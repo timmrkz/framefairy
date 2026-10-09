@@ -22,6 +22,8 @@
 #   make icon       the .icns, from build/icon.png. make app does it for you
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
+#   make frames     build the episode's decoder, on the ffmpeg make ffmpeg
+#                   builds, where it or its code changed
 #   make tools-archive
 #                   pack both of them, with a manifest, for a release
 #   make notices    write the licence notices again, from what the programs
@@ -90,7 +92,13 @@ export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 export CGO_CXXFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 LDFLAGS := -extldflags=-mmacosx-version-min=$(MACOS_MIN)
+# The episode's decoder links ffmpeg's static libraries, and pkg-config
+# names some of them more than once, each library listing what it needs.
+# Apple's linker uses each once and warns about the rest, and the build
+# must print no warning.
+FRAMES_LDFLAGS := -extldflags '-mmacosx-version-min=$(MACOS_MIN) -Wl,-no_warn_duplicate_libraries'
 endif
+FRAMES_LDFLAGS ?= $(LDFLAGS)
 
 # The speech library is native code, so Go's C support must be on. Go never
 # downloads another toolchain behind your back, unless GOTOOLCHAIN is set
@@ -124,9 +132,9 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
-all: deps toolchain $(PROGRAMS) tools-beside
+all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
 	@sh scripts/check.sh --quiet
 
@@ -153,14 +161,19 @@ endif
 NOTOOLS ?=
 tools-beside:
 ifneq ($(NOTOOLS),1)
-	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server; do \
+	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(FRAMES); do \
 		if [ ! -x $$tool ]; then \
-			echo "$$tool is missing, and the programs run no other. Build it with make ffmpeg or make llama."; \
+			case $$tool in \
+			*llama-server) how="make llama" ;; \
+			*framefairy-frames*) how="make frames, on the ffmpeg make ffmpeg builds" ;; \
+			*) how="make ffmpeg" ;; \
+			esac; \
+			echo "$$tool is missing, and the programs run no other. Build it with $$how."; \
 			exit 1; \
 		fi; \
 	done
-	@cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(BIN)/
-	@echo "Using our own ffmpeg and llama-server"
+	@cp $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(FRAMES) $(BIN)/
+	@echo "Using our own ffmpeg, llama-server and episode's decoder"
 endif
 	@for licence in $(STAMPS)/ffmpeg/bin/LICENSE-ffmpeg.txt $(STAMPS)/llama/bin/LICENSE-llama.cpp; do \
 		if [ -f $$licence ]; then cp $$licence $(BIN)/; fi; \
@@ -226,7 +239,7 @@ $(BIN)/framefairy$(EXE): modules
 		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
-$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT)
+$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
 		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
@@ -288,6 +301,30 @@ else
 	@$(BIN)/framefairy-app$(EXE)
 endif
 
+# The episode's decoder, see cmd/framefairy-frames and docs/VIDEO-PREVIEW.md:
+# a program of its own on the libraries of the ffmpeg below, built static
+# against them like ffmpeg itself, with the tag that builds it for real.
+# It is a tool beside the app like ffmpeg, summed and checked the same way.
+# Built when it is not there, or its code, the modules or the ffmpeg under
+# it changed since, which make decides by file times alone. Without the
+# ffmpeg make builds it cannot be built, and says so.
+FRAMES := $(STAMPS)/frames/framefairy-frames$(EXE)
+FRAMES_SRC := $(wildcard cmd/framefairy-frames/*.go internal/framewire/*.go) go.mod go.sum
+frames:
+ifneq ($(NOTOOLS),1)
+frames: $(FRAMES)
+endif
+$(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
+	@if [ ! -f $(STAMPS)/ffmpeg/lib/pkgconfig/libavcodec.pc ]; then \
+		echo "framefairy-frames is built on the libraries of the ffmpeg make builds, and it is not there. Build it with make ffmpeg."; \
+		exit 1; \
+	fi
+	@echo "Building the episode's decoder, framefairy-frames"
+	@mkdir -p $(dir $(FRAMES))
+	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
+		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
+		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
+
 # The ffmpeg we ship, built from source without libx264 so the build is
 # LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has
 # changed since, see scripts/tools.sh. This builds it again whatever is
@@ -347,7 +384,7 @@ motion: frontend/node_modules/.package-lock.json
 # file, and only that. See scripts/changed.sh for what each kind of file
 # runs. CI still runs everything.
 changed:
-	@TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
 test: unit fuzz interface walks
 
@@ -359,7 +396,7 @@ test: unit fuzz interface walks
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
 unit: toolchain modules
-	@PATH="$(TOOLS_FIRST)" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
+	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -380,7 +417,7 @@ STEPS ?=
 WALKERS ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

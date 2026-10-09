@@ -236,6 +236,11 @@ jobs:
       - name: The ffmpeg we ship
         if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
+      # The episode's decoder is built against that ffmpeg's libraries,
+      # which pkg-config finds, also when the ffmpeg came from the cache.
+      - name: pkg-config, for the episode's decoder
+        if: steps.needs.outputs.run == 'true'
+        run: command -v pkg-config >/dev/null || brew install pkg-config
       - name: The llama-server we ship
         if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
         run: sh scripts/build-llama.sh .build/llama

@@ -20,6 +20,26 @@
     ]
   },
   {
+    "name": "github.com/asticode/go-astiav",
+    "version": "0.43.0",
+    "licence": "MIT",
+    "url": "https://github.com/asticode/go-astiav",
+    "part": "The app",
+    "texts": [
+      "github.com-asticode-go-astiav.txt"
+    ]
+  },
+  {
+    "name": "github.com/asticode/go-astikit",
+    "version": "0.42.0",
+    "licence": "MIT",
+    "url": "https://github.com/asticode/go-astikit",
+    "part": "The app",
+    "texts": [
+      "github.com-asticode-go-astikit.txt"
+    ]
+  },
+  {
     "name": "github.com/go-ole/go-ole",
     "version": "1.3.0",
     "licence": "MIT",

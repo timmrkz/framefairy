@@ -51,7 +51,7 @@ cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
 # app would have no ffmpeg or no llama-server at all, since it runs no
 # other. It used to be made anyway, with a line saying it would look on
 # the search path, which on a customer's Mac has none of them.
-for tool in ffmpeg ffprobe llama-server; do
+for tool in ffmpeg ffprobe llama-server framefairy-frames; do
 	if [ ! -x "$BINDIR/$tool" ]; then
 		echo "bundle-macos.sh: no $tool in $BINDIR, and the app runs no other. Build it with make." >&2
 		exit 1

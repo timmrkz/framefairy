@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -14,13 +15,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"framefairy/engine"
 )
 
-// The picture of a file the webview cannot decode, decoded on the Go side,
-// see engine.PreviewFrames. The page opens a stream at a moment, pulls its
+// The picture of the episode, decoded on the Go side by the episode's
+// decoder, see engine.EpisodeFrames. The page opens a stream at a moment, pulls its
 // frames a few at a time and closes it. ffmpeg decodes only as far as the
 // page has pulled, a frame or two ahead: WebKit takes whatever a response
 // writes without ever pushing back, so one long response would have let
@@ -54,6 +56,13 @@ type previews struct {
 	mu     sync.Mutex
 	open   map[string]*preview
 	native map[string]*nativePreview
+	// The episode's decoder of each episode a stream was asked of, see
+	// engine.EpisodeFrames. One whose episode is open in the video preview
+	// is held, by how many times, and is never closed for standing unused:
+	// a click after an hour paused finds it as ready as the first. One
+	// nobody holds is closed once it has stood unused.
+	decoders map[string]*engine.EpisodeFrames
+	held     map[string]int
 	// Started with the first stream, it closes the ones nobody pulls.
 	reaping bool
 }
@@ -82,6 +91,10 @@ type preview struct {
 	// Closed when ffmpeg has stopped, with why in err.
 	done chan struct{}
 	err  error
+	// Where a stream of frames' time went before its first frame, told
+	// once, with the first pull that has a frame. Nil for sound.
+	times *engine.PreviewTimes
+	told  atomic.Bool
 }
 
 type atomicTime struct {
@@ -121,6 +134,22 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 	case "/frames/close":
 		p.close(q.Get("id"))
 		w.WriteHeader(http.StatusNoContent)
+	case "/frames/hold", "/frames/release":
+		path := q.Get("path")
+		if !episodeFile(st, path) {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/frames/release" {
+			p.release(path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if err := p.hold(path); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case "/frames/native":
 		p.serveNative(w, r)
 	case "/frames/decode":
@@ -133,11 +162,7 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	path := q.Get("path")
-	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
-		http.NotFound(w, r)
-		return
-	}
-	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+	if !episodeFile(st, path) {
 		http.NotFound(w, r)
 		return
 	}
@@ -147,6 +172,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
+	var times *engine.PreviewTimes
 	if r.URL.Path == "/frames/sound" {
 		rate, _ := strconv.Atoi(q.Get("rate"))
 		channels, _ := strconv.Atoi(q.Get("ch"))
@@ -164,15 +190,20 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
 			return
 		}
+		times = engine.NewPreviewTimes()
+		dec, err := p.decoder(path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			return e.PreviewFrames(ctx, path, from, width&^1, height&^1, got)
+			if err != nil {
+				return err
+			}
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""
 	if r.URL.Path == "/frames/sound" {
 		kind = "sound"
 	}
-	id := p.start(kind, run)
+	id := p.start(kind, times, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -182,12 +213,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // Streams of sound and of frames are counted apart, so that seeks of a
 // play, each with a sound stream of its own, never close the frames the
 // video preview is drawing, nor frames the sound.
-func (p *previews) start(kind string, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{})}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -218,8 +249,14 @@ func (p *previews) start(kind string, run func(ctx context.Context, got func(at 
 	p.mu.Unlock()
 	go func() {
 		defer close(s.done)
-		s.err = run(ctx, func(at float64, frame []byte) error {
-			f := previewFrame{at: at, data: append([]byte(nil), frame...)}
+		err := run(ctx, func(at float64, frame []byte) error {
+			// A frame is handed over in a buffer of its own, see
+			// engine.PreviewFrames, and kept as it is. Sound comes in one
+			// buffer read into again and again, so it is copied.
+			if kind == "sound" {
+				frame = append([]byte(nil), frame...)
+			}
+			f := previewFrame{at: at, data: frame}
 			select {
 			case s.frames <- f:
 				return nil
@@ -227,6 +264,12 @@ func (p *previews) start(kind string, run func(ctx context.Context, got func(at 
 				return ctx.Err()
 			}
 		})
+		// Stopped from here, whatever ffmpeg said as it was killed, or the
+		// episode's decoder closed under it: the page asks another stream.
+		if ctx.Err() != nil || errors.Is(err, engine.ErrFramesClosed) {
+			err = context.Canceled
+		}
+		s.err = err
 	}()
 	return id
 }
@@ -256,23 +299,100 @@ func (p *previews) close(id string) {
 	}
 }
 
+// episodeFile says whether path is an episode of the library, a file.
+func episodeFile(st *store, path string) bool {
+	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// hold starts the episode's decoder of the episode at path, with its
+// cursors opened, as the episode opens in the video preview, and keeps it
+// until release. The frame queue holds it for as long as it has the
+// episode, see AppFrames in lib/frames/app.ts.
+func (p *previews) hold(path string) error {
+	d, err := p.decoder(path)
+	if err != nil {
+		return err
+	}
+	p.mu.Lock()
+	if p.held == nil {
+		p.held = map[string]int{}
+	}
+	p.held[path]++
+	p.mu.Unlock()
+	return d.Ready()
+}
+
+// release lets go of a hold. The decoder is then closed once it has stood
+// unused, see reap.
+func (p *previews) release(path string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.held[path] > 1 {
+		p.held[path]--
+	} else {
+		delete(p.held, path)
+	}
+}
+
+// decoder is the episode's decoder for the episode at path, started by a
+// hold or on its first stream. It ships beside the app, as ffmpeg does, and an app
+// without it says so the way it says a missing ffmpeg: there is no second
+// way to the frames.
+func (p *previews) decoder(path string) (*engine.EpisodeFrames, error) {
+	program, err := engine.FindTool("FRAMEFAIRY_FRAMES", "framefairy-frames")
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.decoders == nil {
+		p.decoders = map[string]*engine.EpisodeFrames{}
+	}
+	d := p.decoders[path]
+	if d == nil {
+		d = engine.NewEpisodeFrames(program, path)
+		p.decoders[path] = d
+		if !p.reaping {
+			p.reaping = true
+			go p.reap()
+		}
+	}
+	return d, nil
+}
+
 func (p *previews) reap() {
 	for {
 		time.Sleep(previewIdle / 4)
-		p.mu.Lock()
-		for id, s := range p.open {
-			if time.Since(s.pulled.get()) > previewIdle {
-				s.stop()
-				delete(p.open, id)
-			}
+		p.reapOnce(previewIdle)
+	}
+}
+
+// reapOnce closes the streams nobody has pulled for idle, and the decoders
+// nobody holds that have stood unused for three times that.
+func (p *previews) reapOnce(idle time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for path, d := range p.decoders {
+		if p.held[path] == 0 && d.Idle() > 3*idle {
+			delete(p.decoders, path)
+			go d.Close()
 		}
-		for id, n := range p.native {
-			if time.Since(n.used.get()) > previewIdle {
-				n.pictures.Close()
-				delete(p.native, id)
-			}
+	}
+	for id, s := range p.open {
+		if time.Since(s.pulled.get()) > idle {
+			s.stop()
+			delete(p.open, id)
 		}
-		p.mu.Unlock()
+	}
+	for id, n := range p.native {
+		if time.Since(n.used.get()) > idle {
+			n.pictures.Close()
+			delete(p.native, id)
+		}
 	}
 }
 
@@ -304,13 +424,30 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 			if f.at < skip {
 				continue
 			}
+			// The first frame of a stream says where its time went, in
+			// milliseconds from when it was asked for: until the decoder
+			// had the request, until it was at the place, until the first
+			// frame was out, and then 1 where that meant opening the file
+			// and 0 where a cursor was moved, see engine.PreviewTimes.
+			if s.times != nil && !s.told.Swap(true) {
+				file := 0
+				if s.times.File.Load() {
+					file = 1
+				}
+				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d",
+					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file))
+			}
 			if !put(f) {
 				return
 			}
 			waiting = false
 		case <-s.done:
 			w.Header().Set("X-Frames-End", "1")
-			if s.err != nil && !errors.Is(s.err, context.Canceled) {
+			if errors.Is(s.err, context.Canceled) {
+				// Stopped here, to make room or after standing unused, not
+				// at the end of the episode: the page asks another stream.
+				w.Header().Set("X-Frames-Closed", "1")
+			} else if s.err != nil {
 				w.Header().Set("X-Frames-Error", engine.Scrub(s.err.Error(), 300))
 			}
 			w.WriteHeader(http.StatusOK)

@@ -63,6 +63,9 @@
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
 //   ["episode"]        opens the episode on screen before again
+//   ["episode watched"]
+//                      the same, reading back from the video preview every
+//                      frame it draws for the episode from the click on
 //   ["pick model"]     opens the list of what finds clips and, if it
 //                      opens, picks the last model here it does not have
 //                      picked
@@ -96,6 +99,11 @@
 //
 // and what has to come of them:
 //
+//   ["opened on the clip"]
+//                      since "episode watched", the video preview drew the
+//                      first frame of the chosen clip and no other, and the
+//                      playhead was on the clip before the workspace asked
+//                      for the window
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -209,7 +217,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
-import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen } from "./bridge.mjs";
+import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
@@ -611,6 +619,20 @@ export const sequences = [
       ["asks"],
       ["pick model"],
       ["changed"],
+    ],
+  },
+  {
+    // Tim saw the episode's first frames flicker in the video preview as an
+    // episode opened, and then the playhead jump to its clip. An episode
+    // with a clip opens on the clip, and nothing before the clip is drawn
+    // on the way. The clip starts later than the episode does, so a frame
+    // of the episode's start is a frame that should not be there.
+    name: "an episode opens on its clip, with no frame of its start on the way",
+    steps: [
+      ["trim", "start", 160],
+      ["add", 30],
+      ["episode watched"],
+      ["opened on the clip"],
     ],
   },
   {
@@ -1428,6 +1450,47 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.locator(".listhead button.new").first().waitFor();
         await settle(page);
         break;
+      case "episode watched": {
+        // Every frame the new episode's queue draws, read back from the
+        // canvas on every animation frame until well after it settled. The
+        // canvas is the one the episode before drew on, so only frames
+        // drawn once the new episode's frames are open count.
+        await preview(page, 0.04);
+        await page.evaluate(() => {
+          const was = window.__appFrames;
+          window.__drawn = [];
+          window.__watching = true;
+          // Every call to the Go side, with where the playhead stood as it
+          // was made.
+          window.__asked = [];
+          if (!window.__askWatched) {
+            window.__askWatched = true;
+            const real = window.fetch;
+            window.fetch = (input, init) => {
+              if (window.__watching && String(input).endsWith("/call") && init?.body) {
+                const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
+                window.__asked.push([String(JSON.parse(init.body).name).split(".").pop(), playhead]);
+              }
+              return real(input, init);
+            };
+          }
+          const watch = () => {
+            if (!window.__watching) return;
+            if (window.__appFrames && window.__appFrames !== was) {
+              const n = window.__pictured();
+              if (n >= 0 && n !== window.__drawn.at(-1)) window.__drawn.push(n);
+            }
+            requestAnimationFrame(watch);
+          };
+          requestAnimationFrame(watch);
+        });
+        await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
+        await page.locator(".listhead button.new").first().waitFor();
+        await settle(page);
+        await page.waitForTimeout(1000);
+        await page.evaluate(() => (window.__watching = false));
+        break;
+      }
       case "pick model": {
         await page.evaluate(() => (window.__shook = []));
         await page.locator(".card.finding button.pick").first().click();
@@ -1595,6 +1658,34 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "mark":
         marks[arg] = await engineState(page, watch.at);
         break;
+      case "opened on the clip": {
+        // The video preview of an episode that opens on a clip draws the
+        // clip's first frame and nothing before it: no frame of the
+        // episode's start on the way to the clip.
+        const on = await chosen(page);
+        const clip = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const fps = await rate(page);
+        const first = Math.floor((clip.start + 0.001) * fps);
+        const drawn = await page.evaluate(() => window.__drawn ?? []);
+        if (!drawn.length) wrong = "the video preview drew no frame of the episode it opened";
+        else if (drawn.some((n) => n !== first)) {
+          wrong = `the episode opened on its clip at frame ${first} and the video preview drew frames ${drawn.join(", ")} on the way`;
+        }
+        // Where the playhead opens comes before anything else the
+        // workspace reads as it opens: the window, which it reads last and
+        // only as it opens, is asked with the playhead on the clip. The
+        // coverage and the room are read again whenever work elsewhere
+        // ends, a search of the episode added before, so they say nothing
+        // about the order the workspace opens in.
+        const asked = await page.evaluate(() => window.__asked ?? []);
+        const after = ["ChosenWindow"];
+        const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
+        if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
+        else if (!wrong && early.length) {
+          wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
+        }
+        break;
+      }
       case "box": {
         const box = s.map((w) => w.text).join(" ");
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;

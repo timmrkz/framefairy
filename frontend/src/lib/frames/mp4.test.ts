@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { aacRate, findMoov, hevcCodec, MP4Error, parseMoov, pcmPlanes, rankAt, type Pcm } from "./mp4";
+import { aacRate, findMoov, hevcCodec, MP4Error, parseMoov, pcmPlanes, rankAt, rankOf, type Pcm } from "./mp4";
 
 // The boxes are written out here by hand, the way a muxer writes them, so
 // the tests need no file and no ffmpeg. Each test builds only what it is
@@ -414,6 +414,17 @@ describe("rankAt", () => {
     // The held frame holds every moment until the next begins.
     expect(rankAt(uneven, 0.7)).toBe(4);
     expect(rankAt(uneven, 0.7167)).toBe(5);
+
+    // A frame the Go side decoded is the one whose start its moment is
+    // nearest, a rounding early or late. Half an average frame added, here
+    // 47 ms, went on to the next frame wherever it came sooner, and the
+    // video preview showed every such frame one place late, which a walk
+    // of a phone's file found. Plan row 2.156.
+    for (const [r, at] of begins.entries()) {
+      for (const off of [-0.0008, 0, 0.0008]) expect(rankOf(uneven, at + off)).toBe(r);
+    }
+    const half = (begins[5] - begins[0]) / 5 / 2;
+    expect(rankAt(uneven, begins[2] + half)).toBe(3);
   });
 });
 

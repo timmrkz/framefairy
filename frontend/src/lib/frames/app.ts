@@ -17,7 +17,7 @@
 // - A frame is decoded at the size of the canvas and no larger.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
-import { rankAt, type VideoTrack } from "./mp4";
+import { rankOf, type VideoTrack } from "./mp4";
 import { pull, type Pulled } from "./pull";
 
 // How much of the frames shown last is kept, and how far ahead a stream may
@@ -29,7 +29,18 @@ const REACH = 1.5;
 // decoders, and one more for a still or a seek while they play.
 const STREAMS = 3;
 
-type Waiter = { rank: number; done: (f: VideoFrame | null) => void };
+// A frame asked for. gone is set when the one who asked no longer wants it,
+// a decoder reset for a newer target, and a stream then neither pulls for
+// it nor opens another stream for it.
+// seq numbers the asks in the order they were made.
+type Waiter = { rank: number; seq: number; done: (f: VideoFrame | null) => void; gone?: boolean };
+
+// Where the time of a stream's first frame went, in milliseconds from when
+// it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
+// ms until the interface had it, and on the Go side until the decoder had
+// the request, until it was at the place, until the first frame was out,
+// and whether that meant opening the file or only moving a cursor.
+export type Opened = { ms: number; started: number; opened: number; first: number; file: boolean };
 
 class Stream {
   id: Promise<string | null>;
@@ -39,9 +50,13 @@ class Stream {
   ended = false;
   // Whether it has given a frame yet.
   private gave = false;
+  // When it was asked for, to count how long its first frame took.
+  private asked = performance.now();
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
+  // The newest ask it was given.
+  private newest = 0;
 
   constructor(
     private owner: AppFrames,
@@ -59,6 +74,12 @@ class Stream {
       .catch(() => null);
   }
 
+  // Still on its way to its first frame for a place nobody wants any more:
+  // a drag went on past it.
+  get stale(): boolean {
+    return !this.ended && !this.gave && this.waiting.every((w) => w.gone);
+  }
+
   // Whether this stream is the quickest way to the frame: it has not passed
   // it and is not too far behind it.
   reaches(rank: number): boolean {
@@ -68,6 +89,7 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
+    this.newest = Math.max(this.newest, w.seq);
     this.waiting.push(w);
     void this.pull();
   }
@@ -81,7 +103,15 @@ class Stream {
         this.end("the app could not decode the picture of this episode");
         return;
       }
-      while (this.waiting.length && !this.ended) {
+      for (;;) {
+        for (const w of this.waiting) if (w.gone) w.done(null);
+        this.waiting = this.waiting.filter((w) => !w.gone);
+        if (!this.waiting.length || this.ended) {
+          // Opened for a place the hand has left: once its first frame
+          // comes it lets the newest place go, see unpark.
+          if (!this.ended && !this.gave) await this.firstFrame(id);
+          return;
+        }
         const lowest = Math.min(...this.waiting.map((w) => w.rank));
         const highest = Math.max(...this.waiting.map((w) => w.rank));
         // Frames before the first one wanted are decoded on the Go side
@@ -91,10 +121,26 @@ class Stream {
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
         const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height, { ...this.owner.track.colour, fullRange: true });
-        if (got.status === 0 || got.status === 404) {
-          // Closed on the Go side after standing unused: what was waited
-          // for goes to a new stream. A stream that never gave a frame is
-          // no stream at all, and asking again would only ask again.
+        // Closed here while the pull was on its way: what it waited for has
+        // gone to another stream already.
+        if (this.ended) {
+          for (const { frame } of got.frames) frame.close();
+          return;
+        }
+        if (got.status === 404 || got.closed) {
+          // Closed on the Go side, to make room for newer streams or after
+          // standing unused. That is no failure of the decoder: what was
+          // waited for goes to a new stream.
+          this.ended = true;
+          for (const { frame } of got.frames) frame.close();
+          const again = this.waiting;
+          this.waiting = [];
+          for (const w of again) this.owner.route(w);
+          return;
+        }
+        if (got.status === 0) {
+          // The Go side could not be reached at all. A stream that never
+          // gave a frame is no stream, and asking again would only ask again.
           if (!this.gave) {
             this.end("the app's decoder did not answer");
             return;
@@ -116,9 +162,29 @@ class Stream {
     }
   }
 
+  // The first frame of a stream nobody waits on any more, read so that the
+  // stream counts as come and the newest place asked for can go next.
+  private async firstFrame(id: string) {
+    const q = new URLSearchParams({ id, n: "1" });
+    const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height, { ...this.owner.track.colour, fullRange: true });
+    if (this.ended) {
+      for (const { frame } of got.frames) frame.close();
+      return;
+    }
+    if (got.frames.length) {
+      this.take(got);
+      const { at, frame } = got.frames[got.frames.length - 1];
+      this.owner.onPassing?.(rankOf(this.owner.track.samples, at), frame, this.newest);
+    } else this.end("");
+  }
+
   private take(got: Pulled) {
+    if (!this.gave && got.frames.length) {
+      this.owner.opened(performance.now() - this.asked, got.times);
+      queueMicrotask(() => this.owner.unpark());
+    }
     for (const { at, frame } of got.frames) {
-      const rank = rankAt(this.owner.track.samples, at + this.owner.track.frame / 2);
+      const rank = rankOf(this.owner.track.samples, at);
       this.position = Math.max(this.position, rank);
       this.gave = true;
       this.owner.keep(rank, frame);
@@ -135,6 +201,7 @@ class Stream {
 
   private end(why: string) {
     this.ended = true;
+    queueMicrotask(() => this.owner.unpark());
     if (why) this.owner.failed(why);
     for (const w of this.waiting) w.done(this.owner.nearest(w.rank));
     this.waiting = [];
@@ -143,6 +210,7 @@ class Stream {
   // Closed with frames still waited for: they go to another stream.
   close() {
     this.ended = true;
+    queueMicrotask(() => this.owner.unpark());
     const again = this.waiting;
     this.waiting = [];
     for (const w of again) this.owner.route(w);
@@ -160,15 +228,48 @@ export class AppFrames {
   private keptBytes = 0;
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
-  readonly stats = { streams: 0, continued: 0, kept: 0 };
+  // Told of a frame that came for an ask withdrawn on the way, a place a
+  // drag passed, so the queue can put it up while the frame for where the
+  // hand is now is on its way. seq is the ask's. The frame stays the kept
+  // one's.
+  onPassing?: (rank: number, frame: VideoFrame, seq: number) => void;
+  // The number of the newest ask.
+  asked = 0;
+  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
   readonly puller = new Puller();
 
+  // The episode's decoder on the Go side is held for as long as these
+  // frames are open: started now, with the file open and decoders ready,
+  // and never closed for standing unused while the episode is open, so a
+  // click after a long pause is as quick as the first.
   constructor(
     readonly path: string,
     readonly track: VideoTrack,
     private size: () => { width: number; height: number },
     private onTrouble: (why: string) => void,
-  ) {}
+  ) {
+    void fetch(`/frames/hold?${new URLSearchParams({ path })}`).catch(() => {});
+  }
+
+  // The newest place asked for while a stream was on its way to a place
+  // left behind, see route.
+  // Those a reset has withdrawn since are let go as nothing.
+  private parked: Waiter[] = [];
+  private closed = false;
+
+  unpark() {
+    const was = this.parked;
+    this.parked = [];
+    for (const w of was) this.route(w);
+  }
+
+  // A stream gave its first frame: how long that took here, from asking to
+  // having it, and on the Go side, see Opened.
+  opened(ms: number, times: string) {
+    const [started, open, first, file] = times.split(",").map(Number);
+    this.stats.opens.push({ ms: Math.round(ms), started: started || 0, opened: open || 0, first: first || 0, file: file === 1 });
+    if (this.stats.opens.length > 64) this.stats.opens.shift();
+  }
 
   ptsOf(rank: number): number {
     const s = this.track.samples;
@@ -177,16 +278,29 @@ export class AppFrames {
 
   // The frame of this rank, as a new frame with this timestamp, once it is
   // there. Null only when nothing near it could be decoded.
-  frame(rank: number, timestamp: number): Promise<VideoFrame | null> {
+  // withdrawn, when it is set to true before the frame came, makes it
+  // come as null and stops it holding a stream.
+  frame(rank: number, timestamp: number, asked?: Set<Waiter>): Promise<VideoFrame | null> {
     return new Promise((done) => {
-      this.route({
+      const w: Waiter = {
         rank,
-        done: (f) => done(f ? new VideoFrame(f, { timestamp }) : null),
-      });
+        seq: ++this.asked,
+        done: (f) => {
+          asked?.delete(w);
+          if (f && w.gone) this.onPassing?.(rank, f, w.seq);
+          done(f && !w.gone ? new VideoFrame(f, { timestamp }) : null);
+        },
+      };
+      asked?.add(w);
+      this.route(w);
     });
   }
 
   route(w: Waiter) {
+    if (w.gone || this.closed) {
+      w.done(null);
+      return;
+    }
     const have = this.kept.get(w.rank);
     if (have) {
       this.stats.kept++;
@@ -199,7 +313,17 @@ export class AppFrames {
     const { width, height } = this.size();
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
-    else {
+    else if (this.streams.some((x) => x.stale)) {
+      // One new stream on its way at a time. While one is still coming for
+      // a place the hand has already left, a drag over the clip timeline
+      // would start an ffmpeg for every place it passes, more than anyone
+      // can watch and more than the machine can decode. The newest place
+      // waits instead, and goes as soon as that stream has come, so frames
+      // follow the hand as fast as they can be made and no faster.
+      this.parked.push(w);
+      this.stats.parked++;
+      return;
+    } else {
       s = new Stream(this, w.rank, width, height);
       this.stats.streams++;
       this.streams.push(s);
@@ -245,6 +369,11 @@ export class AppFrames {
   }
 
   close() {
+    if (this.closed) return;
+    this.closed = true;
+    void fetch(`/frames/release?${new URLSearchParams({ path: this.path })}`).catch(() => {});
+    for (const w of this.parked) w.done(null);
+    this.parked = [];
     this.puller.close();
     for (const s of this.streams) s.close();
     this.streams = [];
@@ -309,7 +438,7 @@ class Puller {
     w.onerror = () => {
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", frames: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", frames: [] });
       this.waiting.clear();
     };
     this.worker = w;
@@ -354,6 +483,8 @@ export class AppPictures {
   private next = -1;
   private generation = 0;
   private flushes: { done: () => void; fail: (e: Error) => void }[] = [];
+  // The frames asked of AppFrames and not come yet, withdrawn on a reset.
+  private waiting = new Set<Waiter>();
 
   constructor(
     private frames: AppFrames,
@@ -370,7 +501,7 @@ export class AppPictures {
     if (this.next < 0) this.next = first;
     this.asked++;
     const generation = this.generation;
-    void this.frames.frame(rank, timestamp).then((f) => {
+    void this.frames.frame(rank, timestamp, this.waiting).then((f) => {
       if (generation !== this.generation || this.state !== "configured") {
         f?.close();
         return;
@@ -419,6 +550,10 @@ export class AppPictures {
 
   reset() {
     this.generation++;
+    // What was asked for an older target no longer holds a stream, nor
+    // opens one: a drag asks for many frames and wants only the last.
+    for (const w of this.waiting) w.gone = true;
+    this.waiting.clear();
     this.asked = 0;
     this.next = -1;
     for (const f of this.held.values()) f?.close();

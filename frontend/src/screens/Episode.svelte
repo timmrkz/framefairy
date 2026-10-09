@@ -82,6 +82,9 @@
 
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
+  // Until the workspace knows where it opens, on its clip or at the start,
+  // the video preview draws nothing, see opening in Player.svelte.
+  let opened = $state(false);
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
@@ -871,14 +874,8 @@
   // already does. Where the playhead stood a moment before the app was
   // closed is not kept: no editor keeps it, and the start of the clip is a
   // place that means something.
-  async function openOnAClip() {
+  async function openOnAClip(key: string) {
     if (selected || !clips.length) return;
-    let key = "";
-    try {
-      key = await api.chosenClip(path);
-    } catch {
-      // An episode that cannot say has simply never been opened.
-    }
     const clip = clips.find((c) => c.key === key) ?? clips[0];
     await select(clip.key);
   }
@@ -907,24 +904,61 @@
     }
   }
 
+  // The workspace opening: where the playhead opens comes first, before
+  // anything else is asked. The episode, its picture, its clips and the
+  // clip it was last worked on are asked at once, the video preview and
+  // the playhead are put on that clip the moment they are in, and only
+  // then the rest is read, how far it was searched, the room for windows
+  // and the window, none of which the video preview waits for. They were
+  // read first, one after another, with the video preview waiting.
+  async function openEpisode() {
+    try {
+      const ticket = statusRead.send();
+      const [now, picture, , key] = await Promise.all([
+        api.episode(path),
+        // A file that is missing has no picture to say.
+        api.source(path).catch(() => null),
+        refreshClips(),
+        // An episode that cannot say has simply never been opened.
+        api.chosenClip(path).catch(() => ""),
+      ]);
+      if (statusRead.keep(ticket)) status = now;
+      if (!status) return;
+      if (!status.missing) source = picture;
+      keepRemovedTrue();
+      // The video preview is drawn for the picture before the clip is
+      // chosen, so choosing it puts the playhead there.
+      await tick();
+      await openOnAClip(key);
+    } catch (err) {
+      problem = errorText(err);
+    } finally {
+      opened = true;
+    }
+    try {
+      if (!status || status.missing) return;
+      await refreshCoverage();
+      await refreshRoom();
+      if (source) await openWindow();
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
   async function load() {
     try {
       const ticket = statusRead.send();
       const now = await api.episode(path);
       if (statusRead.keep(ticket)) status = now;
       if (!status) return;
-      const first = !source && !status.missing;
-      if (first) {
-        source = await api.source(path);
-      }
+      // A file that was missing as the workspace opened and is there now.
+      const found = !source && !status.missing;
+      if (found) source = await api.source(path);
       if (!status.missing) await refreshCoverage();
       if (!status.missing) await refreshRoom();
-      if (first && source) {
-        await openWindow();
-      }
+      if (found && source) await openWindow();
       await refreshClips();
       keepRemovedTrue();
-      if (first) await openOnAClip();
     } catch (err) {
       problem = errorText(err);
     }
@@ -2196,7 +2230,7 @@
       max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
     });
-    load();
+    openEpisode();
   });
 </script>
 
@@ -2564,6 +2598,7 @@
           {path}
           {source}
           clip={shownClip}
+          opening={!opened}
           bind:time
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}

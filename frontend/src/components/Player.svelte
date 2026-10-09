@@ -51,6 +51,7 @@
     looping = $bindable(false),
     onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
+    opening = false,
   }: {
     path: string;
     source: SourceView;
@@ -58,6 +59,12 @@
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
     time?: number;
+    // While the workspace has not yet decided where the playhead opens,
+    // on the clip it opens on, nothing is drawn: the episode's first
+    // frames were drawn and then left for the clip, a flicker Tim saw as
+    // every episode opened. The queue opens the file meanwhile, so the
+    // first frame is no later for it.
+    opening?: boolean;
     onplayclip?: (clip: ClipEntry) => void;
     // Where the caption box is while it is being dragged, so the setting
     // beside it says what you are doing as you do it. Letting go saves,
@@ -148,9 +155,23 @@
       paused = true;
     });
     q.setProgram(...programOf(place));
-    q.seek(time);
+    sought = null;
+    if (!untrack(() => opening)) {
+      q.seek(time);
+      sought = q;
+    }
     return q;
   }
+
+  // The queue that has had its first seek. One opened while the workspace
+  // was still opening has its first seek once it knows where, from a
+  // gesture or from here.
+  let sought: FrameQueue | null = null;
+  $effect(() => {
+    if (opening || !queue || sought === queue) return;
+    sought = queue;
+    queue.seek(untrack(() => time));
+  });
 
   // What the queue says: where the playhead is and whether it plays. While
   // it plays the playhead is the sound being heard, on every animation
@@ -265,6 +286,7 @@
     if (!queue) return;
     if (!paused) playedClip = placed.place !== "video";
     queue.seek(at, programOf(placeFor(placed, clip?.key)));
+    sought = queue;
   }
 
   export function toggle() {

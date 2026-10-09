@@ -236,7 +236,9 @@ func goToolchain() error {
 
 // Programs is what ships, and systems what it ships on.
 var (
-	programs = []string{"./cmd/framefairy-app", "./cmd/framefairy"}
+	// framefairy-frames is built with the tag ffmpeglibs, without which it
+	// compiles to a program that only says it was built without them.
+	programs = []string{"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/framefairy-frames"}
 	systems  = []string{"darwin", "linux", "windows"}
 )
 
@@ -256,7 +258,7 @@ func goModules() error {
 	type module struct{ Path, Version, Dir string }
 	found := map[string]module{}
 	for _, goos := range systems {
-		args := append([]string{"list", "-deps", "-f",
+		args := append([]string{"list", "-tags", "ffmpeglibs", "-deps", "-f",
 			"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{end}}{{end}}"}, programs...)
 		cmd := exec.Command("go", args...)
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=arm64", "CGO_ENABLED=1")

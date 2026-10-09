@@ -12,6 +12,13 @@ export type Pulled = {
   // The episode has ended, and why when it failed.
   end: boolean;
   error: string;
+  // The Go side closed the stream, to make room for newer ones or because
+  // nobody pulled from it: no end of the episode and no failure.
+  closed: boolean;
+  // Where the stream's time went before its first frame, sent with its
+  // first frame: "started,opened,first" in milliseconds, see
+  // engine.PreviewTimes.
+  times: string;
   frames: { at: number; frame: VideoFrame }[];
 };
 
@@ -34,11 +41,13 @@ function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: numbe
 // side makes them in, see engine.PreviewFrames.
 export async function pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", frames: [] };
+  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", frames: [] };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
     error: res.headers.get("X-Frames-Error") ?? "",
+    closed: !!res.headers.get("X-Frames-Closed"),
+    times: res.headers.get("X-Frames-Times") ?? "",
     frames: [],
   };
   if (!res.ok || !res.body) return out;

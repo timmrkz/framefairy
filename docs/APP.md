@@ -354,10 +354,49 @@ it and says so at the foot of the picture. With one engine, see
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), such files will play as far as the
 render can read them.
 
-A system can also say it decodes a file and then fail on it: WebKit says
-yes to HEVC with 10-bit colour and its decoder then fails on the first
-frame, "Decoder failure". For such a file, and for one the system says no
-to, the Go side decodes the picture instead, plan row 2.141. The queue
+Every file's picture is decoded by ffmpeg on the Go side, the first step
+of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156, by the episode's
+decoder, `framefairy-frames`, which make puts beside the app and the app
+always ships: one program per episode on ffmpeg's libraries, which keeps
+the file open and its decoders ready, so a jump moves a cursor that is
+open instead of starting ffmpeg. An app without it says so the way it
+says a missing ffmpeg, and there is no second way to the frames. The frame
+queue holds the decoder of its episode from the moment the episode opens
+in the video preview, `/frames/hold`, until it closes, `/frames/release`:
+the decoder starts at once and opens its cursors on the file before any
+frame is asked for, and a held decoder is never closed for standing
+unused, so a click after an hour paused is as quick as the first. One
+nobody holds is closed after a minute unused. The webview's
+decoders and the Mac's own below are still in the code, unused, until the
+step that removes them. Each stream of frames says, with its first frame,
+where its time went, in milliseconds from when it was asked for: until
+the decoder had the request, at once where it ran and after starting it
+where it did not, until it was at the place asked for, which it says
+itself, and until the first frame was out, then 1 where reaching the
+place meant opening the file and 0 where a cursor that had it was moved.
+That is the header `X-Frames-Times`, which `AppFrames` keeps in
+`stats.opens`, for a probe to tell where the time of a jump went, see
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), Speed. A frame asked for a place the hand has left is withdrawn when
+the queue's decoder is reset for the newer place, and one new stream is
+on its way at a time: while one is still coming for a place left behind,
+the newest place waits and goes as soon as it has come, so a drag over
+the clip timeline shows frames as fast as they can be made and starts no
+ffmpeg for every place it passes. Every move of the hand is a seek, which
+withdraws the frame the seek before asked for, and a frame takes longer to
+come than the hand takes to move. A frame that comes for an ask withdrawn
+on the way is put up while the frame for where the hand is now is still
+coming, unless a frame asked for later is on screen already, `passing` in
+`lib/frames/queue.ts`. Thrown away, as it was, the picture stood still
+for a whole drag on a busy machine, found by Tim on an HEVC episode at
+1080p. The decoder drops the frames before the moment asked for as they
+come out of decoding, before they are scaled. A stream the Go side stops, to make
+room or after standing unused, says `X-Frames-Closed`, and what waited on
+it goes to another stream. Taken for the end of the episode, it settled
+for a frame near the one wanted, and after a drag Tim saw the wrong frame
+and "the app's decoder did not answer". Before, a system could say it decodes a file and then fail on
+it: WebKit says yes to HEVC with 10-bit colour and its decoder then fails
+on the first frame, "Decoder failure". For such a file, and for one the
+system said no to, the Go side decoded the picture, plan row 2.141. The queue
 asks its picture decoder the same things either way: `AppPictures` in
 `lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
 `GoSound` and `PlainSound` stand in for the sound decoder, so drawing, the clock, cuts
@@ -369,7 +408,7 @@ and its first frames too late, and 72 frames of a play of three seconds
 were dropped as late until it did.
 
 Where the system has a decoder of its own for the picture, VideoToolbox on
-the Mac for H.264 and HEVC, the queue uses it, `NativePictures` in
+the Mac for H.264 and HEVC, the queue used it until 2.156, `NativePictures` in
 `lib/frames/native.ts` and `engine.Pictures`: the page reads the file as
 it does for its own decoder and sends the samples, a batch for whatever it
 fed in a moment, to `POST /frames/decode`, and the decoder, one for each
@@ -496,7 +535,22 @@ playhead goes to the start of that clip, because that is what choosing a
 clip does. Where the playhead stood when the app was closed is not kept, no
 editor keeps that, and the start of a clip is a place that means something.
 Which clip it was lives in the episode's own folder, so it goes when the
-folder goes.
+folder goes. The video preview draws nothing until the workspace knows
+where it opens, `opening` in `Player.svelte`, so the first frame on screen
+is the clip's. It drew the episode's first frames as it opened and then
+left them for the clip, a flicker Tim saw on every episode. The queue
+opens the file meanwhile, so the clip's frame comes no later. Where the
+playhead opens is the first thing the workspace works out, `openEpisode`
+in `Episode.svelte`: the episode, its picture, its clips and the clip last
+worked on are asked at once, and the playhead is on the clip before
+anything else is asked, how far the episode was searched, the room for
+windows and the window, none of which the video preview needs. Those
+were asked first, one after another, with the video preview waiting. The
+walk `an episode opens on its clip, with no frame of its start on the
+way` reads every frame drawn from the click on, and where the playhead
+stood as the window was asked, which only the opening asks. The coverage
+and the room are read again whenever work elsewhere ends, so they cannot
+say what came first.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving

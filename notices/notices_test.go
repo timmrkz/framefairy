@@ -72,9 +72,10 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 // both of those are checked on every change.
 func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
 	list := all(t)
-	cmd := exec.Command("go", "list", "-deps", "-f",
+	// framefairy-frames as make builds it, with ffmpeg's libraries.
+	cmd := exec.Command("go", "list", "-tags", "ffmpeglibs", "-deps", "-f",
 		"{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}}{{end}}{{end}}",
-		"./cmd/framefairy-app", "./cmd/framefairy")
+		"./cmd/framefairy-app", "./cmd/framefairy", "./cmd/framefairy-frames")
 	cmd.Dir = ".."
 	raw, err := cmd.Output()
 	if err != nil {

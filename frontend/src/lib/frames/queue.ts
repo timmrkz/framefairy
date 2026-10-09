@@ -691,6 +691,10 @@ export class FrameQueue {
   // whether the first frame of the play or cue is up.
   private drawnFor = 0;
   private firstShown = false;
+  // The ticket of the seek or play whose own frame is on the canvas, and
+  // the newest ask of the Go side's frames made when it was put up.
+  private putFor = -1;
+  private shownAsked = 0;
   private shown: { frame: VideoFrame; run: number; rank: number } | null = null;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
@@ -749,10 +753,11 @@ export class FrameQueue {
       codedHeight: v.height,
       optimizeForLatency: true,
     };
-    const support = await VideoDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
-    if (this.closed) throw new Error("closed");
+    // Every file's picture comes from ffmpeg on the Go side, the first step
+    // of docs/VIDEO-PREVIEW.md, measured before the webview's decoders and
+    // the Mac's own are removed.
     this.videoConfig = config;
-    if (!support.supported) await this.fromGoSide();
+    this.app = this.fromApp();
     // A sound card at the episode's own rate, so the sound is resampled
     // once, on its way out, rather than stretch by stretch. It starts held,
     // and the first play, a gesture, lets it go.
@@ -816,6 +821,7 @@ export class FrameQueue {
     const app = new AppFrames(path, v, () => this.previewSize(), (why) =>
       this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
+    app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
     // For the walks, which read how the frames came.
     (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
     return app;
@@ -1142,12 +1148,34 @@ export class FrameQueue {
     this.stats.open--;
   }
 
-  // Draws a frame and closes the one it replaces.
-  private put(frame: VideoFrame, run: number, rank: number) {
+  // Draws a frame and closes the one it replaces. One passing is put up
+  // on the way to the frame asked for, see passing.
+  private put(frame: VideoFrame, run: number, rank: number, passing = false) {
     if (this.shown && this.shown.frame !== frame) this.closeFrame(this.shown.frame);
     this.shown = { frame, run, rank };
+    if (!passing) {
+      this.putFor = this.ticket;
+      this.shownAsked = this.app?.asked ?? 0;
+    }
     this.paint();
     this.stats.drawn++;
+  }
+
+  // A frame that came for a place a paused drag has passed, while the frame
+  // for where the hand is now is still on its way: it is put up meanwhile,
+  // unless a frame asked for later is on screen already. Every move of the
+  // hand is a seek, which withdraws the frame asked for by the seek before,
+  // and a frame takes longer to come than the hand takes to move, 30 to
+  // 50 ms against 16. So every frame came for a place already left, none
+  // was drawn, and the picture stood still for the whole drag, found by
+  // Tim on start.mp4. Nothing is reported: the playhead is the hand's.
+  private passing(rank: number, frame: VideoFrame, seq: number) {
+    if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
+    if (seq <= this.shownAsked) return;
+    this.shownAsked = seq;
+    if (this.shown?.rank === rank) return;
+    this.stats.open++;
+    this.put(new VideoFrame(frame, { timestamp: frame.timestamp }), -1, rank, true);
   }
 
   // The frame on screen, as large as the canvas allows and in its own
@@ -1187,6 +1215,7 @@ export class FrameQueue {
     const feed = stillFeed(s, holds);
     // Already on screen: nothing to decode.
     if (this.shown && this.shown.rank === feed.rank) {
+      this.putFor = ticket;
       this.at = at;
       this.report();
       return;
@@ -1332,6 +1361,7 @@ export class FrameQueue {
     // already, the way a still does.
     if (frameIn && !this.firstShown) {
       this.firstShown = true;
+      this.putFor = this.ticket;
       this.drawnFor = this.vplan.moment(0) ?? this.at;
       if (this.state === "cued") this.report();
     }
