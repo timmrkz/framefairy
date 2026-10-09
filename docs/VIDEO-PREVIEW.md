@@ -383,7 +383,15 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    white on a WebGPU canvas in the extended mode, beside the app's own
    white, with whether the webview has WebGPU, whether it kept the
    extended mode and whether it says the screen is HDR. In the cloud's
-   Chromium it has WebGPU and keeps the mode. It is removed before the
+   Chromium it has WebGPU and keeps the mode. On Tim's M2 Max, on 9 October
+   2026, it passed: the webview has WebGPU, keeps the extended mode and
+   says the screen is HDR. The app's white and 1 × white looked the same,
+   both greyer than usual, because macOS holds ordinary white back once
+   HDR is on the screen. 2 × was brighter, and 4 × and 8 × were the
+   brightest the screen could give at half brightness. With the app in
+   the background the headroom shrank and 2, 4 and 8 looked alike. A
+   screenshot cannot hold HDR and shows none of this. So WebKit gives a
+   canvas HDR today, and the video preview takes the WebGPU canvas. It is removed before the
    step is merged.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
