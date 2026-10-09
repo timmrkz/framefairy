@@ -4,6 +4,10 @@
 //
 //   BRIDGE_URL=http://127.0.0.1:8123/ node sequences.mjs [part of a name]
 //
+// or through make, where ONLY is the part of a name:
+//
+//   ONLY="drag across" make walks WALKS=0
+//
 // A step is a list, its name first:
 //
 //   ["frame", word]    walks the playhead with Shift and → until the word is
@@ -33,6 +37,12 @@
 //                      holds it still again, then lets go, reading the
 //                      playhead, the frame on screen and the play button on
 //                      every animation frame
+//   ["drag far", where]
+//                      paused, drags the playhead across the whole of the
+//                      "clip timeline" or the "range picker" in two
+//                      seconds, reading the frame on screen on every
+//                      animation frame, and says how many frames were
+//                      shown a second and how long the picture stood
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -680,6 +690,12 @@ export const sequences = [
     steps: [["press while playing", -60], ["nailed"]],
   },
   {
+    // Plan row 2.157: a drag over a long distance shows frames at the rate
+    // the screen can show and the machine can make. Measured first.
+    name: "a drag across the clip timeline and the range picker shows frames as the hand goes",
+    steps: [["drag far", "clip timeline"], ["drag far", "range picker"]],
+  },
+  {
     // Tim saw the episode's first frames flicker in the video preview as an
     // episode opened, and then the playhead jump to its clip. An episode
     // with a clip opens on the clip, and nothing before the clip is drawn
@@ -1216,7 +1232,7 @@ function shortProblem(entry, short, fps, cutsWanted) {
 }
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
-const only = process.argv[2] ?? "";
+const only = process.argv[2] ?? process.env.ONLY ?? "";
 let failures = 0;
 
 for (const seq of sequences.filter((q) => q.name.includes(only))) {
@@ -1366,6 +1382,61 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.mouse.up();
         await page.waitForTimeout(700);
         await page.evaluate(() => (window.__playWatch = false));
+        await settle(page);
+        break;
+      }
+      case "drag far": {
+        const box = await page.evaluate((where) => {
+          const el = document.querySelector(where === "range picker" ? '[aria-label="The range picker"]' : ".clip-timeline .track");
+          const b = el.getBoundingClientRect();
+          return { x: b.left, y: b.top, w: b.width, h: b.height };
+        }, arg);
+        await preview(page, 0.2);
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            window.__played.push([performance.now(), window.__pictured ? window.__pictured() : -1]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        const y = arg === "range picker" ? box.y + box.h * 0.85 : high(box);
+        const x0 = box.x + 4;
+        const x1 = box.x + box.w - 4;
+        await page.mouse.move(x0, y);
+        await page.mouse.down();
+        const t0 = await page.evaluate(() => performance.now());
+        for (let i = 1; i <= 60; i++) {
+          await page.mouse.move(x0 + ((x1 - x0) * i) / 60, y);
+          await page.waitForTimeout(33);
+        }
+        const t1 = await page.evaluate(() => performance.now());
+        await page.mouse.up();
+        await page.waitForTimeout(800);
+        const played = await page.evaluate(() => {
+          window.__playWatch = false;
+          return window.__played;
+        });
+        const during = played.filter(([t]) => t >= t0 && t <= t1);
+        let changes = 0;
+        let still = 0;
+        let longest = 0;
+        for (let i = 1; i < during.length; i++) {
+          if (during[i][1] !== during[i - 1][1]) {
+            changes++;
+            still = 0;
+          } else {
+            still += during[i][0] - during[i - 1][0];
+            longest = Math.max(longest, still);
+          }
+        }
+        const secs = (t1 - t0) / 1000;
+        console.log(
+          `      ${arg}: ${(changes / secs).toFixed(1)} new frames a second over ${secs.toFixed(2)} s, ${during.length} animation frames, the picture stood for at most ${longest.toFixed(0)} ms`,
+        );
+        if (changes === 0) wrong = `the picture never changed while the hand crossed the ${arg}`;
         await settle(page);
         break;
       }
