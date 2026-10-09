@@ -30,6 +30,7 @@
 //   and sound arriving, and by the animation frame that draws while
 //   playing.
 import { AppFrames, AppPictures } from "./app";
+import { Stretch } from "./stretch";
 import { findMoov, MP4Error, parseMoov, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
@@ -799,7 +800,7 @@ export class FrameQueue {
 
   // How fast a play goes, 1 as it was filmed, from the speed list beside
   // Play. The program runs on the sound card's clock times the speed, and
-  // the sound is played at that speed. A play under way starts again from
+  // the sound is stretched to that speed at its own pitch. A play under way starts again from
   // where it is, which is the one place every frame and every sample is
   // asked for afresh at the new pace, and a play paused in the middle is
   // cued again where it stands, since its sound was scheduled at the old.
@@ -1072,6 +1073,7 @@ export class FrameQueue {
     this.vplan = null;
     this.aplan = null;
     this.c0 = null;
+    this.stretch = null;
   }
 
   // Empties a decoder and lets go of its run.
@@ -1569,23 +1571,40 @@ export class FrameQueue {
     else this.schedule(c);
   }
 
+  // At another speed than 1 the sound goes through a stretch that keeps
+  // its pitch, see stretch.ts, and plays at the sound card's own pace. A
+  // chunk that does not carry on from the one before starts a new one.
+  private stretch: Stretch | null = null;
+
   private schedule(c: Chunk) {
     if (!c.length || this.c0 === null) return;
     const rate = this.sampleRate;
-    const buffer = this.audio.createBuffer(c.data.length, c.length, rate);
-    for (let ch = 0; ch < c.data.length; ch++) buffer.copyToChannel(c.data[ch].subarray(0, c.length), ch);
+    // Where it goes and what is played, in the sound card's samples from
+    // the moment the program's sample m0 is heard.
+    let at = (c.out - this.m0) / this.speed;
+    let length = c.length;
+    let data = c.data;
+    if (this.speed !== 1) {
+      if (!this.stretch || this.stretch.next !== c.out || this.stretch.speed !== this.speed) {
+        this.stretch = new Stretch(c.data.length, rate, this.speed, c.out);
+      }
+      const got = this.stretch.push(c.data, c.length);
+      if (!got) return;
+      at = (this.stretch.start - this.m0) / this.speed + got.at;
+      length = got.length;
+      data = got.data;
+    }
+    const buffer = this.audio.createBuffer(data.length, length, rate);
+    for (let ch = 0; ch < data.length; ch++) buffer.copyToChannel(data[ch].subarray(0, length), ch);
     const src = this.audio.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = this.speed;
     src.connect(this.out);
-    // The sound card's time runs at the play's speed against the program.
-    const when = this.c0 + (c.out - this.m0) / (rate * this.speed);
+    const when = this.c0 + at / rate;
     const now = this.audio.currentTime;
     if (when < now) {
       this.stats.lateSound++;
-      // An offset into the buffer is in the buffer's own time.
-      const skip = (now - when) * this.speed;
-      if (skip < c.length / rate) src.start(now, skip);
+      const skip = now - when;
+      if (skip < length / rate) src.start(now, skip);
     } else {
       src.start(when);
     }

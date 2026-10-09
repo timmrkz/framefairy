@@ -504,9 +504,11 @@ with YouTube's speeds, 0.25×, 0.5×, 0.75×, Normal, 1.25×, 1.5×, 1.75× and
 2×, which Tim asked for. The playhead runs on the sound card's clock times
 the speed, and a play under way starts again from where it is when the
 speed changes. The speed stays for as long as the app is open. It is how
-the episode is looked at, so a short never sees it. For now the sound
-plays at the speed with its pitch, higher when faster, until it is
-stretched to keep its pitch the way YouTube does, plan row 2.157.
+the episode is looked at, so a short never sees it. The sound keeps its
+pitch, the way YouTube's does: it is stretched in windows of 30 ms laid
+over each other, each moved to where its wave carries on the one before,
+`lib/frames/stretch.ts`, so a voice at twice the speed is quicker, not
+higher.
 
 **The space bar plays the clip or the video, and the playhead says which.**
 The playhead is either on the chosen clip or on the video, and the gesture
