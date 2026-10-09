@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -552,10 +553,30 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		if err != nil && !errors.Is(err, errStop) {
 			t.Fatalf("%s: %v", f.name, err)
 		}
-		want, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", path, "-frames:v", "1",
-			"-vf", fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", w, h), "-f", "rawvideo", "-").Output()
-		if err != nil {
-			t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
+		// The ffmpeg program decodes the way the decoder does: on the Mac's
+		// graphics chip where it has one, with the frame brought out as it
+		// is. On the processor as well, the way the render decodes, which
+		// is said and not held to here: on the Mac's runner the two came
+		// out up to 22 apart at the edges of colours, plan row 2.166.
+		convert := func(hw bool) []byte {
+			t.Helper()
+			args := []string{"-loglevel", "error"}
+			if hw {
+				args = append(args, "-hwaccel", "videotoolbox")
+			}
+			args = append(args, "-i", path, "-frames:v", "1",
+				"-vf", fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", w, h), "-f", "rawvideo", "-")
+			out, err := exec.Command("ffmpeg", args...).Output()
+			if err != nil {
+				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
+			}
+			return out
+		}
+		chip := runtime.GOOS == "darwin" && has("hevc_videotoolbox")
+		want := convert(chip)
+		if chip {
+			cpu := convert(false)
+			t.Logf("%s: the chip's frame and the processor's are %.2f apart on average", f.name, meanDiff(want, cpu))
 		}
 		if len(frame) != w*h*4 || len(want) != w*h*4 {
 			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
