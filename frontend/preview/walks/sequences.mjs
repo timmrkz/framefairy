@@ -101,7 +101,9 @@
 //
 //   ["opened on the clip"]
 //                      since "episode watched", the video preview drew the
-//                      first frame of the chosen clip and no other
+//                      first frame of the chosen clip and no other, and the
+//                      playhead was on the clip before the workspace asked
+//                      for the coverage, the room and the window
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -1458,6 +1460,20 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           const was = window.__appFrames;
           window.__drawn = [];
           window.__watching = true;
+          // Every call to the Go side, with where the playhead stood as it
+          // was made.
+          window.__asked = [];
+          if (!window.__askWatched) {
+            window.__askWatched = true;
+            const real = window.fetch;
+            window.fetch = (input, init) => {
+              if (window.__watching && String(input).endsWith("/call") && init?.body) {
+                const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
+                window.__asked.push([String(JSON.parse(init.body).name).split(".").pop(), playhead]);
+              }
+              return real(input, init);
+            };
+          }
           const watch = () => {
             if (!window.__watching) return;
             if (window.__appFrames && window.__appFrames !== was) {
@@ -1654,6 +1670,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!drawn.length) wrong = "the video preview drew no frame of the episode it opened";
         else if (drawn.some((n) => n !== first)) {
           wrong = `the episode opened on its clip at frame ${first} and the video preview drew frames ${drawn.join(", ")} on the way`;
+        }
+        // Where the playhead opens comes before anything else the
+        // workspace reads as it opens: what it reads that the video
+        // preview does not need is asked with the playhead on the clip.
+        const asked = await page.evaluate(() => window.__asked ?? []);
+        const after = ["Coverage", "Room", "ChosenWindow"];
+        const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
+        if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
+        else if (!wrong && early.length) {
+          wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
         }
         break;
       }

@@ -539,9 +539,16 @@ folder goes. The video preview draws nothing until the workspace knows
 where it opens, `opening` in `Player.svelte`, so the first frame on screen
 is the clip's. It drew the episode's first frames as it opened and then
 left them for the clip, a flicker Tim saw on every episode. The queue
-opens the file meanwhile, so the clip's frame comes no later. The walk
-`an episode opens on its clip, with no frame of its start on the way`
-reads every frame drawn from the click on.
+opens the file meanwhile, so the clip's frame comes no later. Where the
+playhead opens is the first thing the workspace works out, `openEpisode`
+in `Episode.svelte`: the episode, its picture, its clips and the clip last
+worked on are asked at once, and the playhead is on the clip before
+anything else is asked, how far the episode was searched, the room for
+windows and the window, none of which the video preview needs. Those
+were asked first, one after another, with the video preview waiting. The
+walk `an episode opens on its clip, with no frame of its start on the
+way` reads every frame drawn from the click on, and where the playhead
+stood as each of those three was asked.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
