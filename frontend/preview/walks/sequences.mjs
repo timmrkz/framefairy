@@ -41,8 +41,9 @@
 //                      paused, drags the playhead across the whole of the
 //                      "clip timeline" or the "range picker" in two
 //                      seconds, reading the frame on screen on every
-//                      animation frame, and says how many frames were
-//                      shown a second and how long the picture stood
+//                      animation frame: a new frame for nearly every new
+//                      place of the playhead, and the picture never more
+//                      than 250 ms behind it
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -1397,7 +1398,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           window.__playWatch = true;
           const tick = () => {
             if (!window.__playWatch) return;
-            window.__played.push([performance.now(), window.__pictured ? window.__pictured() : -1]);
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            window.__played.push([performance.now(), window.__pictured ? window.__pictured() : -1, at]);
             requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
@@ -1420,23 +1422,30 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           return window.__played;
         });
         const during = played.filter(([t]) => t >= t0 && t <= t1);
+        // The hand moves the playhead about every 50 ms here, so a new
+        // frame for every new place is the most there is to see. How long
+        // the picture lagged is counted only while the playhead moved on
+        // without it: at the clip's end the playhead stops, and so may the
+        // picture.
+        let places = 0;
         let changes = 0;
-        let still = 0;
-        let longest = 0;
+        let lag = 0;
+        let since = during[0]?.[0] ?? t0;
+        let pictured = during[0]?.[1];
+        let placed = during[0]?.[2];
         for (let i = 1; i < during.length; i++) {
-          if (during[i][1] !== during[i - 1][1]) {
+          const [t, n, at] = during[i];
+          if (at !== during[i - 1][2]) places++;
+          if (n !== pictured) {
             changes++;
-            still = 0;
-          } else {
-            still += during[i][0] - during[i - 1][0];
-            longest = Math.max(longest, still);
-          }
+            pictured = n;
+            placed = at;
+            since = t;
+          } else if (at !== placed) lag = Math.max(lag, t - since);
         }
-        const secs = (t1 - t0) / 1000;
-        console.log(
-          `      ${arg}: ${(changes / secs).toFixed(1)} new frames a second over ${secs.toFixed(2)} s, ${during.length} animation frames, the picture stood for at most ${longest.toFixed(0)} ms`,
-        );
-        if (changes === 0) wrong = `the picture never changed while the hand crossed the ${arg}`;
+        console.log(`      ${arg}: ${changes} new frames for ${places} new places of the playhead in ${((t1 - t0) / 1000).toFixed(2)} s, the picture behind the playhead for at most ${lag.toFixed(0)} ms`);
+        if (changes < places * 0.8) wrong = `the ${arg} showed ${changes} new frames for ${places} new places of the playhead`;
+        else if (lag > 250) wrong = `the picture stayed behind the playhead for ${lag.toFixed(0)} ms on the ${arg}`;
         await settle(page);
         break;
       }
