@@ -185,7 +185,9 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
-    if (s.drew) pictured = true;
+    // A picture, or a sentence where it would be: either way the video
+    // preview has what it is going to show.
+    if (s.drew || s.trouble) pictured = true;
     if (s.ended) {
       paused = true;
       if (playedClip) {
