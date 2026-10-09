@@ -35,7 +35,8 @@ import (
 // What a record holds.
 const (
 	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in 8-bit I420 at the cursor's size, or a chunk
+	// body is the picture in colours, RGBX with 8 bits each, at the
+	// cursor's size, or a chunk
 	// of sound, 32-bit floats with the channels of a moment side by side.
 	Frame byte = iota
 	// The batch a next asked for is done.
@@ -76,7 +77,7 @@ func Write(w io.Writer, r Record) error {
 }
 
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
-const MaxBody = 7680 * 4320 * 3 / 2
+const MaxBody = 7680 * 4320 * 4
 
 // Read reads the next record. The body is a buffer of its own, which the
 // caller may keep.

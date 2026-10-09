@@ -186,7 +186,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 					if at < from-1e-6 || at <= last {
 						t.Errorf("a stream from %.1f got a frame at %.3f after %.3f", from, at, last)
 					}
-					if len(data) != 64*36*3/2 {
+					if len(data) != 64*36*4 {
 						t.Errorf("a frame of %d bytes", len(data))
 					}
 					last = at
@@ -467,4 +467,107 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 		}
 		dec.Close()
 	}
+}
+
+// The frames of the episode's decoder are colours ffmpeg made from the
+// file's own tags, value by value what the ffmpeg program makes of the
+// same frame, for files tagged BT.601, BT.709 and BT.2020, in video and in
+// full range, in 8 and 10 bits, and for a file that says nothing, where
+// both take ffmpeg's defaults. And the tags count: the same picture tagged
+// otherwise comes out in other colours. Plan row 2.156, step 4.
+func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	if !has("libx264") {
+		ffmpegtest.Unusable(t, "this ffmpeg has no libx264 to make the files with")
+	}
+	type file struct {
+		name string
+		args []string
+	}
+	tags := func(space, primaries, transfer, rng string) []string {
+		return []string{"-colorspace", space, "-color_primaries", primaries, "-color_trc", transfer, "-color_range", rng}
+	}
+	x264 := []string{"-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"}
+	files := []file{
+		{"BT.601 video range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "tv")...)},
+		{"BT.601 full range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "pc")...)},
+		{"BT.709 video range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "tv")...)},
+		{"BT.709 full range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "pc")...)},
+		{"no tags", x264},
+	}
+	if has("libx265") {
+		x265 := []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error", "-tag:v", "hvc1"}
+		files = append(files,
+			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
+			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
+			file{"BT.2020 full range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "pc")...)},
+		)
+	}
+	const w, h = 64, 36
+	dir := t.TempDir()
+	got := map[string][]byte{}
+	for i, f := range files {
+		path := filepath.Join(dir, fmt.Sprintf("%d.mp4", i))
+		// The same numbers in every file, only the tags differ, so what
+		// tells two files' colours apart is what the tags say.
+		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}, f.args...)
+		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+			ffmpegtest.Unusable(t, "ffmpeg could not make the file %s: %s %s", f.name, err, out)
+		}
+		dec := NewEpisodeFrames(program, path)
+		var frame []byte
+		err := dec.Stream(context.Background(), 0, w, h, func(_ float64, data []byte) error {
+			frame = data
+			return errStop
+		})
+		dec.Close()
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatalf("%s: %v", f.name, err)
+		}
+		want, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", path, "-frames:v", "1",
+			"-vf", fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", w, h), "-f", "rawvideo", "-").Output()
+		if err != nil {
+			t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
+		}
+		if len(frame) != w*h*4 || len(want) != w*h*4 {
+			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
+		}
+		// Value by value, red, green and blue. The ffmpeg program in a test
+		// may be another version than the one the decoder is built on, and
+		// two versions of its scaler can round a value one apart.
+		most, at := 0, 0
+		for p := range w * h {
+			for c := range 3 {
+				d := int(frame[p*4+c]) - int(want[p*4+c])
+				if d < 0 {
+					d = -d
+				}
+				if d > most {
+					most, at = d, p
+				}
+			}
+		}
+		if most > 2 {
+			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v", f.name, at, frame[at*4:at*4+3], want[at*4:at*4+3])
+		}
+		got[f.name] = frame
+	}
+	differ := func(a, b string) {
+		t.Helper()
+		if got[a] == nil || got[b] == nil {
+			return
+		}
+		if d := meanDiff(got[a], got[b]); d < 1 {
+			t.Errorf("%s and %s come out in the same colours, %.2f apart on average: a tag was not read", a, b, d)
+		}
+	}
+	differ("BT.601 video range", "BT.709 video range")
+	differ("BT.709 video range", "BT.709 full range")
+	differ("BT.709 video range, 10 bits", "BT.2020 video range, 10 bits")
 }

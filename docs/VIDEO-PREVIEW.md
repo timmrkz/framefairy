@@ -5,7 +5,8 @@ and its sound from here on, and what is removed on the way. Decided with
 Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
 and 2 are built, every file's picture through ffmpeg and the episode's
 decoder for it, in one pull request, #157, as Tim asked. Step 3, one
-engine, is built in #162 and tried on Tim's Mac. Step 4 is next. What is
+engine, is built in #162 and tried on Tim's Mac. Step 4 is being built
+in #168. What is
 not built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
@@ -367,6 +368,16 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    picks the look. HDR in both: the test of the extended canvas on Tim's
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
+   The frames are colours now: the episode's decoder scales each frame
+   and turns it into 8-bit red, green and blue, RGBX, from the file's
+   range and matrix, and the interface draws them as they come, with no
+   colour space of its own. `TestTheEpisodesDecoderMakesFFmpegsColours`
+   holds every value to within 2 of the ffmpeg program's own conversion
+   of the same frame, on files tagged BT.601, BT.709 and BT.2020, in
+   video and full range, in 8 and 10 bits, and on a file with no tags,
+   and checks that the same numbers tagged otherwise come out otherwise.
+   A frame is 4 bytes a pixel where I420 was 1.5, about 110 MB a second
+   at 1280 by 720 and 30 frames a second.
    The test of the extended canvas is Colour Test in the Help menu, in
    the pull request of this step only: patches of 1, 2, 4 and 8 times
    white on a WebGPU canvas in the extended mode, beside the app's own

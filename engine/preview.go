@@ -70,7 +70,8 @@ func previewTimesOf(ctx context.Context) *PreviewTimes {
 // made WebKit's decoder fail on its first frame, where it had said it
 // would take it. ffmpeg decodes it, on the system's own decoder where
 // there is one, from the key frame before from, and hands over every frame
-// from from on, scaled to width by height in 8-bit I420, with the moment of
+// from from on, scaled to width by height in colours, RGBX with 8 bits
+// each, from the file's own range and matrix, with the moment of
 // the episode it starts at, in the order they are shown.
 //
 // Each frame comes in a buffer of its own, which got may keep.
@@ -130,12 +131,12 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
-	// Full range, which WebKit takes every frame made from a buffer to be,
-	// whatever the frame says: a picture in video range came out pale.
-	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", width, height)
+	// Colours ready to draw, converted by ffmpeg from the file's own
+	// range and matrix, so the interface decides nothing about colour.
+	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear,format=rgb0", width, height)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
-		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,scale=out_range=pc,format=yuv420p", width, height)
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,format=rgb0", width, height)
 	} else {
 		args = append(args, e.decodeFlags()...)
 	}
@@ -190,7 +191,7 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 			}
 		}
 	}()
-	size := width * height * 3 / 2
+	size := width * height * 4
 	var failed error
 	for {
 		// Each frame in a buffer of its own, which got may keep, so the

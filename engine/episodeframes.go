@@ -253,7 +253,8 @@ func (f *EpisodeFrames) give(id uint32, kind int, failed bool) {
 }
 
 // Stream hands over the frames of the episode from the moment from on,
-// scaled to width by height in 8-bit I420, each with the moment it starts
+// scaled to width by height in colours, RGBX with 8 bits each, each with
+// the moment it starts
 // at and in a buffer of its own, the way PreviewFrames does with the
 // ffmpeg program. It runs until got says no more, the context ends or the
 // episode does.

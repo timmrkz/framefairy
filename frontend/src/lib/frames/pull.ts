@@ -1,6 +1,6 @@
 // Reading a pull of frames from the Go side, see cmd/framefairy-app/
 // frames.go: each frame is where it starts, 8 bytes, then the frame in
-// 8-bit I420. Each frame is read straight into a buffer of its own as the
+// colours, RGBX with 8 bits each, which ffmpeg made from the file's tags. Each frame is read straight into a buffer of its own as the
 // answer arrives and handed to its VideoFrame without another copy, so a
 // frame is copied once on its way in, not twice. It runs in a Worker, see
 // pull.worker.ts, so it never holds up the page while a hand is on the
@@ -25,8 +25,8 @@ export type Pulled = {
 // Whether a VideoFrame can take a buffer over instead of copying it.
 let transfers = true;
 
-function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: number, colour: VideoColorSpaceInit): VideoFrame {
-  const init = { format: "I420" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6), colorSpace: colour };
+function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: number): VideoFrame {
+  const init = { format: "RGBX" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6) };
   if (transfers) {
     try {
       return new VideoFrame(buffer, { ...init, transfer: [buffer] } as VideoFrameBufferInit);
@@ -37,9 +37,9 @@ function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: numbe
   return new VideoFrame(buffer, init);
 }
 
-// The frames are in the picture's colours and in full range, which the Go
-// side makes them in, see engine.PreviewFrames.
-export async function pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
+// The frames are colours ready to draw, see engine.PreviewFrames. Nothing
+// here decides colour.
+export async function pull(url: string, width: number, height: number): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
   if (!res) return { status: 0, end: false, error: "", closed: false, times: "", frames: [] };
   const out: Pulled = {
@@ -51,7 +51,7 @@ export async function pull(url: string, width: number, height: number, colour: V
     frames: [],
   };
   if (!res.ok || !res.body) return out;
-  const size = (width * height * 3) / 2;
+  const size = width * height * 4;
   const head = new Uint8Array(8);
   let headHas = 0;
   let body: ArrayBuffer | null = null;
@@ -79,7 +79,7 @@ export async function pull(url: string, width: number, height: number, colour: V
       at += n;
       if (bodyHas === size) {
         const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, frame: frameFrom(body!, width, height, when, colour) });
+        out.frames.push({ at: when, frame: frameFrom(body!, width, height, when) });
         headHas = 0;
         body = null;
       }

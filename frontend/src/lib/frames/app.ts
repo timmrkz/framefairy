@@ -120,7 +120,7 @@ class Stream {
         const n = Math.min(16, Math.max(1, highest - Math.max(this.position, lowest - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
-        const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height, { ...this.owner.track.colour, fullRange: true });
+        const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
         // Closed here while the pull was on its way: what it waited for has
         // gone to another stream already.
         if (this.ended) {
@@ -166,7 +166,7 @@ class Stream {
   // stream counts as come and the newest place asked for can go next.
   private async firstFrame(id: string) {
     const q = new URLSearchParams({ id, n: "1" });
-    const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height, { ...this.owner.track.colour, fullRange: true });
+    const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
     if (this.ended) {
       for (const { frame } of got.frames) frame.close();
       return;
@@ -445,14 +445,14 @@ class Puller {
     this.where = "worker";
   }
 
-  async pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
+  async pull(url: string, width: number, height: number): Promise<Pulled> {
     await this.ready;
     const w = this.worker;
-    if (!w) return pull(url, width, height, colour);
+    if (!w) return pull(url, width, height);
     const n = this.count++;
     return new Promise((done) => {
       this.waiting.set(n, done);
-      w.postMessage({ n, url: new URL(url, location.href).href, width, height, colour });
+      w.postMessage({ n, url: new URL(url, location.href).href, width, height });
     });
   }
 
@@ -463,7 +463,7 @@ class Puller {
 }
 
 function bytes(f: VideoFrame): number {
-  return (f.codedWidth * f.codedHeight * 3) / 2;
+  return f.codedWidth * f.codedHeight * 4;
 }
 
 // A picture decoder for the frame queue, with the calls it makes of a

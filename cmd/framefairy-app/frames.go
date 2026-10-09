@@ -379,7 +379,8 @@ func (p *previews) reapOnce(idle time.Duration) {
 // writeFrames answers a pull: the next frame once ffmpeg has it, and up to
 // n in all, as many as are there by then without waiting for more. Each is
 // the moment of the episode it starts at, 8 bytes, a float64 in little
-// endian, then the frame in 8-bit I420, or the moments of sound, from the
+// endian, then the frame in colours, RGBX with 8 bits each, or the
+// moments of sound, from the
 // first that starts at skip or later. Every frame of a stream is as long
 // as every other, but the last of a sound stream, which may be shorter. A stream that has ended answers
 // with no frame and X-Frames-End, and with the reason when it failed.

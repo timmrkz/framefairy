@@ -355,8 +355,8 @@ type cursor struct {
 	// A frame decoded on the graphics chip, brought out to memory.
 	brought  *astiav.Frame
 	filtered *astiav.Frame
-	// The chain that makes a decoded frame the size of the canvas, 8-bit
-	// and in full range, the same as engine.PreviewFrames asks of ffmpeg.
+	// The chain that makes a decoded frame the size of the canvas, in
+	// colours ready to draw, the same as engine.PreviewFrames asks of ffmpeg.
 	graph     *astiav.FilterGraph
 	src       *astiav.BuffersrcFilterContext
 	sink      *astiav.BuffersinkFilterContext
@@ -629,10 +629,14 @@ func (c *cursor) bringOut() error {
 }
 
 // makeGraph builds the chain for the frames the decoder makes: scaled to
-// the size of the canvas, 8-bit and in full range, the same as
-// engine.PreviewFrames asks of the ffmpeg program on the processor.
+// the size of the canvas and turned into colours, 8-bit red, green and
+// blue and a byte left over, the same as engine.PreviewFrames asks of the
+// ffmpeg program on the processor. The colours are ffmpeg's, from the
+// file's own range and matrix, with ffmpeg's defaults where the file says
+// nothing, so nothing in the interface decides colour. Plan row 2.156,
+// step 4.
 func (c *cursor) makeGraph() error {
-	return c.buildGraph(fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height))
+	return c.buildGraph(fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", c.width, c.height))
 }
 
 // buildGraph builds a chain from the decoded frame's kind to chain's end,

@@ -42,7 +42,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
 	}
 	defer get("/frames/close", url.Values{"id": {opened.ID}})
-	size := 8 + 64*36*3/2
+	size := 8 + 64*36*4
 	var told []string
 	read := func(q url.Values) []float64 {
 		t.Helper()
@@ -128,7 +128,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 			}
 			return
 		}
-		frames += rec.Body.Len() / (8 + 32*18*3/2)
+		frames += rec.Body.Len() / (8 + 32*18*4)
 	}
 	t.Errorf("no end after %d frames", frames)
 }
