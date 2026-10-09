@@ -797,6 +797,20 @@ export class FrameQueue {
     );
   }
 
+  // How fast a play goes, 1 as it was filmed, from the speed list beside
+  // Play. The program runs on the sound card's clock times the speed, and
+  // the sound is played at that speed. A play under way starts again from
+  // where it is, which is the one place every frame and every sample is
+  // asked for afresh at the new pace, and a play paused in the middle is
+  // cued again where it stands, since its sound was scheduled at the old.
+  private speed = 1;
+  setSpeed(r: number) {
+    if (!(r > 0) || r === this.speed || this.closed) return;
+    this.speed = r;
+    if (this.state === "playing" || this.state === "starting") this.start(this.at);
+    else if (this.state === "paused" && this.c0 !== null) this.seek(this.at);
+  }
+
   play() {
     if (this.closed || this.state === "playing" || this.state === "starting") return;
     // The sound card starts on the gesture that asked for it, or a browser
@@ -1181,7 +1195,7 @@ export class FrameQueue {
       latency,
       now + 1000 / 60,
     );
-    return this.m0 / this.sampleRate + (heard - this.c0);
+    return this.m0 / this.sampleRate + (heard - this.c0) * this.speed;
   }
 
   // The page's frames stop while the app is behind another window, and with
@@ -1427,7 +1441,8 @@ export class FrameQueue {
     const s = this.sound!.samples;
     const rate = this.sampleRate;
     const heard = this.c0 === null ? this.m0 : Math.round(this.position(performance.now()) * rate);
-    const ahead = (this.c0 === null ? SOUND_FIRST * 2 : this.behind ? SOUND_BEHIND : SOUND_AHEAD) * rate;
+    // Ahead in the program, so a faster play feeds as far ahead in time.
+    const ahead = (this.c0 === null ? SOUND_FIRST * 2 : this.behind ? SOUND_BEHIND : SOUND_AHEAD) * rate * this.speed;
     for (;;) {
       if (!this.soundRun) {
         const next = plan.runs.find((r) => !this.soundRunDone.has(r.id));
@@ -1561,12 +1576,15 @@ export class FrameQueue {
     for (let ch = 0; ch < c.data.length; ch++) buffer.copyToChannel(c.data[ch].subarray(0, c.length), ch);
     const src = this.audio.createBufferSource();
     src.buffer = buffer;
+    src.playbackRate.value = this.speed;
     src.connect(this.out);
-    const when = this.c0 + (c.out - this.m0) / rate;
+    // The sound card's time runs at the play's speed against the program.
+    const when = this.c0 + (c.out - this.m0) / (rate * this.speed);
     const now = this.audio.currentTime;
     if (when < now) {
       this.stats.lateSound++;
-      const skip = now - when;
+      // An offset into the buffer is in the buffer's own time.
+      const skip = (now - when) * this.speed;
       if (skip < c.length / rate) src.start(now, skip);
     } else {
       src.start(when);

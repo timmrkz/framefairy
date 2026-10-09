@@ -49,6 +49,7 @@
     strip,
     paused = $bindable(true),
     looping = $bindable(false),
+    speed = 1,
     onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
@@ -91,6 +92,8 @@
     // Play and Pause stand in the row above the clip timeline, with Render.
     paused?: boolean;
     looping?: boolean;
+    // How fast it plays, 1 as it was filmed, from the speed list.
+    speed?: number;
     // Whether the playhead is on the chosen clip, so the space bar plays
     // the clip, or on the video, so it plays the episode straight on and
     // the clip is drawn dimmed wherever it is drawn. See lib/playhead.ts.
@@ -155,6 +158,7 @@
       paused = true;
     });
     q.setProgram(...programOf(place));
+    q.setSpeed(untrack(() => speed));
     sought = null;
     if (!untrack(() => opening)) {
       q.seek(time);
@@ -268,6 +272,11 @@
   $effect(() => {
     const program = programOf(place);
     untrack(() => queue?.setProgram(...program));
+  });
+
+  $effect(() => {
+    const r = speed;
+    untrack(() => queue?.setSpeed(r));
   });
 
   // Every gesture that puts the playhead somewhere comes through here, and

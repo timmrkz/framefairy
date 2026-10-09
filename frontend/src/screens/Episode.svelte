@@ -157,6 +157,16 @@
   let aboveH = $state(0);
   let paused = $state(true);
   let looping = $state(false);
+  // How fast the video preview plays, from the list beside Play. The
+  // speeds are YouTube's, which Tim asked for, so they are the ones people
+  // already know. It is how the episode is looked at, not part of a clip,
+  // so it is kept for as long as the app is open and a short never sees
+  // it.
+  let speed = $state("1");
+  const speeds = ["0.25", "0.5", "0.75", "1", "1.25", "1.5", "1.75", "2"].map((v) => ({
+    value: v,
+    label: v === "1" ? "Normal" : `${v}×`,
+  }));
   // Whether the playhead is on the chosen clip or on the video, which the
   // video preview keeps, see lib/playhead.ts. On the video the clip is
   // drawn dimmed on the clip timeline and the range picker.
@@ -2596,6 +2606,7 @@
           bind:this={player}
           bind:paused
           bind:looping
+          speed={Number(speed)}
           bind:onClip
           bind:offers
           {path}
@@ -2759,6 +2770,13 @@
             <Icon name="loop" />
           </button>
         {/if}
+        <Pick
+          value={speed}
+          options={speeds}
+          onpick={(v) => (speed = v)}
+          label="Speed"
+          title="How fast the video preview plays. A short is always rendered at its own speed"
+        />
         {#if current}
           <!-- The frame under the playhead as a thumbnail. It is not a
                mode, so it never looks pressed: its picture says what a

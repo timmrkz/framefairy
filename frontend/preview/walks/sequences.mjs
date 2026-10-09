@@ -44,6 +44,11 @@
 //                      animation frame: a new frame for nearly every new
 //                      place of the playhead, and the picture never more
 //                      than 250 ms behind it
+//   ["speed", label]   picks the speed from the list beside Play, "2×"
+//                      or "Normal"
+//   ["plays at", r]    plays if it does not play, and the playhead moves r
+//                      seconds of the episode a second, give or take a
+//                      sixth, with new frames on the way, then pauses
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -695,6 +700,19 @@ export const sequences = [
     // the screen can show and the machine can make. Measured first.
     name: "a drag across the clip timeline and the range picker shows frames as the hand goes",
     steps: [["drag far", "clip timeline"], ["drag far", "range picker"]],
+  },
+  {
+    // Plan row 2.157: the video preview plays slower or faster from a list
+    // beside Play, with YouTube's speeds, which Tim asked for.
+    name: "the speed list plays the video preview slower and faster",
+    steps: [
+      ["speed", "2×"],
+      ["plays at", 2],
+      ["speed", "0.5×"],
+      ["plays at", 0.5],
+      ["speed", "Normal"],
+      ["plays at", 1],
+    ],
   },
   {
     // Tim saw the episode's first frames flicker in the video preview as an
@@ -1447,6 +1465,39 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (changes < places * 0.8) wrong = `the ${arg} showed ${changes} new frames for ${places} new places of the playhead`;
         else if (lag > 250) wrong = `the picture stayed behind the playhead for ${lag.toFixed(0)} ms on the ${arg}`;
         await settle(page);
+        break;
+      }
+      case "speed": {
+        await page.locator('button.pick[aria-label="Speed"]').click();
+        await page.waitForTimeout(300);
+        const row = page.locator('[role="option"]', { hasText: arg }).first();
+        if (!(await row.count())) {
+          wrong = `the speed list has no ${arg}`;
+          break;
+        }
+        await row.click();
+        await page.waitForTimeout(300);
+        const said = (await page.locator('button.pick[aria-label="Speed"] .said > span:not(.room)').textContent())?.trim();
+        if (said !== arg) wrong = `the speed list says ${said}, not ${arg}`;
+        break;
+      }
+      case "plays at": {
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(600);
+        await preview(page, 0.2);
+        const read = () =>
+          page.evaluate(() => [performance.now(), Number(document.querySelector(".screen")?.dataset.playhead), window.__pictured()]);
+        const a = await read();
+        await page.waitForTimeout(1200);
+        const b = await read();
+        await page.keyboard.press("Space");
+        await page.waitForTimeout(300);
+        const rate = (b[1] - a[1]) / ((b[0] - a[0]) / 1000);
+        console.log(`      at ${arg}: the playhead moved ${rate.toFixed(2)} s a second, frames ${a[2]} to ${b[2]}`);
+        if (Math.abs(rate - arg) > arg / 6) wrong = `at ${arg} the playhead moved ${rate.toFixed(2)} s a second`;
+        else if (!(b[2] > a[2])) wrong = `at ${arg} the picture stood on frame ${a[2]}`;
         break;
       }
       case "reset": {

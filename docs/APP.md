@@ -499,6 +499,15 @@ and a cut was a seek in the middle of playing, which held the last frame
 before the cut for as long as the seek took. The frame queue has none of
 that to work around, because the app decides every frame it draws.
 
+**A speed list beside Play** plays the video preview slower or faster,
+with YouTube's speeds, 0.25×, 0.5×, 0.75×, Normal, 1.25×, 1.5×, 1.75× and
+2×, which Tim asked for. The playhead runs on the sound card's clock times
+the speed, and a play under way starts again from where it is when the
+speed changes. The speed stays for as long as the app is open. It is how
+the episode is looked at, so a short never sees it. For now the sound
+plays at the speed with its pitch, higher when faster, until it is
+stretched to keep its pitch the way YouTube does, plan row 2.157.
+
 **The space bar plays the clip or the video, and the playhead says which.**
 The playhead is either on the chosen clip or on the video, and the gesture
 that put it there decides, never a clock. Picking a clip puts it
