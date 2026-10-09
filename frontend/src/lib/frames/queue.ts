@@ -132,7 +132,10 @@ class Reader {
   reads = 0;
   bytes = 0;
 
-  constructor(readonly url: string) {}
+  constructor(
+    readonly url: string,
+    private known: Movie | null = null,
+  ) {}
 
   async read(from: number, to: number): Promise<Uint8Array> {
     this.reads++;
@@ -151,6 +154,7 @@ class Reader {
   }
 
   async open(): Promise<Movie> {
+    if (this.known) return this.known;
     const first = await this.read(0, 1 << 16);
     if (!this.size) this.size = first.length;
     const moov = await findMoov(
@@ -561,15 +565,19 @@ export class FrameQueue {
   private ticket = 0;
   private scratch: Float32Array[] = [];
 
-  constructor(canvas: HTMLCanvasElement, url: string) {
+  // known is the file's index as a queue before this one read it, for a
+  // workspace woken again, see sleeping in Player.svelte. The canvas then
+  // holds this episode's own frame, which stays until the first frame of
+  // this queue replaces it.
+  constructor(canvas: HTMLCanvasElement, url: string, known: Movie | null = null) {
     this.canvas = canvas;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("the canvas has no 2d context");
     this.draw2d = ctx;
     // Black until the first frame, never the last frame of an episode
     // drawn on this canvas before.
-    this.paint();
-    this.reader = new Reader(url);
+    if (!known) this.paint();
+    this.reader = new Reader(url, known);
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
     });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     clock,
@@ -91,28 +91,43 @@
     { value: "added", label: "Added", icon: "sort-added" },
     { value: "name", label: "Name", icon: "sort-name" },
   ];
-  // Opening an episode while another is on screen builds the new
-  // workspace behind it, and the two change places in one frame once the
-  // new one has its episode on it, see ready in Episode.svelte. The
-  // workspace stands where it stood throughout and what is in it changes,
-  // the way a native app moves from one document to the next. It was torn
-  // down and built again in front of the person, empty first and then a
-  // part at a time, and Tim saw that as a flicker on every episode picked.
+  // The workspaces of the episodes opened last are kept, so going back to
+  // one is one frame: it stands where it stood, with everything it had on
+  // it. Only the one in front is awake. The others are asleep, hidden and
+  // inert, and hold their page and the file's index and nothing costly,
+  // no decoder and no sound card, see sleeping in Player.svelte. Tim found
+  // every episode picked took half a second to be built again from
+  // nothing, a chain of questions to the Go side, the file's index and
+  // ffmpeg starting, all of it thrown away again on leaving.
   //
-  // The one in front is onScreen. A second, the episode asked for, stands
-  // behind it, unseen and inert, until it says it is ready, or for a
-  // second at most, so a slow disk never keeps the old episode up. Both
-  // take no clicks and no keys meanwhile: the one going is no longer the
-  // episode picked, and the one coming is not seen yet.
+  // An episode not kept is built behind the one on screen, and the two
+  // change places in one frame once the new one has its episode on it, see
+  // ready in Episode.svelte, or after a second at most, so a slow disk
+  // never keeps the old episode up. It was torn down and built again in
+  // front of the person, empty first and then a part at a time, and Tim saw
+  // that as a flicker on every episode picked.
+  const KEPT = 4;
   const asked = $derived(nav.view.name === "episode" ? nav.view.path : "");
+  // The one in front, and the ones kept, the last opened first.
   let onScreen = $state("");
-  //
-  // The one asked for comes first in the document, so whatever looks the
-  // workspace up finds the episode that was picked, and the one going is
-  // drawn over it until they change places.
-  const workspaces = $derived(!asked ? [] : onScreen && onScreen !== asked ? [asked, onScreen] : [asked]);
+  let kept = $state<string[]>([]);
+  // The kept ones that have had their episode on them once.
+  let readied = $state<Record<string, true>>({});
   $effect(() => {
-    if (!asked) onScreen = "";
+    const coming = asked;
+    if (!coming) return;
+    untrack(() => {
+      kept = [coming, ...kept.filter((p) => p !== coming)].slice(0, KEPT);
+      for (const p of Object.keys(readied)) if (!kept.includes(p)) delete readied[p];
+      if (readied[coming]) onScreen = coming;
+    });
+  });
+  // An episode removed from the library takes its workspace with it.
+  $effect(() => {
+    const known = new Set(episodes.map((e) => e.source));
+    untrack(() => {
+      if (kept.some((p) => !known.has(p) && p !== asked)) kept = kept.filter((p) => known.has(p) || p === asked);
+    });
   });
   $effect(() => {
     const coming = asked;
@@ -122,6 +137,10 @@
     }, 1000);
     return () => clearTimeout(late);
   });
+  // The one asked for comes first in the document, so whatever looks the
+  // workspace up finds the episode that was picked, and the one going is
+  // drawn over it until they change places.
+  const workspaces = $derived(asked ? [asked, ...kept.filter((p) => p !== asked)] : kept);
 
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
@@ -569,21 +588,34 @@
     {#if problem}
       <p class="error banner selectable">{problem}</p>
     {/if}
-    {#if nav.view.name === "episode"}
-      <div class="workspaces">
+    <!-- The kept workspaces stay while another screen is open, out of the
+         way, so coming back from the settings is one frame as well. -->
+    {#if workspaces.length}
+      <div class="workspaces" class:gone={!asked}>
         {#each workspaces as path (path)}
-          <div class="workspace" class:behind={path !== onScreen} inert={path !== onScreen || path !== asked}>
+          <div
+            class="workspace"
+            data-path={path}
+            class:behind={path !== onScreen}
+            class:asleep={path !== onScreen && path !== asked}
+            class:front={path === onScreen}
+            inert={path !== onScreen || path !== asked}
+          >
             <Episode
               {path}
               away={path !== asked}
               onchange={refresh}
               onready={() => {
+                readied[path] = true;
                 if (path === asked) onScreen = path;
               }}
             />
           </div>
         {/each}
       </div>
+    {/if}
+    {#if nav.view.name === "episode"}
+      <!-- The workspaces above. -->
     {:else if nav.view.name === "jobs"}
       <Jobs />
     {:else if nav.view.name === "updates"}
@@ -1108,6 +1140,10 @@
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   }
 
+  .workspaces.gone {
+    display: none;
+  }
+
   .workspace {
     grid-area: 1 / 1;
     display: flex;
@@ -1118,6 +1154,17 @@
 
   .workspace.behind {
     visibility: hidden;
+  }
+
+  .workspace.front {
+    z-index: 1;
+  }
+
+  /* A kept workspace is not laid out or painted while it sleeps, so a
+     resize of the app costs one workspace and not five. The browser keeps
+     what it had laid out, and its canvases keep their pictures. */
+  .workspace.asleep {
+    content-visibility: hidden;
   }
 
   /* In the middle of the workspace, so the sidebar can lie over the left of

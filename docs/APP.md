@@ -575,6 +575,21 @@ that as a flicker on every episode picked. It is the pending state of
 React's transitions, which keep what is on screen until what replaces it
 is ready rather than going back to nothing first.
 
+**The workspaces of the last four episodes opened are kept**, `KEPT` in
+`App.svelte`, so going back to one is one frame, from another episode and
+from the settings alike. Only the one in front is awake. A kept one is
+hidden and inert and not laid out, `content-visibility: hidden`, and its
+video preview lets go of everything costly, `sleeping` in `Player.svelte`:
+the frame queue is closed, with its decoder on the Go side, the frames it
+kept and its sound card, and only the file's index and the frame on the
+canvas stay. Waking, a new queue starts from that index, so nothing is
+read from the file, and the workspace reads the episode and the settings
+again behind what it already shows. Asleep, it reads nothing by itself. A
+fifth episode opened lets go of the one opened longest ago. Building a
+workspace from nothing took 70 to 215 ms in the walks' browser for an
+episode of an hour, a chain of calls each waiting on the one before, and
+longer on the Mac: going back to a kept one takes one frame.
+
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
 the view by hand, and the view stays where it was put. **The playhead is

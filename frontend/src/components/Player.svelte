@@ -21,6 +21,7 @@
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
+  import type { Movie } from "../lib/frames/mp4";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -53,6 +54,7 @@
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
     pictured = $bindable(false),
+    sleeping = false,
   }: {
     path: string;
     source: SourceView;
@@ -101,6 +103,11 @@
     // why it cannot. The workspace is not put in front of the person
     // before, see ready in Episode.svelte.
     pictured?: boolean;
+    // The workspace is kept for coming back to while another episode is
+    // in front, see App.svelte. Asleep, the video preview holds nothing
+    // but the frame on its canvas and the file's index: no decoder on the
+    // Go side, no frames kept, no sound card.
+    sleeping?: boolean;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -134,12 +141,19 @@
   // it is the smallest difference between two moments that means anything.
   const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
-  // A queue for each episode. The one before is closed with everything it
-  // holds, its decoders and its sound card among them.
+  // A queue while the workspace is awake. Going to sleep closes it with
+  // everything it holds, its decoders and its sound card among them, and
+  // keeps only the file's index, so waking reads nothing from the file and
+  // the frame on the canvas stays until the new queue draws the same one.
+  let known: Movie | null = null;
   $effect(() => {
     const url = mediaURL(path);
+    if (sleeping) return;
     const q = untrack(() => open(url));
     return () => {
+      known = q.movie ?? known;
+      if (!untrack(() => paused)) paused = true;
+      nailed = false;
       q.close();
       if (queue === q) queue = null;
     };
@@ -148,7 +162,7 @@
   function open(url: string): FrameQueue {
     failed = "";
     trouble = "";
-    const q = new FrameQueue(canvas, url);
+    const q = new FrameQueue(canvas, url, known);
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {

@@ -377,7 +377,7 @@
   );
   onMount(() =>
     onLevels((p) => {
-      if (p !== path) return;
+      if (p !== path || away) return;
       const ticket = statusRead.send();
       api
         .episode(path)
@@ -1392,10 +1392,24 @@
     toldReady = true;
     untrack(() => onready?.());
   });
-  // An episode left while it plays goes quiet the moment another is
-  // picked, not once that one is on screen.
+  // A workspace kept while another episode is in front is asleep, see
+  // App.svelte: its video preview lets go of everything it holds, so an
+  // episode left while it plays goes quiet the moment another is picked,
+  // and it reads nothing from the Go side by itself. Waking, it reads the
+  // episode again in the background, behind what it already shows, for
+  // whatever changed while it slept, a setting among them.
+  let slept = false;
   $effect(() => {
-    if (away && !paused) untrack(() => player?.toggle());
+    if (away) {
+      slept = true;
+      return;
+    }
+    if (!slept) return;
+    slept = false;
+    untrack(() => {
+      void load();
+      readSettings();
+    });
   });
 
   // A caption edge being dragged on the clip timeline. The caption box in
@@ -2249,6 +2263,8 @@
   onMount(() => {
     let ticks = 0;
     const timer = setInterval(() => {
+      // Asleep, nothing is read: waking reads it all once.
+      if (away) return;
       ticks++;
       if (isTranscribing) {
         // While the transcript grows, how far it has come is read again:
@@ -2279,6 +2295,11 @@
     installFonts()
       .then((list) => (fonts = list))
       .catch(() => {});
+    readSettings();
+    openEpisode();
+  });
+
+  function readSettings() {
     api.getSettings().then((settings) => {
       target = settings.target || 0;
       targetWindow = settings.targetWindow || 0;
@@ -2286,8 +2307,7 @@
       max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
     });
-    openEpisode();
-  });
+  }
 </script>
 
 {#snippet strip()}
@@ -2658,6 +2678,7 @@
           clip={shownClip}
           opening={!opened}
           bind:pictured
+          sleeping={away}
           bind:time
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
