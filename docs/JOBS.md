@@ -203,7 +203,7 @@ no longer than the model can read at once, see `firstSearch` in
 `cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
-Continue, see row 2.168 in [GUI-PLAN.md](GUI-PLAN.md). New on an episode waits for a search that
+Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). New on an episode waits for a search that
 was just called off to be on its way out first, because both write the
 same record.
 
