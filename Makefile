@@ -325,6 +325,12 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
+# The tests run the decoder that is built, so one older than its code is
+# built again before them, or new tests meet an old decoder and fail for
+# no reason in the change. Only one that is there and can be built again:
+# without it the tests that need it skip, as they did.
+FRESH_FRAMES := $(if $(and $(wildcard $(FRAMES)),$(wildcard $(STAMPS)/ffmpeg/lib/pkgconfig/libavcodec.pc)),frames)
+
 # The ffmpeg we ship, built from source without libx264 so the build is
 # LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has
 # changed since, see scripts/tools.sh. This builds it again whatever is
@@ -383,7 +389,7 @@ motion: frontend/node_modules/.package-lock.json
 # The check before a push: what the branch changed, worked out file by
 # file, and only that. See scripts/changed.sh for what each kind of file
 # runs. CI still runs everything.
-changed:
+changed: $(FRESH_FRAMES)
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
 test: unit fuzz interface walks
@@ -395,7 +401,7 @@ test: unit fuzz interface walks
 # This also runs the seed corpus of every fuzz target, so a machine that
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
-unit: toolchain modules
+unit: toolchain modules $(FRESH_FRAMES)
 	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
 
 # The fuzzing runs without the race detector: it is the same code, many more
@@ -415,7 +421,7 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
-walks: toolchain modules frontend/node_modules/.package-lock.json
+walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 

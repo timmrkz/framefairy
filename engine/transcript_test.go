@@ -296,6 +296,12 @@ func FuzzReadTranscriptFile(f *testing.F) {
 		`"from":0.0,"to":3.0,"mean":-30.0,"words":[[0.1,0.5,"eins"]]}`, []byte{0, 0, 0, 0})
 	f.Add(`{"version":2,"words":[[0.1,"x",5]]}`, []byte{1, 2, 3})
 	f.Add(`nicht json`, []byte{})
+	// A blank word and a word of two are heard words like any other: the
+	// words said leave the one out and split the other.
+	f.Add(`{"version":2,"source":{"name":"ep.mp4","size":24,"modified":"x"},"model":"m",`+
+		`"from":0.0,"to":3.0,"mean":-30.0,"words":[[0,5," "]]}`, []byte{0, 0, 0, 0})
+	f.Add(`{"version":2,"source":{"name":"ep.mp4","size":24,"modified":"x"},"model":"m",`+
+		`"from":0.0,"to":3.0,"mean":-30.0,"words":[[0,5,"eins zwei"]]}`, []byte{0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, body string, raw []byte) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "words.json")
@@ -320,9 +326,11 @@ func FuzzReadTranscriptFile(f *testing.F) {
 				t.Fatalf("word %d is timed %v-%v", i, w.Start, w.End)
 			}
 		}
-		// What comes back has to survive being used.
+		// What comes back has to survive being used. Every word read is a
+		// word heard. The words said are not counted: they leave a blank
+		// word out and split a word of several, see Correct.
 		from := fromStored(words, framesRead, float64(file.From), float64(file.Mean), nil)
-		if from == nil || len(from.Words) != len(words) {
+		if from == nil || len(from.HeardWords) != len(words) {
 			t.Fatalf("%d words became %v", len(words), from)
 		}
 	})
