@@ -82,6 +82,9 @@
 
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
+  // Until the workspace knows where it opens, on its clip or at the start,
+  // the video preview draws nothing, see opening in Player.svelte.
+  let opened = $state(false);
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
@@ -927,6 +930,8 @@
       if (first) await openOnAClip();
     } catch (err) {
       problem = errorText(err);
+    } finally {
+      opened = true;
     }
   }
 
@@ -2564,6 +2569,7 @@
           {path}
           {source}
           clip={shownClip}
+          opening={!opened}
           bind:time
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}

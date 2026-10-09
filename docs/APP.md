@@ -535,7 +535,13 @@ playhead goes to the start of that clip, because that is what choosing a
 clip does. Where the playhead stood when the app was closed is not kept, no
 editor keeps that, and the start of a clip is a place that means something.
 Which clip it was lives in the episode's own folder, so it goes when the
-folder goes.
+folder goes. The video preview draws nothing until the workspace knows
+where it opens, `opening` in `Player.svelte`, so the first frame on screen
+is the clip's. It drew the episode's first frames as it opened and then
+left them for the clip, a flicker Tim saw on every episode. The queue
+opens the file meanwhile, so the clip's frame comes no later. The walk
+`an episode opens on its clip, with no frame of its start on the way`
+reads every frame drawn from the click on.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving

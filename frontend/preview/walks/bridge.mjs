@@ -259,7 +259,10 @@ const BITS = 10;
 const STRIP = 12 / 180;
 
 // Puts the reader on the page once: the number of the frame on the
-// canvas of the video preview, or -1 while it has none.
+// canvas of the video preview, or -1 while it has none. A canvas with
+// nothing drawn on it is black, and so are the bars of frame 0, so whether
+// there is a picture is read from the grey under the bars, which no frame
+// has black.
 async function reader(page) {
   await page.evaluate(([bits, strip]) => {
     if (window.__pictured) return;
@@ -268,6 +271,8 @@ async function reader(page) {
       if (!c || !c.width || !c.height) return -1;
       const g = c.getContext("2d");
       const row = g.getImageData(0, Math.floor((c.height * strip) / 2), c.width, 1).data;
+      const grey = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height * 0.6), 1, 1).data[0];
+      if (grey < 6) return -1;
       let n = 0;
       for (let b = 0; b < bits; b++) {
         const x = Math.floor(((b + 0.5) * c.width) / bits);
