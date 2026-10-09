@@ -1537,6 +1537,13 @@ extension, so `ep.mp4` and `ep.mov` side by side would share a transcript,
 clip sets and rendered names. The second one is left out and the reason
 says which two.
 
+A file whose picture ffmpeg cannot decode is left out the same way, with
+ffmpeg's reason: the episode's decoder is asked for its first frame as it
+is added, `undecodable` in `library.go`, and the decoder that answers is
+the one the video preview reads from when the episode opens, so asking
+costs no start later. A file with no picture, and one that is no video at
+all, said nothing at Add before and failed in the video preview after.
+
 ### The colour picker
 
 The colours of the captions, **Text**, **Box** and **Highlight** in the

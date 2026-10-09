@@ -349,7 +349,8 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    first frame 4 ms after it is asked.
 3. **One engine.** Remove WebKit's decoders, the Mac's decoder in cgo and
    the choice between them. Refuse at Add a file whose picture ffmpeg
-   cannot decode.
+   cannot decode. The sound through the episode's decoder as well. Built
+   in #162.
 4. **Colour and HDR.** The frames carry pixels converted by ffmpeg from
    the file's tags, and the interface draws them as they come. Proved
    against ffmpeg's own conversion of the same frame, value by value, on
