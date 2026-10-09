@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os/exec"
 	"sync"
 	"time"
@@ -30,13 +31,25 @@ type EpisodeFrames struct {
 	gone chan struct{}
 	// The gone of a program Close stopped, so its streams say closed and
 	// not failed.
-	closed  chan struct{}
-	err     error
-	nextID  uint32
-	idle    []uint32
+	closed chan struct{}
+	err    error
+	nextID uint32
+	// The cursors kept for the next stream, of picture and of sound: a
+	// cursor reads one stream of the file and stays that kind.
+	idle    [2][]uint32
 	answers map[uint32]chan framewire.Record
 	used    time.Time
+	// When the picture starts, which says how the sound is read, see
+	// soundSeek, found once.
+	picture      float64
+	pictureKnown bool
 }
+
+// The two kinds of cursor.
+const (
+	pictureCursor = 0
+	soundCursor   = 1
+)
 
 // ErrFramesClosed ends a stream whose decoder was closed under it, which
 // is no failure: the page asks another stream, which starts the decoder
@@ -49,9 +62,10 @@ func NewEpisodeFrames(program, path string) *EpisodeFrames {
 	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{}, used: time.Now()}
 }
 
-// cursorsKept is how many cursors a decoder keeps open for the next
-// stream: the frame queue's two decoders and one more for a jump.
-const cursorsKept = 3
+// cursorsKept is how many cursors of picture a decoder keeps open for the
+// next stream: the frame queue's two decoders and one more for a jump. Of
+// sound it keeps two, the play's and the next one's.
+var cursorsKept = [2]int{pictureCursor: 3, soundCursor: 2}
 
 // ahead is how many frames a stream asks for at a time, so the decoder
 // makes the next frames while the page takes the ones before.
@@ -71,12 +85,19 @@ func (f *EpisodeFrames) Ready() error {
 // of its own, and hands each to the streams once its open is done. Under
 // the lock, from start.
 func (f *EpisodeFrames) warm(gone chan struct{}) {
-	for range cursorsKept {
+	// Every picture cursor, and one of sound: a cursor of sound needs the
+	// rate it is asked at only for its chain, which is made at its first
+	// sound. A file with no sound says so, and the cursor is closed.
+	for i := range cursorsKept[pictureCursor] + 1 {
+		kind, request := pictureCursor, "open %d 0 2 2"
+		if i == cursorsKept[pictureCursor] {
+			kind, request = soundCursor, "sound %d 0 0 48000 2"
+		}
 		f.nextID++
 		id := f.nextID
 		ch := make(chan framewire.Record, 1)
 		f.answers[id] = ch
-		if f.send(gone, "open %d 0 2 2", id) != nil {
+		if f.send(gone, request, id) != nil {
 			delete(f.answers, id)
 			return
 		}
@@ -93,8 +114,8 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 				return
 			}
 			delete(f.answers, id)
-			if rec.Kind == framewire.Opened && len(f.idle) < cursorsKept {
-				f.idle = append(f.idle, id)
+			if rec.Kind == framewire.Opened && len(f.idle[kind]) < cursorsKept[kind] {
+				f.idle[kind] = append(f.idle[kind], id)
 			} else {
 				_ = f.send(gone, "close %d", id)
 			}
@@ -131,7 +152,7 @@ func (f *EpisodeFrames) start() error {
 		return fmt.Errorf("the episode's decoder could not start: %w", err)
 	}
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
-	f.idle, f.answers, f.nextID = nil, map[uint32]chan framewire.Record{}, 0
+	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
 	gone := f.gone
 	f.warm(gone)
 	// What the decoder says on its error stream, read to its end before
@@ -202,13 +223,13 @@ func (f *EpisodeFrames) send(gone chan struct{}, format string, args ...any) err
 	return err
 }
 
-// take hands a stream a cursor: one kept from a stream before, or a new
-// one. Under the lock.
-func (f *EpisodeFrames) take() (uint32, chan framewire.Record) {
+// take hands a stream a cursor of its kind: one kept from a stream before,
+// or a new one. Under the lock.
+func (f *EpisodeFrames) take(kind int) (uint32, chan framewire.Record) {
 	var id uint32
-	if n := len(f.idle); n > 0 {
-		id = f.idle[n-1]
-		f.idle = f.idle[:n-1]
+	if n := len(f.idle[kind]); n > 0 {
+		id = f.idle[kind][n-1]
+		f.idle[kind] = f.idle[kind][:n-1]
 	} else {
 		f.nextID++
 		id = f.nextID
@@ -222,10 +243,10 @@ func (f *EpisodeFrames) take() (uint32, chan framewire.Record) {
 
 // give keeps a cursor for the next stream, or closes it when enough are
 // kept or it failed. Under the lock.
-func (f *EpisodeFrames) give(id uint32, failed bool) {
+func (f *EpisodeFrames) give(id uint32, kind int, failed bool) {
 	delete(f.answers, id)
-	if !failed && len(f.idle) < cursorsKept {
-		f.idle = append(f.idle, id)
+	if !failed && len(f.idle[kind]) < cursorsKept[kind] {
+		f.idle[kind] = append(f.idle[kind], id)
 		return
 	}
 	_ = f.send(f.gone, "close %d", id)
@@ -238,6 +259,45 @@ func (f *EpisodeFrames) give(id uint32, failed bool) {
 // episode does.
 func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height int,
 	got func(at float64, frame []byte) error) error {
+	return f.stream(ctx, pictureCursor, func(id uint32) string {
+		return fmt.Sprintf("open %d %.6f %d %d", id, from, width, height)
+	}, got)
+}
+
+// Sound hands over the sound of the episode from the moment from on, as
+// 32-bit float samples at rate in so many channels, the channels of one
+// moment side by side, little endian, in chunks of SoundChunk moments,
+// each with the moment it starts at and in a buffer of its own, the way
+// PreviewSound does with the ffmpeg program: read by the same rule, see
+// soundSeek, so the video preview hears the sound the render and the
+// transcript are made of. e finds where the picture starts, once.
+func (f *EpisodeFrames) Sound(ctx context.Context, e *Engine, from float64, rate, channels int,
+	got func(at float64, chunk []byte) error) error {
+	if rate < 8000 || rate > 192000 || channels < 1 || channels > 8 {
+		return fmt.Errorf("sound at %d Hz in %d channels cannot be made", rate, channels)
+	}
+	if math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
+		from = 0
+	}
+	f.mu.Lock()
+	known, picture := f.pictureKnown, f.picture
+	f.mu.Unlock()
+	if !known {
+		picture = e.pictureStart(ctx, f.path)
+		f.mu.Lock()
+		f.picture, f.pictureKnown = picture, true
+		f.mu.Unlock()
+	}
+	seek, _ := soundSeek(from, picture)
+	return f.stream(ctx, soundCursor, func(id uint32) string {
+		return fmt.Sprintf("sound %d %.6f %.6f %d %d", id, seek, from, rate, channels)
+	}, got)
+}
+
+// stream runs one stream on a cursor of its kind, opened by the request
+// open makes for the cursor's number.
+func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint32) string,
+	got func(at float64, data []byte) error) error {
 	times := previewTimesOf(ctx)
 	f.mu.Lock()
 	if err := f.start(); err != nil {
@@ -245,9 +305,9 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 		return err
 	}
 	f.used = time.Now()
-	id, ch := f.take()
+	id, ch := f.take(kind)
 	gone := f.gone
-	err := f.send(gone, "open %d %.6f %d %d", id, from, width, height)
+	err := f.send(gone, "%s", open(id))
 	if err == nil {
 		err = f.send(gone, "next %d %d 0", id, ahead)
 	}
@@ -282,7 +342,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height 
 			}
 			f.mu.Lock()
 			if f.gone == gone {
-				f.give(id, failed)
+				f.give(id, kind, failed)
 			}
 			f.mu.Unlock()
 		}()

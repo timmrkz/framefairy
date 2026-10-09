@@ -35,9 +35,10 @@ import (
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
 //
-// The sound of every episode comes the same way, decoded by ffmpeg, see
-// engine.PreviewSound: a stream of it is read like a stream of frames,
-// each frame engine.SoundChunk moments of it.
+// The sound of every episode comes the same way, from the episode's
+// decoder, see engine.EpisodeFrames.Sound, read by the rule the render and
+// the transcription read it by: a stream of it is read like a stream of
+// frames, each frame engine.SoundChunk moments of it.
 //
 // openPreviews are the streams of the app, one set however many times the
 // handler is made.
@@ -166,8 +167,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a sound stream needs a rate and a number of channels", http.StatusBadRequest)
 			return
 		}
+		dec, err := p.decoder(path)
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
-			return e.PreviewSound(ctx, path, from, rate, channels, got)
+			if err != nil {
+				return err
+			}
+			return dec.Sound(ctx, e, from, rate, channels, got)
 		}
 	} else {
 		width, _ := strconv.Atoi(q.Get("w"))

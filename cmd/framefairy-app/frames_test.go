@@ -193,6 +193,7 @@ func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 // decodes it, to its end.
 func TestTheFramesRouteStreamsSound(t *testing.T) {
 	ffmpegtest.Need(t)
+	needDecoder(t)
 	svc, mine, _ := library(t)
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc2=s=160x90:r=5:d=4",
@@ -238,11 +239,14 @@ func TestTheFramesRouteStreamsSound(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = want[int(1.5*48000)*8:]
-	if len(heard) != len(want) {
+	// To the end of the sound the file says it has, as the ffmpeg the app
+	// ships reads it. An older ffmpeg, the system's in CI on Linux, keeps
+	// the samples the AAC encoder padded its last packet with, up to 1024.
+	if extra := len(want) - len(heard); extra < 0 || extra > 1024*8 {
 		t.Fatalf("the stream held %d moments, the sound from 1.5 s has %d", len(heard)/8, len(want)/8)
 	}
 	worst := 0.0
-	for i := 0; i+4 <= len(want)-48000/10*8; i += 4 {
+	for i := 0; i+4 <= len(heard)-48000/10*8; i += 4 {
 		a := math.Float32frombits(binary.LittleEndian.Uint32(heard[i:]))
 		b := math.Float32frombits(binary.LittleEndian.Uint32(want[i:]))
 		worst = math.Max(worst, math.Abs(float64(a-b)))

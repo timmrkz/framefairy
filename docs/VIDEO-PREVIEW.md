@@ -133,12 +133,13 @@ closed for standing unused.
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
   to three are kept, and they are opened on the file as the decoder
-  starts, before any frame is asked for. Sound still comes from the
-  ffmpeg program and moves in with step 3.
+  starts, before any frame is asked for. Cursors of sound, two kept, read
+  the sound by the same rule the ffmpeg program reads it by for the render
+  and the transcript, and give the same samples, step 3.
 - It takes requests from the Go side: frames from a moment on at a size,
-  and stop, see `internal/framewire`. Sound from a moment on is not built
-  yet, step 3. A request for a new moment drops what the last one was
-  doing.
+  sound from a moment on at a rate in so many channels, and stop, see
+  `internal/framewire`. A request for a new moment drops what the last one
+  was doing.
 - Not built yet: keeping the frames around the playhead it has already
   decoded, so a step back, a step on and a drag over them cost nothing,
   and while paused decoding the frames on either side of the playhead

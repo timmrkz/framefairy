@@ -309,9 +309,8 @@ frame is drawn into it in its own shape, so a 4K episode is never kept at
 its full size. Opening another episode closes the queue of the one before,
 its decoders and its sound card with it.
 
-The queue reads MP4 and MOV, H.264, HEVC and VP9 for the picture, as far
-as the system decodes them, and AAC, HE-AAC, Opus and plain sound for the
-sound.
+The queue reads the index of MP4 and MOV, and the episode's decoder
+decodes whatever picture and sound ffmpeg does.
 
 The sound is decoded on the Go side, by ffmpeg, plan row 2.153: the same
 sound the render and the transcript are made of, whatever decoder the
@@ -327,7 +326,18 @@ where its first packet lies, and each packet after it is the next of its
 samples, the way ffmpeg reads a piece of a render, so a flush ends a run
 and the packets after it start a stream of their own. The page does not
 read the sound in the file at all, plain sound in a MOV included, which
-the page once turned into samples itself.
+the page once turned into samples itself. The streams come from the
+episode's decoder, `EpisodeFrames.Sound`, cursors of sound beside the
+cursors of picture, two kept and one opened as the decoder starts, so a
+play or a jump starts no ffmpeg for its sound either. A cursor reads the
+sound by the rule the ffmpeg program reads it by for the render and the
+transcript, `soundSeek` in `engine/levels.go`: seeked a fifth of a second
+early and cut at the moment by the samples' own timestamps, or read from
+the file's start where that would be before the picture starts.
+`TestTheEpisodesDecoderHearsWhatFFmpegDoes` holds the two to the sample.
+Read from the start, it does not seek, the way the ffmpeg program does
+not: a seek there lost what the file says to skip of its first packet,
+and the sound came 1024 samples late.
 The Go side closes a stream nobody has read from for 20 seconds, and a
 pause holds the play with its stream, so a stream that answers 404 is
 opened again from the moment after the last that came: a play paused

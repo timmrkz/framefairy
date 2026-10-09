@@ -437,7 +437,24 @@ func audioFrom(source string, start int, picture float64) []string {
 // is decoded together with the one before it.
 func soundFrom(source string, from, picture float64, rate, channels int) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostats"}
-	lead := min(from, float64(soundLead)/1_000_000)
+	seek, lead := soundSeek(from, picture)
+	if seek > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(seek, 'f', 6, 64))
+	}
+	args = append(args, "-i", source, "-map", "0:a:0")
+	if lead > 0 {
+		args = append(args, "-af", "atrim=start="+strconv.FormatFloat(lead, 'f', 6, 64))
+	}
+	return append(args, "-ac", itoa(channels), "-ar", itoa(rate), "-f", "f32le", "-")
+}
+
+// soundSeek is where a reading of the sound from a moment seeks to, and
+// how much of what it decodes from there it cuts away before from, see
+// soundFrom: soundLead early, or from the start of the file where that
+// would be before the picture starts. The episode's decoder reads the
+// sound by the same rule, see EpisodeFrames.Sound.
+func soundSeek(from, picture float64) (seek, lead float64) {
+	lead = min(from, float64(soundLead)/1_000_000)
 	// ffmpeg seeks every stream of a file to the key frame of its picture,
 	// so a seek to before the picture's first frame hands back the sound
 	// from where the picture starts, and a reading resumed there was heard
@@ -447,14 +464,7 @@ func soundFrom(source string, from, picture float64, rate, channels int) []strin
 	if from-lead < picture {
 		lead = from
 	}
-	if from-lead > 0 {
-		args = append(args, "-ss", strconv.FormatFloat(from-lead, 'f', 6, 64))
-	}
-	args = append(args, "-i", source, "-map", "0:a:0")
-	if lead > 0 {
-		args = append(args, "-af", "atrim=start="+strconv.FormatFloat(lead, 'f', 6, 64))
-	}
-	return append(args, "-ac", itoa(channels), "-ar", itoa(rate), "-f", "f32le", "-")
+	return max(0, from-lead), lead
 }
 
 // readLevels turns 16 kHz mono float samples into a frame every 10 ms and
