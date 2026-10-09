@@ -31,7 +31,7 @@
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
-  import { keysElsewhere } from "../lib/keys";
+  import { asleep, keysElsewhere } from "../lib/keys";
 
   let {
     path,
@@ -52,6 +52,7 @@
     onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
+    pictured = $bindable(false),
   }: {
     path: string;
     source: SourceView;
@@ -96,6 +97,10 @@
     // the clip is drawn dimmed wherever it is drawn. See lib/playhead.ts.
     onClip?: boolean;
     offers?: PlayerOffers;
+    // Whether the canvas holds a picture of the episode yet, or has said
+    // why it cannot. The workspace is not put in front of the person
+    // before, see ready in Episode.svelte.
+    pictured?: boolean;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -153,6 +158,7 @@
       if (queue !== q) return;
       failed = e.message;
       paused = true;
+      pictured = true;
     });
     q.setProgram(...programOf(place));
     sought = null;
@@ -179,6 +185,7 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
+    if (s.drew) pictured = true;
     if (s.ended) {
       paused = true;
       if (playedClip) {
@@ -539,7 +546,7 @@
   $effect(() => {
     if (!sampling) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || asleep(shell)) return;
       event.preventDefault();
       event.stopPropagation();
       finishSampling(null);
@@ -956,6 +963,7 @@
   // has the keyboard. The arrows bring the keyboard's word, and Enter opens
   // it.
   function onKey(event: KeyboardEvent) {
+    if (asleep(shell)) return;
     // Delete removes the keyboard's word, the one in the frame, unless a
     // field has the keyboard and the key is its own.
     if (removeKeyed(event)) return;

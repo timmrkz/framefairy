@@ -552,6 +552,20 @@ stood as the window was asked, which only the opening asks. The coverage
 and the room are read again whenever work elsewhere ends, so they cannot
 say what came first.
 
+**Picking another episode changes the workspace in one frame.** The new
+episode's workspace is built behind the one on screen, unseen and inert,
+in the same place, and the two change places once the new one has the
+episode on it: its window on the range picker, a frame on the canvas, its
+clip timeline drawn and the captions of the clip it opened on, `ready` in
+`Episode.svelte`. A second at most, so a slow disk never keeps the old
+episode up. Meanwhile neither takes clicks or keys, `asleep` in
+`lib/keys.ts`, and an episode left while it plays goes quiet at once. The
+workspace was torn down and built again in front of the person, empty for
+a moment and then a part at a time as each answer came in, and Tim saw
+that as a flicker on every episode picked. It is the pending state of
+React's transitions, which keep what is on screen until what replaces it
+is ready rather than going back to nothing first.
+
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
 the view by hand, and the view stays where it was put. **The playhead is

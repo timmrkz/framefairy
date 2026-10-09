@@ -91,6 +91,34 @@
     { value: "added", label: "Added", icon: "sort-added" },
     { value: "name", label: "Name", icon: "sort-name" },
   ];
+  // Opening an episode while another is on screen builds the new
+  // workspace behind it, and the two change places in one frame once the
+  // new one has its episode on it, see ready in Episode.svelte. The
+  // workspace stands where it stood throughout and what is in it changes,
+  // the way a native app moves from one document to the next. It was torn
+  // down and built again in front of the person, empty first and then a
+  // part at a time, and Tim saw that as a flicker on every episode picked.
+  //
+  // The one in front is onScreen. A second, the episode asked for, stands
+  // behind it, unseen and inert, until it says it is ready, or for a
+  // second at most, so a slow disk never keeps the old episode up. Both
+  // take no clicks and no keys meanwhile: the one going is no longer the
+  // episode picked, and the one coming is not seen yet.
+  const asked = $derived(nav.view.name === "episode" ? nav.view.path : "");
+  let onScreen = $state("");
+  const workspaces = $derived(!asked ? [] : onScreen && onScreen !== asked ? [onScreen, asked] : [asked]);
+  $effect(() => {
+    if (!asked) onScreen = "";
+  });
+  $effect(() => {
+    const coming = asked;
+    if (!coming || coming === onScreen) return;
+    const late = setTimeout(() => {
+      if (asked === coming) onScreen = coming;
+    }, 1000);
+    return () => clearTimeout(late);
+  });
+
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
   const title = $derived.by(() => {
@@ -538,9 +566,20 @@
       <p class="error banner selectable">{problem}</p>
     {/if}
     {#if nav.view.name === "episode"}
-      {#key nav.view.path}
-        <Episode path={nav.view.path} onchange={refresh} />
-      {/key}
+      <div class="workspaces">
+        {#each workspaces as path (path)}
+          <div class="workspace" class:behind={path !== onScreen} inert={path !== onScreen || path !== asked}>
+            <Episode
+              {path}
+              away={path !== asked}
+              onchange={refresh}
+              onready={() => {
+                if (path === asked) onScreen = path;
+              }}
+            />
+          </div>
+        {/each}
+      </div>
     {:else if nav.view.name === "jobs"}
       <Jobs />
     {:else if nav.view.name === "updates"}
@@ -1053,6 +1092,28 @@
 
   .banner {
     padding: var(--gap) var(--edge);
+  }
+
+  /* The workspace in front and the one being opened behind it stand in
+     the same place, one cell of a grid, so the one behind is laid out to
+     the pixel as it will be shown and changing places moves nothing. */
+  .workspaces {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  }
+
+  .workspace {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .workspace.behind {
+    visibility: hidden;
   }
 
   /* In the middle of the workspace, so the sidebar can lie over the left of

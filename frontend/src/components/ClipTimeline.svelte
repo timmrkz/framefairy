@@ -41,7 +41,7 @@
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
-  import { keysElsewhere } from "../lib/keys";
+  import { asleep, keysElsewhere } from "../lib/keys";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -77,6 +77,7 @@
     onmark,
     centre,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
+    drawn = $bindable(false),
   }: {
     path: string;
     // Without a clip the timeline follows the playhead through the episode.
@@ -189,6 +190,10 @@
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
     numbers?: ClipNumbers;
+    // Whether the first reading of the words and the waveform has come
+    // back, so the track has something of the episode on it. The workspace
+    // is not put in front of the person before, see ready in Episode.svelte.
+    drawn?: boolean;
   } = $props();
 
   // The numbers travel out of here rather than standing over the
@@ -633,6 +638,7 @@
       peaks = [];
       data = outer;
     }
+    drawn = true;
   }
 
   // Brings a moment into the view without changing how much of the episode
@@ -746,7 +752,7 @@
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-    if (keysElsewhere()) return;
+    if (keysElsewhere() || asleep(track)) return;
     // The edges of a clip and the window on the range picker take the
     // arrows for themselves while they hold the keyboard.
     if (document.activeElement?.getAttribute("role") === "slider") return;

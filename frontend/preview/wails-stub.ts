@@ -823,7 +823,40 @@ function askSearch(from: number, to: number, count?: number): FakeSearch {
   return made;
 }
 
+// ?slowgo=80 answers every call from the window late, from half to one and
+// a half times 80 ms, each method its own share of it, the way the real Go
+// side answers once it has crossed the bridge and read the episode's
+// files. Everything else here answers at once, which hides any part of the
+// workspace that waits on an answer before it is drawn.
+const slowGo = Number(/[?&]slowgo=(\d+)/.exec(location.search)?.[1] ?? 0);
+const lateBy = (method: string) =>
+  slowGo * (0.5 + ([...method].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 1000, 7) % 11) / 10);
+const late = <T,>(method: string, answer: Promise<T>): Promise<T> => {
+  if (!slowGo) return answer;
+  const wait = () => new Promise((r) => setTimeout(r, lateBy(method)));
+  return answer.then(
+    async (v) => (await wait(), v),
+    async (e) => {
+      await wait();
+      throw e;
+    },
+  );
+};
+
 export const Call = {
+  ByName(name: string, ...args: unknown[]): Promise<unknown> {
+    if (!slowGo) return Answers.ByName(name, ...args);
+    let answer: Promise<unknown>;
+    try {
+      answer = Promise.resolve(Answers.ByName(name, ...args));
+    } catch (e) {
+      answer = Promise.reject(e);
+    }
+    return late(name.split(".").pop() ?? "", answer);
+  },
+};
+
+const Answers = {
   ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const method = name.split(".").pop();
     const q = location.search;
