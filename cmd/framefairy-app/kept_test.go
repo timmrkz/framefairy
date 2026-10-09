@@ -11,12 +11,17 @@ import (
 
 // An episode opening asks for its transcript from several calls at once,
 // and it is read once. Going back to one of the last few episodes reads
-// nothing, a fifth lets go of the one asked for longest ago, a file that
+// nothing, one more lets go of the one asked for longest ago, a file that
 // changed is read again, and a failure is not kept.
 func TestTranscriptsAreReadOnceAndKeptForTheLastEpisodes(t *testing.T) {
 	var k keptReads[*int]
+	// a and the others fill what is kept, and one more comes after.
+	others := []string{}
+	for i := 1; i < keptTranscripts; i++ {
+		others = append(others, fmt.Sprintf("k%d", i))
+	}
 	reads := map[string]*atomic.Int32{}
-	for _, key := range []string{"a", "b", "c", "d", "e"} {
+	for _, key := range append(others, "a", "more") {
 		reads[key] = &atomic.Int32{}
 	}
 	read := func(key string) func() (*int, error) {
@@ -43,24 +48,26 @@ func TestTranscriptsAreReadOnceAndKeptForTheLastEpisodes(t *testing.T) {
 		}
 	}
 
-	for _, key := range []string{"b", "c", "d"} {
+	for _, key := range others {
 		_, _ = k.get(key, "1", read(key))
 	}
-	// a, b, c and d are kept: asking any again reads nothing. a is asked
-	// last, so b is the one asked for longest ago when e comes.
-	for _, key := range []string{"b", "c", "d", "a"} {
+	// All are kept: asking any again reads nothing. a is asked last, so
+	// the first of the others is the one asked for longest ago when one
+	// more comes.
+	for _, key := range append(others, "a") {
 		_, _ = k.get(key, "1", read(key))
 	}
-	_, _ = k.get("e", "1", read("e"))
-	for key, want := range map[string]int32{"a": 1, "b": 1, "c": 1, "d": 1, "e": 1} {
-		if n := reads[key].Load(); n != want {
-			t.Errorf("%s was read %d times, wanted %d", key, n, want)
+	_, _ = k.get("more", "1", read("more"))
+	for key, n := range reads {
+		if n.Load() != 1 {
+			t.Errorf("%s was read %d times, wanted once", key, n.Load())
 		}
 	}
-	_, _ = k.get("b", "1", read("b"))
+	first := others[0]
+	_, _ = k.get(first, "1", read(first))
 	_, _ = k.get("a", "1", read("a"))
-	if reads["b"].Load() != 2 || reads["a"].Load() != 1 {
-		t.Errorf("after a fifth, b read %d times and a %d, wanted b again and a kept", reads["b"].Load(), reads["a"].Load())
+	if reads[first].Load() != 2 || reads["a"].Load() != 1 {
+		t.Errorf("after one more, %s read %d times and a %d, wanted %s again and a kept", first, reads[first].Load(), reads["a"].Load(), first)
 	}
 	_, _ = k.get("a", "2", read("a"))
 	if reads["a"].Load() != 2 {

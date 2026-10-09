@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"framefairy/engine"
 )
@@ -24,6 +25,9 @@ const chosenFile = "chosen.json"
 type chosen struct {
 	Clip   string      `json:"clip"`
 	Window *KeptWindow `json:"window,omitempty"`
+	// Opened is when the episode was last put on screen by a person, in
+	// Unix milliseconds, see OpenEpisode.
+	Opened int64 `json:"opened,omitempty"`
 }
 
 // KeptWindow is the window as it was left: where it starts and ends, and
@@ -198,16 +202,30 @@ func looksLikeClipKey(key string) bool {
 	return name != "" && id != ""
 }
 
+// OpenEpisode notes that the episode at path was put on screen, so the app
+// opens on it again as it starts, and builds the workspaces of those opened
+// before it behind it, see Opened.
+func (s *FrameFairy) OpenEpisode(path string) error {
+	if !s.store.Known(path) {
+		return errNotInLibrary
+	}
+	now := time.Now().UnixMilli()
+	return changeChosen(path, func(c *chosen) { c.Opened = max(now, c.Opened) })
+}
+
 // Opened lists the episodes of the library opened last, newest first, at
-// most n of them. Opening an episode chooses a clip on it, which writes
-// chosen.json, so when that file was written is when the episode was last
-// worked on. An episode never opened is not listed. The app builds the
-// workspaces of these as it starts, so the first one picked is on screen
-// in one frame, see App.svelte.
+// most n of them. The app opens the first as it starts, the episode left
+// open, and builds the workspaces of the rest behind it, so the first ones
+// picked are on screen in one frame, see App.svelte. An episode never
+// opened is not listed. One opened only before OpenEpisode was there comes
+// after every one opened since, in the order its chosen.json was last
+// written, because opening an episode chose a clip on it. That file is also
+// written by a workspace built at start, which is not a person opening it.
 func (s *FrameFairy) Opened(n int) []string {
 	type seen struct {
-		path string
-		at   int64
+		path   string
+		marked bool
+		at     int64
 	}
 	var all []seen
 	for _, ep := range s.store.Episodes() {
@@ -219,9 +237,18 @@ func (s *FrameFairy) Opened(n int) []string {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		all = append(all, seen{ep, info.ModTime().UnixNano()})
+		if at := readChosen(ep).Opened; at > 0 {
+			all = append(all, seen{ep, true, at})
+		} else {
+			all = append(all, seen{ep, false, info.ModTime().UnixMilli()})
+		}
 	}
-	sort.SliceStable(all, func(a, b int) bool { return all[a].at > all[b].at })
+	sort.SliceStable(all, func(a, b int) bool {
+		if all[a].marked != all[b].marked {
+			return all[a].marked
+		}
+		return all[a].at > all[b].at
+	})
 	out := []string{}
 	for _, e := range all[:min(max(n, 0), len(all))] {
 		out = append(out, e.path)

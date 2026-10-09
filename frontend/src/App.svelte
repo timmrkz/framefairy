@@ -81,6 +81,8 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // Whether the library has been read once.
+  let libraryRead = $state(false);
   // The list as the sidebar shows it. The trigger is the sort mark Apple's
   // own apps put on a sort menu, and says what it does rather than which
   // order is on: a clock alone read as anything but sorting. The rows say
@@ -106,7 +108,7 @@
   // never keeps the old episode up. It was torn down and built again in
   // front of the person, empty first and then a part at a time, and Tim saw
   // that as a flicker on every episode picked.
-  const KEPT = 4;
+  const KEPT = 10;
   const asked = $derived(nav.view.name === "episode" ? nav.view.path : "");
   // The one in front, and the ones kept, the last opened first.
   let onScreen = $state("");
@@ -116,6 +118,8 @@
   $effect(() => {
     const coming = asked;
     if (!coming) return;
+    // So the app opens on it again as it starts, see Opened in chosen.go.
+    api.openEpisode(coming).catch(() => {});
     untrack(() => {
       kept = [coming, ...kept.filter((p) => p !== coming)].slice(0, KEPT);
       for (const p of Object.keys(readied)) if (!kept.includes(p)) delete readied[p];
@@ -123,18 +127,27 @@
       if (readied[coming]) onScreen = coming;
     });
   });
-  // As the app starts, the workspaces of the episodes opened last are
-  // built, so the first one picked is on screen in one frame too. One at a
-  // time, behind whatever is on screen, and only while no episode that was
-  // picked is being built: each is built awake, so it has its frame on its
-  // canvas, and goes to sleep once it is ready, or after three seconds.
+  // As the app starts, it opens on the episode that was open when it was
+  // left, the way a Mac app comes back with the document it had open, and
+  // the workspaces of the episodes opened before it are built, so the
+  // first one picked is on screen in one frame too. One at a time, behind
+  // whatever is on screen, and only while no episode that was picked is
+  // being built: each is built awake, so it has its frame on its canvas,
+  // and goes to sleep once it is ready, or after three seconds.
   let toWarm = $state<string[]>([]);
   let warming = $state("");
+  // Whether the app knows yet where it was left. Until it does, the page
+  // for no episode stays blank rather than show for a moment.
+  let placed = $state(false);
   onMount(() => {
     api
       .opened(KEPT)
-      .then((list) => (toWarm = list))
-      .catch(() => {});
+      .then((list) => {
+        toWarm = list;
+        if (list.length && nav.view.name === "empty") nav.go({ name: "episode", path: list[0] });
+      })
+      .catch(() => {})
+      .finally(() => (placed = true));
   });
   $effect(() => {
     if (warming || (asked && asked !== onScreen) || kept.length >= KEPT) return;
@@ -233,6 +246,7 @@
     } catch (err) {
       problem = errorText(err);
     }
+    libraryRead = true;
   }
 
   async function add() {
@@ -285,7 +299,12 @@
       // The workspace goes first. Left open, it went on reading the
       // episode it showed, which was no longer in the library, and every
       // read came back as "file does not exist".
-      if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
+      // The episode opened before it comes back, the way closing a tab
+      // shows the one before it.
+      if (nav.view.name === "episode" && nav.view.path === ep.source) {
+        const before = kept.find((p) => p !== ep.source);
+        nav.go(before ? { name: "episode", path: before } : { name: "empty" });
+      }
       removing = null;
       await refresh();
     } catch (err) {
@@ -683,13 +702,21 @@
       <SettingsScreen />
     {:else if nav.view.name === "acknowledgements"}
       <Acknowledgements />
+    {:else if !placed || !libraryRead}
+      <!-- Where the app was left is on its way. -->
+    {:else if !episodes.length}
+      <div class="welcome">
+        <h1>Add an episode</h1>
+        <p class="muted">
+          The app transcribes it on this machine, finds the moments worth clipping and renders
+          them as vertical shorts. Any mp4, mov, m4v or mkv works.
+        </p>
+        <button class="primary" onclick={add}>Add</button>
+      </div>
     {:else}
       <div class="welcome">
         <h1>Pick an episode</h1>
-        <p class="muted">
-          Choose one on the left, or add a new one. The app transcribes it on this machine, finds
-          the moments worth clipping and renders them as vertical shorts.
-        </p>
+        <p class="muted">Choose one on the left, or add a new one.</p>
       </div>
     {/if}
   </main>
@@ -1246,6 +1273,10 @@
 
   .welcome p {
     max-width: 52ch;
+  }
+
+  .welcome button {
+    margin-top: var(--gap);
   }
 
   .welcome h1 {

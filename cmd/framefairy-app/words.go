@@ -38,7 +38,7 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 
 // keptTranscripts is how many episodes' transcripts are kept, the same as
 // KEPT in App.svelte.
-const keptTranscripts = 4
+const keptTranscripts = 10
 
 // keptReads keeps what was read for the last few keys, each with the stamp
 // of what it was read from, and reads a key once however many ask at once.

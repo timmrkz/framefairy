@@ -270,4 +270,23 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	if got := s.Opened(-1); len(got) != 0 {
 		t.Errorf("none asked for gave %v", got)
 	}
+	// Opened by a person, b comes first, and stays first when a clip is
+	// chosen on another without it being opened, as a workspace built at
+	// start does.
+	if err := s.OpenEpisode(eps[1]); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Opened(1); fmt.Sprint(got) != fmt.Sprint([]string{eps[1]}) {
+		t.Errorf("after opening b got %v", got)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if err := s.ChooseClip(eps[2], "clips/y"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Opened(1); fmt.Sprint(got) != fmt.Sprint([]string{eps[1]}) {
+		t.Errorf("a clip chosen on c without opening it put first %v", got)
+	}
+	if err := s.OpenEpisode(filepath.Join(dir, "elsewhere.mp4")); err == nil {
+		t.Error("an episode not in the library was noted as opened")
+	}
 }

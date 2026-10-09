@@ -105,6 +105,13 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+The app opens on the episode that was open when it was left. With no
+episode in the library, the page says **Add an episode** and has the
+**Add** button on it, since there is nothing to pick. Removing the
+episode that is open goes to the one opened before it, the way closing a
+tab shows the one before, and the page for no episode shows only when
+there is none left to show.
+
 The episodes are listed in the order they were added, the newest at the
 foot, where one just added is brought into view. Once there are two, the
 sort mark at the right of the head of the sidebar, an arrow up beside an
@@ -575,7 +582,7 @@ that as a flicker on every episode picked. It is the pending state of
 React's transitions, which keep what is on screen until what replaces it
 is ready rather than going back to nothing first.
 
-**The workspaces of the last four episodes opened are kept**, `KEPT` in
+**The workspaces of the last ten episodes opened are kept**, `KEPT` in
 `App.svelte`, so going back to one is one frame, from another episode and
 from the settings alike. Only the one in front is awake. A kept one is
 taken out of the page, `shelf` in `App.svelte`, so a resize of the app
@@ -590,9 +597,17 @@ read from the file, in the task after the frame that shows the workspace
 again, so starting a sound card and a decoder does not hold that frame
 back, and the workspace reads the episode and the settings
 again behind what it already shows. Asleep, it reads nothing by itself. A
-fifth episode opened lets go of the one opened longest ago. As the app starts, the workspaces of the four episodes opened last,
-`Opened` on the Go side, by when each last chose a clip, are built one at
-a time behind whatever is on screen and put to sleep once each has its
+eleventh episode opened lets go of the one opened longest ago. Asleep,
+a workspace is its page, its canvases and the file's index, about 10 MB,
+so ten is about 100 MB. As the app starts, it opens on the episode that
+was open when it was left, the way a Mac app comes back with the document
+it had open, and the workspaces of the episodes opened before it are
+built one at a time behind it. `Opened` on the Go side lists them by when
+each was last put on screen, which `OpenEpisode` notes in the episode's
+`chosen.json`. An episode opened only before that was noted comes after
+the rest, by when its `chosen.json` was last written. The workspaces are
+built one at a
+time behind whatever is on screen and put to sleep once each has its
 frame, so the first episode picked is on screen in one frame too. Building a
 workspace from nothing took 70 to 215 ms in the walks' browser for an
 episode of an hour, a chain of calls each waiting on the one before, and
@@ -610,7 +625,7 @@ starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
 the workspace knows what the episode is, and the frame queue takes the
 index read ahead. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
-Go side keeps the transcripts of the last four episodes read, `keptReads`
+Go side keeps the transcripts of the last ten episodes read, `keptReads`
 in `words.go`, and reads one once however many calls ask for it at the
 same moment: a workspace opening asked for the same transcript up to
 seven times, and each read it from the file. The longest window the range
