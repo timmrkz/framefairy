@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -195,4 +196,35 @@ func looksLikeClipKey(key string) bool {
 	}
 	name, id, _ := strings.Cut(key, "/")
 	return name != "" && id != ""
+}
+
+// Opened lists the episodes of the library opened last, newest first, at
+// most n of them. Opening an episode chooses a clip on it, which writes
+// chosen.json, so when that file was written is when the episode was last
+// worked on. An episode never opened is not listed. The app builds the
+// workspaces of these as it starts, so the first one picked is on screen
+// in one frame, see App.svelte.
+func (s *FrameFairy) Opened(n int) []string {
+	type seen struct {
+		path string
+		at   int64
+	}
+	var all []seen
+	for _, ep := range s.store.Episodes() {
+		file, err := engine.SafeChild(engine.WorkDir(ep), chosenFile)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(file)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		all = append(all, seen{ep, info.ModTime().UnixNano()})
+	}
+	sort.SliceStable(all, func(a, b int) bool { return all[a].at > all[b].at })
+	out := []string{}
+	for _, e := range all[:min(max(n, 0), len(all))] {
+		out = append(out, e.path)
+	}
+	return out
 }

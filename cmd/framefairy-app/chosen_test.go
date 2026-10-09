@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"framefairy/engine"
 )
@@ -229,5 +230,44 @@ func TestTheWindowMovedByHandIsUndone(t *testing.T) {
 	}
 	if done, _ := s.Undo(source); done.Done {
 		t.Error("a window put where it already was became a step")
+	}
+}
+
+// The episodes opened last come newest first, as many as were asked for,
+// and an episode never opened is not one of them.
+func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	var eps []string
+	for _, name := range []string{"a.mp4", "b.mp4", "c.mp4", "never.mp4"} {
+		ep := filepath.Join(dir, name)
+		if err := os.WriteFile(ep, []byte("not really a video"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		eps = append(eps, ep)
+	}
+	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: eps}
+	s := &FrameFairy{store: st}
+	if got := s.Opened(4); len(got) != 0 {
+		t.Fatalf("nothing opened yet gave %v", got)
+	}
+	// b, then c, then a, each a second apart on the clock of the files.
+	base := time.Now().Add(-time.Hour)
+	for i, ep := range []string{eps[1], eps[2], eps[0]} {
+		if err := s.ChooseClip(ep, "clips/x"); err != nil {
+			t.Fatal(err)
+		}
+		at := base.Add(time.Duration(i) * time.Second)
+		if err := os.Chtimes(filepath.Join(engine.WorkDir(ep), chosenFile), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, want := s.Opened(4), []string{eps[0], eps[2], eps[1]}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("got %v, wanted %v", got, want)
+	}
+	if got := s.Opened(2); fmt.Sprint(got) != fmt.Sprint([]string{eps[0], eps[2]}) {
+		t.Errorf("two asked for gave %v", got)
+	}
+	if got := s.Opened(-1); len(got) != 0 {
+		t.Errorf("none asked for gave %v", got)
 	}
 }

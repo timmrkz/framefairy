@@ -1297,6 +1297,10 @@ const Answers = {
         );
       case "ChosenClip":
         return Promise.resolve((window as any).__chosen ?? "");
+      // No workspace is built before one is picked, so a probe starts
+      // from the same place it always did.
+      case "Opened":
+        return Promise.resolve([]);
       case "ChooseClip":
         (window as any).__chosen = args[1];
         return Promise.resolve();

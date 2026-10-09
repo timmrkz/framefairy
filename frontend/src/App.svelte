@@ -93,9 +93,9 @@
   ];
   // The workspaces of the episodes opened last are kept, so going back to
   // one is one frame: it stands where it stood, with everything it had on
-  // it. Only the one in front is awake. The others are asleep, hidden and
-  // inert, and hold their page and the file's index and nothing costly,
-  // no decoder and no sound card, see sleeping in Player.svelte. Tim found
+  // it. Only the one in front is awake. The others are asleep, out of the
+  // page, see shelf, and hold their page and the file's index and nothing
+  // costly, no decoder and no sound card, see sleeping in Player.svelte. Tim found
   // every episode picked took half a second to be built again from
   // nothing, a chain of questions to the Go side, the file's index and
   // ffmpeg starting, all of it thrown away again on leaving.
@@ -119,8 +119,41 @@
     untrack(() => {
       kept = [coming, ...kept.filter((p) => p !== coming)].slice(0, KEPT);
       for (const p of Object.keys(readied)) if (!kept.includes(p)) delete readied[p];
+      if (warming && !kept.includes(warming)) warming = "";
       if (readied[coming]) onScreen = coming;
     });
+  });
+  // As the app starts, the workspaces of the episodes opened last are
+  // built, so the first one picked is on screen in one frame too. One at a
+  // time, behind whatever is on screen, and only while no episode that was
+  // picked is being built: each is built awake, so it has its frame on its
+  // canvas, and goes to sleep once it is ready, or after three seconds.
+  let toWarm = $state<string[]>([]);
+  let warming = $state("");
+  onMount(() => {
+    api
+      .opened(KEPT)
+      .then((list) => (toWarm = list))
+      .catch(() => {});
+  });
+  $effect(() => {
+    if (warming || (asked && asked !== onScreen) || kept.length >= KEPT) return;
+    const known = new Set(episodes.map((e) => e.source));
+    const next = toWarm.find((p) => known.has(p) && !kept.includes(p));
+    if (!next) return;
+    untrack(() => {
+      toWarm = toWarm.filter((p) => p !== next);
+      warming = next;
+      kept = [...kept, next];
+    });
+  });
+  $effect(() => {
+    const now = warming;
+    if (!now) return;
+    const late = setTimeout(() => {
+      if (warming === now) warming = "";
+    }, 3000);
+    return () => clearTimeout(late);
   });
   // An episode removed from the library takes its workspace with it.
   $effect(() => {
@@ -137,6 +170,29 @@
     }, 1000);
     return () => clearTimeout(late);
   });
+  // A kept workspace that sleeps is taken out of the page and put back as
+  // it was. Out of the page, it costs no layout when the app is resized,
+  // and nothing that looks the workspace up by the document finds it. It
+  // keeps everything it holds, its canvases with what is drawn on them
+  // among it. Its slot stays where it was for it to go back into.
+  function shelf(node: HTMLElement, away: boolean) {
+    const home = node.parentElement!;
+    let kept: number | null = null;
+    const put = (now: boolean) => {
+      if (now && node.isConnected) {
+        // Taken out of the page, a list forgets how far it was scrolled.
+        kept = node.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? null;
+        node.remove();
+      } else if (!now && !node.isConnected) {
+        home.append(node);
+        const list = node.querySelector<HTMLElement>(".pane .list");
+        if (list && kept !== null) list.scrollTop = kept;
+      }
+    };
+    put(away);
+    return { update: put };
+  }
+
   // The one asked for comes first in the document, so whatever looks the
   // workspace up finds the episode that was picked, and the one going is
   // drawn over it until they change places.
@@ -593,23 +649,26 @@
     {#if workspaces.length}
       <div class="workspaces" class:gone={!asked}>
         {#each workspaces as path (path)}
-          <div
-            class="workspace"
-            data-path={path}
-            class:behind={path !== onScreen}
-            class:asleep={path !== onScreen && path !== asked}
-            class:front={path === onScreen}
-            inert={path !== onScreen || path !== asked}
-          >
-            <Episode
-              {path}
-              away={path !== asked}
-              onchange={refresh}
-              onready={() => {
-                readied[path] = true;
-                if (path === asked) onScreen = path;
-              }}
-            />
+          <div class="slot">
+            <div
+              class="workspace"
+              data-path={path}
+              class:behind={path !== onScreen}
+              class:front={path === onScreen}
+              inert={path !== onScreen || path !== asked}
+              use:shelf={path !== onScreen && path !== asked && path !== warming}
+            >
+              <Episode
+                {path}
+                away={path !== asked && path !== warming}
+                onchange={refresh}
+                onready={() => {
+                  readied[path] = true;
+                  if (path === warming) warming = "";
+                  if (path === asked) onScreen = path;
+                }}
+              />
+            </div>
           </div>
         {/each}
       </div>
@@ -1119,6 +1178,7 @@
   /* The sidebar is out of the flow, so the workspace has to be told to
      stay in the second column and leave the rail alone. */
   main {
+    position: relative;
     grid-column: 2;
     display: flex;
     flex-direction: column;
@@ -1140,8 +1200,13 @@
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   }
 
+  /* Kept while another screen is open, where they stand when shown and
+     unseen, so one being built as the app starts is laid out to the pixel
+     and its canvases keep their size. */
   .workspaces.gone {
-    display: none;
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
   }
 
   .workspace {
@@ -1160,11 +1225,10 @@
     z-index: 1;
   }
 
-  /* A kept workspace is not laid out or painted while it sleeps, so a
-     resize of the app costs one workspace and not five. The browser keeps
-     what it had laid out, and its canvases keep their pictures. */
-  .workspace.asleep {
-    content-visibility: hidden;
+  /* What a workspace stands in. An empty one, its workspace put away,
+     takes no room. */
+  .slot {
+    display: contents;
   }
 
   /* In the middle of the workspace, so the sidebar can lie over the left of

@@ -578,17 +578,30 @@ is ready rather than going back to nothing first.
 **The workspaces of the last four episodes opened are kept**, `KEPT` in
 `App.svelte`, so going back to one is one frame, from another episode and
 from the settings alike. Only the one in front is awake. A kept one is
-hidden and inert and not laid out, `content-visibility: hidden`, and its
-video preview lets go of everything costly, `sleeping` in `Player.svelte`:
+taken out of the page, `shelf` in `App.svelte`, so a resize of the app
+lays out one workspace and nothing that looks the workspace up by the
+document finds a second one, and it keeps what is drawn on its canvases
+and how far its clip list was scrolled. Its video preview lets go of
+everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
 kept and its sound card, and only the file's index and the frame on the
 canvas stay. Waking, a new queue starts from that index, so nothing is
-read from the file, and the workspace reads the episode and the settings
+read from the file, in the task after the frame that shows the workspace
+again, so starting a sound card and a decoder does not hold that frame
+back, and the workspace reads the episode and the settings
 again behind what it already shows. Asleep, it reads nothing by itself. A
-fifth episode opened lets go of the one opened longest ago. Building a
+fifth episode opened lets go of the one opened longest ago. As the app starts, the workspaces of the four episodes opened last,
+`Opened` on the Go side, by when each last chose a clip, are built one at
+a time behind whatever is on screen and put to sleep once each has its
+frame, so the first episode picked is on screen in one frame too. Building a
 workspace from nothing took 70 to 215 ms in the walks' browser for an
 episode of an hour, a chain of calls each waiting on the one before, and
-longer on the Mac: going back to a kept one takes one frame.
+longer on the Mac. Going back to a kept one is the layout of the
+workspace put back and nothing else, 17 to 30 ms in the same browser, and
+it has its picture, its clip timeline and its captions in that frame.
+Only a picture is the video preview being ready: the sound stopping before
+the first frame once counted, and a workspace built as the app started
+went to sleep with nothing on its canvas.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving

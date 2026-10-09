@@ -1029,7 +1029,12 @@
   });
 
   onMount(() => {
-    const observer = new ResizeObserver(() => (width = track.clientWidth));
+    // A workspace put away for later is taken out of the page, see
+    // App.svelte, and its track then measures nothing. It keeps the width
+    // it had, and what it drew, until it is back.
+    const observer = new ResizeObserver(() => {
+      if (track.isConnected && track.clientWidth) width = track.clientWidth;
+    });
     observer.observe(track);
     // Not the listener Svelte would attach: a wheel we act on is ours, and
     // a passive one cannot say so.

@@ -145,19 +145,43 @@
   // everything it holds, its decoders and its sound card among them, and
   // keeps only the file's index, so waking reads nothing from the file and
   // the frame on the canvas stays until the new queue draws the same one.
+  //
+  // Waking, the queue is opened once the workspace is on screen, in the
+  // task after the frame that shows it: what is on the canvas is already
+  // the frame it would draw, and starting a sound card and a decoder in
+  // that frame held it back. Going to sleep, it is closed the same way.
   let known: Movie | null = null;
   $effect(() => {
     const url = mediaURL(path);
     if (sleeping) return;
-    const q = untrack(() => open(url));
+    let q: FrameQueue | null = null;
+    const stop = known ? afterPaint(() => (q = open(url))) : null;
+    if (!stop) q = untrack(() => open(url));
     return () => {
-      known = q.movie ?? known;
-      if (!untrack(() => paused)) paused = true;
+      stop?.();
+      if (!q) return;
+      const going: FrameQueue = q;
+      known = going.movie ?? known;
+      if (!untrack(() => paused)) going.pause();
+      paused = true;
       nailed = false;
-      q.close();
-      if (queue === q) queue = null;
+      if (queue === going) queue = null;
+      setTimeout(() => going.close());
     };
   });
+
+  // Runs fn in the task after the next frame is painted. What it answers
+  // with calls it off, whichever of the two waits is under way.
+  function afterPaint(fn: () => void): () => void {
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      timer = window.setTimeout(() => untrack(fn));
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }
 
   function open(url: string): FrameQueue {
     failed = "";
@@ -199,9 +223,12 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
-    // A picture, or a sentence where it would be: either way the video
-    // preview has what it is going to show.
-    if (s.drew || s.trouble) pictured = true;
+    // A picture: the video preview has what it is going to show. A file
+    // that cannot be opened at all says so where the picture would be, see
+    // open. Trouble on the way is no picture: the sound stopping said the
+    // video preview was ready before its first frame, and a workspace built
+    // as the app starts went to sleep with nothing on its canvas.
+    if (s.drew) pictured = true;
     if (s.ended) {
       paused = true;
       if (playedClip) {
@@ -234,6 +261,8 @@
   function watchSize(node: HTMLCanvasElement) {
     const seen = (entries: ResizeObserverEntry[]) => {
       const e = entries[entries.length - 1];
+      // Nothing measured while the workspace is put away, see App.svelte.
+      if (!node.isConnected || !e.contentRect.width) return;
       const device = e.devicePixelContentBoxSize?.[0];
       const ratio = window.devicePixelRatio || 1;
       pixels = device
