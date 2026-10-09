@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"framefairy/internal/framewire"
 )
 
 // PreviewTimes is where the time of a stream of frames goes, counted from
@@ -132,11 +134,13 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
 	// Colours ready to draw, converted by ffmpeg from the file's own
-	// range and matrix, so the interface decides nothing about colour.
-	scale := fmt.Sprintf("showinfo,scale=%d:%d:flags=bilinear,format=rgb0", width, height)
+	// range and matrix with the look of the video preview, the same chain
+	// as the episode's decoder, so the interface decides nothing about
+	// colour.
+	scale := "showinfo," + framewire.Picture(width, height)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
-		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,format=rgb0", width, height)
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,", width, height) + framewire.Picture(width, height)
 	} else {
 		args = append(args, e.decodeFlags()...)
 	}

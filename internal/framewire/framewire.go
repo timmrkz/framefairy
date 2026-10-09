@@ -76,6 +76,23 @@ func Write(w io.Writer, r Record) error {
 	return err
 }
 
+// Picture is the chain that makes a decoded frame what the video preview
+// draws: scaled to width by height, turned into colours from the file's
+// own range and matrix, RGBX with 8 bits each, and given the look Tim
+// picked in the side-by-side test of step 4, docs/VIDEO-PREVIEW.md. That
+// look is QuickTime's: the shadows and middle tones of standard video
+// lifted the way the Mac shows them, measured on Tim's screen from
+// start.mp4 beside QuickTime. A value v of 0 to 1 is shown as v to the
+// power of 0.98 - 0.31 v, never below 0.891, which is 1.961 over 2.2, the
+// Mac's curve for video over the screen's. So black stays black and white
+// white, a grey of 22 is shown as 25 and one of 81 as 92. The short is
+// never changed by it: its numbers are the file's. The episode's decoder
+// and engine.PreviewFrames build the same chain from here.
+func Picture(width, height int) string {
+	const lift = "clip(round(255*pow(val/255,max(0.891,0.98-0.31*val/255))),0,255)"
+	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb24,lutrgb=r='%s':g='%s':b='%s',format=rgb0", width, height, lift, lift, lift)
+}
+
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
 const MaxBody = 7680 * 4320 * 4
 

@@ -239,6 +239,25 @@ preview, the same on every system. The short itself is never changed by
 this choice: its numbers are the file's, and each phone shows them its
 own way.
 
+**Tim picked QuickTime's look**, on 9 October 2026, from start.mp4 at
+the same frame in the video preview and in QuickTime, side by side: he
+found QuickTime's blacks deeper and the video preview a little pale.
+His screenshot of the two says what the difference is. Black is the
+same in both and so is white, and QuickTime shows the middle tones
+brighter: a grey the video preview showed as 22 QuickTime showed as 25,
+46 as 55 and 81 as 93. The brighter middle against the same black is
+what reads as deeper. The curve fitted to it is a value v of 0 to 1
+shown as v to the power of 0.98 - 0.31 v, never below 0.891, which is
+1.961 over 2.2, the Mac's curve for video over the screen's. It meets
+the measured points within 2, keeps black and white where they are, and
+is the end of `framewire.Picture`, the one chain the episode's decoder
+and `engine.PreviewFrames` build, held by
+`TestThePreviewsLookIsQuickTimes`. It is the same on every system, so
+on Windows and Linux the video preview looks as QuickTime does on a Mac,
+a little brighter in the middle than most players there show the same
+file. Above the brightest grey of start.mp4, 93, the curve is not
+measured, and an HDR file is not yet drawn as HDR.
+
 ## HDR
 
 **What it is.** Standard video, SDR, is made for a screen of about 100
@@ -413,8 +432,8 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
   is code we keep, about 700 lines, and its Go side, `engine.EpisodeFrames`
   and the protocol, about 450 more. It is still ffmpeg's decoding, only
   kept running.
-- **Possibly a little more contrast in the shadows than QuickTime**, if
-  Tim picks the standard look in the colour test.
+- **A video preview a little brighter in the middle tones than most
+  players on Windows and Linux**, because Tim picked QuickTime's look.
 
 ## What established players do
 

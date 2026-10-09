@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/framewire"
 )
 
 // The episode's decoder hands over the frames the ffmpeg program hands
@@ -565,7 +566,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 				args = append(args, "-hwaccel", "videotoolbox")
 			}
 			args = append(args, "-i", path, "-frames:v", "1",
-				"-vf", fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", w, h), "-f", "rawvideo", "-")
+				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-")
 			out, err := exec.Command("ffmpeg", args...).Output()
 			if err != nil {
 				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
@@ -613,4 +614,29 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	differ("BT.601 video range", "BT.709 video range")
 	differ("BT.709 video range", "BT.709 full range")
 	differ("BT.709 video range, 10 bits", "BT.2020 video range, 10 bits")
+}
+
+// The look of the video preview, QuickTime's, which Tim picked in the
+// side-by-side test: black stays black, white stays white, and the
+// shadows and middle tones are lifted as the Mac shows standard video,
+// as measured on Tim's screen beside QuickTime. Plan row 2.156, step 4.
+func TestThePreviewsLookIsQuickTimes(t *testing.T) {
+	ffmpegtest.Need(t)
+	for _, c := range [][2]int{{0, 0}, {3, 3}, {11, 12}, {22, 25}, {46, 52}, {81, 92}, {128, 138}, {255, 255}} {
+		grey := fmt.Sprintf("color=c=0x%02x%02x%02x:s=16x16,format=rgb24", c[0], c[0], c[0])
+		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", grey, "-frames:v", "1",
+			"-vf", framewire.Picture(16, 16), "-f", "rawvideo", "-").Output()
+		if err != nil {
+			t.Fatalf("a grey of %d: %v", c[0], err)
+		}
+		if len(out) != 16*16*4 {
+			t.Fatalf("a grey of %d came out as %d bytes", c[0], len(out))
+		}
+		for i := range 3 {
+			if int(out[i]) != c[1] {
+				t.Errorf("a grey of %d is shown as %v, want %d", c[0], out[:3], c[1])
+				break
+			}
+		}
+	}
 }

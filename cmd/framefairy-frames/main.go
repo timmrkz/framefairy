@@ -628,15 +628,15 @@ func (c *cursor) bringOut() error {
 	return nil
 }
 
-// makeGraph builds the chain for the frames the decoder makes: scaled to
-// the size of the canvas and turned into colours, 8-bit red, green and
-// blue and a byte left over, the same as engine.PreviewFrames asks of the
-// ffmpeg program on the processor. The colours are ffmpeg's, from the
-// file's own range and matrix, with ffmpeg's defaults where the file says
-// nothing, so nothing in the interface decides colour. Plan row 2.156,
-// step 4.
+// makeGraph builds the chain for the frames the decoder makes, the one
+// engine.PreviewFrames asks of the ffmpeg program, framewire.Picture:
+// scaled to the size of the canvas and turned into colours, 8-bit red,
+// green and blue and a byte left over, with the look Tim picked. The
+// colours are ffmpeg's, from the file's own range and matrix, with
+// ffmpeg's defaults where the file says nothing, so nothing in the
+// interface decides colour. Plan row 2.156, step 4.
 func (c *cursor) makeGraph() error {
-	return c.buildGraph(fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb0", c.width, c.height))
+	return c.buildGraph(framewire.Picture(c.width, c.height))
 }
 
 // buildGraph builds a chain from the decoded frame's kind to chain's end,
