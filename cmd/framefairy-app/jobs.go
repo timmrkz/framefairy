@@ -108,8 +108,7 @@ type Job struct {
 
 // JobUpdate is what the interface receives on the "job" event.
 type JobUpdate struct {
-	Job   Job           `json:"job"`
-	Event *engine.Event `json:"event,omitempty"`
+	Job Job `json:"job"`
 }
 
 // Lanes the queue runs side by side, one for each kind of machinery a step
@@ -332,12 +331,12 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 func (q *queue) turn(job *Job) engine.Turn {
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
 		lane, kind := laneOfStep(job.Kind, step)
-		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
+		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {
 			return nil, nil, err
 		}
-		q.update(job, nil, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
+		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = step, lane, nil })
 		return stepCtx, release, nil
 	}
 }
@@ -350,7 +349,7 @@ func makesClips(kind string) bool {
 	return kind == engine.JobSearch || kind == engine.JobClip
 }
 
-// jobLabel is what a job is called in Activity, by what it does.
+// jobLabel is what a job is called, by what it does.
 func jobLabel(kind string, preview bool) string {
 	switch {
 	case kind == engine.JobRender && preview:
@@ -662,22 +661,6 @@ func (q *queue) waitJob(id string) {
 	}
 }
 
-// clear forgets finished jobs.
-func (q *queue) clear() {
-	q.mu.Lock()
-	kept := q.jobs[:0]
-	for _, j := range q.jobs {
-		// A search or a render that stopped and has not been acted on is
-		// not finished: it says so where its work was until it is.
-		if j.State == JobQueued || j.State == JobRunning || j.State == JobInterrupted ||
-			(j.State == JobFailed && j.Record != "") {
-			kept = append(kept, j)
-		}
-	}
-	q.jobs = kept
-	q.mu.Unlock()
-}
-
 // find returns the newest job of a kind for an episode, if any.
 func (q *queue) find(episode, kind string) (Job, bool) {
 	q.mu.Lock()
@@ -698,7 +681,7 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 func (q *queue) runSafely(job *Job) {
 	defer func() {
 		if caught := recover(); caught != nil {
-			q.update(job, nil, func(j *Job) {
+			q.update(job, func(j *Job) {
 				if j.State == JobRunning {
 					j.State = JobFailed
 					j.Error = fmt.Sprintf("%s stopped unexpectedly: %v", j.Label, caught)
@@ -736,7 +719,7 @@ func (q *queue) runJob(job *Job) {
 		// said cancelled already, and nothing waits for a job that says
 		// so, so work it did now would run on behind everyone's back.
 		started := false
-		q.update(job, nil, func(j *Job) {
+		q.update(job, func(j *Job) {
 			if j.State == JobQueued && j.ctx.Err() == nil {
 				j.State = JobRunning
 				started = true
@@ -746,7 +729,7 @@ func (q *queue) runJob(job *Job) {
 			return
 		}
 	} else {
-		q.update(job, nil, func(j *Job) {})
+		q.update(job, func(j *Job) {})
 	}
 
 	log := engine.NewLog(io.Discard, false, false)
@@ -757,12 +740,12 @@ func (q *queue) runJob(job *Job) {
 		}
 		copied := ev
 		if copied.Kind == engine.EventUnderway {
-			q.update(job, nil, func(j *Job) {
+			q.update(job, func(j *Job) {
 				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole
 			})
 			return
 		}
-		q.update(job, &copied, func(j *Job) {
+		q.update(job, func(j *Job) {
 			j.Last = &copied
 			if copied.Kind == engine.EventProgress {
 				j.Progress = &copied
@@ -791,7 +774,7 @@ func (q *queue) runJob(job *Job) {
 		}
 	}
 	log.SetSink(nil)
-	q.update(job, nil, func(j *Job) {
+	q.update(job, func(j *Job) {
 		j.Progress = nil
 		j.Result = result
 		if j.steps != nil && err == nil {
@@ -851,13 +834,13 @@ func run(ctx context.Context, job *Job, project *engine.Project, turn engine.Tur
 	return job.work(ctx, project)
 }
 
-func (q *queue) update(job *Job, ev *engine.Event, change func(*Job)) {
+func (q *queue) update(job *Job, change func(*Job)) {
 	q.mu.Lock()
 	change(job)
 	q.stampLocked(job)
 	snapshot := *job
 	q.mu.Unlock()
-	q.emit(JobUpdate{Job: snapshot, Event: ev})
+	q.emit(JobUpdate{Job: snapshot})
 }
 
 // windowLength is how long the window of a search is, in seconds. A search
@@ -899,6 +882,3 @@ func (s *FrameFairy) StopClipWork(path, click string) {
 	}
 	s.jobs.stopClips(path, click)
 }
-
-// ClearJobs forgets finished jobs.
-func (s *FrameFairy) ClearJobs() { s.jobs.clear() }

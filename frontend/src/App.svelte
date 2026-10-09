@@ -24,7 +24,6 @@
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
-  import Jobs from "./screens/Jobs.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
   import UpdatesScreen from "./screens/Updates.svelte";
@@ -98,7 +97,6 @@
       const path = nav.view.path;
       return episodes.find((ep) => ep.source === path)?.name ?? "";
     }
-    if (nav.view.name === "jobs") return "Activity";
     if (nav.view.name === "settings") return "Settings";
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
@@ -485,23 +483,6 @@
       </button>
       <button
         class="quiet nav"
-        class:current={nav.view.name === "jobs"}
-        onclick={() => nav.go({ name: "jobs" })}
-        title={jobs.busy
-          ? jobs.busy === 1
-            ? "Activity, one job running"
-            : `Activity, ${jobs.busy} jobs running`
-          : "Activity"}
-      >
-        <!-- No dot of its own. Work in hand is the dot beside the episode
-             it is for, and a second one here said the same thing twice. -->
-        <span class="mark">
-          <Icon name="activity" />
-        </span>
-        <span class="label">Activity</span>
-      </button>
-      <button
-        class="quiet nav"
         class:current={nav.view.name === "settings"}
         onclick={() => nav.go({ name: "settings" })}
         title="Settings"
@@ -541,8 +522,6 @@
       {#key nav.view.path}
         <Episode path={nav.view.path} onchange={refresh} />
       {/key}
-    {:else if nav.view.name === "jobs"}
-      <Jobs />
     {:else if nav.view.name === "updates"}
       <UpdatesScreen />
     {:else if nav.view.name === "settings"}

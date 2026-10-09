@@ -64,9 +64,6 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 			for k := 0; k < each*4; k++ {
 				q.list()
 				q.find(filepath.Join(home, "ep.mp4"), "plan")
-				if k%7 == 0 {
-					q.clear()
-				}
 			}
 		}()
 	}

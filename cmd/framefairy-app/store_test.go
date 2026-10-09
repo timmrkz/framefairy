@@ -192,14 +192,9 @@ func TestCancellingAQueuedJobNeverRunsIt(t *testing.T) {
 	if states[first.ID] != JobDone || states[second.ID] != JobCancelled {
 		t.Errorf("states %v", states)
 	}
-	// The newest job of a kind is the one the interface asks about, and
-	// clearing keeps nothing that is finished.
+	// The newest job of a kind is the one the interface asks about.
 	if job, ok := q.find("a.mp4", "render"); !ok || job.ID != second.ID {
 		t.Errorf("find gave %+v", job)
-	}
-	q.clear()
-	if jobs := q.list(); len(jobs) != 0 {
-		t.Errorf("clear left %+v", jobs)
 	}
 }
 

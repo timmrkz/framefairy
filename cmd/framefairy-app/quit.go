@@ -74,7 +74,7 @@ func (l *leaving) shouldQuit() bool {
 
 // stay is the question taken away, with Escape or a click. The next Cmd+Q
 // asks again. It did not: the question went from the screen and the press
-// still counted, so Cmd+Q, Escape, a click on Activity and Cmd+Q there
+// still counted, so Cmd+Q, Escape, a click on Settings and Cmd+Q there
 // quit on what looked like the first press.
 func (l *leaving) stay() {
 	l.mu.Lock()
