@@ -167,13 +167,25 @@ jobs:
         run: make frames
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
+      #
+      # go test stops a package that runs over ten minutes by itself, with
+      # the stack of every goroutine, and the tests take five. The limit is
+      # for when even that does not end it: a job once waited half an hour
+      # on what a failed test had left running, until it was cancelled by
+      # hand.
       - name: Go tests
         if: steps.needs.outputs.run == 'true'
+        timeout-minutes: 15
         run: |
           make unit 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
+      # Whichever way the tests ended, what they left running is named on
+      # the check and stopped, see scripts/leftovers.sh.
+      - name: Nothing left running
+        if: always() && steps.needs.outputs.run == 'true'
+        run: sh scripts/leftovers.sh
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -359,14 +371,19 @@ jobs:
             echo "The build printed warnings, see above."
             exit 1
           fi
+      # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
         if: steps.needsgo.outputs.run == 'true'
+        timeout-minutes: 15
         run: |
           make frames
           make unit 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
+      - name: Nothing left running
+        if: always() && steps.needsgo.outputs.run == 'true'
+        run: sh scripts/leftovers.sh
 
   # The app on a Mac, opened from outside it: a link in the letter a buyer
   # gets, handed to macOS with the app closed and with it open, with the
