@@ -1814,6 +1814,11 @@ export const Events = {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
     }
+    // The colour test in Help, with window.__colourTest().
+    if (name === "colourtest") {
+      (window as any).__colourTest = () => fn({ data: null });
+      return () => delete (window as any).__colourTest;
+    }
     if (name === "updates") {
       updListeners.add(fn);
       return () => updListeners.delete(fn);

@@ -367,6 +367,13 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    picks the look. HDR in both: the test of the extended canvas on Tim's
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
+   The test of the extended canvas is Colour Test in the Help menu, in
+   the pull request of this step only: patches of 1, 2, 4 and 8 times
+   white on a WebGPU canvas in the extended mode, beside the app's own
+   white, with whether the webview has WebGPU, whether it kept the
+   extended mode and whether it says the screen is HDR. In the cloud's
+   Chromium it has WebGPU and keeps the mode. It is removed before the
+   step is merged.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.

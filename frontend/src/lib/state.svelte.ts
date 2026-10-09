@@ -100,6 +100,7 @@ export type View =
   | { name: "settings" }
   | { name: "updates" }
   | { name: "acknowledgements" }
+  | { name: "colourtest" }
   | { name: "empty" };
 
 class Nav {
