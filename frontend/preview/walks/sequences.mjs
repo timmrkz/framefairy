@@ -46,7 +46,7 @@
 //                      than 250 ms behind it
 //   ["speed", label]   picks the speed from the list beside Play, "2×"
 //                      or "Normal"
-//   ["plays at", r]    plays if it does not play, and the playhead moves r
+//   ["plays at", r]    plays from near the clip's start, and the playhead moves r
 //                      seconds of the episode a second, give or take a
 //                      sixth, with new frames on the way, then pauses
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
@@ -1482,9 +1482,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "plays at": {
-        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
-          await page.keyboard.press("Space");
+        // From near the clip's start, wherever the playhead was left, so
+        // there is a clip ahead to play, and with a click on the clip
+        // timeline, so the space bar is the playhead's and not the list's.
+        const first = (await engineState(page, watch.at)).segments[0];
+        if (!(await seekTo(page, first.start + 0.5, await rate(page)))) {
+          wrong = "the video preview never showed the frame near the clip's start";
+          break;
         }
+        await page.keyboard.press("Space");
         await page.waitForTimeout(600);
         await preview(page, 0.2);
         const read = () =>
@@ -1494,9 +1500,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const b = await read();
         await page.keyboard.press("Space");
         await page.waitForTimeout(300);
-        const rate = (b[1] - a[1]) / ((b[0] - a[0]) / 1000);
-        console.log(`      at ${arg}: the playhead moved ${rate.toFixed(2)} s a second, frames ${a[2]} to ${b[2]}`);
-        if (Math.abs(rate - arg) > arg / 6) wrong = `at ${arg} the playhead moved ${rate.toFixed(2)} s a second`;
+        const moved = (b[1] - a[1]) / ((b[0] - a[0]) / 1000);
+        console.log(`      at ${arg}: the playhead moved ${moved.toFixed(2)} s a second, frames ${a[2]} to ${b[2]}`);
+        if (Math.abs(moved - arg) > arg / 6) wrong = `at ${arg} the playhead moved ${moved.toFixed(2)} s a second`;
         else if (!(b[2] > a[2])) wrong = `at ${arg} the picture stood on frame ${a[2]}`;
         break;
       }
