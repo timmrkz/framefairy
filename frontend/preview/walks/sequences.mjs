@@ -73,10 +73,9 @@
 //                      presses the bin of the "language" model on this
 //                      machine, under Downloaded models, or of the
 //                      "speech" model
-//   ["decoder fails"]  makes the browser's picture decoder fail on its first
-//                      frame, after saying it takes the file, the way
-//                      WebKit's does with HEVC in 10-bit colour, and opens
-//                      the episode again
+//   ["no browser decoder"]
+//                      takes the browser's picture and sound decoders away,
+//                      every one, and opens the episode again
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -662,10 +661,12 @@ export const sequences = [
     ],
   },
   {
-    // Tim's start.mp4, HEVC in 10-bit colour: WebKit said it would decode
-    // it and then failed on the first frame, "Decoder failure".
-    name: "a picture the browser's decoder fails on comes from the Go side",
-    steps: [["decoder fails"], ["from the app", 4]],
+    // One engine: every frame comes from ffmpeg on the Go side, so a
+    // webview with no decoder of its own plays the episode the same. Tim's
+    // start.mp4, HEVC in 10-bit colour, was where it began: WebKit said it
+    // would decode it and then failed on the first frame.
+    name: "the picture comes from the Go side with no decoder in the browser",
+    steps: [["no browser decoder"], ["from the app", 4]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -1553,19 +1554,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
         break;
       }
-      case "decoder fails": {
+      case "no browser decoder": {
         await page.addInitScript(() => {
-          const Real = window.VideoDecoder;
-          window.VideoDecoder = class extends Real {
-            constructor(init) {
-              super(init);
-              this.failWith = init.error;
-            }
-            decode() {
-              setTimeout(() => this.failWith(new DOMException("Decoder failure", "EncodingError")), 0);
-            }
-          };
-          window.VideoDecoder.isConfigSupported = async (config) => ({ supported: true, config });
+          for (const name of ["VideoDecoder", "AudioDecoder", "EncodedVideoChunk", "EncodedAudioChunk"]) {
+            Object.defineProperty(window, name, {
+              get() {
+                throw new Error(`${name} is not to be used: the Go side decodes`);
+              },
+            });
+          }
         });
         const name = (await episodeOn(page)).split("/").pop();
         await page.reload();

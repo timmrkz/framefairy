@@ -587,30 +587,6 @@ export function fade(m: number, pieceOut: number, pieceEnd: number, rate: number
   return inside >= f ? 1 : Math.max(0, inside / f);
 }
 
-// Byte ranges to read so the samples wanted are in hand: what is not read
-// already, put together where they lie close, so one request brings what
-// the picture and the sound both need from the same part of the file.
-export function spans(
-  wants: { from: number; to: number }[],
-  have: { from: number; to: number }[],
-  gap = 1 << 18,
-  most = 1 << 23,
-): { from: number; to: number }[] {
-  const missing = wants
-    .filter((w) => !have.some((h) => h.from <= w.from && w.to <= h.to))
-    .sort((a, b) => a.from - b.from);
-  const out: { from: number; to: number }[] = [];
-  for (const w of missing) {
-    const last = out[out.length - 1];
-    if (last && w.from - last.to <= gap && Math.max(last.to, w.to) - last.from <= most) {
-      last.to = Math.max(last.to, w.to);
-    } else {
-      out.push({ from: w.from, to: w.to });
-    }
-  }
-  return out;
-}
-
 // Where the sound being heard is now, on the sound card's clock. The
 // output timestamp says which moment of the clock the speaker plays at
 // which moment of the page's clock, so the latency of the output is in it.

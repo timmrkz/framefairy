@@ -173,26 +173,18 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	}
 }
 
-// Where the system has no decoder of its own, opening one says so and the
-// page takes ffmpeg's streams. A batch for a decoder nobody opened is
-// refused.
-func TestTheFramesRouteSaysWhenThereIsNoSystemDecoder(t *testing.T) {
+// There is one way to the frames, the episode's decoder: the routes of
+// the Mac's own decoder, which the page fed with the file's samples, are
+// gone with it. Plan row 2.156, step 3 of docs/VIDEO-PREVIEW.md.
+func TestTheFramesRouteHasNoSecondDecoder(t *testing.T) {
 	svc, _, _ := library(t)
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/frames/native?codec=vp09&cw=320&ch=180&w=160&h=90", strings.NewReader("config")))
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("a decoder for VP9 was answered with %d: %q", rec.Code, rec.Body.String())
-	}
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("POST", "/frames/decode?id=nobody", strings.NewReader("")))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("samples for no decoder were answered with %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("a decoder opened with GET was answered with %d", rec.Code)
+	for _, route := range []string{"/frames/native?codec=hvc1&cw=320&ch=180&w=160&h=90", "/frames/decode?id=nobody"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("POST", route, strings.NewReader("config")))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d, want 404", route, rec.Code)
+		}
 	}
 }
 

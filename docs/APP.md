@@ -326,8 +326,8 @@ measure what it does with those 44 ms, the queue no longer uses it.
 where its first packet lies, and each packet after it is the next of its
 samples, the way ffmpeg reads a piece of a render, so a flush ends a run
 and the packets after it start a stream of their own. The page does not
-read the sound in the file at all. Plain sound needs no decoder and is
-still turned into the sound card's numbers on the page, `PlainSound`.
+read the sound in the file at all, plain sound in a MOV included, which
+the page once turned into samples itself.
 The Go side closes a stream nobody has read from for 20 seconds, and a
 pause holds the play with its stream, so a stream that answers 404 is
 opened again from the moment after the last that came: a play paused
@@ -399,7 +399,7 @@ on the first frame, "Decoder failure". For such a file, and for one the
 system said no to, the Go side decoded the picture, plan row 2.141. The queue
 asks its picture decoder the same things either way: `AppPictures` in
 `lib/frames/app.ts` answers the calls of a `VideoDecoder`, like
-`GoSound` and `PlainSound` stand in for the sound decoder, so drawing, the clock, cuts
+`GoSound` stands in for the sound decoder, so drawing, the clock, cuts
 and the walks are the same. Only the frames the queue will draw are asked
 for, the file's picture is not read by the page at all, and like a
 decoder it puts them out in the order they are shown, not the order they
@@ -407,31 +407,21 @@ were fed: fed in the order they decode, a run's B-frames came too early
 and its first frames too late, and 72 frames of a play of three seconds
 were dropped as late until it did.
 
-Where the system has a decoder of its own for the picture, VideoToolbox on
-the Mac for H.264 and HEVC, the queue used it until 2.156, `NativePictures` in
-`lib/frames/native.ts` and `engine.Pictures`: the page reads the file as
-it does for its own decoder and sends the samples, a batch for whatever it
-fed in a moment, to `POST /frames/decode`, and the decoder, one for each
-of the queue's two, stays open in the app's own process for as long as
-the episode does. So a jump starts no program, reads no index again and
-makes no session again: it costs only decoding from the key frame before.
-VideoToolbox makes the frame the size of the canvas and 8-bit itself, on
-the graphics chip, and the page gets it in NV12 as it comes out. A
-decoder that will not open, or fails on a frame, or puts out a frame at
-another size than asked for, hands over to ffmpeg's streams below.
-
-    POST /frames/native?codec=&cw=&ch=&w=&h=   the avcC or hvcC box   {"id": ...}
-    POST /frames/decode?id=                    samples, the frames kept come back
-
-Elsewhere, or where it will not take the file, the frames come from
-ffmpeg in streams the page opens and pulls from:
+There is one way to the frames, step 3 of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). Until then the webview's own
+decoders, the Mac's VideoToolbox through cgo, `NativePictures` and
+`engine.Pictures` with `/frames/native` and `/frames/decode`, plain sound
+read and turned into samples by the page, and the choice between them
+were in the code as well, each with its own way of failing. They are
+removed, and the page reads nothing of the file but its index. The frames
+come in streams the page opens and pulls from:
 
     /frames/open?path=&from=&w=&h=   {"id": ...}
     /frames/read?id=&n=&skip=        up to n frames
     /frames/close?id=
 
-A stream runs the ffmpeg the app ships, on the system's own decoder where
-there is one, from the key frame before `from`, and hands over every
+A stream is a cursor of the episode's decoder, on the graphics chip where
+it decodes the file, from the key frame before `from`, and hands over every
 frame from `from` on, scaled to `w` by `h` in 8-bit I420, each after the
 moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
 of what was pulled and waits: WebKit takes whatever a response writes
@@ -453,10 +443,9 @@ file's index and decoding from the key frame before:
   file's own.
 - The queue's second decoder asks for the piece after a cut while the
   first plays, so its stream is open before it is needed.
-- On the Mac, ffmpeg makes the frame smaller and 8-bit on the graphics
-  chip, `scale_vt`, before it is copied out of VideoToolbox, a fraction of
-  the 6 MB a 1080p frame of 10-bit colour is. A chain that fails before
-  its first frame is made again on the processor, and every one after it.
+- On the Mac the graphics chip decodes, and the frame is made smaller
+  and 8-bit on the processor by the one chain every system uses, see
+  [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md).
 - A pull is read in a Worker, `lib/frames/pull.worker.ts`, each frame
   straight into a buffer of its own as it arrives and handed to its
   `VideoFrame` without another copy, so nothing on the page waits for it.

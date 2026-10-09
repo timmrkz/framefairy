@@ -316,9 +316,9 @@ the Mac alone, against rule 2. It is not planned.
 | What | Where | Lines today |
 | --- | --- | ---: |
 | Our reader of MP4 and MOV | `frontend/src/lib/frames/mp4.ts` and its tests | 851 and 457 |
-| The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests |
-| WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200 |
-| The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100 |
+| The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests, removed in step 3 |
+| WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200, removed in step 3 |
+| The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100, removed in step 3 |
 | Colour in the interface and the full range forced for WebKit | `queue.ts`, `app.ts`, `engine/preview.go` | a few dozen |
 
 About 1,800 lines of code and 600 of tests, of about 6,400 in all, and
