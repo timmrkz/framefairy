@@ -320,6 +320,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			q.Get("namesake") == "1")
 		answer(w, path, err)
 	})
+	// A file of sound alone, named like a video, which Add has to leave
+	// out: the episode's decoder finds no picture in it.
+	mux.HandleFunc("/pick-sound", func(w http.ResponseWriter, r *http.Request) {
+		path, err := b.pickSound()
+		answer(w, path, err)
+	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		b.d.model.hangs(q.Get("hang") == "1")
@@ -773,6 +779,23 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake boo
 	}
 	if err != nil {
 		return "", err
+	}
+	b.mu.Lock()
+	b.picks = append(b.picks, path)
+	b.mu.Unlock()
+	return path, nil
+}
+
+// pickSound makes a file of sound with no picture, named like a video,
+// and has the Add button's box hand it over next.
+func (b *bridge) pickSound() (string, error) {
+	b.mu.Lock()
+	b.made++
+	path := filepath.Join(b.d.home, fmt.Sprintf("nur-ton-%d.mp4", b.made))
+	b.mu.Unlock()
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=12",
+		"-c:a", "aac", path).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
 	}
 	b.mu.Lock()
 	b.picks = append(b.picks, path)

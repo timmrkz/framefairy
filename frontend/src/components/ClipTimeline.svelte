@@ -256,6 +256,14 @@
 
   // One seek a frame while an edge is dragged, for the playhead that goes
   // with it, the same pace the playhead itself is dragged at.
+  //
+  // edgesWhilePlaying: an edge of the clip or of a cut, dragged or
+  // clicked while the episode plays, moves no playhead,
+  // and the play goes on with the pieces it started with, see setProgram
+  // in lib/frames/queue.ts. The edit is saved and drawn at once, and the
+  // next play plays it. Only the space bar and a click on the clip
+  // timeline change a play, rule 6 of docs/VIDEO-PREVIEW.md. Tim saw the
+  // play stutter with the hand on a cut's edge.
   let wanted = 0;
   let queued = 0;
 
@@ -371,10 +379,12 @@
       const answer = await api.shape(path, asked.plan, asked.id, g);
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
-        if (answer.playhead >= 0) {
+        // The playhead goes with the edge being dragged, so it is on the
+        // clip, even a hair outside the pieces drawn so far. Not while the
+        // episode plays: only the space bar and a click on the clip
+        // timeline change a play, and an edge is neither, see edgesWhilePlaying.
+        if (answer.playhead >= 0 && !playing) {
           leftAt = answer.playhead;
-          // The playhead goes with the edge being dragged, so it is on
-          // the clip, even a hair outside the pieces drawn so far.
           seekSoon(answer.playhead, "clip");
         }
       }
@@ -493,7 +503,7 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       if (!moved) {
-        onseek(edge === "start" ? first : last, "clip");
+        if (!playing) onseek(edge === "start" ? first : last, "clip");
         return;
       }
       await letGo(true);
@@ -538,8 +548,8 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       // A click without a drag puts the playhead on the edge, the way a
-      // click on an edge of the clip does.
-      if (!moved) onseek(side === "from" ? was.from : was.to);
+      // click on an edge of the clip does, while paused.
+      if (!moved && !playing) onseek(side === "from" ? was.from : was.to);
       await letGo(moved);
     };
     target.addEventListener("pointermove", move);

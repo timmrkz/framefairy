@@ -90,12 +90,44 @@ describe("the loop switched while playing", () => {
     expect(said).toEqual([]);
   });
 
-  test("with other pieces still starts the play again", () => {
+});
+
+// A clip edge or a cut dragged while the clip plays. A running play is
+// never changed in place, rule 6 of docs/VIDEO-PREVIEW.md: it goes on with
+// the program it started with, and the next play plays the new one. It was
+// started again at every step of the hand, and Tim saw the picture, the
+// sound and the playhead stutter.
+describe("the pieces changed while playing", () => {
+  const wanted = (q: FrameQueue) => (q as unknown as { wantedKey: string }).wantedKey;
+
+  test("change nothing that plays", () => {
     const { q, said } = playing(58.2);
     q.seek(58.2, [clip, false]);
     said.length = 0;
-    q.setProgram([clip[0]], true);
-    expect(said.map((s) => s.at)).toEqual([58.2]);
+    q.setProgram([clip[0]], false);
+    q.setProgram([{ start: clip[0].start, end: clip[0].end - 0.5 }], true);
+    expect(said).toEqual([]);
+    expect(wanted(q)).toBe(JSON.stringify([clip, false]));
+  });
+
+  test("are what the next play plays", () => {
+    const { q, said } = playing(58.2);
+    q.seek(58.2, [clip, false]);
+    q.setProgram([clip[0]], false);
+    said.length = 0;
+    q.seek(58.5);
+    expect(said.map((s) => s.at)).toEqual([58.5]);
+    expect(wanted(q)).toBe(JSON.stringify([[clip[0]], false]));
+  });
+
+  test("and put back as they were, change nothing either", () => {
+    const { q, said } = playing(58.2);
+    q.seek(58.2, [clip, false]);
+    q.setProgram([clip[0]], false);
+    q.setProgram(clip, false);
+    said.length = 0;
+    q.seek(58.5);
+    expect(wanted(q)).toBe(JSON.stringify([clip, false]));
   });
 });
 

@@ -7,8 +7,15 @@
 // open with a decoder of its own, by a number the Go side chooses:
 //
 //	open <cursor> <from> <width> <height>   the cursor goes to from, in seconds
-//	next <cursor> <n> <skip>                up to n frames, none before skip
+//	sound <cursor> <seek> <from> <rate> <channels>
+//	                                        a cursor of sound seeks to seek, or
+//	                                        reads from the start where it is 0,
+//	                                        and starts at from
+//	next <cursor> <n> <skip>                up to n frames, none before skip,
+//	                                        or n chunks of sound
 //	close <cursor>
+//
+// A cursor is of picture or of sound for as long as it is open.
 //
 // Every answer is a record of a header and a body. A next is answered by
 // up to n frame records and then one record that ends the batch, or one
@@ -28,7 +35,8 @@ import (
 // What a record holds.
 const (
 	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in 8-bit I420 at the cursor's size.
+	// body is the picture in 8-bit I420 at the cursor's size, or a chunk
+	// of sound, 32-bit floats with the channels of a moment side by side.
 	Frame byte = iota
 	// The batch a next asked for is done.
 	Done

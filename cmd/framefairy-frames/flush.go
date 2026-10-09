@@ -2,8 +2,9 @@
 
 package main
 
-// #cgo pkg-config: libavcodec
+// #cgo pkg-config: libavcodec libavutil
 // #include <libavcodec/avcodec.h>
+// #include <libavutil/channel_layout.h>
 import "C"
 
 import (
@@ -34,4 +35,17 @@ func copyFrameProps(dst, src *astiav.Frame) error {
 // carries one of its own.
 func bestEffort(f *astiav.Frame) int64 {
 	return int64((*C.AVFrame)(f.UnsafePointer()).best_effort_timestamp)
+}
+
+// defaultLayout is the name of the layout the ffmpeg program's -ac gives so
+// many channels, the first ffmpeg knows of that many.
+func defaultLayout(channels int) string {
+	var l C.AVChannelLayout
+	C.av_channel_layout_default(&l, C.int(channels))
+	defer C.av_channel_layout_uninit(&l)
+	var buf [64]C.char
+	if C.av_channel_layout_describe(&l, &buf[0], C.size_t(len(buf))) < 0 {
+		return fmt.Sprintf("%dc", channels)
+	}
+	return C.GoString(&buf[0])
 }

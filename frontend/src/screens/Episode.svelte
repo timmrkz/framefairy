@@ -1954,8 +1954,10 @@
       if (clip && clip.key !== selected) await select(clip.key);
       // A dragged edge took the playhead along, so taking it back takes
       // the playhead back too. After the clip is chosen, because choosing
-      // one puts the playhead on it.
-      if (done.playhead !== undefined) player?.seek(done.playhead);
+      // one puts the playhead on it. Not while the episode plays: only the
+      // space bar and a click on the clip timeline change a play, see
+      // edgesWhilePlaying in ClipTimeline.svelte.
+      if (done.playhead !== undefined && paused) player?.seek(done.playhead);
     } catch (err) {
       problem = errorText(err);
     } finally {
