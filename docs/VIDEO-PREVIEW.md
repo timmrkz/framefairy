@@ -1,8 +1,11 @@
 # The video preview on one engine
 
-A spec, not yet built. It decides how the video preview gets its picture
+A spec, being built. It decides how the video preview gets its picture
 and its sound from here on, and what is removed on the way. Decided with
-Tim on 8 October 2026, after the history below. Plan row 2.156.
+Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
+and 2 are built, every file's picture through ffmpeg and the episode's
+decoder for it, in one pull request, #157, as Tim asked. What is not
+built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
 TypeScript and Svelte in `frontend/`, which runs in the webview and draws
@@ -103,7 +106,9 @@ removed. Nothing is prepared before the first play.
 ### The episode's decoder
 
 One program per open episode, started by the Go side when the episode
-opens and stopped when it closes.
+opens in the video preview and stopped when it closes. The frame queue
+holds it for as long as it has the episode, and a held decoder is never
+closed for standing unused.
 
 - It is built on ffmpeg's own libraries, the code the ffmpeg program
   runs, so it decodes exactly as the render does. It is a program of its
@@ -121,18 +126,25 @@ opens and stopped when it closes.
   processor scales it to the size of the canvas, the same chain on every
   system and for every file. Scaling on the chip as well was a second
   chain with a fallback, and the chip on Tim's Mac refused it for an HEVC
-  file with 10-bit colour. A stream the
+  file with 10-bit colour. Why the chip refused it is still to be found
+  out. A file the chip does not decode at all, AV1 on an M2 or MPEG-4, is
+  decoded by ffmpeg on the processor, with as many threads as it takes:
+  that is the file's codec, not a second path of ours. A stream the
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
-  to three are kept. Sound still comes from the ffmpeg program and moves
-  in later.
+  to three are kept, and they are opened on the file as the decoder
+  starts, before any frame is asked for. Sound still comes from the
+  ffmpeg program and moves in with step 3.
 - It takes requests from the Go side: frames from a moment on at a size,
-  sound from a moment on, stop. A request for a new moment drops what the
-  last one was doing.
-- It keeps the frames around the playhead it has already decoded, so a
-  step back, a step on and a drag over them cost nothing, and while
-  paused it decodes the frames on either side of the playhead before they
-  are asked for.
+  and stop, see `internal/framewire`. Sound from a moment on is not built
+  yet, step 3. A request for a new moment drops what the last one was
+  doing.
+- Not built yet: keeping the frames around the playhead it has already
+  decoded, so a step back, a step on and a drag over them cost nothing,
+  and while paused decoding the frames on either side of the playhead
+  before they are asked for. The interface keeps the frames it was given,
+  which covers a step back, so this waits until the marks say it is
+  needed, with plan row 2.157.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.
@@ -317,7 +329,7 @@ thing.
 ## The steps
 
 Each step is its own pull request, tested by Tim on his Mac before the
-next one starts.
+next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
 
 1. **Measure first, remove nothing.** Every file plays through the ffmpeg
    program's streams that already exist, on every system. A change of a
@@ -327,7 +339,8 @@ next one starts.
    The walks measure where a jump's time goes: starting the program,
    opening the file, decoding from the key frame.
 2. **The episode's decoder.** The waiting program of rule 3, for picture
-   and sound, behind the same routes. Measured against step 1 and the
+   and sound, behind the same routes. The picture is built, the sound
+   moves in with step 3. Measured against step 1 and the
    marks. The picture first: 20 paused clicks on the clip timeline of the
    bridge's episode came to their frame in 29 ms at the median, H.264 and
    HEVC with 10-bit colour alike, where the ffmpeg program took 78 and 94
@@ -361,7 +374,8 @@ next one starts.
   made at the size of the video preview. Activity Monitor and the marks
   say whether it matters on smaller machines.
 - **A program of our own on ffmpeg's libraries.** The episode's decoder
-  is code we keep, about 450 lines. It is still ffmpeg's decoding, only
+  is code we keep, about 700 lines, and its Go side, `engine.EpisodeFrames`
+  and the protocol, about 450 more. It is still ffmpeg's decoding, only
   kept running.
 - **Possibly a little more contrast in the shadows than QuickTime**, if
   Tim picks the standard look in the colour test.

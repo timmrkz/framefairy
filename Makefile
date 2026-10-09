@@ -22,6 +22,8 @@
 #   make icon       the .icns, from build/icon.png. make app does it for you
 #   make ffmpeg     build the ffmpeg we ship again, from scratch
 #   make llama      build the llama-server we ship again, from scratch
+#   make frames     build the episode's decoder, on the ffmpeg make ffmpeg
+#                   builds, where it or its code changed
 #   make tools-archive
 #                   pack both of them, with a manifest, for a release
 #   make notices    write the licence notices again, from what the programs
@@ -161,7 +163,12 @@ tools-beside:
 ifneq ($(NOTOOLS),1)
 	@for tool in $(STAMPS)/ffmpeg/bin/ffmpeg $(STAMPS)/ffmpeg/bin/ffprobe $(STAMPS)/llama/bin/llama-server $(FRAMES); do \
 		if [ ! -x $$tool ]; then \
-			echo "$$tool is missing, and the programs run no other. Build it with make ffmpeg or make llama."; \
+			case $$tool in \
+			*llama-server) how="make llama" ;; \
+			*framefairy-frames*) how="make frames, on the ffmpeg make ffmpeg builds" ;; \
+			*) how="make ffmpeg" ;; \
+			esac; \
+			echo "$$tool is missing, and the programs run no other. Build it with $$how."; \
 			exit 1; \
 		fi; \
 	done
@@ -298,14 +305,25 @@ endif
 # a program of its own on the libraries of the ffmpeg below, built static
 # against them like ffmpeg itself, with the tag that builds it for real.
 # It is a tool beside the app like ffmpeg, summed and checked the same way.
-# Built again whenever make runs, which takes a moment when nothing changed.
+# Built when it is not there, or its code, the modules or the ffmpeg under
+# it changed since, which make decides by file times alone. Without the
+# ffmpeg make builds it cannot be built, and says so.
 FRAMES := $(STAMPS)/frames/framefairy-frames$(EXE)
-frames: modules
+FRAMES_SRC := $(wildcard cmd/framefairy-frames/*.go internal/framewire/*.go) go.mod go.sum
+frames:
 ifneq ($(NOTOOLS),1)
+frames: $(FRAMES)
+endif
+$(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
+	@if [ ! -f $(STAMPS)/ffmpeg/lib/pkgconfig/libavcodec.pc ]; then \
+		echo "framefairy-frames is built on the libraries of the ffmpeg make builds, and it is not there. Build it with make ffmpeg."; \
+		exit 1; \
+	fi
+	@echo "Building the episode's decoder, framefairy-frames"
+	@mkdir -p $(dir $(FRAMES))
 	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
-endif
 
 # The ffmpeg we ship, built from source without libx264 so the build is
 # LGPL. make builds it when it is not there or scripts/build-ffmpeg.sh has

@@ -218,12 +218,12 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 // The files people bring, H.264 and HEVC with 10-bit colour, come through
 // the episode's decoder from wherever they are opened, with the frames the
 // ffmpeg program hands over. On a Mac they are decoded on the graphics
-// chip and scaled there, or on the processor where the chip's scaler will
-// not, which a virtual Mac in CI is. The first build of the decoder failed
-// on every such file on Tim's Mac the moment an episode opened, "the
-// picture could not be scaled, its chain: Invalid argument", and the
-// tests had only an MPEG-4 file, which no Mac decodes on its chip. Plan
-// row 2.156.
+// chip, brought out as they are and scaled on the processor by the same
+// chain as everywhere else. The first build of the decoder, which scaled
+// on the chip as well, failed on every such file on Tim's Mac the moment
+// an episode opened, "the picture could not be scaled, its chain: Invalid
+// argument", and the tests had only an MPEG-4 file, which no Mac decodes
+// on its chip. Plan row 2.156.
 func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -295,6 +295,89 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 				if d := meanDiff(gotData[i], wantData[i]); d > 6 {
 					t.Fatalf("%s from %.2f: frame %d differs from the ffmpeg program's by %.2f on average", k.name, from, i, d)
 				}
+			}
+		}
+		dec.Close()
+	}
+}
+
+// A file whose picture starts after its sound, the way an export from
+// DaVinci Resolve starts 44 ms in, and one that starts late as a whole,
+// come through the episode's decoder with the file's own frames at the
+// file's own moments, from before the picture starts, from inside its
+// first frame and from further on: from any moment, the first frame that
+// starts there or after, and the ones after it. What a seek of the
+// ffmpeg program gives is not the measure here: its -ss counts from the
+// file's start, so on the second file it starts 0.276 s late.
+func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	// The picture and the sound made apart and put together late, the way
+	// only a copy of them keeps it.
+	dir := t.TempDir()
+	mux := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("ffmpeg", append([]string{"-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
+			ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+		}
+	}
+	picture, sound := filepath.Join(dir, "picture.mp4"), filepath.Join(dir, "sound.m4a")
+	mux("-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=6", "-c:v", "mpeg4", "-q:v", "3", "-g", "25", picture)
+	mux("-f", "lavfi", "-i", "sine=f=440:sample_rate=48000:d=6", "-c:a", "aac", sound)
+	pictureLate, allLate := filepath.Join(dir, "picture-late.mp4"), filepath.Join(dir, "all-late.mp4")
+	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", pictureLate)
+	mux("-itsoffset", "0.3", "-i", picture, "-itsoffset", "0.3", "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", allLate)
+	e := NewEngine(NewLog(nil, false, false))
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	type frame struct {
+		at   float64
+		data []byte
+	}
+	for _, path := range []string{pictureLate, allLate} {
+		name := filepath.Base(path)
+		// Every frame of the file, decoded from its start by the ffmpeg
+		// program, which keeps each at the moment the file gives it.
+		var all []frame
+		if err := e.PreviewFrames(context.Background(), path, 0, 160, 90, func(at float64, data []byte) error {
+			all = append(all, frame{at, data})
+			return nil
+		}); err != nil {
+			t.Fatalf("%s, the ffmpeg program: %v", name, err)
+		}
+		if len(all) != 150 || math.Abs(all[0].at-0.3) > 1e-6 {
+			t.Fatalf("%s has %d frames from %.3f, want 150 from 0.3", name, len(all), all[0].at)
+		}
+		dec := NewEpisodeFrames(program, path)
+		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
+			k := 0
+			for k < len(all) && all[k].at < from-1e-6 {
+				k++
+			}
+			var got []frame
+			err := dec.Stream(context.Background(), from, 160, 90, func(at float64, data []byte) error {
+				got = append(got, frame{at, data})
+				if len(got) == 6 {
+					return errStop
+				}
+				return nil
+			})
+			if err != nil && !errors.Is(err, errStop) {
+				t.Fatalf("%s from %.2f: %v", name, from, err)
+			}
+			for i, g := range got {
+				want := all[k+i]
+				if math.Abs(g.at-want.at) > 1e-6 {
+					t.Fatalf("%s from %.2f: frame %d at %.4f, want %.4f", name, from, i, g.at, want.at)
+				}
+				if d := meanDiff(g.data, want.data); d > 2 {
+					t.Fatalf("%s from %.2f: frame %d differs from the file's by %.2f on average", name, from, i, d)
+				}
+			}
+			if len(got) != 6 {
+				t.Fatalf("%s from %.2f: %d frames, want 6", name, from, len(got))
 			}
 		}
 		dec.Close()

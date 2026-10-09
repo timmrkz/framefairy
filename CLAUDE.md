@@ -503,7 +503,8 @@ Full specification in [docs/TRAINING.md](docs/TRAINING.md). The essentials:
 Sessions at claude.ai/code run on Ubuntu 24.04 on x86_64, with the setup
 script from `scripts/cloud-setup.sh` pasted into the environment. It
 provides Go 1.27, ffmpeg, and the GTK and WebKit packages the app needs to
-compile. There are no models in the cloud, which the tests do not need.
+compile, and builds the ffmpeg we ship and the episode's decoder on it,
+which every frame of the video preview comes from. There are no models in the cloud, which the tests do not need.
 It also installs the engineering skills from `samber/cc-skills-golang` and
 `addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
 because plugins added on claude.ai do not reach cloud sessions. They are
@@ -516,6 +517,9 @@ the skills listed last show their name without what they are for.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
+  Without `.build/frames/framefairy-frames` the decoder's tests and the
+  walks cannot run: `make ffmpeg frames` builds it, ffmpeg once in several
+  minutes.
 - Push a change once its own tests pass, then run `make changed`, and it
   must pass, see the tests rule above. A merge of main without conflicts
   is pushed as it is. Waiting minutes on tests before a push is Tim

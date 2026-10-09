@@ -28,7 +28,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/asticode/go-astiav"
 
@@ -41,18 +40,7 @@ func main() {
 		os.Exit(2)
 	}
 	astiav.SetLogLevel(astiav.LogLevelError)
-	// What ffmpeg says when something fails is kept, so a failure says why
-	// in ffmpeg's own words and not only in an error number.
-	astiav.SetLogCallback(func(c astiav.Classer, l astiav.LogLevel, format, msg string) {
-		said := strings.TrimSpace(msg)
-		if c != nil {
-			if cl := c.Class(); cl != nil {
-				said = cl.Name() + ": " + said
-			}
-		}
-		lastSaid.Store(said)
-		fmt.Fprintln(os.Stderr, said)
-	})
+	astiav.SetLogCallback(logged)
 	d := &decoder{path: os.Args[1], out: bufio.NewWriterSize(os.Stdout, 1<<20), cursors: map[uint32]*cursor{}}
 	// The episode is opened once here, so a file that cannot be read says so
 	// before anything is asked of it.
@@ -74,13 +62,83 @@ func main() {
 	d.closeAll()
 }
 
-// lastSaid is the last thing ffmpeg said at the level of an error.
-var lastSaid atomic.Value
+// What ffmpeg says when something fails is kept with the cursor it is
+// about, so a failure says why in ffmpeg's own words and not only in an
+// error number, and never in the words of another cursor's failure.
+// ffmpeg names the object it speaks of, a decoder, a file, a chain or a
+// filter in one, and owners finds the cursor that object belongs to.
+var (
+	saidMu sync.Mutex
+	owners = map[string]*cursor{}
+)
 
-// withSaid is err with what ffmpeg last said, where it said anything.
-func withSaid(err error) error {
-	if s, _ := lastSaid.Load().(string); s != "" {
-		return fmt.Errorf("%w (ffmpeg: %s)", err, s)
+// logged is what ffmpeg says, at the level of an error.
+func logged(c astiav.Classer, _ astiav.LogLevel, _, msg string) {
+	said := strings.TrimSpace(msg)
+	var cl *astiav.Class
+	if c != nil {
+		cl = c.Class()
+	}
+	if cl != nil {
+		said = cl.Name() + ": " + said
+	}
+	fmt.Fprintln(os.Stderr, said)
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	// The object itself, or what it is part of.
+	for i := 0; cl != nil && i < 4; i, cl = i+1, cl.Parent() {
+		if owner := owners[classKey(cl)]; owner != nil {
+			owner.said = said
+			return
+		}
+	}
+}
+
+// classKey is the address ffmpeg's log names an object by.
+func classKey(cl *astiav.Class) string {
+	if cl == nil {
+		return ""
+	}
+	s := cl.String()
+	if i := strings.LastIndex(s, " @ "); i >= 0 {
+		return s[i+3:]
+	}
+	return ""
+}
+
+// own has what ffmpeg says about these objects kept with the cursor, under
+// keys that disown lets go of.
+func (c *cursor) own(keys *[]string, objects ...astiav.Classer) {
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	for _, o := range objects {
+		if k := classKey(o.Class()); k != "" {
+			owners[k] = c
+			*keys = append(*keys, k)
+		}
+	}
+}
+
+func (c *cursor) disown(keys *[]string) {
+	saidMu.Lock()
+	defer saidMu.Unlock()
+	for _, k := range *keys {
+		if owners[k] == c {
+			delete(owners, k)
+		}
+	}
+	*keys = nil
+}
+
+// withSaid is err with what ffmpeg said about this cursor's objects since
+// it was last asked, where it said anything.
+func (c *cursor) withSaid(err error) error {
+	saidMu.Lock()
+	said := c.said
+	c.said = ""
+	saidMu.Unlock()
+	if said != "" {
+		return fmt.Errorf("%w (ffmpeg: %s)", err, said)
 	}
 	return err
 }
@@ -213,6 +271,9 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 		dec.Free()
 		return fmt.Errorf("the decoder cannot take this picture: %w", err)
 	}
+	// Threads for decoding on the processor, which is also where a file
+	// the graphics chip does not take is decoded.
+	dec.SetThreadCount(0)
 	if hardware != nil {
 		dec.SetHardwareDeviceContext(hardware)
 		dec.SetPixelFormatCallback(func(pfs []astiav.PixelFormat) astiav.PixelFormat {
@@ -224,8 +285,6 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 			// The chip does not take it: the first the processor can.
 			return pfs[0]
 		})
-	} else {
-		dec.SetThreadCount(0)
 	}
 	if err := dec.Open(codec, nil); err != nil {
 		dec.Free()
@@ -259,6 +318,11 @@ type cursor struct {
 	sentEOF   bool
 	graphEOF  bool
 	failedWhy string
+	// What ffmpeg said about this cursor's objects, under saidMu, and the
+	// keys they are known by: the file and its decoder, and the chain.
+	said      string
+	keys      []string
+	graphKeys []string
 }
 
 func (c *cursor) run() {
@@ -270,6 +334,7 @@ func (c *cursor) run() {
 
 func (c *cursor) free() {
 	c.freeGraph()
+	c.disown(&c.keys)
 	for _, f := range []*astiav.Frame{c.decoded, c.brought, c.filtered} {
 		if f != nil {
 			f.Free()
@@ -285,6 +350,7 @@ func (c *cursor) free() {
 
 func (c *cursor) freeGraph() {
 	if c.graph != nil {
+		c.disown(&c.graphKeys)
 		c.graph.Free()
 		c.graph, c.src, c.sink = nil, nil, nil
 	}
@@ -316,6 +382,7 @@ func (c *cursor) open(from float64, w, h int) {
 			return
 		}
 		c.v = v
+		c.own(&c.keys, v.fc, v.dec)
 		c.pkt = astiav.AllocPacket()
 		c.decoded = astiav.AllocFrame()
 		c.brought = astiav.AllocFrame()
@@ -401,17 +468,22 @@ func (c *cursor) frame(drop float64) (float64, []byte, error) {
 				return 0, nil, astiav.ErrEof
 			}
 			if !errors.Is(err, astiav.ErrEagain) {
-				return 0, nil, withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
+				return 0, nil, c.withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
 			}
 		}
 		// The chain wants a decoded frame.
 		err := c.v.dec.ReceiveFrame(c.decoded)
 		switch {
 		case err == nil:
-			if pts := c.decoded.Pts(); pts == astiav.NoPtsValue || float64(pts)*c.v.stream.TimeBase().Float64() < drop {
+			// Its moment is ffmpeg's best guess, as the ffmpeg program
+			// takes it, so a frame that carries none of its own still has
+			// one.
+			pts := bestEffort(c.decoded)
+			if pts == astiav.NoPtsValue || float64(pts)*c.v.stream.TimeBase().Float64() < drop {
 				c.decoded.Unref()
 				continue
 			}
+			c.decoded.SetPts(pts)
 			if err := c.bringOut(); err != nil {
 				return 0, nil, err
 			}
@@ -423,7 +495,7 @@ func (c *cursor) frame(drop float64) (float64, []byte, error) {
 			}
 			if err := c.src.AddFrame(c.decoded, astiav.NewBuffersrcFlags()); err != nil {
 				c.decoded.Unref()
-				return 0, nil, withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
+				return 0, nil, c.withSaid(fmt.Errorf("the picture could not be scaled: %w", err))
 			}
 			c.decoded.Unref()
 		case errors.Is(err, astiav.ErrEof):
@@ -441,7 +513,7 @@ func (c *cursor) frame(drop float64) (float64, []byte, error) {
 				return 0, nil, err
 			}
 		default:
-			return 0, nil, fmt.Errorf("the picture could not be decoded: %w", err)
+			return 0, nil, c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 	}
 }
@@ -459,7 +531,7 @@ func (c *cursor) feed() error {
 			return c.v.dec.SendPacket(nil)
 		}
 		if err != nil {
-			return fmt.Errorf("the episode could not be read: %w", err)
+			return c.withSaid(fmt.Errorf("the episode could not be read: %w", err))
 		}
 		if c.pkt.StreamIndex() != c.v.stream.Index() {
 			c.pkt.Unref()
@@ -468,7 +540,7 @@ func (c *cursor) feed() error {
 		err = c.v.dec.SendPacket(c.pkt)
 		c.pkt.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
-			return fmt.Errorf("the picture could not be decoded: %w", err)
+			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 		return nil
 	}
@@ -492,7 +564,7 @@ func (c *cursor) bringOut() error {
 	c.decoded.Unref()
 	if err != nil {
 		c.brought.Unref()
-		return withSaid(fmt.Errorf("the picture could not be brought off the graphics chip: %w", err))
+		return c.withSaid(fmt.Errorf("the picture could not be brought off the graphics chip: %w", err))
 	}
 	c.decoded, c.brought = c.brought, c.decoded
 	return nil
@@ -503,14 +575,16 @@ func (c *cursor) bringOut() error {
 // engine.PreviewFrames asks of the ffmpeg program on the processor.
 func (c *cursor) makeGraph() error {
 	chain := fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height)
-	lastSaid.Store("")
 	g := astiav.AllocFilterGraph()
 	if g == nil {
 		return errors.New("no memory to scale the picture")
 	}
+	c.own(&c.graphKeys, g)
 	fail := func(what string, err error) error {
+		err = c.withSaid(fmt.Errorf("the picture could not be scaled, %s: %w", what, err))
+		c.disown(&c.graphKeys)
 		g.Free()
-		return withSaid(fmt.Errorf("the picture could not be scaled, %s: %w", what, err))
+		return err
 	}
 	src, err := g.NewBuffersrcFilterContext(astiav.FindFilterByName("buffer"), "in")
 	if err != nil {
@@ -549,6 +623,10 @@ func (c *cursor) makeGraph() error {
 	inputs.SetNext(nil)
 	if err := g.Parse(chain, inputs, outputs); err != nil {
 		return fail("its chain", err)
+	}
+	// Each filter speaks for itself when the chain is set up.
+	for _, f := range g.Filters() {
+		c.own(&c.graphKeys, f)
 	}
 	if err := g.Configure(); err != nil {
 		return fail("its chain", err)

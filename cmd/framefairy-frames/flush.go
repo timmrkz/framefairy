@@ -28,3 +28,10 @@ func copyFrameProps(dst, src *astiav.Frame) error {
 	}
 	return nil
 }
+
+// bestEffort is ffmpeg's best guess at when a frame starts, which the
+// ffmpeg program takes as every frame's moment, whether or not the frame
+// carries one of its own.
+func bestEffort(f *astiav.Frame) int64 {
+	return int64((*C.AVFrame)(f.UnsafePointer()).best_effort_timestamp)
+}

@@ -7,6 +7,11 @@
 # - Go 1.27, downloaded from the Go module proxy, so no Go needs to be there
 # - ffmpeg with libass and libx264, for the tests that render
 # - GTK 4 and WebKitGTK 6, for compiling the app
+# - the ffmpeg we ship, built from source, and the episode's decoder on its
+#   libraries, framefairy-frames, which every frame of the video preview
+#   comes from, so the decoder's tests and the walks run here as in CI.
+#   Built in the checkout, when the checkout is there, and otherwise left to
+#   make ffmpeg frames inside the session
 # - the engineering skills from the two plugins Tim added on claude.ai, which
 #   do not reach cloud sessions by themselves, as skills Claude loads
 #
@@ -69,8 +74,34 @@ install_packages() {
 	# allowed network. apt then reports an error, while Ubuntu's own lists
 	# still update, so only the install decides.
 	"${apt[@]}" update || echo "Some package sources could not be reached, continuing"
+	# meson, ninja and nasm build the ffmpeg we ship, see build-ffmpeg.sh.
 	"${apt[@]}" install -y --no-install-recommends \
-		ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev || return 1
+		ffmpeg patchelf pkg-config libgtk-4-dev libwebkitgtk-6.0-dev \
+		meson ninja-build nasm || return 1
+}
+
+# The ffmpeg we ship and the episode's decoder, in the checkout. Building
+# ffmpeg takes several minutes, once: make ffmpeg frames does nothing more
+# while they are there and up to date.
+build_decoder() {
+	local repo
+	repo=$(git rev-parse --show-toplevel 2>/dev/null) || repo=""
+	if [ -z "$repo" ] || [ ! -f "$repo/scripts/build-ffmpeg.sh" ]; then
+		for dir in /home/user/framefairy "${HOME:-/root}/framefairy"; do
+			[ -f "$dir/scripts/build-ffmpeg.sh" ] && repo=$dir && break
+		done
+	fi
+	if [ -z "$repo" ] || [ ! -f "$repo/scripts/build-ffmpeg.sh" ]; then
+		echo "No checkout of framefairy here: run make ffmpeg frames in the session"
+		return 0
+	fi
+	cd "$repo" || return 1
+	export PATH="/usr/local/go/bin:$PATH"
+	if [ ! -f .build/ffmpeg/lib/pkgconfig/libavcodec.pc ]; then
+		make ffmpeg || return 1
+	fi
+	make frames || return 1
+	echo "in $repo/.build/frames"
 }
 
 # Every skill goes straight into ~/.claude/skills, the one level Claude Code
@@ -135,6 +166,13 @@ else
 fi
 if wait "$packages_job"; then
 	log "system packages ready"
+	# After Go and the packages, which it builds with.
+	if build_decoder >/tmp/framefairy-setup-decoder.log 2>&1; then
+		log "the episode's decoder ready: $(tail -n 1 /tmp/framefairy-setup-decoder.log)"
+	else
+		log "the episode's decoder failed, see /tmp/framefairy-setup-decoder.log:"
+		tail -n 20 /tmp/framefairy-setup-decoder.log
+	fi
 else
 	log "system packages failed, see /tmp/framefairy-setup-packages.log:"
 	tail -n 20 /tmp/framefairy-setup-packages.log

@@ -67,7 +67,9 @@ message box, and choose **Add cloud environment**:
 | Setup script | the full content of [`scripts/cloud-setup.sh`](../scripts/cloud-setup.sh) |
 
 The setup script installs Go 1.27, ffmpeg and the libraries the app needs to
-compile. It also installs the engineering skills from two plugins, Go skills
+compile, and builds the ffmpeg we ship and the episode's decoder in the
+checkout, the way CI does, so the decoder's tests and the walks run in a
+session too. It also installs the engineering skills from two plugins, Go skills
 from `samber/cc-skills-golang` and general ones from `addyosmani/agent-skills`,
 because plugins added on claude.ai do not reach cloud sessions. Each is pinned
 to a commit in `SKILL_SOURCES` at the top of the script, so a new version is
