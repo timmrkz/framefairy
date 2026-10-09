@@ -271,10 +271,12 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 		dec.Free()
 		return fmt.Errorf("the decoder cannot take this picture: %w", err)
 	}
-	// Threads for decoding on the processor, which is also where a file
-	// the graphics chip does not take is decoded.
-	dec.SetThreadCount(0)
-	if hardware != nil {
+	// On the graphics chip where it decodes this codec, and otherwise on
+	// the processor with as many threads as it has. Never both: a decoder
+	// offered the chip with threads of its own failed on every frame on a
+	// Mac, "Invalid argument", since the chip is chosen for each frame from
+	// ffmpeg's threads.
+	if hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID()) {
 		dec.SetHardwareDeviceContext(hardware)
 		dec.SetPixelFormatCallback(func(pfs []astiav.PixelFormat) astiav.PixelFormat {
 			for _, pf := range pfs {
@@ -285,6 +287,8 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 			// The chip does not take it: the first the processor can.
 			return pfs[0]
 		})
+	} else {
+		dec.SetThreadCount(0)
 	}
 	if err := dec.Open(codec, nil); err != nil {
 		dec.Free()
