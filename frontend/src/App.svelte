@@ -106,7 +106,11 @@
   // episode picked, and the one coming is not seen yet.
   const asked = $derived(nav.view.name === "episode" ? nav.view.path : "");
   let onScreen = $state("");
-  const workspaces = $derived(!asked ? [] : onScreen && onScreen !== asked ? [onScreen, asked] : [asked]);
+  //
+  // The one asked for comes first in the document, so whatever looks the
+  // workspace up finds the episode that was picked, and the one going is
+  // drawn over it until they change places.
+  const workspaces = $derived(!asked ? [] : onScreen && onScreen !== asked ? [asked, onScreen] : [asked]);
   $effect(() => {
     if (!asked) onScreen = "";
   });

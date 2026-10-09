@@ -1552,7 +1552,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             const real = window.fetch;
             window.fetch = (input, init) => {
               if (window.__watching && String(input).endsWith("/call") && init?.body) {
-                const playhead = Number([...document.querySelectorAll(".screen")].at(-1)?.dataset.playhead);
+                const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
                 window.__asked.push([String(JSON.parse(init.body).name).split(".").pop(), playhead]);
               }
               return real(input, init);

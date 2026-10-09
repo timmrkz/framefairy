@@ -267,10 +267,7 @@ async function reader(page) {
   await page.evaluate(([bits, strip]) => {
     if (window.__pictured) return;
     window.__pictured = () => {
-      // The newest workspace's: an episode just picked is built behind the
-      // one on screen, and its canvas is drawn on before it is shown, see
-      // App.svelte.
-      const c = [...document.querySelectorAll(".screen canvas")].at(-1);
+      const c = document.querySelector(".screen canvas");
       if (!c || !c.width || !c.height) return -1;
       const g = c.getContext("2d");
       const row = g.getImageData(0, Math.floor((c.height * strip) / 2), c.width, 1).data;
