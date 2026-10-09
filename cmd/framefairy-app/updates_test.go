@@ -173,6 +173,8 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 	if c.state.Off != "" {
 		t.Fatalf("off: %s", c.state.Off)
 	}
+	// Nothing it started goes on into the next test.
+	t.Cleanup(c.shutDown)
 	return c, func() []UpdateState {
 		mu.Lock()
 		defer mu.Unlock()
@@ -193,8 +195,24 @@ func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) 
 	return UpdateState{}
 }
 
+// waitDone is waitFor that also waits for the check that got there to
+// end. A check says what it found before it has finished: the build a
+// newer one replaced is removed after the state says the newer one is
+// ready, and a check asked for until then only leaves word for the one
+// running and returns at once.
+func waitDone(t *testing.T, c *updating, what string, ok func(UpdateState) bool) UpdateState {
+	t.Helper()
+	return waitFor(t, c, what, func(s UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.checking && ok(s)
+	})
+}
+
+// cleanStaged removes what was unpacked once nothing can unpack more.
 func cleanStaged(t *testing.T, c *updating) {
 	t.Cleanup(func() {
+		c.shutDown()
 		if p := c.staged(); p != "" {
 			_ = os.RemoveAll(filepath.Dir(p))
 		}
@@ -284,8 +302,11 @@ func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
 	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
+	// Nothing looks again by itself while the test runs.
+	c.next = func(UpdateState) time.Duration { return time.Hour }
 	_ = c.Follow("pr-20")
-	s := waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	// The check below is the test's own only once the pick's has ended.
+	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
 	if s.Building != "def5678abcde" || s.Next != "0.3.0-pr20.9" {
 		t.Errorf("%+v", s)
 	}
@@ -605,10 +626,12 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 	cs.mu.Lock()
 	cs.slow, cs.slowOnly = release, "/main-"
 	cs.mu.Unlock()
-	t.Cleanup(func() { close(release) })
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
 	c, _ := newTestUpdating(t, cs, false)
 	c.src.Cache = t.TempDir()
 	cleanStaged(t, c)
+	c.next = func(UpdateState) time.Duration { return time.Hour }
 	_ = c.Follow("main")
 	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-21", "0.3.0-pr21.1", "twenty-one"})
@@ -620,6 +643,10 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 	if strings.Join(ids, " ") != "main pr-21" {
 		t.Errorf("the list after Check: %v", ids)
 	}
+	// The download arrives, and the check ends with it, so nothing goes on
+	// into the next test.
+	let()
+	waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 }
 
 // The app holds the newest build of the channel it follows. A build that
@@ -665,8 +692,11 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 		got, _ := os.ReadFile(filepath.Join(from, "Contents/MacOS/framefairy-app"))
 		return from, string(got)
 	}
+	// Nothing looks again by itself while the test runs, and every check
+	// below is the test's own: each waits for the one before to end.
+	c.next = func(UpdateState) time.Duration { return time.Hour }
 	_ = c.Follow("main")
-	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
 	first, says := quit()
 	if says != "five" {
 		t.Fatalf("ready with main.5, quitting installs %q saying %q", first, says)
@@ -712,9 +742,11 @@ func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 		t.Errorf("while main.7 downloads, quitting installs %q saying %q", at, says)
 	}
 
-	// Once it is here, it is the one, and the one before is gone.
+	// Once it is here, it is the one, and the one before is gone. It is
+	// removed after the state says main.7 is ready, so the check is waited
+	// for to the end.
 	let()
-	waitFor(t, c, "ready with main.7", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.7" })
+	waitDone(t, c, "ready with main.7", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.7" })
 	if at, says := quit(); at == "" || says != "seven" {
 		t.Errorf("with main.7 ready, quitting installs %q saying %q", at, says)
 	}
@@ -832,7 +864,12 @@ func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
 	c.next = func(UpdateState) time.Duration { return 20 * time.Millisecond }
 	c.start()
 	c.check()
-	time.Sleep(200 * time.Millisecond)
+	c.mu.Lock()
+	looking := c.looking
+	c.mu.Unlock()
+	if looking {
+		t.Error("it started looking now and then")
+	}
 	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Phase != "" || cs.hits.Load() != 0 {
 		t.Errorf("started as %+v, the list read %d times", s, cs.hits.Load())
 	}
@@ -873,5 +910,52 @@ func TestABuildFromAChannelFollowsWhatWasPicked(t *testing.T) {
 	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" })
 	if s.Next != "0.3.0-pr20.9" || s.Follows != "pr-20" {
 		t.Errorf("%+v", s)
+	}
+}
+
+// Shutting down ends the looks: the check in hand lets go of a download
+// that never comes, the loop stops, and nothing looks after. A loop left
+// looking every twenty milliseconds after its test read whichever later
+// test's server was given the same port, and the later test counted reads
+// it never made.
+func TestShuttingDownEndsTheLooks(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-"
+	cs.mu.Unlock()
+	t.Cleanup(func() { close(release) })
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	c.next = func(UpdateState) time.Duration { return 0 }
+	var ends atomic.Int32
+	c.ended = func() { ends.Add(1) }
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
+	done := make(chan struct{})
+	go func() {
+		c.shutDown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("shutting down waited for the download")
+	}
+	c.mu.Lock()
+	checking := c.checking
+	c.mu.Unlock()
+	n := ends.Load()
+	if checking || n != 1 {
+		t.Errorf("after shutting down a check runs: %v, %d ended", checking, n)
+	}
+	// Nothing starts a check after it.
+	c.check()
+	_ = c.Follow("main")
+	c.checkNow()
+	if got := ends.Load(); got != n {
+		t.Errorf("%d checks ran after shutting down", got-n)
 	}
 }
