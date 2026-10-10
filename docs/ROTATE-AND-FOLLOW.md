@@ -79,90 +79,72 @@ viewer, with black where it is narrower. The viewer keeps the shape of the
 video, so nothing moves or jumps as the playhead crosses a cut into a
 rotated part.
 
-### 3. A crop that follows: places on the clip, the glide worked out
+### 3. A crop that follows: crop marks, made like thumbnails
 
-Today a drag of the crop frame moves the crop for the whole camera angle.
-That stays exactly as it is. What is new:
+Tim decided this on #188: a crop mark is made the way a thumbnail is,
+with a button and a key, and dragging the crop frame only places the
+crop.
 
-- **Every placement is kept at the moment it was made.** A crop placed
-  once stands still for the whole angle, which is today's behaviour.
-- **A second place makes it move.** With the playhead on another frame,
-  the crop is placed again (see the question below for how), and the crop
-  now glides from the first place to the second. Before the first place
-  it stands where the first one is, after the last it stands where the
-  last one is.
+- **C, and a crop mark button** in the row under the clip timeline beside
+  the thumbnail button, puts a crop mark on the frame under the playhead,
+  with the crop where it stands there now. With the playhead on a crop
+  mark, the button or C removes it, the way the thumbnail button does.
+  Its icon is the crop frame with a plus, and with a minus while the
+  playhead stands on a mark.
+- **Dragging the crop frame places the crop, and nothing else.** With the
+  playhead on a crop mark, it moves that mark's crop. Anywhere else it
+  moves the crop of the whole camera angle, every mark of it by the same
+  distance, which is today's drag for a clip with no marks.
+- **No mark, or one, is a crop that stands still**, today's behaviour.
+  **Two or more make it move**: it glides from each mark to the next.
+  Before the first mark it stands where the first one is, after the last
+  it stands where the last one is.
 - **What is happening is shown while it happens.** While a clip plays,
   the crop frame in the video preview follows the glide frame by frame,
   so what plays is what renders.
 
-### 4. The tempo is where the places are
+### 4. The tempo is where the marks are
 
-There is no speed to set. The places say where the crop is and when, and
+There is no speed to set. The marks say where the crop is and when, and
 three rules work out the rest:
 
-- **A glide takes the whole time between two places.** It starts gently,
+- **A glide takes the whole time between two marks.** It starts gently,
   moves steadily and settles gently, the way a camera operator pans. A
-  person who shifts in the seat over ten seconds gets two places ten
+  person who shifts in the seat over ten seconds gets two marks ten
   seconds apart and a slow drift. That is the common case, and it needs
   nothing more.
-- **Two places close together are a quick move.** Placed a frame apart,
-  the move is instant. A move at one moment after a long hold is a place
+- **Two marks close together are a quick move.** Placed a frame apart,
+  the move is instant. A move at one moment after a long hold is a mark
   just before the move, where the crop already stands, and one just after
-  it. Dragging a place along the clip timeline changes when it applies,
+  it. Dragging a mark along the clip timeline changes when it applies,
   so the tempo is changed by moving a dot and never by typing a number.
 - **A cut is always instant, and no glide crosses one.** Each part between
-  cuts has its own places. So the rotate case needs nothing at all: the
+  cuts has its own marks. So the rotate case needs nothing at all: the
   rotated part begins at the cut over the spin, and its crop is there
   from its first frame.
 
 Later, with 3.28, the engine times a glide by the picture: between two
-places the crop moves when the face it follows moves, and the even glide
+marks the crop moves when the face it follows moves, and the even glide
 is what it does where it finds no face.
 
 ### 5. Where the marks are on the clip timeline
 
 The clip timeline already has the waveform, the caption blocks across its
-middle and the thumbnail marks along its foot. Crop places add no row of
+middle and the thumbnail marks along its foot. Crop marks add no row of
 their own:
 
-- **A crop place is the same mark as a thumbnail**, with another icon,
-  the crop frame instead of the picture, in the same row along the foot.
-  Both are a frame of the clip with something attached to it, so both are
-  one component and behave alike: a click puts the playhead on it, a
-  drag moves it to another frame, a double-click removes it, and it lights
-  under the hand and while the playhead is on its frame.
-- **A single place shows no mark.** A crop placed once is today's moved
-  crop, which has never needed one, and **Automatic crop** takes it back
-  as today. The marks appear only once a crop moves, so a podcast's clip
-  timeline looks exactly as it does now.
-- **A thumbnail and a crop place on the same frame** stand as a pair,
-  touching, the thumbnail on the left of the frame and the crop place on
-  its right, always in that order so the hand learns where each one is.
-  Neither hides the other, and each still takes its own click, drag and
-  double-click. Dragged apart, each goes back to standing centred on its
-  own frame. The same holds wherever two marks would overlap, on nearby
-  frames or with the clip timeline zoomed out: they are moved apart only
-  as far as it takes for them to touch, each as near its frame as it can
-  stand, and the playhead on a frame lights the mark that belongs to it.
-  The order on screen is never anything but the order in time, except
-  for the pair on one frame.
-- **Automatic crop** removes every place of the angle and brings back the
+- **A crop mark is the same mark as a thumbnail**, one component with
+  another icon. A click puts the playhead on it, a drag moves it to
+  another frame, a double-click removes it, and it lights under the hand
+  and while the playhead is on its frame.
+- **They are stacked, not set side by side.** The thumbnail stands inside
+  the track, a few pixels above its foot, as it does today. The crop mark
+  is a small dot centred on the foot line itself, half in the track and
+  half below it. So on the same frame the dot sits just under the
+  thumbnail, both on the frame's line, and each takes its own click,
+  drag and double-click.
+- **Automatic crop** removes every crop mark of the angle and brings back the
   placement the engine found.
-
-### The one question
-
-How a second place is made, so a podcast that is only nudged twice does
-not start to pan:
-
-- **A: Option-drag makes another place (recommended).** A plain drag
-  moves the crop of the whole angle, today's behaviour, untouched. Holding
-  Option while dragging adds a place at the playhead, the way Option-drag
-  in Finder makes another copy instead of moving. Every existing clip and
-  every habit stays as it is.
-- **B: Every drag at a new moment is a new place.** One rule, nothing to
-  hold, but re-placing the crop of a podcast at a later moment makes it
-  glide from the old place to the new one, and the old dot has to be
-  removed to stop it.
 
 ### 6. What the engine can do by itself, later
 
@@ -175,37 +157,38 @@ two above:
   detector fires many times in a second. The engine then proposes the cut
   over the spin and the rotation, and R or Undo takes them back.
 - **It follows a subject that moves.** Where the faces in a shot do not
-  settle on one place, the engine places the crop at a few moments
-  itself instead of one, and the glide does the rest. Places made by
-  hand override its places.
+  settle on one place, the engine puts crop marks at a few moments
+  itself instead of one, and the glide does the rest. Marks made by
+  hand override its marks.
 
 ## How it is built
 
 - **The plan.** A rotation is kept for a part of the clip as its start and end
   in seconds of the video and a quarter count, the way caption times are
   kept against the video, so trimming a clip or moving a cut's edge does
-  not lose it. The places are kept with the camera angle as pairs of a
+  not lose it. The crop marks are kept with the camera angle as pairs of a
   moment in the video and a left edge. `editPlan` writes both, `LoadClips`
   checks both, and an old plan without them reads as no rotation and one
   still crop. The fuzz targets that read a plan read the new fields.
 - **The engine.** `CropWindow` takes the rotated shape of a part.
   `BuildFilterGraph` puts `transpose` before the crop of a rotated piece
   and gives the crop a left edge that changes with the frame, an ffmpeg
-  expression in `t` built from the places, worked out on whole frames and
+  expression in `t` built from the marks, worked out on whole frames and
   even pixels, so the render and the video preview agree to the pixel.
   The face finder samples rotated frames for a rotated part, so its
   automatic crop is found on the upright picture.
 - **The app.** The video preview rotates the frame it draws, with a
   transform on the canvas, and the crop frame reads its left edge from
   the same glide the engine uses, in `lib/`, with a test that compares
-  both on the same places. The clip timeline draws a crop place with the thumbnail's mark, one
-  component with an icon of its own, and the rotate mark. `Rotate`, `SetCrop` with a place, and removing a place go through
+  both on the same marks. The clip timeline draws a crop mark with the thumbnail's mark, one
+  component with an icon of its own, and the rotate mark. `Rotate`,
+  `SetCrop`, adding and removing a crop mark go through
   `Shape` and the undo history like every other edit of a clip.
 - **Nothing for training.** Framing and rotating are not a judgement of a
   clip, so like the crop today nothing is recorded.
 - **Proof.** A test video in `engine/testdata` with a part rotated a
   quarter: a render test that reads the short back and finds the part
-  upright, a test that the crop of a render with two places is where the
-  glide says on chosen frames, and walks that press R and drag the crop
-  with Option, checking the canvas and the plan, so Tim does not have to
+  upright, a test that the crop of a render with two marks is where the
+  glide says on chosen frames, and walks that press R and C and drag the
+  crop, checking the canvas and the plan, so Tim does not have to
   try it by hand to know it holds.
