@@ -421,10 +421,13 @@ with its newest build, so one fetch is the whole check:
 ```
 
 - **The workflow keeps it true.** A push to a pull request builds it and
-  refreshes its entry. `newest` is there while a pull request has a
-  commit whose build has not come yet: the list is written again the
-  moment a push starts, beside its build, and once more when the build is
-  published, which takes it away. The page then says **A newer commit is
+  refreshes its entry. `newest` is there while a pull request, or main,
+  has a commit whose build has not come yet: the list is written again
+  the moment a push starts, beside its build, and once more when the
+  build is published, which takes it away. A publish that waits half an
+  hour to enter the `updates` environment is cancelled, because it would
+  hold its channel's queue for good, which kept main on one build for
+  three days in October. The page then says **A newer commit is
   being built** and names it, rather than offering the build before as
   the newest. That build can still be installed. A commit that only
   changes the docs has no build coming and is never named. A pull request that is merged or closed has its
