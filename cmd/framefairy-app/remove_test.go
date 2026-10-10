@@ -307,4 +307,8 @@ func TestAnEpisodeAddedAgainTakesWork(t *testing.T) {
 	if j.State == JobFailed {
 		t.Errorf("an episode added again was refused: %s", j.Error)
 	}
+	// The job opens its log in the work folder as it starts. Left running,
+	// it did so on a Mac in CI while the test's folder was being removed,
+	// and the removal failed on a folder that was no longer empty.
+	waitForSettled(t, s, source)
 }
