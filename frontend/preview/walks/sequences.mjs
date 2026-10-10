@@ -197,6 +197,8 @@
 //   ["cards", n]       the clip list holds n clips
 //   ["whole clip", s]  the episode on screen, s seconds long, has one clip,
 //                      and it runs from its first second to its last
+//   ["waveform"]       the clip timeline draws the waveform across the whole
+//                      of its view within ten seconds, read from its canvas
 //   ["rulers fit", s]  the range picker has lines and times on it, every
 //                      one inside the episode of s seconds, and the clip
 //                      timeline shows that episode and nothing past it
@@ -442,6 +444,22 @@ export const sequences = [
     name: "a new video gets its first clips with no click",
     steps: [
       ["add", 60],
+      ["wait for", "New"],
+      ["cards", 1],
+    ],
+  },
+  {
+    // Plan row 2.181. Tim added a video and its clip timeline stayed bare
+    // until its first clip came, where the waveform used to come within
+    // seconds, measured on its own. The episode is heard slowly, so the
+    // search is still hearing it when the waveform has to be there.
+    name: "a video just added shows its waveform before its first clip",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["waveform"],
+      ["cards", 0],
+      ["speech", 0],
       ["wait for", "New"],
       ["cards", 1],
     ],
@@ -2144,6 +2162,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (clips?.length !== 1) wrong = `the episode has ${clips?.length} clips, not its one`;
         else if (clips[0].start > 1 || clips[0].end < arg - 1.5) {
           wrong = `the clip runs ${clips[0].start} to ${clips[0].end}, not the episode of ${arg} s`;
+        }
+        break;
+      }
+      case "waveform": {
+        // The canvas itself, not what the interface was told: a column of
+        // it with more than a few pixels painted is the waveform there.
+        // The bridge's episode has sound from its first second to its last.
+        let read = null;
+        for (let tries = 0; tries < 40; tries++) {
+          read = await page.evaluate(() => {
+            const c = document.querySelector(".clip-timeline .track canvas");
+            if (!c?.width || !c.height) return null;
+            const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+            let drawn = 0;
+            for (let x = 0; x < c.width; x++) {
+              let painted = 0;
+              for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) painted++;
+              if (painted > 6) drawn++;
+            }
+            return { drawn, width: c.width };
+          });
+          if (read && read.drawn >= read.width * 0.9) break;
+          await page.waitForTimeout(250);
+        }
+        if (!read) wrong = "the clip timeline has no canvas";
+        else if (read.drawn < read.width * 0.9) {
+          wrong = `the clip timeline draws the waveform in ${read.drawn} of its ${read.width} columns after ten seconds`;
         }
         break;
       }
