@@ -301,8 +301,10 @@ cut made, moved or put back, an edge trimmed or a step undone, moves no
 playhead and changes nothing that plays: the play goes on with the pieces
 it started with, and the next play, or a click, plays the clip as it is
 now. A drag on a cut's edge used to start the play again on every step,
-which stuttered. Loop switched on or off changes only what follows the
-clip's end.
+which stuttered. Loop switched on or off changes only where the play
+ends, never what plays: the picture stops at that end and the sound
+stops there too, in the silence the clip fades out to, however often L
+is pressed on the way.
 
 The sound goes on while the app is behind another window. macOS stops the
 page's animation frames there, and the frames are what fed the sound, a
@@ -1320,10 +1322,16 @@ bubble scrolled by those eight pixels.
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
   thumbnail's, as the three marks anyone knows. Loop switched on or off
-  while the clip plays changes nothing that plays until the clip's end:
-  the play goes on as it was. It was started again from the playhead,
-  and the picture and the sound stopped for a tenth of a second at every
-  press. Then the
+  while the clip plays changes nothing that plays: the loop only says
+  where the play ends. The play works out the next time through before
+  the clip's end, and when the loop goes off it keeps it but stops at
+  the end, the picture there and every stretch of sound on the sound
+  card there, in the silence the clip fades out to. When the loop comes
+  back on, the same stretches play on. Started again from the playhead
+  for each press, the picture and the sound stopped for a moment and the
+  sound clicked, and kept going without a new end, the play stood at the
+  clip's end while the sound of its start played on for seconds. Tim
+  heard both. Then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
