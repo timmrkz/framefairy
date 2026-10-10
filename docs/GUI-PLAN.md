@@ -284,6 +284,10 @@ Status marks: `[x]` done, `[~]` done in a first version, `[ ]` open, `[-]` won't
 | 3.22 | A caption is drawn only where the clip is, never over a cut, and the last caption is held past the end only when it is on screen there, so trimming the end no longer stretches the caption before. Asked for by Tim | `[x]` |
 | 3.23 | Moving one edge of a cut never moves the other, a click on a cut's edge puts the playhead there, and a caption whose first word a cut takes appears where the cut ends. Asked for by Tim | `[x]` |
 | 3.24 | An edge dragged with shift stops where a caption goes off the screen, the end of its block on the clip timeline, before it goes on to the word. Asked for by Tim | `[x]` |
+| 3.25 | Turn a part of a clip: **R** and a **Turn** button under the clip timeline turn the part between two cuts that the playhead stands in a quarter to the left, the video preview draws it turned at once, and the render turns it before the crop. For a phone video turned while recording, with the spin cut out by the cuts there are. See [TURN-AND-FOLLOW.md](TURN-AND-FOLLOW.md). Asked for by Tim | `[ ]` |
+| 3.26 | A crop that follows: a crop placed at a second moment of the same camera angle glides there from the first, easing out and in, with the places as dots on the clip timeline that a double-click removes. One place is today's still crop. See [TURN-AND-FOLLOW.md](TURN-AND-FOLLOW.md). Asked for by Tim | `[ ]` |
+| 3.27 | The engine finds a turned part by itself, from faces that are upright only when the picture is turned, and proposes the turn and the cut over the spin before it. Asked for by Tim | `[ ]` |
+| 3.28 | The automatic crop follows a subject that moves, with places of its own where the faces in a shot do not settle, which places made by hand override. Asked for by Tim | `[ ]` |
 
 ## Phase 4: caption editor
 
