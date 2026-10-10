@@ -1,20 +1,24 @@
 <!--
 How a pull request is described, see CLAUDE.md. Plain words, short
 sentences, no semicolons. Leave out a section that has nothing to say,
-except To test, which is always there. A pull request that adds
+except How to test, which is always there. A pull request that adds
 something rather than fixing it says what was asked for under What was
-wrong, and what it builds on under Why.
+wrong, and what it builds on under Root cause.
 -->
 
-<!-- One line: the plan row, and who found it or asked for it, like "Plan row 2.186, found by Tim while testing." -->
+<!--
+One or two sentences of context: who saw the problem, where, and who
+tested what. The plan row, like "Plan row 2.186. Tim saw it on his Mac
+while testing #184."
+-->
 
 ## What was wrong
 
-<!-- What a person saw, where, and how often. Numbers where there are any. -->
+<!-- A short summary of what a person saw, where, and how often. Numbers where there are any. -->
 
-## Why
+## Root cause
 
-<!-- The cause, traced to the line that has it. -->
+<!-- Why it happened, traced to the line that has it. -->
 
 ## The fix
 
@@ -23,23 +27,24 @@ wrong, and what it builds on under Why.
 ## Proof
 
 <!--
-The tests written for it, and that they fail on main and pass here.
+The tests that ensure it, and that they fail on main and pass here.
 The walks, the measurements before and after, and whether make changed
 passed. What could not be checked here, like WebKit on a Mac, is said.
 -->
 
-## To test
+## How to test
 
 <!--
-Numbered steps for Tim, each one he can take as it stands. The first
-is to update the app to this pull request from the Updates page. Then
-what to do, and what he should see happen. A change with nothing to see
-in the app says so, and says which test proves it instead.
+Numbered steps to test it by hand, each one that can be taken as it
+stands. The first is to update the app to this pull request from the
+Updates page. Then what to do, what to look at and what to verify. A
+change with nothing to see in the app says so, and says which test
+proves it instead.
 -->
 
 1. Update the app to this pull request from the Updates page.
 2.
 
-## Found on the way, not fixed here
+## Found along the way, not fixed here
 
 <!-- Each with the plan row it was logged as. -->
