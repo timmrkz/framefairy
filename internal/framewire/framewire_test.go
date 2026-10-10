@@ -37,3 +37,36 @@ func TestRecordsComeBackAsWritten(t *testing.T) {
 		t.Error("a record of 2 GB was read")
 	}
 }
+
+// An open says whether it opened the file and the light of its picture,
+// and a decoder from before HDR, which says only "file", is read as
+// standard video.
+func TestAnOpenSaysItsLight(t *testing.T) {
+	for _, c := range []struct {
+		file  bool
+		light Light
+		body  string
+	}{
+		{true, SDR, "file"},
+		{false, SDR, ""},
+		{true, HLG, "file hlg"},
+		{false, PQ, " pq"},
+	} {
+		body := OpenedBody(c.file, c.light)
+		if string(body) != c.body {
+			t.Errorf("an open of file %v and light %q is %q, want %q", c.file, c.light, body, c.body)
+		}
+		file, light := ReadOpened(body)
+		if file != c.file || light != c.light {
+			t.Errorf("%q reads as file %v and light %q", body, file, light)
+		}
+	}
+	if _, light := ReadOpened([]byte("file sunshine")); light != SDR {
+		t.Errorf("a light nobody knows reads as %q, want standard video", light)
+	}
+	for trc, want := range map[string]Light{"smpte2084": PQ, "arib-std-b67": HLG, "bt709": SDR, "": SDR} {
+		if got := LightOf(trc); got != want {
+			t.Errorf("a transfer of %q is %q, want %q", trc, got, want)
+		}
+	}
+}

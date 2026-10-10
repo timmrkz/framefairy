@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"framefairy/internal/framewire"
 )
 
 // RenderError is a failure the operator can act on, as opposed to a bug.
@@ -79,6 +81,7 @@ type Engine struct {
 
 	mu               sync.Mutex
 	encoder          Encoder
+	hdrEncoder       Encoder
 	subtitleTemplate string
 	faces            *faceDetector
 	facesLoaded      bool
@@ -475,6 +478,36 @@ func (s SourceInfo) FPS() float64 { return float64(s.FPSNum) / float64(s.FPSDen)
 
 // FPSString is the frame rate as ffmpeg wants it, in lowest terms.
 func (s SourceInfo) FPSString() string { return fmt.Sprintf("%d/%d", s.FPSNum, s.FPSDen) }
+
+// Light is how the episode's picture codes its brightness, from its
+// transfer tag: standard video, or HDR in PQ or HLG.
+func (s SourceInfo) Light() framewire.Light {
+	for _, c := range s.Colour {
+		if c[0] == "color_trc" {
+			return framewire.LightOf(c[1])
+		}
+	}
+	return framewire.SDR
+}
+
+// colourParams is the file's colour tags as setparams takes them, which
+// puts them on every frame of a short, or nothing for a file without tags.
+// An encoder of a newer ffmpeg, ours among them, takes its tags from its
+// frames and drops -color_trc and the like. The names are ffprobe's, from
+// ffmpeg's own lists, and anything else is left out.
+func (s SourceInfo) colourParams() string {
+	var set []string
+	for _, c := range s.Colour {
+		if c[1] == "" || strings.Trim(c[1], "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
+			continue
+		}
+		set = append(set, c[0]+"="+c[1])
+	}
+	if len(set) == 0 {
+		return ""
+	}
+	return "setparams=" + strings.Join(set, ":")
+}
 
 func gcd(a, b int) int {
 	if a < 0 {

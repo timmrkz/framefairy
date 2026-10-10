@@ -262,16 +262,16 @@ func openVideo(path string) (*video, error) {
 func openMedia(path string, kind astiav.MediaType) (*video, error) {
 	fc := astiav.AllocFormatContext()
 	if fc == nil {
-		return nil, errors.New("no memory to open the episode")
+		return nil, errors.New("no memory to open the video")
 	}
 	if err := fc.OpenInput(path, nil, nil); err != nil {
 		fc.Free()
-		return nil, fmt.Errorf("the episode cannot be opened: %w", err)
+		return nil, fmt.Errorf("the video cannot be opened: %w", err)
 	}
 	v := &video{fc: fc}
 	if err := fc.FindStreamInfo(nil); err != nil {
 		v.close()
-		return nil, fmt.Errorf("the episode cannot be read: %w", err)
+		return nil, fmt.Errorf("the video cannot be read: %w", err)
 	}
 	for _, s := range fc.Streams() {
 		if s.CodecParameters().MediaType() == kind {
@@ -282,9 +282,9 @@ func openMedia(path string, kind astiav.MediaType) (*video, error) {
 	if v.stream == nil {
 		v.close()
 		if kind == astiav.MediaTypeAudio {
-			return nil, errors.New("the episode has no sound")
+			return nil, errors.New("the video has no sound")
 		}
-		return nil, errors.New("the episode has no picture")
+		return nil, errors.New("the video has no picture")
 	}
 	return v, nil
 }
@@ -355,13 +355,15 @@ type cursor struct {
 	// A frame decoded on the graphics chip, brought out to memory.
 	brought  *astiav.Frame
 	filtered *astiav.Frame
-	// The chain that makes a decoded frame the size of the canvas, 8-bit
-	// and in full range, the same as engine.PreviewFrames asks of ffmpeg.
-	graph     *astiav.FilterGraph
-	src       *astiav.BuffersrcFilterContext
-	sink      *astiav.BuffersinkFilterContext
-	width     int
-	height    int
+	// The chain that makes a decoded frame the size of the canvas, in
+	// colours ready to draw, the same as engine.PreviewFrames asks of ffmpeg.
+	graph  *astiav.FilterGraph
+	src    *astiav.BuffersrcFilterContext
+	sink   *astiav.BuffersinkFilterContext
+	width  int
+	height int
+	// How the picture's brightness is coded, from the file's transfer tag.
+	light     framewire.Light
 	from      float64
 	sentEOF   bool
 	graphEOF  bool
@@ -425,9 +427,8 @@ func (c *cursor) fail(why string) {
 // only seeks.
 func (c *cursor) open(from float64, w, h int) {
 	c.failedWhy = ""
-	opened := ""
+	opened := c.v == nil
 	if c.v == nil {
-		opened = "file"
 		v, err := openVideo(c.d.path)
 		if err == nil {
 			err = v.openDecoder(c.d.hardware)
@@ -440,6 +441,7 @@ func (c *cursor) open(from float64, w, h int) {
 			return
 		}
 		c.v = v
+		c.light = lightOf(v.stream.CodecParameters().ColorTransferCharacteristic())
 		c.own(&c.keys, v.fc, v.dec)
 		c.pkt = astiav.AllocPacket()
 		c.decoded = astiav.AllocFrame()
@@ -459,7 +461,19 @@ func (c *cursor) open(from float64, w, h int) {
 	}
 	c.width, c.height, c.from = w, h, from
 	c.sentEOF, c.graphEOF = false, false
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: []byte(opened)})
+	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, c.light)})
+}
+
+// lightOf is the light of the episode's picture, from its transfer tag,
+// as framewire.LightOf has it for the name.
+func lightOf(trc astiav.ColorTransferCharacteristic) framewire.Light {
+	switch trc {
+	case astiav.ColorTransferCharacteristicSmpte2084:
+		return framewire.PQ
+	case astiav.ColorTransferCharacteristicAribStdB67:
+		return framewire.HLG
+	}
+	return framewire.SDR
 }
 
 // seek goes to the key frame before from, with what the decoder held
@@ -468,7 +482,7 @@ func (c *cursor) seek(from float64) error {
 	tb := c.v.stream.TimeBase()
 	ts := int64(math.Floor(from / tb.Float64()))
 	if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
-		return fmt.Errorf("the episode cannot be read from %.3f s: %s", from, err)
+		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
 	flushDecoder(c.v.dec)
 	c.sentEOF, c.graphEOF = false, false
@@ -591,7 +605,7 @@ func (c *cursor) feed() error {
 			return c.v.dec.SendPacket(nil)
 		}
 		if err != nil {
-			return c.withSaid(fmt.Errorf("the episode could not be read: %w", err))
+			return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
 		}
 		if c.pkt.StreamIndex() != c.v.stream.Index() {
 			c.pkt.Unref()
@@ -630,11 +644,14 @@ func (c *cursor) bringOut() error {
 	return nil
 }
 
-// makeGraph builds the chain for the frames the decoder makes: scaled to
-// the size of the canvas, 8-bit and in full range, the same as
-// engine.PreviewFrames asks of the ffmpeg program on the processor.
+// makeGraph builds the chain for the frames the decoder makes, the one
+// engine.PreviewFrames asks of the ffmpeg program, framewire.Picture:
+// scaled to the size of the canvas and turned into colours, 10-bit red,
+// green and blue. The colours are ffmpeg's, from the file's own range
+// and matrix, with ffmpeg's defaults where the file says nothing. Plan
+// row 2.156, step 4.
 func (c *cursor) makeGraph() error {
-	return c.buildGraph(fmt.Sprintf("scale=%d:%d:flags=bilinear:out_range=pc,format=yuv420p", c.width, c.height))
+	return c.buildGraph(framewire.Picture(c.width, c.height))
 }
 
 // buildGraph builds a chain from the decoded frame's kind to chain's end,

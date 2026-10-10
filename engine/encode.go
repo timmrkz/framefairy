@@ -6,9 +6,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"framefairy/internal/framewire"
 )
 
-// Which encoder writes the H.264 in a finished short.
+// Which encoder writes the picture of a finished short: H.264 for standard
+// video, and HEVC in 10 bits for HDR, see HDREncoder.
 //
 // It used to be libx264 and nothing else, and Preflight refused to run
 // without it. libx264 is the one thing that makes an ffmpeg build GPL, and
@@ -20,7 +23,8 @@ import (
 // means the development build and the shipped one take the same path
 // through the same code.
 
-// Encoder is one way of writing H.264, and how to ask it for a quality.
+// Encoder is one way of writing a short's picture, and how to ask it for a
+// quality.
 type Encoder struct {
 	// Name is the ffmpeg encoder, as `ffmpeg -encoders` lists it.
 	Name string
@@ -28,6 +32,10 @@ type Encoder struct {
 	// Every encoder has its own idea of what a number means and most of
 	// them do not have -crf at all.
 	Quality func(rs RenderSettings) []string
+	// Picture is how an encoder of HDR is asked for 10 bits, its profile
+	// and the tag Apple's players look for. Standard video is H.264 in
+	// 8 bits, asked the same of every encoder, see BuildCommand.
+	Picture []string
 }
 
 // x264 takes the quality as it is written, because CRF is its own idea and
@@ -51,23 +59,55 @@ var x264 = Encoder{
 // so the default is 85 now: each step of CRF is five sixths of a step of
 // q, and CRF 0 is still 100.
 var videoToolbox = Encoder{
-	Name: "h264_videotoolbox",
+	Name:    "h264_videotoolbox",
+	Quality: toolboxQuality,
+}
+
+func toolboxQuality(rs RenderSettings) []string {
+	q := 100 - (5*rs.CRF+3)/6
+	if q < 1 {
+		q = 1
+	}
+	if q > 100 {
+		q = 100
+	}
+	return []string{"-q:v", strconv.Itoa(q)}
+}
+
+// An HDR episode makes an HDR short, see HDR in docs/VIDEO-PREVIEW.md:
+// HEVC with 10-bit colour, the form an iPhone films in and Instagram and
+// YouTube take, tagged hvc1 so QuickTime and Photos play it. On the Mac it
+// is VideoToolbox's, asked for quality the same way as its H.264.
+var hevcVideoToolbox = Encoder{
+	Name:    "hevc_videotoolbox",
+	Quality: toolboxQuality,
+	Picture: []string{"-profile:v", "main10", "-pix_fmt", "p010le", "-tag:v", "hvc1"},
+}
+
+// x265 takes CRF as x264 does. It is GPL like x264, so the ffmpeg we ship
+// does not have it, and an ffmpeg that does makes HDR shorts with it.
+var x265 = Encoder{
+	Name: "libx265",
 	Quality: func(rs RenderSettings) []string {
-		q := 100 - (5*rs.CRF+3)/6
-		if q < 1 {
-			q = 1
-		}
-		if q > 100 {
-			q = 100
-		}
-		return []string{"-q:v", strconv.Itoa(q)}
+		return []string{"-preset", rs.Preset, "-crf", strconv.Itoa(rs.CRF), "-x265-params", "log-level=error"}
 	},
+	Picture: []string{"-profile:v", "main10", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"},
 }
 
 // known encoders by name, for --encoder.
 var known = map[string]Encoder{
 	x264.Name:         x264,
 	videoToolbox.Name: videoToolbox,
+}
+
+// hdrEncoderOrder is what to try for an HDR short, best first. Windows
+// and Linux have no encoder of HEVC in 10 bits in the ffmpeg we ship, which
+// is a question for docs/PACKAGING.md.
+func hdrEncoderOrder() []Encoder {
+	if runtime.GOOS == "darwin" {
+		return []Encoder{hevcVideoToolbox, x265}
+	}
+	return []Encoder{x265}
 }
 
 // encoderOrder is what to try on this system, best first. The first one
@@ -138,6 +178,35 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 		strings.Join(tried, ", "))
 }
 
+// HDREncoder is the encoder this run uses for an HDR short, found once
+// and kept. --encoder names the encoder of standard video only.
+func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
+	e.mu.Lock()
+	if e.hdrEncoder.Name != "" {
+		chosen := e.hdrEncoder
+		e.mu.Unlock()
+		return chosen, nil
+	}
+	e.mu.Unlock()
+	have := run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
+	if have.Code != 0 {
+		return Encoder{}, renderErr("%s cannot list its encoders.", e.FFmpeg)
+	}
+	var tried []string
+	for _, candidate := range hdrEncoderOrder() {
+		if hasEncoder(have.Stdout, candidate.Name) {
+			e.mu.Lock()
+			e.hdrEncoder = candidate
+			e.mu.Unlock()
+			e.Log.Detail("video encoder for HDR: %s", candidate.Name)
+			return candidate, nil
+		}
+		tried = append(tried, candidate.Name)
+	}
+	return Encoder{}, renderErr("this video is HDR, and this ffmpeg has no encoder of HEVC in 10 bits "+
+		"to keep it HDR: %s.", strings.Join(tried, ", "))
+}
+
 func (e *Engine) keepEncoder(chosen Encoder) {
 	e.mu.Lock()
 	e.encoder = chosen
@@ -160,7 +229,17 @@ func hasEncoder(listing, name string) bool {
 
 // VideoArgs is the -c:v and the quality for one render.
 func (e *Engine) VideoArgs(ctx context.Context, rs RenderSettings) ([]string, error) {
-	chosen, err := e.VideoEncoder(ctx)
+	return e.videoArgs(ctx, rs, framewire.SDR)
+}
+
+// videoArgs is VideoArgs for a short of standard video or of HDR, with
+// what an encoder of HDR is asked for its 10 bits.
+func (e *Engine) videoArgs(ctx context.Context, rs RenderSettings, light framewire.Light) ([]string, error) {
+	pick := e.VideoEncoder
+	if light != framewire.SDR {
+		pick = e.HDREncoder
+	}
+	chosen, err := pick(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +247,7 @@ func (e *Engine) VideoArgs(ctx context.Context, rs RenderSettings) ([]string, er
 	if chosen.Quality != nil {
 		args = append(args, chosen.Quality(rs)...)
 	}
-	return args, nil
+	return append(args, chosen.Picture...), nil
 }
 
 // EncoderNames is every encoder this build knows how to drive, for the
