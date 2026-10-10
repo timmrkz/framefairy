@@ -74,6 +74,28 @@ export function overlaid(samples, state, frame) {
   return null;
 }
 
+// What is wrong with the size of the frame standing on the video preview,
+// or null: nothing stands still, or it was decoded at the size the canvas
+// asks for. Waits a moment for a frame on its way.
+export async function stillBlurred(page) {
+  const look = () => {
+    const q = window.__frameQueue;
+    const c = document.querySelector(".screen canvas");
+    const f = q?.picture();
+    const v = q?.video;
+    if (!f || !v || !c || (q.state !== "paused" && q.state !== "cued")) return null;
+    const scale = Math.min(1, c.width / v.width, c.height / v.height);
+    const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+    const want = [even(v.width * scale), even(v.height * scale)];
+    if (f.width === want[0] && f.height === want[1]) return null;
+    return `the frame on the video preview is ${f.width} by ${f.height}, the canvas is ${c.width} by ${c.height} and the file ${v.width} by ${v.height}, so it should be ${want.join(" by ")}`;
+  };
+  const sharp = await page
+    .waitForFunction(`(${look})() === null`, null, { timeout: 1500, polling: 100 })
+    .then(() => true, () => false);
+  return sharp ? null : page.evaluate(look);
+}
+
 // Watches one page through the steps made on it.
 export class Watch {
   constructor(page, at, errors) {
@@ -146,6 +168,15 @@ export class Watch {
     this.callsSeen = from + calls.length;
     for (const c of calls) if (c.failed) this.broke("a call failed", `${c.name}: ${c.failed}`);
     for (const e of this.errors.splice(0)) this.broke("the page threw", e);
+
+    // A picture that stands still is as sharp as the video preview lets it
+    // be: the frame on the canvas was decoded at the canvas's size, no
+    // larger than the file's own. A frame asked for again after a resize
+    // may still be on its way, so it has a moment to come. Tim saw the
+    // first frame of every workspace blurred, decoded at the 300 by 150 of
+    // a canvas not laid out yet, plan row 2.187.
+    const blurred = await stillBlurred(page);
+    if (blurred) this.broke("a still frame is at the canvas's size", blurred);
 
     // Enter opens the word in the keyboard's frame, and no other: the
     // frame is there to say which word Enter opens.
