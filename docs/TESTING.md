@@ -428,6 +428,14 @@ crop frame on every frame and the captions on every frame the engine has
 a caption for. Against main it fails at `only the video`: on the video at
 6.8 s, the crop frame and the shade are still there, and the captions with
 them.
+`the episode played through a clip with cuts shows only the video, and
+the clip its frame and captions` does the same after two cuts, at a
+quarter and at a little over half of the clip, with plays long enough to
+cross them, `across cuts`. The episode's play has to stand in two pieces
+or more and go through a part cut out between them, on the video and with
+nothing over the picture the whole way. The clip's play has to jump a cut
+and keep its crop frame and its captions in the piece after it. Against
+main it fails the same way, at 6.8 s.
 
 `a cut or an edge put back keeps the camera switch` is Tim's test of
 #116 done the way he would do it. It adds a video of 30 seconds whose

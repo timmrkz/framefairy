@@ -139,6 +139,10 @@
 //                      press and again where the hand moved to, the button
 //                      said Pause the whole time, and the play went on
 //                      from where the hand let go
+//   ["only the video", "across cuts"], ["the clip shown", "across cuts"]
+//                      the same, and the play crossed a cut: it stood in
+//                      two pieces of the clip or more, and on the video
+//                      went through the part cut out between them
 //   ["only the video"] since "play from", the playhead was on the video
 //                      on every frame and played two seconds or more of
 //                      the clip's own moments, and the video preview laid
@@ -703,6 +707,24 @@ export const sequences = [
       ["only the video"],
       ["play from", "in", 4],
       ["the clip shown"],
+    ],
+  },
+  {
+    // The same with cuts in the clip, which Tim asked for: the episode
+    // plays straight through the parts cut out and the pieces either side
+    // of them, on the video the whole way, and the clip jumps its cuts,
+    // on the clip the whole way. Neither may show the clip on the video,
+    // in a piece or in a cut, nor lose it on the clip after a jump.
+    name: "the episode played through a clip with cuts shows only the video, and the clip its frame and captions",
+    steps: [
+      ["trim", "start", 300],
+      ["cut at", 0.25],
+      ["cut at", 0.55],
+      ["cuts", 2],
+      ["play from", "before", 13],
+      ["only the video", "across cuts"],
+      ["play from", "in", 9],
+      ["the clip shown", "across cuts"],
     ],
   },
   {
@@ -1872,6 +1894,25 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const { overlays, state, fps } = played;
         const video = what === "only the video";
         const frame = 1 / fps;
+        // With "across cuts" the play has to have crossed a cut: the
+        // episode through the part cut out, from a piece before it to a
+        // piece after it, and the clip from one piece on into the next.
+        const pieceOf = (at) => state.segments.findIndex((p) => at >= p.start + frame && at < p.end - frame);
+        const played_ = overlays.filter((o) => o.playing);
+        const pieces = new Set(played_.map((o) => pieceOf(o.at)).filter((i) => i >= 0));
+        const inCut = played_.some((o) => state.segments.some((p, i) => i > 0 && o.at > state.segments[i - 1].end + frame && o.at < p.start - frame));
+        if (arg === "across cuts" && state.segments.length < 2) {
+          wrong = `the clip has ${state.segments.length} piece, so no cut to play across`;
+          break;
+        }
+        if (arg === "across cuts" && pieces.size < 2) {
+          wrong = `the play stood in ${pieces.size} piece of the clip, so it crossed no cut`;
+          break;
+        }
+        if (arg === "across cuts" && video && !inCut) {
+          wrong = "the episode played through no part cut out of the clip";
+          break;
+        }
         // The frames of the play that stood in one of the clip's pieces,
         // which is where a clip's frame and captions could show.
         const inside = overlays.filter((o) => o.playing && state.segments.some((p) => o.at >= p.start + frame && o.at < p.end - frame));
