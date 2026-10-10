@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Reach, fitWindow, leastWindow, longestShortest, mostClips, type RoomView } from "./room";
+import { Reach, fitWindow, leastWindow, longestShortest, mostClips, type LineWeight, type RoomView } from "./room";
 
 // A line every four seconds, three seconds long, each weighing 100
 // characters, for as long as the transcript goes.
@@ -63,6 +63,37 @@ describe("how far a window may reach", () => {
     // From anywhere a window of that length fits, a start inside a line
     // included.
     for (let s = 0; s + reach <= 4000; s += 0.37) expect(r.fits(s, s + reach)).toBe(true);
+  });
+
+  test("anywhere passes over starts and still finds what searching every one finds", () => {
+    // Every start searched, the way anywhere once did it.
+    const everyStart = (r: Reach, heard: [number, number][], lines: LineWeight[], duration: number) => {
+      if (!r.known || r.fits(0, duration)) return duration;
+      let shortest = duration;
+      for (const start of [0, ...heard.flat(), ...lines.map((l) => Math.max(l.start, l.end - 0.001))]) {
+        if (start >= duration) continue;
+        const end = r.longestFrom(start);
+        if (end >= duration) continue;
+        shortest = Math.min(shortest, end - start);
+      }
+      return Math.floor(shortest);
+    };
+    let seed = 7;
+    const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let round = 0; round < 200; round++) {
+      const duration = 200 + Math.floor(random() * 4000);
+      const heardTo = Math.floor(random() * duration);
+      const lines: LineWeight[] = [];
+      for (let t = random() * 5; t < heardTo; t += 1 + random() * 8) {
+        const end = Math.min(t + 0.5 + random() * 6, heardTo);
+        lines.push({ start: t, end, chars: Math.floor(5 + random() * 120) });
+        t = end;
+      }
+      const heard: [number, number][] = heardTo ? [[0, heardTo]] : [];
+      const view = { chars: 200 + Math.floor(random() * 20000), by: "context", lines, heard, rate: random() * 40 };
+      const r = new Reach(view, duration);
+      expect(r.anywhere()).toBe(everyStart(r, heard, lines, duration));
+    }
   });
 });
 

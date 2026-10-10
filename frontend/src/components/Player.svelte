@@ -21,6 +21,7 @@
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
+  import type { Movie } from "../lib/frames/mp4";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -31,7 +32,7 @@
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
-  import { keysElsewhere } from "../lib/keys";
+  import { asleep, keysElsewhere } from "../lib/keys";
 
   let {
     path,
@@ -52,6 +53,8 @@
     onClip = $bindable(false),
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
+    pictured = $bindable(false),
+    sleeping = false,
   }: {
     path: string;
     source: SourceView;
@@ -96,6 +99,15 @@
     // the clip is drawn dimmed wherever it is drawn. See lib/playhead.ts.
     onClip?: boolean;
     offers?: PlayerOffers;
+    // Whether the canvas holds a picture of the episode yet, or has said
+    // why it cannot. The workspace is not put in front of the person
+    // before, see ready in Episode.svelte.
+    pictured?: boolean;
+    // The workspace is kept for coming back to while another episode is
+    // in front, see App.svelte. Asleep, the video preview holds nothing
+    // but the frame on its canvas and the file's index: no decoder on the
+    // Go side, no frames kept, no sound card.
+    sleeping?: boolean;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -129,21 +141,52 @@
   // it is the smallest difference between two moments that means anything.
   const oneFrame = $derived(source.fps > 0 ? 1 / source.fps : 1 / 30);
 
-  // A queue for each episode. The one before is closed with everything it
-  // holds, its decoders and its sound card among them.
+  // A queue while the workspace is awake. Going to sleep closes it with
+  // everything it holds, its decoders and its sound card among them, and
+  // keeps only the file's index, so waking reads nothing from the file and
+  // the frame on the canvas stays until the new queue draws the same one.
+  //
+  // Waking, the queue is opened once the workspace is on screen, in the
+  // task after the frame that shows it: what is on the canvas is already
+  // the frame it would draw, and starting a sound card and a decoder in
+  // that frame held it back. Going to sleep, it is closed the same way.
+  let known: Movie | null = null;
   $effect(() => {
     const url = mediaURL(path);
-    const q = untrack(() => open(url));
+    if (sleeping) return;
+    let q: FrameQueue | null = null;
+    const stop = known ? afterPaint(() => (q = open(url))) : null;
+    if (!stop) q = untrack(() => open(url));
     return () => {
-      q.close();
-      if (queue === q) queue = null;
+      stop?.();
+      if (!q) return;
+      const going: FrameQueue = q;
+      known = going.movie ?? known;
+      if (!untrack(() => paused)) going.pause();
+      paused = true;
+      nailed = false;
+      if (queue === going) queue = null;
+      setTimeout(() => going.close());
     };
   });
+
+  // Runs fn in the task after the next frame is painted. What it answers
+  // with calls it off, whichever of the two waits is under way.
+  function afterPaint(fn: () => void): () => void {
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      timer = window.setTimeout(() => untrack(fn));
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }
 
   function open(url: string): FrameQueue {
     failed = "";
     trouble = "";
-    const q = new FrameQueue(canvas, url);
+    const q = new FrameQueue(canvas, url, known);
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
@@ -153,6 +196,7 @@
       if (queue !== q) return;
       failed = e.message;
       paused = true;
+      pictured = true;
     });
     q.setProgram(...programOf(place));
     sought = null;
@@ -179,6 +223,12 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
+    // A picture: the video preview has what it is going to show. A file
+    // that cannot be opened at all says so where the picture would be, see
+    // open. Trouble on the way is no picture: the sound stopping said the
+    // video preview was ready before its first frame, and a workspace built
+    // as the app starts went to sleep with nothing on its canvas.
+    if (s.drew) pictured = true;
     if (s.ended) {
       paused = true;
       if (playedClip) {
@@ -211,6 +261,8 @@
   function watchSize(node: HTMLCanvasElement) {
     const seen = (entries: ResizeObserverEntry[]) => {
       const e = entries[entries.length - 1];
+      // Nothing measured while the workspace is put away, see App.svelte.
+      if (!node.isConnected || !e.contentRect.width) return;
       const device = e.devicePixelContentBoxSize?.[0];
       const ratio = window.devicePixelRatio || 1;
       pixels = device
@@ -564,7 +616,7 @@
   $effect(() => {
     if (!sampling) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || asleep(shell)) return;
       event.preventDefault();
       event.stopPropagation();
       finishSampling(null);
@@ -981,6 +1033,7 @@
   // has the keyboard. The arrows bring the keyboard's word, and Enter opens
   // it.
   function onKey(event: KeyboardEvent) {
+    if (asleep(shell)) return;
     // Delete removes the keyboard's word, the one in the frame, unless a
     // field has the keyboard and the key is its own.
     if (removeKeyed(event)) return;

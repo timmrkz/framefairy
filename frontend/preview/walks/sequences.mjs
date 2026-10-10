@@ -1868,11 +1868,14 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         // only as it opens, is asked with the playhead on the clip. The
         // coverage and the room are read again whenever work elsewhere
         // ends, a search of the episode added before, so they say nothing
-        // about the order the workspace opens in.
+        // about the order the workspace opens in. A workspace kept from
+        // before, see App.svelte, is woken rather than built and asks
+        // neither the clip it opens on nor the window: it has them.
         const asked = await page.evaluate(() => window.__asked ?? []);
         const after = ["ChosenWindow"];
+        const built = asked.some(([name]) => name === "ChosenClip");
         const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
-        if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
+        if (!wrong && built && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
         else if (!wrong && early.length) {
           wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
         }

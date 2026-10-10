@@ -64,9 +64,10 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
-  import { asking, keysElsewhere, typing } from "../lib/keys";
+  import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
   import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
+  import { readAhead } from "../lib/frames/queue";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -78,7 +79,26 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
 
-  let { path, onchange }: { path: string; onchange: () => void } = $props();
+  let {
+    path,
+    onchange,
+    onready,
+    away = false,
+  }: {
+    path: string;
+    onchange: () => void;
+    // Told once the workspace has the episode on it, see ready.
+    onready?: () => void;
+    // Another episode has been picked, and this workspace only stays on
+    // screen until that one is ready, see App.svelte.
+    away?: boolean;
+  } = $props();
+
+  // The workspace's own element. Another episode's workspace can stand in
+  // the app beside this one for a moment, see App.svelte, so whatever this
+  // one looks for it looks for in itself, and keys are only taken while it
+  // is the one in front, see asleep.
+  let root = $state<HTMLElement>();
 
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
@@ -358,7 +378,7 @@
   );
   onMount(() =>
     onLevels((p) => {
-      if (p !== path) return;
+      if (p !== path || away) return;
       const ticket = statusRead.send();
       api
         .episode(path)
@@ -838,11 +858,11 @@
   // with, after a restart too, and where there is none, the one the app
   // would choose, see moveWindowOn. One that no longer fits the episode
   // is not one.
-  async function openWindow() {
+  async function openWindow(asked: Promise<KeptWindow | null> = api.chosenWindow(path)) {
     const was = path;
     let kept: KeptWindow | null = null;
     try {
-      kept = await api.chosenWindow(path);
+      kept = await asked;
     } catch {
       kept = null;
     }
@@ -937,11 +957,17 @@
     }
     try {
       if (!status || status.missing) return;
-      await refreshCoverage();
-      await refreshRoom();
-      if (source) await openWindow();
+      // Asked together, and used in this order: the window is placed from
+      // what was searched and fitted to the room. One after another they
+      // kept the workspace behind the one on screen three answers longer.
+      const kept = api.chosenWindow(path);
+      kept.catch(() => {});
+      await Promise.all([refreshCoverage(), refreshRoom()]);
+      if (source) await openWindow(kept);
     } catch (err) {
       problem = errorText(err);
+    } finally {
+      settled = true;
     }
   }
 
@@ -977,7 +1003,7 @@
   // screen, and the veil over each end means a card only just inside the
   // list is a card half faded away.
   function showChosen() {
-    const list = document.querySelector<HTMLElement>(".pane .list");
+    const list = root?.querySelector<HTMLElement>(".pane .list");
     const card = list?.querySelector<HTMLElement>(".pick.current, li.next.current")?.closest("li");
     if (!list || !card) return;
     // The same veil the list fades its ends with, from the stylesheet.
@@ -1264,7 +1290,7 @@
     if (!out && event.key !== "i" && event.key !== "I") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere()) return;
+    if (keysElsewhere() || asleep(root)) return;
     if (inClip) return;
     event.preventDefault();
     void makeClip(out);
@@ -1279,7 +1305,7 @@
     const on = document.activeElement as HTMLElement | null;
     const tag = on?.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || on?.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (document.querySelector("dialog[open]") || asleep(root)) return;
     if (!current) return;
     event.preventDefault();
     looping = !looping;
@@ -1289,7 +1315,7 @@
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
-    if (keysElsewhere()) return;
+    if (keysElsewhere() || asleep(root)) return;
     if (!current) return;
     event.preventDefault();
     toggleThumbnail();
@@ -1347,6 +1373,46 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+
+  // Whether the workspace has the episode on it: the window on the range
+  // picker, a picture on the canvas, the clip timeline drawn and the
+  // captions of the clip it opened on. Opening another episode keeps the
+  // workspace before it on screen until then, and the two change places in
+  // one frame, see App.svelte. It was built in front of the person, empty
+  // first and then a part at a time as each answer came in, and Tim saw
+  // the workspace flicker every time he picked an episode.
+  let settled = $state(false);
+  let pictured = $state(false);
+  let drawn = $state(false);
+  const ready = $derived(
+    settled && (!source || (pictured && drawn && (!current || !!captions))),
+  );
+  let toldReady = false;
+  $effect(() => {
+    if (!ready || toldReady) return;
+    toldReady = true;
+    untrack(() => onready?.());
+  });
+  // A workspace kept while another episode is in front is asleep, see
+  // App.svelte: its video preview lets go of everything it holds, so an
+  // episode left while it plays goes quiet the moment another is picked,
+  // and it reads nothing from the Go side by itself. Waking, it reads the
+  // episode again in the background, behind what it already shows, for
+  // whatever changed while it slept, a setting among them.
+  let slept = false;
+  $effect(() => {
+    if (away) {
+      slept = true;
+      return;
+    }
+    if (!slept) return;
+    slept = false;
+    untrack(() => {
+      void load();
+      readSettings();
+    });
+  });
+
   // A caption edge being dragged on the clip timeline. The caption box in
   // the video preview follows it on the way, so what is seen while dragging
   // is what will be saved.
@@ -1869,6 +1935,9 @@
   // and nothing changes where nobody is looking.
   let undoing = false;
   async function undo(what: "undo" | "redo") {
+    // The menu tells every workspace standing in the app. Only the one in
+    // front is the one the person means.
+    if (asleep(root)) return;
     if (typing()) {
       document.execCommand(what);
       return;
@@ -2121,7 +2190,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
     // A box asking something, and an edge being nudged, take the arrows
     // for themselves.
-    if (keysElsewhere()) return;
+    if (keysElsewhere() || asleep(root)) return;
     if (document.activeElement?.getAttribute("role") === "slider") return;
     const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
@@ -2195,6 +2264,8 @@
   onMount(() => {
     let ticks = 0;
     const timer = setInterval(() => {
+      // Asleep, nothing is read: waking reads it all once.
+      if (away) return;
       ticks++;
       if (isTranscribing) {
         // While the transcript grows, how far it has come is read again:
@@ -2225,6 +2296,12 @@
     installFonts()
       .then((list) => (fonts = list))
       .catch(() => {});
+    readAhead(mediaURL(path), path);
+    readSettings();
+    openEpisode();
+  });
+
+  function readSettings() {
     api.getSettings().then((settings) => {
       target = settings.target || 0;
       targetWindow = settings.targetWindow || 0;
@@ -2232,8 +2309,7 @@
       max = settings.max || 30;
       captionY = settings.captionY || captionYDefault;
     });
-    openEpisode();
-  });
+  }
 </script>
 
 {#snippet strip()}
@@ -2273,6 +2349,7 @@
      stay put while the app is resized, so the whole layout below is the
      browser's own work from there on. -->
 <section
+  bind:this={root}
   style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
 >
   <!-- Everything that stands above the workspace, together, so its height
@@ -2602,6 +2679,8 @@
           {source}
           clip={shownClip}
           opening={!opened}
+          bind:pictured
+          sleeping={away}
           bind:time
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
@@ -2685,6 +2764,7 @@
       <ClipTimeline
         bind:this={timeline}
         {path}
+        waiting={!opened}
         clip={current ?? making}
         {duration}
         heard={saved}
@@ -2697,6 +2777,7 @@
         frameStart={source.videoStart ?? 0}
         {lit}
         bind:numbers
+        bind:drawn
         onseek={(t, about) => player?.seek(t, about)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}

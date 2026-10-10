@@ -313,7 +313,7 @@ func (p *previews) hold(path string) error {
 }
 
 // release lets go of a hold. The decoder is then closed once it has stood
-// unused, see reap.
+// unused, see reap, or at once when more than decodersSpare stand unheld.
 func (p *previews) release(path string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -321,6 +321,36 @@ func (p *previews) release(path string) {
 		p.held[path]--
 	} else {
 		delete(p.held, path)
+	}
+	p.spare()
+}
+
+// decodersSpare is how many decoders nobody holds are kept running for an
+// episode that comes back. The app keeps ten workspaces and builds them as
+// it starts, each holding its decoder until it is asleep, so without a
+// bound ten programs stood running for a minute after the app started.
+const decodersSpare = 2
+
+// spare closes the decoders nobody holds beyond decodersSpare, the one
+// unused longest first. Under the lock.
+func (p *previews) spare() {
+	for {
+		oldest, longest, free := "", time.Duration(-1), 0
+		for path, d := range p.decoders {
+			if p.held[path] > 0 {
+				continue
+			}
+			free++
+			if idle := d.Idle(); idle > longest {
+				oldest, longest = path, idle
+			}
+		}
+		if free <= decodersSpare {
+			return
+		}
+		d := p.decoders[oldest]
+		delete(p.decoders, oldest)
+		go d.Close()
 	}
 }
 
