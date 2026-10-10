@@ -674,7 +674,7 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, renderErr("there is nothing to make a clip of in this episode")
+		return nil, renderErr("there is nothing to make a clip of in this video")
 	}
 	e.Log.OK("the episode is shorter than a clip at its shortest, so it is the clip")
 	return &PlanFile{Source: filepath.Base(sourcePath), PlannedWith: build.stamp, Clips: clips}, nil

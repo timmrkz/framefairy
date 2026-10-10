@@ -137,7 +137,7 @@
   <header>
     <h1>Frame Fairy</h1>
     <p class="muted lead">
-      Turns a podcast episode into vertical shorts. Two things to set up first.
+      Turns a long video into vertical shorts. Two things to set up first.
     </p>
   </header>
 
@@ -160,14 +160,14 @@
         <div class="area asks">
           <span class="ask corner">
             <Info label="About the speech model" side="right">
-              Every episode is transcribed on this machine, word by word with the time of each
-              word. Nothing about the episode is sent anywhere. The model is not part of the app,
+              Every video is transcribed on this machine, word by word with the time of each
+              word. Nothing about the video is sent anywhere. The model is not part of the app,
               so the first time it is fetched from the people who published it and kept on your
               machine, in <b>~/.framefairy/models</b>.
             </Info>
           </span>
           <h2>Speech</h2>
-          <p class="muted">Every episode is transcribed on this machine.</p>
+          <p class="muted">Every video is transcribed on this machine.</p>
           <ModelList
             models={speechRows}
             kind="model"
@@ -182,7 +182,7 @@
             <Info label="About finding clips" side="right">
               A language model reads the transcript and picks the moments worth clipping. A model
               in the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own
-              from that company, and costs a few cents an episode. A model on this machine is free
+              from that company, and costs a few cents a video. A model on this machine is free
               to run and needs the memory to hold it. Either way the video and the
               audio stay here: only the words are read.
             </Info>
@@ -193,7 +193,7 @@
             <li class:on={setup.chosen && setup.planner === "api"}>
               <button class="pick" onclick={() => choose("api")}>
                 <span class="title">In the cloud</span>
-                <span class="muted about">Anthropic or OpenAI. Works on any machine. A few cents an episode.</span>
+                <span class="muted about">Anthropic or OpenAI. Works on any machine. A few cents a video.</span>
               </button>
               {#if setup.chosen && setup.planner === "api"}
                 <div class="more">

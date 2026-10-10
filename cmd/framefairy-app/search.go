@@ -177,7 +177,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 		return s.jobs.refuse(path, engine.JobClip, label, notInLibrary)
 	}
 	if math.IsNaN(req.At) || math.IsInf(req.At, 0) || req.At < 0 || req.At > engine.MaxEpisodeSeconds {
-		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the episode")
+		return s.jobs.refuse(path, engine.JobClip, label, "there is no such moment in the video")
 	}
 	id := engine.NewClipID()
 	if carry != "" {

@@ -89,7 +89,7 @@ describe("how the choice stands", () => {
   test("a model in the cloud without its company's key needs one", () => {
     const s = finderStanding({ planner: "api", provider: openai, hasKey: false });
     expect(s.state).toBe("warn");
-    expect(s.text).toBe("By OpenAI. A few cents an episode.");
+    expect(s.text).toBe("By OpenAI. A few cents a video.");
   });
 
   test("with its key it is ready", () => {

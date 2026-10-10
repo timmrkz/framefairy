@@ -325,7 +325,7 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 		{
 			"a segment past any episode",
 			`{"clips": [{"id": "01", "slug": "eins", "segments": [{"start": 1e300, "end": 1e301}]}]}`,
-			"outside the episode",
+			"outside the video",
 		},
 	}
 	for _, c := range cases {
