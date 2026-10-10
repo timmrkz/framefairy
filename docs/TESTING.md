@@ -418,7 +418,7 @@ installed, and the setup check counts both models and llama-server as
 there, since the stand-ins hear and find the clips.
 
 `the episode played through a clip shows only the video, and the clip
-its frame and captions` is Tim's test of 2.171. It trims the clip's start
+its frame and captions` is Tim's test of 2.173. It trims the clip's start
 to leave room before it, clicks the clip timeline there and plays six
 seconds, on into the clip, and then clicks inside the clip and plays four.
 Through the first play the playhead has to be on the video on every
