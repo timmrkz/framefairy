@@ -80,7 +80,6 @@ export type View =
   | { name: "settings" }
   | { name: "updates" }
   | { name: "acknowledgements" }
-  | { name: "updatestest" }
   | { name: "empty" };
 
 class Nav {

@@ -821,7 +821,11 @@ bubble scrolled by those eight pixels.
   keyboard is on are the same row, in `--ink-3`, and what is chosen is in
   the accent with a tick that keeps its place whether or not it is there.
   The trigger keeps room for the longest thing the list can say, so a row
-  never changes width as it is used. It is built on
+  never changes width as it is used. The one exception is a list that
+  stands alone at the end of a row, where nothing beside it moves, and
+  whose short names would sit in a box made for the longest: `fit` makes
+  its trigger as wide as what it says now. The channel on the Updates page
+  is one. It is built on
   [bits-ui](https://bits-ui.com), the headless half of shadcn-svelte, which
   brings the keyboard, the roles, the focus, the typeahead and the floating
   placement, and no look at all.

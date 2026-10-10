@@ -64,11 +64,5 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	help.Add("Acknowledgements").OnClick(func(*application.Context) {
 		app.Event.Emit("acknowledgements", nil)
 	})
-	// The Updates page in made-up states, so Tim can see how a pull
-	// request in conflict is shown before 2.176 is merged. It is removed
-	// before it is.
-	help.Add("Updates Test").OnClick(func(*application.Context) {
-		app.Event.Emit("updatestest", nil)
-	})
 	return menu
 }

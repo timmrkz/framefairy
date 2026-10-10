@@ -1853,11 +1853,6 @@ export const Events = {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
     }
-    // The Updates page in made-up states, with window.__updatesTest().
-    if (name === "updatestest") {
-      (window as any).__updatesTest = () => fn({ data: null });
-      return () => delete (window as any).__updatesTest;
-    }
     if (name === "updates") {
       updListeners.add(fn);
       return () => updListeners.delete(fn);

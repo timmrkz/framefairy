@@ -41,16 +41,16 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid,mergeabl
 			rm -f "$entry"
 			continue
 		fi
-		# A newer commit than the one built, with a build to come, is said
-		# beside the build, by the same rule the build goes by. One that
-		# only changes the docs has no build coming, and a list that said
-		# it had would say so for good.
 		# One that no longer merges into main is still listed, because its
 		# build is of the branch as it is, and the app says it conflicts.
 		if [ "$(printf '%s\n' "$open" | awk -v n="$number" '$1 == n { print $3 }')" = CONFLICTING ]; then
 			echo "pull request $number no longer merges into main"
 			conflict="$conflict -conflict pr-$number"
 		fi
+		# A newer commit than the one built, with a build to come, is said
+		# beside the build, by the same rule the build goes by. One that
+		# only changes the docs has no build coming, and a list that said
+		# it had would say so for good.
 		built=$(jq -r '.commit // empty' "$entry")
 		if [ "$(sh scripts/needs-build.sh "$built" "$head")" = build ]; then
 			echo "pull request $number has $head still to be built"
@@ -61,8 +61,8 @@ fi
 
 set -- "$entries"/*.json
 [ -e "$1" ] || set --
-# $newest and $conflict are words the loop above made of a number and a
-# commit, so they are split on purpose.
+# $newest and $conflict are words the loop above made, of a flag and a
+# channel, so they are split on purpose.
 # shellcheck disable=SC2086
 go run ./cmd/framefairy-release list -out channels.json $newest $conflict "$@"
 cat channels.json
