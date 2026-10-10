@@ -89,6 +89,13 @@ Start with [README.md](README.md). In short:
   never a plan row or a note alone. A push starts CI on shared runners, so
   push when there is something for CI to check, and do not hold finished
   work back on the machine either.
+- **A pull request is described the way
+  [.github/pull_request_template.md](.github/pull_request_template.md)
+  lays it out:** where it came from, what was wrong, why, the fix, the
+  proof, the steps to test it, and what was found on the way. The steps
+  to test are what Tim reads first, so they are never left out. A change
+  with nothing to see in the app says so and names the test that proves
+  it instead. A short Before and After is no replacement for any of it.
 - **One change, one pull request.** Never push the same commits into two
   pull requests. Work that builds on an open pull request takes that pull
   request's branch as its base, so its diff shows only its own change, or
