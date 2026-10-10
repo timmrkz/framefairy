@@ -223,7 +223,7 @@ var outside = map[string]bool{
 	"Updates": true, "FollowChannel": true, "CheckForUpdates": true, "RestartToUpdate": true,
 	"InstallSpeechModel": true, "InstallLanguageModel": true,
 	"OpenKeysPage": true, "SaveAPIKey": true, "OpenCommit": true,
-	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true,
+	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true, "ReportProblem": true,
 }
 
 // walkedUpdates are the calls of the Updates page a walk can have answered

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
@@ -124,6 +125,10 @@ func main() {
 		},
 		OnShutdown: quit,
 		ShouldQuit: leave.shouldQuit,
+		// What Wails says goes into the app's log. Its debug lines are one
+		// for every request the window makes, which the log has its own
+		// lines for, see logged.
+		Logger: theLog.slog("wails", zerolog.InfoLevel),
 	})
 	svc.app = app
 	svc.leave = leave
@@ -136,7 +141,7 @@ func main() {
 	svc.updates = newUpdating(app.Updater, app.Quit, st, svc.jobs.busy, func(u UpdateState) {
 		app.Event.Emit("updates", u)
 	})
-	app.Menu.Set(appMenu(app, func() {
+	app.Menu.Set(appMenu(app, st, func() {
 		go svc.updates.checkNow()
 		app.Event.Emit("show-updates", nil)
 	}))

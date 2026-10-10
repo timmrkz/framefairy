@@ -10,7 +10,7 @@ export type { RoomView } from "./room";
 // is what a loop gone wrong looks like. See lib/said.ts.
 const call = <T>(method: string, ...args: unknown[]): Promise<T> => {
   const p = Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
-  if (method === "Said") return p;
+  if (method === "Said" || method === "Acted") return p;
   const from = performance.now();
   counted(method);
   return p.then(
@@ -552,8 +552,14 @@ export interface SetupState {
 export const api = {
   platform: () => call<string>("Platform"),
   // Lines for the app's own log, each with the moment it was said, in ms
-  // since 1970, see lib/said.ts.
-  said: (lines: { at: number; text: string }[]) => call<void>("Said", lines),
+  // since 1970, its level and the video it is about, see lib/said.ts.
+  said: (lines: { at: number; text: string; level?: string; video?: string; act?: string }[]) => call<void>("Said", lines),
+  // What the person did, said at once so the Go side's lines for it carry
+  // its id, see lib/said.ts.
+  acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),
+  // Writes a report of a problem to the Desktop and shows it in Finder,
+  // and gives its path, see screens/Report.svelte.
+  reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -809,6 +815,11 @@ export function onQuit(fn: (what: "ask" | "going") => void): () => void {
 
 export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
+}
+
+// Report a Problem… in the Help menu.
+export function onReport(fn: () => void): () => void {
+  return Events.On("report", () => fn());
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

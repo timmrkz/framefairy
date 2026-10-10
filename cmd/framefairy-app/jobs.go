@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"framefairy/asr"
 	"framefairy/engine"
 )
@@ -105,6 +107,9 @@ type Job struct {
 	// click is the press of New or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
+	// act is what the person did that asked for the job, so the app's log
+	// ties the job's lines to it however long it runs. See applog.go.
+	act string
 }
 
 // JobUpdate is what the interface receives on the "job" event.
@@ -302,7 +307,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: kind, Label: label,
 		State: JobRunning, Step: engine.StepWaiting, Queued: time.Now(), Lane: laneFor(kind),
-		steps: steps, cancel: cancel, ctx: ctx}
+		steps: steps, cancel: cancel, ctx: ctx, act: theLog.acting()}
 	if prepare != nil {
 		prepare(job)
 	}
@@ -682,6 +687,7 @@ func (q *queue) find(episode, kind string) (Job, bool) {
 func (q *queue) runSafely(job *Job) {
 	defer func() {
 		if caught := recover(); caught != nil {
+			theLog.jobLine(zerolog.ErrorLevel, job).Str("stack", string(debug.Stack())).Msgf("the job stopped unexpectedly: %v", caught)
 			q.update(job, func(j *Job) {
 				if j.State == JobRunning {
 					j.State = JobFailed
@@ -769,6 +775,8 @@ func (q *queue) runJob(job *Job) {
 			}
 		})
 	})
+	started := time.Now()
+	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
 	e := engine.NewEngine(log)
 	opts := q.store.Settings().options()
 	setUp(e, &opts)
@@ -810,6 +818,14 @@ func (q *queue) runJob(job *Job) {
 			}
 		}
 	})
+	q.mu.Lock()
+	state, failed := job.State, job.Error
+	q.mu.Unlock()
+	ended := theLog.jobLine(zerolog.InfoLevel, job)
+	if state == JobFailed {
+		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
+	}
+	ended.Str("state", string(state)).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

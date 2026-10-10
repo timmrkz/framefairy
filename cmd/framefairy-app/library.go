@@ -184,6 +184,12 @@ func (s *FrameFairy) Reveal(path string) error {
 	if !s.store.Known(path) {
 		return errNotInLibrary
 	}
+	return showInFolder(path)
+}
+
+// showInFolder shows a file in Finder, Explorer or the file manager, for
+// a file the app has already judged.
+func showInFolder(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		return startReaped(exec.Command("open", "-R", path))
