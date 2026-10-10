@@ -86,7 +86,8 @@ func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error)
 	}
 	k.mu.Unlock()
 	// However the read ends, a panic too, whoever waits is let go and a
-	// failure is not kept.
+	// failure is not kept. The failure is taken out first, so a waiter let
+	// go that asks again reads again rather than finding it.
 	defer func() {
 		if r.err != nil {
 			k.mu.Lock()
@@ -95,8 +96,8 @@ func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error)
 			}
 			k.mu.Unlock()
 		}
+		close(r.done)
 	}()
-	defer close(r.done)
 	r.err = fmt.Errorf("the read stopped before it finished")
 	r.v, r.err = read()
 	return r.v, r.err

@@ -55,8 +55,16 @@ export async function open(url) {
   // The episode the way the bridge found it, whatever the walk before did.
   const reset = await fetch(new URL("/reset", url), { method: "POST" });
   if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
-  const browser = await chromium.launch({ executablePath: browserPath() });
+  // WebGPU on, which headless Chromium on Linux only gives when asked, for
+  // the step that checks what the GPU draws, ["screen light"]. The video
+  // preview itself draws on a 2D canvas here, __flatScreen, because
+  // headless Chromium gives nothing back from a WebGPU canvas, and the
+  // walks read the frame on screen from the canvas. See screen.ts.
+  const browser = await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  await page.addInitScript(() => {
+    window.__flatScreen = true;
+  });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto(url);
@@ -269,9 +277,18 @@ async function reader(page) {
     window.__pictured = () => {
       const c = document.querySelector(".screen canvas");
       if (!c || !c.width || !c.height) return -1;
-      const g = c.getContext("2d");
-      const row = g.getImageData(0, Math.floor((c.height * strip) / 2), c.width, 1).data;
-      const grey = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height * 0.6), 1, 1).data[0];
+      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
+      // of it is copied to a 2D canvas to be read.
+      const grab = (x, y, w, h) => {
+        const s = document.createElement("canvas");
+        s.width = w;
+        s.height = h;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, x, y, w, h, 0, 0, w, h);
+        return t.getImageData(0, 0, w, h).data;
+      };
+      const row = grab(0, Math.floor((c.height * strip) / 2), c.width, 1);
+      const grey = grab(Math.floor(c.width / 2), Math.floor(c.height * 0.6), 1, 1)[0];
       if (grey < 6) return -1;
       let n = 0;
       for (let b = 0; b < bits; b++) {
@@ -289,14 +306,17 @@ async function reader(page) {
 // screen when recording starts is where it starts from and is not one of
 // them, since it was put up before. Also whether the playhead moved,
 // data-playhead on the video preview, so a play whose first frame is the
-// one already on screen is seen to have started.
+// one already on screen is seen to have started. And on every animation
+// frame, what lies over the picture, see overlay.
 export async function recordFrames(page, frame) {
   await reader(page);
+  await overlayReader(page);
   await page.evaluate(() => {
     const screen = document.querySelector(".screen");
     const from = screen.dataset.playhead;
     let last = window.__pictured();
     window.__frames = [];
+    window.__overlays = [];
     window.__moved = false;
     window.__recording = true;
     const watch = () => {
@@ -305,6 +325,7 @@ export async function recordFrames(page, frame) {
       if (n >= 0 && n !== last) window.__frames.push(n);
       last = n;
       if (screen.dataset.playhead !== from) window.__moved = true;
+      window.__overlays.push(window.__overlay());
       requestAnimationFrame(watch);
     };
     requestAnimationFrame(watch);
@@ -312,10 +333,40 @@ export async function recordFrames(page, frame) {
   return async () => {
     const r = await page.evaluate(() => {
       window.__recording = false;
-      return { frames: window.__frames, moved: window.__moved };
+      return { frames: window.__frames, moved: window.__moved, overlays: window.__overlays };
     });
-    return { frames: r.frames.map((n) => n * frame), moved: r.moved };
+    return { frames: r.frames.map((n) => n * frame), moved: r.moved, overlays: r.overlays };
   };
+}
+
+// Puts the overlay reader on the page once: where the playhead is, whether
+// it plays, whether the clip timeline says it is on the video, by the
+// chosen clip dimmed there or no clip chosen at all, and what the video
+// preview lays over the picture: the crop frame, the shade beside it and
+// the caption box.
+async function overlayReader(page) {
+  await page.evaluate(() => {
+    if (window.__overlay) return;
+    window.__overlay = () => {
+      const screen = document.querySelector(".screen");
+      const chosen = document.querySelector(".clip-timeline .chosen");
+      return {
+        at: Number(screen?.dataset.playhead),
+        playing: !!document.querySelector('button[aria-label="Pause"]'),
+        video: !chosen || chosen.classList.contains("dim"),
+        crop: !!screen?.querySelector(".frame"),
+        shade: !!screen?.querySelector(".shade"),
+        captions: !!screen?.querySelector(".captions"),
+      };
+    };
+  });
+}
+
+// What lies over the picture of the video preview now, as recordFrames
+// records it on every animation frame.
+export async function overlay(page) {
+  await overlayReader(page);
+  return page.evaluate(() => window.__overlay());
 }
 
 // Where the video preview is: the playhead, data-playhead, the moment the
@@ -489,7 +540,14 @@ export async function cropFrame(page) {
     // A pixel in from either side, past the line the frame is drawn with.
     const x0 = Math.ceil((left + 0.01) * canvas.width);
     const x1 = Math.floor((left + width - 0.01) * canvas.width);
-    const pixels = canvas.getContext("2d").getImageData(x0, 0, x1 - x0, canvas.height).data;
+    // The canvas may be a WebGPU canvas, which has no 2D context, so the
+    // piece is copied to a 2D canvas to be read.
+    const s = document.createElement("canvas");
+    s.width = x1 - x0;
+    s.height = canvas.height;
+    const t = s.getContext("2d", { willReadFrequently: true });
+    t.drawImage(canvas, x0, 0, x1 - x0, canvas.height, 0, 0, x1 - x0, canvas.height);
+    const pixels = t.getImageData(0, 0, x1 - x0, canvas.height).data;
     return { left, width, w: x1 - x0, h: canvas.height, pixels: [...pixels] };
   });
   if (!got) return null;
@@ -562,13 +620,22 @@ export async function filmedOnScreen(page) {
     window.__filmed = () => {
       const c = document.querySelector(".screen canvas");
       if (!c || !c.width || !c.height) return -1;
-      const g = c.getContext("2d");
+      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
+      // of it is copied to a 2D canvas to be read.
+      const grab = (x, y, w, h) => {
+        const s = document.createElement("canvas");
+        s.width = w;
+        s.height = h;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, x, y, w, h, 0, 0, w, h);
+        return t.getImageData(0, 0, w, h).data;
+      };
       const x = Math.floor(c.width / 4);
       const w = Math.max(1, Math.floor(c.width / 2));
       let n = 0;
       for (let b = 0; b < bits; b++) {
         const y = Math.floor((((b + 0.5) * band) / 180) * c.height);
-        const row = g.getImageData(x, y, w, 1).data;
+        const row = grab(x, y, w, 1);
         let sum = 0;
         for (let i = 0; i < row.length; i += 4) sum += row[i];
         n = n * 2 + (sum / (row.length / 4) > 110 ? 1 : 0);

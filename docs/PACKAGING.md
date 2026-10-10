@@ -255,6 +255,13 @@ ffmpeg actually has, macOS reaching for `h264_videotoolbox` and falling
 back to `libx264`, with `--encoder` to name one instead. Preflight checks
 that the chosen encoder exists rather than insisting on libx264.
 
+An HDR episode makes an HDR short, HEVC in 10 bits, see HDR in
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). On the Mac that is
+`hevc_videotoolbox`, which the ffmpeg we ship has. Elsewhere it is
+`libx265`, which is GPL like libx264, so an LGPL ffmpeg on Windows and
+Linux says it cannot keep the episode HDR and makes no short. Which
+system encoder takes its place there is open, with the H.264 one.
+
 Windows and Linux are deliberately not in that table yet. Windows has
 `h264_mf` and Linux has VA-API or openh264, and a guess written there would
 render every short made on that system. They go in when those builds are
