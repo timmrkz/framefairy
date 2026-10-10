@@ -135,8 +135,17 @@ their own:
   crop, which has never needed one, and **Automatic crop** takes it back
   as today. The marks appear only once a crop moves, so a podcast's clip
   timeline looks exactly as it does now.
-- **Two marks on nearly the same frame** stand side by side, the earlier
-  one on the left, rather than one hiding the other.
+- **A thumbnail and a crop place on the same frame** stand as a pair,
+  touching, the thumbnail on the left of the frame and the crop place on
+  its right, always in that order so the hand learns where each one is.
+  Neither hides the other, and each still takes its own click, drag and
+  double-click. Dragged apart, each goes back to standing centred on its
+  own frame. The same holds wherever two marks would overlap, on nearby
+  frames or with the clip timeline zoomed out: they are moved apart only
+  as far as it takes for them to touch, each as near its frame as it can
+  stand, and the playhead on a frame lights the mark that belongs to it.
+  The order on screen is never anything but the order in time, except
+  for the pair on one frame.
 - **Automatic crop** removes every place of the angle and brings back the
   placement the engine found.
 
