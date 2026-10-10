@@ -201,7 +201,8 @@ messages, pull request text, code comments and chat replies.
 - **Never use semicolons.** Use commas and full stops. Semicolons in code
   syntax are fine, in prose and comments they are not.
 - Plain, direct language. Short sentences.
-- **One name per thing.** The area the episode plays in is the **video
+- **One name per thing.** What a person adds and works on is a **video**
+  in the interface, never an episode. The area the episode plays in is the **video
   preview**, never the picture or the player. The slim strip under it, the
   whole episode at a glance, is the **range picker**, and the part of the
   episode a search reads is the **window**, never a stretch. In the

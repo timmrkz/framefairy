@@ -165,7 +165,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 				return nil, -1, renderErr("a clip needs at least one second")
 			}
 			if end-start > MaxClipSpan {
-				return nil, -1, renderErr("a clip can span at most %s minutes of the episode",
+				return nil, -1, renderErr("a clip can span at most %s minutes of the video",
 					fixed(MaxClipSpan/60, 0))
 			}
 		default:

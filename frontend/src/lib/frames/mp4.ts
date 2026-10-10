@@ -367,7 +367,7 @@ function parseSamples(v: View, stbl: Box, shift: number, timescale: number, reor
   if (!stsz) fail(child(v, stbl, "stz2") ? "compact sample sizes are not read" : "a track has no sample sizes");
   const fixed = v.u32(stsz.body + 4);
   const count = v.u32(stsz.body + 8);
-  if (count > 50_000_000) fail("a track has more samples than any episode");
+  if (count > 50_000_000) fail("a track has more samples than any video");
   const size = new Uint32Array(count);
   for (let i = 0; i < count; i++) size[i] = fixed || v.u32(stsz.body + 12 + i * 4);
 
@@ -630,7 +630,7 @@ function pcmSamples(v: View, stbl: Box, shift: number, timescale: number, frameB
   if (!chunks) fail("a track has no chunk offsets");
   const wide = chunks.type === "co64";
   const chunkCount = v.u32(chunks.body + 4);
-  if (chunkCount > 50_000_000) fail("a track has more chunks than any episode");
+  if (chunkCount > 50_000_000) fail("a track has more chunks than any video");
   const stsc = child(v, stbl, "stsc");
   if (!stsc) fail("a track has no sample to chunk table");
   const stts = child(v, stbl, "stts");

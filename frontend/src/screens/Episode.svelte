@@ -560,7 +560,7 @@
       return `The model is reading the window from ${clock(from)} to ${clock(to)} and choosing ${count} moments from it. Each one appears here and on the range picker as soon as it is found.${leftOfWork ? ` About ${leftOfWork}.` : ""}`;
     }
     const first = transcribing
-      ? `The episode is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
+      ? `The video is being transcribed on this machine, no cloud and no cost.${leftToGo ? ` About ${leftToGo}.` : ""}`
       : heardWindow
         ? "The search waits while another one finds its clips."
         : "The window is not all transcribed yet.";

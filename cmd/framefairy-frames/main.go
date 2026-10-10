@@ -262,16 +262,16 @@ func openVideo(path string) (*video, error) {
 func openMedia(path string, kind astiav.MediaType) (*video, error) {
 	fc := astiav.AllocFormatContext()
 	if fc == nil {
-		return nil, errors.New("no memory to open the episode")
+		return nil, errors.New("no memory to open the video")
 	}
 	if err := fc.OpenInput(path, nil, nil); err != nil {
 		fc.Free()
-		return nil, fmt.Errorf("the episode cannot be opened: %w", err)
+		return nil, fmt.Errorf("the video cannot be opened: %w", err)
 	}
 	v := &video{fc: fc}
 	if err := fc.FindStreamInfo(nil); err != nil {
 		v.close()
-		return nil, fmt.Errorf("the episode cannot be read: %w", err)
+		return nil, fmt.Errorf("the video cannot be read: %w", err)
 	}
 	for _, s := range fc.Streams() {
 		if s.CodecParameters().MediaType() == kind {
@@ -282,9 +282,9 @@ func openMedia(path string, kind astiav.MediaType) (*video, error) {
 	if v.stream == nil {
 		v.close()
 		if kind == astiav.MediaTypeAudio {
-			return nil, errors.New("the episode has no sound")
+			return nil, errors.New("the video has no sound")
 		}
-		return nil, errors.New("the episode has no picture")
+		return nil, errors.New("the video has no picture")
 	}
 	return v, nil
 }
@@ -482,7 +482,7 @@ func (c *cursor) seek(from float64) error {
 	tb := c.v.stream.TimeBase()
 	ts := int64(math.Floor(from / tb.Float64()))
 	if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
-		return fmt.Errorf("the episode cannot be read from %.3f s: %s", from, err)
+		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
 	flushDecoder(c.v.dec)
 	c.sentEOF, c.graphEOF = false, false
@@ -605,7 +605,7 @@ func (c *cursor) feed() error {
 			return c.v.dec.SendPacket(nil)
 		}
 		if err != nil {
-			return c.withSaid(fmt.Errorf("the episode could not be read: %w", err))
+			return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
 		}
 		if c.pkt.StreamIndex() != c.v.stream.Index() {
 			c.pkt.Unref()
