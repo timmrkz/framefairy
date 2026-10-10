@@ -1746,7 +1746,32 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             { polling: 50, timeout: 10000 },
           )
           .then(() => true, () => false);
-        if (!stopped) wrong = `the play did not stop at the end of the episode, ${end.toFixed(2)}`;
+        if (!stopped) {
+          wrong = `the play did not stop at the end of the episode, ${end.toFixed(2)}`;
+          break;
+        }
+        // The playhead stays at the end, drawn on the clip timeline and on
+        // the range picker, where the hand can take hold of it again. A
+        // playhead a hair past the end was drawn on neither, plan row 2.172.
+        const lost = await page.evaluate((duration) => {
+          const at = Number(document.querySelector(".screen").dataset.playhead);
+          if (at > duration) return `the playhead stopped at ${at.toFixed(3)}, past the end of the episode, ${duration.toFixed(3)}`;
+          const on = (line, track) => {
+            if (!line || !track) return false;
+            const l = line.getBoundingClientRect();
+            const t = track.getBoundingClientRect();
+            const x = l.left + l.width / 2;
+            return l.width > 0 && l.height > 0 && x >= t.left - 1 && x <= t.right + 1;
+          };
+          const timeline = document.querySelector(".clip-timeline");
+          if (!on(timeline?.querySelector(".at .playhead"), timeline?.querySelector(".track")))
+            return "the clip timeline shows no playhead at the end of the episode";
+          const picker = [...document.querySelectorAll(".playhead")].find((e) => !e.closest(".clip-timeline"));
+          const track = [...document.querySelectorAll(".track")].find((e) => !e.closest(".clip-timeline"));
+          if (!on(picker, track)) return "the range picker shows no playhead at the end of the episode";
+          return "";
+        }, duration);
+        if (lost) wrong = lost;
         break;
       }
       case "no browser decoder": {
