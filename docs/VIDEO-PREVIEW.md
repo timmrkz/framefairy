@@ -145,6 +145,14 @@ closed for standing unused.
   starts, before any frame is asked for. Cursors of sound, two kept, read
   the sound by the same rule the ffmpeg program reads it by for the render
   and the transcript, and give the same samples, step 3.
+- A seek lands on a key frame shown at the moment asked for or before it.
+  ffmpeg finds a key frame by when it is decoded, and in an open GOP, the
+  way HEVC encoders and DaVinci Resolve write it, a key frame is decoded
+  before the frames shown just ahead of it, which need the GOP before and
+  are dropped when decoding starts at that key frame. So a seek to one of
+  them landed a key frame late, and the frame asked for never came. The
+  decoder reads the key frame a seek lands on and seeks to the one before
+  while it is shown too late. Plan row 2.186.
 - It takes requests from the Go side: frames from a moment on at a size,
   sound from a moment on at a rate in so many channels, and stop, see
   `internal/framewire`. A request for a new moment drops what the last one

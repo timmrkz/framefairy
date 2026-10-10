@@ -546,14 +546,60 @@ func lightOf(trc astiav.ColorTransferCharacteristic) framewire.Light {
 // seek goes to the key frame before from, with what the decoder held
 // dropped.
 func (c *cursor) seek(from float64) error {
-	tb := c.v.stream.TimeBase()
-	ts := int64(math.Floor(from / tb.Float64()))
-	if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
+	tb := c.v.stream.TimeBase().Float64()
+	ts, err := c.keyBefore(from, int64(math.Floor(from/tb)))
+	if err == nil {
+		err = c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
+	}
+	if err != nil {
 		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
 	flushDecoder(c.v.dec)
 	c.sentEOF, c.graphEOF = false, false
 	return nil
+}
+
+// keyBefore is where to seek to for the frame at from: a moment whose key
+// frame is shown at from or before it. A seek finds its key frame by when
+// it is decoded, and in an open GOP, HEVC's CRA, the key frame is decoded
+// before the frames shown just ahead of it, which need the GOP before to
+// be decoded and are dropped when a decoder starts at that key. So a seek
+// to one of those frames landed on a key frame shown after it, and the
+// frame asked for never came: start.mp4 stood without a picture and would
+// not play, plan row 2.186. The key frame a seek lands on is read, and
+// while it is shown after from, the seek goes to the key before it.
+func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
+	tb := c.v.stream.TimeBase().Float64()
+	landed := int64(math.MaxInt64)
+	for range 16 {
+		if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
+			return 0, err
+		}
+		pts, dts, err := c.firstPacket()
+		if err != nil || pts == astiav.NoPtsValue || dts == astiav.NoPtsValue || dts >= landed ||
+			float64(pts)*tb <= from+1e-6 {
+			return ts, nil
+		}
+		landed, ts = dts, dts-1
+	}
+	return ts, nil
+}
+
+// firstPacket is when the next packet of the picture is shown and when it
+// is decoded. It is read and let go, so a seek has to follow it.
+func (c *cursor) firstPacket() (pts, dts int64, err error) {
+	for {
+		if err := c.v.fc.ReadFrame(c.pkt); err != nil {
+			return 0, 0, err
+		}
+		if c.pkt.StreamIndex() != c.v.stream.Index() {
+			c.pkt.Unref()
+			continue
+		}
+		pts, dts = c.pkt.Pts(), c.pkt.Dts()
+		c.pkt.Unref()
+		return pts, dts, nil
+	}
 }
 
 // next answers up to n frames from where the cursor is, none that starts
