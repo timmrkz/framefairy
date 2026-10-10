@@ -298,7 +298,16 @@ episode makes an HDR short. That is the rule of no colour changes.
   `setparams`, so the encoder takes them, `TestAnHDREpisodeMakesAnHDRShort`.
 - The captions are drawn at the reference white for graphics in HDR,
   BT.2408, 203 nits, so the caption colour looks on an HDR screen the way
-  it was chosen, and not glaring.
+  it was chosen, and not glaring. **This is done**: each colour of the
+  caption style is taken as sRGB, turned into light with white at 203
+  nits, into BT.2020's colours and into the short's own curve, which puts
+  white at 75 percent of HLG's signal and 58 percent of PQ's,
+  `engine/hdrcolour.go`. The caption file says `None` for its matrix, so
+  libass draws in the frame's own range and matrix, BT.2020's, and a
+  white caption stays white. A standard short keeps `TV.709`.
+  `TestTheCaptionsOfAnHDRShortAreAtTheReferenceWhite` and
+  `TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite`, which reads the
+  burned white back from the frame.
 - What the encoder for 10-bit HEVC is on Windows and Linux, where our
   ffmpeg has no x265 because x265 is GPL, is a question for
   [PACKAGING.md](PACKAGING.md). On the Mac it is VideoToolbox.

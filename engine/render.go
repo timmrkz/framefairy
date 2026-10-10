@@ -459,7 +459,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		if err != nil {
 			return "", err
 		}
-		if err := e.WriteASS(ctx, cues, assPath, rs.OutW, rs.OutH, style); err != nil {
+		if err := e.writeASS(ctx, cues, assPath, rs.OutW, rs.OutH, style, source.Light()); err != nil {
 			return "", err
 		}
 		// The face travels with the program, so the render never depends on
