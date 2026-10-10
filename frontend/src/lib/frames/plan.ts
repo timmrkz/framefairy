@@ -72,6 +72,13 @@ export class Program {
     return this.times === Infinity;
   }
 
+  // Where the program ends, as a position on it, Infinity while it loops.
+  // This is all the loop decides: a play goes on until here, whatever it
+  // has worked out beyond.
+  get end(): number {
+    return this.times * this.length;
+  }
+
   // The loop switched on while it plays: it goes on and on from here.
   loopOn() {
     this.times = Infinity;
@@ -517,9 +524,11 @@ export class AudioPlan {
     const last = this.packetBefore(to);
     const run = this.runs[this.runs.length - 1];
     // Carried on when the stretch starts no further on than a run would
-    // start before it anyway, and not back in what was fed.
+    // start before it anyway, and not back in what was fed: never before
+    // where the run's last stretch ends, which a loop back to the start of
+    // a clip with no cut would be.
     const lead = this.packetFrom(from - this.preroll);
-    if (run && first >= run.first && lead <= run.last + 1) {
+    if (run && from >= run.stretches[run.stretches.length - 1].to && lead <= run.last + 1) {
       run.last = Math.max(run.last, last);
       run.stretches.push(stretch);
       return;

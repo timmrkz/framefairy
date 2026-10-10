@@ -448,12 +448,18 @@ and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
 
 `loop switched off near the end stops the play at the clip's end` is
-Tim's test of 2.183. It plays the clip, presses L to loop it, and L again
-two seconds before the clip's end, once the play has worked out the next
-time through. The play has to stop within 400 ms of the playhead reaching
-the clip's end, and no frame from before the clip's last second may be
-drawn after that. Before the fix it fails with the play going on for 9 s
-with the playhead at the end.
+Tim's test of 2.183. It records every sample the sound card is handed,
+plays the clip, presses L to loop it, and two seconds before the clip's
+end presses L five times quickly, the loop off after the last, once the
+play has worked out the next time through. No press may start the play
+over. The bridge's video sounds a steady tone, so the sound may not bend
+by more than 3 % of its height from one sample to the next, which a stop
+or a restart does, and nothing may be heard after the clip's end. The
+play has to stop within 400 ms of the playhead reaching the end, and no
+frame from before the clip's last second may be drawn after that. Against
+main it fails with the play going on for 9 s with the playhead at the
+end, and against the first fix, which started the play over on each
+press, with three restarts, heard as a click at each.
 
 `shift and the arrows skip ahead through a clip on the video, and walk its
 words on the clip` is Tim's test of the skip. With the clip's start

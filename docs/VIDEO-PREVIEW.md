@@ -96,8 +96,9 @@ removed. Nothing is prepared before the first play.
    or it is off while it would matter, the way I and O are off inside a
    clip. #152 did the same in 366 lines by splicing the new program into
    the running play, and was closed for #155, which made the case
-   impossible in about 40. The one exception is loop, 2.150, which only
-   changes what follows the clip's end. No other splice is built. Only
+   impossible in about 40. The one exception is loop, 2.150 and 2.183,
+   which changes only where the play ends and nothing that plays. No
+   other splice is built. Only
    the space bar and a click on the clip timeline change a play. An edge
    of the clip or of a cut, dragged or clicked while it plays, moves no
    playhead and changes nothing that plays: the edit is saved and drawn

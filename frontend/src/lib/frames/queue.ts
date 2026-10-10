@@ -86,6 +86,9 @@ export type Stats = {
   late: number;
   // Stretches of sound scheduled after their time had come.
   lateSound: number;
+  // Plays started, a seek while playing and a new program included. A
+  // press of L starts none, see relooped.
+  starts: number;
   // Packets of sound decoded, and stretches handed to the sound card.
   soundDecoded: number;
   soundScheduled: number;
@@ -562,6 +565,7 @@ export class FrameQueue {
     drawn: 0,
     late: 0,
     lateSound: 0,
+    starts: 0,
     soundDecoded: 0,
     soundScheduled: 0,
     reads: 0,
@@ -619,7 +623,9 @@ export class FrameQueue {
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
-  private sources = new Set<AudioBufferSourceNode>();
+  // What is on the sound card, with the sound card's time each stretch
+  // ends at by itself, see clip.
+  private sources = new Map<AudioBufferSourceNode, number>();
   private pending: Chunk | null = null;
   private unscheduled: Chunk[] = [];
   private soundRun: AudioRun | null = null;
@@ -648,6 +654,8 @@ export class FrameQueue {
     this.canvas = canvas;
     this.known = known !== null;
     this.reader = new Reader(url, known);
+    // For the walks, which listen to what it plays, see the sequences.
+    (globalThis as unknown as { __frameQueue?: FrameQueue }).__frameQueue = this;
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
     });
@@ -794,11 +802,17 @@ export class FrameQueue {
   }
 
   // Only the loop switched, with the same pieces, while a play starts or
-  // plays: the play goes on as it is, because the loop says nothing until
-  // the end of the clip. Started again for it, the play threw away what
-  // was decoded and the picture and the sound stopped for a moment. Only
-  // in the last moments of a time through, once what comes after its end
-  // is worked out already, is it started again.
+  // plays: nothing that plays changes, because the loop says only where
+  // the play ends, program.end. The play works out what follows the
+  // clip's end before it gets there, the next time through with the loop
+  // on, and keeps whatever it has worked out when the loop changes. Its
+  // end is where it stops: the picture at tick, the sound by each stretch
+  // on the sound card stopping there, see clip.
+  //
+  // Started again for the loop, the play threw away what was decoded, and
+  // the picture and the sound stopped for a moment at every press. Kept
+  // going without the end moving, the play stood at the clip's end while
+  // the sound of its start went on for seconds. Both found by Tim.
   private relooped(pieces: Piece[] | null, loop: boolean): boolean {
     if (this.state !== "playing" && this.state !== "starting") return false;
     const copy = pieces ? pieces.map((p) => ({ start: p.start, end: p.end })) : null;
@@ -806,19 +820,17 @@ export class FrameQueue {
     if (this.vplan && this.built) {
       if (loop) this.built.loopOn();
       else this.built.loopOff(this.reached);
-      if (!this.vplan.relooped() || (this.aplan && !this.aplan.relooped())) {
-        // The next time through is worked out already, its sound on the
-        // sound card, so the play is started again from here on the new
-        // program. Left to setProgram, it was kept for the next play while
-        // this one went on: the program it had changed under it ended at
-        // the clip's end, the playhead stood there, and the sound and the
-        // picture of the clip's start went on for what was worked out,
-        // seconds of it. Found by Tim.
-        this.asked = null;
-        this.want(pieces, loop);
-        this.start(this.at);
-        return true;
+      if (loop) {
+        // A play that had worked out its end works on past it, the sound
+        // too, and a stretch on the sound card stopped at the end plays
+        // to its own end again.
+        this.vplan.relooped();
+        this.aplan?.relooped();
+        this.soundDone = !this.aplan;
       }
+      for (const src of this.sources.keys()) this.clip(src);
+      this.pump();
+      this.pumpSound();
     } else {
       // Not worked out yet: the play starting builds it from what is wanted.
       this.built = null;
@@ -1127,7 +1139,7 @@ export class FrameQueue {
     this.ticket++;
     cancelAnimationFrame(this.frameRequest);
     clearTimeout(this.suspendTimer);
-    for (const src of this.sources) {
+    for (const src of this.sources.keys()) {
       try {
         src.stop();
       } catch {}
@@ -1165,6 +1177,7 @@ export class FrameQueue {
   // prepared and waiting for play.
   private start(from: number, cue = false) {
     this.stopPlay();
+    if (!cue) this.stats.starts++;
     const ticket = this.ticket;
     this.state = cue ? "cued" : "starting";
     this.firstShown = false;
@@ -1330,7 +1343,7 @@ export class FrameQueue {
     // display frame, and the frame before a cut is the one that says where
     // the cut is.
     const k = Math.max(this.k, Math.min(plan.gridAt(pos), plan.nextEdge(this.k)));
-    if (plan.finished && k > plan.lastK) {
+    if (pos >= this.program.end || (plan.finished && k > plan.lastK)) {
       this.end();
       return;
     }
@@ -1662,6 +1675,23 @@ export class FrameQueue {
       this.sources.delete(src);
       src.disconnect();
     };
-    this.sources.add(src);
+    this.sources.set(src, when + c.length / rate);
+    this.clip(src);
+  }
+
+  // A stretch on the sound card stops where the program ends, or at its
+  // own end while the program loops. The sound ends with the last piece
+  // faded out to nothing at its edge, see fade, so stopped there it stops
+  // in silence, wherever the stretch began. Asked again it moves the stop,
+  // which a source allows until it has stopped, so the loop switched on
+  // and off a dozen times in the last second leaves the sound as it was.
+  private clip(src: AudioBufferSourceNode) {
+    const own = this.sources.get(src);
+    if (own === undefined || this.c0 === null) return;
+    const end = this.program.end;
+    const at = Number.isFinite(end) ? this.c0 + (Math.round(end * this.sampleRate) - this.m0) / this.sampleRate : own;
+    try {
+      src.stop(Math.max(0, Math.min(at, own)));
+    } catch {}
   }
 }
