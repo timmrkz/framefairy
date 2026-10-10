@@ -185,7 +185,8 @@ quarter of a second:
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, the one before it then staying up through its time | the caption that broke where a removed word had been, and the next caption's first word pulled up into the room a removed word left |
+| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
+| A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 
 The engine's captions are asked for directly, `Captions` through
@@ -235,7 +236,7 @@ every walk's:
 | Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
 | The space bar plays: a frame comes, or the playhead moves | a press of the space bar lost while the file was still being read |
 | Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
-| A clip played to its end stops at its end | |
+| A clip played to its end stops at its end, within half a second of the playhead reaching it, half the time with L pressed on the way and again a moment before the end | the clip's start heard for seconds after the play stood at its end, loop switched off near the end, found by Tim |
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
 | The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
@@ -349,11 +350,13 @@ as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `trim` an edge by some
-pixels and `reset` an edge. What has to come of them: `box`, what
+pixels, `reset` an edge and click the caption `block` holding a word. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
-appearing and going when it did at a mark, and `cuts`, how many cuts the
-clip timeline shows. For finding clips: `model` holds, fails or answers,
+appearing and going when it did at a mark, `fewer`, so many words fewer
+than at a mark and no caption fewer, `gone`, no caption holding a
+word, `blocks`, a block on the clip timeline for every caption the engine
+has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,
 and then `wait for` the head to say a word, a `row` to say something, and
 how many `cards` the list holds. For a render: `add` a video filmed at a
@@ -446,6 +449,20 @@ or more and go through a part cut out between them, on the video and with
 nothing over the picture the whole way. The clip's play has to jump a cut
 and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
+
+`loop switched off near the end stops the play at the clip's end` is
+Tim's test of 2.183. It records every sample the sound card is handed,
+plays the clip, presses L to loop it, and two seconds before the clip's
+end presses L five times quickly, the loop off after the last, once the
+play has worked out the next time through. No press may start the play
+over. The bridge's video sounds a steady tone, so the sound may not bend
+by more than 3 % of its height from one sample to the next, which a stop
+or a restart does, and nothing may be heard after the clip's end. The
+play has to stop within 400 ms of the playhead reaching the end, and no
+frame from before the clip's last second may be drawn after that. Against
+main it fails with the play going on for 9 s with the playhead at the
+end, and against the first fix, which started the play over on each
+press, with three restarts, heard as a click at each.
 
 `shift and the arrows skip ahead through a clip on the video, and walk its
 words on the clip` is Tim's test of the skip. With the clip's start

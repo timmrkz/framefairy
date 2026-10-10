@@ -301,8 +301,10 @@ cut made, moved or put back, an edge trimmed or a step undone, moves no
 playhead and changes nothing that plays: the play goes on with the pieces
 it started with, and the next play, or a click, plays the clip as it is
 now. A drag on a cut's edge used to start the play again on every step,
-which stuttered. Loop switched on or off changes only what follows the
-clip's end.
+which stuttered. Loop switched on or off changes only where the play
+ends, never what plays: the picture stops at that end and the sound
+stops there too, in the silence the clip fades out to, however often L
+is pressed on the way.
 
 The sound goes on while the app is behind another window. macOS stops the
 page's animation frames there, and the frames are what fed the sound, a
@@ -914,13 +916,31 @@ bubble scrolled by those eight pixels.
     time it held is no pause, the room it took on its line stays taken, so
     no word of the next caption is pulled up into it, and a caption whose
     first word it was appears when that word is said. A caption whose
-    words are all removed goes, and the one before it stays up through
-    its time. Before, the gap it left
+    words are all removed goes and leaves its time empty, and the one
+    before it goes when it did. It used to stay up through that time, so
+    the block before a removed caption grew across its place on the clip
+    timeline, which Tim read as two captions merging. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words
     became one list: the engine refused an empty word and the caption box
     put the old one back.
+  - **Removing a caption:** a click on a caption block on the clip
+    timeline puts the playhead on its first word and picks the block, which
+    wears the frame a picked word wears in the caption box. Delete, the key
+    marked delete on the Mac and the forward delete key alike, then removes
+    every word of that caption at once, the way removing each word would,
+    in one step that Cmd+Z takes back whole. The clip keeps its time, the
+    place the caption had stays empty, and every other caption appears
+    and goes when it did. The block leaves with the key and
+    comes back if the engine refuses. A press anywhere else, or Escape,
+    lets the pick go, and so does any other key: a block clicked only to put
+    the playhead there, then Shift and an arrow to a word, means delete is
+    for that word, and a frame stepped with an arrow means nothing is
+    picked any more. Found by Tim. The engine finds
+    the caption by the moment its first word starts, `RemoveCaption` in
+    `engine/corrections.go`, and a word typed back afterwards comes back as
+    any removed word does.
   - **Putting a word back:** Cmd+Z, or type it into the word beside it,
     "das" made "das ein". Both end the same way: the word is back where
     it was heard, with its own time, lit while it is said, and no
@@ -1302,10 +1322,16 @@ bubble scrolled by those eight pixels.
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
   thumbnail's, as the three marks anyone knows. Loop switched on or off
-  while the clip plays changes nothing that plays until the clip's end:
-  the play goes on as it was. It was started again from the playhead,
-  and the picture and the sound stopped for a tenth of a second at every
-  press. Then the
+  while the clip plays changes nothing that plays: the loop only says
+  where the play ends. The play works out the next time through before
+  the clip's end, and when the loop goes off it keeps it but stops at
+  the end, the picture there and every stretch of sound on the sound
+  card there, in the silence the clip fades out to. When the loop comes
+  back on, the same stretches play on. Started again from the playhead
+  for each press, the picture and the sound stopped for a moment and the
+  sound clicked, and kept going without a new end, the play stood at the
+  clip's end while the sound of its start played on for seconds. Tim
+  heard both. Then the
   title of the selected clip, why it was chosen and its numbers, and on the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the

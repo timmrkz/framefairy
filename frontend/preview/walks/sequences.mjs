@@ -10,6 +10,13 @@
 //                      in the caption box, clicks it and leaves it with
 //                      Escape, so it wears the keyboard's frame
 //   ["click", word]    clicks the word, which opens it
+//   ["block", word]    clicks the block on the clip timeline of the caption
+//                      the engine has the word in, which picks it
+//   ["gone", word]     no caption the engine has holds the word
+//   ["fewer", label, n] the engine's captions hold n words fewer than at
+//                      the mark, and as many captions
+//   ["blocks"]         the clip timeline draws a block for every caption the
+//                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
@@ -33,6 +40,15 @@
 //                      holds it still again, then lets go, reading the
 //                      playhead, the frame on screen and the play button on
 //                      every animation frame
+//   ["loop off near the end", seconds]
+//                      records every sample handed to the sound card,
+//                      plays the clip from where the playhead is, presses
+//                      L to loop it, and once the playhead is so many
+//                      seconds before the clip's end presses L five times
+//                      quickly, the loop off after the last, then reads
+//                      the playhead, the frame on screen and the play
+//                      button on every animation frame until the play
+//                      stops, and a second after
 //   ["play from", where, seconds]
 //                      clicks the clip timeline "before" the clip, halfway
 //                      between the track's left end and the clip's start,
@@ -155,6 +171,14 @@
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
 //                      drawn was older than the one before it
+//   ["stopped at its end"]
+//                      since "loop off near the end", the presses of L
+//                      started no play over, the sound did not click,
+//                      nothing was heard after the clip's end, the play
+//                      stopped within 400 ms of the playhead reaching it,
+//                      and no frame drawn from then on is from before the
+//                      last second of the clip, so nothing of the clip's
+//                      start played again
 //   ["nailed"]         since "press while playing", the playhead stood
 //                      still under the hand while it held still, on the
 //                      press and again where the hand moved to, the button
@@ -313,6 +337,55 @@ export const sequences = [
       ["press", "Backspace"],
       ["box", "Ich war sechs Jahre alt,"],
       ["spans", "start"],
+    ],
+  },
+  {
+    name: "delete removes the caption block clicked on the clip timeline",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["blocks"],
+      ["mark", "removed"],
+      ["undo"],
+      ["same", "start"],
+      ["blocks"],
+      ["redo"],
+      ["same", "removed"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then a word walked to, delete removes only the word",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Backspace"],
+      ["fewer", "start", 1],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then the playhead moved a frame, delete removes nothing",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "ArrowRight"],
+      ["press", "Backspace"],
+      ["same", "start"],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption block clicked and then let go of is not removed by delete",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Escape"],
+      ["press", "Delete"],
+      ["same", "start"],
+      ["blocks"],
     ],
   },
   {
@@ -810,6 +883,21 @@ export const sequences = [
       ["only the video"],
       ["play from", "in", 4, "Shift+ArrowRight"],
       ["the clip shown"],
+    ],
+  },
+  {
+    // Tim pressed L a few times while the clip played, and the play went
+    // on to the clip's end and stood there, but the sound of the clip's
+    // start played on for about three seconds. Loop switched off once the
+    // play has worked out the next time through, in the last four seconds
+    // of a time through, stops the play at the end, sound and picture.
+    // Then Tim pressed L quickly near the end and heard clicks: that fix
+    // started the play over on each press. A press of L touches nothing
+    // that plays, so the sound runs on without a click.
+    name: "loop switched off near the end stops the play at the clip's end",
+    steps: [
+      ["loop off near the end", 2],
+      ["stopped at its end"],
     ],
   },
   {
@@ -1434,6 +1522,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   // What the video preview laid over the picture on every animation frame
   // of the last "play from", and the clip the engine had then.
   let played = null;
+  let loopEnd = null;
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -1452,6 +1541,48 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await word(arg).click();
         await page.keyboard.press("Escape");
         await watch.step("frame", s);
+        break;
+      }
+      case "block": {
+        const now = await engineState(page, watch.at);
+        const cue = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))));
+        if (!cue) {
+          wrong = `no caption has "${arg}"`;
+          break;
+        }
+        await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
+        await watch.step("block", s);
+        break;
+      }
+      case "gone": {
+        const now = await engineState(page, watch.at);
+        if (now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
+          wrong = `a caption still has "${arg}"\n${describe(marks.start ?? now, now)}`;
+        }
+        break;
+      }
+      case "fewer": {
+        const [label, n] = arg;
+        const count = (caps) => caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words)).length;
+        const now = await engineState(page, watch.at);
+        const was = marks[label];
+        if (count(was) - count(now) !== n || now.captions.length !== was.captions.length) {
+          wrong = `${count(was) - count(now)} words and ${was.captions.length - now.captions.length} captions fewer than at "${label}", not ${n} and none\n${describe(was, now)}`;
+        }
+        break;
+      }
+      case "blocks": {
+        const now = await engineState(page, watch.at);
+        const want = [...new Set(now.captions.map((c) => String(c.first)))].join(" ");
+        let drawn = "";
+        for (let i = 0; i < 20; i++) {
+          drawn = await page.evaluate(() =>
+            [...new Set([...document.querySelectorAll(".clip-timeline .caption")].map((b) => b.dataset.first))].join(" "),
+          );
+          if (drawn === want) break;
+          await page.waitForTimeout(100);
+        }
+        if (drawn !== want) wrong = `the clip timeline draws captions at ${drawn}, the engine has them at ${want}`;
         break;
       }
       case "click":
@@ -1525,6 +1656,95 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.mouse.up();
         await page.waitForTimeout(500);
         await page.evaluate(() => (window.__playWatch = false));
+        await settle(page);
+        break;
+      }
+      case "loop off near the end": {
+        const end = (await engineState(page, watch.at)).segments.at(-1).end;
+        await preview(page, 0.2);
+        // Every sample the sound card is handed, with the sound card's own
+        // frame it plays at, the way the frame queue's probe records it.
+        await page.evaluate(async () => {
+          const q = window.__frameQueue;
+          const code = `registerProcessor("recorder", class extends AudioWorkletProcessor {
+            process(inputs) {
+              const ch = inputs[0][0];
+              // Chromium now and then hands two render quanta the same
+              // currentFrame and the one after that two on, see the frame
+              // queue's probe, preview/frames/main.ts.
+              const frame = Math.max(currentFrame, (this.last ?? -Infinity) + 128);
+              this.last = frame;
+              // Sent 32 quanta at a time: a message for each, 375 a second,
+              // stopped coming after about 8000 of them.
+              if (!ch) return true;
+              if (!this.batch) this.batch = { frame, data: new Float32Array(4096), n: 0 };
+              if (this.batch.frame + this.batch.n !== frame && this.batch.n) {
+                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
+                this.batch = { frame, data: new Float32Array(4096), n: 0 };
+              }
+              this.batch.data.set(ch, this.batch.n);
+              this.batch.n += ch.length;
+              if (this.batch.n + 128 > 4096) {
+                this.port.postMessage({ frame: this.batch.frame, data: this.batch.data.slice(0, this.batch.n) });
+                this.batch = null;
+              }
+              return true;
+            }
+          });`;
+          await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+          const node = new AudioWorkletNode(q.audio, "recorder", { numberOfOutputs: 1 });
+          window.__heard = [];
+          node.port.onmessage = (e) => window.__heard.push(e.data);
+          const hush = q.audio.createGain();
+          hush.gain.value = 0;
+          q.out.connect(node).connect(hush).connect(q.audio.destination);
+          // Held, or the recorder is collected while it records.
+          window.__recorder = [node, hush];
+        });
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(300);
+        const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
+        await page.keyboard.press("l");
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - arg, { timeout: 60000, polling: "raf" })
+          .catch(() => {});
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            const playing = !!document.querySelector('button[aria-label="Pause"]');
+            window.__played.push([performance.now(), at, window.__pictured(), playing]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        // L pressed quickly five times, the way Tim did, the loop off after
+        // the last.
+        for (let i = 0; i < 5; i++) {
+          await page.keyboard.press("l");
+          await page.waitForTimeout(120);
+        }
+        await page
+          .waitForFunction(() => !!document.querySelector('button[aria-label="Play"]'), null, { timeout: (arg + 8) * 1000, polling: 100 })
+          .catch(() => {});
+        await page.waitForTimeout(1000);
+        const q = await page.evaluate(() => {
+          window.__playWatch = false;
+          const q = window.__frameQueue;
+          return {
+            starts: q.stats.starts,
+            c0: q.c0,
+            m0: q.m0,
+            rate: q.audio.sampleRate,
+            programEnd: q.program.end,
+            heard: window.__heard.map((h) => ({ frame: h.frame, data: Array.from(h.data) })),
+          };
+        });
+        loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
         await settle(page);
         break;
       }
@@ -2316,6 +2536,58 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         if (!wrong && played.length < 30) wrong = `only ${played.length} animation frames were read`;
         if (!wrong && longest > 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge`;
+        break;
+      }
+      case "stopped at its end": {
+        if (!loopEnd) {
+          wrong = "stopped at its end with nothing played";
+          break;
+        }
+        const { end, fps } = loopEnd;
+        const played = await page.evaluate(() => window.__played ?? []);
+        // Reached once the playhead stands in the clip's last frame.
+        const i = played.findIndex(([, at]) => at >= end - 1.5 / fps);
+        if (i < 0) {
+          wrong = `the playhead never reached the clip's end at ${end.toFixed(3)}, it got to ${Math.max(...played.map(([, at]) => at)).toFixed(3)}`;
+          break;
+        }
+        const [reached] = played[i];
+        const stopped = played.slice(i).find(([, , , playing]) => !playing);
+        const old = played.slice(i).find(([, , n]) => n >= 0 && n / fps < end - 1);
+        // The sound, sample by sample. The bridge's episode sounds a steady
+        // tone, so a click is a step in it: from one sample to the next the
+        // tone bends by its second difference, never more than a few
+        // thousandths of its height, and a stop or a restart jumps by a
+        // good part of it. The sound card's time of the program's end is
+        // where the sound ends, and after it nothing.
+        const { heard, c0, m0, rate: sr, programEnd } = loopEnd;
+        const xs = [];
+        for (const h of heard) for (let k = 0; k < h.data.length; k++) xs.push([h.frame + k, h.data[k]]);
+        const endFrame = Math.round((c0 + (Math.round(programEnd * sr) - m0) / sr) * sr);
+        let height = 0;
+        for (const [f, x] of xs) if (f < endFrame) height = Math.max(height, Math.abs(x));
+        let clicks = 0;
+        let firstClick = null;
+        let after = 0;
+        for (let k = 2; k < xs.length; k++) {
+          const [f, x] = xs[k];
+          if (f >= endFrame + 2) {
+            if (Math.abs(x) > 1e-3) after++;
+            continue;
+          }
+          if (xs[k - 1][0] !== f - 1 || xs[k - 2][0] !== f - 2) continue;
+          if (Math.abs(x - 2 * xs[k - 1][1] + xs[k - 2][1]) > 0.03 * height) {
+            clicks++;
+            firstClick ??= ((f - endFrame) / sr) * 1000;
+          }
+        }
+        if (loopEnd.starts) wrong = `the play started over ${loopEnd.starts} times while L was pressed`;
+        else if (!(height > 0.01)) wrong = `the sound card was handed nothing to hear, ${xs.length} samples`;
+        else if (clicks) wrong = `the sound clicked ${clicks} times, the first ${(-firstClick).toFixed(0)} ms before the end`;
+        else if (after) wrong = `${after} samples of sound were heard after the clip's end`;
+        else if (!stopped) wrong = `the play went on for ${(played.at(-1)[0] - reached).toFixed(0)} ms with the playhead at the clip's end`;
+        else if (stopped[0] - reached > 400) wrong = `the play stopped ${(stopped[0] - reached).toFixed(0)} ms after the playhead reached the clip's end`;
+        else if (old) wrong = `frame ${(old[2] / fps).toFixed(3)} was drawn ${(old[0] - reached).toFixed(0)} ms after the playhead reached the clip's end at ${end.toFixed(3)}`;
         break;
       }
       case "nailed": {

@@ -392,6 +392,23 @@ describe("AudioPlan", () => {
     expect(close.runs).toHaveLength(1);
     expect(close.runs[0].stretches).toHaveLength(2);
   });
+
+  // A clip with no cut, looped: the next time through starts where the
+  // run started, so by its first packet it looked carried on. Those
+  // packets were fed long ago, and every one fed after went to both times
+  // through, the second a whole clip ahead, so the sound was taken as fed
+  // that far and stopped about three seconds before the seam.
+  test("a loop back to where the run started starts a run of its own", () => {
+    const looped = new AudioPlan(opus, 48000, new Program([{ start: 10, end: 20 }], true), 0);
+    looped.extend(15);
+    expect(looped.runs).toHaveLength(2);
+    expect(looped.runs.map((r) => r.stretches.length)).toEqual([1, 1]);
+    let j = 0;
+    while (looped.packet(j).at < 15 * 48000) j++;
+    const parts = looped.slices(looped.runs[0], j, 960);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].out).toBeLessThan(10 * 48000);
+  });
 });
 
 describe("fade", () => {

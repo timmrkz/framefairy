@@ -333,6 +333,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		g := engine.Gesture{Kind: "trim", Edge: "start", From: 1}
 		errs := map[string]error{}
 		_, errs["SetWord"] = svc.SetWord(ctx, mine, wrong, "01", 1, "word")
+		_, errs["RemoveCaption"] = svc.RemoveCaption(ctx, mine, wrong, "01", 1)
 		_, errs["SetCrop"] = svc.SetCrop(ctx, mine, wrong, "01", 1, 10)
 		errs["SetCaptionStyle"] = svc.SetCaptionStyle(ctx, mine, wrong, "Inter", 60)
 		errs["SetCaptionColours"] = svc.SetCaptionColours(ctx, mine, wrong, "#ffffff", 1, "", 0, "", 0)

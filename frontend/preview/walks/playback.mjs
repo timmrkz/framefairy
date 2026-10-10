@@ -145,6 +145,22 @@ const gestures = [
       // Playing, the play button says Pause, and once the clip has stopped
       // at its end, Play again.
       await page.locator('button[aria-label="Pause"]').waitFor({ timeout: 2000 }).catch(() => {});
+      const end = p[p.length - 1].end;
+      // Half the time L loops the clip on the way and L again stops the
+      // loop a moment before the end, once the next time through is worked
+      // out, which is how Tim heard the clip's start play on after the
+      // play had stopped at its end.
+      const looped = rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
+      if (looped) {
+        await page.keyboard.press("l");
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - looped, {
+            timeout: (length + 5) * 1000,
+            polling: "raf",
+          })
+          .catch(() => {});
+        await page.keyboard.press("l");
+      }
       await page.waitForFunction(() => document.querySelector('button[aria-label="Play"]') !== null, null, {
         timeout: (length + 5) * 1000,
         polling: 100,
@@ -152,13 +168,18 @@ const gestures = [
       const { frames, overlays } = await stop();
       framesInClip(frames, p);
       overlaysFollow(overlays, state);
+      // At the clip's end, the play stops: no more than half a second of
+      // animation frames with the playhead there and the button on Pause.
+      const stood = overlays.filter((o) => o.playing && o.at >= end - 1.5 * frame).length;
+      if (stood > 30) {
+        watch.broke("a clip played to its end stops there", `${stood} animation frames played on with the playhead at the end ${end.toFixed(3)}${looped ? ", loop switched off on the way" : ""}`);
+      }
       const v = await at();
-      const end = p[p.length - 1].end;
       if (!v.paused || Math.abs(v.at - end) > frame + 0.1) {
         watch.broke("a clip played to its end stops there", `end ${end.toFixed(3)}, stopped ${v.paused} at ${v.at.toFixed(3)}`);
       }
       await staysPaused("at the end");
-      return `play the clip from ${from.toFixed(2)} to its end`;
+      return `play the clip from ${from.toFixed(2)} to its end${looped ? `, loop on and off ${looped.toFixed(1)} s before it` : ""}`;
     },
   },
   {
