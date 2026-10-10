@@ -30,6 +30,9 @@ export type Playhead = { place: Place; clip: string };
 
 export const onVideo: Playhead = { place: "video", clip: "" };
 
+// What a gesture says it is about, when it says, see placeOf.
+export type About = "clip" | "video";
+
 // Where a gesture that puts the playhead at a moment leaves it, for the
 // clip chosen, by its key and its pieces, in an episode of fps frames a
 // second whose picture starts videoStart seconds into the file.
@@ -38,8 +41,13 @@ export const onVideo: Playhead = { place: "video", clip: "" };
 // its edges, a trim, a click on a caption. That decides an edge, which is
 // the clip's own, and a trim, whose playhead stands on the edge being
 // dragged and so can be a hair outside the pieces the video preview has
-// at that moment. Every other gesture, a click, a drag, a step or a seek,
-// is decided by the frame it lands in: from the frame that holds the
+// at that moment. A step taken while the episode plays on the video says
+// it is about the video, about "video": it skips ahead or back through the
+// episode and stays there, through the clip and its cuts, the way a play
+// on the video does. Found by Tim, who sped through a dimmed clip with
+// shift and the right arrow and had the clip light up under him. Every
+// other gesture, a click, a drag, a step or a seek, is decided by the
+// frame it lands in: from the frame that holds the
 // clip's start to the frame that holds the moment a frame before its end,
 // cuts included, is on the clip, and any other frame is on the video.
 // Either way, that last frame is the clip's end, and so is the end itself.
@@ -59,10 +67,10 @@ export function placeOf(
   key: string,
   at: number,
   fps: number,
-  about?: "clip",
+  about?: About,
   videoStart = 0,
 ): Playhead {
-  if (!key || !pieces.length) return onVideo;
+  if (!key || !pieces.length || about === "video") return onVideo;
   const start = pieces[0].start;
   const end = pieces[pieces.length - 1].end;
   const rate = fps > 0 ? fps : 30;

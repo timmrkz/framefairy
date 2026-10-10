@@ -306,14 +306,17 @@ async function reader(page) {
 // screen when recording starts is where it starts from and is not one of
 // them, since it was put up before. Also whether the playhead moved,
 // data-playhead on the video preview, so a play whose first frame is the
-// one already on screen is seen to have started.
+// one already on screen is seen to have started. And on every animation
+// frame, what lies over the picture, see overlay.
 export async function recordFrames(page, frame) {
   await reader(page);
+  await overlayReader(page);
   await page.evaluate(() => {
     const screen = document.querySelector(".screen");
     const from = screen.dataset.playhead;
     let last = window.__pictured();
     window.__frames = [];
+    window.__overlays = [];
     window.__moved = false;
     window.__recording = true;
     const watch = () => {
@@ -322,6 +325,7 @@ export async function recordFrames(page, frame) {
       if (n >= 0 && n !== last) window.__frames.push(n);
       last = n;
       if (screen.dataset.playhead !== from) window.__moved = true;
+      window.__overlays.push(window.__overlay());
       requestAnimationFrame(watch);
     };
     requestAnimationFrame(watch);
@@ -329,10 +333,40 @@ export async function recordFrames(page, frame) {
   return async () => {
     const r = await page.evaluate(() => {
       window.__recording = false;
-      return { frames: window.__frames, moved: window.__moved };
+      return { frames: window.__frames, moved: window.__moved, overlays: window.__overlays };
     });
-    return { frames: r.frames.map((n) => n * frame), moved: r.moved };
+    return { frames: r.frames.map((n) => n * frame), moved: r.moved, overlays: r.overlays };
   };
+}
+
+// Puts the overlay reader on the page once: where the playhead is, whether
+// it plays, whether the clip timeline says it is on the video, by the
+// chosen clip dimmed there or no clip chosen at all, and what the video
+// preview lays over the picture: the crop frame, the shade beside it and
+// the caption box.
+async function overlayReader(page) {
+  await page.evaluate(() => {
+    if (window.__overlay) return;
+    window.__overlay = () => {
+      const screen = document.querySelector(".screen");
+      const chosen = document.querySelector(".clip-timeline .chosen");
+      return {
+        at: Number(screen?.dataset.playhead),
+        playing: !!document.querySelector('button[aria-label="Pause"]'),
+        video: !chosen || chosen.classList.contains("dim"),
+        crop: !!screen?.querySelector(".frame"),
+        shade: !!screen?.querySelector(".shade"),
+        captions: !!screen?.querySelector(".captions"),
+      };
+    };
+  });
+}
+
+// What lies over the picture of the video preview now, as recordFrames
+// records it on every animation frame.
+export async function overlay(page) {
+  await overlayReader(page);
+  return page.evaluate(() => window.__overlay());
 }
 
 // Where the video preview is: the playhead, data-playhead, the moment the

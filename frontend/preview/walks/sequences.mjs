@@ -33,6 +33,19 @@
 //                      holds it still again, then lets go, reading the
 //                      playhead, the frame on screen and the play button on
 //                      every animation frame
+//   ["play from", where, seconds]
+//                      clicks the clip timeline "before" the clip, halfway
+//                      between the track's left end and the clip's start,
+//                      which puts the playhead on the video, or "in" it, a
+//                      fifth of the way along, which puts it on the clip,
+//                      presses the space bar, reads what the video preview
+//                      lays over the picture on every animation frame for
+//                      so many seconds of play, and pauses
+//   ["play from", where, seconds, key]
+//                      the same, pressing this key every 400 ms of the
+//                      play, "Shift+ArrowRight" to skip ahead by words,
+//                      and from "before" the playhead has to have gone a
+//                      second or more further than the play takes it
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -146,6 +159,20 @@
 //                      press and again where the hand moved to, the button
 //                      said Pause the whole time, and the play went on
 //                      from where the hand let go
+//   ["only the video", "across cuts"], ["the clip shown", "across cuts"]
+//                      the same, and the play crossed a cut: it stood in
+//                      two pieces of the clip or more, and on the video
+//                      went through the part cut out between them
+//   ["only the video"] since "play from", the playhead was on the video
+//                      on every frame and played two seconds or more of
+//                      the clip's own moments, and the video preview laid
+//                      nothing over the picture, no crop frame, no shade
+//                      and no captions
+//   ["the clip shown"] since "play from", the playhead was on the clip on
+//                      every frame and played two seconds or more inside
+//                      it, the crop frame stood over the picture on every
+//                      one of them, and the captions on every one where the
+//                      engine has a caption, a few at least
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -265,7 +292,8 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { Watch, same, describe } from "./rules.mjs";
+import { recordFrames } from "./bridge.mjs";
+import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
   {
@@ -707,6 +735,56 @@ export const sequences = [
       ["press", "Space"],
       ["drag while playing", "end", -60],
       ["played through"],
+    ],
+  },
+  {
+    // Tim saw the captions stay up in the video preview while the episode
+    // played on through the chosen clip, with the clip dimmed on the clip
+    // timeline. On the video the video preview shows the video alone, and
+    // on the clip its crop frame and its captions. The clip starts with
+    // the episode, so its start is trimmed first to leave room before it.
+    name: "the episode played through a clip shows only the video, and the clip its frame and captions",
+    steps: [
+      ["trim", "start", 300],
+      ["play from", "before", 6],
+      ["only the video"],
+      ["play from", "in", 4],
+      ["the clip shown"],
+    ],
+  },
+  {
+    // The same with cuts in the clip, which Tim asked for: the episode
+    // plays straight through the parts cut out and the pieces either side
+    // of them, on the video the whole way, and the clip jumps its cuts,
+    // on the clip the whole way. Neither may show the clip on the video,
+    // in a piece or in a cut, nor lose it on the clip after a jump.
+    name: "the episode played through a clip with cuts shows only the video, and the clip its frame and captions",
+    steps: [
+      ["trim", "start", 300],
+      ["cut at", 0.25],
+      ["cut at", 0.55],
+      ["cuts", 2],
+      ["play from", "before", 13],
+      ["only the video", "across cuts"],
+      ["play from", "in", 9],
+      ["the clip shown", "across cuts"],
+    ],
+  },
+  {
+    // Tim played the episode from before the clip and pressed shift and
+    // the right arrow to skip ahead, and the clip lit up the moment a step
+    // landed in it. A step while the episode plays on the video skips
+    // through the episode and stays on the video, cuts and all. On the
+    // clip the same keys walk its words and the play stays on the clip.
+    name: "shift and the arrows skip ahead through a clip on the video, and walk its words on the clip",
+    steps: [
+      ["trim", "start", 300],
+      ["cut at", 0.4],
+      ["cuts", 1],
+      ["play from", "before", 8, "Shift+ArrowRight"],
+      ["only the video"],
+      ["play from", "in", 4, "Shift+ArrowRight"],
+      ["the clip shown"],
     ],
   },
   {
@@ -1285,6 +1363,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   let episodeBefore = "";
   // The Updates page in the frame after a channel was picked.
   let picked = null;
+  // What the video preview laid over the picture on every animation frame
+  // of the last "play from", and the clip the engine had then.
+  let played = null;
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -1419,6 +1500,46 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.waitForTimeout(700);
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
+        break;
+      }
+      case "play from": {
+        const [where, seconds, key] = arg;
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
+        if (where === "before" && g.start.x - g.track.x < 40) {
+          wrong = "there is no room on the clip timeline before the clip";
+          break;
+        }
+        await page.mouse.click(x, high(g.track));
+        await settle(page);
+        const state = await engineState(page, watch.at);
+        const stop = await recordFrames(page, 1 / (await rate(page)));
+        await page.evaluate(() => document.body.focus());
+        const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
+        await page.keyboard.press("Space");
+        // With a key, it is pressed every 400 ms of the play, the way a
+        // hand skips ahead while it watches.
+        if (key) {
+          for (let t = 0; t + 0.4 <= seconds; t += 0.4) {
+            await page.waitForTimeout(400);
+            await page.keyboard.press(key);
+          }
+        } else await page.waitForTimeout(seconds * 1000);
+        await page.evaluate(() => {
+          if (document.querySelector('button[aria-label="Play"]')) return;
+          const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+          document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+          document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+        });
+        played = { overlays: (await stop()).overlays, state, fps: await rate(page) };
+        // The steps have to have skipped: on the video the playhead went
+        // further than the play alone takes it.
+        const ended = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+        if (key === "Shift+ArrowRight" && where === "before" && ended - began < seconds + 1) {
+          wrong = `${key} while playing moved the playhead ${(ended - began).toFixed(2)} s in ${seconds} s of play, no skip ahead`;
+        }
+        await watch.step("play", s);
         break;
       }
       case "reset": {
@@ -2000,6 +2121,50 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "mark":
         marks[arg] = await engineState(page, watch.at);
         break;
+      case "only the video":
+      case "the clip shown": {
+        if (!played) {
+          wrong = `${what} with nothing played`;
+          break;
+        }
+        const { overlays, state, fps } = played;
+        const video = what === "only the video";
+        const frame = 1 / fps;
+        // With "across cuts" the play has to have crossed a cut: the
+        // episode through the part cut out, from a piece before it to a
+        // piece after it, and the clip from one piece on into the next.
+        const pieceOf = (at) => state.segments.findIndex((p) => at >= p.start + frame && at < p.end - frame);
+        const played_ = overlays.filter((o) => o.playing);
+        const pieces = new Set(played_.map((o) => pieceOf(o.at)).filter((i) => i >= 0));
+        const inCut = played_.some((o) => state.segments.some((p, i) => i > 0 && o.at > state.segments[i - 1].end + frame && o.at < p.start - frame));
+        if (arg === "across cuts" && state.segments.length < 2) {
+          wrong = `the clip has ${state.segments.length} piece, so no cut to play across`;
+          break;
+        }
+        if (arg === "across cuts" && pieces.size < 2) {
+          wrong = `the play stood in ${pieces.size} piece of the clip, so it crossed no cut`;
+          break;
+        }
+        if (arg === "across cuts" && video && !inCut) {
+          wrong = "the episode played through no part cut out of the clip";
+          break;
+        }
+        // The frames of the play that stood in one of the clip's pieces,
+        // which is where a clip's frame and captions could show.
+        const inside = overlays.filter((o) => o.playing && state.segments.some((p) => o.at >= p.start + frame && o.at < p.end - frame));
+        const span = inside.length ? inside[inside.length - 1].at - inside[0].at : 0;
+        const elsewhere = overlays.filter((o) => o.playing && o.video !== video);
+        if (elsewhere.length) {
+          wrong = `the playhead was on the ${video ? "clip" : "video"} at ${elsewhere[0].at.toFixed(3)} while it played`;
+        } else if (span < 2) {
+          wrong = `the play stood inside the clip for ${span.toFixed(2)} s of the episode, in ${inside.length} animation frames`;
+        } else if (!video && !inside.some((o) => o.captions)) {
+          wrong = "the clip played with no caption shown";
+        } else {
+          wrong = overlaid(overlays, state, frame);
+        }
+        break;
+      }
       case "opened on the clip": {
         // The video preview of an episode that opens on a clip draws the
         // clip's first frame and nothing before it: no frame of the

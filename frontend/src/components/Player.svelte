@@ -15,11 +15,12 @@
   // button, one playhead: playing starts where the playhead stands. With
   // the playhead on the selected clip it jumps the clip's cuts and stops
   // where the clip ends, and on the video it plays the episode straight on.
-  // While the playhead is inside a clip, its captions are drawn inside the
-  // crop the way the render will burn them in.
+  // While the playhead is on the clip and inside it, its captions are drawn
+  // inside the crop the way the render will burn them in. On the video the
+  // video preview shows the video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { insideClip, litWord, type Piece } from "../lib/flow";
-  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import type { Movie } from "../lib/frames/mp4";
   import Info from "./Info.svelte";
@@ -331,7 +332,7 @@
   // across the clip's edge while playing was lost: the new program started
   // the play again from where it was, the queue said so at once, that set
   // the playhead back, and the seek after it went to the playhead.
-  export function seek(t: number, about?: "clip") {
+  export function seek(t: number, about?: About) {
     const at = Math.max(0, Math.min(t, source.duration));
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
@@ -439,10 +440,9 @@
     return {
       left: (left / source.width) * 100,
       width: (source.cropWidth / source.width) * 100,
-      inside: insideClip(clip.segments, time, oneFrame),
-      // On the video, the clip's rules are not in play, and its frame says
-      // so by being dimmed.
-      dim: place === "video",
+      // On the video the clip's rules are not in play, and the video
+      // preview shows the episode alone, the clip's moments included.
+      inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
       moved: clip.segments[piece]?.moved ?? false,
     };
   });
@@ -468,9 +468,10 @@
 
   // The caption standing at the playhead, with the word being spoken. The
   // engine hands over the lines and the look, so nothing about captions is
-  // decided twice.
+  // decided twice. None on the video: the episode playing on through the
+  // clip is the episode, not the short, and Tim saw its captions stay up.
   const caption = $derived.by(() => {
-    if (!clip || !captions?.captions?.length) return null;
+    if (!clip || !captions?.captions?.length || place === "video") return null;
     if (shown < clipStart - 0.05 || shown > clipEnd + 0.05) return null;
     const at = inClipTime(shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
@@ -1136,7 +1137,7 @@
       <Info label="What you can do with the picture" side="right">
         The space bar plays and pauses, and so does a click on the picture. With the playhead on
         the chosen clip it plays the clip, its cuts jumped, and anywhere else the episode straight
-        on, with the clip's frame dimmed. Drag the crop frame
+        on, with nothing of the clip over it. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
         saves it, Escape leaves it, and two words split it in two. Delete removes the word in the
@@ -1151,16 +1152,16 @@
     {:else if trouble}
       <p class="trouble selectable">{trouble}</p>
     {/if}
-    <!-- The crop is drawn only while the playhead stands in the clip. Anywhere
-         else the picture is the episode, not the short, so nothing is laid
-         over it. -->
+    <!-- The crop is drawn only while the playhead stands in the clip and is
+         on it. Anywhere else, and on the video playing on through the clip,
+         the picture is the episode, not the short, so nothing is laid over
+         it. -->
     {#if crop?.inside}
       <div class="shade" style="left: 0; width: {crop.left}%"></div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="frame"
         class:lit={dragLeft !== null}
-        class:dim={crop.dim}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}
