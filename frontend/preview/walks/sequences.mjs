@@ -874,14 +874,14 @@ export const sequences = [
     steps: [
       ["updates", { stored: "pr-143", list: "main,pr-143" }],
       ["channel", "Choose a channel"],
-      ["choices", ["Branch main", "Pull request #143"], ""],
+      ["choices", ["Branch main", "PR #143"], ""],
       ["status", "Built on this Mac", "It stays as it is until you choose a channel to follow."],
       ["no check"],
       ["follow", "Branch main"],
       ["at once", "Looking for a newer build"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "Branch main"],
-      ["choices", ["Branch main", "Pull request #143"], "Branch main"],
+      ["choices", ["Branch main", "PR #143"], "Branch main"],
     ],
   },
   {
@@ -889,16 +889,16 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
-      ["choices", ["Branch main", "Pull request #20"], "Branch main"],
+      ["choices", ["Branch main", "PR #20"], "Branch main"],
     ],
   },
   {
     name: "a pull request followed that closed says closed in the list and in the line under it",
     steps: [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
-      ["status", "Pull request #143 is closed", "Nothing downloads until you choose what to follow next."],
-      ["channel", "Pull request #143, closed"],
-      ["choices", ["Branch main", "Pull request #143, closed"], "Pull request #143, closed"],
+      ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
+      ["channel", "PR #143, closed"],
+      ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
     ],
   },
   {
@@ -908,10 +908,10 @@ export const sequences = [
     name: "a pull request in conflict with main says so in the list and can still be followed",
     steps: [
       ["updates", { from: "main", list: "main,pr-20,pr-21", conflict: "pr-20" }],
-      ["choices", ["Branch main", "Pull request #21", "Pull request #20, conflicts with main"], "Branch main"],
-      ["follow", "Pull request #20, conflicts with main"],
+      ["choices", ["Branch main", "PR #21", "PR #20, conflicts"], "Branch main"],
+      ["follow", "PR #20, conflicts"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
-      ["channel", "Pull request #20, conflicts with main"],
+      ["channel", "PR #20, conflicts"],
     ],
   },
 ];

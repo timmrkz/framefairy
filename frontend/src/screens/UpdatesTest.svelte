@@ -34,23 +34,23 @@
 
   const samples: { what: string; state: UpdateState }[] = [
     {
-      what: "Following main. Two pull requests in the list conflict with main.",
+      what: "Following main. Two PRs in the list conflict.",
       state: { ...base, version: "0.3.0-main.12", channel: "main", follows: "main" },
     },
     {
-      what: "Following a pull request in conflict, up to date.",
+      what: "Following a PR in conflict, up to date.",
       state: { ...base, follows: "pr-21" },
     },
     {
-      what: "Following a pull request in conflict, a newer build ready.",
+      what: "Following a PR in conflict, a newer build ready.",
       state: { ...base, follows: "pr-21", phase: "ready", next: "0.3.0-pr21.8" },
     },
     {
-      what: "Following a pull request in conflict, a newer commit being built.",
+      what: "Following a PR in conflict, a newer commit being built.",
       state: { ...base, follows: "pr-21", building: "9f8e7d6c5b4a" },
     },
     {
-      what: "Following a pull request that was closed, others in conflict in the list.",
+      what: "Following a PR that was closed, others in conflict in the list.",
       state: { ...base, channel: "pr-18", gone: "pr-18", phase: "gone" },
     },
     {

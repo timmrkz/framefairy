@@ -107,7 +107,7 @@
   // by its number. The pull request's title says what it is about, which
   // is not what is being picked here. Customers will see releases the same
   // way, by their version.
-  const channelName = (id: string) => (id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : `Branch ${id}`);
+  const channelName = (id: string) => (id.startsWith("pr-") ? `PR #${id.slice(3)}` : `Branch ${id}`);
   // The channel followed, as updates.Followed has it: the one picked, or
   // the one a build from a channel came from. Empty for a build made on
   // the Mac until a channel is chosen.
@@ -119,7 +119,7 @@
     // it is still there to try.
     const listed = (update?.channels ?? []).map((c) => ({
       value: c.id,
-      label: c.conflict ? `${channelName(c.id)}, conflicts with main` : channelName(c.id),
+      label: c.conflict ? `${channelName(c.id)}, conflicts` : channelName(c.id),
     }));
     // A pull request that was followed and has since gone stays in the
     // list for as long as it is followed, so the trigger never names
