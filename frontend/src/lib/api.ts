@@ -4,8 +4,54 @@ import { Call, Events } from "@wailsio/runtime";
 import type { RoomView } from "./room";
 export type { RoomView } from "./room";
 
-const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
-  Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
+// Every call into the Go side. One that fails, or takes longer than a
+// person waits without noticing, goes to the app's log, and so do the
+// calls of a second with more of them than the app makes on its own, which
+// is what a loop gone wrong looks like. See lib/said.ts.
+const call = <T>(method: string, ...args: unknown[]): Promise<T> => {
+  const p = Call.ByName(`main.FrameFairy.${method}`, ...args) as Promise<T>;
+  if (method === "Said") return p;
+  const from = performance.now();
+  counted(method);
+  return p.then(
+    (v) => {
+      const ms = performance.now() - from;
+      if (ms > SLOW) tell(`calls: ${method} took ${Math.round(ms)} ms`);
+      return v;
+    },
+    (e: unknown) => {
+      tell(`calls: ${method} failed after ${Math.round(performance.now() - from)} ms: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    },
+  );
+};
+
+// What the log is told through, set by lib/said.ts, which needs this file
+// and so cannot be imported here.
+let tell: (line: string) => void = () => {};
+export function tellTo(fn: (line: string) => void) {
+  tell = fn;
+}
+
+// A call slower than this is said, in ms.
+const SLOW = 500;
+// More calls than this in a second are said, with which they were.
+const MANY = 60;
+let second = 0;
+let calls = new Map<string, number>();
+function counted(method: string) {
+  const now = Math.floor(performance.now() / 1000);
+  if (now !== second) {
+    const n = [...calls.values()].reduce((a, b) => a + b, 0);
+    if (n > MANY) {
+      const most = [...calls].sort((a, b) => b[1] - a[1]).slice(0, 5);
+      tell(`calls: ${n} in one second, ${most.map(([m, k]) => `${m} ${k}`).join(", ")}`);
+    }
+    second = now;
+    calls = new Map();
+  }
+  calls.set(method, (calls.get(method) ?? 0) + 1);
+}
 
 // One piece of other people's work the app is made of or brings with it,
 // and its licence. The texts are asked for one at a time, by name.
@@ -505,8 +551,9 @@ export interface SetupState {
 
 export const api = {
   platform: () => call<string>("Platform"),
-  // Lines for the app's own log, see lib/said.ts.
-  said: (lines: string[]) => call<void>("Said", lines),
+  // Lines for the app's own log, each with the moment it was said, in ms
+  // since 1970, see lib/said.ts.
+  said: (lines: { at: number; text: string }[]) => call<void>("Said", lines),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or

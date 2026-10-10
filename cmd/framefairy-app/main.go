@@ -231,27 +231,32 @@ func mediaMiddleware(st *store) application.Middleware {
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/frames/") {
-				openPreviews.serve(st, w, r)
+				logged(w, r, func(w http.ResponseWriter, r *http.Request) { openPreviews.serve(st, w, r) })
 				return
 			}
 			if !strings.HasPrefix(r.URL.Path, "/media/") {
 				next.ServeHTTP(w, r)
 				return
 			}
-			path := r.URL.Query().Get("path")
-			if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
-				http.NotFound(w, r)
-				return
-			}
-			// Files, and nothing else. A folder would be answered with a
-			// listing of what is in it.
-			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-				http.NotFound(w, r)
-				return
-			}
-			http.ServeFile(w, r, path)
+			logged(w, r, func(w http.ResponseWriter, r *http.Request) { serveMedia(st, w, r) })
 		})
 	}
+}
+
+// serveMedia serves a file of an episode in the library, and nothing else.
+func serveMedia(st *store, w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
+		http.NotFound(w, r)
+		return
+	}
+	// Files, and nothing else. A folder would be answered with a listing
+	// of what is in it.
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, path)
 }
 
 // notInLibrary is what a call is told when it names a file that does not

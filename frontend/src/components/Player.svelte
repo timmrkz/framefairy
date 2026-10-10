@@ -163,6 +163,7 @@
       stop?.();
       if (!q) return;
       const going: FrameQueue = q;
+      said(`video preview, ${path.split("/").pop()}: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : "the workspace went"}`);
       known = going.movie ?? known;
       if (!untrack(() => paused)) going.pause();
       paused = true;
@@ -188,7 +189,9 @@
   function open(url: string): FrameQueue {
     failed = "";
     trouble = "";
+    const name = path.split("/").pop();
     const q = new FrameQueue(canvas, url, known);
+    q.trace = (line) => said(`video preview, ${name}: ${line}`);
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
@@ -196,18 +199,17 @@
     });
     // What the video preview had when it still showed no picture, for the
     // app's log, see lib/said.ts. Plan row 2.185.
-    const name = path.split("/").pop();
-    said(`video preview: opening ${name}`);
+    said(`video preview, ${name}: opening${known ? ", woken with its index" : ""}, canvas ${canvas.width}x${canvas.height}, playhead ${time.toFixed(3)} s${untrack(() => opening) ? ", the workspace still opening" : ""}`);
     for (const after of [5, 15])
       setTimeout(() => {
         if (queue !== q || pictured || sleeping) return;
         const frames = (window as unknown as { __appFrames?: { stats: unknown } }).__appFrames?.stats;
         said(
-          `video preview: no picture of ${name} ${after} s after it opened, playhead ${time.toFixed(3)}, ${paused ? "paused" : "playing"}, opening ${opening}, trouble "${trouble}", queue ${JSON.stringify(q.stats)}, movie ${JSON.stringify(q.movie && { duration: q.movie.duration, video: q.movie.video && { width: q.movie.video.width, height: q.movie.video.height, codec: q.movie.video.codec, frame: q.movie.video.frame, samples: q.movie.video.samples.count } })}, frames ${JSON.stringify(frames)}`,
+          `video preview, ${name}: no picture ${after} s after it opened, playhead ${time.toFixed(3)}, ${paused ? "paused" : "playing"}, opening ${opening}, trouble "${trouble}", queue ${JSON.stringify(q.stats)}, movie ${JSON.stringify(q.movie && { duration: q.movie.duration, video: q.movie.video && { width: q.movie.video.width, height: q.movie.video.height, codec: q.movie.video.codec, frame: q.movie.video.frame, samples: q.movie.video.samples.count } })}, frames ${JSON.stringify(frames)}`,
         );
       }, after * 1000);
     q.ready.catch((e: Error) => {
-      said(`video preview: ${name} could not be opened: ${e.message}`);
+      said(`video preview, ${name}: could not be opened: ${e.message}`);
       if (queue !== q) return;
       failed = e.message;
       paused = true;
@@ -381,7 +383,10 @@
   }
 
   export function toggle() {
-    if (!queue || failed) return;
+    if (!queue || failed) {
+      said(`video preview, ${path.split("/").pop()}: play or pause asked, and ${failed ? `the video could not be opened: ${failed}` : `there is nothing to play yet${sleeping ? ", the workspace sleeps" : ""}`}`);
+      return;
+    }
     nailed = false;
     if (paused) play();
     else {

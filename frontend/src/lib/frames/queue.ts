@@ -538,6 +538,17 @@ type Slot = {
 // of the program.
 type State = "paused" | "cued" | "starting" | "playing" | "ended";
 
+// A file's index in a few words, for the log.
+function describe(m: Movie): string {
+  const v = m.video;
+  const a = m.audio;
+  const picture = v
+    ? `${v.codec} ${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, ${v.samples.timescale} a second, ${v.samples.key.reduce((n, k) => n + k, 0)} key frames, the first shown at ${(v.samples.pts[v.samples.order[0]] / v.samples.timescale).toFixed(3)} s, ${JSON.stringify(v.colour)}`
+    : "no picture";
+  const sound = a ? `${a.codec} ${a.sampleRate} Hz, ${a.channels} channels, ${a.samples.count} packets${a.pcm ? ", plain" : ""}` : "no sound";
+  return `${m.duration.toFixed(3)} s, ${picture}, ${sound}`;
+}
+
 // A reason, in a sentence, from whatever went wrong.
 function sentence(e: unknown): string {
   const said = e instanceof Error ? e.message : String(e);
@@ -587,6 +598,17 @@ export class FrameQueue {
   private app: AppFrames | null = null;
   private closed = false;
   private trouble = "";
+  // Every step the queue takes on its way to a picture and a play, for
+  // the app's log, see lib/said.ts. Set by the video preview straight
+  // after the queue is made.
+  trace: (line: string) => void = () => {};
+  private born = performance.now();
+  // Whether the first frame of the queue, and of the play under way, was
+  // said in the log yet.
+  private firstTold = false;
+  private playTold = false;
+  // The counts as the play under way began, so its end says how it went.
+  private began: { at: number; drawn: number; late: number; lateSound: number; when: number } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
   // episode straight on, and whether it loops. The program is made from
@@ -657,7 +679,17 @@ export class FrameQueue {
   }
 
   private async open() {
-    const [screen, movie] = await Promise.all([screenOf(this.canvas), this.reader.open()]);
+    const [screen, movie] = await Promise.all([
+      screenOf(this.canvas).then((s) => {
+        this.trace(`the canvas draws with ${s.kind}, ${this.ms()}`);
+        return s;
+      }),
+      this.reader.open().then((m) => {
+        const how = this.known ? "kept from before" : this.reader.reads ? `read in ${this.reader.reads} reads of ${this.reader.bytes} bytes` : "read ahead as the workspace opened";
+        this.trace(`index ${how}, ${this.ms()}: ${describe(m)}`);
+        return m;
+      }),
+    ]);
     if (this.closed) throw new Error("closed");
     this.screen = screen;
     this.stats.screen = screen.kind;
@@ -685,9 +717,18 @@ export class FrameQueue {
     }
     this.out = this.audio.createGain();
     this.out.connect(this.audio.destination);
+    const card = this.audio;
+    this.trace(`sound card at ${card.sampleRate} Hz${this.sound && card.sampleRate !== this.sound.sampleRate ? `, not the ${this.sound.sampleRate} Hz asked` : ""}, ${card.state}`);
+    card.onstatechange = () => this.trace(`sound card ${card.state}`);
     for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot());
     if (this.sound) await this.openSound(this.sound);
     if (this.closed) throw new Error("closed");
+    this.trace(`ready, ${this.ms()}`);
+  }
+
+  // How long since the queue was made, for the log.
+  private ms(): string {
+    return `${Math.round(performance.now() - this.born)} ms after it opened`;
   }
 
   // The sound, decoded by ffmpeg on the Go side whatever it is, plain
@@ -727,6 +768,7 @@ export class FrameQueue {
     const app = new AppFrames(path, v, () => this.previewSize(), (why) =>
       this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
+    app.trace = (line) => this.trace(line);
     app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
     // For the walks, which read how the frames came.
     (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
@@ -882,6 +924,7 @@ export class FrameQueue {
   }
 
   play() {
+    this.trace(`play asked at ${this.at.toFixed(3)} s, ${this.state}, sound card ${this.audio?.state ?? "not there yet"}`);
     if (this.closed || this.state === "playing" || this.state === "starting") return;
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
@@ -894,6 +937,8 @@ export class FrameQueue {
     if (!changed && this.vplan && this.c0 !== null && this.state === "paused") {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
+      this.trace(`playing on from ${this.at.toFixed(3)} s`);
+      this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
       this.ramp(1);
       this.report();
       this.loop();
@@ -914,6 +959,7 @@ export class FrameQueue {
   }
 
   pause() {
+    this.trace(`pause asked at ${this.at.toFixed(3)} s, ${this.state}${this.state === "playing" ? `, ${this.howItWent()}` : ""}`);
     if (this.state === "starting") {
       // Nothing was heard yet: stop it, stay on the frame shown, and cue
       // the play again from there.
@@ -993,6 +1039,7 @@ export class FrameQueue {
   }
 
   private fault(what: string) {
+    this.trace(`fault: ${what}`);
     this.stats.errors.push(what);
     console.error("frame queue:", what);
     if (this.closed) return;
@@ -1024,6 +1071,10 @@ export class FrameQueue {
   // Draws a frame and closes the one it replaces. One passing is put up
   // on the way to the frame asked for, see passing.
   private put(frame: Picture, run: number, rank: number, passing = false) {
+    if (!this.firstTold) {
+      this.firstTold = true;
+      this.trace(`first frame drawn, frame ${rank} of ${frame.width}x${frame.height}${frame.light ? `, ${frame.light}` : ""}, ${this.ms()}`);
+    }
     if (this.shown && this.shown.frame !== frame) this.closeFrame(this.shown.frame);
     this.shown = { frame, run, rank };
     if (!passing) {
@@ -1155,6 +1206,17 @@ export class FrameQueue {
     this.stopPlay();
     const ticket = this.ticket;
     this.state = cue ? "cued" : "starting";
+    if (!cue) {
+      this.playTold = false;
+      this.trace(`starting a play from ${from.toFixed(3)} s`);
+      const asked = performance.now();
+      // A play that has not started after a while says what it waits for.
+      for (const after of [3, 10])
+        setTimeout(() => {
+          if (ticket === this.ticket && this.state === "starting" && !this.closed)
+            this.trace(`the play from ${from.toFixed(3)} s has not started ${Math.round((performance.now() - asked) / 1000)} s after it was asked: ${this.waitingFor()}`);
+        }, after * 1000);
+    }
     this.firstShown = false;
     this.startFrom = from;
     this.at = from;
@@ -1224,14 +1286,23 @@ export class FrameQueue {
     if (!frameIn || !soundIn) return;
     if (this.audio.state !== "running") {
       const ticket = this.ticket;
-      void this.audio.resume().then(() => {
-        if (ticket === this.ticket) this.maybeBegin();
-      });
+      if (!this.playTold) {
+        this.playTold = true;
+        this.trace(`the first frame and sound are in, waiting for the sound card, which is ${this.audio.state}`);
+      }
+      void this.audio.resume().then(
+        () => {
+          if (ticket === this.ticket) this.maybeBegin();
+        },
+        (e: unknown) => this.trace(`the sound card would not start: ${e instanceof Error ? e.message : String(e)}`),
+      );
       return;
     }
     const rate = this.audio.sampleRate;
     this.c0 = Math.ceil((this.audio.currentTime + START_LEAD) * rate) / rate;
     this.state = "playing";
+    this.trace(`playing from ${this.startFrom.toFixed(3)} s`);
+    this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
     if (this.pending) {
       this.unscheduled.push(this.pending);
       this.pending = null;
@@ -1239,6 +1310,32 @@ export class FrameQueue {
     for (const c of this.unscheduled) this.schedule(c);
     this.unscheduled = [];
     this.tick(performance.now());
+  }
+
+  // How the play under way went, for the log: how long it ran, how many
+  // frames it drew and how many came too late to be drawn on time.
+  private howItWent(): string {
+    const b = this.began;
+    if (!b) return "no play under way";
+    const ran = (performance.now() - b.when) / 1000;
+    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s`;
+  }
+
+  // What a play that has not started waits for, for the log.
+  private waitingFor(): string {
+    const need = this.vplan?.need(0);
+    const slot = need ? this.slotOf(need.run) : null;
+    const frameIn = !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank);
+    const sound = this.soundDone ? "all of it" : `${((this.soundReach - this.m0) / this.sampleRate).toFixed(3)} s of ${SOUND_FIRST} s`;
+    return [
+      this.vplan ? `first frame ${need ? `${need.rank}, ${frameIn ? "in" : "not in"}` : "none needed"}` : "no plan yet, the video is not read",
+      `decoder ${slot ? `holding ${slot.ready.length} frames, ${slot.coming} coming, ${slot.decoder.decodeQueueSize} asked` : "none on it"}`,
+      `sound ${sound}, its decoder ${this.soundDecoder ? `${this.soundDecoder.state}, ${this.soundDecoder.decodeQueueSize} asked` : "none"}`,
+      `sound card ${this.audio?.state ?? "not there"}`,
+      `trouble "${this.trouble}"`,
+      `queue ${JSON.stringify(this.stats)}`,
+      `frames ${JSON.stringify(this.app?.stats ?? null)}, read on the ${this.app?.puller.where ?? "nothing"}`,
+    ].join(", ");
   }
 
   // Where the program is now, from the sound being heard, at the moment a
@@ -1372,6 +1469,7 @@ export class FrameQueue {
     this.state = "ended";
     this.at = last ? last.end : this.at;
     this.k = plan.lastK;
+    this.trace(`played to the end, ${this.at.toFixed(3)} s, ${this.howItWent()}`);
     this.report();
     // The sound card is held once the last of the sound has been heard.
     // Anything that plays or seeks after the end clears this first.

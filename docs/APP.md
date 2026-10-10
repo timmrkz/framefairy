@@ -2369,14 +2369,33 @@ the licence asks to be said and to the licence's own text. The list is built int
   and shows nothing about them. See [TRAINING.md](TRAINING.md).
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
   where the Console app shows it, and `Frame Fairy/logs/app.log` in the
-  user's cache folder elsewhere. It holds what nobody sees on screen: each
-  start with its build, the window's warnings and errors, anything thrown
-  and not caught, what the episode's decoder says, and what the video
-  preview had when a video it opened still showed no picture five and
-  fifteen seconds later. A line said again straight after itself is
-  counted, not written again. Past 4 MB it starts over, with the one before
-  kept as `app.1.log`. It is the log plan row R.8 asks for, and a report of
-  a problem will carry it. See `cmd/framefairy-app/applog.go` and
+  user's cache folder elsewhere. It says enough that a fault is found by
+  reading it, not by trying again. Each line starts with its moment, to
+  the millisecond, and where it came from:
+  - `app`: each start, with its build.
+  - `window`: the window's warnings and errors and anything thrown and
+    not caught, every time the window stood still for more than
+    400 ms, the space bar with where the keyboard was and which
+    workspace could hear it, calls to the Go side that failed, took
+    longer than half a second or came more than 60 in a second, which
+    workspace is asked for and in front, each step of a workspace
+    opening and what it still waits for when it is slow, and each step
+    of the video preview: the canvas, the file's index, the sound card,
+    the first frame, every play and pause with how it went, and what a
+    play that does not start waits for.
+  - `files`: every read of the video's file, every stream of frames or
+    sound opened and closed, the first pull of each, a slow one and one
+    that ended it, and the episode's decoder held, let go and closed.
+  - `decoder`: the episode's decoder starting and stopping, what it
+    found in the file, whether it decodes on the graphics chip, every
+    place it was moved to and how long its first frame took, the chain
+    a frame goes through and ffmpeg's errors.
+
+  The window sends its lines a quarter of a second after it says them,
+  so they can stand a little after the Go side's lines of the same
+  moment. Past 4 MB the log starts over, with the one before kept as
+  `app.1.log`. It is the log plan row R.8 asks for, and a report of a
+  problem will carry it. See `cmd/framefairy-app/applog.go` and
   `frontend/src/lib/said.ts`.
 
 The app only shows files that belong to an episode in its list. It finds

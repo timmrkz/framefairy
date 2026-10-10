@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,9 +16,20 @@ import (
 )
 
 // DecoderSaid, when set, hears every line an episode's decoder writes on
-// its error stream, which the app keeps in its log. It is set once, before
-// any decoder starts.
+// its error stream, and when it starts and stops, which the app keeps in
+// its log. It is set once, before any decoder starts.
 var DecoderSaid func(video, line string)
+
+// DecoderInfo starts a line the decoder writes only for the log: what it
+// opened and how, what it is doing and how long it took. Only its other
+// lines, ffmpeg's errors, say why it failed.
+const DecoderInfo = "info: "
+
+func decoderSaid(video, line string) {
+	if DecoderSaid != nil {
+		DecoderSaid(video, line)
+	}
+}
 
 // EpisodeFrames is the episode's decoder as the Go side sees it: one
 // framefairy-frames for one episode, started when the episode opens in the
@@ -159,6 +171,7 @@ func (f *EpisodeFrames) start() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("the video's decoder could not start: %w", err)
 	}
+	decoderSaid(f.path, fmt.Sprintf("started, process %d", cmd.Process.Pid))
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
 	gone := f.gone
@@ -170,10 +183,10 @@ func (f *EpisodeFrames) start() error {
 		defer close(saidAll)
 		lines := bufio.NewScanner(errs)
 		for lines.Scan() {
-			said.add(lines.Text())
-			if DecoderSaid != nil {
-				DecoderSaid(f.path, lines.Text())
+			if !strings.HasPrefix(lines.Text(), DecoderInfo) {
+				said.add(lines.Text())
 			}
+			decoderSaid(f.path, lines.Text())
 		}
 	}()
 	go func() {
@@ -200,6 +213,11 @@ func (f *EpisodeFrames) start() error {
 		werr := cmd.Wait()
 		f.mu.Lock()
 		f.err = fmt.Errorf("the video's decoder stopped: %v %s", werr, said.String())
+		if gone == f.closed {
+			decoderSaid(f.path, fmt.Sprintf("process %d closed", cmd.Process.Pid))
+		} else {
+			decoderSaid(f.path, fmt.Sprintf("process %d stopped by itself: %v", cmd.Process.Pid, werr))
+		}
 		close(gone)
 		f.mu.Unlock()
 	}()
