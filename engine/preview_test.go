@@ -41,8 +41,8 @@ func TestPreviewFramesFromAMoment(t *testing.T) {
 	const from, w, h = 2.0, 64, 36
 	var ats []float64
 	err = e.PreviewFrames(context.Background(), path, from, w, h, func(at float64, f []byte) error {
-		if len(f) != w*h*3/2 {
-			t.Fatalf("a frame of %d bytes, want %d", len(f), w*h*3/2)
+		if len(f) != w*h*4 {
+			t.Fatalf("a frame of %d bytes, want %d", len(f), w*h*4)
 		}
 		ats = append(ats, at)
 		return nil

@@ -42,7 +42,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
 	}
 	defer get("/frames/close", url.Values{"id": {opened.ID}})
-	size := 8 + 64*36*3/2
+	size := 8 + 64*36*4
 	var told []string
 	read := func(q url.Values) []float64 {
 		t.Helper()
@@ -52,6 +52,9 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 			t.Fatalf("read answered %d", rec.Code)
 		}
 		told = append(told, rec.Header().Get("X-Frames-Times"))
+		if light := rec.Header().Get("X-Frames-Light"); light != "" {
+			t.Errorf("a pull of standard video says its light is %q", light)
+		}
 		body := rec.Body.Bytes()
 		if len(body) == 0 && rec.Header().Get("X-Frames-End") != "" {
 			t.Fatalf("the stream ended with no frame: %s", rec.Header().Get("X-Frames-Error"))
@@ -102,6 +105,49 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	}
 }
 
+// An HDR episode's frames say their light with every pull, so the page
+// draws them as HDR, and a standard one's say nothing, see
+// framewire.Picture. Step 4 of 2.156.
+func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
+	ffmpegtest.Need(t)
+	needDecoder(t)
+	svc, mine, _ := library(t)
+	// The tags are what says HDR, so any picture tagged HLG will do. The
+	// colr box carries them in an MP4 whatever the codec. They are set on
+	// the frames, because a newer ffmpeg, ours among them, drops -color_trc
+	// and takes the encoder's tags from its frames.
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=160x90:r=5:d=2",
+		"-vf", "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc",
+		"-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
+		t.Fatalf("making the episode: %s %s", err, out)
+	}
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	get := func(path string, q url.Values) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
+		return rec
+	}
+	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"0"}, "w": {"64"}, "h": {"36"}})
+	var opened struct{ ID string }
+	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
+		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
+	}
+	defer get("/frames/close", url.Values{"id": {opened.ID}})
+	for range 2 {
+		rec := get("/frames/read", url.Values{"id": {opened.ID}, "n": {"2"}})
+		if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
+			t.Fatalf("read answered %d with %d bytes: %s", rec.Code, rec.Body.Len(), rec.Header().Get("X-Frames-Error"))
+		}
+		if rec.Body.Len()%(8+64*36*4) != 0 {
+			t.Errorf("%d bytes is no whole number of frames of 4 bytes a pixel", rec.Body.Len())
+		}
+		if light := rec.Header().Get("X-Frames-Light"); light != "hlg" {
+			t.Errorf("a pull of an HLG episode says its light is %q, want hlg", light)
+		}
+	}
+}
+
 // A stream that has run to the end of the episode says so.
 func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	ffmpegtest.Need(t)
@@ -128,7 +174,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 			}
 			return
 		}
-		frames += rec.Body.Len() / (8 + 32*18*3/2)
+		frames += rec.Body.Len() / (8 + 32*18*4)
 	}
 	t.Errorf("no end after %d frames", frames)
 }

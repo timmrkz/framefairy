@@ -278,7 +278,9 @@ export async function screen({
   const at = port++;
   await new Promise((r) => server.listen(at, r));
 
-  const browser = await chromium.launch({ args });
+  // WebGPU on, which headless Chromium on Linux only gives when asked, so
+  // the video preview draws the way it does in the app, see screen.ts.
+  const browser = await chromium.launch({ args: ["--enable-unsafe-webgpu", ...args] });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: scale });
   // A probe that reports nothing because the page threw is worse than no
   // probe at all, so anything thrown is printed.

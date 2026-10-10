@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"framefairy/internal/framewire"
 )
 
 // Style is the resolved caption look. Values are authored against a
@@ -43,6 +45,9 @@ type Style struct {
 	// HighlightAlpha is how see-through the pill is, as the two hex digits
 	// an ASS alpha tag takes. 00 is solid.
 	HighlightAlpha string
+	// light is the light of the short the colours are written for, see
+	// inLight.
+	light framewire.Light
 }
 
 // DefaultStyle is the caption look used unless a plan or a flag says
@@ -577,7 +582,14 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 // captions laid out in lines, see ClipCaptions.
 func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 	width, height int, overrides map[string]any) error {
-	s := ResolveStyle(overrides)
+	return e.writeASS(ctx, laid, path, width, height, overrides, framewire.SDR)
+}
+
+// writeASS is WriteASS for a short of standard video or of HDR, whose
+// captions are drawn at the reference white, see inLight.
+func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
+	width, height int, overrides map[string]any, light framewire.Light) error {
+	s := ResolveStyle(overrides).inLight(light)
 	if s.Highlight {
 		done, err := e.writeHighlighted(ctx, laid, path, width, height, s)
 		if done || err != nil {
@@ -663,6 +675,16 @@ func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 	return os.WriteFile(path, []byte(header+strings.Join(events, "\n")+"\n"), 0o644)
 }
 
+// matrix is how libass turns the colours into the short's: BT.709's for
+// standard video, and for HDR None, which ffmpeg takes for the frame's
+// own, BT.2020's.
+func (s Style) matrix() string {
+	if s.light != framewire.SDR {
+		return "None"
+	}
+	return "TV.709"
+}
+
 func assHeader(s Style, width, height, size, captionBorder, outline, shadow,
 	marginH, marginV int) string {
 	return fmt.Sprintf(`[Script Info]
@@ -671,7 +693,7 @@ PlayResX: %d
 PlayResY: %d
 WrapStyle: 2
 ScaledBorderAndShadow: yes
-YCbCr Matrix: TV.709
+YCbCr Matrix: %s
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -681,7 +703,7 @@ Style: Box,%s,%d,%s,%s,%s,%s,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`, width, height,
+`, width, height, s.matrix(),
 		s.Font, size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
 		captionBorder, outline, shadow, marginH, marginH, marginV,
 		s.Font, size, s.Primary, s.Primary, s.Primary, s.Primary)
