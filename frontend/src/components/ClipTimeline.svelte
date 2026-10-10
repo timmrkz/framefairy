@@ -237,7 +237,13 @@
   let words = $state<Word[]>([]);
   let peaks = $state<number[]>([]);
   let viewFor = "";
-  let loaded = false;
+  // Whether a view has been read yet. It is state, because the effects
+  // that read the view again as the waveform and the words grow return
+  // early until it is true, and an effect that returned having read
+  // nothing else never runs again. While the workspace was still opening,
+  // that was the effect that grows the waveform, so an episode just added
+  // showed none until its first clip was chosen.
+  let loaded = $state(false);
   // How much of the view the transcript had heard when it was read, how
   // much of the loudness was measured, and whether all of what was read.
   let loadedHeard = $state(-1);
