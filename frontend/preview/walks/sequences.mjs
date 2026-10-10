@@ -146,6 +146,11 @@
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
 //   ["cards", n]       the clip list holds n clips
+//   ["whole clip", s]  the episode on screen, s seconds long, has one clip,
+//                      and it runs from its first second to its last
+//   ["rulers fit", s]  the range picker has lines and times on it, every
+//                      one inside the episode of s seconds, and the clip
+//                      timeline shows that episode and nothing past it
 //   ["spans", label]   every caption appears and goes when it did at the mark
 //   ["pieces", n]      the clip timeline draws the clip in n pieces
 //   ["framed", label]  the clip timeline draws as many pieces as at the
@@ -389,6 +394,24 @@ export const sequences = [
       ["add", 60],
       ["wait for", "New"],
       ["cards", 1],
+    ],
+  },
+  {
+    // Plan row 2.177. Tim added a video of 15 s with Shortest at 20 s:
+    // its first search failed, the range picker had no line on it and the
+    // clip timeline showed a minute.
+    name: "a video shorter than a clip is its own clip, with rulers that fit it",
+    steps: [
+      // Heard slowly, so the rulers are looked at with no clip yet, the
+      // way Tim saw them once the search had failed.
+      ["speech", 3000],
+      ["add", 15],
+      ["rulers fit", 15],
+      ["speech", 0],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["whole clip", 15],
+      ["rulers fit", 15],
     ],
   },
   {
@@ -1870,6 +1893,44 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "cards": {
         const list = await clipList(page);
         if (list?.cards.length !== arg) wrong = `the clip list holds ${list?.cards.length} clips, not ${arg}`;
+        break;
+      }
+      case "whole clip": {
+        const clips = await ask(page, "Clips", await episodeOn(page));
+        if (clips?.length !== 1) wrong = `the episode has ${clips?.length} clips, not its one`;
+        else if (clips[0].start > 1 || clips[0].end < arg - 1.5) {
+          wrong = `the clip runs ${clips[0].start} to ${clips[0].end}, not the episode of ${arg} s`;
+        }
+        break;
+      }
+      case "rulers fit": {
+        // Waited for while the workspace of an episode just added opens,
+        // and then looked at once: looked at until it held, it held as
+        // soon as the clip came, and passed on the old clip timeline.
+        const seconds = (time) => time.split(":").reduce((sum, part) => sum * 60 + Number(part), 0);
+        for (let tries = 0; tries < 40; tries++) {
+          wrong = "";
+          const read = await page.evaluate(() => {
+            const picker = document.querySelector('[aria-label="The range picker"]');
+            const text = (e) => (e.textContent ?? "").trim();
+            return {
+              lines: picker?.querySelectorAll(".tick").length ?? 0,
+              times: [...(picker?.querySelectorAll(".time:not(.start)") ?? [])].map(text),
+              timeline: [...document.querySelectorAll(".clip-timeline .time")].map(text),
+            };
+          });
+          const picked = read.times.map(seconds);
+          const shown = read.timeline.map(seconds);
+          if (read.lines < 2 || picked.length < 2) {
+            wrong = `the range picker has ${read.lines} lines and the times ${JSON.stringify(read.times)}`;
+          } else if (picked.some((t) => t <= 0 || t >= arg)) {
+            wrong = `the range picker has times outside the episode: ${JSON.stringify(read.times)}`;
+          } else if (!shown.length || Math.max(...shown) > arg || Math.max(...shown) < arg - 2) {
+            wrong = `the clip timeline shows the times ${JSON.stringify(read.timeline)} for an episode of ${arg} s`;
+          }
+          if (!wrong || (read.lines > 0 && shown.length > 0)) break;
+          await page.waitForTimeout(250);
+        }
         break;
       }
       case "mark":

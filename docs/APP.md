@@ -1542,7 +1542,11 @@ bubble scrolled by those eight pixels.
       the end of the range picker is left out, see `lib/ruler.ts`. It was a
       guess, 72 pixels a time, and a range picker 370 pixels wide drew one
       time every five minutes on a six minute episode, where a time every
-      minute fits. The clip timeline keeps its sparser ruler, a time for
+      minute fits. Its finest step was a minute, so an episode shorter
+      than that had no line on it at all. Steps of seconds join in where
+      they draw no more than eight lines, so a fifteen second episode has
+      a line every two seconds and one of a few minutes keeps its line a
+      minute. The clip timeline keeps its sparser ruler, a time for
       every 96 pixels: the same rule there drew a line over the waveform
       every second, and Tim preferred it as it was.
     - Everything on the range picker, the marks, the window, the playhead
@@ -1618,7 +1622,8 @@ bubble scrolled by those eight pixels.
   as one.
 - **The timeline is always there.** With no clip selected it shows the
   minute around the playhead and follows it as the episode plays, so there
-  is always something saying where you are. Trimming needs a clip, so it
+  is always something saying where you are. It never shows more than the
+  episode, so a shorter episode fills it, all of it. Trimming needs a clip, so it
   appears once one is selected, and so does the caption box a word is
   corrected in.
 

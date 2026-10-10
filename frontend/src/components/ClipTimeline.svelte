@@ -220,6 +220,13 @@
 
   // How much of the episode the timeline shows when no clip is selected.
   const loose = 60;
+  // The most the timeline shows, the whole episode, or a minute while its
+  // length is not known yet. It was never less than a minute, so a fifteen
+  // second episode took the first quarter of the timeline and left the
+  // rest an empty ruler with nothing to play. Without a clip it shows
+  // the minute around the playhead, or all of a shorter episode.
+  const widest = $derived(duration > 0 ? duration : loose);
+  const roomy = $derived(Math.min(loose, widest));
 
   let track: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -768,10 +775,9 @@
       load(Math.max(0, from), Math.min(duration, from + shown));
       return;
     }
-    const whole = Math.max(duration, loose);
-    const from = Math.max(0, Math.min(time - loose * 0.25, whole - loose));
+    const from = Math.max(0, Math.min(time - roomy * 0.25, widest - roomy));
     viewFor = "";
-    load(from, Math.min(from + loose, whole));
+    load(from, Math.min(from + roomy, widest));
   }
 
   // The arrow keys step the playhead a frame at a time, as in every video
@@ -834,9 +840,8 @@
   // Puts the view somewhere, kept inside the episode and between the
   // closest the timeline goes and the whole of it.
   function showing(from: number, to: number) {
-    const whole = Math.max(duration, loose);
-    const shown = Math.min(Math.max(to - from, nearest), whole);
-    const at = Math.min(Math.max(from, 0), whole - shown);
+    const shown = Math.min(Math.max(to - from, nearest), widest);
+    const at = Math.min(Math.max(from, 0), widest - shown);
     view = { from: at, to: at + shown };
   }
 
@@ -860,8 +865,7 @@
       // at the wall and the edges still moving: a pinch that could go no
       // closer slid the view sideways instead of doing nothing. At the
       // wall the width does not change, so neither edge moves either.
-      const most = Math.max(duration, loose);
-      const shown = Math.min(Math.max(span * Math.exp(event.deltaY * 0.01), nearest), most);
+      const shown = Math.min(Math.max(span * Math.exp(event.deltaY * 0.01), nearest), widest);
       showing(at - share * shown, at + (1 - share) * shown);
     } else {
       const shift = (along / Math.max(width, 1)) * span;
@@ -902,8 +906,7 @@
     if (playing && loaded && viewFor === "") return;
     const shown = view.to - view.from;
     const middle = time > view.from + shown * 0.15 && time < view.from + shown * 0.85;
-    const whole = Math.max(duration, loose);
-    const from = Math.max(0, Math.min(time - loose * 0.25, whole - loose));
+    const from = Math.max(0, Math.min(time - roomy * 0.25, widest - roomy));
     // Nothing to do while the playhead is well inside the window, and
     // nothing to do when the window it wants is the one already loaded.
     if (loaded && viewFor === "" && (middle || Math.abs(from - view.from) < 0.5)) return;
