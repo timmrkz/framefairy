@@ -76,6 +76,10 @@ jobs:
       # which is as silent when it is wrong.
       - name: Check the rule for a build
         run: sh scripts/needs-build-test.sh
+      # And the script that tells a pull request main no longer merges
+      # into it, which is as silent when it is wrong.
+      - name: Check the Main moved notice
+        run: sh scripts/main-moved-test.sh
       - id: needs
         run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
       - if: steps.needs.outputs.run == 'true'

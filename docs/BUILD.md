@@ -121,6 +121,7 @@ committed or not, new files included, and runs what those files can reach:
 | `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
+| `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
 | a workflow | a read of its YAML |
 | docs | nothing |
 | anything else | `make`, so a file nobody thought of is checked rather than skipped |

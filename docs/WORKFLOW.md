@@ -154,13 +154,20 @@ its commits reach it. A merge into `main` is none of those, so a pull
 request can fall behind `main`, or stop merging, with nobody told.
 
 [`.github/workflows/main-moved.yml`](../.github/workflows/main-moved.yml)
-closes that gap. On every push to `main` it runs
+closes that gap. It runs
 [`scripts/main-moved.sh`](../scripts/main-moved.sh), which tries merging
-`main` into the branch of every open pull request and leaves one comment on
-each one it no longer merges into, naming the files that conflict. A pull
-request that still merges is left alone: merging `main` into it would only
-add a commit, a CI run and a build to take, and change nothing being
-tested.
+`main` into the branch of a pull request and leaves a comment on it when
+`main` no longer merges, naming the files that conflict. It does that for
+every open pull request on every push to `main`, and for one pull request
+whenever it is opened or pushed to. The second is for a branch started
+from a `main` that has moved on since: it is in conflict from its first
+push, and no push to `main` follows to say so. A pull request that still
+merges is left alone: merging `main` into it would only add a commit, a CI
+run and a build to take, and change nothing being tested.
+
+The merge is tried in git, not asked of GitHub. GitHub works out whether a
+pull request merges some time after a push, and until then it answers
+that it does not know.
 
 The comment is what wakes the session. It merges `main` in at once,
 without asking, resolves the conflict, reads `CLAUDE.md` again and pushes,
