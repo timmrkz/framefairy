@@ -43,7 +43,7 @@ export type Arriving = {
 // arriving is every clip the jobs of an episode have on the way. A job
 // that runs shows its clips at work. One that was cut off or failed shows
 // the clip it was making where it would have appeared, until it is
-// carried on or put away in Activity. stopping is the jobs told to stop
+// carried on or a new search takes its place. stopping is the jobs told to stop
 // that have not said so yet, which keep their fill and stop moving.
 export function arriving(
   jobs: Job[],

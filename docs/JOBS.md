@@ -197,13 +197,13 @@ command line keeps its flags and its own run, and keeps no records.
 **The app** runs every job on a goroutine of its own, in the lanes above.
 When it starts, it reads the records of the episodes in its library: a
 record in a running step is a job in the list in the state `interrupted`,
-a failed one a job that `failed`, with its reason. Clearing the finished
-jobs leaves them, because they are not finished. Adding a video asks for
+a failed one a job that `failed`, with its reason. Adding a video asks for
 its first search, of its first window, see `engine.SuggestedWindow`, and
 no longer than the model can read at once, see `firstSearch` in
 `cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
-record stopped as it ends. Cancel on one that stopped, which only Activity
-offers, takes its record away. New on an episode waits for a search that
+record stopped as it ends. A new search takes the record of one that
+stopped away. A render or a clip made by hand that stopped has only
+Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). New on an episode waits for a search that
 was just called off to be on its way out first, because both write the
 same record.
 
@@ -216,7 +216,7 @@ is no logic about jobs in TypeScript.
 | Render | `Render(path, request)` |
 | Continue, on a search or a render that stopped | `Continue(job, press)` |
 | Cancel at the head of the clip list | `StopClipWork(path, press)` |
-| Cancel, on one that runs or one that stopped, in Activity and on a render | `CancelJob(job)` |
+| Cancel on a render | `CancelJob(job)` |
 
 **Cancel at the head of the clip list takes effect the moment it is
 pressed.** New and Cancel are a person's actions, and Cancel means: stop

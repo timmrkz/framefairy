@@ -688,7 +688,6 @@ export const api = {
   redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
-  clearJobs: () => call<void>("ClearJobs"),
   reveal: (path: string) => call<void>("Reveal", path),
   // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
   // newer build downloads by itself and waits for a restart.
@@ -704,7 +703,6 @@ export const api = {
 
 export interface JobUpdate {
   job: Job;
-  event?: EngineEvent;
 }
 
 export function onJob(fn: (u: JobUpdate) => void): () => void {
