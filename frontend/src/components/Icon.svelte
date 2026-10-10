@@ -28,8 +28,6 @@
   {:else if name === "info"}
     <circle cx="8" cy="8" r="6.2" />
     <path d="M8 7.3v4M8 4.9v.8" />
-  {:else if name === "activity"}
-    <path d="M1.5 8h3l2-4.5 2.6 9L11.3 8h3.2" />
   {:else if name === "close"}
     <path d="M4 4l8 8M12 4l-8 8" />
   {:else if name === "pause"}

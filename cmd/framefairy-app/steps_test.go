@@ -48,7 +48,6 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 					if plan != "" {
 						d.svc.Render(a, engine.RenderRequest{Plan: plan, Preview: true})
 					}
-					d.svc.ClearJobs()
 				case 3:
 					running := 0
 					for _, j := range d.svc.Jobs() {

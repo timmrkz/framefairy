@@ -660,3 +660,63 @@ func ReadTimings(source string) []Timing {
 	}
 	return out
 }
+
+// jobLogsKept is how many job logs an episode keeps. A log is read when
+// something went wrong, and that is the last few jobs, not every job the
+// episode ever ran.
+const jobLogsKept = 20
+
+// OpenJobLog makes a new log file for a job of an episode, in jobs/ of its
+// work folder beside the job records, named by when it started and what it
+// is, and takes
+// away the oldest logs beyond jobLogsKept. A log is what the job said as
+// it went, detail lines included, for when something went wrong. It is
+// opened through the work folder as a root, so a link inside it is no way
+// out of it.
+func OpenJobLog(source, kind string, at time.Time) (*os.File, error) {
+	if !jobID.MatchString(kind) {
+		return nil, fmt.Errorf("%q is no kind of job", kind)
+	}
+	work := WorkDir(source)
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(work)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	dir := "jobs"
+	if err := root.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	name := at.Format("2006-01-02-150405.000") + "-" + kind + ".log"
+	f, err := root.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	pruneJobLogs(root, dir)
+	return f, nil
+}
+
+// pruneJobLogs takes away the oldest job logs beyond jobLogsKept. The
+// names start with the time, so the oldest sort first.
+func pruneJobLogs(root *os.Root, dir string) {
+	d, err := root.Open(dir)
+	if err != nil {
+		return
+	}
+	names, _ := d.Readdirnames(-1)
+	d.Close()
+	var logs []string
+	for _, n := range names {
+		if strings.HasSuffix(n, ".log") {
+			logs = append(logs, n)
+		}
+	}
+	slices.Sort(logs)
+	for len(logs) > jobLogsKept {
+		_ = root.Remove(filepath.Join(dir, logs[0]))
+		logs = logs[1:]
+	}
+}

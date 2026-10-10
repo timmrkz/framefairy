@@ -61,7 +61,7 @@ func (p *Project) LastError() string {
 
 // step runs one step of the engine, and what went wrong is the error the
 // engine returned, not the last line it logged. That line is still logged,
-// for the app's activity and anything else that reads the log. The error
+// for the job's log file and anything else that reads the log. The error
 // keeps its kind under ErrStepFailed.
 func (p *Project) step(ctx context.Context, do func() error) error {
 	p.mu.Lock()

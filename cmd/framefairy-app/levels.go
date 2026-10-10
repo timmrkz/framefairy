@@ -15,7 +15,7 @@ import (
 // measuring measures the loudness of each episode, the waveform of the clip
 // timeline, from the moment it is added, see engine.MeasureLevels. It is
 // not a job: nobody starts it, waits for it or stops it by hand, and it
-// takes seconds, so it has no row in Activity. What it has measured is on
+// takes seconds, so it is not in the job list. What it has measured is on
 // screen as it goes.
 //
 // At most two episodes are measured at a time, so adding a season does not

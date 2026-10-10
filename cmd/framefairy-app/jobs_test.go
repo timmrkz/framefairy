@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -64,9 +66,6 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 			for k := 0; k < each*4; k++ {
 				q.list()
 				q.find(filepath.Join(home, "ep.mp4"), "plan")
-				if k%7 == 0 {
-					q.clear()
-				}
 			}
 		}()
 	}
@@ -395,6 +394,59 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		heard := newest[j.ID]
 		if heard.State != j.State {
 			t.Errorf("%s ended %s, and the newest news of it says %s", j.ID, j.State, heard.State)
+		}
+	}
+}
+
+// What a job says is kept in a file in its episode's work folder, detail
+// lines too, since the app has no page for it: that file is where a
+// failure is looked into.
+func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	st := openStore()
+	episode := filepath.Join(home, "ep.mp4")
+	if err := os.WriteFile(episode, []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{}, 1)
+	q := newQueue(st, func(u JobUpdate) {
+		if u.Job.State == JobFailed {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	}, func(string) {})
+	q.add(episode, engine.JobRender, "Work", func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().Info("%s", "rendering the first clip")
+		p.Log().Detail("%s", "ffmpeg said something odd")
+		return "", fmt.Errorf("%s", "the disk is full")
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the job never ended")
+	}
+	// The file is closed after the job says it ended, so it is read once
+	// it holds what was said.
+	var body string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, _ := filepath.Glob(filepath.Join(engine.JobsDir(episode), "*-render.log"))
+		if len(logs) == 1 {
+			b, _ := os.ReadFile(logs[0])
+			body = string(b)
+			if strings.Contains(body, "ffmpeg said something odd") {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, want := range []string{"rendering the first clip", "ffmpeg said something odd"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the log has no %q:\n%s", want, body)
 		}
 	}
 }

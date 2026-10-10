@@ -115,8 +115,7 @@
     padding: 0;
   }
 
-  /* A row opens to its licence, the way a finished job opens to its log
-     on the activity page, and looks the same doing it. */
+  /* A row opens to its licence. */
   li {
     padding: 8px 0;
     border-top: 1px solid var(--line);
