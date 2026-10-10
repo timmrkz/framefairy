@@ -23,6 +23,11 @@
   // least this long, the answer after it.
   const LOOK_AT_LEAST = 1400;
 
+  // A made-up state to show instead of the Go side's, for the Updates test
+  // in the Help menu. A page with one asks the Go side nothing: picking a
+  // channel only moves the list, and the buttons do nothing.
+  let { sample = undefined }: { sample?: UpdateState } = $props();
+
   // What the Go side last said, and what is on screen, which trails it
   // while a check is held.
   let latest = $state<UpdateState | null>(null);
@@ -54,7 +59,7 @@
   // A click shows at once. The Go side's own word that it is looking
   // follows a moment later and changes nothing.
   async function check() {
-    if (!update) return;
+    if (!update || sample) return;
     problem = "";
     heard({ ...update, phase: "checking" });
     try {
@@ -69,6 +74,10 @@
   // says is true is asked for again.
   async function follow(channel: string) {
     if (!update) return;
+    if (sample) {
+      update = { ...update, picked: channel, gone: "" };
+      return;
+    }
     problem = "";
     heard({ ...update, picked: channel, gone: "", building: "", next: "", phase: "checking" });
     try {
@@ -83,6 +92,7 @@
   }
 
   async function install() {
+    if (sample) return;
     problem = "";
     restarting = true;
     try {
@@ -214,6 +224,10 @@
   const downloading = $derived(update?.phase === "downloading");
 
   onMount(() => {
+    if (sample) {
+      update = sample;
+      return;
+    }
     // Asking also reads the channel list, and what that read found is
     // sent as an event, which can arrive before the answer to the asking
     // does. The answer is then the older of the two, and it emptied the

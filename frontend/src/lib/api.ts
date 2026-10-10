@@ -758,6 +758,12 @@ export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
 }
 
+// The Updates page in made-up states, in the Help menu while 2.176 is
+// being tried.
+export function onUpdatesTest(fn: () => void): () => void {
+  return Events.On("updatestest", () => fn());
+}
+
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }
