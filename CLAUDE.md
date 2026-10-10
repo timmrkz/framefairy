@@ -91,12 +91,14 @@ Start with [README.md](README.md). In short:
   work back on the machine either.
 - **A pull request is described the way
   [.github/pull_request_template.md](.github/pull_request_template.md)
-  lays it out:** who saw it and who tested what, what was wrong, the
-  root cause, the fix, the proof, how to test it by hand, and what was
-  found along the way. How to test is what Tim reads first, so it is
-  never left out. A change
-  with nothing to see in the app says so and names the test that proves
-  it instead. A short Before and After is no replacement for any of it.
+  lays it out:** one or two opening sentences on who saw what was
+  wrong, where, and who tested what, then the root cause, the fix, the
+  proof, how to test it by hand, and what was found along the way. The
+  opening sentences are the summary, so nothing below says what was
+  wrong again. How to test is what Tim reads first, so it is never left
+  out. A change with nothing to see in the app says so and names the
+  test that proves it instead. A short Before and After is no
+  replacement for any of it.
 - **One change, one pull request.** Never push the same commits into two
   pull requests. Work that builds on an open pull request takes that pull
   request's branch as its base, so its diff shows only its own change, or
