@@ -13,6 +13,8 @@
 //   ["block", word]    clicks the block on the clip timeline of the caption
 //                      the engine has the word in, which picks it
 //   ["gone", word]     no caption the engine has holds the word
+//   ["fewer", label, n] the engine's captions hold n words fewer than at
+//                      the mark, and as many captions
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
@@ -327,6 +329,28 @@ export const sequences = [
       ["blocks"],
       ["redo"],
       ["same", "removed"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then a word walked to, delete removes only the word",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Backspace"],
+      ["fewer", "start", 1],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then the playhead moved a frame, delete removes nothing",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "ArrowRight"],
+      ["press", "Backspace"],
+      ["same", "start"],
+      ["blocks"],
     ],
   },
   {
@@ -1451,6 +1475,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const now = await engineState(page, watch.at);
         if (now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
           wrong = `a caption still has "${arg}"\n${describe(marks.start ?? now, now)}`;
+        }
+        break;
+      }
+      case "fewer": {
+        const [label, n] = arg;
+        const count = (caps) => caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words)).length;
+        const now = await engineState(page, watch.at);
+        const was = marks[label];
+        if (count(was) - count(now) !== n || now.captions.length !== was.captions.length) {
+          wrong = `${count(was) - count(now)} words and ${was.captions.length - now.captions.length} captions fewer than at "${label}", not ${n} and none\n${describe(was, now)}`;
         }
         break;
       }

@@ -168,7 +168,8 @@ func putBack(heard []Cue, i int, text string) map[int]string {
 // removes one, so each is still the word heard there, to put back on its
 // own or with an undo. A word that a correction made several is removed
 // only where it is in this caption. What is left is laid out as it was:
-// the caption goes, and the one before it stays up through its time.
+// the caption goes and leaves its time empty, and the one before it goes
+// when it did, see Captions.
 func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
 	view, err := ClipCaptionsView(planPath, clipID, t, overrides)
 	if err != nil {

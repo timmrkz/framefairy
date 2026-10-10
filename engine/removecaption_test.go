@@ -103,3 +103,47 @@ func TestRemovingACaptionThatIsNotThereIsRefused(t *testing.T) {
 		t.Error("a refused removal wrote corrections")
 	}
 }
+
+// Removing any one caption leaves every other caption as it was, its
+// words and when it appears and goes. The caption before used to stay up
+// through the time of the one removed, so its block on the clip timeline
+// grew across the place, which read as the two merging. Found by Tim.
+func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
+	text := "Ich habe ihn dort geschlagen und dann habe ich so Judostyle den Arm hochgerissen und dieser Regenschirm ist zersprungen."
+	var heard []Cue
+	at := 60.0
+	for _, w := range strings.Fields(text) {
+		heard = append(heard, Cue{at, at + 0.3, w})
+		at += 0.35
+	}
+	tr := fromStored(heard, nil, 0, 0, nil)
+	before, err := ClipCaptionsView(captionPlanPath(t), "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Captions) < 3 {
+		t.Fatalf("the test needs three captions, the clip has %d", len(before.Captions))
+	}
+	for k := range before.Captions {
+		path := captionPlanPath(t)
+		if err := RemoveCaption(filepath.Dir(path), path, "01", before.Captions[k].First, tr, nil); err != nil {
+			t.Fatal(err)
+		}
+		after, err := ClipCaptionsView(path, "01", tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want []CaptionView
+		want = append(want, before.Captions[:k]...)
+		want = append(want, before.Captions[k+1:]...)
+		if len(after.Captions) != len(want) {
+			t.Fatalf("removing caption %d left %d captions, not %d", k, len(after.Captions), len(want))
+		}
+		for i, c := range after.Captions {
+			was := want[i]
+			if cueWords(c) != cueWords(was) || math.Abs(c.Start-was.Start) > 1e-9 || math.Abs(c.End-was.End) > 1e-9 {
+				t.Errorf("removing caption %d: %.2f-%.2f %q became %.2f-%.2f %q", k, was.Start, was.End, cueWords(was), c.Start, c.End, cueWords(c))
+			}
+		}
+	}
+}

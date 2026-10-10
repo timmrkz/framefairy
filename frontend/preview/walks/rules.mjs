@@ -232,9 +232,10 @@ export class Watch {
         if (far(before) !== far(after)) this.broke("an edit stays where it was made", describe(before, after));
         // Taking a word out takes out the word and changes no caption:
         // every caption still there appears when it did and goes when it
-        // did. A caption whose words were all removed goes, and the one
-        // before it then stays up through its time rather than leave the
-        // box empty for a moment.
+        // did. A caption whose words were all removed goes and leaves its
+        // time empty. The one before it used to stay up through that time,
+        // and its block on the clip timeline grew across the place, which
+        // Tim read as two captions merging.
         if (whole && cue && after.captions.some((c) => Math.abs((c.first ?? NaN) - where) < 1e-6)) {
           this.broke("a caption removed is gone", describe(before, after));
         }
@@ -242,10 +243,7 @@ export class Watch {
           const near = (a, b) => Math.abs(a - b) < 1e-3;
           const kept = after.captions.every((c) => {
             const i = before.captions.findIndex((b) => near(b.start, c.start));
-            if (i < 0) return false;
-            const next = before.captions[i + 1];
-            const gone = next && !after.captions.some((a) => near(a.start, next.start));
-            return near(c.end, before.captions[i].end) || (gone && near(c.end, next.end));
+            return i >= 0 && near(c.end, before.captions[i].end);
           });
           if (!kept) {
             const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");

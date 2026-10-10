@@ -910,8 +910,10 @@ bubble scrolled by those eight pixels.
     time it held is no pause, the room it took on its line stays taken, so
     no word of the next caption is pulled up into it, and a caption whose
     first word it was appears when that word is said. A caption whose
-    words are all removed goes, and the one before it stays up through
-    its time. Before, the gap it left
+    words are all removed goes and leaves its time empty, and the one
+    before it goes when it did. It used to stay up through that time, so
+    the block before a removed caption grew across its place on the clip
+    timeline, which Tim read as two captions merging. Before, the gap it left
     read as a pause, so the caption ended at the word before it, nothing
     was on screen for a moment, and the words after it went on to a
     caption of their own. Removing a word lost its way when the words
@@ -922,10 +924,14 @@ bubble scrolled by those eight pixels.
     wears the frame a picked word wears in the caption box. Delete, the key
     marked delete on the Mac and the forward delete key alike, then removes
     every word of that caption at once, the way removing each word would,
-    in one step that Cmd+Z takes back whole. The clip keeps its time and
-    the captions around keep theirs. The block leaves with the key and
+    in one step that Cmd+Z takes back whole. The clip keeps its time, the
+    place the caption had stays empty, and every other caption appears
+    and goes when it did. The block leaves with the key and
     comes back if the engine refuses. A press anywhere else, or Escape,
-    lets the pick go, so a later delete removes nothing. The engine finds
+    lets the pick go, and so does any other key: a block clicked only to put
+    the playhead there, then Shift and an arrow to a word, means delete is
+    for that word, and a frame stepped with an arrow means nothing is
+    picked any more. Found by Tim. The engine finds
     the caption by the moment its first word starts, `RemoveCaption` in
     `engine/corrections.go`, and a word typed back afterwards comes back as
     any removed word does.

@@ -807,9 +807,13 @@
   // and paused, a step lands where its frame says, see placeOf.
   function onKey(event: KeyboardEvent) {
     if (removePicked(event)) return;
-    if (event.key === "Escape" && picked !== null) {
+    // Any other key lets the pick go, and the key does what it does. A
+    // block clicked only to put the playhead there, and then Shift and an
+    // arrow to walk to a word, is work on that word now: delete was meant
+    // for the word, and it removed the block still picked as well.
+    if (picked !== null && event.key !== "Backspace" && event.key !== "Delete") {
       picked = null;
-      return;
+      if (event.key === "Escape") return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
@@ -1161,7 +1165,8 @@
   });
 
   // A press of the pointer anywhere but on a caption block lets the pick
-  // go, the same as the word picked in the caption box.
+  // go, the same as the word picked in the caption box, and so does any
+  // key but delete, see onKey.
   function unpick(event: PointerEvent) {
     if (picked === null) return;
     const on = event.target as Element | null;

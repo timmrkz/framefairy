@@ -185,7 +185,7 @@ quarter of a second:
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, the one before it then staying up through its time | the caption that broke where a removed word had been, and the next caption's first word pulled up into the room a removed word left |
+| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 
@@ -353,7 +353,8 @@ engine's captions and pieces under a label, and on the clip timeline
 pixels, `reset` an edge and click the caption `block` holding a word. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
-appearing and going when it did at a mark, `gone`, no caption holding a
+appearing and going when it did at a mark, `fewer`, so many words fewer
+than at a mark and no caption fewer, `gone`, no caption holding a
 word, `blocks`, a block on the clip timeline for every caption the engine
 has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,

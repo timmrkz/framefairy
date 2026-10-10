@@ -425,6 +425,9 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// Where its first word is said on the clip's clock, a word removed
 		// among them, since a caption is on screen from there as it was.
 		from float64
+		// Where its first and last word are in all the words, the removed
+		// ones among them.
+		firstK, lastK int
 	}
 	var groups []group
 	text := func(ws []Cue) string {
@@ -436,7 +439,11 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	}
 	// The words are grouped as laid, the removed ones among them, and a
 	// group is then the words shown in it. One with none shown is no
-	// caption.
+	// caption, but it is kept as a hole: its time stays empty, and the
+	// caption before it goes when it did. The one before used to stay up
+	// through it, so removing a caption on the clip timeline drew the
+	// block before it across the place it had been, which Tim read as the
+	// two merging.
 	var current []int
 	line := func(ks []int) string {
 		parts := make([]string, 0, len(ks))
@@ -448,7 +455,8 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		return strings.Join(parts, " ")
 	}
 	closeGroup := func(isAlone bool) {
-		g := group{alone: isAlone, first: -1, from: all[current[0]].Start}
+		g := group{alone: isAlone, first: -1, from: all[current[0]].Start,
+			firstK: current[0], lastK: current[len(current)-1]}
 		for _, k := range current {
 			if i := shownAt[k]; i >= 0 {
 				if g.first < 0 {
@@ -458,7 +466,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 				g.words = append(g.words, words[i])
 			}
 		}
-		if len(g.words) > 0 {
+		if len(g.words) > 0 || len(groups) > 0 {
 			groups = append(groups, g)
 		}
 		current = nil
@@ -523,7 +531,12 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		return math.Min(at, ClipTime(clip, math.Max(piece, before.Start)))
 	}
 
+	afterHole := false
 	for i, g := range groups {
+		if len(g.words) == 0 {
+			afterHole = true
+			continue
+		}
 		start := math.Min(appears(g.first), g.from)
 		if len(out) > 0 {
 			start = math.Max(start, out[len(out)-1].Start)
@@ -531,7 +544,16 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 		// Held for as long as it is in the episode, and gone where a cut
 		// begins inside that hold.
 		end := math.Max(reach[g.last], ClipTime(clip, wasReach[g.last]+captionHold))
-		if i+1 < len(groups) {
+		if i+1 < len(groups) && len(groups[i+1].words) == 0 {
+			// Before a hole it goes where the words removed with the hole
+			// begin, or after its hold when a pause comes first.
+			hole := groups[i+1]
+			if allWas[hole.firstK].Start-allWas[g.lastK].End < captionPause {
+				end = hole.from
+			} else {
+				end = math.Min(end, hole.from)
+			}
+		} else if i+1 < len(groups) {
 			next := math.Min(appears(groups[i+1].first), groups[i+1].from)
 			if pauseAfter(g.last) < captionPause {
 				end = next
@@ -539,7 +561,9 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 				end = math.Min(end, next)
 			}
 		}
-		if len(out) > 0 && end-start < minCaption && !g.alone && !lastAlone {
+		rides := len(out) > 0 && end-start < minCaption && !g.alone && !lastAlone && !afterHole
+		afterHole = false
+		if rides {
 			// Too brief to read on its own, so it rides with the one before.
 			prev := out[len(out)-1]
 			out[len(out)-1] = Caption{Start: prev.Start, End: end,
