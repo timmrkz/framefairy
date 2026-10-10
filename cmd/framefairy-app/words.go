@@ -151,3 +151,23 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
 }
+
+// RemoveCaption removes the caption of a clip that begins on the word heard
+// at first, every word in it, as one step to undo. See engine.RemoveCaption.
+func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID string, first float64) (ClipEntry, error) {
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	// Read fresh, as SetWord does: an edit works on the words themselves.
+	t, err := p.Transcript()
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := s.edit(path, func() error {
+		return engine.RemoveCaption(p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}

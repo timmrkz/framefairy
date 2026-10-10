@@ -10,6 +10,13 @@
 //                      in the caption box, clicks it and leaves it with
 //                      Escape, so it wears the keyboard's frame
 //   ["click", word]    clicks the word, which opens it
+//   ["block", word]    clicks the block on the clip timeline of the caption
+//                      the engine has the word in, which picks it
+//   ["gone", word]     no caption the engine has holds the word
+//   ["fewer", label, n] the engine's captions hold n words fewer than at
+//                      the mark, and as many captions
+//   ["blocks"]         the clip timeline draws a block for every caption the
+//                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
@@ -313,6 +320,55 @@ export const sequences = [
       ["press", "Backspace"],
       ["box", "Ich war sechs Jahre alt,"],
       ["spans", "start"],
+    ],
+  },
+  {
+    name: "delete removes the caption block clicked on the clip timeline",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["blocks"],
+      ["mark", "removed"],
+      ["undo"],
+      ["same", "start"],
+      ["blocks"],
+      ["redo"],
+      ["same", "removed"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then a word walked to, delete removes only the word",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Backspace"],
+      ["fewer", "start", 1],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption block clicked, then the playhead moved a frame, delete removes nothing",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "ArrowRight"],
+      ["press", "Backspace"],
+      ["same", "start"],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption block clicked and then let go of is not removed by delete",
+    steps: [
+      ["mark", "start"],
+      ["block", "Schulhof"],
+      ["press", "Escape"],
+      ["press", "Delete"],
+      ["same", "start"],
+      ["blocks"],
     ],
   },
   {
@@ -1452,6 +1508,48 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await word(arg).click();
         await page.keyboard.press("Escape");
         await watch.step("frame", s);
+        break;
+      }
+      case "block": {
+        const now = await engineState(page, watch.at);
+        const cue = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))));
+        if (!cue) {
+          wrong = `no caption has "${arg}"`;
+          break;
+        }
+        await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
+        await watch.step("block", s);
+        break;
+      }
+      case "gone": {
+        const now = await engineState(page, watch.at);
+        if (now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
+          wrong = `a caption still has "${arg}"\n${describe(marks.start ?? now, now)}`;
+        }
+        break;
+      }
+      case "fewer": {
+        const [label, n] = arg;
+        const count = (caps) => caps.captions.flatMap((c) => c.lines.flatMap((l) => l.words)).length;
+        const now = await engineState(page, watch.at);
+        const was = marks[label];
+        if (count(was) - count(now) !== n || now.captions.length !== was.captions.length) {
+          wrong = `${count(was) - count(now)} words and ${was.captions.length - now.captions.length} captions fewer than at "${label}", not ${n} and none\n${describe(was, now)}`;
+        }
+        break;
+      }
+      case "blocks": {
+        const now = await engineState(page, watch.at);
+        const want = [...new Set(now.captions.map((c) => String(c.first)))].join(" ");
+        let drawn = "";
+        for (let i = 0; i < 20; i++) {
+          drawn = await page.evaluate(() =>
+            [...new Set([...document.querySelectorAll(".clip-timeline .caption")].map((b) => b.dataset.first))].join(" "),
+          );
+          if (drawn === want) break;
+          await page.waitForTimeout(100);
+        }
+        if (drawn !== want) wrong = `the clip timeline draws captions at ${drawn}, the engine has them at ${want}`;
         break;
       }
       case "click":

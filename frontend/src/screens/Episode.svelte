@@ -1348,6 +1348,24 @@
     }
   }
 
+  // A caption removed whole is many words at once, and the same as a word
+  // removed for everything after it, so it takes the same ticket.
+  async function removeCaption(clip: ClipEntry, first: number) {
+    problem = "";
+    const ticket = words.send();
+    try {
+      const updated = await api.removeCaption(path, clip.plan, clip.id, first);
+      const read = listed.send();
+      const list = (await api.clips(path)) ?? [];
+      if (!words.keep(ticket) || !listed.keep(read)) return;
+      clips = list.map((c) => (c.key === updated.key ? updated : c));
+    } catch (err) {
+      words.keep(ticket);
+      problem = errorText(err);
+      throw err;
+    }
+  }
+
   async function setCrop(clip: ClipEntry, at: number, left: number) {
     problem = "";
     try {
@@ -2808,6 +2826,7 @@
           : null}
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
+        onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
         oncaptiondraft={(draft) => (captionDraft = draft)}
         onshape={(next) => (reshaped = next)}
       />

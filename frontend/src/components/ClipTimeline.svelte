@@ -70,6 +70,7 @@
     captionLook = null,
     oncaptiontime,
     oncaptiondraft,
+    onremovecaption,
     onshape,
     thumbnails = [],
     onthumbnail,
@@ -162,6 +163,10 @@
     // the caption box in the video preview can follow it. Null once the
     // captions have come back with it saved.
     oncaptiondraft?: (draft: CaptionDraft | null) => void;
+    // A caption block clicked and then removed with delete, known by the
+    // moment its first word starts in the episode. It throws when the
+    // caption could not be removed, and the block comes back.
+    onremovecaption?: (first: number) => Promise<void>;
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way.
@@ -801,6 +806,15 @@
   // the clip lighting up under it was a clip nobody chose. On the clip
   // and paused, a step lands where its frame says, see placeOf.
   function onKey(event: KeyboardEvent) {
+    if (removePicked(event)) return;
+    // Any other key lets the pick go, and the key does what it does. A
+    // block clicked only to put the playhead there, and then Shift and an
+    // arrow to walk to a word, is work on that word now: delete was meant
+    // for the word, and it removed the block still picked as well.
+    if (picked !== null && event.key !== "Backspace" && event.key !== "Delete") {
+      picked = null;
+      if (event.key === "Escape") return;
+    }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
     if (keysElsewhere() || asleep(track)) return;
@@ -1073,10 +1087,12 @@
     // a passive one cannot say so.
     track.addEventListener("wheel", wheel, { passive: false });
     window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", unpick, true);
     return () => {
       observer.disconnect();
       track.removeEventListener("wheel", wheel);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", unpick, true);
       clearTimeout(settle);
     };
   });
@@ -1121,6 +1137,60 @@
       return { i, c: shownCues[i], from, to, parts: parts.length ? parts : [{ from, to }] };
     });
   });
+
+  // A caption block clicked is picked, the way a file is in the Finder,
+  // and delete removes it: the key marked delete on the Mac, which is
+  // Backspace to the browser, and the forward delete key alike. Its words
+  // leave the captions as a removed word does, and the clip keeps its
+  // time. A caption is known by the moment its first word starts, which
+  // stays the same when the captions around it change.
+  let picked = $state<number | null>(null);
+  // Removed blocks leave at once, and the engine's answer, the captions
+  // without them, takes over when it lands.
+  let goneCaps = $state<Set<number>>(new Set());
+  const shownBlocks = $derived(
+    captionBlocks.filter((b) => b.c.first === undefined || !goneCaps.has(b.c.first)),
+  );
+  $effect(() => {
+    void captions;
+    untrack(() => {
+      if (goneCaps.size) goneCaps = new Set();
+      if (picked !== null && !captions?.some((c) => c.first === picked)) picked = null;
+    });
+  });
+  // Another clip has other captions.
+  $effect(() => {
+    void clip?.key;
+    untrack(() => (picked = null));
+  });
+
+  // A press of the pointer anywhere but on a caption block lets the pick
+  // go, the same as the word picked in the caption box, and so does any
+  // key but delete, see onKey.
+  function unpick(event: PointerEvent) {
+    if (picked === null) return;
+    const on = event.target as Element | null;
+    if (on?.closest?.(".caption") && track.contains(on)) return;
+    picked = null;
+  }
+
+  function removePicked(event: KeyboardEvent): boolean {
+    if (event.key !== "Backspace" && event.key !== "Delete") return false;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return false;
+    if (picked === null || !onremovecaption || locked || event.defaultPrevented) return false;
+    if (keysElsewhere() || asleep(track)) return false;
+    const first = picked;
+    event.preventDefault();
+    picked = null;
+    goneCaps = new Set([...goneCaps, first]);
+    onremovecaption(first).catch(() => {
+      // The workspace says what went wrong, and the block comes back.
+      const back = new Set(goneCaps);
+      back.delete(first);
+      goneCaps = back;
+    });
+    return true;
+  }
 
   // The other clips in view, as marks across the middle of the track.
   // Clips may overlap, and inside the chosen clip its own captions are
@@ -1535,7 +1605,7 @@
           style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
             'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
         >
-          {#each captionBlocks as b (b.i)}
+          {#each shownBlocks as b (b.i)}
             <!-- A click puts the playhead on the caption's first word, where
                  the video preview shows it spoken. That is where it appears,
                  except for the first caption of a clip, which is on screen
@@ -1553,18 +1623,25 @@
                 <div
                   class="caption"
                   class:showing={time >= b.from && time < b.to}
+                  class:picked={b.c.first !== undefined && picked === b.c.first}
+                  data-first={b.c.first}
                   style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {b.i}"
                   role="button"
-                  title="Put the playhead where this caption appears"
+                  title={onremovecaption && !locked
+                    ? "Put the playhead where this caption appears. Delete then removes it."
+                    : "Put the playhead where this caption appears"}
                   onpointerdown={(e) => e.stopPropagation()}
-                  onclick={() => onseek(firstWordOf(b.c) ?? b.from, "clip")}
+                  onclick={() => {
+                    onseek(firstWordOf(b.c) ?? b.from, "clip");
+                    if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
+                  }}
                 ><i></i></div>
               {/each}
             {/key}
           {/each}
         </div>
         {#if !locked && oncaptiontime && !shapedShown}
-          {#each captionBlocks as b (b.i)}
+          {#each shownBlocks as b (b.i)}
             <div
               class="capedge start"
               class:active={capDraft?.index === b.i && capDraft.edge === "start"}
@@ -1895,6 +1972,13 @@
     border-radius: 1px;
     background: var(--cap-text);
     transition: height 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* The picked block wears the frame the picked word wears in the caption
+     box, so the two read as one way of picking a caption. */
+  .caption.picked {
+    outline: 1px solid var(--accent-hi);
+    outline-offset: 1px;
   }
 
   .caption:hover i,
