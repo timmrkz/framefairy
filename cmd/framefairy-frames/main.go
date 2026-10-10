@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/asticode/go-astiav"
 
@@ -49,10 +50,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	info("opened %s", probe.about())
 	probe.close()
 	if runtime.GOOS == "darwin" {
 		if t := astiav.FindHardwareDeviceTypeByName("videotoolbox"); t != astiav.HardwareDeviceTypeNone {
-			d.hardware, _ = astiav.CreateHardwareDeviceContext(t, "", nil, 0)
+			hw, err := astiav.CreateHardwareDeviceContext(t, "", nil, 0)
+			if err != nil {
+				info("the graphics chip cannot decode here: %v", err)
+			} else {
+				d.hardware = hw
+				info("the graphics chip is ready, VideoToolbox")
+			}
+		} else {
+			info("this ffmpeg has no VideoToolbox")
 		}
 	}
 	lines := bufio.NewScanner(os.Stdin)
@@ -60,6 +70,29 @@ func main() {
 		d.request(strings.Fields(lines.Text()))
 	}
 	d.closeAll()
+}
+
+// info writes a line for the app's log alone, see engine.DecoderInfo: what
+// the decoder opened and how, and how long its work took. Its other lines
+// are ffmpeg's errors, which say why a stream failed.
+func info(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "info: "+format+"\n", args...)
+}
+
+// about is the episode's picture in a few words, for the log.
+func (v *video) about() string {
+	p := v.stream.CodecParameters()
+	frames := v.stream.NbFrames()
+	rate := v.stream.AvgFrameRate()
+	tb := v.stream.TimeBase()
+	length := float64(v.fc.Duration()) / 1e6
+	// The transfer and the primaries as ffmpeg numbers them: 1 is BT.709,
+	// 16 PQ and 18 HLG, 9 BT.2020.
+	return fmt.Sprintf("%s, %s profile %d, %dx%d %s, %d frames at %.3f a second, time base %d/%d, %.3f s, transfer %d, primaries %d, matrix %s, range %s, %d streams",
+		v.fc.InputFormat().Name(), p.CodecID().Name(), p.Profile(), p.Width(), p.Height(), p.PixelFormat().Name(),
+		frames, rate.Float64(), tb.Num(), tb.Den(), length,
+		int(p.ColorTransferCharacteristic()), int(p.ColorPrimaries()), p.ColorSpace().Name(), p.ColorRange().Name(),
+		len(v.fc.Streams()))
 }
 
 // What ffmpeg says when something fails is kept with the cursor it is
@@ -301,7 +334,7 @@ func (v *video) close() {
 // the system has one and it takes the file. Where it does not, ffmpeg
 // decodes on the processor by itself, and either way the frame comes out
 // the same, see cursor.frame.
-func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
+func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(string)) error {
 	codec := astiav.FindDecoder(v.stream.CodecParameters().CodecID())
 	if codec == nil {
 		return errors.New("there is no decoder for this picture")
@@ -321,17 +354,31 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext) error {
 	// ffmpeg's threads.
 	if hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID()) {
 		dec.SetHardwareDeviceContext(hardware)
+		said := ""
 		dec.SetPixelFormatCallback(func(pfs []astiav.PixelFormat) astiav.PixelFormat {
 			for _, pf := range pfs {
 				if pf == astiav.PixelFormatVideotoolbox {
+					if said != "chip" {
+						said = "chip"
+						say("decodes on the graphics chip")
+					}
 					return pf
 				}
 			}
 			// The chip does not take it: the first the processor can.
+			if said != "processor" {
+				said = "processor"
+				say(fmt.Sprintf("the graphics chip did not take it, decodes on the processor as %s, one thread", pfs[0].Name()))
+			}
 			return pfs[0]
 		})
 	} else {
 		dec.SetThreadCount(0)
+		if hardware != nil {
+			say("the graphics chip does not decode " + v.stream.CodecParameters().CodecID().Name() + ", decodes on the processor")
+		} else if v.stream.CodecParameters().MediaType() == astiav.MediaTypeVideo {
+			say("decodes on the processor")
+		}
 	}
 	if err := dec.Open(codec, nil); err != nil {
 		dec.Free()
@@ -378,6 +425,10 @@ type cursor struct {
 	// and whether the episode's sound has ended.
 	rate, channels int
 	soundFrom      float64
+	// When the last open was asked, and whether its first frame was said
+	// in the log yet.
+	asked     time.Time
+	firstSaid bool
 	// Whether it has moved from where the file was opened.
 	read       bool
 	pcm        []byte
@@ -416,7 +467,17 @@ func (c *cursor) freeGraph() {
 	}
 }
 
+// say writes a line about this cursor for the app's log.
+func (c *cursor) say(line string) {
+	kind := "picture"
+	if c.sound {
+		kind = "sound"
+	}
+	info("cursor %d, %s: %s", c.id, kind, line)
+}
+
 func (c *cursor) fail(why string) {
+	c.say("failed: " + why)
 	c.failedWhy = why
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Failed, Body: []byte(why)})
 }
@@ -427,11 +488,12 @@ func (c *cursor) fail(why string) {
 // only seeks.
 func (c *cursor) open(from float64, w, h int) {
 	c.failedWhy = ""
+	c.asked, c.firstSaid = time.Now(), false
 	opened := c.v == nil
 	if c.v == nil {
 		v, err := openVideo(c.d.path)
 		if err == nil {
-			err = v.openDecoder(c.d.hardware)
+			err = v.openDecoder(c.d.hardware, c.say)
 			if err != nil {
 				v.close()
 			}
@@ -461,6 +523,11 @@ func (c *cursor) open(from float64, w, h int) {
 	}
 	c.width, c.height, c.from = w, h, from
 	c.sentEOF, c.graphEOF = false, false
+	how := "moved"
+	if opened {
+		how = "opened the file"
+	}
+	c.say(fmt.Sprintf("%s, at %.3f s for %dx%d, %d ms", how, from, w, h, time.Since(c.asked).Milliseconds()))
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, c.light)})
 }
 
@@ -479,14 +546,60 @@ func lightOf(trc astiav.ColorTransferCharacteristic) framewire.Light {
 // seek goes to the key frame before from, with what the decoder held
 // dropped.
 func (c *cursor) seek(from float64) error {
-	tb := c.v.stream.TimeBase()
-	ts := int64(math.Floor(from / tb.Float64()))
-	if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
+	tb := c.v.stream.TimeBase().Float64()
+	ts, err := c.keyBefore(from, int64(math.Floor(from/tb)))
+	if err == nil {
+		err = c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
+	}
+	if err != nil {
 		return fmt.Errorf("the video cannot be read from %.3f s: %s", from, err)
 	}
 	flushDecoder(c.v.dec)
 	c.sentEOF, c.graphEOF = false, false
 	return nil
+}
+
+// keyBefore is where to seek to for the frame at from: a moment whose key
+// frame is shown at from or before it. A seek finds its key frame by when
+// it is decoded, and in an open GOP, HEVC's CRA, the key frame is decoded
+// before the frames shown just ahead of it, which need the GOP before to
+// be decoded and are dropped when a decoder starts at that key. So a seek
+// to one of those frames landed on a key frame shown after it, and the
+// frame asked for never came: start.mp4 stood without a picture and would
+// not play, plan row 2.186. The key frame a seek lands on is read, and
+// while it is shown after from, the seek goes to the key before it.
+func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
+	tb := c.v.stream.TimeBase().Float64()
+	landed := int64(math.MaxInt64)
+	for range 16 {
+		if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
+			return 0, err
+		}
+		pts, dts, err := c.firstPacket()
+		if err != nil || pts == astiav.NoPtsValue || dts == astiav.NoPtsValue || dts >= landed ||
+			float64(pts)*tb <= from+1e-6 {
+			return ts, nil
+		}
+		landed, ts = dts, dts-1
+	}
+	return ts, nil
+}
+
+// firstPacket is when the next packet of the picture is shown and when it
+// is decoded. It is read and let go, so a seek has to follow it.
+func (c *cursor) firstPacket() (pts, dts int64, err error) {
+	for {
+		if err := c.v.fc.ReadFrame(c.pkt); err != nil {
+			return 0, 0, err
+		}
+		if c.pkt.StreamIndex() != c.v.stream.Index() {
+			c.pkt.Unref()
+			continue
+		}
+		pts, dts = c.pkt.Pts(), c.pkt.Dts()
+		c.pkt.Unref()
+		return pts, dts, nil
+	}
 }
 
 // next answers up to n frames from where the cursor is, none that starts
@@ -507,18 +620,28 @@ func (c *cursor) next(n int, skip float64) {
 	// and scaling each to the size of the canvas only to throw it away
 	// kept a drag waiting.
 	drop := max(c.from, skip) - 1e-6
-	for sent := 0; sent < n; {
+	began := time.Now()
+	sent := 0
+	for sent < n {
 		at, body, err := c.frame(drop)
 		if err != nil {
 			if errors.Is(err, astiav.ErrEof) {
+				c.say(fmt.Sprintf("the video ended after %d frames of %d asked", sent, n))
 				c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
 			} else {
 				c.fail(err.Error())
 			}
 			return
 		}
+		if !c.firstSaid {
+			c.firstSaid = true
+			c.say(fmt.Sprintf("first frame at %.3f s, %d ms after the open", at, time.Since(c.asked).Milliseconds()))
+		}
 		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: body})
 		sent++
+	}
+	if took := time.Since(began); took > 250*time.Millisecond {
+		c.say(fmt.Sprintf("%d frames took %d ms, %d sent", n, took.Milliseconds(), sent))
 	}
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Done})
 }
@@ -651,7 +774,10 @@ func (c *cursor) bringOut() error {
 // and matrix, with ffmpeg's defaults where the file says nothing. Plan
 // row 2.156, step 4.
 func (c *cursor) makeGraph() error {
-	return c.buildGraph(framewire.Picture(c.width, c.height))
+	chain := framewire.Picture(c.width, c.height)
+	c.say(fmt.Sprintf("chain from %dx%d %s, range %s, matrix %s: %s", c.decoded.Width(), c.decoded.Height(),
+		c.decoded.PixelFormat().Name(), c.decoded.ColorRange().Name(), c.decoded.ColorSpace().Name(), chain))
+	return c.buildGraph(chain)
 }
 
 // buildGraph builds a chain from the decoded frame's kind to chain's end,

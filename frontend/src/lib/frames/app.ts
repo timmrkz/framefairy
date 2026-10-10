@@ -73,9 +73,16 @@ class Stream {
     const from = Math.max(0, owner.ptsOf(first) - owner.track.frame / 2);
     const q = new URLSearchParams({ path: owner.path, from: from.toFixed(6), w: String(width), h: String(height) });
     this.id = fetch(`/frames/open?${q}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        owner.trace(`a stream from ${from.toFixed(3)} s could not be opened, it answered ${r.status}: ${(await r.text()).trim()}`);
+        return null;
+      })
       .then((j: { id?: string } | null) => j?.id ?? null)
-      .catch(() => null);
+      .catch((e: unknown) => {
+        owner.trace(`a stream from ${from.toFixed(3)} s could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+        return null;
+      });
   }
 
   // Still on its way to its first frame for a place nobody wants any more:
@@ -132,6 +139,7 @@ class Stream {
           return;
         }
         if (got.status === 404 || got.closed) {
+          this.owner.trace(`stream ${id.slice(0, 6)} was ${got.closed ? "closed" : "gone"} on the Go side, ${this.waiting.length} frames go to another`);
           // Closed on the Go side, to make room for newer streams or after
           // standing unused. That is no failure of the decoder: what was
           // waited for goes to a new stream.
@@ -143,6 +151,7 @@ class Stream {
           return;
         }
         if (got.status === 0) {
+          this.owner.trace(`stream ${id.slice(0, 6)}: the Go side did not answer a pull, ${this.gave ? "after frames" : "before any frame"}`);
           // The Go side could not be reached at all. A stream that never
           // gave a frame is no stream, and asking again would only ask again.
           if (!this.gave) {
@@ -156,6 +165,7 @@ class Stream {
           return;
         }
         if (got.end && got.frames.length === 0) {
+          this.owner.trace(`stream ${id.slice(0, 6)} ended at frame ${this.position}${got.error ? `: ${got.error}` : ""}`);
           this.end(got.error);
           return;
         }
@@ -241,7 +251,9 @@ export class AppFrames {
   asked = 0;
   // first is the size the first stream was opened at, for the walks.
   readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[], first: "" };
-  readonly puller = new Puller();
+  // Every step on the way to a frame, for the app's log, see lib/said.ts.
+  trace: (line: string) => void = () => {};
+  readonly puller = new Puller((line) => this.trace(line));
 
   // The episode's decoder on the Go side is held for as long as these
   // frames are open: started now, with the file open and decoders ready,
@@ -403,8 +415,8 @@ class Puller {
   // Where the pulls are read, for the walks.
   where: "worker" | "page" | "starting" = "starting";
 
-  constructor() {
-    this.ready = this.start();
+  constructor(private trace: (line: string) => void) {
+    this.ready = this.start().then(() => this.trace(`frames are read on the ${this.where}`));
   }
 
   private async start() {
@@ -440,7 +452,8 @@ class Puller {
     };
     // A Worker that stops answers what it owed as unreachable, and the
     // pulls after it are read on the page.
-    w.onerror = () => {
+    w.onerror = (e) => {
+      this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
       for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] });

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -389,6 +390,82 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 			}
 		}
 		dec.Close()
+	}
+}
+
+// In an open GOP, the way HEVC encoders write it and DaVinci Resolve wrote
+// Tim's start.mp4, the frames shown just before a key frame are decoded
+// after it and need the GOP before. The episode's decoder gives each of
+// them from its own moment, and the ones after. A seek lands on a key
+// frame by when it is decoded, so it landed on the key frame those frames
+// lead up to, the decoder dropped them, and the first frame came a key
+// frame late: the frame asked for never came, and start.mp4 stood without
+// a picture and would not play. Plan row 2.186.
+//
+// The file is in testdata so that the Mac, whose own ffmpeg has no x265,
+// reads it too:
+//
+//	ffmpeg -f lavfi -i testsrc2=s=320x180:r=25:d=4 -c:v libx265 -preset ultrafast \
+//		-pix_fmt yuv420p10le -x265-params keyint=24:min-keyint=24:bframes=3:scenecut=0:crf=40 \
+//		-tag:v hvc1 -an open-gop.mp4
+func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join("testdata", "open-gop.mp4")
+	// The frames shown before the key frame they are decoded after, read
+	// from the file's packets in the order they are decoded.
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path).Output()
+	if err != nil {
+		ffmpegtest.Unusable(t, "ffprobe could not read %s: %v", path, err)
+	}
+	var shown []float64
+	var leading []float64
+	key := math.Inf(-1)
+	for _, line := range strings.Fields(string(out)) {
+		var at float64
+		var flags string
+		if _, err := fmt.Sscanf(strings.Replace(line, ",", " ", 1), "%g %s", &at, &flags); err != nil {
+			t.Fatalf("a packet ffprobe read: %q: %v", line, err)
+		}
+		shown = append(shown, at)
+		if strings.HasPrefix(flags, "K") {
+			key = at
+		} else if at < key {
+			leading = append(leading, at)
+		}
+	}
+	if len(leading) < 3 {
+		t.Fatalf("%s has %d frames shown before their key frame, not an open GOP", path, len(leading))
+	}
+	slices.Sort(shown)
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	for _, from := range leading {
+		var got []float64
+		err := dec.Stream(context.Background(), from, 160, 90, func(at float64, _ []byte) error {
+			got = append(got, at)
+			if len(got) == 4 {
+				return errStop
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatalf("from %.3f: %v", from, err)
+		}
+		i := slices.IndexFunc(shown, func(at float64) bool { return math.Abs(at-from) < 1e-6 })
+		want := shown[i:min(i+4, len(shown))]
+		if len(got) != len(want) {
+			t.Fatalf("from %.3f: frames at %v, want %v", from, got, want)
+		}
+		for j := range want {
+			if math.Abs(got[j]-want[j]) > 1e-6 {
+				t.Fatalf("from %.3f: frames at %v, want %v", from, got, want)
+			}
+		}
 	}
 }
 

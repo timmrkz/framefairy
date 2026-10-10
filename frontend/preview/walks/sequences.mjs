@@ -136,6 +136,14 @@
 //   ["no browser decoder"]
 //                      takes the browser's picture and sound decoders away,
 //                      every one, and opens the episode again
+//   ["add hevc"]       adds a video of 40 seconds whose picture is HEVC with
+//                      10-bit colour in open GOPs, as x265 writes it, and
+//                      chooses the clip its first search finds
+//   ["leading frames"] puts the playhead with a click on the clip timeline
+//                      on three frames of the clip that are shown before
+//                      the key frame they are decoded after, read from the
+//                      file by ffprobe, waits for each in the video
+//                      preview, and plays from the last
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -332,7 +340,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames } from "./bridge.mjs";
+import { recordFrames, addHEVC } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -992,6 +1000,16 @@ export const sequences = [
     // be first, for a frame smaller than the picture to grow from.
     name: "a paused frame grows sharp with the app",
     steps: [["app size", 700, 500], ["restart"], ["sharp", "opened"], ["app size", 1500, 1000], ["sharp"]],
+  },
+  {
+    // Tim's start.mp4 stood without a picture and would not play, on
+    // Space or Play, while every other video was fine. It is HEVC in open
+    // GOPs, and the playhead was on a frame shown before the key frame it
+    // is decoded after: the episode's decoder started a key frame late,
+    // and the frame the video preview waited for never came. Plan row
+    // 2.186.
+    name: "a frame shown before its key frame comes and plays",
+    steps: [["add hevc"], ["leading frames"]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -2291,6 +2309,58 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           return "";
         }, duration);
         if (lost) wrong = lost;
+        break;
+      }
+      case "add hevc":
+        await addHEVC(url, page);
+        await watch.step("wait", s);
+        break;
+      case "leading frames": {
+        const path = await episodeOn(page);
+        const fps = await rate(page);
+        // In the order the frames are decoded: a frame shown before the
+        // key frame decoded last leads up to it.
+        const packets = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", path])
+          .toString()
+          .trim()
+          .split("\n");
+        let key = -Infinity;
+        const leading = [];
+        for (const line of packets) {
+          const [t, flags] = line.split(",");
+          if (flags.startsWith("K")) key = Number(t);
+          else if (Number(t) < key) leading.push(Number(t));
+        }
+        const { segments } = await engineState(page, watch.at);
+        const first = segments[0].start;
+        const last = segments[segments.length - 1].end;
+        const on = leading.filter((t) => t > first + 1 && t < last - 3).slice(0, 3);
+        if (on.length < 3) {
+          wrong = `the clip from ${first.toFixed(2)} to ${last.toFixed(2)} holds ${on.length} frames shown before their key frame, not 3`;
+          break;
+        }
+        // In the middle of the frame, so the click lands on it.
+        for (const t of on) {
+          if (!(await seekTo(page, t + 0.5 / fps, fps))) {
+            const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+            wrong = `the video preview never showed the frame at ${t.toFixed(3)}, shown before its key frame, with the playhead at ${at.toFixed(3)}`;
+            break;
+          }
+        }
+        if (wrong) break;
+        const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("Space");
+        const plays = await page
+          .waitForFunction(
+            (from) =>
+              Number(document.querySelector(".screen").dataset.playhead) > from.at + 0.5 && window.__pictured() > from.frame + 1,
+            from,
+            { polling: 50, timeout: 5000 },
+          )
+          .then(() => true, () => false);
+        await page.keyboard.press("Space");
+        if (!plays) wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
         break;
       }
       case "no browser decoder": {

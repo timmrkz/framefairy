@@ -37,6 +37,9 @@ node_modules/
 *.m4v
 *.mkv
 *.wav
+# Except the one test video, an open GOP that the Mac's own ffmpeg cannot
+# make, see engine/episodeframes_test.go
+!engine/testdata/open-gop.mp4
 
 # Models
 *.gguf
@@ -60,3 +63,6 @@ __pycache__/
 *.swp
 *.log
 .env
+
+# What a merge tool leaves beside a file it resolved.
+*.orig

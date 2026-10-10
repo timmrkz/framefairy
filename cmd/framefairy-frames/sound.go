@@ -41,7 +41,7 @@ func (c *cursor) openSound(seek, from float64, rate, channels int) {
 		opened = "file"
 		v, err := openMedia(c.d.path, astiav.MediaTypeAudio)
 		if err == nil {
-			err = v.openDecoder(nil)
+			err = v.openDecoder(nil, c.say)
 			if err != nil {
 				v.close()
 			}
@@ -83,6 +83,11 @@ func (c *cursor) openSound(seek, from float64, rate, channels int) {
 	// The moment the first chunk starts at, on the clock the ffmpeg
 	// program reads by.
 	c.soundFrom = from
+	how := "moved"
+	if opened != "" {
+		how = "opened the file"
+	}
+	c.say(fmt.Sprintf("%s, from %.3f s, seek %.3f s, at %d Hz, %d channels", how, from, seek, rate, channels))
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: []byte(opened)})
 }
 
