@@ -6,7 +6,6 @@
     onChrome,
     onEpisodeChanged,
     onAcknowledgements,
-    onColourTest,
     onShowUpdates,
     onLicenceLink,
     onUpdates,
@@ -27,7 +26,6 @@
   import Episode from "./screens/Episode.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
-  import ColourTest from "./screens/ColourTest.svelte";
   import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
 
@@ -222,7 +220,6 @@
     if (nav.view.name === "settings") return "Settings";
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
-    if (nav.view.name === "colourtest") return "Colour test";
     return "Frame Fairy";
   });
 
@@ -441,7 +438,6 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
-    const noColourTest = onColourTest(() => nav.go({ name: "colourtest" }));
     // An event can arrive before the answer to the asking, and is then
     // the newer of the two, see the Updates page.
     let told = false;
@@ -482,7 +478,6 @@
       window.removeEventListener("click", letButtonGo);
       noChrome();
       noAcknowledgements();
-      noColourTest();
       noUpdates();
       noShowUpdates();
       noLicenceLink();
@@ -682,8 +677,6 @@
       <SettingsScreen />
     {:else if nav.view.name === "acknowledgements"}
       <Acknowledgements />
-    {:else if nav.view.name === "colourtest"}
-      <ColourTest />
     {:else if !placed || !libraryRead}
       <!-- Where the app was left is on its way. -->
     {:else if !episodes.length}

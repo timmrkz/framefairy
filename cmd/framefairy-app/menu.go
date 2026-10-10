@@ -64,10 +64,5 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	help.Add("Acknowledgements").OnClick(func(*application.Context) {
 		app.Event.Emit("acknowledgements", nil)
 	})
-	// The colour test of step 4 of the video preview, only while that step
-	// is being built, see docs/VIDEO-PREVIEW.md.
-	help.Add("Colour Test").OnClick(func(*application.Context) {
-		app.Event.Emit("colourtest", nil)
-	})
 	return menu
 }

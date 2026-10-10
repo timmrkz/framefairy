@@ -428,8 +428,9 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    and checks that the same numbers tagged otherwise come out otherwise.
    A frame is 4 bytes a pixel where I420 was 1.5, about 110 MB a second
    at 1280 by 720 and 30 frames a second.
-   The test of the extended canvas is Colour Test in the Help menu, in
-   the pull request of this step only: patches of 1, 2, 4 and 8 times
+   The test of the extended canvas was Colour Test in the Help menu, in
+   the pull request of this step only, and it was removed before the
+   merge: patches of 1, 2, 4 and 8 times
    white on a WebGPU canvas in the extended mode, beside the app's own
    white, with whether the webview has WebGPU, whether it kept the
    extended mode and whether it says the screen is HDR. In the cloud's
@@ -441,8 +442,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    brightest the screen could give at half brightness. With the app in
    the background the headroom shrank and 2, 4 and 8 looked alike. A
    screenshot cannot hold HDR and shows none of this. So WebKit gives a
-   canvas HDR today, and the video preview takes the WebGPU canvas. It is removed before the
-   step is merged.
+   canvas HDR today, and the video preview takes the WebGPU canvas.
    HDR is drawn as HDR now, see The video preview under HDR. The walk
    `the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light`
    holds what the GPU gives the canvas to `light.ts` worked out on the

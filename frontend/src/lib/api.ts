@@ -758,12 +758,6 @@ export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
 }
 
-// The colour test of step 4 of the video preview, in the Help menu while
-// that step is being built, see docs/VIDEO-PREVIEW.md.
-export function onColourTest(fn: () => void): () => void {
-  return Events.On("colourtest", () => fn());
-}
-
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }
