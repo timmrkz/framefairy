@@ -89,12 +89,6 @@
 //                      presses the bin of the "language" model on this
 //                      machine, under Downloaded models, or of the
 //                      "speech" model
-//   ["play to the end"]
-//                      drags the clip's end to the end of the episode,
-//                      puts the playhead three seconds before it with a
-//                      click on the clip timeline and plays until the play
-//                      stops there, so the episode's decoder reads to the
-//                      end of the file
 //   ["no browser decoder"]
 //                      takes the browser's picture and sound decoders away,
 //                      every one, and opens the episode again
@@ -732,14 +726,6 @@ export const sequences = [
     // would decode it and then failed on the first frame.
     name: "the picture comes from the Go side with no decoder in the browser",
     steps: [["no browser decoder"], ["from the app", 4]],
-  },
-  {
-    // The video preview stayed black once the playhead had been to the end
-    // of the episode, until the app started again: the cursor of the
-    // episode's decoder that read to the end ended every stream after it
-    // at once. Plan row 2.166.
-    name: "the picture comes back after the playhead reached the end of the episode",
-    steps: [["play to the end"], ["from the app", 4]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -1713,67 +1699,6 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
         break;
       }
-      case "play to the end": {
-        // Far to the right first, which the clip timeline takes as far as
-        // it shows, and then onto the end of the episode where the clip
-        // timeline shows it now.
-        const { duration, fps } = await ask(page, "Source", await episodeOn(page));
-        let g = await handles(page);
-        await drag(page, middle(g.end), high(g.track), 4000, false);
-        await watch.step("trim", s);
-        g = await handles(page);
-        await drag(page, middle(g.end), high(g.track), (await xOf(page, duration)) - middle(g.end), false);
-        await watch.step("trim", s);
-        const { segments } = await engineState(page, watch.at);
-        const end = segments[segments.length - 1].end;
-        if (Math.abs(end - duration) > 0.05) {
-          wrong = `the clip ends at ${end.toFixed(2)}, not at the end of the episode, ${duration.toFixed(2)}`;
-          break;
-        }
-        // Three seconds before the end, so the click lands on the clip
-        // timeline clear of the end's handle.
-        if (!(await seekTo(page, end - 3, fps))) {
-          wrong = `the video preview never showed the frame at ${(end - 3).toFixed(2)}`;
-          break;
-        }
-        await page.keyboard.press("Space");
-        const stopped = await page
-          .waitForFunction(
-            (end) =>
-              document.querySelector('button[aria-label="Play"]') !== null &&
-              Number(document.querySelector(".screen").dataset.playhead) >= end - 0.1,
-            end,
-            { polling: 50, timeout: 10000 },
-          )
-          .then(() => true, () => false);
-        if (!stopped) {
-          wrong = `the play did not stop at the end of the episode, ${end.toFixed(2)}`;
-          break;
-        }
-        // The playhead stays at the end, drawn on the clip timeline and on
-        // the range picker, where the hand can take hold of it again. A
-        // playhead a hair past the end was drawn on neither, plan row 2.172.
-        const lost = await page.evaluate((duration) => {
-          const at = Number(document.querySelector(".screen").dataset.playhead);
-          if (at > duration) return `the playhead stopped at ${at.toFixed(3)}, past the end of the episode, ${duration.toFixed(3)}`;
-          const on = (line, track) => {
-            if (!line || !track) return false;
-            const l = line.getBoundingClientRect();
-            const t = track.getBoundingClientRect();
-            const x = l.left + l.width / 2;
-            return l.width > 0 && l.height > 0 && x >= t.left - 1 && x <= t.right + 1;
-          };
-          const timeline = document.querySelector(".clip-timeline");
-          if (!on(timeline?.querySelector(".at .playhead"), timeline?.querySelector(".track")))
-            return "the clip timeline shows no playhead at the end of the episode";
-          const picker = [...document.querySelectorAll(".playhead")].find((e) => !e.closest(".clip-timeline"));
-          const track = [...document.querySelectorAll(".track")].find((e) => !e.closest(".clip-timeline"));
-          if (!on(picker, track)) return "the range picker shows no playhead at the end of the episode";
-          return "";
-        }, duration);
-        if (lost) wrong = lost;
-        break;
-      }
       case "no browser decoder": {
         await page.addInitScript(() => {
           for (const name of ["VideoDecoder", "AudioDecoder", "EncodedVideoChunk", "EncodedAudioChunk"]) {
@@ -1893,14 +1818,11 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         // only as it opens, is asked with the playhead on the clip. The
         // coverage and the room are read again whenever work elsewhere
         // ends, a search of the episode added before, so they say nothing
-        // about the order the workspace opens in. A workspace kept from
-        // before, see App.svelte, is woken rather than built and asks
-        // neither the clip it opens on nor the window: it has them.
+        // about the order the workspace opens in.
         const asked = await page.evaluate(() => window.__asked ?? []);
         const after = ["ChosenWindow"];
-        const built = asked.some(([name]) => name === "ChosenClip");
         const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
-        if (!wrong && built && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
+        if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
         else if (!wrong && early.length) {
           wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
         }

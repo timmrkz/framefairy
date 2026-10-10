@@ -107,3 +107,14 @@ export function playFrom(place: Place, pieces: Piece[], at: number): { clip: boo
 export function playedToEnd(p: Playhead, looping: boolean): Playhead {
   return { place: looping ? "clip" : "end", clip: p.clip };
 }
+
+// A moment the queue reports, kept inside the episode of duration seconds.
+// The queue reads the length of the episode from the file's own sample
+// tables, and on a real recording the last sample ends a little after the
+// end ffmpeg gives, 0.06 seconds on one episode. A playhead that played to
+// the end stopped there, past the end of the clip timeline and the range
+// picker, and was drawn nowhere, plan row 2.172. A duration not yet known
+// keeps the moment as it is.
+export function inEpisode(at: number, duration: number): number {
+  return duration > 0 ? Math.max(0, Math.min(at, duration)) : at;
+}
