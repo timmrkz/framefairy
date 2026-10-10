@@ -129,7 +129,7 @@ nothing left to refresh.
 | `--preview` | off | half size, fast preset, into `preview/`, or into the folder `--out` names. A preview keeps the clip's id in its name, `<id>_<words>.mp4`, so it never writes over a short |
 | `--crf 18` | 18 | quality, lower is better. Every encoder is asked in its own language, so this becomes `-q:v` on Apple's encoder, where higher is better: 18 is 85 there |
 | `--preset slow` | slow | x264 speed against compression. Only libx264 has presets, and any other encoder ignores it |
-| `--encoder` | the best this ffmpeg has | the video encoder to use. macOS reaches for `h264_videotoolbox` first and falls back to `libx264`, everywhere else it is `libx264` for now |
+| `--encoder` | the best this ffmpeg has | the video encoder to use. macOS reaches for `h264_videotoolbox` first and falls back to `libx264`, everywhere else it is `libx264` for now. An HDR episode makes an HEVC short in 10 bits, with `hevc_videotoolbox` on macOS or `libx265`, whatever this names |
 | `--audio-bitrate 256k` | 256k | aac bitrate |
 | `--width 1080 --height 1920` | 1080x1920 | output size in pixels |
 | `--no-upscale` | off | write the native crop, no resampling |

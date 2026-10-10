@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"framefairy/internal/framewire"
 )
 
 // Fade is the audio fade at each cut and at the clip's two ends, in
@@ -69,7 +71,16 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if rs.ScaleUp && (cropW != rs.OutW || cropH != rs.OutH) {
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}
-		chain = append(chain, "fps="+source.FPSString(), "format=yuv420p", "setsar=1")
+		// Standard video in 8 bits, HDR in 10, each with the episode's own
+		// colour tags on every frame, see colourParams.
+		pixels := "format=yuv420p"
+		if source.Light() != framewire.SDR {
+			pixels = "format=yuv420p10le"
+		}
+		chain = append(chain, "fps="+source.FPSString(), pixels, "setsar=1")
+		if tags := source.colourParams(); tags != "" {
+			chain = append(chain, tags)
+		}
 		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", 2*i, strings.Join(chain, ","), i))
 
 		// A piece that runs straight on from the one before, the way a
@@ -151,7 +162,8 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		}
 		cmd = append(cmd, "-t", cut.soundRead, "-vn", "-i", abs)
 	}
-	video, err := e.VideoArgs(ctx, rs)
+	light := source.Light()
+	video, err := e.videoArgs(ctx, rs, light)
 	if err != nil {
 		return nil, err
 	}
@@ -160,9 +172,10 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		"-map", videoLabel, "-map", audioLabel,
 	)
 	cmd = append(cmd, video...)
+	if light == framewire.SDR {
+		cmd = append(cmd, "-profile:v", "high", "-pix_fmt", "yuv420p")
+	}
 	cmd = append(cmd,
-		"-profile:v", "high",
-		"-pix_fmt", "yuv420p",
 		"-fps_mode", "cfr",
 		"-r", source.FPSString(),
 		"-c:a", "aac", "-b:a", rs.AudioBitrate, "-ar", "48000",

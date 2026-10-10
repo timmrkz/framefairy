@@ -277,11 +277,12 @@ with 10-bit colour, HLG and Dolby Vision on top. A file says it is HDR in
 its tags: a transfer of `arib-std-b67` is HLG, `smpte2084` is PQ. The
 engine's probe already reads these tags.
 
-**What happens today.** Nothing is decided. The render copies the file's
-colour tags onto a short encoded in H.264 with 8-bit colour, so a short
-made from iPhone footage comes out as HDR-tagged video with too few bits
-for HDR, and players show it in different ways. The video preview shows
-whatever the decoder in use makes of it.
+**What happened before.** The render copied the file's colour tags onto
+a short encoded in H.264 with 8-bit colour, so a short made from iPhone
+footage came out as HDR-tagged video with too few bits for HDR, and
+players showed it in different ways. With our own ffmpeg it lost the tags
+as well: a newer ffmpeg takes an encoder's tags from its frames and drops
+`-color_trc` and the like.
 
 ### The short: HDR in, HDR out
 
@@ -290,7 +291,11 @@ episode makes an HDR short. That is the rule of no colour changes.
 
 - The short is HEVC with 10-bit colour and the episode's own transfer,
   primaries and matrix, HLG stays HLG and PQ stays PQ. Instagram and
-  YouTube take HDR from an iPhone in this form.
+  YouTube take HDR from an iPhone in this form. **This is done**:
+  `hevc_videotoolbox` on the Mac and `libx265` where an ffmpeg has it,
+  tagged `hvc1`, `HDREncoder` in `engine/encode.go`. The episode's colour
+  tags are put on every frame of every short, standard video too, with
+  `setparams`, so the encoder takes them, `TestAnHDREpisodeMakesAnHDRShort`.
 - The captions are drawn at the reference white for graphics in HDR,
   BT.2408, 203 nits, so the caption colour looks on an HDR screen the way
   it was chosen, and not glaring.
