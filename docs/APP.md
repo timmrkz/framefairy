@@ -532,15 +532,18 @@ playhead, through the chosen clip and its cuts, with no jump and no stop,
 so any part of the episode can be heard with a clip chosen. Playing through
 the clip leaves the playhead on the video, and loop changes nothing there.
 While the playhead is on the video the chosen clip is dimmed as one thing,
-wherever it is drawn: the crop frame in the video preview, its mark on the
-range picker, and on the clip timeline everything drawn for it, its frame,
-its pieces, its cuts and their edges, its trim edges, its caption blocks and
-their edges and its thumbnails. So it shows that the clip's rules are not in
-play. It is one rule, `.chosen.dim` with `.frame.dim` and
-`.clipmark.selected.dim` in `app.css`, at the brightness of a button that
-cannot be pressed, `--dimmed`, and it changes in the frame the playhead
-does. With the hand on the clip somewhere else, its card or its mark, it is
-lit whole.
+wherever it is drawn: its mark on the range picker, and on the clip
+timeline everything drawn for it, its frame, its pieces, its cuts and their
+edges, its trim edges, its caption blocks and their edges and its
+thumbnails. So it shows that the clip's rules are not in play. It is one
+rule, `.chosen.dim` with `.clipmark.selected.dim` in `app.css`, at the
+brightness of a button that cannot be pressed, `--dimmed`, and it changes
+in the frame the playhead does. With the hand on the clip somewhere else,
+its card or its mark, it is lit whole. The video preview then shows the
+video alone, with no crop frame, no shade and no captions, even while the
+episode plays on through the clip's own moments: what plays is the
+episode, not the short. On the clip, the crop frame and the captions are
+back in the same frame.
 
 It used to be measured: the clip played when the playhead was within half
 a frame of its start. The paused video element on the Mac answered with

@@ -428,10 +428,11 @@ input[type="password"] {
    clip: the space bar plays the episode straight on and the clip's rules,
    its cuts jumped and a stop at its end, are not in play. So the clip is
    dimmed wherever it is drawn, as one thing, the way a control that is
-   not in play is dimmed: the crop frame, its mark on the range picker,
-   and on the clip timeline everything drawn for it, its frame, its
-   pieces, its cuts and their edges, its trim edges, its captions and
-   their edges and its thumbnails, which .chosen holds. One rule, so no
+   not in play is dimmed: its mark on the range picker, and on the clip
+   timeline everything drawn for it, its frame, its pieces, its cuts and
+   their edges, its trim edges, its captions and their edges and its
+   thumbnails, which .chosen holds. The video preview shows the video
+   alone then, with no crop frame and no captions. One rule, so no
    part of the clip can be left bright while the rest is dim. It is
    brightness, the same share of every colour, so a caption keeps the
    colours it was given. Lit as a whole while the hand is on the clip
@@ -444,7 +445,6 @@ input[type="password"] {
   display: contents;
 }
 
-.frame.dim:not(.lit),
 .clipmark.selected.dim:not(.lit):not(:hover),
 .chosen.dim:not(.lit) > * {
   opacity: var(--dimmed);

@@ -6,15 +6,13 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, preview, engineState } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle } from "./bridge.mjs";
+import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
 const { page, rng, watch } = w;
 const frame = 1 / (await ask(page, "Source", watch.at.path)).fps;
 const at = () => preview(page, frame);
-
-// The clip as the engine has it now.
-const pieces = async () => (await engineState(page, watch.at)).segments;
 
 // Whether a press of the space bar plays the clip rather than the episode
 // from the playhead: when the playhead is on the clip, which the app
@@ -39,6 +37,14 @@ function framesInClip(frames, p) {
       `pieces ${p.map((x) => `${x.start.toFixed(2)}-${x.end.toFixed(2)}`).join(" ")}\nframes not in them ${out.map((t) => t.toFixed(3)).join(" ")}`,
     );
   }
+}
+
+// On every animation frame of a play, the video preview shows the video
+// alone while the playhead is on the video, and the clip's crop frame and
+// captions while it is on the clip, see overlaid in rules.mjs.
+function overlaysFollow(overlays, state) {
+  const broke = overlaid(overlays, state, frame);
+  if (broke) watch.broke("the video preview shows the clip only on the clip", broke);
 }
 
 // Paused, the picture stays where it was paused: the playhead stays, and
@@ -87,7 +93,8 @@ const gestures = [
     weight: 4,
     when: () => true,
     async run() {
-      const p = await pieces();
+      const state = await engineState(page, watch.at);
+      const p = state.segments;
       const from = (await at()).at;
       const clip = await playsClip();
       const ms = 300 + rng.int(2700);
@@ -106,9 +113,10 @@ const gestures = [
         document.body.dispatchEvent(new KeyboardEvent("keydown", key));
         document.body.dispatchEvent(new KeyboardEvent("keyup", key));
       });
-      const { frames, moved } = await stop();
+      const { frames, moved, overlays } = await stop();
       if (!frames.length && !moved) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
       if (clip) framesInClip(frames, p);
+      overlaysFollow(overlays, state);
       await staysPaused(`after playing for ${ms} ms`);
       return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms`;
     },
@@ -118,7 +126,8 @@ const gestures = [
     weight: 1,
     when: () => true,
     async run(g) {
-      const p = await pieces();
+      const state = await engineState(page, watch.at);
+      const p = state.segments;
       if (!(await playsClip())) return "nothing, the playhead is on the video";
       // Played from anywhere, a clip takes up to half a minute of real
       // time to reach its end, and that was most of what the walks took.
@@ -140,8 +149,9 @@ const gestures = [
         timeout: (length + 5) * 1000,
         polling: 100,
       }).catch(() => {});
-      const { frames } = await stop();
+      const { frames, overlays } = await stop();
       framesInClip(frames, p);
+      overlaysFollow(overlays, state);
       const v = await at();
       const end = p[p.length - 1].end;
       if (!v.paused || Math.abs(v.at - end) > frame + 0.1) {
@@ -149,6 +159,54 @@ const gestures = [
       }
       await staysPaused("at the end");
       return `play the clip from ${from.toFixed(2)} to its end`;
+    },
+  },
+  {
+    // The clip starts with the bridge's episode, so there is nothing of
+    // the episode before it until its start is trimmed.
+    name: "trim",
+    weight: 1,
+    when: (g) => g.end.x - (g.start.x + g.start.w) > 400 && g.start.x - g.track.x < 40,
+    async run(g) {
+      const px = 80 + rng.int(220);
+      await drag(page, middle(g.start), high(g.track), px, false);
+      return `drag the clip's start by ${px} px`;
+    },
+  },
+  {
+    // Plays the episode from before the clip on into it, which is on the
+    // video the whole way, so the video preview shows the video alone.
+    name: "into",
+    weight: 2,
+    when: (g) => g.start.x - g.track.x > 40,
+    async run(g) {
+      const state = await engineState(page, watch.at);
+      const start = state.segments[0].start;
+      const x = g.track.x + 4 + rng.next() * (g.start.x - g.track.x - 12);
+      await page.mouse.click(x, high(g.track));
+      await settle(page);
+      const from = (await at()).at;
+      const stop = await recordFrames(page, frame);
+      await page.evaluate(() => document.body.focus());
+      await page.keyboard.press("Space");
+      await page
+        .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, start + 1.5, {
+          timeout: (start - from + 6) * 1000,
+          polling: 100,
+        })
+        .catch(() => {});
+      await page.evaluate(() => {
+        if (document.querySelector('button[aria-label="Play"]')) return;
+        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+      });
+      const { overlays } = await stop();
+      const to = (await at()).at;
+      if (to < start + 1) watch.broke("the episode plays on into the clip", `played from ${from.toFixed(3)} to ${to.toFixed(3)}, the clip starts at ${start.toFixed(3)}`);
+      overlaysFollow(overlays, state);
+      await staysPaused("after playing into the clip");
+      return `play the episode from ${from.toFixed(2)} into the clip to ${to.toFixed(2)}`;
     },
   },
   {
