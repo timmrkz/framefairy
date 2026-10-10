@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -475,6 +476,103 @@ func autoCrop(seg *object) any {
 	return value
 }
 
+// rotationOf is how far a person rotated a piece, in degrees to the left.
+func rotationOf(seg *object) int {
+	value, ok := seg.get(keyRotate)
+	if !ok {
+		return 0
+	}
+	n, _ := toInt(value)
+	return n
+}
+
+// angleOf is the camera angle a piece shows, as a crop moved by hand sees
+// it: the shot's automatic crop, and the way the piece is rotated. A part
+// rotated upright is framed apart from the pieces of its shot that are not.
+func angleOf(seg *object) string {
+	return fmt.Sprint(autoCrop(seg)) + "/" + strconv.Itoa(rotationOf(seg))
+}
+
+// RotatePart rotates the part of a clip a moment is in a quarter turn to
+// the left, the way Preview and Photos rotate. A part is the pieces between
+// two cuts, or between a cut and an edge of the clip: what plays straight
+// on. Four turns bring it back. A rotated part's crop stands in the middle
+// of the rotated picture until it is placed, and a part rotated back takes
+// the framing its shot was found with. Framing is not a judgement of the
+// clip, so nothing is recorded for training.
+func RotatePart(planPath, clipID string, at float64) error {
+	return editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		pieces := segmentObjects(c)
+		target := segmentAt(pieces, at)
+		if target < 0 {
+			return renderErr("clip %s has no pieces", clipID)
+		}
+		found := foundPieces(c)
+		if _, ok := c.values[keyFoundSegments]; !ok && len(found) > 0 {
+			kept := make([]any, len(found))
+			for i, f := range found {
+				kept[i] = copyObject(f.seg)
+			}
+			c.set(keyFoundSegments, kept)
+		}
+		first, last := partOf(pieces, target)
+		turned := (rotationOf(pieces[target]) + 90) % 360
+		for _, seg := range pieces[first : last+1] {
+			seg.remove(keyCropXAuto)
+			if turned != 0 {
+				seg.set(keyRotate, turned)
+				seg.remove(keyCropX)
+				continue
+			}
+			seg.remove(keyRotate)
+			seg.remove(keyCropX)
+			if crop, ok := foundCropAt(found, number(seg.values[keyStart])); ok {
+				seg.set(keyCropX, crop)
+			}
+		}
+		return nil
+	})
+}
+
+// partOf is the first and last of the pieces around one that play straight
+// on from each other, with no cut between them.
+func partOf(pieces []*object, i int) (int, int) {
+	first, last := i, i
+	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= 0.0005 {
+		first--
+	}
+	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= 0.0005 {
+		last++
+	}
+	return first, last
+}
+
+// foundCropAt is the automatic crop of the shot the clip was found with at
+// a moment, the one its found piece there was given.
+func foundCropAt(found []foundPiece, at float64) (any, bool) {
+	k := -1
+	for i, f := range found {
+		if f.start <= at+0.0005 {
+			k = i
+		}
+	}
+	if k < 0 && len(found) > 0 {
+		k = 0
+	}
+	if k < 0 {
+		return nil, false
+	}
+	value, ok := found[k].seg.get(keyCropXAuto)
+	if !ok {
+		value, ok = found[k].seg.get(keyCropX)
+	}
+	return value, ok && value != nil
+}
+
 func segmentObjects(c *object) []*object {
 	list, _ := c.values[keySegments].([]any)
 	var pieces []*object
@@ -769,9 +867,9 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := fmt.Sprint(autoCrop(pieces[target]))
+		angle := angleOf(pieces[target])
 		for _, seg := range pieces {
-			if fmt.Sprint(autoCrop(seg)) != angle {
+			if angleOf(seg) != angle {
 				continue
 			}
 			if _, moved := seg.get(keyCropXAuto); !moved {
@@ -1051,10 +1149,10 @@ func ResetCrop(planPath, clipID string, at float64) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := fmt.Sprint(autoCrop(pieces[target]))
+		angle := angleOf(pieces[target])
 		for _, seg := range pieces {
 			auto, moved := seg.get(keyCropXAuto)
-			if !moved || fmt.Sprint(auto) != angle {
+			if !moved || angleOf(seg) != angle {
 				continue
 			}
 			seg.set(keyCropX, auto)

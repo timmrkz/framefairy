@@ -444,8 +444,15 @@ func (e *Engine) Preflight(ctx context.Context) error {
 
 // SourceInfo describes the episode's video stream.
 type SourceInfo struct {
-	Width    int
-	Height   int
+	// The size of the picture standing up, the way ffmpeg shows it, after
+	// the turn the file asks for, see Turned.
+	Width  int
+	Height int
+	// Turned is how far the file asks for its picture to be turned to
+	// stand up, in degrees counterclockwise, 0, 90, 180 or 270, the way
+	// ffprobe reports a phone's display matrix. ffmpeg turns it by
+	// itself. Width and Height are already the picture turned.
+	Turned   int
 	FPSNum   int
 	FPSDen   int
 	Duration float64
@@ -566,6 +573,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 		"-select_streams", "v:0",
 		"-show_entries",
 		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
+		"-show_entries", "stream_side_data=rotation",
 		"-show_entries", "format=duration,start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
@@ -631,9 +639,16 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	if _, present := stream["height"]; !present || !okH {
 		return SourceInfo{}, renderErr("%s reports no video dimensions", path)
 	}
+	// A phone stores the picture the way its sensor lies and says how to
+	// stand it up, and ffmpeg stands it up before anything else sees it.
+	// So every size the engine works with is the picture standing up.
+	turned := fileRotation(stream["side_data_list"])
+	if turned == 90 || turned == 270 {
+		width, height = height, width
+	}
 	videoStart := videoStartOf(stream, data.Format)
 	first, hasFirst := toFloat(stream["start_time"])
-	info := SourceInfo{Width: width, Height: height, FPSNum: num, FPSDen: den,
+	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst}
 	info.Variable = hasFirst && e.uneven(ctx, path, info)
@@ -653,6 +668,26 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 		info.FPSNum, info.FPSDen = shortRate(average), 1
 	}
 	return info, nil
+}
+
+// fileRotation is the turn a file's display matrix asks for, from
+// ffprobe's side data, as 0, 90, 180 or 270 degrees counterclockwise. A
+// turn that is not a quarter of a circle is no turn: ffmpeg leaves it too.
+func fileRotation(sideData any) int {
+	list, _ := sideData.([]any)
+	for _, item := range list {
+		entry, _ := item.(map[string]any)
+		value, ok := toFloat(entry["rotation"])
+		if !ok || !isFinite(value) {
+			continue
+		}
+		quarter := math.Round(value / 90)
+		if math.Abs(value-quarter*90) > 1 {
+			return 0
+		}
+		return ((int(quarter)%4 + 4) % 4) * 90
+	}
+	return 0
 }
 
 // shortRate is the rate a short of uneven frames is made at: the nearest

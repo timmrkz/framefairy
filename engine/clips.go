@@ -21,6 +21,9 @@ type Segment struct {
 	// Moved means a person placed the crop by hand. The automatic placement
 	// is kept in the plan as crop_x_auto.
 	Moved bool
+	// Rotate is how far a person rotated the piece, in degrees to the
+	// left: 0, 90, 180 or 270. The crop is placed on the picture rotated.
+	Rotate int
 }
 
 // Duration of the segment in seconds.
@@ -351,8 +354,18 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				return Plan{}, nil, renderErr("clip %d: a segment lies outside the video, "+
 					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
 			}
+			rotate := 0
+			if value, present := seg[keyRotate]; present && value != nil {
+				f, ok := toFloat(value)
+				n := int(f)
+				if _, isText := value.(string); isText || !ok || float64(n) != f || !validRotate(n) {
+					return Plan{}, nil, renderErr("clip %d: a piece is rotated by %s, "+
+						"which is not 0, 90, 180 or 270", index, Scrub(pyReprAny(value), 40))
+				}
+				rotate = n
+			}
 			_, moved := seg[keyCropXAuto]
-			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved})
+			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
 		}
 		if len(segments) == 0 {
 			continue
@@ -422,6 +435,21 @@ func LoadClips(path string) (Plan, []Clip, error) {
 // --------------------------------------------------------------------------
 // geometry
 // --------------------------------------------------------------------------
+
+// validRotate says whether a piece may be rotated by so many degrees: a
+// quarter of a circle at a time, the way Preview and Photos rotate.
+func validRotate(degrees int) bool {
+	return degrees == 0 || degrees == 90 || degrees == 180 || degrees == 270
+}
+
+// Rotated is the picture as a piece rotated by so many degrees to the left
+// shows it: a quarter turn either way swaps its width and its height.
+func (s SourceInfo) Rotated(degrees int) SourceInfo {
+	if degrees == 90 || degrees == 270 {
+		s.Width, s.Height = s.Height, s.Width
+	}
+	return s
+}
 
 // CropWindow is the source-pixel rectangle that fills the output aspect
 // ratio. Height is used in full whenever the source is wider than the target

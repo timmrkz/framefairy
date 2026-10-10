@@ -518,7 +518,7 @@ func framedBack(from, to float64, pieces []*object, found []foundPiece) []*objec
 		}
 		like := f.seg
 		for _, seg := range pieces {
-			if fmt.Sprint(autoCrop(seg)) == fmt.Sprint(autoCrop(f.seg)) {
+			if angleOf(seg) == angleOf(f.seg) {
 				like = seg
 				break
 			}
@@ -553,7 +553,7 @@ func meet(a, b []*object) []*object {
 // sameFraming says whether two pieces are framed alike: the same crop, and
 // the same automatic crop behind it.
 func sameFraming(a, b *object) bool {
-	for _, key := range []string{keyCropX, keyCropXAuto} {
+	for _, key := range []string{keyCropX, keyCropXAuto, keyRotate} {
 		x, okA := a.get(key)
 		y, okB := b.get(key)
 		if okA != okB || fmt.Sprint(x) != fmt.Sprint(y) {

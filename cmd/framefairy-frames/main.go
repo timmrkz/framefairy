@@ -72,6 +72,23 @@ func main() {
 	d.closeAll()
 }
 
+// turnedOf is how far a stream's display matrix asks for its picture to be
+// turned, in degrees to the left, 0, 90, 180 or 270, the way ffprobe and
+// engine.Probe read it. A turn that is not a quarter is no turn, as for
+// ffmpeg.
+func turnedOf(s *astiav.Stream) int {
+	m, ok := s.CodecParameters().SideData().DisplayMatrix().Get()
+	if !ok {
+		return 0
+	}
+	left := -m.Rotation()
+	quarter := math.Round(left / 90)
+	if math.Abs(left-quarter*90) > 1 {
+		return 0
+	}
+	return ((int(quarter)%4 + 4) % 4) * 90
+}
+
 // info writes a line for the app's log alone, see engine.DecoderInfo: what
 // the decoder opened and how, and how long its work took. Its other lines
 // are ffmpeg's errors, which say why a stream failed.
@@ -286,6 +303,10 @@ type video struct {
 	fc     *astiav.FormatContext
 	stream *astiav.Stream
 	dec    *astiav.CodecContext
+	// turned is how far the file asks for its picture to be turned to
+	// stand up, in degrees to the left, which ffmpeg does by itself and
+	// so the engine's sizes already are. See engine.SourceInfo.Turned.
+	turned int
 }
 
 func openVideo(path string) (*video, error) {
@@ -311,6 +332,9 @@ func openMedia(path string, kind astiav.MediaType) (*video, error) {
 			v.stream = s
 			break
 		}
+	}
+	if v.stream != nil {
+		v.turned = turnedOf(v.stream)
 	}
 	if v.stream == nil {
 		v.close()
@@ -775,6 +799,9 @@ func (c *cursor) bringOut() error {
 // row 2.156, step 4.
 func (c *cursor) makeGraph() error {
 	chain := framewire.Picture(c.width, c.height)
+	if turn := framewire.Rotate(c.v.turned); turn != "" {
+		chain = turn + "," + chain
+	}
 	c.say(fmt.Sprintf("chain from %dx%d %s, range %s, matrix %s: %s", c.decoded.Width(), c.decoded.Height(),
 		c.decoded.PixelFormat().Name(), c.decoded.ColorRange().Name(), c.decoded.ColorSpace().Name(), chain))
 	return c.buildGraph(chain)

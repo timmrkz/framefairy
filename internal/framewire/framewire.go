@@ -151,6 +151,22 @@ func Picture(width, height int) string {
 	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
 }
 
+// Rotate is the ffmpeg filter that rotates a picture so many degrees to
+// the left, 90, 180 or 270, or nothing. It stands up the picture of a file
+// that asks to be turned, the way ffmpeg does by itself, and it rotates a
+// piece of a clip a person rotated.
+func Rotate(degrees int) string {
+	switch degrees {
+	case 90:
+		return "transpose=cclock"
+	case 180:
+		return "hflip,vflip"
+	case 270:
+		return "transpose=clock"
+	}
+	return ""
+}
+
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
 const MaxBody = 7680 * 4320 * 4
 

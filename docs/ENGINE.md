@@ -894,6 +894,26 @@ shortest longer than the longest or no clips at all.
 
 ## Framing
 
+**A phone's video stands up first.** A phone stores its picture the way
+the sensor lies and says in the file how to turn it upright, the display
+matrix. ffmpeg turns it by itself before any filter sees it, so `Probe`
+reads that turn, `SourceInfo.Turned`, and reports the picture's size
+standing up, and the episode's decoder turns its frames the same way, with
+the same filter, `framewire.Rotate`. Before this the engine took a
+portrait phone video for a landscape one: the render worked out a
+landscape crop and cut it from the portrait picture, and the video
+preview showed it on its side.
+
+**A rotated piece.** A person can rotate the part of a clip between two
+cuts a quarter turn to the left at a time, for a phone that was turned
+while it recorded, `RotatePart` in `engine/edit.go`. Each of its pieces
+keeps `rotate`, 90, 180 or 270, and the render rotates the piece before it
+crops it, so the crop is the shape of the short in the picture rotated. A
+rotated part's crop stands in the middle until it is placed, it is framed
+apart from the pieces of its shot that are not rotated, and rotated back
+it takes the crop its shot was found with. See
+[ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
+
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing
 decodes only what a clip keeps, and each kept span once. One ffmpeg run per
