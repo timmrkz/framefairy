@@ -307,6 +307,7 @@
             label="Channel"
             placeholder="Choose a channel"
             align="right"
+            fit
             title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
             tone={update.phase === "gone" || conflicted ? "warn" : undefined}
             disabled={channelOptions.length === 0}
@@ -400,9 +401,9 @@
     flex: none;
   }
 
-  /* The list is as wide as what its trigger says and no wider, the same
-     as every list in the settings. It hangs from the trigger's right edge,
-     the edge of the card, and grows away from it into the card. */
+  /* The trigger is as wide as the channel it names and no wider, see fit
+     in Pick. The list hangs from its right edge, the edge of the card, and
+     grows away from it into the card as far as its longest name needs. */
   .build :global(button.pick) {
     width: max-content;
   }

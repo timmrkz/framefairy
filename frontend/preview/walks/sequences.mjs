@@ -287,6 +287,8 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["fits"]           the list's trigger is as wide as the channel it
+//                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
 //                      channel picked and the line under it this head
 //
@@ -933,6 +935,7 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", list: "main,pr-20,pr-21", conflict: "pr-20" }],
       ["choices", ["Branch main", "PR #21", "PR #20, conflicts"], "Branch main"],
+      ["fits"],
       ["follow", "PR #20, conflicts"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "PR #20, conflicts"],
@@ -955,6 +958,14 @@ function readUpdates() {
     button: text(line?.querySelector("button")),
     mark: markOf(line?.querySelector(".mark")),
     warned: !!document.querySelector("#channel")?.classList.contains("warn"),
+    // What the trigger has beside the name it says: its padding, the gap
+    // and the mark, about 54 pixels, and more once room is kept for a
+    // longer name.
+    slack: (() => {
+      const trigger = document.querySelector("#channel");
+      const said = trigger?.querySelector(".said > span:not(.room)");
+      return trigger && said ? trigger.getBoundingClientRect().width - said.getBoundingClientRect().width : -1;
+    })(),
   };
 
   // The mark by its shape, and whether it is drawn in the colour of a
@@ -2535,6 +2546,11 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "warned": {
         const now = await updatesComeTo(page, (u) => u.warned);
         if (!now.warned) wrong = `the list does not wear the colour of a warning`;
+        break;
+      }
+      case "fits": {
+        const now = await updatesPage(page);
+        if (now.slack < 0 || now.slack > 60) wrong = `the list's trigger keeps ${Math.round(now.slack)} px beside ${now.channel}, room for a longer name`;
         break;
       }
       case "no check": {
