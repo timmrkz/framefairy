@@ -6,6 +6,7 @@
     onChrome,
     onEpisodeChanged,
     onAcknowledgements,
+    onReport,
     onShowUpdates,
     onLicenceLink,
     onUpdates,
@@ -26,6 +27,7 @@
   import Episode from "./screens/Episode.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
+  import Report from "./screens/Report.svelte";
   import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
   import { said } from "./lib/said";
@@ -227,6 +229,7 @@
     if (nav.view.name === "settings") return "Settings";
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
+    if (nav.view.name === "report") return "Report a Problem";
     return "Frame Fairy";
   });
 
@@ -445,6 +448,12 @@
     refresh();
     const off = onEpisodeChanged(() => refresh());
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
+    // The video in front goes with the report by its name, whatever page
+    // the menu was picked on, so a second pick keeps the first one's.
+    const noReport = onReport(() => {
+      const v = nav.view;
+      nav.go({ name: "report", video: v.name === "episode" ? v.path : v.name === "report" ? v.video : undefined });
+    });
     // An event can arrive before the answer to the asking, and is then
     // the newer of the two, see the Updates page.
     let told = false;
@@ -485,6 +494,7 @@
       window.removeEventListener("click", letButtonGo);
       noChrome();
       noAcknowledgements();
+      noReport();
       noUpdates();
       noShowUpdates();
       noLicenceLink();
@@ -684,6 +694,8 @@
       <SettingsScreen />
     {:else if nav.view.name === "acknowledgements"}
       <Acknowledgements />
+    {:else if nav.view.name === "report"}
+      <Report video={nav.view.video} />
     {:else if !placed || !libraryRead}
       <!-- Where the app was left is on its way. -->
     {:else if !episodes.length}

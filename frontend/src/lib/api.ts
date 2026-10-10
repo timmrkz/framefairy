@@ -557,6 +557,9 @@ export const api = {
   // What the person did, said at once so the Go side's lines for it carry
   // its id, see lib/said.ts.
   acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),
+  // Writes a report of a problem to the Desktop and shows it in Finder,
+  // and gives its path, see screens/Report.svelte.
+  reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -812,6 +815,11 @@ export function onQuit(fn: (what: "ask" | "going") => void): () => void {
 
 export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
+}
+
+// Report a Problem… in the Help menu.
+export function onReport(fn: () => void): () => void {
+  return Events.On("report", () => fn());
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

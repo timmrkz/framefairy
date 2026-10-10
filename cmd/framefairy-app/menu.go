@@ -63,6 +63,11 @@ func appMenu(app *application.App, st *store, checkForUpdates func()) *applicati
 	// held one item, Learn More, which opened wails.io in the app's own
 	// window.
 	help := menu.AddSubmenu("Help")
+	// Report a Problem… makes the one file a customer sends us, see
+	// report.go. Apps keep it in the Help menu.
+	help.Add("Report a Problem…").OnClick(func(*application.Context) {
+		app.Event.Emit("report", nil)
+	})
 	help.Add("Acknowledgements").OnClick(func(*application.Context) {
 		app.Event.Emit("acknowledgements", nil)
 	})

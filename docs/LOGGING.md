@@ -25,15 +25,20 @@ disk free is a cap, not a switch. The log is at most 10 MB of lines in
 use and three older files compressed beside it, a few MB more. That
 holds many hours of work. It is never more, whatever happens.
 
-The report is one zip file on the Desktop, shown in Finder:
+The page has one field, for what happened, and **Make Report**. The
+report is one zip file on the Desktop, shown in Finder:
 
-- the log and its older files
-- the build, the macOS version, the chip and the memory
-- the settings, with every key removed
-- the jobs folder of the video in front, which holds what a search sent
-  to the model and what it got back
+- what the person wrote
+- the log and its older files, unpacked
+- the build, the macOS version, the chip, the memory, the run of the
+  app, whether the log was detailed, and the file name of the video
+  that was in front
+- the settings, which hold no keys: those are in the keychain
 
-It never holds the video, its transcript or its captions. Paths under the
+It never holds the video, its transcript or its captions. That leaves
+out the jobs folder of a video too, since what a search sent the model
+is the video's words. A search's start and end, and why it failed, are
+in the log. Paths under the
 home folder are written as `~`, so the Mac's user name does not travel.
 The customer sees what is in it before sending: Finder shows the zip, and
 the zip holds plain text.
@@ -146,5 +151,6 @@ jq -c 'select(.video == "start.mp4")' app.log
    window tells the Go side at once, so the Go side's lines carry the
    act the person is at, and a job keeps the act that asked for it
    however long it runs. Its start and end are lines of `jobs`.
-3. Help → Report a Problem…, the zip above. It is R.8 without the
-   address.
+3. Done. Help → Report a Problem…, the page and the zip above. It is
+   R.8 without the address. Plan row 2.189 adds a microphone to the
+   field and questions from the model.

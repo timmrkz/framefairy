@@ -893,6 +893,10 @@ const Answers = {
         return Promise.resolve(location.search.includes("linux") ? "linux" : "darwin");
       // The real notices, the ones the app builds in, so the page is looked
       // at with what it will really show.
+      // A report is made in a moment, and its name is the Go side's.
+      case "ReportProblem":
+        (window as any).__reported = { what: args[0], video: args[1] };
+        return new Promise((done) => setTimeout(() => done("/Users/tim/Desktop/Frame Fairy report 2026-10-10 21.40.zip"), 400));
       case "Licences":
         return Promise.resolve(noticeList);
       case "LicenceText":
@@ -1852,6 +1856,11 @@ export const Events = {
     if (name === "acknowledgements") {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
+    }
+    // Report a Problem…, with window.__report().
+    if (name === "report") {
+      (window as any).__report = () => fn({ data: null });
+      return () => delete (window as any).__report;
     }
     if (name === "updates") {
       updListeners.add(fn);

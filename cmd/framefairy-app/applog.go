@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -122,6 +123,21 @@ func (l *appLog) leveled() {
 	}
 	lg := zerolog.New(l.file).Level(level)
 	l.root.Store(&lg)
+}
+
+// files are the log's files, the older ones first, the one in use last,
+// or none while it is not open.
+func (l *appLog) files() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return nil
+	}
+	path := l.file.Filename
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	older, _ := filepath.Glob(filepath.Join(filepath.Dir(path), base+"-*"))
+	sort.Strings(older)
+	return append(older, path)
 }
 
 // detailed says whether the trace lines are written as well.

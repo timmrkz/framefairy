@@ -200,7 +200,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**. No screen
+screen: the name of the episode, or **Settings**, **Updates**, **Acknowledgements** or **Report a Problem**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -2355,6 +2355,15 @@ makers. A row is the name, the version and the licence, and it opens to what
 the licence asks to be said and to the licence's own text. The list is built into the app from
 `notices/`, and how it is made and kept complete is in
 [THIRD_PARTY.md](THIRD_PARTY.md).
+
+### Report a Problem
+
+In the Help menu too, where Mac apps keep it. One field for what happened
+and **Make Report**, which saves one zip file on the Desktop and shows it
+in Finder: what was written, the app's log, the build and the Mac, and
+the settings, with the home folder written as ~ and nothing of a video
+but its file name. The info mark in the card's corner says what goes in.
+See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
 
 ## Where things are kept
 
