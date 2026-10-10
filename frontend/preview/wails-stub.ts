@@ -1892,16 +1892,16 @@ export const Events = {
         if (job.progress) {
           ((window as any).__heardSent ??= []).push({ at: Date.now() - ((window as any).__started ?? Date.now()), covered: job.progress.covered });
         }
-        fn({ data: { job, event: job.progress ?? { kind: "idle", text: "", elapsed: 0 } } });
+        fn({ data: { job } });
       }
     }, 250);
     if (location.search.includes("setup") || location.search.includes("models")) {
       const timer = setInterval(() => {
         if (installAt()) {
-          fn({ data: { job: modelJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+          fn({ data: { job: modelJob() } });
         }
         if (llmAt()) {
-          fn({ data: { job: llmJob(), event: { kind: "progress", text: "fetching", elapsed: 1 } } });
+          fn({ data: { job: llmJob() } });
         }
       }, 300);
       return () => {

@@ -35,9 +35,8 @@ it is about to do and does it: the download starts by itself and reports how
 far it has come, with the same fill every other piece of work in the app
 wears, and **Cancel** stops it. The row says what the model is, what it
 covers, what the download costs and what it costs on disk, before anything
-starts. It is a job like any other, in the lane of hearing, so it shows in
-**Activity** too, and a search that comes to hearing waits for the model
-rather than failing on it.
+starts. It is a job like any other, in the lane of hearing, and a search that
+comes to hearing waits for the model rather than failing on it.
 
 **Finding clips** is the question. A model in the cloud, Anthropic's or
 OpenAI's with a key of your own, works on any machine and
@@ -129,16 +128,17 @@ opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
 come back. Closed, it leaves room for the settings column of the workspace,
-which is exactly what it covers when it opens. **Add episode**, **Activity**,
+which is exactly what it covers when it opens. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
 its mark says a newer one is ready. Its page has the build and its commit,
 the channel it follows, where things stand, and Check or Relaunch. See
 [UPDATES.md](UPDATES.md). Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
-under the pointer that came for it. The Activity mark has no dot of its
-own: work in hand is the lamp of the episode it is for, and a second dot
-said the same thing twice.
+under the pointer that came for it. There is no page of jobs: work in
+hand is the lamp of the episode it is for and shows where it was started,
+and a page that listed it all again said everything twice. It was
+removed, see below under **Work in the background**.
 
 The episodes stay on the rail too, as their lamps. **An episode's row is
 one line and the rail's own 36 pixel box**, so shut it is a square around
@@ -200,7 +200,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Activity**, **Settings** or **Acknowledgements**. No screen
+screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -1610,8 +1610,7 @@ bubble scrolled by those eight pixels.
   within a second rather than after everything before it. The clip
   timeline reads its view again while what it read had a gap in it and
   more has been measured. An episode added before this was there is measured the first time
-  it is opened. It is not a job: nobody starts it or waits for it, so it
-  has no row in Activity. At most two episodes are measured at a time.
+  it is opened. It is not a job: nobody starts it or waits for it. At most two episodes are measured at a time.
 - **Before the first transcription** there are no words. That is where
   every episode starts, so the captions band simply waits. The words
   appear as the transcript grows past them, without anything being
@@ -1907,15 +1906,7 @@ things and no others, and each one means one thing.
   stops: no beam, no motes, no light over the fill, and the head keeps its
   line without the glow ahead of it. Running and paused are told apart by
   movement. The range picker shows a transcription stopped at a window,
-  or waiting while a search has the machine, this way. In
-  Activity, where a job has no control of its own, the same fill lies in a
-  track of its own. It is `Busy.svelte` with no rim and no motes, not a
-  bar drawn apart, so it cannot drift from the fill in New and Render.
-  With no words over it, the track sets the wash to the app's colour
-  itself, a brighter light over it and a rounded head, and nothing else
-  about it is its own. Work that cannot say how far it has come shuttles
-  across that track instead of standing at a number it does not have,
-  which is Busy's `shuttle`.
+  or waiting while a search has the machine, this way.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, which are already rows of the list and brighten under the
   pointer the way a clip's row does while they go on breathing, the part of the clip timeline the transcript has not reached,
@@ -1931,8 +1922,7 @@ things and no others, and each one means one thing.
   chosen. They all stay in `make motion` to be compared again, where they
   cost the app nothing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
-  the sidebar and the dot on **Activity** on the rail keep their size and
-  their place, and a ring widens out of them and fades.
+  the sidebar keeps its size and its place, and a ring widens out of them and fades.
 
 The colours are the app's own throughout, mixed from the accent, so
 changing it in the settings moves the beam, the fill and the shimmer with
@@ -2007,16 +1997,25 @@ It has to be in that episode's own logs folder, so a plan of one episode
 given with the path of another is refused, rather than edited against the
 wrong video, the wrong words and the wrong history.
 
-### Activity
+### Work in the background
 
-Everything that runs in the background, with progress, a log per job and
-**Cancel**, which wears the beam while the job winds down so the click is
-seen at once. One job is one
-row, parted from the next by a line across the page, and clicking a finished
-row opens its log. Transcription runs in its own lane, so finding and
-rendering clips never wait for it.
+Every piece of work shows where it was started and nowhere else: a
+transcription on the episode's lamp and the range picker, a search in the
+clip list with **Cancel** and **Continue**, a render on its button, a
+model being fetched on its row in the settings. Transcription runs in its
+own lane, so finding and rendering clips never wait for it.
 
-The list is kept current by the news the Go side sends about every job.
+There used to be an **Activity** page that listed every job again, with
+its progress, **Cancel**, **Clear finished** and the job's log. Nobody
+used it, because everything on it was already on screen where the work
+was, so it was removed. What only it had, the log, is a file now: every
+job of an episode writes what it says, detail lines too, to
+`jobs/<time>-<kind>.log` in the episode's work folder, beside the records of its jobs, and the newest
+twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
+looked into. Work that belongs to no episode, a model being fetched,
+keeps none.
+
+The list of jobs is kept current by the news the Go side sends about every job.
 Each piece of news carries a number that grows with every change, so a
 piece that arrives late never puts a job back to where it was. While
 anything runs, the list is also read again every five seconds, so a piece
@@ -2300,8 +2299,7 @@ the app is made of or brings with it,
 grouped by where it is: the app, its interface, speech recognition, ffmpeg,
 llama-server, the caption fonts, and the models the app fetches from their
 makers. A row is the name, the version and the licence, and it opens to what
-the licence asks to be said and to the licence's own text, the way a finished
-job opens to its log in **Activity**. The list is built into the app from
+the licence asks to be said and to the licence's own text. The list is built into the app from
 `notices/`, and how it is made and kept complete is in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
@@ -2377,7 +2375,7 @@ interface's types.
 
 | Folder | What |
 | --- | --- |
-| `frontend/src/screens/` | the workspace, activity and settings |
+| `frontend/src/screens/` | the workspace, settings, updates and acknowledgements |
 | `frontend/src/components/` | player, timelines, clip list, work in hand |
 | `frontend/src/lib/` | calls into Go and the shared state |
 | `frontend/src/app.css` | colours, sizes and the base styles |

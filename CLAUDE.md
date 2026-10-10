@@ -148,7 +148,7 @@ Start with [README.md](README.md). In short:
 
   **This thread:** the settings page, made ready for customers (#23)
   **For you:**
-  1. Pick a model you do not have, press Download, then click Activity. The
+  1. Pick a model you do not have, press Download, then click Updates. The
      settings should stay and the card should shake.
   2. Merge #23 when it looks right.
 - **Watch a pull request, quietly.** Subscribe to its events and act on them:

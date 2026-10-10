@@ -165,7 +165,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 		// says.
 		if !s.jobs.waitEpisode(path) {
 			return errors.New("something is still running on this episode and would not stop, " +
-				"so nothing was deleted. Stop it in Activity and remove the episode again")
+				"so nothing was deleted. Remove the episode again in a moment")
 		}
 		if err := engine.DeleteWork(path); err != nil {
 			return err
