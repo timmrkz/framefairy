@@ -1928,7 +1928,7 @@ its progress, **Cancel**, **Clear finished** and the job's log. Nobody
 used it, because everything on it was already on screen where the work
 was, so it was removed. What only it had, the log, is a file now: every
 job of an episode writes what it says, detail lines too, to
-`logs/jobs/<time>-<kind>.log` in the episode's work folder, and the newest
+`jobs/<time>-<kind>.log` in the episode's work folder, beside the records of its jobs, and the newest
 twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
 looked into. Work that belongs to no episode, a model being fetched,
 keeps none.

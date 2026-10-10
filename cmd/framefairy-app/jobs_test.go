@@ -434,7 +434,7 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 	var body string
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		logs, _ := filepath.Glob(filepath.Join(engine.WorkDir(episode), "logs", "jobs", "*-render.log"))
+		logs, _ := filepath.Glob(filepath.Join(engine.JobsDir(episode), "*-render.log"))
 		if len(logs) == 1 {
 			b, _ := os.ReadFile(logs[0])
 			body = string(b)

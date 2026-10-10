@@ -666,8 +666,9 @@ func ReadTimings(source string) []Timing {
 // episode ever ran.
 const jobLogsKept = 20
 
-// OpenJobLog makes a new log file for a job of an episode, in logs/jobs/
-// of its work folder, named by when it started and what it is, and takes
+// OpenJobLog makes a new log file for a job of an episode, in jobs/ of its
+// work folder beside the job records, named by when it started and what it
+// is, and takes
 // away the oldest logs beyond jobLogsKept. A log is what the job said as
 // it went, detail lines included, for when something went wrong. It is
 // opened through the work folder as a root, so a link inside it is no way
@@ -685,7 +686,7 @@ func OpenJobLog(source, kind string, at time.Time) (*os.File, error) {
 		return nil, err
 	}
 	defer root.Close()
-	dir := filepath.Join("logs", "jobs")
+	dir := "jobs"
 	if err := root.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
