@@ -623,7 +623,11 @@ func workOf(video string) string {
 // instead, see twoCameras. With hevc its picture is HEVC with 10-bit
 // colour, which WebKit says it decodes and then fails on, and which the
 // Chromium a walk drives cannot decode at all: the Go side decodes it, see
-// frames.go.
+// frames.go. Its GOPs are open, the way x265 writes them and DaVinci
+// Resolve wrote Tim's start.mp4: a key frame every twelve frames, the last
+// of a run of four, so the three frames shown before it are decoded after
+// it. With a key frame every ten, every run of four ended on the frame
+// before a key frame, and no frame led up to one. Plan row 2.186.
 func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
 	d := strconv.Itoa(seconds)
 	below, sound := "[1]geq=lum='30+180*T/"+d+"':cb=128:cr=128,scale=320:168:flags=neighbor[g]", "220"
@@ -651,7 +655,7 @@ func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
 		"-shortest"}
 	if hevc {
 		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
-			"-x265-params", "bframes=3:keyint=10:log-level=error")
+			"-x265-params", "bframes=3:keyint=12:log-level=error")
 	} else {
 		args = append(args, "-c:v", "libvpx-vp9", "-b:v", rate, "-deadline", "realtime", "-cpu-used", "8", "-g", "10")
 	}

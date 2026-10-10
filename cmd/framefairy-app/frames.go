@@ -237,6 +237,7 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		if n < previewMost {
 			break
 		}
+		theLog.write("files", fmt.Sprintf("stream %s is closed to make room, %d open", oldest[:6], n))
 		p.open[oldest].stop()
 		delete(p.open, oldest)
 	}
@@ -267,6 +268,8 @@ func (p *previews) start(kind string, times *engine.PreviewTimes, light func() f
 		// episode's decoder closed under it: the page asks another stream.
 		if ctx.Err() != nil || errors.Is(err, engine.ErrFramesClosed) {
 			err = context.Canceled
+		} else if err != nil {
+			theLog.write("files", fmt.Sprintf("stream %s failed: %v", id[:6], err))
 		}
 		s.err = err
 	}()
@@ -316,8 +319,11 @@ func (p *previews) hold(path string) error {
 		p.held = map[string]int{}
 	}
 	p.held[path]++
+	held := p.held[path]
 	p.mu.Unlock()
-	return d.Ready()
+	err = d.Ready()
+	theLog.write("files", fmt.Sprintf("the decoder of %s is held %d times, ready: %v", filepath.Base(path), held, err))
+	return err
 }
 
 // release lets go of a hold. The decoder is then closed once it has stood
@@ -330,6 +336,7 @@ func (p *previews) release(path string) {
 	} else {
 		delete(p.held, path)
 	}
+	theLog.write("files", fmt.Sprintf("the decoder of %s is held %d times", filepath.Base(path), p.held[path]))
 	p.spare()
 }
 
@@ -358,6 +365,7 @@ func (p *previews) spare() {
 		}
 		d := p.decoders[oldest]
 		delete(p.decoders, oldest)
+		theLog.write("files", fmt.Sprintf("the decoder of %s is closed, %d stand unheld", filepath.Base(oldest), free))
 		go d.Close()
 	}
 }
@@ -403,11 +411,13 @@ func (p *previews) reapOnce(idle time.Duration) {
 	for path, d := range p.decoders {
 		if p.held[path] == 0 && d.Idle() > 3*idle {
 			delete(p.decoders, path)
+			theLog.write("files", fmt.Sprintf("the decoder of %s is closed, unused for %.0f s", filepath.Base(path), d.Idle().Seconds()))
 			go d.Close()
 		}
 	}
 	for id, s := range p.open {
 		if time.Since(s.pulled.get()) > idle {
+			theLog.write("files", fmt.Sprintf("stream %s is closed, not pulled for %.0f s", id[:6], time.Since(s.pulled.get()).Seconds()))
 			s.stop()
 			delete(p.open, id)
 		}

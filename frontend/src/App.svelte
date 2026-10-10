@@ -28,6 +28,7 @@
   import Acknowledgements from "./screens/Acknowledgements.svelte";
   import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
+  import { said } from "./lib/said";
 
   // The sidebar is a rail until the pointer reaches it, and stays open when
   // it is pinned. Open, it lies over the workspace rather than pushing it,
@@ -166,6 +167,12 @@
       if (warming === now) warming = "";
     }, 3000);
     return () => clearTimeout(late);
+  });
+  // Which workspace is asked for, in front and being built, for the app's
+  // log, see lib/said.ts.
+  const base = (p: string) => p.split("/").pop() ?? "";
+  $effect(() => {
+    said(`app: ${asked ? `${base(asked)} asked for` : "no video asked for"}, ${onScreen ? `${base(onScreen)} in front` : "nothing in front"}${warming ? `, ${base(warming)} being built` : ""}, ${untrack(() => kept.length)} kept`);
   });
   // An episode removed from the library takes its workspace with it.
   $effect(() => {

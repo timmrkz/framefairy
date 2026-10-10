@@ -79,6 +79,7 @@
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
+  import { said } from "../lib/said";
 
   let {
     path,
@@ -100,6 +101,13 @@
   // one looks for it looks for in itself, and keys are only taken while it
   // is the one in front, see asleep.
   let root = $state<HTMLElement>();
+
+  // Every step of the workspace opening, for the app's log, see
+  // lib/said.ts: what it asked the Go side and what came back, and what
+  // it still waits for when it is slow to be ready.
+  const built = performance.now();
+  const tell = (line: string) =>
+    said(`workspace, ${path.split("/").pop()}: ${line}, ${Math.round(performance.now() - built)} ms after it was made`);
 
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
@@ -944,6 +952,9 @@
         api.chosenClip(path).catch(() => ""),
       ]);
       if (statusRead.keep(ticket)) status = now;
+      tell(
+        `the Go side answered: ${status ? (status.missing ? "the file is missing" : "the file is there") : "no status"}, picture ${picture ? `${picture.width}x${picture.height} at ${picture.fps} a second, ${picture.duration.toFixed(3)} s` : "none"}, ${clips.length} clips, opens on ${key ? `the clip ${key}` : "no clip"}`,
+      );
       if (!status) return;
       if (!status.missing) source = picture;
       keepRemovedTrue();
@@ -955,6 +966,7 @@
       problem = errorText(err);
     } finally {
       opened = true;
+      tell(`opened, the playhead at ${time.toFixed(3)} s`);
     }
     try {
       if (!status || status.missing) return;
@@ -969,6 +981,7 @@
       problem = errorText(err);
     } finally {
       settled = true;
+      tell("settled, the window and its room are read");
     }
   }
 
@@ -1410,7 +1423,30 @@
   $effect(() => {
     if (!ready || toldReady) return;
     toldReady = true;
+    tell("ready, its video is on it");
     untrack(() => onready?.());
+  });
+  // A workspace slow to be ready says what it still waits for.
+  onMount(() => {
+    const timers = [3, 10].map((after) =>
+      setTimeout(() => {
+        if (toldReady) return;
+        tell(
+          `not ready ${after} s after it was made: ${[
+            settled ? "" : "the window is not read yet",
+            !source ? "" : pictured ? "" : "no picture on the video preview",
+            !source || drawn ? "" : "the clip timeline is not drawn",
+            !source || !current || captions ? "" : "the clip's captions are not read",
+          ]
+            .filter(Boolean)
+            .join(", ")}${away ? ", asleep" : ""}${problem ? `, problem: ${problem}` : ""}`,
+        );
+      }, after * 1000),
+    );
+    return () => timers.forEach(clearTimeout);
+  });
+  $effect(() => {
+    if (problem) tell(`problem: ${problem}`);
   });
   // A workspace kept while another episode is in front is asleep, see
   // App.svelte: its video preview lets go of everything it holds, so an
@@ -1419,6 +1455,9 @@
   // episode again in the background, behind what it already shows, for
   // whatever changed while it slept, a setting among them.
   let slept = false;
+  $effect(() => {
+    tell(away ? "asleep" : "awake");
+  });
   $effect(() => {
     if (away) {
       slept = true;
@@ -2315,6 +2354,7 @@
     installFonts()
       .then((list) => (fonts = list))
       .catch(() => {});
+    tell(`made${away ? ", asleep" : ""}`);
     readAhead(mediaURL(path), path);
     readSettings();
     openEpisode();

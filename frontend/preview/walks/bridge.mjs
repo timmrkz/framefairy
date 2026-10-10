@@ -453,6 +453,34 @@ export async function fromSidebar(page, click) {
   );
 }
 
+// Adds an HEVC 10-bit episode with Add and chooses the clip its first
+// search finds.
+export async function addHEVC(url, page) {
+  await control(url, "/pick?seconds=40&codec=hevc");
+  await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+  await page.waitForFunction(
+    () => {
+      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+      return (
+        on.startsWith("folge-") &&
+        pane?.querySelector(".listhead button.new")?.textContent.includes("New") &&
+        pane.querySelectorAll("ol li[data-key]").length > 0
+      );
+    },
+    null,
+    { timeout: 120000, polling: 250 },
+  );
+  await page.locator("aside ol li[data-key] button.pick").first().click();
+  await settle(page);
+  // The frames on screen came through the Go side's streams, or this walk
+  // proves nothing about them.
+  const streams = await page.evaluate(() => window.__appFrames?.stats.streams ?? 0);
+  if (!streams) throw new Error("the picture of the HEVC episode did not come from the Go side");
+  if (process.env.VERBOSE) console.log("frames read in the", await page.evaluate(() => window.__appFrames.puller.where));
+  await page.evaluate(() => document.body.focus());
+}
+
 // What a picture shows, in a band across it from a tenth of its height
 // to a half: below the strip that carries the frame number, and above
 // the captions a short burns in. The mean of red, green and blue, and how
