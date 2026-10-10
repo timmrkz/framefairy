@@ -113,6 +113,10 @@
   // the Mac until a channel is chosen.
   const following = $derived(update ? update.picked || update.follows || update.gone || update.channel || "" : "");
   const followingName = $derived(following ? channelName(following) : "");
+  // The pull request followed no longer merges into main. Its builds
+  // still come, but CI does not run on them, so the page wears the colour
+  // of a warning for it, the way it does for one that closed.
+  const conflicted = $derived(!!update?.channels?.some((c) => c.id === following && c.conflict));
   const channelOptions = $derived.by(() => {
     // A pull request that no longer merges into main says so in its name,
     // the way a closed one does. Its build is of the branch as it is, so
@@ -172,7 +176,8 @@
         return { mark: "look", head: "Looking for a newer build", more: following ? `Of ${followingName}.` : "" };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
-        return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
+        // Work running, so the pulse, the same as looking.
+        return { mark: "look", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
       }
       case "ready":
         return {
@@ -190,6 +195,12 @@
             mark: "look",
             head: "A newer commit is being built",
             more: `${building}. This is the build before it, the newest of ${followingName} so far. ${when(u.checked)}`.trim(),
+          };
+        if (conflicted)
+          return {
+            mark: "warn",
+            head: "Up to date",
+            more: `This is the newest build of ${followingName}. It conflicts with main, so CI has not tested it. ${when(u.checked)}`.trim(),
           };
         return {
           mark: "ok",
@@ -297,7 +308,7 @@
             placeholder="Choose a channel"
             align="right"
             title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
-            tone={update.phase === "gone" ? "warn" : undefined}
+            tone={update.phase === "gone" || conflicted ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
         {/if}
@@ -305,16 +316,22 @@
 
       <!-- Where things stand, and the one thing to do about it. -->
       <div class="item" class:on={update.phase === "ready"}>
+        <!-- A dot is work, running or waiting to be picked up. Something
+             that needs a look is the triangle, the way the settings mark a
+             missing key, in the colour of a warning or of a failure. Work
+             on a pull request in conflict keeps its dot, in the colour of
+             a warning. -->
         <span class="mark {standing.mark}" aria-hidden="true">
           {#if standing.mark === "ok"}
-            <Icon name="check" size={14} />
+            <Icon name="check" />
+          {:else if standing.mark === "warn" || standing.mark === "err"}
+            <Icon name="warn" />
           {:else}
             <span
               class="dot"
               class:busy={standing.mark === "look"}
               class:ready={standing.mark === "new"}
-              class:err={standing.mark === "err"}
-              class:warn={standing.mark === "warn"}
+              class:warn={conflicted && (standing.mark === "look" || standing.mark === "new")}
             ></span>
           {/if}
         </span>

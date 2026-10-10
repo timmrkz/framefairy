@@ -283,6 +283,10 @@
 //                      the line under the build comes to say this head, in
 //                      ten seconds at most, and more somewhere after it
 //   ["no check"]       the line under the build offers no button
+//   ["mark", what]     the line under the build starts with this mark,
+//                      "check", "triangle" or "dot", and ", warning" when
+//                      it wears the colour of a warning
+//   ["warned"]         the list wears the colour of a warning
 //   ["at once", head]  in the frame after the pick, the list said the
 //                      channel picked and the line under it this head
 //
@@ -915,6 +919,8 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
       ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
+      ["mark", "triangle, warning"],
+      ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
     ],
@@ -930,6 +936,8 @@ export const sequences = [
       ["follow", "PR #20, conflicts"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "PR #20, conflicts"],
+      ["mark", "dot, warning"],
+      ["warned"],
     ],
   },
 ];
@@ -945,7 +953,24 @@ function readUpdates() {
     head: text(line?.querySelector(".head")),
     more: text(line?.querySelector(".words .muted")),
     button: text(line?.querySelector("button")),
+    mark: markOf(line?.querySelector(".mark")),
+    warned: !!document.querySelector("#channel")?.classList.contains("warn"),
   };
+
+  // The mark by its shape, and whether it is drawn in the colour of a
+  // warning, read from what is painted rather than from a class.
+  function markOf(mark) {
+    if (!mark) return "";
+    const probe = document.createElement("span");
+    probe.style.color = "var(--warn)";
+    document.body.append(probe);
+    const warn = getComputedStyle(probe).color;
+    probe.remove();
+    const dot = mark.querySelector(".dot");
+    const shape = dot ? "dot" : mark.querySelector('svg path[d$="Z"]') ? "triangle" : mark.querySelector("svg") ? "check" : "";
+    const colour = dot ? getComputedStyle(dot).backgroundColor : getComputedStyle(mark).color;
+    return colour === warn ? `${shape}, warning` : shape;
+  }
 }
 const updatesPage = (page) => page.evaluate(readUpdates);
 
@@ -2500,6 +2525,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const now = await updatesComeTo(page, (u) => u.head === head);
         if (now.head !== head) wrong = `the line under the build says ${now.head || "nothing"}, not ${head}`;
         else if (more && !now.more.includes(more)) wrong = `under ${head} it says ${JSON.stringify(now.more)}, not ${JSON.stringify(more)}`;
+        break;
+      }
+      case "mark": {
+        const now = await updatesComeTo(page, (u) => u.mark === arg);
+        if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "warned": {
+        const now = await updatesComeTo(page, (u) => u.warned);
+        if (!now.warned) wrong = `the list does not wear the colour of a warning`;
         break;
       }
       case "no check": {

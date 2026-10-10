@@ -42,6 +42,10 @@
       state: { ...base, follows: "pr-21" },
     },
     {
+      what: "Following a PR in conflict, a newer build downloading.",
+      state: { ...base, follows: "pr-21", phase: "downloading", next: "0.3.0-pr21.8", written: 41_000_000, total: 98_000_000 },
+    },
+    {
       what: "Following a PR in conflict, a newer build ready.",
       state: { ...base, follows: "pr-21", phase: "ready", next: "0.3.0-pr21.8" },
     },
@@ -56,6 +60,10 @@
     {
       what: "Built on this Mac, no channel chosen yet.",
       state: { ...base, version: "0.3.0-dev", commit: "", channel: "", phase: "" },
+    },
+    {
+      what: "Following main, the check did not get through.",
+      state: { ...base, version: "0.3.0-main.12", channel: "main", follows: "main", phase: "failed", problem: "GitHub did not answer." },
     },
   ];
 </script>

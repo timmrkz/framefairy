@@ -439,7 +439,10 @@ with its newest build, so one fetch is the whole check:
   Updates page then names it **PR #20, conflicts**,
   the way it names a closed one, in the list and on the trigger when it is
   followed. GitHub runs no CI on such a pull request, so the mark says its
-  build was not tested. The workflow asks GitHub whether each pull request
+  build was not tested. Followed, the list wears the colour of a warning,
+  and the line under the build starts with the warning triangle and says
+  CI has not tested it. While a build of it is looked for, downloads or
+  waits for Relaunch, the line keeps its dot, in the colour of a warning. The workflow asks GitHub whether each pull request
   merges every time it writes the list, which is on every build, main's
   included, so a pull request main moved away from is marked once main's
   build is published. While GitHub has not worked it out yet, nothing is
@@ -522,8 +525,8 @@ with its newest build, so one fetch is the whole check:
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
-   it downloads nothing. The page says **PR #18 is closed**,
-   the list names it, closed, in the colour of a warning, and nothing
+   it downloads nothing. The page says **PR #18 is closed** after the
+   warning triangle, the list names it, closed, in the colour of a warning, and nothing
    downloads until another channel is picked. The build kept for it is
    removed the next time the list is read, and so is any build a newer
    push has replaced: nothing is kept that the list does not name. It
