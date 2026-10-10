@@ -795,7 +795,19 @@ export class FrameQueue {
     if (this.vplan && this.built) {
       if (loop) this.built.loopOn();
       else this.built.loopOff(this.reached);
-      if (!this.vplan.relooped() || (this.aplan && !this.aplan.relooped())) return false;
+      if (!this.vplan.relooped() || (this.aplan && !this.aplan.relooped())) {
+        // The next time through is worked out already, its sound on the
+        // sound card, so the play is started again from here on the new
+        // program. Left to setProgram, it was kept for the next play while
+        // this one went on: the program it had changed under it ended at
+        // the clip's end, the playhead stood there, and the sound and the
+        // picture of the clip's start went on for what was worked out,
+        // seconds of it. Found by Tim.
+        this.asked = null;
+        this.want(pieces, loop);
+        this.start(this.at);
+        return true;
+      }
     } else {
       // Not worked out yet: the play starting builds it from what is wanted.
       this.built = null;

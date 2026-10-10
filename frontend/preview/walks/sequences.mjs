@@ -33,6 +33,13 @@
 //                      holds it still again, then lets go, reading the
 //                      playhead, the frame on screen and the play button on
 //                      every animation frame
+//   ["loop off near the end", seconds]
+//                      plays the clip from where the playhead is, presses
+//                      L to loop it, and L again once the playhead is so
+//                      many seconds before the clip's end, then reads the
+//                      playhead, the frame on screen and the play button
+//                      on every animation frame until the play stops, and
+//                      a second after
 //   ["play from", where, seconds]
 //                      clicks the clip timeline "before" the clip, halfway
 //                      between the track's left end and the clip's start,
@@ -145,6 +152,12 @@
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
 //                      drawn was older than the one before it
+//   ["stopped at its end"]
+//                      since "loop off near the end", the play stopped
+//                      within 400 ms of the playhead reaching the clip's
+//                      end, and no frame drawn from then on is from
+//                      before the last second of the clip, so nothing of
+//                      the clip's start played again
 //   ["nailed"]         since "press while playing", the playhead stood
 //                      still under the hand while it held still, on the
 //                      press and again where the hand moved to, the button
@@ -779,6 +792,18 @@ export const sequences = [
     ],
   },
   {
+    // Tim pressed L a few times while the clip played, and the play went
+    // on to the clip's end and stood there, but the sound of the clip's
+    // start played on for about three seconds. Loop switched off once the
+    // play has worked out the next time through, in the last four seconds
+    // of a time through, stops the play at the end, sound and picture.
+    name: "loop switched off near the end stops the play at the clip's end",
+    steps: [
+      ["loop off near the end", 2],
+      ["stopped at its end"],
+    ],
+  },
+  {
     // Tim pressed the clip timeline while the clip played, to get a drag
     // ready, and the play ran on from the press at once, away from the
     // hand. A press holds the play under the hand, like a nail, until the
@@ -1351,6 +1376,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   // What the video preview laid over the picture on every animation frame
   // of the last "play from", and the clip the engine had then.
   let played = null;
+  let loopEnd = null;
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -1442,6 +1468,39 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.mouse.up();
         await page.waitForTimeout(500);
         await page.evaluate(() => (window.__playWatch = false));
+        await settle(page);
+        break;
+      }
+      case "loop off near the end": {
+        const end = (await engineState(page, watch.at)).segments.at(-1).end;
+        await preview(page, 0.2);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(300);
+        await page.keyboard.press("l");
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - arg, { timeout: 60000, polling: "raf" })
+          .catch(() => {});
+        await page.keyboard.press("l");
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            const playing = !!document.querySelector('button[aria-label="Pause"]');
+            window.__played.push([performance.now(), at, window.__pictured(), playing]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        await page
+          .waitForFunction(() => !!document.querySelector('button[aria-label="Play"]'), null, { timeout: (arg + 8) * 1000, polling: 100 })
+          .catch(() => {});
+        await page.waitForTimeout(1000);
+        await page.evaluate(() => (window.__playWatch = false));
+        loopEnd = { end, fps: await rate(page) };
         await settle(page);
         break;
       }
@@ -2157,6 +2216,27 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         if (!wrong && played.length < 30) wrong = `only ${played.length} animation frames were read`;
         if (!wrong && longest > 150) wrong = `the playhead stood still for ${longest.toFixed(0)} ms while the hand was on the edge`;
+        break;
+      }
+      case "stopped at its end": {
+        if (!loopEnd) {
+          wrong = "stopped at its end with nothing played";
+          break;
+        }
+        const { end, fps } = loopEnd;
+        const played = await page.evaluate(() => window.__played ?? []);
+        // Reached once the playhead stands in the clip's last frame.
+        const i = played.findIndex(([, at]) => at >= end - 1.5 / fps);
+        if (i < 0) {
+          wrong = `the playhead never reached the clip's end at ${end.toFixed(3)}, it got to ${Math.max(...played.map(([, at]) => at)).toFixed(3)}`;
+          break;
+        }
+        const [reached] = played[i];
+        const stopped = played.slice(i).find(([, , , playing]) => !playing);
+        const old = played.slice(i).find(([, , n]) => n >= 0 && n / fps < end - 1);
+        if (!stopped) wrong = `the play went on for ${(played.at(-1)[0] - reached).toFixed(0)} ms with the playhead at the clip's end`;
+        else if (stopped[0] - reached > 400) wrong = `the play stopped ${(stopped[0] - reached).toFixed(0)} ms after the playhead reached the clip's end`;
+        else if (old) wrong = `frame ${(old[2] / fps).toFixed(3)} was drawn ${(old[0] - reached).toFixed(0)} ms after the playhead reached the clip's end at ${end.toFixed(3)}`;
         break;
       }
       case "nailed": {

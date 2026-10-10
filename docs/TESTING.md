@@ -235,7 +235,7 @@ every walk's:
 | Every frame put on screen while a clip plays is in one of its pieces, a frame of give either side | the part just cut played when the space bar was pressed with the playhead in it |
 | The space bar plays: a frame comes, or the playhead moves | a press of the space bar lost while the file was still being read |
 | Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
-| A clip played to its end stops at its end | |
+| A clip played to its end stops at its end, within half a second of the playhead reaching it, half the time with L pressed on the way and again a moment before the end | the clip's start heard for seconds after the play stood at its end, loop switched off near the end, found by Tim |
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
 | The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
@@ -446,6 +446,14 @@ or more and go through a part cut out between them, on the video and with
 nothing over the picture the whole way. The clip's play has to jump a cut
 and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
+
+`loop switched off near the end stops the play at the clip's end` is
+Tim's test of 2.178. It plays the clip, presses L to loop it, and L again
+two seconds before the clip's end, once the play has worked out the next
+time through. The play has to stop within 400 ms of the playhead reaching
+the clip's end, and no frame from before the clip's last second may be
+drawn after that. Before the fix it fails with the play going on for 9 s
+with the playhead at the end.
 
 `shift and the arrows skip ahead through a clip on the video, and walk its
 words on the clip` is Tim's test of the skip. With the clip's start
