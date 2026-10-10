@@ -131,15 +131,25 @@ class Reader {
   size = 0;
   reads = 0;
   bytes = 0;
+  // The file as the server last described it, its length and when it was
+  // written, see fileStamps.
+  stamp = "";
 
-  constructor(readonly url: string) {}
+  constructor(
+    readonly url: string,
+    private known: Movie | null = null,
+  ) {}
 
   async read(from: number, to: number): Promise<Uint8Array> {
     this.reads++;
-    const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` } });
+    // Never from the webview's cache: a file written long ago is taken as
+    // unchanged for a while, and one written over since would be read as
+    // it was.
+    const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` }, cache: "no-store" });
     if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the episode file could not be read, it answered ${res.status}`);
     const total = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
     if (total) this.size = Number(total[1]);
+    this.stamp = `${total?.[1] ?? res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}`;
     let body = new Uint8Array(await res.arrayBuffer());
     // A server that sends the whole file has sent what was asked too.
     if (res.status === 200) {
@@ -151,15 +161,74 @@ class Reader {
   }
 
   async open(): Promise<Movie> {
+    if (this.known && (await this.same(this.known))) return this.known;
+    const early = ahead.get(this.url);
+    if (early) {
+      ahead.delete(this.url);
+      const movie = await early.catch(() => null);
+      if (movie) return movie;
+    }
+    return this.read0();
+  }
+
+  private async read0(): Promise<Movie> {
     const first = await this.read(0, 1 << 16);
     if (!this.size) this.size = first.length;
     const moov = await findMoov(
       async (from, to) => (to <= first.length ? first.subarray(from, to) : this.read(from, to)),
       this.size,
     );
-    return parseMoov(moov);
+    const movie = parseMoov(moov);
+    fileStamps.set(movie, this.stamp);
+    return movie;
   }
 
+  // Whether the file is still the one the index was read from. A workspace
+  // keeps the index while it sleeps, and an episode written over in the
+  // meantime, exported again under its name, would be read by the old one.
+  private async same(movie: Movie): Promise<boolean> {
+    try {
+      const res = await fetch(this.url, { method: "HEAD", cache: "no-store" });
+      return res.ok && `${res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}` === fileStamps.get(movie);
+    } catch {
+      return false;
+    }
+  }
+
+}
+
+// The file each index was read from, its length and when it was written.
+const fileStamps = new WeakMap<Movie, string>();
+
+// The indexes read ahead, by the episode's address, until a queue takes
+// its own. See readAhead.
+const ahead = new Map<string, Promise<Movie>>();
+
+// Starts what a video preview needs before anything else, the moment a
+// workspace starts to open, rather than once the workspace has asked the
+// Go side what the episode is: the file's index, read in up to three reads
+// one after another, and the episode's decoder on the Go side, ffmpeg
+// started with the file open. Both were the last links of a chain, and the
+// first frame waited for each in turn. The decoder is held only until it
+// is up: the queue holds it for itself, and one nobody holds stands for
+// twenty seconds before it is closed.
+export function readAhead(url: string, path: string) {
+  if (!ahead.has(url)) {
+    const movie = new Reader(url).open();
+    movie.catch(() => ahead.delete(url));
+    ahead.set(url, movie);
+    // Never more than a few waiting: an index is megabytes for a long
+    // episode.
+    for (const old of ahead.keys()) {
+      if (ahead.size <= 4) break;
+      ahead.delete(old);
+    }
+  }
+  const q = new URLSearchParams({ path });
+  // Released only once held, so a hold that failed takes nobody else's.
+  void fetch(`/frames/hold?${q}`)
+    .then((res) => (res.ok ? fetch(`/frames/release?${q}`) : null))
+    .catch(() => {});
 }
 
 // Sound out of a decoder, the part of AudioData the queue reads.
@@ -561,15 +630,19 @@ export class FrameQueue {
   private ticket = 0;
   private scratch: Float32Array[] = [];
 
-  constructor(canvas: HTMLCanvasElement, url: string) {
+  // known is the file's index as a queue before this one read it, for a
+  // workspace woken again, see sleeping in Player.svelte. The canvas then
+  // holds this episode's own frame, which stays until the first frame of
+  // this queue replaces it.
+  constructor(canvas: HTMLCanvasElement, url: string, known: Movie | null = null) {
     this.canvas = canvas;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("the canvas has no 2d context");
     this.draw2d = ctx;
     // Black until the first frame, never the last frame of an episode
     // drawn on this canvas before.
-    this.paint();
-    this.reader = new Reader(url);
+    if (!known) this.paint();
+    this.reader = new Reader(url, known);
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
     });

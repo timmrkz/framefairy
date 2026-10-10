@@ -513,6 +513,9 @@ export const api = {
   // The clip of an episode that was last worked on, so opening it again
   // opens on the same one. It is the clip's key, or an empty string.
   chosenClip: (path: string) => call<string>("ChosenClip", path),
+  // The episodes opened last, newest first, at most n.
+  opened: (n: number) => call<string[]>("Opened", n),
+  openEpisode: (path: string) => call<void>("OpenEpisode", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
   // The window an episode's range picker was left with, so opening it
   // again, after a restart too, opens on the same one. length is how long
