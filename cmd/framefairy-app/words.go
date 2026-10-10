@@ -5,18 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"framefairy/engine"
 )
 
 // transcript is the whole-episode transcript, read once and kept, for the
-// two calls the timeline makes over and over as it is moved. A four hour
+// calls the timeline makes over and over as it is moved. A four hour
 // transcript is megabytes of words and levels, and reading it for every
 // swipe made the timeline crawl and the waveform arrive in steps.
 //
+// The transcripts of the last keptTranscripts episodes are kept, as many as
+// the app keeps workspaces of, so going back to one reads nothing. One was
+// kept, so every episode picked read its transcript again. And it is read
+// once however many ask at once: an episode opening asks for its words, its
+// waveform, its captions and its room together, and each read the whole
+// file for itself, up to seven times.
+//
 // What it hands out is shared, so only what reads goes through here.
 func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
-	stamp := p.Source
+	stamp := ""
 	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
 		info, err := os.Stat(file)
 		if err != nil {
@@ -25,21 +33,73 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 		}
 		stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
 	}
-	s.mu.Lock()
-	if s.said != nil && s.saidBy == stamp {
-		kept := s.said
-		s.mu.Unlock()
-		return kept, nil
+	return s.said.get(p.Source, stamp, p.Transcript)
+}
+
+// keptTranscripts is how many episodes' transcripts are kept, the same as
+// KEPT in App.svelte.
+const keptTranscripts = 10
+
+// keptReads keeps what was read for the last few keys, each with the stamp
+// of what it was read from, and reads a key once however many ask at once.
+// The zero value keeps keptTranscripts.
+type keptReads[T any] struct {
+	mu   sync.Mutex
+	held map[string]*keptRead[T]
+	uses uint64
+}
+
+// keptRead is one key's read: as stamp says its source was, or still being
+// read until done is closed.
+type keptRead[T any] struct {
+	stamp string
+	v     T
+	err   error
+	done  chan struct{}
+	used  uint64
+}
+
+// get gives what read gives for key, read again only when stamp has
+// changed. A failure is not kept: the next ask reads again.
+func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error) {
+	k.mu.Lock()
+	k.uses++
+	if r := k.held[key]; r != nil && r.stamp == stamp {
+		r.used = k.uses
+		k.mu.Unlock()
+		<-r.done
+		return r.v, r.err
 	}
-	s.mu.Unlock()
-	t, err := p.Transcript()
-	if err != nil {
-		return nil, err
+	r := &keptRead[T]{stamp: stamp, used: k.uses, done: make(chan struct{})}
+	if k.held == nil {
+		k.held = map[string]*keptRead[T]{}
 	}
-	s.mu.Lock()
-	s.said, s.saidBy = t, stamp
-	s.mu.Unlock()
-	return t, nil
+	k.held[key] = r
+	for len(k.held) > keptTranscripts {
+		oldest := ""
+		for other, o := range k.held {
+			if oldest == "" || o.used < k.held[oldest].used {
+				oldest = other
+			}
+		}
+		delete(k.held, oldest)
+	}
+	k.mu.Unlock()
+	// However the read ends, a panic too, whoever waits is let go and a
+	// failure is not kept.
+	defer func() {
+		if r.err != nil {
+			k.mu.Lock()
+			if k.held[key] == r {
+				delete(k.held, key)
+			}
+			k.mu.Unlock()
+		}
+	}()
+	defer close(r.done)
+	r.err = fmt.Errorf("the read stopped before it finished")
+	r.v, r.err = read()
+	return r.v, r.err
 }
 
 // words is what an episode says, see engine/words.go, from the transcript

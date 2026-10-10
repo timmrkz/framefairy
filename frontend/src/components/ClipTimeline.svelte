@@ -41,7 +41,7 @@
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
-  import { keysElsewhere } from "../lib/keys";
+  import { asleep, keysElsewhere } from "../lib/keys";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
 
@@ -78,8 +78,14 @@
     onmark,
     centre,
     numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
+    drawn = $bindable(false),
+    waiting = false,
   }: {
     path: string;
+    // The workspace is still opening and does not yet know the clip it
+    // opens on. Nothing is read until it does: the minute around the start
+    // of the episode was read first and then thrown away for the clip.
+    waiting?: boolean;
     // Without a clip the timeline follows the playhead through the episode.
     clip: ClipEntry | null;
     duration: number;
@@ -193,6 +199,10 @@
     // are dragged, how long it comes out and in how many pieces, and
     // whether an edit is still on its way to disk.
     numbers?: ClipNumbers;
+    // Whether the first reading of the words and the waveform has come
+    // back, so the track has something of the episode on it. The workspace
+    // is not put in front of the person before, see ready in Episode.svelte.
+    drawn?: boolean;
   } = $props();
 
   // The numbers travel out of here rather than standing over the
@@ -611,6 +621,10 @@
   // as long as the reading takes, which looks like the waveform jumping
   // about. A reading that comes back after a newer one is dropped.
   let latest = 0;
+  // What the reading on its way was asked for. The same view asked for
+  // again before it is back is that reading: an episode opening asked for
+  // the clip's view twice over, and each read the words and the waveform.
+  let reading = "";
 
   async function load(from: number, to: number) {
     view = { from, to };
@@ -634,6 +648,9 @@
       from: Math.max(outer.from, middle - spoken / 2),
       to: Math.min(outer.to, middle + spoken / 2),
     };
+    const ask = `${said.from}|${said.to}|${outer.from}|${outer.to}|${buckets}`;
+    if (ask === reading) return;
+    reading = ask;
     const mine = ++latest;
     try {
       const [w, p] = await Promise.all([
@@ -649,7 +666,10 @@
       words = [];
       peaks = [];
       data = outer;
+    } finally {
+      if (mine === latest) reading = "";
     }
+    drawn = true;
   }
 
   // Brings a moment into the view without changing how much of the episode
@@ -763,7 +783,7 @@
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-    if (keysElsewhere()) return;
+    if (keysElsewhere() || asleep(track)) return;
     // The edges of a clip and the window on the range picker take the
     // arrows for themselves while they hold the keyboard.
     if (document.activeElement?.getAttribute("role") === "slider") return;
@@ -855,6 +875,7 @@
   // timeline saying where you are in the episode. A view moved by hand is
   // left alone until the clip changes or the playhead leaves it.
   $effect(() => {
+    if (waiting) return;
     if (clip && clip.segments.length) {
       if (viewFor !== clip.key) {
         fitView();
@@ -1023,7 +1044,12 @@
   });
 
   onMount(() => {
-    const observer = new ResizeObserver(() => (width = track.clientWidth));
+    // A workspace put away for later is taken out of the page, see
+    // App.svelte, and its track then measures nothing. It keeps the width
+    // it had, and what it drew, until it is back.
+    const observer = new ResizeObserver(() => {
+      if (track.isConnected && track.clientWidth) width = track.clientWidth;
+    });
     observer.observe(track);
     // Not the listener Svelte would attach: a wheel we act on is ours, and
     // a passive one cannot say so.

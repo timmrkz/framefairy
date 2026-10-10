@@ -105,6 +105,13 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+The app opens on the episode that was open when it was left. With no
+episode in the library, the page says **Add an episode** and has the
+**Add** button on it, since there is nothing to pick. Removing the
+episode that is open goes to the one opened before it, the way closing a
+tab shows the one before, and the page for no episode shows only when
+there is none left to show.
+
 The episodes are listed in the order they were added, the newest at the
 foot, where one just added is brought into view. Once there are two, the
 sort mark at the right of the head of the sidebar, an arrow up beside an
@@ -386,7 +393,11 @@ in the video preview, `/frames/hold`, until it closes, `/frames/release`:
 the decoder starts at once and opens its cursors on the file before any
 frame is asked for, and a held decoder is never closed for standing
 unused, so a click after an hour paused is as quick as the first. One
-nobody holds is closed after a minute unused. The webview's
+nobody holds is closed after a minute unused, and at once when more than
+two stand unheld, the one used longest ago first, `decodersSpare` in
+`frames.go`: every workspace kept holds its decoder while it is awake, and
+the ten built as the app starts left ten programs running for a minute.
+The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
@@ -560,6 +571,77 @@ way` reads every frame drawn from the click on, and where the playhead
 stood as the window was asked, which only the opening asks. The coverage
 and the room are read again whenever work elsewhere ends, so they cannot
 say what came first.
+
+**Picking another episode changes the workspace in one frame.** The new
+episode's workspace is built behind the one on screen, unseen and inert,
+in the same place, and the two change places once the new one has the
+episode on it: its window on the range picker, a frame on the canvas, its
+clip timeline drawn and the captions of the clip it opened on, `ready` in
+`Episode.svelte`. A second at most, so a slow disk never keeps the old
+episode up. Meanwhile neither takes clicks or keys, `asleep` in
+`lib/keys.ts`, and an episode left while it plays goes quiet at once. The
+workspace was torn down and built again in front of the person, empty for
+a moment and then a part at a time as each answer came in, and Tim saw
+that as a flicker on every episode picked. It is the pending state of
+React's transitions, which keep what is on screen until what replaces it
+is ready rather than going back to nothing first.
+
+**The workspaces of the last ten episodes opened are kept**, `KEPT` in
+`App.svelte`, so going back to one is one frame, from another episode and
+from the settings alike. Only the one in front is awake. A kept one is
+taken out of the page, `shelf` in `App.svelte`, so a resize of the app
+lays out one workspace and nothing that looks the workspace up by the
+document finds a second one, and it keeps what is drawn on its canvases
+and how far its clip list was scrolled. Its video preview lets go of
+everything costly, `sleeping` in `Player.svelte`:
+the frame queue is closed, with its decoder on the Go side, the frames it
+kept and its sound card, and only the file's index and the frame on the
+canvas stay. Waking, a new queue starts from that index, in the task
+after the frame that shows the workspace again, so starting a sound card
+and a decoder does not hold that frame back. Nothing is read from the
+file then but its length and when it was written, and the index is read
+again if either changed, an episode exported again under its name.
+Nothing of the file is taken from the webview's cache, which took a file
+written long ago as unchanged for minutes. The workspace reads the
+episode and the settings again behind what it already shows. Asleep, it
+reads nothing by itself. An
+eleventh episode opened lets go of the one opened longest ago. Asleep,
+a workspace is its page, its canvases and the file's index, about 10 MB,
+so ten is about 100 MB. As the app starts, it opens on the episode that
+was open when it was left, the way a Mac app comes back with the document
+it had open, and the workspaces of the episodes opened before it are
+built one at a time behind it. `Opened` on the Go side lists them by when
+each was last put on screen, which `OpenEpisode` notes in the episode's
+`chosen.json`. An episode opened only before that was noted comes after
+the rest, by when its `chosen.json` was last written. The workspaces are
+built one at a
+time behind whatever is on screen and put to sleep once each has its
+frame, so the first episode picked is on screen in one frame too. Building a
+workspace from nothing took 70 to 215 ms in the walks' browser for an
+episode of an hour, a chain of calls each waiting on the one before, and
+longer on the Mac. Going back to a kept one is the layout of the
+workspace put back and nothing else, 17 to 30 ms in the same browser, and
+it has its picture, its clip timeline and its captions in that frame.
+Only a picture is the video preview being ready: the sound stopping before
+the first frame once counted, and a workspace built as the app started
+went to sleep with nothing on its canvas.
+
+An episode that is not kept is built the moment it is picked, and the
+parts of that are started together rather than one after another. The
+file's index and the episode's decoder are asked for as the workspace
+starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
+the workspace knows what the episode is, and the frame queue takes the
+index read ahead. The clip timeline asks for its words and its waveform
+once the episode has answered, and never twice for the same view. The
+Go side keeps the transcripts of the last ten episodes read, `keptReads`
+in `words.go`, and reads one once however many calls ask for it at the
+same moment: a workspace opening asked for the same transcript up to
+seven times, and each read it from the file. The longest window the range
+picker may draw is worked out without a search from every line, which
+took forty milliseconds of an hour's transcript in the frame the
+workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
+kept is on screen in 200 ms in the walks' browser, from 240, and what is
+left is the workspace itself being laid out and the file's index read.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
