@@ -448,14 +448,16 @@ func (c *cursor) open(from float64, w, h int) {
 		c.brought = astiav.AllocFrame()
 		c.filtered = astiav.AllocFrame()
 	}
+	// The chain holds no frames between two, so it is kept unless the size
+	// changed or it was told the episode had ended. Asked before the seek,
+	// which forgets that it was told: a chain kept after it ended every
+	// stream after it at once, plan row 2.166.
+	if c.graph != nil && (c.width != w || c.height != h || c.graphEOF) {
+		c.freeGraph()
+	}
 	if err := c.seek(from); err != nil {
 		c.fail(err.Error())
 		return
-	}
-	// The chain holds no frames between two, so it is kept unless the size
-	// changed or it was told the episode had ended.
-	if c.graph != nil && (c.width != w || c.height != h || c.graphEOF) {
-		c.freeGraph()
 	}
 	c.width, c.height, c.from = w, h, from
 	c.sentEOF, c.graphEOF = false, false

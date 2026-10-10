@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "./playhead";
+import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "./playhead";
 
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
@@ -217,5 +217,18 @@ describe("the frame a gesture lands in is the picture's own", () => {
   test("a moment in the picture's first frame of the clip is on the clip", () => {
     expect(placeOf(late, key, 9.99, fps, undefined, 0.02).place).toBe("clip");
     expect(placeOf(late, key, 9.99, fps).place).toBe("video");
+  });
+});
+
+describe("the playhead stays inside the episode", () => {
+  test("a moment past the end the file's tables give is the end", () => {
+    expect(inEpisode(349.524, 349.465)).toBe(349.465);
+  });
+  test("a moment inside is kept, and none is before the start", () => {
+    expect(inEpisode(12.5, 349.465)).toBe(12.5);
+    expect(inEpisode(-0.01, 349.465)).toBe(0);
+  });
+  test("a duration not yet known keeps the moment", () => {
+    expect(inEpisode(3, 0)).toBe(3);
   });
 });
