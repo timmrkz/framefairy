@@ -576,6 +576,10 @@ export class FrameQueue {
 
   private reader: Reader;
   private canvas: HTMLCanvasElement;
+  // Whether the canvas has been told its size, see resize, and the frame
+  // and size last asked for again, see sharpen.
+  private sized = false;
+  private sharpened = "";
   // The canvas's screen, kept with the canvas, see screen.ts, and null
   // until it is set up. Whether the canvas holds this episode's own frame
   // from a queue before this one, see the constructor.
@@ -747,8 +751,12 @@ export class FrameQueue {
     const v = this.video!;
     let w = this.canvas.width;
     let h = this.canvas.height;
-    // Not laid out yet: a size that is sharp in most windows.
-    if (w < 64 || h < 64) [w, h] = [1280, 720];
+    // Not told its size yet: a size that is sharp in most windows. A
+    // canvas nobody has sized is 300 by 150, which is a size, and the
+    // first frame of every workspace was decoded at it, blurred until a
+    // play asked for frames again, found by Tim. See resize for the frame
+    // asked for again once the size is known.
+    if (!this.sized) [w, h] = [1280, 720];
     const scale = Math.min(1, w / v.width, h / v.height);
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
     return { width: even(v.width * scale), height: even(v.height * scale) };
@@ -994,13 +1002,44 @@ export class FrameQueue {
 
   // The canvas has this many device pixels, as the stylesheet laid it out.
   // The frame on it is drawn again to fit.
+  //
+  // A paused frame decoded at another size than the canvas has now is
+  // asked for again at the new one, so the picture is as sharp as the
+  // canvas lets it be whenever it stands still: the first frame, asked
+  // for before the stylesheet had laid the canvas out, and the frame on
+  // screen after the app grew. A play asks for every frame at the size of
+  // the moment anyway. See sharpen.
   resize(width: number, height: number) {
     const w = Math.max(1, Math.round(width));
     const h = Math.max(1, Math.round(height));
-    if (this.canvas.width === w && this.canvas.height === h) return;
+    const first = !this.sized;
+    this.sized = true;
+    if (!first && this.canvas.width === w && this.canvas.height === h) return;
     this.canvas.width = w;
     this.canvas.height = h;
     this.paint();
+    this.sharpen();
+  }
+
+  // Whether a frame was decoded at the size the canvas asks for now.
+  private sharp(f: Picture): boolean {
+    if (!this.video) return true;
+    const { width, height } = this.previewSize();
+    return f.width === width && f.height === height;
+  }
+
+  // The frame standing on the canvas, asked for again at the canvas's size
+  // where it came at another. It is asked for once for each frame and
+  // size, so a decoder that answers at a size of its own is not asked
+  // again and again.
+  private sharpen() {
+    if (this.closed || (this.state !== "paused" && this.state !== "cued") || !this.shown) return;
+    if (this.sharp(this.shown.frame)) return;
+    const { width, height } = this.previewSize();
+    const key = `${this.shown.rank} ${width} ${height}`;
+    if (key === this.sharpened) return;
+    this.sharpened = key;
+    this.seek(this.at);
   }
 
   // The frame on the canvas, in its own pixels, for a colour taken from the
@@ -1053,6 +1092,9 @@ export class FrameQueue {
     if (!passing) {
       this.putFor = this.ticket;
       this.shownAsked = this.app?.asked ?? 0;
+      // A frame asked for before the canvas was told its size, or before
+      // it last changed, comes at the size it was asked at.
+      setTimeout(() => this.sharpen());
     }
     this.paint();
     this.stats.drawn++;
@@ -1100,8 +1142,8 @@ export class FrameQueue {
     this.release(slot);
     const s = this.video!.samples;
     const feed = stillFeed(s, holds);
-    // Already on screen: nothing to decode.
-    if (this.shown && this.shown.rank === feed.rank) {
+    // Already on screen, at the canvas's size: nothing to decode.
+    if (this.shown && this.shown.rank === feed.rank && this.sharp(this.shown.frame)) {
       this.putFor = ticket;
       this.at = at;
       this.report();
@@ -1226,7 +1268,11 @@ export class FrameQueue {
     if ((this.state !== "starting" && this.state !== "cued") || !this.vplan) return;
     const need = this.vplan.need(0);
     const slot = need ? this.slotOf(need.run) : null;
-    let frameIn = !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank);
+    // The frame on screen is the one wanted when it is at the canvas's
+    // size too: a cue asked for again by sharpen has the same run and rank
+    // as the frame it replaces.
+    let frameIn =
+      !need || (!!this.shown && this.shown.run === need.run && this.shown.rank === need.rank && this.sharp(this.shown.frame));
     if (need && !frameIn && slot?.ready[0]?.rank === need.rank) {
       const h = slot.ready.shift()!;
       this.put(h.frame, need.run, h.rank);

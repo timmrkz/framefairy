@@ -305,8 +305,12 @@ export class AppFrames {
       w.done(null);
       return;
     }
+    const { width, height } = this.size();
+    // A kept frame of another size is not this frame: one decoded before
+    // the canvas had its size, or before the app grew, stays as blurred as
+    // it was.
     const have = this.kept.get(w.rank);
-    if (have) {
+    if (have && have.width === width && have.height === height) {
       this.stats.kept++;
       // The kept frame stays the most recently used.
       this.kept.delete(w.rank);
@@ -314,7 +318,6 @@ export class AppFrames {
       w.done(have);
       return;
     }
-    const { width, height } = this.size();
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
     else if (this.streams.some((x) => x.stale)) {

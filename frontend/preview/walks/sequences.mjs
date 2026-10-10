@@ -227,6 +227,11 @@
 //                      the picture comes from the Go side, and n clicks
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
+//   ["app size", w, h] makes the app w by h pixels
+//   ["sharp"]          the frame on the video preview, as the workspace
+//                      opened and before anything played, was decoded at
+//                      the size of the canvas, no larger than the file's
+//                      own picture
 //   ["on frames"]      every edge of the clip the hand put, all but its
 //                      end and any before the picture starts, lands on
 //                      one of the picture's own frames, counted from where
@@ -969,6 +974,22 @@ export const sequences = [
     // at once. Plan row 2.166.
     name: "the picture comes back after the playhead reached the end of the episode",
     steps: [["play to the end"], ["from the app", 4]],
+  },
+  {
+    // Tim saw the first frame of a workspace blurred until he played, and
+    // sharp once he came back to it: it was decoded before the canvas was
+    // told its size, at the 300 by 150 a canvas has before that, and kept
+    // at it. Plan row 2.187.
+    name: "a workspace opens on a sharp frame, and again after the app restarts",
+    steps: [["sharp"], ["restart"], ["sharp"]],
+  },
+  {
+    // The frame on screen while paused is asked for again when the app
+    // grows. The bridge's picture is 320 by 180, smaller than the video
+    // preview of the smallest app, so the app is made smaller than it can
+    // be first, for a frame smaller than the picture to grow from.
+    name: "a paused frame grows sharp with the app",
+    steps: [["app size", 700, 500], ["restart"], ["sharp"], ["app size", 1500, 1000], ["sharp"]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -2330,6 +2351,35 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!wrong && !streams) wrong = "the picture did not come from the Go side";
         const trouble = await page.evaluate(() => document.querySelector(".screen")?.textContent.trim() ?? "");
         if (!wrong && /decod/i.test(trouble)) wrong = `the video preview says "${trouble}"`;
+        break;
+      }
+      case "app size":
+        await page.setViewportSize({ width: arg[0], height: arg[1] });
+        await page.waitForTimeout(600);
+        await settle(page);
+        break;
+      case "sharp": {
+        // The playhead stands still and nothing plays, so the frame on the
+        // canvas is the one asked for while paused.
+        const got = await page.evaluate(() => {
+          const q = window.__frameQueue;
+          const c = document.querySelector(".screen canvas");
+          const f = q?.picture();
+          const v = q?.video;
+          return f && v && c ? { frame: [f.width, f.height], canvas: [c.width, c.height], file: [v.width, v.height] } : null;
+        });
+        if (!got) {
+          wrong = "the video preview has no frame on its canvas";
+          break;
+        }
+        const [cw, ch] = got.canvas;
+        const [vw, vh] = got.file;
+        const scale = Math.min(1, cw / vw, ch / vh);
+        const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+        const want = [even(vw * scale), even(vh * scale)];
+        if (got.frame[0] !== want[0] || got.frame[1] !== want[1]) {
+          wrong = `the frame on the video preview is ${got.frame.join(" by ")}, decoded for a canvas of another size: the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${want.join(" by ")}`;
+        }
         break;
       }
       case "restart": {
