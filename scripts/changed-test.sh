@@ -121,6 +121,8 @@ has "scripts/changed.sh" "changed-rules"
 is ".github/workflows/builds.yml" "build-rules workflow .github/workflows/builds.yml"
 is ".github/workflows/publish.yml" "build-rules workflow .github/workflows/publish.yml"
 is "scripts/needs-build.sh" "build-rules script scripts/needs-build.sh"
+is "scripts/main-moved.sh" "moved-rules script scripts/main-moved.sh"
+is ".github/workflows/main-moved.yml" "moved-rules workflow .github/workflows/main-moved.yml"
 
 # A file nobody thought of builds, rather than being passed over.
 is "build/icon.png" "build"

@@ -107,6 +107,7 @@ build=0
 rules=0
 changed_rules=0
 build_rules=0
+moved_rules=0
 workflows=""
 shells=""
 
@@ -141,6 +142,10 @@ for file in $changed; do
 		build_rules=1
 		shells="$shells $file"
 		;;
+	scripts/main-moved.sh | scripts/main-moved-test.sh)
+		moved_rules=1
+		shells="$shells $file"
+		;;
 	*.sh)
 		shells="$shells $file"
 		build=1
@@ -156,6 +161,7 @@ for file in $changed; do
 		case $file in
 		*/ci.yml) rules=1 ;;
 		*/builds.yml | */publish.yml) build_rules=1 ;;
+		*/main-moved.yml) moved_rules=1 ;;
 		esac
 		;;
 	.github/*) ;;
@@ -216,9 +222,10 @@ fi
 [ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
+[ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules" = 000000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules" = 0000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -231,6 +238,7 @@ if [ "$plan_only" = 1 ]; then
 	[ "$rules" = 1 ] && echo rules
 	[ "$changed_rules" = 1 ] && echo changed-rules
 	[ "$build_rules" = 1 ] && echo build-rules
+	[ "$moved_rules" = 1 ] && echo moved-rules
 	for s in $shells; do echo "script $s"; done
 	for w in $workflows; do echo "workflow $w"; done
 	exit 0
@@ -356,6 +364,7 @@ done
 [ "$rules" = 1 ] && sh scripts/ci-needs-test.sh
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
+[ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
 # Away from a Mac nothing builds the tools we ship, and make stops without
 # them, so there the build proves the programs build and says it goes
 # without, the way CI's Linux job does. On a Mac make builds them.
