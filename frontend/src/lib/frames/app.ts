@@ -239,7 +239,8 @@ export class AppFrames {
   onPassing?: (rank: number, frame: Picture, seq: number) => void;
   // The number of the newest ask.
   asked = 0;
-  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
+  // first is the size the first stream was opened at, for the walks.
+  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[], first: "" };
   readonly puller = new Puller();
 
   // The episode's decoder on the Go side is held for as long as these
@@ -332,6 +333,7 @@ export class AppFrames {
       return;
     } else {
       s = new Stream(this, w.rank, width, height);
+      this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
       this.streams.push(s);
       this.streams = this.streams.filter((x) => !x.ended);

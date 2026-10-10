@@ -232,6 +232,8 @@
 //                      opened and before anything played, was decoded at
 //                      the size of the canvas, no larger than the file's
 //                      own picture
+//   ["sharp", "opened"] the same, and the first frame the workspace asked
+//                      for since it opened was asked at that size
 //   ["on frames"]      every edge of the clip the hand put, all but its
 //                      end and any before the picture starts, lands on
 //                      one of the picture's own frames, counted from where
@@ -981,7 +983,7 @@ export const sequences = [
     // told its size, at the 300 by 150 a canvas has before that, and kept
     // at it. Plan row 2.187.
     name: "a workspace opens on a sharp frame, and again after the app restarts",
-    steps: [["sharp"], ["restart"], ["sharp"]],
+    steps: [["sharp", "opened"], ["restart"], ["sharp", "opened"]],
   },
   {
     // The frame on screen while paused is asked for again when the app
@@ -989,7 +991,7 @@ export const sequences = [
     // preview of the smallest app, so the app is made smaller than it can
     // be first, for a frame smaller than the picture to grow from.
     name: "a paused frame grows sharp with the app",
-    steps: [["app size", 700, 500], ["restart"], ["sharp"], ["app size", 1500, 1000], ["sharp"]],
+    steps: [["app size", 700, 500], ["restart"], ["sharp", "opened"], ["app size", 1500, 1000], ["sharp"]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -2366,7 +2368,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           const c = document.querySelector(".screen canvas");
           const f = q?.picture();
           const v = q?.video;
-          return f && v && c ? { frame: [f.width, f.height], canvas: [c.width, c.height], file: [v.width, v.height] } : null;
+          const first = window.__appFrames?.stats.first ?? "";
+          return f && v && c ? { frame: [f.width, f.height], canvas: [c.width, c.height], file: [v.width, v.height], first } : null;
         });
         if (!got) {
           wrong = "the video preview has no frame on its canvas";
@@ -2379,6 +2382,11 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const want = [even(vw * scale), even(vh * scale)];
         if (got.frame[0] !== want[0] || got.frame[1] !== want[1]) {
           wrong = `the frame on the video preview is ${got.frame.join(" by ")}, decoded for a canvas of another size: the canvas is ${got.canvas.join(" by ")} and the file ${got.file.join(" by ")}, so it should be ${want.join(" by ")}`;
+        } else if (arg === "opened" && got.first !== want.join("x")) {
+          // Nothing has resized the app since it opened, so the first
+          // frame it asked for was asked at this size too, not at the size
+          // of a canvas the stylesheet had not laid out yet and then again.
+          wrong = `the first frame was asked for at ${got.first}, before the canvas had its size, and only then at ${want.join("x")}`;
         }
         break;
       }
