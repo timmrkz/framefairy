@@ -24,6 +24,20 @@ export function rulerStep(span: number, width: number, label: number, steps: num
   return steps.find((s) => (s / span) * width >= need) ?? steps[steps.length - 1];
 }
 
+// The steps the range picker's ruler picks from for an episode duration
+// seconds long. Its finest was a minute, so an episode shorter than one
+// had no line and no time on it at all, only the 0:00 at its start, which
+// is what Tim saw on a fifteen second video. The steps under a minute
+// join in only where they draw no more than SHORT lines, so an episode of
+// a few minutes keeps its line a minute and a short one gets lines every
+// few seconds.
+export const SHORT = 8;
+const SECONDS = [1, 2, 5, 10, 15, 30];
+const MINUTES = [60, 300, 600, 900, 1800, 3600, 7200];
+export function pickerSteps(duration: number): number[] {
+  return [...SECONDS.filter((s) => duration / s <= SHORT), ...MINUTES];
+}
+
 // Whether a time whose line is at x fits on a track width pixels wide,
 // with GAP to spare at the end, rather than running into its edge.
 export function fitsAt(x: number, label: number, width: number): boolean {

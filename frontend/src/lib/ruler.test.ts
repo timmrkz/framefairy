@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fitsAt, GAP, rulerStep } from "./ruler";
+import { fitsAt, GAP, pickerSteps, rulerStep, SHORT } from "./ruler";
 
 const picker = [60, 300, 600, 900, 1800, 3600, 7200];
 
@@ -32,5 +32,23 @@ describe("fitsAt", () => {
     // 5:00 at 320 of 372, the time Tim's small range picker left out.
     expect(fitsAt(320, 25, 372)).toBe(true);
     expect(fitsAt(340, 25, 372)).toBe(false);
+  });
+});
+
+describe("pickerSteps", () => {
+  test("gives a fifteen second episode lines every few seconds", () => {
+    // Tim's fifteen second video had no line at all on the range picker.
+    const step = rulerStep(15, 1150, 25, pickerSteps(15));
+    expect(step).toBe(2);
+    expect(Math.ceil(15 / step) - 1).toBeLessThanOrEqual(SHORT);
+  });
+
+  test("keeps a line a minute on an episode of a few minutes", () => {
+    expect(rulerStep(349, 372, 25, pickerSteps(349))).toBe(60);
+    expect(rulerStep(349, 1150, 25, pickerSteps(349))).toBe(60);
+  });
+
+  test("leaves the steps of a long episode as they were", () => {
+    expect(pickerSteps(4 * 3600)).toEqual(picker);
   });
 });
