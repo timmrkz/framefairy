@@ -1,0 +1,194 @@
+# Rotating a part of a clip, and a crop that follows
+
+A proposal, not yet built. Plan rows 3.25 to 3.28 and 2.190 in
+[GUI-PLAN.md](GUI-PLAN.md).
+
+## What Tim wants to fix
+
+A phone records a video in the shape it had when recording began. Tim
+started in portrait, turned the phone to landscape while recording, and the
+phone kept writing portrait. So the video has a part where the person
+lies on their side, a quarter turn off, and the moments of the turn itself,
+where the whole picture spins. He wants to mark that part with cuts, rotate
+it upright, and place the crop on a few frames by hand with the movement
+between them worked out for him. No numbers, no curves, no keyframe editor,
+and nothing changes for a video that is fine as it is.
+
+## What the app has today
+
+- A clip is a list of pieces, `Segment` in `engine/clips.go`. Each piece
+  has a start, an end and one crop, `CropX`, the left edge in pixels of
+  the video. The crop is always the full height of the video and only
+  moves sideways.
+- The crop belongs to the camera angle, not the piece: `ClipSegments` in
+  `engine/analysis.go` gives every piece of the same shot the same crop,
+  measured once from where the faces are, and `SetCrop` in
+  `engine/edit.go` moves every piece of that angle together. One crop per
+  angle, standing still for the whole clip.
+- A double-click in the clip on the clip timeline cuts a part out, and its
+  edges are dragged to size. The render plays straight over it.
+- `BuildFilterGraph` in `engine/render.go` builds one ffmpeg chain per
+  piece: cut, crop, scale.
+
+So most of what Tim needs is there. The cuts are the cuts that exist, the
+crop is the crop that exists. Two things are missing: a piece cannot be
+rotated, and a crop cannot move while a piece plays.
+
+## The design
+
+### 1. The spin is cut out, with the cut that exists
+
+The seconds where the phone turns are no use to anybody: the picture spins
+and no rotation of ours makes it stand still. So the first step is what Tim
+already does to a pause: a double-click on the spin cuts it out, and the
+cut's edges are dragged onto the first and last frame of the spin. When
+the phone is turned back later, a second cut. That is the "two cuts" Tim
+described, and it needs nothing new. What lies between two cuts, or
+between a cut and an edge of the clip, is a **part** of the clip below.
+
+### 2. Rotate: one key, one button, a quarter turn each
+
+- **R**, and a **Rotate** button in the row under the clip timeline beside
+  the thumbnail button, rotates the part the playhead stands in a quarter
+  turn to the left. Press again for the next quarter, four presses bring
+  it back. It is the rotate button of Preview and Photos, with their
+  name, their icon, the arrow turning left, and their rule of a quarter
+  at a time.
+  The single letter follows I, O, L and T.
+- The video preview rotates the picture at once, in the same frame as the
+  press, and the crop frame stands on the rotated picture.
+- **Undo** takes it back like any other edit, and so do three more
+  presses.
+- A rotated part shows a small rotate mark at its start on the clip
+  timeline, so a clip that holds a rotation says so without playing it.
+- Nothing about it is a setting, and nothing is on screen until a part
+  is rotated. A video that was never rotated looks and works as it does
+  today.
+
+What happens to the shape: Tim's video is portrait, 1080 by 1920. The
+rotated part is landscape, 1920 by 1080, and the short is portrait, so the
+crop is a 608 by 1080 window that moves sideways in it, exactly as the
+crop of a landscape podcast does today. It is scaled up to the short,
+which costs sharpness and nothing can avoid. The other way round, a
+landscape video with a part rotated to portrait, the rotated part is already
+the shape of the short and its crop is the whole picture, nothing to
+place.
+
+In the video preview a rotated part is drawn rotated, fitted into the same
+viewer, with black where it is narrower. The viewer keeps the shape of the
+video, so nothing moves or jumps as the playhead crosses a cut into a
+rotated part.
+
+### 3. A crop that follows: crop marks, made like thumbnails
+
+Tim decided this on #188: a crop mark is made the way a thumbnail is,
+with a button and a key, and dragging the crop frame only places the
+crop.
+
+- **C, and a crop mark button** in the row under the clip timeline beside
+  the thumbnail button, puts a crop mark on the frame under the playhead,
+  with the crop where it stands there now. With the playhead on a crop
+  mark, the button or C removes it, the way the thumbnail button does.
+  Its icon is the crop frame with a plus, and with a minus while the
+  playhead stands on a mark.
+- **Dragging the crop frame places the crop, and nothing else.** With the
+  playhead on a crop mark, it moves that mark's crop. Anywhere else it
+  moves the crop of the whole camera angle, every mark of it by the same
+  distance, which is today's drag for a clip with no marks.
+- **No mark, or one, is a crop that stands still**, today's behaviour.
+  **Two or more make it move**: it glides from each mark to the next.
+  Before the first mark it stands where the first one is, after the last
+  it stands where the last one is.
+- **What is happening is shown while it happens.** While a clip plays,
+  the crop frame in the video preview follows the glide frame by frame,
+  so what plays is what renders.
+
+### 4. The tempo is where the marks are
+
+There is no speed to set. The marks say where the crop is and when, and
+three rules work out the rest:
+
+- **A glide takes the whole time between two marks.** It starts gently,
+  moves steadily and settles gently, the way a camera operator pans. A
+  person who shifts in the seat over ten seconds gets two marks ten
+  seconds apart and a slow drift. That is the common case, and it needs
+  nothing more.
+- **Two marks close together are a quick move.** Placed a frame apart,
+  the move is instant. A move at one moment after a long hold is a mark
+  just before the move, where the crop already stands, and one just after
+  it. Dragging a mark along the clip timeline changes when it applies,
+  so the tempo is changed by moving a dot and never by typing a number.
+- **A cut is always instant, and no glide crosses one.** Each part between
+  cuts has its own marks. So the rotate case needs nothing at all: the
+  rotated part begins at the cut over the spin, and its crop is there
+  from its first frame.
+
+Later, with 3.28, the engine times a glide by the picture: between two
+marks the crop moves when the face it follows moves, and the even glide
+is what it does where it finds no face.
+
+### 5. Where the marks are on the clip timeline
+
+The clip timeline already has the waveform, the caption blocks across its
+middle and the thumbnail marks along its foot. Crop marks add no row of
+their own:
+
+- **A crop mark is the same mark as a thumbnail**, one component with
+  another icon. A click puts the playhead on it, a drag moves it to
+  another frame, a double-click removes it, and it lights under the hand
+  and while the playhead is on its frame.
+- **They are stacked, not set side by side.** The thumbnail stands inside
+  the track, a few pixels above its foot, as it does today. The crop mark
+  is a small dot centred on the foot line itself, half in the track and
+  half below it. So on the same frame the dot sits just under the
+  thumbnail, both on the frame's line, and each takes its own click,
+  drag and double-click.
+- **Automatic crop** removes every crop mark of the angle and brings back the
+  placement the engine found.
+
+### 6. What the engine can do by itself, later
+
+The app should not need Tim to do even this much, so two rows follow the
+two above:
+
+- **It finds a rotated part.** The face finder already samples every shot
+  for faces. A shot where it finds none upright but finds them rotated a
+  quarter is a rotated part, and the spin before it is where the shot
+  detector fires many times in a second. The engine then proposes the cut
+  over the spin and the rotation, and R or Undo takes them back.
+- **It follows a subject that moves.** Where the faces in a shot do not
+  settle on one place, the engine puts crop marks at a few moments
+  itself instead of one, and the glide does the rest. Marks made by
+  hand override its marks.
+
+## How it is built
+
+- **The plan.** A rotation is kept for a part of the clip as its start and end
+  in seconds of the video and a quarter count, the way caption times are
+  kept against the video, so trimming a clip or moving a cut's edge does
+  not lose it. The crop marks are kept with the camera angle as pairs of a
+  moment in the video and a left edge. `editPlan` writes both, `LoadClips`
+  checks both, and an old plan without them reads as no rotation and one
+  still crop. The fuzz targets that read a plan read the new fields.
+- **The engine.** `CropWindow` takes the rotated shape of a part.
+  `BuildFilterGraph` puts `transpose` before the crop of a rotated piece
+  and gives the crop a left edge that changes with the frame, an ffmpeg
+  expression in `t` built from the marks, worked out on whole frames and
+  even pixels, so the render and the video preview agree to the pixel.
+  The face finder samples rotated frames for a rotated part, so its
+  automatic crop is found on the upright picture.
+- **The app.** The video preview rotates the frame it draws, with a
+  transform on the canvas, and the crop frame reads its left edge from
+  the same glide the engine uses, in `lib/`, with a test that compares
+  both on the same marks. The clip timeline draws a crop mark with the thumbnail's mark, one
+  component with an icon of its own, and the rotate mark. `Rotate`,
+  `SetCrop`, adding and removing a crop mark go through
+  `Shape` and the undo history like every other edit of a clip.
+- **Nothing for training.** Framing and rotating are not a judgement of a
+  clip, so like the crop today nothing is recorded.
+- **Proof.** A test video in `engine/testdata` with a part rotated a
+  quarter: a render test that reads the short back and finds the part
+  upright, a test that the crop of a render with two marks is where the
+  glide says on chosen frames, and walks that press R and C and drag the
+  crop, checking the canvas and the plan, so Tim does not have to
+  try it by hand to know it holds.

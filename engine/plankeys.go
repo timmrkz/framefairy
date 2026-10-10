@@ -55,4 +55,8 @@ const (
 	// keyCropXAuto is where the crop was placed before a person moved it,
 	// kept so it can be put back.
 	keyCropXAuto = "crop_x_auto"
+	// keyRotate is how far a person rotated the piece, in degrees to the
+	// left, 90, 180 or 270, on top of the turn the file asks for itself.
+	// Absent is not rotated.
+	keyRotate = "rotate"
 )

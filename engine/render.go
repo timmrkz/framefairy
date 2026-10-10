@@ -52,7 +52,6 @@ type RenderSettings struct {
 // picture from input 2i and its sound from input 2i+1, see soundLead.
 func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceInfo,
 	rs RenderSettings, assName string) (graph, videoLabel, audioLabel string, err error) {
-	cropW, cropH := CropWindow(source, rs.OutW, rs.OutH)
 	flags := rs.ScaleFlags
 	if flags == "" {
 		flags = "lanczos"
@@ -60,14 +59,19 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 	var parts []string
 	for i, seg := range clip.Segments {
 		cut := source.cutOf(seg)
-		cropY := (source.Height - cropH) / 2
+		// A rotated piece is rotated first, and its crop is placed on the
+		// picture as it stands then.
+		upright := source.Rotated(seg.Rotate)
+		cropW, cropH := CropWindow(upright, rs.OutW, rs.OutH)
+		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
-		cropX := ClampCropX(seg.CropX, cropW, source.Width)
+		cropX := ClampCropX(seg.CropX, cropW, upright.Width)
 
-		chain := []string{
-			cut.picture + "setpts=PTS-STARTPTS",
-			fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, cropX, cropY),
+		chain := []string{cut.picture + "setpts=PTS-STARTPTS"}
+		if rotate := framewire.Rotate(seg.Rotate); rotate != "" {
+			chain = append(chain, rotate)
 		}
+		chain = append(chain, fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, cropX, cropY))
 		if rs.ScaleUp && (cropW != rs.OutW || cropH != rs.OutH) {
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}
