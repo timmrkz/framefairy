@@ -49,6 +49,22 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid \
 	done
 fi
 
+# main's newest commit, when it is not the one built. Every push to main
+# is built, docs too, so any other commit is one still to come. Without
+# this the page said main was up to date for three days while every
+# publish of main waited behind one that never started.
+if [ -e "$entries/channel-main.json" ] &&
+	head=$(gh api "repos/${GH_REPO:-${GITHUB_REPOSITORY:-}}/commits/main" --jq .sha); then
+	built=$(jq -r '.commit // empty' "$entries/channel-main.json")
+	case $head in
+	"$built"*) ;;
+	*)
+		echo "main has $head still to be built"
+		newest="$newest -newest main=$(echo "$head" | cut -c1-12)"
+		;;
+	esac
+fi
+
 set -- "$entries"/*.json
 [ -e "$1" ] || set --
 # $newest is words the loop above made of a number and a commit, so it is
