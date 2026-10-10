@@ -120,7 +120,7 @@ export function finderStanding(f: FinderFacts): { text: string; tone: Tone; stat
 function finderAtRest(f: FinderFacts): { text: string; tone: Tone; state: Standing } {
   if (f.planner === "api") {
     return {
-      text: `By ${f.provider.title}. A few cents an episode.`,
+      text: `By ${f.provider.title}. A few cents a video.`,
       tone: "",
       state: f.hasKey ? "ok" : "warn",
     };

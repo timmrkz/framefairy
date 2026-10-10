@@ -146,7 +146,7 @@ class Reader {
     // unchanged for a while, and one written over since would be read as
     // it was.
     const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` }, cache: "no-store" });
-    if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the episode file could not be read, it answered ${res.status}`);
+    if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the video file could not be read, it answered ${res.status}`);
     const total = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
     if (total) this.size = Number(total[1]);
     this.stamp = `${total?.[1] ?? res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}`;
@@ -660,7 +660,7 @@ export class FrameQueue {
     this.movie = movie;
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
-    if (!this.video) throw new MP4Error("the episode has no picture the video preview can decode");
+    if (!this.video) throw new MP4Error("the video has no picture the video preview can decode");
     // Every file's picture comes from ffmpeg on the Go side, the episode's
     // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
     this.app = this.fromApp();

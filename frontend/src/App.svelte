@@ -543,14 +543,14 @@
       >
         <Icon name="sidebar" />
       </button>
-      <h2>Episodes</h2>
+      <h2>Videos</h2>
       {#if episodes.length > 1}
         <span class="order">
           <Pick
             value={shell.order}
             options={orders}
-            label="Sort episodes by"
-            title={shell.order === "name" ? "Sort episodes, now by name" : "Sort episodes, now by when they were added"}
+            label="Sort videos by"
+            title={shell.order === "name" ? "Sort videos, now by name" : "Sort videos, now by when they were added"}
             align="right"
             face="icon"
             icon="sort"
@@ -598,7 +598,7 @@
       <button
         class="quiet nav"
         onclick={add}
-        title="Add an episode. Any mp4, mov, m4v or mkv works"
+        title="Add a video. Any mp4, mov, m4v or mkv works"
       >
         <Icon name="plus" />
         <span class="label">Add</span>
@@ -681,7 +681,7 @@
       <!-- Where the app was left is on its way. -->
     {:else if !episodes.length}
       <div class="welcome">
-        <h1>Add an episode</h1>
+        <h1>Add a video</h1>
         <p class="muted">
           The app transcribes it on this machine, finds the moments worth clipping and renders
           them as vertical shorts. Any mp4, mov, m4v or mkv works.
@@ -690,7 +690,7 @@
       </div>
     {:else}
       <div class="welcome">
-        <h1>Pick an episode</h1>
+        <h1>Pick a video</h1>
         <p class="muted">Choose one on the left, or add a new one.</p>
       </div>
     {/if}
@@ -717,14 +717,14 @@
       {#if ep.work}
         <p>
           The transcript, the clip sets and the rendered clips are in
-          <b>{workFolder(ep.source)}</b>, beside the episode. Keeping that folder means adding the
-          episode again picks up where this left off, deleting it starts from the beginning. The
-          episode file itself always stays.
+          <b>{workFolder(ep.source)}</b>, beside the video. Keeping that folder means adding the
+          video again picks up where this left off, deleting it starts from the beginning. The
+          video file itself always stays.
         </p>
       {:else}
         <p>
-          There is nothing beside the episode to throw away: it has no
-          <b>{workFolder(ep.source)}</b> folder. Only the episode leaves the list, the file itself
+          There is nothing beside the video to throw away: it has no
+          <b>{workFolder(ep.source)}</b> folder. Only the video leaves the list, the file itself
           stays where it is.
         </p>
       {/if}

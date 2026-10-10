@@ -348,7 +348,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			// outside this is a broken plan, and it would reach ffmpeg as a
 			// seek nobody can make.
 			if start < 0 || end > MaxEpisodeSeconds {
-				return Plan{}, nil, renderErr("clip %d: a segment lies outside the episode, "+
+				return Plan{}, nil, renderErr("clip %d: a segment lies outside the video, "+
 					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
 			}
 			_, moved := seg[keyCropXAuto]

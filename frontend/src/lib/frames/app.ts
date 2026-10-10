@@ -100,7 +100,7 @@ class Stream {
     try {
       const id = await this.id;
       if (!id) {
-        this.end("the app could not decode the picture of this episode");
+        this.end("the app could not decode the picture of this video");
         return;
       }
       for (;;) {

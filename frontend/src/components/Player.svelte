@@ -1140,7 +1140,7 @@
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
         The space bar plays and pauses, and so does a click on the picture. With the playhead on
-        the chosen clip it plays the clip, its cuts jumped, and anywhere else the episode straight
+        the chosen clip it plays the clip, its cuts jumped, and anywhere else the video straight
         on, with the clip's frame dimmed. Drag the crop frame
         sideways to place it, and the black box up or down for the captions. Click a word in the
         caption box to correct it, or walk to it with Shift and the arrows and press Enter: Enter
