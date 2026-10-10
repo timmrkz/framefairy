@@ -47,6 +47,8 @@ type appLog struct {
 	// One start of the app, so a restart is seen and two runs never mix.
 	run   string
 	trace atomic.Bool
+	// The person's last act, which the Go side's lines carry, see Acted.
+	act atomic.Pointer[string]
 }
 
 // The log is at most 10 MB of lines in use and three older files
@@ -130,12 +132,39 @@ func (l *appLog) detailed(on bool) {
 	l.leveled()
 }
 
-// line starts a line of one part of the app at this moment, or gives nil,
-// which takes fields and writes nothing, where its level is not written.
+// line starts a line of one part of the app at this moment, with the act
+// it belongs to, or gives nil, which takes fields and writes nothing,
+// where its level is not written.
 func (l *appLog) line(level zerolog.Level, from string) *zerolog.Event {
-	return l.lineAt(level, from, time.Now())
+	return withAct(l.lineAt(level, from, time.Now()), l.acting())
 }
 
+// jobLine starts a line about a job, with the act that asked for it, not
+// the one the person is at by now.
+func (l *appLog) jobLine(level zerolog.Level, job *Job) *zerolog.Event {
+	ev := l.lineAt(level, "jobs", time.Now()).Str("job", job.ID).Str("kind", job.Kind)
+	if job.Episode != "" {
+		ev = ev.Str("video", filepath.Base(job.Episode))
+	}
+	return withAct(ev, job.act)
+}
+
+func withAct(ev *zerolog.Event, act string) *zerolog.Event {
+	if act == "" {
+		return ev
+	}
+	return ev.Str("act", act)
+}
+
+// acting is the person's last act, or empty before the first.
+func (l *appLog) acting() string {
+	if a := l.act.Load(); a != nil {
+		return *a
+	}
+	return ""
+}
+
+// lineAt starts a line at a moment of its own, with no act.
 func (l *appLog) lineAt(level zerolog.Level, from string, at time.Time) *zerolog.Event {
 	lg := l.root.Load()
 	if lg == nil {
@@ -201,6 +230,7 @@ type SaidLine struct {
 	At    float64 `json:"at"`
 	Level string  `json:"level,omitempty"`
 	Video string  `json:"video,omitempty"`
+	Act   string  `json:"act,omitempty"`
 	Text  string  `json:"text"`
 }
 
@@ -244,11 +274,52 @@ func (f *FrameFairy) Said(lines []SaidLine) {
 		if line.Video != "" {
 			ev = ev.Str("video", filepath.Base(line.Video))
 		}
-		ev.Msg(text)
+		withAct(ev, clipped(line.Act, actMax)).Msg(text)
 	}
 	if more > 0 {
 		theLog.line(zerolog.WarnLevel, "window").Int("more", more).Msgf("and %d lines more", more)
 	}
+}
+
+// An act's id and what it says are the window's own few words.
+const (
+	actMax     = 16
+	actWhatMax = 300
+)
+
+func clipped(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// Act is one thing the person did: a click, a key or a video picked, with
+// the id every line it sets off carries, the moment, in ms since 1970, a
+// few words on what it was and the video in front. See lib/said.ts.
+type Act struct {
+	ID    string  `json:"id"`
+	At    float64 `json:"at"`
+	What  string  `json:"what"`
+	Video string  `json:"video,omitempty"`
+}
+
+// Acted notes what the person did, at once rather than with the window's
+// next lines, so that what the Go side does for it carries its id: the
+// streams and the decoder it starts, the job it asks for. The window says
+// each act before the calls it makes for it.
+func (f *FrameFairy) Acted(a Act) {
+	id := clipped(a.ID, actMax)
+	theLog.act.Store(&id)
+	at := time.Now()
+	if t := time.UnixMilli(int64(a.At)); a.At > 0 && t.Sub(at).Abs() < time.Minute {
+		at = t
+	}
+	ev := theLog.lineAt(zerolog.InfoLevel, "window", at)
+	if a.Video != "" {
+		ev = ev.Str("video", filepath.Base(a.Video))
+	}
+	withAct(ev, id).Msg(clipped(a.What, actWhatMax))
 }
 
 // recorded is a response as it was written, for the log.

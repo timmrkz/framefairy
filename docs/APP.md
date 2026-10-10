@@ -2402,6 +2402,8 @@ the licence asks to be said and to the licence's own text. The list is built int
   [LOGGING.md](LOGGING.md):
   - `app`: each start, with its build.
   - `wails`: what Wails, which runs the app's window, says from info up.
+  - `jobs`: each search, render and install starting and ending, with
+    how it ended and how long it took.
   - `window`: the window's warnings and errors and anything thrown and
     not caught, every time the window stood still for more than
     400 ms, the space bar with where the keyboard was and which
@@ -2421,6 +2423,9 @@ the licence asks to be said and to the licence's own text. The list is built int
     place it was moved to and how long its first frame took, the chain
     a frame goes through and ffmpeg's errors.
 
+  Every click and every key that is not typing is an act, a line of its
+  own with an id that every line it sets off carries, see
+  [LOGGING.md](LOGGING.md#acts).
   The window sends its lines a quarter of a second after it says them,
   so they can stand a little after the Go side's lines of the same
   moment. Every line from debug up is always written. Trace lines only

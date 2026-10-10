@@ -26,6 +26,7 @@ func testLog(t *testing.T) (path string, read func() []map[string]any) {
 	t.Cleanup(func() {
 		theLog.close()
 		theLog.detailed(false)
+		theLog.act.Store(nil)
 	})
 	return path, func() []map[string]any {
 		t.Helper()
@@ -216,4 +217,27 @@ func TestTheLogKeepsToItsSize(t *testing.T) {
 		t.Error("no older file was kept beside the log")
 	}
 	read()
+}
+
+// What the person did is a line of its own, and every line it sets off
+// carries its id: the window's, the Go side's and a job's, which keeps the
+// act that asked for it however many acts follow while it runs. Plan row
+// 2.188.
+func TestActsTieTheLinesTheySetOff(t *testing.T) {
+	_, read := testLog(t)
+	f := &FrameFairy{}
+	f.Acted(Act{ID: "a7", What: `pressed button "New"`, Video: "/videos/start.mp4"})
+	job := &Job{ID: "job-3", Kind: "clip", Episode: "/videos/start.mp4", act: theLog.acting()}
+	f.Said([]SaidLine{{Act: "a7", Text: "video preview: opening", Video: "/videos/start.mp4"}})
+	theLog.line(zerolog.DebugLevel, "files").Msg("open from 1.5 at 874x492")
+	f.Acted(Act{ID: "a8", What: "Space on canvas"})
+	theLog.line(zerolog.DebugLevel, "decoder").Msg("moved to 46.084 s")
+	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job ended")
+
+	lines := read()
+	has(t, find(lines, `pressed button "New"`), map[string]any{"level": "info", "from": "window", "act": "a7", "video": "start.mp4"})
+	has(t, find(lines, "video preview: opening"), map[string]any{"act": "a7"})
+	has(t, find(lines, "open from"), map[string]any{"act": "a7", "from": "files"})
+	has(t, find(lines, "moved to"), map[string]any{"act": "a8"})
+	has(t, find(lines, "the job ended"), map[string]any{"act": "a7", "job": "job-3", "kind": "clip", "video": "start.mp4", "from": "jobs"})
 }

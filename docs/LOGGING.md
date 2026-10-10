@@ -79,7 +79,7 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `run` | one start of the app, so a restart is seen and two runs never mix |
-| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `engine`, `wails` |
+| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `wails` |
 | `video` | the video it is about, by file name, where there is one |
 | `act` | what the person did that led to it, see below |
 | `msg` | what happened, in words |
@@ -94,8 +94,11 @@ What the person did is the thread a fault is followed by. Each act is a
 line at `info` with a short id of its own: a video picked, added or
 removed, play, pause, a jump of the playhead, a search started, a cut, a
 render. Everything that act sets off carries its id, in the window, on
-the Go side and in the decoder. The window sends it with every call and
-every request for frames, and the Go side hands it on.
+the Go side and in the decoder. The window tells the Go side of each act
+the moment it happens, before the calls it makes for it, and the Go
+side's lines carry the act it was told of last. A search or a render
+keeps the act that asked for it, so its end, minutes later, is still
+read with the click that started it.
 
 So the report of a picture that never came reads as: the person picked
 start.mp4, act a41. Then every line with `act=a41`: the workspace
@@ -138,7 +141,10 @@ jq -c 'select(.video == "start.mp4")' app.log
    lines, the levels above, `run`, `from` and `video`, and Wails's own
    lines, from info up, in the same file. Its debug lines are one for
    every request the window makes, which `files` has lines for already.
-2. Acts: an id for each, sent with every call and request for frames,
-   and carried by the Go side and the decoder.
+2. Done. Acts: every click and every key that is not typing is an act,
+   named by the control it was on and never by words of the video. The
+   window tells the Go side at once, so the Go side's lines carry the
+   act the person is at, and a job keeps the act that asked for it
+   however long it runs. Its start and end are lines of `jobs`.
 3. Help → Report a Problem…, the zip above. It is R.8 without the
    address.

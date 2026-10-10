@@ -19,7 +19,25 @@ import { api, tellTo } from "./api";
 export type Level = "error" | "warn" | "info" | "debug" | "trace";
 export type Said = { level?: Level; video?: string };
 
-type Line = { at: number; text: string } & Said;
+type Line = { at: number; text: string; act?: string } & Said;
+
+// The person's last act: a click, a key, a video picked. Every line said
+// after it carries its id, and so does every line the Go side writes for
+// it, so what one act set off is read together. See docs/LOGGING.md.
+let acts = 0;
+let acting = "";
+
+// The video in front, if there is one.
+function inFront(): string | undefined {
+  return document.querySelector<HTMLElement>(".workspace.front[data-path]")?.dataset.path || undefined;
+}
+
+// Starts an act: says what the person did, at once, and gives its id.
+export function act(what: string, video = inFront()): string {
+  acting = `a${(++acts).toString(36)}`;
+  api.acted({ id: acting, at: Date.now(), what, video }).catch(() => {});
+  return acting;
+}
 
 let waiting: Line[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -37,7 +55,7 @@ const MOST = 400;
 // counted, not written again.
 export function said(text: string, how: Said = {}) {
   const at = Date.now();
-  const key = `${how.level ?? ""} ${how.video ?? ""} ${text}`;
+  const key = `${acting} ${how.level ?? ""} ${how.video ?? ""} ${text}`;
   if (key === last) {
     repeats++;
     repeatedAt = at;
@@ -46,7 +64,7 @@ export function said(text: string, how: Said = {}) {
   if (repeats) waiting.push({ at: repeatedAt, text: `(said ${repeats} more times)` });
   last = key;
   repeats = 0;
-  waiting.push({ at, text, ...how });
+  waiting.push({ at, text, act: acting || undefined, ...how });
   if (waiting.length > MOST) waiting.splice(0, waiting.length - MOST);
   timer ??= setTimeout(write, 250);
 }
@@ -102,10 +120,47 @@ export function workspaces(): string {
 // that should fire every quarter of a second came this much late.
 const STOOD = 400;
 
+// The control an act was on, by what the interface calls it, and never by
+// the words of a video: a word clicked in the caption box is named as the
+// caption box, so the log holds no transcript.
+function control(target: Element | null): string {
+  const el = target?.closest<HTMLElement>("button, a, input, textarea, select, canvas, label, [role], [contenteditable], [title], [aria-label]") ?? (target as HTMLElement | null);
+  if (!el || el === document.body) return "nothing";
+  const labelled = el.matches("button, a, label, [role=button], [role=menuitem], [role=option], [role=tab], [role=checkbox], [role=switch]");
+  const name = el.getAttribute("aria-label") || el.title || (labelled ? (el.textContent ?? "").trim().slice(0, 30) : "");
+  const kind = typeof el.className === "string" ? el.className.split(" ").find((c) => c && !c.startsWith("svelte-")) : "";
+  return `${el.tagName.toLowerCase()}${kind ? `.${kind}` : ""}${name ? ` "${name}"` : ""}`;
+}
+
+// Whether a key is typing into a field, which is not an act of its own:
+// the field the person typed into is, once, when they clicked or tabbed
+// into it.
+function typing(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  const field = !!el && (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+  return field && !e.metaKey && !e.ctrlKey && (e.key.length === 1 || ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Shift"].includes(e.key));
+}
+
+// A key as the person pressed it: ⌘Z, Space, ArrowLeft.
+function pressed(e: KeyboardEvent): string {
+  const key = e.key === " " ? "Space" : e.key;
+  return `${e.metaKey ? "⌘" : ""}${e.ctrlKey ? "⌃" : ""}${e.altKey ? "⌥" : ""}${e.shiftKey && key.length > 1 ? "⇧" : ""}${key}`;
+}
+
 // The console's warnings and errors, and whatever is thrown and not
 // caught, go to the log as well as where they went. So does every time the
-// window stood still, and what the space bar met.
+// window stood still, and what the space bar met. Every click and every
+// key that is not typing is an act.
 export function listen() {
+  window.addEventListener("pointerdown", (e) => act(`pressed ${control(e.target as Element | null)}`), true);
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.repeat || ["Shift", "Meta", "Control", "Alt", "CapsLock"].includes(e.key) || typing(e)) return;
+      act(`${pressed(e)} on ${control(document.activeElement)}`);
+    },
+    true,
+  );
   tellTo((line) => said(line, { level: "warn" }));
   const warn = console.warn.bind(console);
   const error = console.error.bind(console);
