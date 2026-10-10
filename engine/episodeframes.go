@@ -57,7 +57,7 @@ const (
 // ErrFramesClosed ends a stream whose decoder was closed under it, which
 // is no failure: the page asks another stream, which starts the decoder
 // again.
-var ErrFramesClosed = errors.New("the episode's decoder was closed")
+var ErrFramesClosed = errors.New("the video's decoder was closed")
 
 // NewEpisodeFrames is the episode's decoder for the episode at path, run
 // from program. Nothing starts until a stream is asked for.
@@ -152,7 +152,7 @@ func (f *EpisodeFrames) start() error {
 		return err
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("the episode's decoder could not start: %w", err)
+		return fmt.Errorf("the video's decoder could not start: %w", err)
 	}
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
@@ -191,7 +191,7 @@ func (f *EpisodeFrames) start() error {
 		<-saidAll
 		werr := cmd.Wait()
 		f.mu.Lock()
-		f.err = fmt.Errorf("the episode's decoder stopped: %v %s", werr, said.String())
+		f.err = fmt.Errorf("the video's decoder stopped: %v %s", werr, said.String())
 		close(gone)
 		f.mu.Unlock()
 	}()
@@ -328,7 +328,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 		if why := f.ended(gone); why != nil {
 			err = why
 		} else {
-			err = fmt.Errorf("the episode's decoder could not be asked: %w", err)
+			err = fmt.Errorf("the video's decoder could not be asked: %w", err)
 		}
 	}
 	f.mu.Unlock()
@@ -390,7 +390,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 					if why := f.ended(gone); why != nil {
 						err = why
 					} else {
-						err = fmt.Errorf("the episode's decoder could not be asked: %w", err)
+						err = fmt.Errorf("the video's decoder could not be asked: %w", err)
 					}
 				}
 				f.mu.Unlock()

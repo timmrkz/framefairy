@@ -621,7 +621,7 @@
   // belongs to shakes, the way it does when the settings may not be left.
   // The Go side refuses the same, see lockedBy in setup.go.
   const findingLocked = "A search is using it. It can be changed once the search is done";
-  const speechLocked = "An episode is being transcribed with it. It can be removed once that is done";
+  const speechLocked = "A video is being transcribed with it. It can be removed once that is done";
   function shakeFinding() {
     shaking = false;
     requestAnimationFrame(() => (shaking = true));
@@ -686,7 +686,7 @@
             <Info label="About finding clips" side="left">
               A language model reads the transcript and picks the moments worth clipping. A model in
               the cloud, Anthropic's or OpenAI's, works on any machine with a key of your own from
-              that company, and costs a few cents an episode. A model on this machine is free to run
+              that company, and costs a few cents a video. A model on this machine is free to run
               and needs the memory to hold it. Either way the video and the audio stay
               here: only the words are read.
               {#if settings.planner === "local"}
@@ -898,8 +898,8 @@
           <h2>Speech</h2>
           <span class="ask">
             <Info label="About the speech model" side="left">
-              Every episode is transcribed on this machine, word by word with the time of each
-              word. Nothing about the episode is sent anywhere. The model is fetched from the
+              Every video is transcribed on this machine, word by word with the time of each
+              word. Nothing about the video is sent anywhere. The model is fetched from the
               people who published it and kept in <b>~/.framefairy/models</b>.
             </Info>
           </span>
@@ -911,7 +911,7 @@
             oninstall={api.installSpeechModel}
             onchange={modelsChanged}
             onremove={api.removeSpeechModel}
-            removeSays="Every episode is transcribed with it, so the app asks for one again the next time it starts."
+            removeSays="Every video is transcribed with it, so the app asks for one again the next time it starts."
             locked={hearing ? speechLocked : ""}
             onlocked={shakeSpeech}
           />
@@ -926,14 +926,14 @@
             <div class="words">
               <span class="head">Save shorts to</span>
               <span class="small muted selectable path">
-                {settings.outputDir || "Next to each episode"}
+                {settings.outputDir || "Next to each video"}
               </span>
             </div>
             {#if settings.outputDir}
               <button
                 class="quiet"
-                title="Save each short next to its episode again"
-                onclick={() => settings && (settings.outputDir = "")}>Next to episode</button
+                title="Save each short next to its video again"
+                onclick={() => settings && (settings.outputDir = "")}>Next to video</button
               >
             {/if}
             <button class="act" onclick={chooseOutput}>Choose…</button>

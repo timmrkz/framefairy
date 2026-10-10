@@ -398,7 +398,7 @@ func (s *FrameFairy) UseLanguageModel(name string) (string, error) {
 // refused. The settings show the same before they ask, see Settings.svelte.
 var (
 	errSearching = errors.New("a search is using it. It can be changed once the search is done")
-	errHearing   = errors.New("an episode is being transcribed with it. It can be removed once that is done")
+	errHearing   = errors.New("a video is being transcribed with it. It can be removed once that is done")
 )
 
 // languageLocked says why what finds clips may not change now, or nil.

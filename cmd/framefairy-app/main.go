@@ -112,7 +112,7 @@ func main() {
 
 	app = application.New(application.Options{
 		Name:        "Frame Fairy",
-		Description: "Turns a podcast episode into vertical clips",
+		Description: "Turns a long video into vertical shorts",
 		Services:    []application.Service{application.NewService(svc)},
 		Assets: application.AssetOptions{
 			Handler:    interfaceHandler(),
@@ -256,7 +256,7 @@ func mediaMiddleware(st *store) application.Middleware {
 // notInLibrary is what a call is told when it names a file that does not
 // belong to an episode in the library. The interface only ever names files
 // it was given, so this is the last line rather than the first.
-const notInLibrary = "this file does not belong to an episode in the library"
+const notInLibrary = "this file does not belong to a video in the library"
 
 // errNotInLibrary is notInLibrary as the error a call returns. It says
 // what happened, where os.ErrNotExist said "file does not exist" about a

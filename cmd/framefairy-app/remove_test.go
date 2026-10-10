@@ -262,7 +262,7 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 		if j.State == JobQueued || j.State == JobRunning {
 			t.Errorf("%s %s is %s after the episode was removed", j.ID, j.Kind, j.State)
 		}
-		if j.State == JobFailed && j.Error == "the episode is being removed" {
+		if j.State == JobFailed && j.Error == "the video is being removed" {
 			refused++
 		}
 	}
