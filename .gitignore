@@ -60,3 +60,6 @@ __pycache__/
 *.swp
 *.log
 .env
+
+# What a merge tool leaves beside a file it resolved.
+*.orig
