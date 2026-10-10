@@ -189,12 +189,25 @@ const gestures = [
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
-      await page
-        .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, start + 1.5, {
-          timeout: (start - from + 6) * 1000,
-          polling: 100,
-        })
-        .catch(() => {});
+      // Half the time the hand skips ahead on the way, shift and the right
+      // arrow, or the arrow alone, every 300 ms: on the video either is a
+      // skip through the episode, and the clip stays dimmed.
+      const skip = rng.next() < 0.5 ? rng.pick(["Shift+ArrowRight", "ArrowRight"]) : "";
+      const past = (to) => page.evaluate((to) => Number(document.querySelector(".screen").dataset.playhead) > to, to);
+      if (skip) {
+        const until = Date.now() + (start - from + 6) * 1000;
+        while (Date.now() < until && !(await past(start + 1.5))) {
+          await page.waitForTimeout(300);
+          await page.keyboard.press(skip);
+        }
+      } else {
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, start + 1.5, {
+            timeout: (start - from + 6) * 1000,
+            polling: 100,
+          })
+          .catch(() => {});
+      }
       await page.evaluate(() => {
         if (document.querySelector('button[aria-label="Play"]')) return;
         const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -204,9 +217,11 @@ const gestures = [
       const { overlays } = await stop();
       const to = (await at()).at;
       if (to < start + 1) watch.broke("the episode plays on into the clip", `played from ${from.toFixed(3)} to ${to.toFixed(3)}, the clip starts at ${start.toFixed(3)}`);
+      const lit = overlays.find((o) => o.playing && !o.video);
+      if (lit) watch.broke("the episode plays on into the clip", `the clip lit up at ${lit.at.toFixed(3)}${skip ? ` with ${skip} pressed on the way` : ""}`);
       overlaysFollow(overlays, state);
       await staysPaused("after playing into the clip");
-      return `play the episode from ${from.toFixed(2)} into the clip to ${to.toFixed(2)}`;
+      return `play the episode from ${from.toFixed(2)} into the clip to ${to.toFixed(2)}${skip ? `, ${skip} on the way` : ""}`;
     },
   },
   {

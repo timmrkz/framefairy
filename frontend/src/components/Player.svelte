@@ -20,7 +20,7 @@
   // video preview shows the video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { insideClip, litWord, type Piece } from "../lib/flow";
-  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import type { Movie } from "../lib/frames/mp4";
   import Info from "./Info.svelte";
@@ -332,7 +332,7 @@
   // across the clip's edge while playing was lost: the new program started
   // the play again from where it was, the queue said so at once, that set
   // the playhead back, and the seek after it went to the playhead.
-  export function seek(t: number, about?: "clip") {
+  export function seek(t: number, about?: About) {
     const at = Math.max(0, Math.min(t, source.duration));
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);

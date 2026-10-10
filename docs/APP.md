@@ -521,7 +521,12 @@ before its end, and the clip playing to its end, leave it on the clip at
 its end. Any frame before or after the clip is on the video, and so is
 having no clip chosen. It goes by frames and not by seconds because what
 is on screen is a frame: a clip's start kept to the millisecond can lie a
-hair before its frame, and a step onto that frame is on the clip.
+hair before its frame, and a step onto that frame is on the clip. A step
+taken while the episode plays on the video is the one exception: an arrow,
+with Shift or without, skips through the episode and leaves the playhead
+on the video, through the clip and its cuts, so a hand that skips ahead
+through a dimmed clip does not light it up. Paused, or on the clip, a step
+lands where its frame says.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.
@@ -1310,6 +1315,10 @@ bubble scrolled by those eight pixels.
       they took before, and a second is nothing in particular. It lands in
       the middle of a word as often as not, it walks four words at a time
       where someone speaks quickly and none at all across a pause.
+      While the episode plays on the video, they walk the words of the
+      transcript and stay on the video, see the place of the playhead
+      above. Found by Tim, who skipped ahead through a dimmed clip and
+      had it light up.
       - **It walks the words the caption lights up, not the words the
         transcript holds.** They are not the same list. A correction that
         reads as two words is two words in the caption and one in the

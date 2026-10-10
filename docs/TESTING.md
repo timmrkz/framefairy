@@ -218,7 +218,9 @@ rules. `TestWalks` runs every one it finds, for the same seeds.
 The gestures: the space bar, playing for a moment and pausing, playing a
 clip to its end from a moment before its last cut, or before its end
 when it has none, a drag of the clip's start that leaves room before it,
-playing the episode from before the clip on into it, a double-click that
+playing the episode from before the clip on into it, half the time with
+Shift and the right arrow or the right arrow alone pressed on the way to
+skip ahead, a double-click that
 cuts a part out, one that puts a cut back, a click on the clip timeline,
 and Shift and an arrow. While a clip
 plays, the walk records every frame the video preview puts on screen, by
@@ -235,7 +237,7 @@ every walk's:
 | Paused, the picture stays where it was paused: the playhead stays, and the frame on screen is the one that holds it, or at the clip's end the one that ends on it | |
 | A clip played to its end stops at its end | |
 | On every animation frame of a play, on the video the video preview lays nothing over the picture, no crop frame, no shade, no captions, and on the clip a frame or more inside a piece it shows the crop frame, and the captions wherever the engine has a caption, `overlaid` in `rules.mjs` | the crop frame and the captions staying up while the episode played on through the clip, found by Tim |
-| The episode played from before the clip goes on into it | |
+| The episode played from before the clip goes on into it, and stays on the video on every animation frame, skips and all | the clip lighting up the moment Shift and the right arrow skipped into it, found by Tim |
 
 `make walks` also walks it on an episode whose picture is HEVC in 10-bit
 colour, `HEVC=1`, added with Add and searched first. The Chromium a walk
@@ -444,6 +446,17 @@ or more and go through a part cut out between them, on the video and with
 nothing over the picture the whole way. The clip's play has to jump a cut
 and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
+
+`shift and the arrows skip ahead through a clip on the video, and walk its
+words on the clip` is Tim's test of the skip. With the clip's start
+trimmed and one cut in it, it plays eight seconds from before the clip,
+pressing Shift and the right arrow every 400 ms. The playhead has to go a
+second or more further than the play alone takes it, and stay on the
+video with nothing over the picture on every animation frame. Then it
+plays four seconds from inside the clip with the same presses, which walk
+the clip's words and stay on the clip, its crop frame and its captions
+shown. Before the fix it fails at `only the video`, the playhead on the
+clip at 7.96 s.
 
 `a cut or an edge put back keeps the camera switch` is Tim's test of
 #116 done the way he would do it. It adds a video of 30 seconds whose

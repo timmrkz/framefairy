@@ -41,6 +41,7 @@
   } from "../lib/flow";
   import { scrub as scrubPlayhead } from "../lib/scrub";
   import { hoverClip } from "../lib/hover";
+  import type { About } from "../lib/playhead";
   import { asleep, keysElsewhere } from "../lib/keys";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
@@ -115,8 +116,9 @@
     lit?: Word[];
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
-    // clip whatever the moment, see placeOf in lib/playhead.ts.
-    onseek: (t: number, about?: "clip") => void;
+    // clip whatever the moment, and a step while the episode plays on the
+    // video says that, see placeOf in lib/playhead.ts.
+    onseek: (t: number, about?: About) => void;
     // The hand has taken hold of the playhead, or let go of it, so a play
     // can wait under the hand, see hold in Player.svelte.
     onhold?: (held: boolean) => void;
@@ -780,6 +782,12 @@
   // lights up the word being spoken, so this walks that light one word at
   // a time. Where nothing has been heard yet there are no words to walk,
   // and shift takes a second, which is all it ever took before.
+  //
+  // While the episode plays on the video, a step skips through the
+  // episode and stays on the video, the clip and its cuts included: the
+  // play started outside the clip, so moving on is all it asks for, and
+  // the clip lighting up under it was a clip nobody chose. On the clip
+  // and paused, a step lands where its frame says, see placeOf.
   function onKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
@@ -789,7 +797,8 @@
     if (document.activeElement?.getAttribute("role") === "slider") return;
     const back = event.key === "ArrowLeft";
     event.preventDefault();
-    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)));
+    const through = playing && dimmed;
+    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined);
     if (!event.shiftKey) {
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
@@ -808,7 +817,7 @@
     // clip that could not be made to happen twice: it only happens on the
     // first press after picking one.
     const step = Math.max(frame, 1 / 240);
-    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
+    const walk = lit.length && !through && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
       put(to);

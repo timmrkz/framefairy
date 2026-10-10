@@ -41,6 +41,11 @@
 //                      presses the space bar, reads what the video preview
 //                      lays over the picture on every animation frame for
 //                      so many seconds of play, and pauses
+//   ["play from", where, seconds, key]
+//                      the same, pressing this key every 400 ms of the
+//                      play, "Shift+ArrowRight" to skip ahead by words,
+//                      and from "before" the playhead has to have gone a
+//                      second or more further than the play takes it
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -731,6 +736,23 @@ export const sequences = [
       ["only the video", "across cuts"],
       ["play from", "in", 9],
       ["the clip shown", "across cuts"],
+    ],
+  },
+  {
+    // Tim played the episode from before the clip and pressed shift and
+    // the right arrow to skip ahead, and the clip lit up the moment a step
+    // landed in it. A step while the episode plays on the video skips
+    // through the episode and stays on the video, cuts and all. On the
+    // clip the same keys walk its words and the play stays on the clip.
+    name: "shift and the arrows skip ahead through a clip on the video, and walk its words on the clip",
+    steps: [
+      ["trim", "start", 300],
+      ["cut at", 0.4],
+      ["cuts", 1],
+      ["play from", "before", 8, "Shift+ArrowRight"],
+      ["only the video"],
+      ["play from", "in", 4, "Shift+ArrowRight"],
+      ["the clip shown"],
     ],
   },
   {
@@ -1443,7 +1465,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "play from": {
-        const [where, seconds] = arg;
+        const [where, seconds, key] = arg;
         const g = await handles(page);
         const from = g.start.x + g.start.w;
         const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
@@ -1456,8 +1478,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const state = await engineState(page, watch.at);
         const stop = await recordFrames(page, 1 / (await rate(page)));
         await page.evaluate(() => document.body.focus());
+        const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
         await page.keyboard.press("Space");
-        await page.waitForTimeout(seconds * 1000);
+        // With a key, it is pressed every 400 ms of the play, the way a
+        // hand skips ahead while it watches.
+        if (key) {
+          for (let t = 0; t + 0.4 <= seconds; t += 0.4) {
+            await page.waitForTimeout(400);
+            await page.keyboard.press(key);
+          }
+        } else await page.waitForTimeout(seconds * 1000);
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -1465,6 +1495,12 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           document.body.dispatchEvent(new KeyboardEvent("keyup", key));
         });
         played = { overlays: (await stop()).overlays, state, fps: await rate(page) };
+        // The steps have to have skipped: on the video the playhead went
+        // further than the play alone takes it.
+        const ended = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+        if (key === "Shift+ArrowRight" && where === "before" && ended - began < seconds + 1) {
+          wrong = `${key} while playing moved the playhead ${(ended - began).toFixed(2)} s in ${seconds} s of play, no skip ahead`;
+        }
         await watch.step("play", s);
         break;
       }
