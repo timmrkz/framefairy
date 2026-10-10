@@ -215,12 +215,18 @@ export class Watch {
       // An edit stays where it was made: every word more than three
       // seconds of the episode away from the word corrected keeps its text
       // and its time.
-      const last = [...calls].reverse().find((c) => c.name === "SetWord");
+      // A caption removed whole is its words removed, from its first to
+      // its last, so the same holds around all of them.
+      const last = [...calls].reverse().find((c) => c.name === "SetWord" || c.name === "RemoveCaption");
       if (last) {
+        const whole = last.name === "RemoveCaption";
         const where = last.args[3];
+        const cue = whole ? before.captions.find((c) => Math.abs((c.first ?? NaN) - where) < 1e-6) : null;
+        if (whole && !cue) this.broke("a caption removed was there", `no caption began on ${where}`);
+        const till = cue?.last ?? where;
         const far = (caps) =>
           words(caps)
-            .filter((w) => w.said === undefined || Math.abs(w.said - where) > 3)
+            .filter((w) => w.said === undefined || w.said < where - 3 || w.said > till + 3)
             .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
             .join(" ");
         if (far(before) !== far(after)) this.broke("an edit stays where it was made", describe(before, after));
@@ -229,7 +235,10 @@ export class Watch {
         // did. A caption whose words were all removed goes, and the one
         // before it then stays up through its time rather than leave the
         // box empty for a moment.
-        if (last.args[4] === "") {
+        if (whole && cue && after.captions.some((c) => Math.abs((c.first ?? NaN) - where) < 1e-6)) {
+          this.broke("a caption removed is gone", describe(before, after));
+        }
+        if (whole || last.args[4] === "") {
           const near = (a, b) => Math.abs(a - b) < 1e-3;
           const kept = after.captions.every((c) => {
             const i = before.captions.findIndex((b) => near(b.start, c.start));

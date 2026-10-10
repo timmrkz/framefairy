@@ -186,6 +186,7 @@ quarter of a second:
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
 | Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, the one before it then staying up through its time | the caption that broke where a removed word had been, and the next caption's first word pulled up into the room a removed word left |
+| A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 
 The engine's captions are asked for directly, `Captions` through
@@ -349,11 +350,12 @@ as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `trim` an edge by some
-pixels and `reset` an edge. What has to come of them: `box`, what
+pixels, `reset` an edge and click the caption `block` holding a word. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
-appearing and going when it did at a mark, and `cuts`, how many cuts the
-clip timeline shows. For finding clips: `model` holds, fails or answers,
+appearing and going when it did at a mark, `gone`, no caption holding a
+word, `blocks`, a block on the clip timeline for every caption the engine
+has, and `cuts`, how many cuts the clip timeline shows. For finding clips: `model` holds, fails or answers,
 `add` a video, press the clip list's `head` button and `restart` the app,
 and then `wait for` the head to say a word, a `row` to say something, and
 how many `cards` the list holds. For a render: `add` a video filmed at a

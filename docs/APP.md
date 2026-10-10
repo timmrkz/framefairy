@@ -917,6 +917,18 @@ bubble scrolled by those eight pixels.
     caption of their own. Removing a word lost its way when the words
     became one list: the engine refused an empty word and the caption box
     put the old one back.
+  - **Removing a caption:** a click on a caption block on the clip
+    timeline puts the playhead on its first word and picks the block, which
+    wears the frame a picked word wears in the caption box. Delete, the key
+    marked delete on the Mac and the forward delete key alike, then removes
+    every word of that caption at once, the way removing each word would,
+    in one step that Cmd+Z takes back whole. The clip keeps its time and
+    the captions around keep theirs. The block leaves with the key and
+    comes back if the engine refuses. A press anywhere else, or Escape,
+    lets the pick go, so a later delete removes nothing. The engine finds
+    the caption by the moment its first word starts, `RemoveCaption` in
+    `engine/corrections.go`, and a word typed back afterwards comes back as
+    any removed word does.
   - **Putting a word back:** Cmd+Z, or type it into the word beside it,
     "das" made "das ein". Both end the same way: the word is back where
     it was heard, with its own time, lit while it is said, and no
