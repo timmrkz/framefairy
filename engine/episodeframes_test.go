@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/framewire"
 )
 
 // The episode's decoder hands over the frames the ffmpeg program hands
@@ -138,19 +140,22 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 
 var errStop = errors.New("enough")
 
+// meanDiff is how far apart two frames made by framewire.Picture are on
+// average, colour by colour, in steps of 8 bits.
 func meanDiff(a, b []byte) float64 {
 	if len(a) != len(b) {
 		return math.Inf(1)
 	}
+	ca, cb := colours(a), colours(b)
 	sum := 0
-	for i := range a {
-		d := int(a[i]) - int(b[i])
+	for i := range ca {
+		d := ca[i] - cb[i]
 		if d < 0 {
 			d = -d
 		}
 		sum += d
 	}
-	return float64(sum) / float64(len(a))
+	return float64(sum) / 4 / float64(len(ca))
 }
 
 // Everything the Go side does to the episode's decoder at once: streams
@@ -186,7 +191,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 					if at < from-1e-6 || at <= last {
 						t.Errorf("a stream from %.1f got a frame at %.3f after %.3f", from, at, last)
 					}
-					if len(data) != 64*36*3/2 {
+					if len(data) != 64*36*4 {
 						t.Errorf("a frame of %d bytes", len(data))
 					}
 					last = at
@@ -511,4 +516,179 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 			t.Fatalf("round %d: after the end, a stream from 1 s gave %d frames, want 10", round, n)
 		}
 	}
+}
+
+// The frames of the episode's decoder are colours ffmpeg made from the
+// file's own tags, value by value what the ffmpeg program makes of the
+// same frame, for files tagged BT.601, BT.709 and BT.2020, in video and in
+// full range, in 8 and 10 bits, and for a file that says nothing, where
+// both take ffmpeg's defaults. And the tags count: the same picture tagged
+// otherwise comes out in other colours. Plan row 2.156, step 4.
+func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
+	// Our own ffmpeg on the Mac has no x264 or x265, which are GPL, and
+	// makes the files with the Mac's encoders instead.
+	h264 := []string{"-c:v", "libx264", "-preset", "ultrafast"}
+	hevc := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
+	software := true
+	switch {
+	case has("libx264"):
+	case has("h264_videotoolbox"):
+		h264 = []string{"-c:v", "h264_videotoolbox", "-b:v", "2M"}
+		hevc = []string{"-c:v", "hevc_videotoolbox", "-profile:v", "main10", "-b:v", "2M"}
+		software = false
+	default:
+		ffmpegtest.Unusable(t, "this ffmpeg has no H.264 encoder to make the files with")
+	}
+	type file struct {
+		name string
+		args []string
+	}
+	// The tags are set on the frames rather than asked of the encoder. A
+	// newer ffmpeg, ours among them, takes an encoder's tags from its
+	// frames and drops -color_trc and the like, so a file made with those
+	// came out with no tags at all from our own ffmpeg, 9, and only the
+	// ffmpeg of a Linux distribution, 6, wrote them.
+	tags := func(space, primaries, transfer, rng string) []string {
+		return []string{"-vf", fmt.Sprintf("setparams=colorspace=%s:color_primaries=%s:color_trc=%s:range=%s", space, primaries, transfer, rng)}
+	}
+	x264 := append(append([]string{}, h264...), "-pix_fmt", "yuv420p")
+	files := []file{
+		{"BT.601 video range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "tv")...)},
+		{"BT.601 full range", append(append([]string{}, x264...), tags("smpte170m", "smpte170m", "smpte170m", "pc")...)},
+		{"BT.709 video range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "tv")...)},
+		{"BT.709 full range", append(append([]string{}, x264...), tags("bt709", "bt709", "bt709", "pc")...)},
+		{"no tags", x264},
+	}
+	if has("libx265") || !software && has("hevc_videotoolbox") {
+		tenBits := "yuv420p10le"
+		if !software {
+			tenBits = "p010le"
+		}
+		x265 := append(append([]string{}, hevc...), "-pix_fmt", tenBits, "-tag:v", "hvc1")
+		files = append(files,
+			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
+			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
+			file{"BT.2020 full range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "pc")...)},
+			file{"HLG, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "arib-std-b67", "tv")...)},
+			file{"PQ, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "smpte2084", "tv")...)},
+		)
+	}
+	const w, h = 64, 36
+	dir := t.TempDir()
+	got := map[string][]byte{}
+	for i, f := range files {
+		path := filepath.Join(dir, fmt.Sprintf("%d.mp4", i))
+		// The same numbers in every file, only the tags differ, so what
+		// tells two files' colours apart is what the tags say.
+		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=1"}, f.args...)
+		if out, err := exec.Command("ffmpeg", append(args, path)...).CombinedOutput(); err != nil {
+			if strings.Contains(f.name, "10 bits") {
+				// A virtual Mac may have no HEVC encoder that takes 10 bits.
+				t.Logf("no file %s here: %s", f.name, out)
+				continue
+			}
+			ffmpegtest.Unusable(t, "ffmpeg could not make the file %s: %s %s", f.name, err, out)
+		}
+		dec := NewEpisodeFrames(program, path)
+		var frame []byte
+		err := dec.Stream(context.Background(), 0, w, h, func(_ float64, data []byte) error {
+			frame = data
+			return errStop
+		})
+		light := dec.Light()
+		dec.Close()
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatalf("%s: %v", f.name, err)
+		}
+		// HDR stays in the file's own curve with 10 bits a colour, and the
+		// decoder says which curve, so the page can turn it into light.
+		wantLight := framewire.SDR
+		switch {
+		case strings.HasPrefix(f.name, "HLG"):
+			wantLight = framewire.HLG
+		case strings.HasPrefix(f.name, "PQ"):
+			wantLight = framewire.PQ
+		}
+		if light != wantLight {
+			t.Errorf("%s: the decoder says its light is %q, want %q", f.name, light, wantLight)
+		}
+		// The ffmpeg program decodes the way the decoder does: on the Mac's
+		// graphics chip where it has one, with the frame brought out as it
+		// is. On the processor as well, the way the render decodes, which
+		// is said and not held to here: on the Mac's runner the two came
+		// out up to 22 apart at the edges of colours, plan row 2.167.
+		convert := func(hw bool) []byte {
+			t.Helper()
+			args := []string{"-loglevel", "error"}
+			if hw {
+				args = append(args, "-hwaccel", "videotoolbox")
+			}
+			args = append(args, "-i", path, "-frames:v", "1",
+				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-")
+			out, err := exec.Command("ffmpeg", args...).Output()
+			if err != nil {
+				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
+			}
+			return out
+		}
+		chip := runtime.GOOS == "darwin" && has("hevc_videotoolbox")
+		want := convert(chip)
+		if chip {
+			cpu := convert(false)
+			t.Logf("%s: the chip's frame and the processor's are %.2f apart on average", f.name, meanDiff(want, cpu))
+		}
+		if len(frame) != w*h*4 || len(want) != w*h*4 {
+			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
+		}
+		// Value by value, red, green and blue. The ffmpeg program in a test
+		// may be another version than the one the decoder is built on, and
+		// two versions of its scaler can round a value one apart, in 8 bits
+		// or in 10.
+		mine, theirs := colours(frame), colours(want)
+		most, at := 0, 0
+		for i := range mine {
+			d := mine[i] - theirs[i]
+			if d < 0 {
+				d = -d
+			}
+			if d > most {
+				most, at = d, i/3
+			}
+		}
+		// 2 in 8 bits is 8 in 10.
+		if most > 8 {
+			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v, in 10 bits", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3])
+		}
+		got[f.name] = frame
+	}
+	differ := func(a, b string) {
+		t.Helper()
+		if got[a] == nil || got[b] == nil {
+			return
+		}
+		if d := meanDiff(got[a], got[b]); d < 1 {
+			t.Errorf("%s and %s come out in the same colours, %.2f apart on average: a tag was not read", a, b, d)
+		}
+	}
+	differ("BT.601 video range", "BT.709 video range")
+	differ("BT.709 video range", "BT.709 full range")
+	differ("BT.709 video range, 10 bits", "BT.2020 video range, 10 bits")
+}
+
+// colours are the red, green and blue of every pixel of a frame made by
+// framewire.Picture, 10 bits each.
+func colours(frame []byte) []int {
+	out := make([]int, 0, len(frame)/4*3)
+	for p := 0; p+4 <= len(frame); p += 4 {
+		v := binary.LittleEndian.Uint32(frame[p:])
+		out = append(out, int(v&1023), int(v>>10&1023), int(v>>20&1023))
+	}
+	return out
 }

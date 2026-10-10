@@ -448,7 +448,7 @@ and keep its crop frame and its captions in the piece after it. Against
 main it fails the same way, at 6.8 s.
 
 `loop switched off near the end stops the play at the clip's end` is
-Tim's test of 2.178. It plays the clip, presses L to loop it, and L again
+Tim's test of 2.182. It plays the clip, presses L to loop it, and L again
 two seconds before the clip's end, once the play has worked out the next
 time through. The play has to stop within 400 ms of the playhead reaching
 the clip's end, and no frame from before the clip's last second may be

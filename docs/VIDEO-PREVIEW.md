@@ -5,7 +5,8 @@ and its sound from here on, and what is removed on the way. Decided with
 Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
 and 2 are built, every file's picture through ffmpeg and the episode's
 decoder for it, in one pull request, #157, as Tim asked. Step 3, one
-engine, is built in #162 and tried on Tim's Mac. Step 4 is next. What is
+engine, is built in #162 and tried on Tim's Mac. Step 4 is being built
+in #168. What is
 not built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
@@ -238,6 +239,35 @@ preview, the same on every system. The short itself is never changed by
 this choice: its numbers are the file's, and each phone shows them its
 own way.
 
+**Tim picked QuickTime's look**, on 9 October 2026, from start.mp4 at
+the same frame in the video preview and in QuickTime, side by side: he
+found QuickTime's blacks deeper and the video preview a little pale.
+His screenshot of the two says what the difference is. Black is the
+same in both and so is white, and QuickTime shows the middle tones
+brighter: a grey the video preview showed as 22 QuickTime showed as 25,
+46 as 55 and 81 as 93. The brighter middle against the same black is
+what reads as deeper. The curve fitted to it is a value v of 0 to 1
+shown as v to the power of 0.98 - 0.31 v, never below 0.891, which is
+1.961 over 2.2, the Mac's curve for video over the screen's. It meets
+the measured points within 2 and keeps black and white where they are.
+It is `lift` in `frontend/src/lib/frames/light.ts`, put on in floats on
+the GPU and in the same numbers on the processor for a 2D canvas. It is
+the same on every system, so
+on Windows and Linux the video preview looks as QuickTime does on a Mac,
+a little brighter in the middle than most players there show the same
+file. Above the brightest grey of start.mp4, 93, the curve is not
+measured.
+
+**Every frame comes in 10 bits**, standard video too. Tim saw banding
+in the dark of start.mp4 with the look first made in ffmpeg, in 8 bits:
+the curtain in stripes and a block on the black shirt, where QuickTime
+showed smooth gradients. Video range spreads 220 values over 256, and the
+look lifts the shadows further, so in 8 bits a value of the file became
+a step of 3 in the dark, with the values between left out. In 10 bits
+from `framewire.Picture` every value of the file keeps a colour of its
+own, and the look on the GPU in floats makes each a step of about 0.27
+of 255 there. The frames are no bigger, 4 bytes a pixel either way.
+
 ## HDR
 
 **What it is.** Standard video, SDR, is made for a screen of about 100
@@ -247,11 +277,12 @@ with 10-bit colour, HLG and Dolby Vision on top. A file says it is HDR in
 its tags: a transfer of `arib-std-b67` is HLG, `smpte2084` is PQ. The
 engine's probe already reads these tags.
 
-**What happens today.** Nothing is decided. The render copies the file's
-colour tags onto a short encoded in H.264 with 8-bit colour, so a short
-made from iPhone footage comes out as HDR-tagged video with too few bits
-for HDR, and players show it in different ways. The video preview shows
-whatever the decoder in use makes of it.
+**What happened before.** The render copied the file's colour tags onto
+a short encoded in H.264 with 8-bit colour, so a short made from iPhone
+footage came out as HDR-tagged video with too few bits for HDR, and
+players showed it in different ways. With our own ffmpeg it lost the tags
+as well: a newer ffmpeg takes an encoder's tags from its frames and drops
+`-color_trc` and the like.
 
 ### The short: HDR in, HDR out
 
@@ -260,10 +291,23 @@ episode makes an HDR short. That is the rule of no colour changes.
 
 - The short is HEVC with 10-bit colour and the episode's own transfer,
   primaries and matrix, HLG stays HLG and PQ stays PQ. Instagram and
-  YouTube take HDR from an iPhone in this form.
+  YouTube take HDR from an iPhone in this form. **This is done**:
+  `hevc_videotoolbox` on the Mac and `libx265` where an ffmpeg has it,
+  tagged `hvc1`, `HDREncoder` in `engine/encode.go`. The episode's colour
+  tags are put on every frame of every short, standard video too, with
+  `setparams`, so the encoder takes them, `TestAnHDREpisodeMakesAnHDRShort`.
 - The captions are drawn at the reference white for graphics in HDR,
   BT.2408, 203 nits, so the caption colour looks on an HDR screen the way
-  it was chosen, and not glaring.
+  it was chosen, and not glaring. **This is done**: each colour of the
+  caption style is taken as sRGB, turned into light with white at 203
+  nits, into BT.2020's colours and into the short's own curve, which puts
+  white at 75 percent of HLG's signal and 58 percent of PQ's,
+  `engine/hdrcolour.go`. The caption file says `None` for its matrix, so
+  libass draws in the frame's own range and matrix, BT.2020's, and a
+  white caption stays white. A standard short keeps `TV.709`.
+  `TestTheCaptionsOfAnHDRShortAreAtTheReferenceWhite` and
+  `TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite`, which reads the
+  burned white back from the frame.
 - What the encoder for 10-bit HEVC is on Windows and Linux, where our
   ffmpeg has no x265 because x265 is GPL, is a question for
   [PACKAGING.md](PACKAGING.md). On the Mac it is VideoToolbox.
@@ -299,11 +343,18 @@ not yet for a canvas, as far as can be found:
 So the video preview draws on a WebGPU canvas, for every file, and asks
 for the extended mode:
 
-- ffmpeg converts each frame to half floats in which 1.0 is the reference
-  white of BT.2408 and the highlights go above it, and the interface
-  hands them to the canvas as they come. The colour is still ffmpeg's.
-  The conversion of HLG and PQ needs zimg in our build of ffmpeg, which
-  has a permissive licence.
+- ffmpeg turns each frame of HDR into red, green and blue with 10 bits
+  each, from the file's own range and matrix, and leaves it in the file's
+  curve, PQ or HLG, with BT.2020's colours. That is 4 bytes a pixel, as
+  much as standard video, and 10 bits is what an HDR file has. The GPU
+  turns it into light by BT.2100's formulas, in which 1.0 is the
+  reference white of BT.2408, 203 nits, the white of the interface, and
+  the highlights go above it, in BT.709's colours, `lib/frames/light.ts`.
+  This was to be half floats made by ffmpeg with zimg, and is not: our
+  ffmpeg's scaler makes no half floats, and the formulas are short and
+  fixed. So the build needs no zimg. HDR is known by the file's transfer
+  tag, `framewire.LightOf`, and every pull of its frames says so,
+  `X-Frames-Light`.
 - Where the webview gives the extended mode and the screen is HDR, the
   video preview shows the HDR short as it is.
 - Where it does not, the system squeezes everything above white, and the
@@ -367,6 +418,50 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    picks the look. HDR in both: the test of the extended canvas on Tim's
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
+   The frames are colours now: the episode's decoder scales each frame
+   and turns it into red, green and blue from the file's range and
+   matrix, first in 8 bits and now in 10, see Colour, and the interface
+   draws them with no colour space of its own. `TestTheEpisodesDecoderMakesFFmpegsColours`
+   holds every value to within 2 of the ffmpeg program's own conversion
+   of the same frame, on files tagged BT.601, BT.709 and BT.2020, in
+   video and full range, in 8 and 10 bits, and on a file with no tags,
+   and checks that the same numbers tagged otherwise come out otherwise.
+   A frame is 4 bytes a pixel where I420 was 1.5, about 110 MB a second
+   at 1280 by 720 and 30 frames a second.
+   The test of the extended canvas was Colour Test in the Help menu, in
+   the pull request of this step only, and it was removed before the
+   merge: patches of 1, 2, 4 and 8 times
+   white on a WebGPU canvas in the extended mode, beside the app's own
+   white, with whether the webview has WebGPU, whether it kept the
+   extended mode and whether it says the screen is HDR. In the cloud's
+   Chromium it has WebGPU and keeps the mode. On Tim's M2 Max, on 9 October
+   2026, it passed: the webview has WebGPU, keeps the extended mode and
+   says the screen is HDR. The app's white and 1 × white looked the same,
+   both greyer than usual, because macOS holds ordinary white back once
+   HDR is on the screen. 2 × was brighter, and 4 × and 8 × were the
+   brightest the screen could give at half brightness. With the app in
+   the background the headroom shrank and 2, 4 and 8 looked alike. A
+   screenshot cannot hold HDR and shows none of this. So WebKit gives a
+   canvas HDR today, and the video preview takes the WebGPU canvas.
+   HDR is drawn as HDR now, see The video preview under HDR. The walk
+   `the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light`
+   holds what the GPU gives the canvas to `light.ts` worked out on the
+   processor, and to the anchors: HDR's reference white is the app's
+   white, PQ at 1000 nits is 1.99 and a green of BT.2020 lies outside
+   BT.709. `TestTheEpisodesDecoderMakesFFmpegsColours` holds files tagged
+   HLG and PQ to the ffmpeg program's conversion like the rest, in 10
+   bits. Where there is no WebGPU, and for a colour taken from the
+   picture, HDR is cut at white, as an SDR screen shows it.
+   The video preview draws on that canvas now, `lib/frames/screen.ts`,
+   for every file, where the webview has WebGPU, and on a 2D canvas where
+   it has none. A frame is the app's own, `lib/frames/picture.ts`, its
+   bytes as they came from the Go side, and no longer a WebCodecs
+   `VideoFrame`: a VideoFrame holds nothing brighter than white, and
+   handing one to WebGPU took Chromium's GPU process down in the cloud,
+   where the bytes written as they are draw on every system. Headless
+   Chromium gives nothing back from a WebGPU canvas, so the walks, which
+   read the frame on screen from the canvas, draw the video preview on a
+   2D canvas and check what the GPU draws on its own.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.
@@ -387,8 +482,8 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
   is code we keep, about 700 lines, and its Go side, `engine.EpisodeFrames`
   and the protocol, about 450 more. It is still ffmpeg's decoding, only
   kept running.
-- **Possibly a little more contrast in the shadows than QuickTime**, if
-  Tim picks the standard look in the colour test.
+- **A video preview a little brighter in the middle tones than most
+  players on Windows and Linux**, because Tim picked QuickTime's look.
 
 ## What established players do
 

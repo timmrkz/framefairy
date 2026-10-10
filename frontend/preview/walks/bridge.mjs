@@ -55,8 +55,16 @@ export async function open(url) {
   // The episode the way the bridge found it, whatever the walk before did.
   const reset = await fetch(new URL("/reset", url), { method: "POST" });
   if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
-  const browser = await chromium.launch({ executablePath: browserPath() });
+  // WebGPU on, which headless Chromium on Linux only gives when asked, for
+  // the step that checks what the GPU draws, ["screen light"]. The video
+  // preview itself draws on a 2D canvas here, __flatScreen, because
+  // headless Chromium gives nothing back from a WebGPU canvas, and the
+  // walks read the frame on screen from the canvas. See screen.ts.
+  const browser = await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  await page.addInitScript(() => {
+    window.__flatScreen = true;
+  });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto(url);
@@ -269,9 +277,18 @@ async function reader(page) {
     window.__pictured = () => {
       const c = document.querySelector(".screen canvas");
       if (!c || !c.width || !c.height) return -1;
-      const g = c.getContext("2d");
-      const row = g.getImageData(0, Math.floor((c.height * strip) / 2), c.width, 1).data;
-      const grey = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height * 0.6), 1, 1).data[0];
+      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
+      // of it is copied to a 2D canvas to be read.
+      const grab = (x, y, w, h) => {
+        const s = document.createElement("canvas");
+        s.width = w;
+        s.height = h;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, x, y, w, h, 0, 0, w, h);
+        return t.getImageData(0, 0, w, h).data;
+      };
+      const row = grab(0, Math.floor((c.height * strip) / 2), c.width, 1);
+      const grey = grab(Math.floor(c.width / 2), Math.floor(c.height * 0.6), 1, 1)[0];
       if (grey < 6) return -1;
       let n = 0;
       for (let b = 0; b < bits; b++) {
@@ -523,7 +540,14 @@ export async function cropFrame(page) {
     // A pixel in from either side, past the line the frame is drawn with.
     const x0 = Math.ceil((left + 0.01) * canvas.width);
     const x1 = Math.floor((left + width - 0.01) * canvas.width);
-    const pixels = canvas.getContext("2d").getImageData(x0, 0, x1 - x0, canvas.height).data;
+    // The canvas may be a WebGPU canvas, which has no 2D context, so the
+    // piece is copied to a 2D canvas to be read.
+    const s = document.createElement("canvas");
+    s.width = x1 - x0;
+    s.height = canvas.height;
+    const t = s.getContext("2d", { willReadFrequently: true });
+    t.drawImage(canvas, x0, 0, x1 - x0, canvas.height, 0, 0, x1 - x0, canvas.height);
+    const pixels = t.getImageData(0, 0, x1 - x0, canvas.height).data;
     return { left, width, w: x1 - x0, h: canvas.height, pixels: [...pixels] };
   });
   if (!got) return null;
@@ -596,13 +620,22 @@ export async function filmedOnScreen(page) {
     window.__filmed = () => {
       const c = document.querySelector(".screen canvas");
       if (!c || !c.width || !c.height) return -1;
-      const g = c.getContext("2d");
+      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
+      // of it is copied to a 2D canvas to be read.
+      const grab = (x, y, w, h) => {
+        const s = document.createElement("canvas");
+        s.width = w;
+        s.height = h;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, x, y, w, h, 0, 0, w, h);
+        return t.getImageData(0, 0, w, h).data;
+      };
       const x = Math.floor(c.width / 4);
       const w = Math.max(1, Math.floor(c.width / 2));
       let n = 0;
       for (let b = 0; b < bits; b++) {
         const y = Math.floor((((b + 0.5) * band) / 180) * c.height);
-        const row = g.getImageData(x, y, w, 1).data;
+        const row = grab(x, y, w, 1);
         let sum = 0;
         for (let i = 0; i < row.length; i += 4) sum += row[i];
         n = n * 2 + (sum / (row.length / 4) > 110 ? 1 : 0);

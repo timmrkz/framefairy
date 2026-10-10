@@ -476,13 +476,19 @@ file's index and decoding from the key frame before:
 - The queue's second decoder asks for the piece after a cut while the
   first plays, so its stream is open before it is needed.
 - On the Mac the graphics chip decodes, and the frame is made smaller
-  and 8-bit on the processor by the one chain every system uses, see
+  and turned into 10-bit colours on the processor by the one chain every
+  system uses, see
   [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md).
 - A pull is read in a Worker, `lib/frames/pull.worker.ts`, each frame
-  straight into a buffer of its own as it arrives and handed to its
-  `VideoFrame` without another copy, so nothing on the page waits for it.
-  Where a Worker cannot reach the Go side or hand a frame back, the same
-  code runs on the page.
+  straight into a buffer of its own as it arrives and kept as it is, the
+  app's own frame, `lib/frames/picture.ts`, so nothing on the page waits
+  for it. Where a Worker cannot reach the Go side, the same code runs on
+  the page.
+- The canvas is a WebGPU canvas in the extended mode wherever the webview
+  has WebGPU, so the video preview can show HDR, and a 2D canvas where it
+  has none, `lib/frames/screen.ts`. A frame's bytes are written to the
+  GPU as they are, and the look of standard video, or the light of HDR,
+  is put on there in floats, `lib/frames/light.ts`.
 
 Measured on the cloud machine, four cores and no system decoder, with the
 bridge's HEVC 10-bit episode at 320 by 180 in Chromium: a click on the
