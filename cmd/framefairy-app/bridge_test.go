@@ -750,6 +750,26 @@ func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 	return nil
 }
 
+// makeTurnedEpisode is a filmed episode the way a phone that recorded it
+// upright stores it: the picture lying on its side and a display matrix
+// that says to turn it a quarter to the right to stand it up. Standing up,
+// the frame number's bands run down its right side, and rotated a quarter
+// to the left in the app they run across its top again, where a short of
+// it is read. Plan row 3.25.
+func makeTurnedEpisode(path string, seconds int, rate string) error {
+	lying := path + ".lying.mp4"
+	defer os.Remove(lying)
+	if err := makeFilmedEpisode(lying, seconds, rate, ""); err != nil {
+		return err
+	}
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", "270",
+		"-i", lying, "-c", "copy", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("turning %s: %s %s", filepath.Base(path), err, out)
+	}
+	return nil
+}
+
 // frameRate is a frame rate as ffmpeg takes it, a whole number or one
 // whole number over another, and nothing else, since it goes into a
 // filter.
@@ -769,7 +789,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake boo
 	if rate != "" && !frameRate.MatchString(rate) {
 		return "", fmt.Errorf("%q is no frame rate", rate)
 	}
-	if timing != "" && timing != "uneven" && timing != "late" {
+	if timing != "" && timing != "uneven" && timing != "late" && timing != "turned" {
 		return "", fmt.Errorf("%q is no timing of frames", timing)
 	}
 	at, err := strconv.ParseFloat(switchAt, 64)
@@ -787,7 +807,9 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake boo
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	if rate != "" {
+	if rate != "" && timing == "turned" {
+		err = makeTurnedEpisode(path, n, rate)
+	} else if rate != "" {
 		err = makeFilmedEpisode(path, n, rate, timing)
 	} else {
 		err = makeEpisode(path, n, at, hevc)

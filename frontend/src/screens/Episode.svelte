@@ -80,6 +80,7 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { said } from "../lib/said";
+  import { rotated } from "../lib/rotate";
 
   let {
     path,
@@ -1325,6 +1326,16 @@
     looping = !looping;
   }
 
+  function rotateKey(event: KeyboardEvent) {
+    if (event.key !== "r" && event.key !== "R") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    if (keysElsewhere() || asleep(root)) return;
+    if (!current) return;
+    event.preventDefault();
+    void rotatePart();
+  }
+
   function thumbnailKey(event: KeyboardEvent) {
     if (event.key !== "t" && event.key !== "T") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -1877,6 +1888,27 @@
     }
   }
 
+  // R and the Rotate button: the part of the clip between two cuts that
+  // the playhead stands in turns a quarter to the left, the way Preview's
+  // Rotate Left does, for a phone that was turned while it recorded. It
+  // turns in the video preview in the frame it is pressed in, by the
+  // engine's own rule in lib/rotate.ts, and the clip the engine answers
+  // with takes its place. Plan row 3.25.
+  async function rotatePart() {
+    if (!current || renderingCurrent || !inShort || !source) return;
+    problem = "";
+    const clip = current;
+    const at = time;
+    clips = clips.map((c) => (c.key === clip.key ? rotated(c, source!, at) : c));
+    try {
+      const updated = await api.rotatePart(path, clip.plan, clip.id, at);
+      putClip(updated);
+    } catch (err) {
+      problem = errorText(err);
+      clips = clips.map((c) => (c.key === clip.key ? clip : c));
+    }
+  }
+
   async function resetCrop(clip: ClipEntry, at: number) {
     problem = "";
     try {
@@ -2305,11 +2337,13 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", rotateKey);
       window.removeEventListener("keydown", loopKey);
       window.removeEventListener("keydown", inOutKey);
     };
@@ -2917,6 +2951,20 @@
                 : "Put the playhead in the clip to make a thumbnail of the frame there"}
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
+          </button>
+          <!-- Rotate Left, the way Preview and Photos rotate: the part of
+               the clip between two cuts the playhead stands in, a quarter
+               turn to the left a click, four clicks round. -->
+          <button
+            class="glyph"
+            aria-label="Rotate this part of the clip to the left"
+            disabled={renderingCurrent || !inShort}
+            onclick={rotatePart}
+            title={inShort
+              ? "Rotate the part of the clip between two cuts under the playhead a quarter turn to the left. R does the same"
+              : "Put the playhead in the clip to rotate the part of it there"}
+          >
+            <Icon name="rotate" />
           </button>
         {/if}
         <!-- In and Out, the way every editor marks a clip, with the keys of

@@ -1,7 +1,8 @@
 # Rotating a part of a clip, and a crop that follows
 
-A proposal, not yet built. Plan rows 3.25 to 3.28 and 2.190 in
-[GUI-PLAN.md](GUI-PLAN.md).
+Plan rows 3.25 to 3.28 and 2.190 in [GUI-PLAN.md](GUI-PLAN.md). Rotate,
+3.25, is built, see Rotate in [APP.md](APP.md). The crop that follows is
+still a proposal.
 
 ## What Tim wants to fix
 
@@ -60,7 +61,9 @@ between a cut and an edge of the clip, is a **part** of the clip below.
 - **Undo** takes it back like any other edit, and so do three more
   presses.
 - A rotated part shows a small rotate mark at its start on the clip
-  timeline, so a clip that holds a rotation says so without playing it.
+  timeline, in the top left corner of the part, clear of the thumbnails
+  and crop marks along the foot, so a clip that holds a rotation says so
+  without playing it.
 - Nothing about it is a setting, and nothing is on screen until a part
   is rotated. A video that was never rotated looks and works as it does
   today.

@@ -198,6 +198,9 @@ export interface Segment {
   end: number;
   cropX: number | null;
   moved: boolean;
+  // How far a person rotated the piece, in degrees to the left: 0, 90, 180
+  // or 270. Its crop is on the picture rotated, see lib/rotate.ts.
+  rotate?: number;
 }
 
 export interface ClipView {
@@ -295,6 +298,9 @@ export interface SourceView {
   height: number;
   cropWidth: number;
   cropHeight: number;
+  // How wide the crop is on the picture rotated a quarter turn, where its
+  // width and height have swapped.
+  turnedCropWidth?: number;
   // The episode's frame rate. One step of the arrow keys on the clip
   // timeline is one frame of it.
   fps: number;
@@ -701,6 +707,8 @@ export const api = {
     call<ClipEntry>("SetCrop", path, plan, clip, at, left),
   resetCrop: (path: string, plan: string, clip: string, at: number) =>
     call<ClipEntry>("ResetCrop", path, plan, clip, at),
+  rotatePart: (path: string, plan: string, clip: string, at: number) =>
+    call<ClipEntry>("RotatePart", path, plan, clip, at),
   setCaptionStyle: (path: string, plan: string, font: string, size: number) =>
     call<void>("SetCaptionStyle", path, plan, font, size),
   // The colour of the caption text and of the box behind it, as #rrggbb,

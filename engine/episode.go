@@ -400,6 +400,9 @@ type SegmentView struct {
 	CropX *int    `json:"cropX"`
 	// Moved means the crop was placed by hand.
 	Moved bool `json:"moved"`
+	// Rotate is how far a person rotated the piece, in degrees to the left,
+	// and the crop is on the picture rotated, see Segment.Rotate.
+	Rotate int `json:"rotate"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -482,7 +485,7 @@ func (s PlanSummary) View() *PlanView {
 			}
 		}
 		for _, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
+			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate})
 		}
 		v.Rendered = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {

@@ -17,6 +17,10 @@ type SourceView struct {
 	Height     int     `json:"height"`
 	CropWidth  int     `json:"cropWidth"`
 	CropHeight int     `json:"cropHeight"`
+	// TurnedCropWidth is how wide the crop is on the picture rotated a
+	// quarter turn, where its width and height have swapped: the crop of a
+	// piece a person rotated, see engine.Segment.Rotate.
+	TurnedCropWidth int `json:"turnedCropWidth"`
 	// FPS is the episode's frame rate, which is what one step of the arrow
 	// keys on the clip timeline is worth.
 	FPS float64 `json:"fps"`
@@ -61,8 +65,9 @@ func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error
 	}
 	o := s.store.Settings().options()
 	cw, ch := engine.CropWindow(info, o.Width, o.Height)
+	tw, _ := engine.CropWindow(info.Rotated(90), o.Width, o.Height)
 	return SourceView{Duration: info.Duration, Width: info.Width, Height: info.Height,
-		CropWidth: cw, CropHeight: ch, FPS: info.FPS(), VideoStart: info.VideoStart}, nil
+		CropWidth: cw, CropHeight: ch, TurnedCropWidth: tw, FPS: info.FPS(), VideoStart: info.VideoStart}, nil
 }
 
 // frames are an episode's frames, the grid a gesture puts its edges on,

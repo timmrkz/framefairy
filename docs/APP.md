@@ -1818,6 +1818,34 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - A trim or a cut that leaves a thumbnail outside the clip hides it. It
   comes back with the part it was in.
 
+### Rotate
+
+For a phone that was turned while it recorded, so a part of the video
+lies on its side. Plan row 3.25, the design is in
+[ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
+
+- **The Rotate button**, beside the thumbnail button under the clip
+  timeline, rotates the part of the clip the playhead stands in a quarter
+  turn to the left, the way Rotate Left in Preview and Photos does. **R**
+  does the same. A part is what plays straight on between two cuts, or
+  between a cut and an edge of the clip, so the spin of the phone is cut
+  out with a double-click first, and the part after it is rotated. Four
+  presses bring a part back.
+- **The video preview rotates the picture at once**, in the frame the key
+  is pressed in. A part rotated a quarter shows the picture the other way
+  up, as big as it fits in the video preview, and the crop frame and the
+  captions stand on it rotated.
+- **The crop of a rotated part starts in the middle** of the picture
+  rotated, and is dragged like any other. Rotated back all the way, the
+  part has the crop its shot was found with again.
+- **A rotated part shows the Rotate icon** at its start, in the top left
+  corner of the part on the clip timeline. It takes no click.
+- **Undo** takes a rotation back like any other edit.
+- **A phone's video stands up by itself.** A phone that records upright
+  stores the picture lying down and says in the file how to stand it up.
+  The app, the video preview and the short all stand it up, so Rotate is
+  only for a turn the phone did not notice.
+
 ### Caption timing
 
 A caption appears when its first word is said and goes when the next one

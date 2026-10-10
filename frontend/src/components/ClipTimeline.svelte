@@ -45,6 +45,7 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
+  import { partOf } from "../lib/rotate";
 
   let {
     path,
@@ -1358,6 +1359,14 @@
       shown: thumbDrag && thumbDrag.from === at ? thumbDrag.to : at,
     })),
   );
+  // Where each rotated part of the clip starts, and how far it is rotated:
+  // the first piece of every part with no cut inside it, see lib/rotate.ts.
+  const rotatedParts = $derived(
+    segments
+      .map((p, i) => ({ at: p.start, rotate: p.rotate ?? 0, starts: i === partOf(segments, i)[0] }))
+      .filter((r) => r.starts && r.rotate !== 0),
+  );
+
   // The frame the playhead is in, which is how a mark knows it is the one
   // on screen. A state, never a distance.
   const playFrame = $derived(frameAt(time, frame, frameStart));
@@ -1699,6 +1708,15 @@
             onpointerdown={(e) => grabThumb(m.at, e)}
           >
             <Icon name="thumbnail" size={18} />
+          </div>
+        {/each}
+        <!-- A rotated part says so at its start, in the top left corner of
+             its first piece, so a clip that holds a rotation shows it
+             without playing it. It takes no click: R and the Rotate button
+             are where it is changed. Plan row 3.25. -->
+        {#each rotatedParts as r (r.at)}
+          <div class="turnmark" style="left: {x(r.at)}%" data-rotate={r.rotate} aria-hidden="true">
+            <Icon name="rotate" size={14} />
           </div>
         {/each}
       {/if}
@@ -2070,6 +2088,19 @@
   .thumb.active {
     background: var(--accent);
     color: #fff;
+  }
+
+  /* The mark at the start of a rotated part: the Rotate button's icon,
+     small, in the top left corner of the part in the app's colour. */
+  .turnmark {
+    position: absolute;
+    top: 3px;
+    margin-left: 3px;
+    width: 14px;
+    height: 14px;
+    color: var(--accent-hi);
+    pointer-events: none;
+    z-index: 5;
   }
 
   /* The playhead. */
