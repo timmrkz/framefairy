@@ -433,6 +433,17 @@ with its newest build, so one fetch is the whole check:
   because GitHub runs nothing for a pull request that no longer merges
   into main: #24 was closed in that state, the close was never seen, and
   the app went on offering it.
+- **A pull request in conflict says so.** One that no longer merges into
+  main keeps its entry, because its build is of the branch as it is and
+  can still be tried, and the list marks it with `"conflict": true`. The
+  Updates page then names it **Pull request #20, conflicts with main**,
+  the way it names a closed one, in the list and on the trigger when it is
+  followed. GitHub runs no CI on such a pull request, so the mark says its
+  build was not tested. The workflow asks GitHub whether each pull request
+  merges every time it writes the list, which is on every build, main's
+  included, so a pull request main moved away from is marked once main's
+  build is published. While GitHub has not worked it out yet, nothing is
+  marked until the next writing. Like `newest`, it is not signed.
 - **Nothing in it is trusted.** Anybody on the way could change the file.
   What makes a build safe is two signatures, made with the development key
   and checked against the public half built into the app. The

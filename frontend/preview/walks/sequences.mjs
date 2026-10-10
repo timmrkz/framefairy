@@ -110,7 +110,8 @@
 //                      as how says: from the channel how.from, or made on
 //                      the Mac without it, with how.stored picked by a
 //                      build before it, and the channels how.list on the
-//                      list, each with a newer build
+//                      list, each with a newer build, and those in
+//                      how.conflict said to no longer merge into main
 //   ["follow", name]   picks the channel of this name in the Updates
 //                      page's list, and reads the page in the next frame
 //   ["words again"]    the speech stand-in says its sentences again from
@@ -782,6 +783,19 @@ export const sequences = [
       ["status", "Pull request #143 is closed", "Nothing downloads until you choose what to follow next."],
       ["channel", "Pull request #143, closed"],
       ["choices", ["Branch main", "Pull request #143, closed"], "Pull request #143, closed"],
+    ],
+  },
+  {
+    // Tim asked for a pull request in conflict with main to be in the list
+    // and say so, the way a closed one does. Its build is of the branch as
+    // it is, so it can still be followed and installed.
+    name: "a pull request in conflict with main says so in the list and can still be followed",
+    steps: [
+      ["updates", { from: "main", list: "main,pr-20,pr-21", conflict: "pr-20" }],
+      ["choices", ["Branch main", "Pull request #21", "Pull request #20, conflicts with main"], "Branch main"],
+      ["follow", "Pull request #20, conflicts with main"],
+      ["status", "A newer build is ready", "Relaunch to finish updating"],
+      ["channel", "Pull request #20, conflicts with main"],
     ],
   },
 ];
@@ -2099,7 +2113,12 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await control(url, "/speech?ms=0&from=0");
         break;
       case "updates": {
-        const q = new URLSearchParams({ from: arg.from ?? "", stored: arg.stored ?? "", list: arg.list ?? "" });
+        const q = new URLSearchParams({
+          from: arg.from ?? "",
+          stored: arg.stored ?? "",
+          list: arg.list ?? "",
+          conflict: arg.conflict ?? "",
+        });
         await control(url, `/updates?${q}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Updates", { exact: true }).first().click());
         await page.locator("#channel").waitFor();

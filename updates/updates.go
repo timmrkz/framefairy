@@ -105,6 +105,12 @@ type Build struct {
 	// it as current. Empty when the build is the newest. It is not signed,
 	// like everything else in the entry but the zip.
 	Newest string `json:"newest,omitempty"`
+	// Conflict is true when the channel is a pull request that no longer
+	// merges into main. Its build is of the branch as it is, so it can
+	// still be installed and tried, and the app says so beside its name.
+	// GitHub runs no CI on such a pull request, so a build that works is
+	// not yet one that was tested. Not signed either.
+	Conflict bool `json:"conflict,omitempty"`
 }
 
 // List is the channel list.

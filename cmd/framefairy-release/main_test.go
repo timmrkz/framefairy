@@ -147,7 +147,7 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 
 	out := filepath.Join(t.TempDir(), "channels.json")
-	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", good, pr, forgedPath}); err != nil {
+	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", "-conflict", "pr-58", good, pr, forgedPath}); err != nil {
 		t.Fatal(err)
 	}
 	written, err := os.ReadFile(out)
@@ -167,6 +167,14 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 	if b, _ := l.Find("pr-58"); b.Newest != "0123456789ab" {
 		t.Errorf("pr-58's newest commit is %q", b.Newest)
+	}
+	// A pull request that no longer merges into main is still listed, and
+	// says so. Main never does.
+	if b, _ := l.Find("pr-58"); !b.Conflict {
+		t.Error("pr-58 no longer merges into main, and the list does not say so")
+	}
+	if b, _ := l.Find("main"); b.Conflict {
+		t.Error("main is said to conflict with itself")
 	}
 	// When it was written, so the app can tell the newer of the list's two
 	// copies.

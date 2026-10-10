@@ -50,6 +50,8 @@ type channelServer struct {
 	fetched map[string]int
 	// newest is a channel's commit still to be built, as the list says it.
 	newest map[string]string
+	// conflict is a pull request the list says no longer merges into main.
+	conflict map[string]bool
 }
 
 func newChannelServer(t *testing.T) *channelServer {
@@ -103,7 +105,7 @@ func (cs *channelServer) publish(t *testing.T, builds ...[3]string) {
 			Channel: channel, Name: "#" + channel, Version: version, Commit: "abc1234",
 			URL: cs.srv.URL + path, Size: size, SHA256: hex.EncodeToString(digest),
 			Signature: updates.Sign(cs.key, digest), Published: time.Now(),
-			Newest: cs.newest[channel],
+			Newest: cs.newest[channel], Conflict: cs.conflict[channel],
 		}
 		entry.Claim = updates.SignClaim(cs.key, entry)
 		l.Channels = append(l.Channels, entry)
@@ -317,6 +319,29 @@ func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
 	c.check()
 	if s := c.State(); s.Building != "" {
 		t.Errorf("still says %q is being built", s.Building)
+	}
+}
+
+// A pull request that no longer merges into main is listed and says so,
+// and its build still downloads: it is the branch as it is.
+func TestAPullRequestInConflictIsListedAndSaysSo(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.conflict = map[string]bool{"pr-20": true}
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	c.next = func(UpdateState) time.Duration { return time.Hour }
+	_ = c.Follow("pr-20")
+	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" {
+		t.Errorf("the build of a pull request in conflict did not download: %+v", s)
+	}
+	said := map[string]bool{}
+	for _, ch := range s.Channels {
+		said[ch.ID] = ch.Conflict
+	}
+	if !said["pr-20"] || said["main"] {
+		t.Errorf("the channels say %v, want pr-20 in conflict and main not", said)
 	}
 }
 

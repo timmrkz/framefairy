@@ -104,7 +104,13 @@
   const following = $derived(update ? update.picked || update.follows || update.gone || update.channel || "" : "");
   const followingName = $derived(following ? channelName(following) : "");
   const channelOptions = $derived.by(() => {
-    const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
+    // A pull request that no longer merges into main says so in its name,
+    // the way a closed one does. Its build is of the branch as it is, so
+    // it is still there to try.
+    const listed = (update?.channels ?? []).map((c) => ({
+      value: c.id,
+      label: c.conflict ? `${channelName(c.id)}, conflicts with main` : channelName(c.id),
+    }));
     // A pull request that was followed and has since gone stays in the
     // list for as long as it is followed, so the trigger never names
     // nothing and says what became of it. Closed only when a list that was

@@ -119,6 +119,9 @@ type UpdateChannel struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	// Conflict is true for a pull request that no longer merges into
+	// main. Its build can still be installed, see updates.Build.
+	Conflict bool `json:"conflict"`
 }
 
 // updating finds, fetches and installs a newer build, through Wails'
@@ -395,7 +398,7 @@ func (c *updating) picked() string {
 func (c *updating) seen(l updates.List) {
 	var chans []UpdateChannel
 	for _, b := range l.Channels {
-		chans = append(chans, UpdateChannel{ID: b.Channel, Name: b.Name, Version: b.Version})
+		chans = append(chans, UpdateChannel{ID: b.Channel, Name: b.Name, Version: b.Version, Conflict: b.Conflict})
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
