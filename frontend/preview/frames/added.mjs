@@ -28,18 +28,27 @@ const recorder = () => {
     const s = document.querySelector(".screen");
     const c = s?.querySelector("canvas");
     if (c && c.width) {
-      const g = c.getContext("2d");
+      // The canvas may be a WebGPU canvas, which has no 2D context, so a piece
+      // of it is copied to a 2D canvas to be read.
+      const grab = (x, y, w, h) => {
+        const s = document.createElement("canvas");
+        s.width = w;
+        s.height = h;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, x, y, w, h, 0, 0, w, h);
+        return t.getImageData(0, 0, w, h).data;
+      };
       const scale = Math.min(c.width / 96, c.height / 54);
       const x0 = (c.width - 96 * scale) / 2;
       const y0 = (c.height - 54 * scale) / 2;
-      const row = g.getImageData(0, Math.round(y0 + 13 * scale), c.width, 1).data;
+      const row = grab(0, Math.round(y0 + 13 * scale), c.width, 1);
       let n = 0;
       for (let b = 0; b < 24; b++) {
         const x = Math.round(x0 + (b * 4 + 2) * scale);
         n = n * 2 + (row[x * 4] > 125 ? 1 : 0);
       }
       // The grey of the bottom half: black is no picture.
-      const grey = g.getImageData(Math.round(c.width / 2), Math.round(y0 + 40 * scale), 1, 1).data[0];
+      const grey = grab(Math.round(c.width / 2), Math.round(y0 + 40 * scale), 1, 1)[0];
       const sel = document.querySelector("aside .list li.selected, aside .list li[aria-selected='true'], aside .list li.chosen");
       window.__rows.push({
         t: performance.now(),

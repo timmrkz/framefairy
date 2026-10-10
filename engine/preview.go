@@ -72,8 +72,8 @@ func previewTimesOf(ctx context.Context) *PreviewTimes {
 // made WebKit's decoder fail on its first frame, where it had said it
 // would take it. ffmpeg decodes it, on the system's own decoder where
 // there is one, from the key frame before from, and hands over every frame
-// from from on, scaled to width by height in colours, RGBX with 8 bits
-// each, from the file's own range and matrix, with the moment of
+// from from on, scaled to width by height in colours, RGBA with 8 bits
+// each and an opaque alpha, from the file's own range and matrix, with the moment of
 // the episode it starts at, in the order they are shown.
 //
 // Each frame comes in a buffer of its own, which got may keep.

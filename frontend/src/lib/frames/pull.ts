@@ -1,10 +1,13 @@
 // Reading a pull of frames from the Go side, see cmd/framefairy-app/
 // frames.go: each frame is where it starts, 8 bytes, then the frame in
-// colours, RGBX with 8 bits each, which ffmpeg made from the file's tags. Each frame is read straight into a buffer of its own as the
-// answer arrives and handed to its VideoFrame without another copy, so a
-// frame is copied once on its way in, not twice. It runs in a Worker, see
-// pull.worker.ts, so it never holds up the page while a hand is on the
-// clip timeline, and on the page itself where a Worker will not have it.
+// colours, RGBA with 8 bits each and an opaque alpha, which ffmpeg made
+// from the file's tags. Each frame is read straight into a buffer of its
+// own as the answer arrives and kept as it is, so a frame is copied once
+// on its way in, not twice. It runs in a Worker, see pull.worker.ts, so
+// it never holds up the page while a hand is on the clip timeline, and on
+// the page itself where a Worker will not have it.
+
+import { Picture } from "./picture";
 
 export type Pulled = {
   // The answer's status, 404 for a stream the Go side has closed.
@@ -19,22 +22,14 @@ export type Pulled = {
   // first frame: "started,opened,first" in milliseconds, see
   // engine.PreviewTimes.
   times: string;
-  frames: { at: number; frame: VideoFrame }[];
+  // Each frame's pixels, see Picture. They are bytes rather than a
+  // Picture so they can come from a Worker, see pictures.
+  frames: { at: number; data: ArrayBuffer }[];
 };
 
-// Whether a VideoFrame can take a buffer over instead of copying it.
-let transfers = true;
-
-function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: number): VideoFrame {
-  const init = { format: "RGBX" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6) };
-  if (transfers) {
-    try {
-      return new VideoFrame(buffer, { ...init, transfer: [buffer] } as VideoFrameBufferInit);
-    } catch {
-      transfers = false;
-    }
-  }
-  return new VideoFrame(buffer, init);
+// The frames of a pull as Pictures of width by height.
+export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture }[] {
+  return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6)) }));
 }
 
 // The frames are colours ready to draw, see engine.PreviewFrames. Nothing
@@ -79,7 +74,7 @@ export async function pull(url: string, width: number, height: number): Promise<
       at += n;
       if (bodyHas === size) {
         const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, frame: frameFrom(body!, width, height, when) });
+        out.frames.push({ at: when, data: body! });
         headHas = 0;
         body = null;
       }

@@ -18,7 +18,11 @@
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
 import { rankOf, type VideoTrack } from "./mp4";
-import { pull, type Pulled } from "./pull";
+import type { Picture } from "./picture";
+import { pictures, pull, type Pulled } from "./pull";
+
+// A pull with its frames as Pictures.
+type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] };
 
 // How much of the frames shown last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
@@ -33,7 +37,7 @@ const STREAMS = 3;
 // a decoder reset for a newer target, and a stream then neither pulls for
 // it nor opens another stream for it.
 // seq numbers the asks in the order they were made.
-type Waiter = { rank: number; seq: number; done: (f: VideoFrame | null) => void; gone?: boolean };
+type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
@@ -178,7 +182,7 @@ class Stream {
     } else this.end("");
   }
 
-  private take(got: Pulled) {
+  private take(got: Got) {
     if (!this.gave && got.frames.length) {
       this.owner.opened(performance.now() - this.asked, got.times);
       queueMicrotask(() => this.owner.unpark());
@@ -224,7 +228,7 @@ class Stream {
 // queue's decoders.
 export class AppFrames {
   private streams: Stream[] = [];
-  private kept = new Map<number, VideoFrame>();
+  private kept = new Map<number, Picture>();
   private keptBytes = 0;
   // Why the Go side could not decode a frame, for the queue to say.
   trouble = "";
@@ -232,7 +236,7 @@ export class AppFrames {
   // drag passed, so the queue can put it up while the frame for where the
   // hand is now is on its way. seq is the ask's. The frame stays the kept
   // one's.
-  onPassing?: (rank: number, frame: VideoFrame, seq: number) => void;
+  onPassing?: (rank: number, frame: Picture, seq: number) => void;
   // The number of the newest ask.
   asked = 0;
   readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
@@ -280,7 +284,7 @@ export class AppFrames {
   // there. Null only when nothing near it could be decoded.
   // withdrawn, when it is set to true before the frame came, makes it
   // come as null and stops it holding a stream.
-  frame(rank: number, timestamp: number, asked?: Set<Waiter>): Promise<VideoFrame | null> {
+  frame(rank: number, timestamp: number, asked?: Set<Waiter>): Promise<Picture | null> {
     return new Promise((done) => {
       const w: Waiter = {
         rank,
@@ -288,7 +292,7 @@ export class AppFrames {
         done: (f) => {
           asked?.delete(w);
           if (f && w.gone) this.onPassing?.(rank, f, w.seq);
-          done(f && !w.gone ? new VideoFrame(f, { timestamp }) : null);
+          done(f && !w.gone ? f.clone(timestamp) : null);
         },
       };
       asked?.add(w);
@@ -337,7 +341,7 @@ export class AppFrames {
     s.want(w);
   }
 
-  keep(rank: number, frame: VideoFrame) {
+  keep(rank: number, frame: Picture) {
     const old = this.kept.get(rank);
     if (old) {
       this.keptBytes -= bytes(old);
@@ -355,7 +359,7 @@ export class AppFrames {
   }
 
   // The kept frame of this rank, or the closest one before it.
-  nearest(rank: number): VideoFrame | null {
+  nearest(rank: number): Picture | null {
     for (let r = rank; r >= Math.max(0, rank - 4); r--) {
       const f = this.kept.get(r);
       if (f) return f;
@@ -384,9 +388,8 @@ export class AppFrames {
 }
 
 // Pulls go through a Worker, pull.worker.ts, once it has shown that it can
-// reach the Go side and hand a frame back, and are read on the page where
-// it cannot: a WebKit that will not run a Worker for the app's own scheme
-// still plays.
+// reach the Go side, and are read on the page where it cannot: a WebKit
+// that will not run a Worker for the app's own scheme still plays.
 class Puller {
   private worker: Worker | null = null;
   private ready: Promise<void>;
@@ -409,13 +412,10 @@ class Puller {
     }
     const ok = await new Promise<boolean>((done) => {
       const late = setTimeout(() => done(false), 2000);
-      w.onmessage = (e: MessageEvent<{ n: number; frame: VideoFrame | null }>) => {
+      w.onmessage = (e: MessageEvent<{ n: number; reached: boolean }>) => {
         if (e.data.n !== -1) return;
         clearTimeout(late);
-        const f = e.data.frame;
-        const good = typeof VideoFrame !== "undefined" && f instanceof VideoFrame;
-        f?.close();
-        done(good);
+        done(e.data.reached);
       };
       w.onerror = () => {
         clearTimeout(late);
@@ -445,7 +445,12 @@ class Puller {
     this.where = "worker";
   }
 
-  async pull(url: string, width: number, height: number): Promise<Pulled> {
+  async pull(url: string, width: number, height: number): Promise<Got> {
+    const got = await this.pulled(url, width, height);
+    return { ...got, frames: pictures(got, width, height) };
+  }
+
+  private async pulled(url: string, width: number, height: number): Promise<Pulled> {
     await this.ready;
     const w = this.worker;
     if (!w) return pull(url, width, height);
@@ -462,8 +467,8 @@ class Puller {
   }
 }
 
-function bytes(f: VideoFrame): number {
-  return f.codedWidth * f.codedHeight * 4;
+function bytes(f: Picture): number {
+  return f.width * f.height * 4;
 }
 
 // A picture decoder for the frame queue, with the calls it makes of a
@@ -478,7 +483,7 @@ export class AppPictures {
   // Asked for and not come yet.
   private asked = 0;
   // Come, and waiting for the ones shown before them.
-  private held = new Map<number, VideoFrame | null>();
+  private held = new Map<number, Picture | null>();
   // The rank to put out next, or -1 before the first frame of a run.
   private next = -1;
   private generation = 0;
@@ -488,7 +493,7 @@ export class AppPictures {
 
   constructor(
     private frames: AppFrames,
-    private output: (f: VideoFrame) => void,
+    private output: (f: Picture) => void,
     private dequeue: () => void,
   ) {}
 

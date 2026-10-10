@@ -388,7 +388,8 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
    The frames are colours now: the episode's decoder scales each frame
-   and turns it into 8-bit red, green and blue, RGBX, from the file's
+   and turns it into 8-bit red, green and blue, RGBA with an opaque
+   alpha, from the file's
    range and matrix, and the interface draws them as they come, with no
    colour space of its own. `TestTheEpisodesDecoderMakesFFmpegsColours`
    holds every value to within 2 of the ffmpeg program's own conversion
@@ -412,6 +413,14 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    screenshot cannot hold HDR and shows none of this. So WebKit gives a
    canvas HDR today, and the video preview takes the WebGPU canvas. It is removed before the
    step is merged.
+   The video preview draws on that canvas now, `lib/frames/screen.ts`,
+   for every file, where the webview has WebGPU, and on a 2D canvas where
+   it has none. A frame is the app's own, `lib/frames/picture.ts`, its
+   bytes as they came from the Go side, and no longer a WebCodecs
+   `VideoFrame`: a VideoFrame holds nothing brighter than white, and
+   handing one to WebGPU took Chromium's GPU process down in the cloud,
+   where the bytes written as they are draw on every system. The walks
+   run with WebGPU on, so they draw the way the app does.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.

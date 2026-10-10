@@ -514,8 +514,8 @@
   function pixelAt(clientX: number, clientY: number): { x: number; y: number; hex: string } | null {
     const source = queue?.picture();
     if (!lens || !screen || !source) return null;
-    const w = source.displayWidth;
-    const h = source.displayHeight;
+    const w = source.width;
+    const h = source.height;
     if (!w || !h) return null;
     // The picture is contained in the screen and keeps its shape, so it is
     // as large as the side that runs out first allows, in the middle.
@@ -528,15 +528,10 @@
     if (fx < 0 || fy < 0 || fx >= w || fy >= h) return null;
     const ctx = lens.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, 9, 9);
-    try {
-      ctx.drawImage(source, fx - 4, fy - 4, 9, 9, 0, 0, 9, 9);
-      const [red, green, blue] = ctx.getImageData(4, 4, 1, 1).data;
-      return { x: clientX - r.left, y: clientY - r.top, hex: rgbToHex(red, green, blue) };
-    } catch {
-      return null;
-    }
+    const piece = source.imageData(fx - 4, fy - 4, 9, 9);
+    ctx.putImageData(piece, 0, 0);
+    const [red, green, blue] = piece.data.subarray(4 * 9 * 4 + 4 * 4);
+    return { x: clientX - r.left, y: clientY - r.top, hex: rgbToHex(red, green, blue) };
   }
 
   function sampleMove(event: PointerEvent) {

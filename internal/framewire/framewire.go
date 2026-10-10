@@ -35,7 +35,7 @@ import (
 // What a record holds.
 const (
 	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in colours, RGBX with 8 bits each, at the
+	// body is the picture in colours, RGBA with 8 bits each and an opaque alpha, at the
 	// cursor's size, or a chunk
 	// of sound, 32-bit floats with the channels of a moment side by side.
 	Frame byte = iota
@@ -78,7 +78,7 @@ func Write(w io.Writer, r Record) error {
 
 // Picture is the chain that makes a decoded frame what the video preview
 // draws: scaled to width by height, turned into colours from the file's
-// own range and matrix, RGBX with 8 bits each, and given the look Tim
+// own range and matrix, RGBA with 8 bits each and an opaque alpha, and given the look Tim
 // picked in the side-by-side test of step 4, docs/VIDEO-PREVIEW.md. That
 // look is QuickTime's: the shadows and middle tones of standard video
 // lifted the way the Mac shows them, measured on Tim's screen from
@@ -90,7 +90,7 @@ func Write(w io.Writer, r Record) error {
 // and engine.PreviewFrames build the same chain from here.
 func Picture(width, height int) string {
 	const lift = "clip(round(255*pow(val/255,max(0.891,0.98-0.31*val/255))),0,255)"
-	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb24,lutrgb=r='%s':g='%s':b='%s',format=rgb0", width, height, lift, lift, lift)
+	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb24,lutrgb=r='%s':g='%s':b='%s',format=rgba", width, height, lift, lift, lift)
 }
 
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
