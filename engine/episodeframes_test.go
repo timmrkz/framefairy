@@ -486,9 +486,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	encoders, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	has := func(name string) bool { return strings.Contains(string(encoders), " "+name+" ") }
 	// Our own ffmpeg on the Mac has no x264 or x265, which are GPL, and
-	// makes the files with the Mac's encoders instead. Whether those keep
-	// every tag as it is asked is theirs to say, so the tags are only
-	// held to coming out apart where x264 and x265 made the files.
+	// makes the files with the Mac's encoders instead.
 	h264 := []string{"-c:v", "libx264", "-preset", "ultrafast"}
 	hevc := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
 	software := true
@@ -505,8 +503,13 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		name string
 		args []string
 	}
+	// The tags are set on the frames rather than asked of the encoder. A
+	// newer ffmpeg, ours among them, takes an encoder's tags from its
+	// frames and drops -color_trc and the like, so a file made with those
+	// came out with no tags at all from our own ffmpeg, 9, and only the
+	// ffmpeg of a Linux distribution, 6, wrote them.
 	tags := func(space, primaries, transfer, rng string) []string {
-		return []string{"-colorspace", space, "-color_primaries", primaries, "-color_trc", transfer, "-color_range", rng}
+		return []string{"-vf", fmt.Sprintf("setparams=colorspace=%s:color_primaries=%s:color_trc=%s:range=%s", space, primaries, transfer, rng)}
 	}
 	x264 := append(append([]string{}, h264...), "-pix_fmt", "yuv420p")
 	files := []file{
@@ -624,7 +627,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	}
 	differ := func(a, b string) {
 		t.Helper()
-		if !software || got[a] == nil || got[b] == nil {
+		if got[a] == nil || got[b] == nil {
 			return
 		}
 		if d := meanDiff(got[a], got[b]); d < 1 {

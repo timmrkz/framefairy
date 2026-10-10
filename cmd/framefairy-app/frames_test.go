@@ -113,11 +113,13 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 	needDecoder(t)
 	svc, mine, _ := library(t)
 	// The tags are what says HDR, so any picture tagged HLG will do. The
-	// colr box carries them in an MP4 whatever the codec.
+	// colr box carries them in an MP4 whatever the codec. They are set on
+	// the frames, because a newer ffmpeg, ours among them, drops -color_trc
+	// and takes the encoder's tags from its frames.
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=160x90:r=5:d=2", "-c:v", "mpeg4", "-color_primaries", "bt2020",
-		"-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-movflags", "+write_colr",
-		"-f", "mp4", mine).CombinedOutput(); err != nil {
+		"-i", "testsrc2=s=160x90:r=5:d=2",
+		"-vf", "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc",
+		"-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
 		t.Fatalf("making the episode: %s %s", err, out)
 	}
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
