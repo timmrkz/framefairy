@@ -3,14 +3,23 @@
 // console to itself, so without this a fault on a Mac the cloud cannot run
 // leaves nothing to read. Plan row 2.185, and the log of R.8.
 //
-// It says enough that a fault is found by reading it, not by asking Tim to
-// try again: every step a video takes from its workspace opening to its
-// first frame and its play, every call to the Go side that fails or is
-// slow, every time the window stood still, and what the space bar met.
+// It says enough that a fault is found by reading it, not by asking the
+// person to try again: every step a video takes from its workspace opening
+// to its first frame and its play, every call to the Go side that fails or
+// is slow, every time the window stood still, and what the space bar met.
+// Each line has its level and, where there is one, the video it is about,
+// see docs/LOGGING.md.
 
 import { api, tellTo } from "./api";
 
-type Line = { at: number; text: string };
+// error: something failed. warn: something went wrong and the app carried
+// on. info: what the person did, and what started. debug: the steps
+// between. trace: what comes with every frame, written only while the log
+// is detailed.
+export type Level = "error" | "warn" | "info" | "debug" | "trace";
+export type Said = { level?: Level; video?: string };
+
+type Line = { at: number; text: string } & Said;
 
 let waiting: Line[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -23,19 +32,21 @@ let repeatedAt = 0;
 const MOST = 400;
 
 // Adds a line to the log, written within a quarter of a second with what
-// came with it, stamped with the moment it was said. A line said again
-// straight after itself is counted, not written again.
-export function said(text: string) {
+// came with it, stamped with the moment it was said. It is a debug line
+// unless it says otherwise. A line said again straight after itself is
+// counted, not written again.
+export function said(text: string, how: Said = {}) {
   const at = Date.now();
-  if (text === last) {
+  const key = `${how.level ?? ""} ${how.video ?? ""} ${text}`;
+  if (key === last) {
     repeats++;
     repeatedAt = at;
     return;
   }
   if (repeats) waiting.push({ at: repeatedAt, text: `(said ${repeats} more times)` });
-  last = text;
+  last = key;
   repeats = 0;
-  waiting.push({ at, text });
+  waiting.push({ at, text, ...how });
   if (waiting.length > MOST) waiting.splice(0, waiting.length - MOST);
   timer ??= setTimeout(write, 250);
 }
@@ -95,20 +106,20 @@ const STOOD = 400;
 // caught, go to the log as well as where they went. So does every time the
 // window stood still, and what the space bar met.
 export function listen() {
-  tellTo(said);
+  tellTo((line) => said(line, { level: "warn" }));
   const warn = console.warn.bind(console);
   const error = console.error.bind(console);
   console.warn = (...args: unknown[]) => {
     warn(...args);
-    said(`warning: ${text(args)}`);
+    said(text(args), { level: "warn" });
   };
   console.error = (...args: unknown[]) => {
     error(...args);
-    said(`error: ${text(args)}`);
+    said(text(args), { level: "error" });
   };
-  window.addEventListener("error", (e) => said(`uncaught: ${text([e.error ?? e.message])}`));
-  window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`));
-  said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`);
+  window.addEventListener("error", (e) => said(`uncaught: ${text([e.error ?? e.message])}`, { level: "error" }));
+  window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`, { level: "error" }));
+  said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`, { level: "info" });
   // A window that stands still is a window doing something too long: the
   // timer comes late by as much.
   let tick = performance.now();
@@ -116,7 +127,7 @@ export function listen() {
     const now = performance.now();
     const late = now - tick - 250;
     tick = now;
-    if (late > STOOD && !document.hidden) said(`window: stood still for ${Math.round(late)} ms`);
+    if (late > STOOD && !document.hidden) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
   }, 250);
   document.addEventListener("visibilitychange", () => said(`window: ${document.hidden ? "hidden" : "shown"}`));
   // The space bar, before anything takes it: where the keyboard was, and

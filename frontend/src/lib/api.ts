@@ -552,8 +552,8 @@ export interface SetupState {
 export const api = {
   platform: () => call<string>("Platform"),
   // Lines for the app's own log, each with the moment it was said, in ms
-  // since 1970, see lib/said.ts.
-  said: (lines: { at: number; text: string }[]) => call<void>("Said", lines),
+  // since 1970, its level and the video it is about, see lib/said.ts.
+  said: (lines: { at: number; text: string; level?: string; video?: string }[]) => call<void>("Said", lines),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or

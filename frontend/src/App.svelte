@@ -172,7 +172,7 @@
   // log, see lib/said.ts.
   const base = (p: string) => p.split("/").pop() ?? "";
   $effect(() => {
-    said(`app: ${asked ? `${base(asked)} asked for` : "no video asked for"}, ${onScreen ? `${base(onScreen)} in front` : "nothing in front"}${warming ? `, ${base(warming)} being built` : ""}, ${untrack(() => kept.length)} kept`);
+    said(`app: ${asked ? `${base(asked)} asked for` : "no video asked for"}, ${onScreen ? `${base(onScreen)} in front` : "nothing in front"}${warming ? `, ${base(warming)} being built` : ""}, ${untrack(() => kept.length)} kept`, { level: "info", video: asked || undefined });
   });
   // An episode removed from the library takes its workspace with it.
   $effect(() => {

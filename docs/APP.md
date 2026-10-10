@@ -2396,9 +2396,12 @@ the licence asks to be said and to the licence's own text. The list is built int
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
   where the Console app shows it, and `Frame Fairy/logs/app.log` in the
   user's cache folder elsewhere. It says enough that a fault is found by
-  reading it, not by trying again. Each line starts with its moment, to
-  the millisecond, and where it came from:
+  reading it, not by trying again. Each line is one JSON object with its
+  moment, to the millisecond, its level, the run of the app, the video
+  it is about where there is one, and where it came from, see
+  [LOGGING.md](LOGGING.md):
   - `app`: each start, with its build.
+  - `wails`: what Wails, which runs the app's window, says from info up.
   - `window`: the window's warnings and errors and anything thrown and
     not caught, every time the window stood still for more than
     400 ms, the space bar with where the keyboard was and which
@@ -2412,6 +2415,7 @@ the licence asks to be said and to the licence's own text. The list is built int
   - `files`: every read of the video's file, every stream of frames or
     sound opened and closed, the first pull of each, a slow one and one
     that ended it, and the episode's decoder held, let go and closed.
+    Every other pull is a trace line.
   - `decoder`: the episode's decoder starting and stopping, what it
     found in the file, whether it decodes on the graphics chip, every
     place it was moved to and how long its first frame took, the chain
@@ -2419,10 +2423,11 @@ the licence asks to be said and to the licence's own text. The list is built int
 
   The window sends its lines a quarter of a second after it says them,
   so they can stand a little after the Go side's lines of the same
-  moment. Past 4 MB the log starts over, with the one before kept as
-  `app.1.log`. It is the log plan row R.8 asks for, and a report of a
-  problem will carry it. See `cmd/framefairy-app/applog.go` and
-  `frontend/src/lib/said.ts`.
+  moment. Every line from debug up is always written. Trace lines only
+  while **Help → Detailed Log** is ticked. The log is at most 10 MB, with
+  three older files compressed beside it. It is the log plan row R.8 asks
+  for, and a report of a problem will carry it. See
+  `cmd/framefairy-app/applog.go` and `frontend/src/lib/said.ts`.
 
 The app only shows files that belong to an episode in its list. It finds
 Homebrew's ffmpeg and llama-server even when it is started from Finder.

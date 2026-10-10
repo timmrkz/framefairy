@@ -59,6 +59,10 @@ type Settings struct {
 	// then Planner is a default rather than a decision, and the app asks
 	// on the first run instead of guessing on the customer's behalf.
 	Chosen bool `json:"chosen"`
+	// DetailedLog writes the trace lines into the app's log as well, the
+	// ones that come with every frame and every pull. Detailed Log in the
+	// Help menu, see applog.go.
+	DetailedLog bool `json:"detailedLog,omitempty"`
 }
 
 // defaultColour is what both the app and the word highlight start out as.
@@ -176,6 +180,7 @@ func (s *store) Settings() Settings {
 // is set whenever the settings are read or written.
 func (s Settings) apply() {
 	engine.SetTrainingDir(s.TrainingDir)
+	theLog.detailed(s.DetailedLog)
 }
 
 // UpdateSettings changes the settings in one step: read, change, write,

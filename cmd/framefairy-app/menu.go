@@ -3,6 +3,8 @@ package main
 import (
 	"runtime"
 
+	"github.com/rs/zerolog"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -15,7 +17,7 @@ import (
 // These send the interface an event, and the interface decides: the text of
 // a field being typed in when there is one, the episode's last edit
 // otherwise.
-func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
+func appMenu(app *application.App, st *store, checkForUpdates func()) *application.Menu {
 	menu := application.NewMenu()
 	// The app menu, the stock one with Check for Updates in it, where every
 	// Mac app keeps it. The first menu is the app menu whatever it is
@@ -63,6 +65,17 @@ func appMenu(app *application.App, checkForUpdates func()) *application.Menu {
 	help := menu.AddSubmenu("Help")
 	help.Add("Acknowledgements").OnClick(func(*application.Context) {
 		app.Event.Emit("acknowledgements", nil)
+	})
+	// Detailed Log writes the trace lines into the app's log as well, the
+	// ones that come with every frame and every pull, for a fault like a
+	// play that stutters. It stays as it was left when the app starts
+	// again. See applog.go and docs/LOGGING.md.
+	help.AddSeparator()
+	help.AddCheckbox("Detailed Log", st.Settings().DetailedLog).OnClick(func(ctx *application.Context) {
+		on := ctx.ClickedMenuItem().Checked()
+		if st.UpdateSettings(func(s *Settings) { s.DetailedLog = on }) == nil {
+			theLog.line(zerolog.InfoLevel, "app").Bool("detailed", on).Msg("detailed log")
+		}
 	})
 	return menu
 }
