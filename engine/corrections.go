@@ -162,3 +162,67 @@ func putBack(heard []Cue, i int, text string) map[int]string {
 	}
 	return put
 }
+
+// RemoveCaption removes the caption of a clip that begins on a word, the
+// one heard at first: every word in it is removed the way SetWordText
+// removes one, so each is still the word heard there, to put back on its
+// own or with an undo. A word that a correction made several is removed
+// only where it is in this caption. What is left is laid out as it was:
+// the caption goes, and the one before it stays up through its time.
+func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
+	view, err := ClipCaptionsView(planPath, clipID, t, overrides)
+	if err != nil {
+		return err
+	}
+	var cue *CaptionView
+	for i := range view.Captions {
+		if math.Abs(view.Captions[i].First-first) < 1e-6 && len(view.Captions[i].Lines) > 0 {
+			cue = &view.Captions[i]
+			break
+		}
+	}
+	if cue == nil {
+		return renderErr("there is no caption at %s", HMS(first))
+	}
+	// The heard words of the caption, each with the parts of it the
+	// caption holds, or all of it. A word the captions draw in halves is
+	// there twice, and is one word.
+	whole := map[float64]string{}
+	parts := map[float64]map[int]bool{}
+	var order []float64
+	for _, line := range cue.Lines {
+		for _, w := range line.Words {
+			if w.Said == nil {
+				continue
+			}
+			at := *w.Said
+			if _, seen := whole[at]; !seen {
+				whole[at] = w.Whole
+				parts[at] = map[int]bool{}
+				order = append(order, at)
+			}
+			if w.Part == nil {
+				parts[at] = nil
+			} else if parts[at] != nil {
+				parts[at][*w.Part] = true
+			}
+		}
+	}
+	if len(order) == 0 {
+		return renderErr("the caption at %s has no words to remove", HMS(first))
+	}
+	for _, at := range order {
+		var kept []string
+		if parts[at] != nil {
+			for i, word := range strings.Fields(whole[at]) {
+				if !parts[at][i] {
+					kept = append(kept, word)
+				}
+			}
+		}
+		if err := SetWordText(logsDir, at, strings.Join(kept, " "), t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
