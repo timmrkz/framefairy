@@ -249,7 +249,8 @@ export class AppFrames {
   onPassing?: (rank: number, frame: Picture, seq: number) => void;
   // The number of the newest ask.
   asked = 0;
-  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[] };
+  // first is the size the first stream was opened at, for the walks.
+  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[], first: "" };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
@@ -317,8 +318,12 @@ export class AppFrames {
       w.done(null);
       return;
     }
+    const { width, height } = this.size();
+    // A kept frame of another size is not this frame: one decoded before
+    // the canvas had its size, or before the app grew, stays as blurred as
+    // it was.
     const have = this.kept.get(w.rank);
-    if (have) {
+    if (have && have.width === width && have.height === height) {
       this.stats.kept++;
       // The kept frame stays the most recently used.
       this.kept.delete(w.rank);
@@ -326,7 +331,6 @@ export class AppFrames {
       w.done(have);
       return;
     }
-    const { width, height } = this.size();
     let s = this.streams.find((x) => x.width === width && x.height === height && x.reaches(w.rank));
     if (s) this.stats.continued++;
     else if (this.streams.some((x) => x.stale)) {
@@ -341,6 +345,7 @@ export class AppFrames {
       return;
     } else {
       s = new Stream(this, w.rank, width, height);
+      this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
       this.streams.push(s);
       this.streams = this.streams.filter((x) => !x.ended);

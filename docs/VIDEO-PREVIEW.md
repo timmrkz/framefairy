@@ -192,6 +192,13 @@ closed for standing unused.
   now: the second stream is asked for the next piece while the first
   plays, so the frame after a cut is already waiting.
 - **Drawing**: each frame onto the one canvas when the clock reaches it.
+- **The size of a frame** is the canvas's, no larger than the file's
+  own picture. No frame is asked for before the stylesheet has laid the
+  canvas out and told it its size, one frame after the workspace is on
+  screen. A paused frame that came at another size than the canvas has
+  now is asked for again whenever the app is resized, so
+  a picture that stands still is always as sharp as the canvas lets it
+  be. Plan row 2.187.
 
 ## Speed
 
