@@ -357,11 +357,13 @@ type cursor struct {
 	filtered *astiav.Frame
 	// The chain that makes a decoded frame the size of the canvas, in
 	// colours ready to draw, the same as engine.PreviewFrames asks of ffmpeg.
-	graph     *astiav.FilterGraph
-	src       *astiav.BuffersrcFilterContext
-	sink      *astiav.BuffersinkFilterContext
-	width     int
-	height    int
+	graph  *astiav.FilterGraph
+	src    *astiav.BuffersrcFilterContext
+	sink   *astiav.BuffersinkFilterContext
+	width  int
+	height int
+	// How the picture's brightness is coded, from the file's transfer tag.
+	light     framewire.Light
 	from      float64
 	sentEOF   bool
 	graphEOF  bool
@@ -425,9 +427,8 @@ func (c *cursor) fail(why string) {
 // only seeks.
 func (c *cursor) open(from float64, w, h int) {
 	c.failedWhy = ""
-	opened := ""
+	opened := c.v == nil
 	if c.v == nil {
-		opened = "file"
 		v, err := openVideo(c.d.path)
 		if err == nil {
 			err = v.openDecoder(c.d.hardware)
@@ -440,6 +441,7 @@ func (c *cursor) open(from float64, w, h int) {
 			return
 		}
 		c.v = v
+		c.light = lightOf(v.stream.CodecParameters().ColorTransferCharacteristic())
 		c.own(&c.keys, v.fc, v.dec)
 		c.pkt = astiav.AllocPacket()
 		c.decoded = astiav.AllocFrame()
@@ -457,7 +459,19 @@ func (c *cursor) open(from float64, w, h int) {
 	}
 	c.width, c.height, c.from = w, h, from
 	c.sentEOF, c.graphEOF = false, false
-	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: []byte(opened)})
+	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, c.light)})
+}
+
+// lightOf is the light of the episode's picture, from its transfer tag,
+// as framewire.LightOf has it for the name.
+func lightOf(trc astiav.ColorTransferCharacteristic) framewire.Light {
+	switch trc {
+	case astiav.ColorTransferCharacteristicSmpte2084:
+		return framewire.PQ
+	case astiav.ColorTransferCharacteristicAribStdB67:
+		return framewire.HLG
+	}
+	return framewire.SDR
 }
 
 // seek goes to the key frame before from, with what the decoder held
@@ -636,7 +650,7 @@ func (c *cursor) bringOut() error {
 // ffmpeg's defaults where the file says nothing, so nothing in the
 // interface decides colour. Plan row 2.156, step 4.
 func (c *cursor) makeGraph() error {
-	return c.buildGraph(framewire.Picture(c.width, c.height))
+	return c.buildGraph(framewire.Picture(c.width, c.height, c.light))
 }
 
 // buildGraph builds a chain from the decoded frame's kind to chain's end,

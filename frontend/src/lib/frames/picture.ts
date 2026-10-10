@@ -1,10 +1,14 @@
 // A frame of the video preview: its pixels as ffmpeg made them on the Go
-// side, red, green, blue and an opaque alpha with 8 bits each, kept as
-// the bytes they came as, see pull.ts. The bytes are never changed once
+// side, 4 bytes each, kept as the bytes they came as, see pull.ts. For
+// standard video that is red, green, blue and an opaque alpha with 8 bits
+// each, and for HDR red, green and blue with 10 bits each in the file's
+// own curve, see light.ts. The bytes are never changed once
 // they are here, so a frame shared by two holders is the same bytes, not
 // a copy. It is the app's own frame rather than WebCodecs' VideoFrame,
 // because the WebGPU canvas takes bytes on every system, see screen.ts,
 // and VideoFrame holds nothing brighter than white.
+
+import { toSDR, type Light } from "./light";
 
 export class Picture {
   private bytes: Uint8Array | null;
@@ -15,6 +19,7 @@ export class Picture {
     readonly height: number,
     // When the frame starts, in microseconds, as a VideoFrame's timestamp.
     readonly timestamp: number,
+    readonly light: Light = "",
   ) {
     this.bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
     if (this.bytes.length !== width * height * 4) throw new Error(`a frame of ${width} by ${height} needs ${width * height * 4} bytes, not ${this.bytes.length}`);
@@ -32,7 +37,7 @@ export class Picture {
   // The same frame for another holder, under another time if need be.
   clone(timestamp = this.timestamp): Picture {
     if (!this.bytes) throw new Error("the frame is closed");
-    return new Picture(this.bytes, this.width, this.height, timestamp);
+    return new Picture(this.bytes, this.width, this.height, timestamp, this.light);
   }
 
   // Lets go of the pixels. The other holders of the same frame keep them.
@@ -40,8 +45,8 @@ export class Picture {
     this.bytes = null;
   }
 
-  // The pixels of a piece of the frame, as a 2D canvas takes them. What
-  // lies outside the frame is left clear.
+  // The pixels of a piece of the frame, as a 2D canvas takes them, HDR cut
+  // at white. What lies outside the frame is left clear.
   imageData(x: number, y: number, w: number, h: number): ImageData {
     const out = new ImageData(w, h);
     const src = this.bytes;
@@ -52,7 +57,10 @@ export class Picture {
       const from = Math.max(0, x);
       const to = Math.min(this.width, x + w);
       if (to <= from) continue;
-      out.data.set(src.subarray((sy * this.width + from) * 4, (sy * this.width + to) * 4), (row * w + from - x) * 4);
+      const piece = src.subarray((sy * this.width + from) * 4, (sy * this.width + to) * 4);
+      const at = (row * w + from - x) * 4;
+      if (this.light) toSDR(this.light, piece, out.data.subarray(at, at + piece.length));
+      else out.data.set(piece, at);
     }
     return out;
   }

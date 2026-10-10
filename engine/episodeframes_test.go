@@ -526,6 +526,8 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
 			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
 			file{"BT.2020 full range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "pc")...)},
+			file{"HLG, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "arib-std-b67", "tv")...)},
+			file{"PQ, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "smpte2084", "tv")...)},
 		)
 	}
 	const w, h = 64, 36
@@ -550,9 +552,22 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			frame = data
 			return errStop
 		})
+		light := dec.Light()
 		dec.Close()
 		if err != nil && !errors.Is(err, errStop) {
 			t.Fatalf("%s: %v", f.name, err)
+		}
+		// HDR stays in the file's own curve with 10 bits a colour, and the
+		// decoder says which curve, so the page can turn it into light.
+		wantLight := framewire.SDR
+		switch {
+		case strings.HasPrefix(f.name, "HLG"):
+			wantLight = framewire.HLG
+		case strings.HasPrefix(f.name, "PQ"):
+			wantLight = framewire.PQ
+		}
+		if light != wantLight {
+			t.Errorf("%s: the decoder says its light is %q, want %q", f.name, light, wantLight)
 		}
 		// The ffmpeg program decodes the way the decoder does: on the Mac's
 		// graphics chip where it has one, with the frame brought out as it
@@ -566,7 +581,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 				args = append(args, "-hwaccel", "videotoolbox")
 			}
 			args = append(args, "-i", path, "-frames:v", "1",
-				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-")
+				"-vf", framewire.Picture(w, h, wantLight), "-f", "rawvideo", "-")
 			out, err := exec.Command("ffmpeg", args...).Output()
 			if err != nil {
 				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
@@ -584,21 +599,26 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		}
 		// Value by value, red, green and blue. The ffmpeg program in a test
 		// may be another version than the one the decoder is built on, and
-		// two versions of its scaler can round a value one apart.
+		// two versions of its scaler can round a value one apart, in 8 bits
+		// or in 10.
+		mine, theirs := colours(frame, light), colours(want, light)
 		most, at := 0, 0
-		for p := range w * h {
-			for c := range 3 {
-				d := int(frame[p*4+c]) - int(want[p*4+c])
-				if d < 0 {
-					d = -d
-				}
-				if d > most {
-					most, at = d, p
-				}
+		for i := range mine {
+			d := mine[i] - theirs[i]
+			if d < 0 {
+				d = -d
+			}
+			if d > most {
+				most, at = d, i/3
 			}
 		}
-		if most > 2 {
-			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v", f.name, at, frame[at*4:at*4+3], want[at*4:at*4+3])
+		limit, bits := 2, ""
+		if light != framewire.SDR {
+			// 2 in 8 bits is 8 in 10.
+			limit, bits = 8, ", in 10 bits"
+		}
+		if most > limit {
+			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v%s", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3], bits)
 		}
 		got[f.name] = frame
 	}
@@ -616,6 +636,21 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	differ("BT.709 video range, 10 bits", "BT.2020 video range, 10 bits")
 }
 
+// colours are the red, green and blue of every pixel of a frame made by
+// framewire.Picture for light: 8 bits each for standard video, 10 for HDR.
+func colours(frame []byte, light framewire.Light) []int {
+	out := make([]int, 0, len(frame)/4*3)
+	for p := 0; p+4 <= len(frame); p += 4 {
+		if light == framewire.SDR {
+			out = append(out, int(frame[p]), int(frame[p+1]), int(frame[p+2]))
+			continue
+		}
+		v := binary.LittleEndian.Uint32(frame[p:])
+		out = append(out, int(v&1023), int(v>>10&1023), int(v>>20&1023))
+	}
+	return out
+}
+
 // The look of the video preview, QuickTime's, which Tim picked in the
 // side-by-side test: black stays black, white stays white, and the
 // shadows and middle tones are lifted as the Mac shows standard video,
@@ -625,7 +660,7 @@ func TestThePreviewsLookIsQuickTimes(t *testing.T) {
 	for _, c := range [][2]int{{0, 0}, {3, 3}, {11, 12}, {22, 25}, {46, 52}, {81, 92}, {128, 138}, {255, 255}} {
 		grey := fmt.Sprintf("color=c=0x%02x%02x%02x:s=16x16,format=rgb24", c[0], c[0], c[0])
 		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", grey, "-frames:v", "1",
-			"-vf", framewire.Picture(16, 16), "-f", "rawvideo", "-").Output()
+			"-vf", framewire.Picture(16, 16, framewire.SDR), "-f", "rawvideo", "-").Output()
 		if err != nil {
 			t.Fatalf("a grey of %d: %v", c[0], err)
 		}

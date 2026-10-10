@@ -30,14 +30,15 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 )
 
 // What a record holds.
 const (
 	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in colours, RGBA with 8 bits each and an opaque alpha, at the
-	// cursor's size, or a chunk
-	// of sound, 32-bit floats with the channels of a moment side by side.
+	// body is the picture in colours, 4 bytes a pixel as Picture makes
+	// them, at the cursor's size, or a chunk of sound, 32-bit floats with
+	// the channels of a moment side by side.
 	Frame byte = iota
 	// The batch a next asked for is done.
 	Done
@@ -47,7 +48,8 @@ const (
 	Failed
 	// An open is done: the cursor is at its place. The body is "file" when
 	// the open had to open the file and a decoder first, and empty when it
-	// moved a cursor that had them.
+	// moved a cursor that had them. A cursor of picture adds its Light
+	// after a space: "file hlg", " pq".
 	Opened
 )
 
@@ -76,19 +78,81 @@ func Write(w io.Writer, r Record) error {
 	return err
 }
 
+// Light is how a picture's brightness is coded: standard video, or HDR
+// with the curve of PQ or of HLG, from the file's transfer tag. It is the
+// word an open answers with after "file", see Opened.
+type Light string
+
+const (
+	SDR Light = ""
+	PQ  Light = "pq"
+	HLG Light = "hlg"
+)
+
+// OpenedBody is the body of an Opened record: whether the open opened the
+// file, and the light of the cursor's picture.
+func OpenedBody(file bool, light Light) []byte {
+	body := ""
+	if file {
+		body = "file"
+	}
+	if light != SDR {
+		body += " " + string(light)
+	}
+	return []byte(body)
+}
+
+// ReadOpened reads the body of an Opened record. A light it does not know
+// is standard video, which is what it was before HDR came.
+func ReadOpened(body []byte) (file bool, light Light) {
+	word, rest, _ := strings.Cut(string(body), " ")
+	switch Light(rest) {
+	case PQ, HLG:
+		light = Light(rest)
+	}
+	return word == "file", light
+}
+
+// LightOf is the light of a file whose transfer tag is trc, as ffmpeg
+// names it: smpte2084 is PQ, arib-std-b67 HLG, and everything else,
+// no tag included, standard video.
+func LightOf(trc string) Light {
+	switch trc {
+	case "smpte2084":
+		return PQ
+	case "arib-std-b67":
+		return HLG
+	}
+	return SDR
+}
+
 // Picture is the chain that makes a decoded frame what the video preview
-// draws: scaled to width by height, turned into colours from the file's
-// own range and matrix, RGBA with 8 bits each and an opaque alpha, and given the look Tim
-// picked in the side-by-side test of step 4, docs/VIDEO-PREVIEW.md. That
-// look is QuickTime's: the shadows and middle tones of standard video
-// lifted the way the Mac shows them, measured on Tim's screen from
-// start.mp4 beside QuickTime. A value v of 0 to 1 is shown as v to the
-// power of 0.98 - 0.31 v, never below 0.891, which is 1.961 over 2.2, the
-// Mac's curve for video over the screen's. So black stays black and white
-// white, a grey of 22 is shown as 25 and one of 81 as 92. The short is
-// never changed by it: its numbers are the file's. The episode's decoder
-// and engine.PreviewFrames build the same chain from here.
-func Picture(width, height int) string {
+// draws, scaled to width by height and turned into colours from the
+// file's own range and matrix, 4 bytes a pixel.
+//
+// Standard video is RGBA with 8 bits each and an opaque alpha, so a 2D
+// canvas draws the bytes as they are where the webview has no WebGPU, and
+// given the look Tim picked in the side-by-side test of step 4,
+// docs/VIDEO-PREVIEW.md. That look is QuickTime's: the shadows and middle
+// tones of standard video lifted the way the Mac shows them, measured on
+// Tim's screen from start.mp4 beside QuickTime. A value v of 0 to 1 is
+// shown as v to the power of 0.98 - 0.31 v, never below 0.891, which is
+// 1.961 over 2.2, the Mac's curve for video over the screen's. So black
+// stays black and white white, a grey of 22 is shown as 25 and one of 81
+// as 92.
+//
+// HDR is red, green and blue with 10 bits each, X2BGR10 in little endian,
+// red lowest, still in the file's own curve, PQ or HLG, and its own
+// primaries. The video preview turns that into light on the screen, see
+// frontend/src/lib/frames/screen.ts. 10 bits is what an HDR file has.
+//
+// The short is never changed by any of it: its numbers are the file's.
+// The episode's decoder and engine.PreviewFrames build the same chain from
+// here.
+func Picture(width, height int, light Light) string {
+	if light != SDR {
+		return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
+	}
 	const lift = "clip(round(255*pow(val/255,max(0.891,0.98-0.31*val/255))),0,255)"
 	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb24,lutrgb=r='%s':g='%s':b='%s',format=rgba", width, height, lift, lift, lift)
 }

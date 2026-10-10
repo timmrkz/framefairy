@@ -72,9 +72,10 @@ func previewTimesOf(ctx context.Context) *PreviewTimes {
 // made WebKit's decoder fail on its first frame, where it had said it
 // would take it. ffmpeg decodes it, on the system's own decoder where
 // there is one, from the key frame before from, and hands over every frame
-// from from on, scaled to width by height in colours, RGBA with 8 bits
-// each and an opaque alpha, from the file's own range and matrix, with the moment of
-// the episode it starts at, in the order they are shown.
+// from from on, scaled to width by height in colours as framewire.Picture
+// makes them for the file's light, from the file's own range and matrix,
+// with the moment of the episode it starts at, in the order they are
+// shown.
 //
 // Each frame comes in a buffer of its own, which got may keep.
 //
@@ -116,6 +117,21 @@ func (e *Engine) PreviewFrames(ctx context.Context, path string, from float64, w
 	return e.previewFrames(ctx, path, from, width, height, false, got)
 }
 
+// lightOf is how the file's picture codes its brightness, from its
+// transfer tag, and standard video where the tag cannot be read.
+func (e *Engine) lightOf(ctx context.Context, path string) framewire.Light {
+	info, err := e.Probe(ctx, path)
+	if err != nil {
+		return framewire.SDR
+	}
+	for _, c := range info.Colour {
+		if c[0] == "color_trc" {
+			return framewire.LightOf(c[1])
+		}
+	}
+	return framewire.SDR
+}
+
 // gpuScaleFails is set once scaling on the graphics chip has failed.
 var gpuScaleFails atomic.Bool
 
@@ -137,10 +153,11 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	// range and matrix with the look of the video preview, the same chain
 	// as the episode's decoder, so the interface decides nothing about
 	// colour.
-	scale := "showinfo," + framewire.Picture(width, height)
+	light := e.lightOf(ctx, path)
+	scale := "showinfo," + framewire.Picture(width, height, light)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
-		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,", width, height) + framewire.Picture(width, height)
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,", width, height) + framewire.Picture(width, height, light)
 	} else {
 		args = append(args, e.decodeFlags()...)
 	}

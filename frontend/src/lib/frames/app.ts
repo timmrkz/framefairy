@@ -438,7 +438,7 @@ class Puller {
     w.onerror = () => {
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", frames: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] });
       this.waiting.clear();
     };
     this.worker = w;

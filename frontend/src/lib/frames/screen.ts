@@ -5,9 +5,11 @@
 // Where it has none it is a 2D canvas, which ends at white. Either way a
 // frame is drawn as large as the canvas allows, in its own shape, in the
 // middle, on whole pixels, and black around it. Nothing here decides
-// colour: the frames are ffmpeg's colours and are drawn as they come.
+// colour: the frames are ffmpeg's colours and are drawn as they come, and
+// HDR is turned into light by BT.2100's formulas, see light.ts.
 
-import type { Picture } from "./picture";
+import { lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
+import { Picture } from "./picture";
 
 export interface Screen {
   readonly kind: "webgpu" | "2d";
@@ -21,7 +23,12 @@ export interface Screen {
 
 // Where a frame of fw by fh goes on a canvas of cw by ch: as large as the
 // side that runs out first allows, in the middle, on whole pixels.
-export function fit(cw: number, ch: number, fw: number, fh: number): { x: number; y: number; w: number; h: number } | null {
+export function fit(
+  cw: number,
+  ch: number,
+  fw: number,
+  fh: number,
+): { x: number; y: number; w: number; h: number } | null {
   if (!cw || !ch || !fw || !fh) return null;
   const scale = Math.min(cw / fw, ch / fh);
   const w = Math.round(fw * scale);
@@ -32,11 +39,18 @@ export function fit(cw: number, ch: number, fw: number, fh: number): { x: number
 // The screen for this canvas. A canvas keeps the first kind of context it
 // is asked for, so a GPU device is in hand before the canvas is asked for
 // WebGPU, and only without one is it asked for the 2D context.
+//
+// The walks read the video preview back from its canvas, which headless
+// Chromium does not give for a WebGPU canvas, so they ask for the 2D
+// canvas with __flatScreen and check what the GPU draws with checkPixels.
 export async function openScreen(canvas: HTMLCanvasElement): Promise<Screen> {
-  const gpu = await GPUScreen.open(canvas).catch((e) => {
-    console.warn("video preview: no WebGPU canvas,", e);
-    return null;
-  });
+  const flat = (globalThis as { __flatScreen?: boolean }).__flatScreen === true;
+  const gpu = flat
+    ? null
+    : await GPUScreen.open(canvas).catch((e) => {
+        console.warn("video preview: no WebGPU canvas,", e);
+        return null;
+      });
   return gpu ?? new FlatScreen(canvas);
 }
 
@@ -46,6 +60,8 @@ class FlatScreen implements Screen {
   // The frame at its own size, which is then drawn to fit.
   private own = document.createElement("canvas");
   private ownG: CanvasRenderingContext2D;
+  // HDR cut at white, as an SDR screen shows it.
+  private sdr: ImageData | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const g = canvas.getContext("2d", { alpha: false });
@@ -66,7 +82,23 @@ class FlatScreen implements Screen {
       this.own.width = frame.width;
       this.own.height = frame.height;
     }
-    this.ownG.putImageData(new ImageData(new Uint8ClampedArray(d.buffer as ArrayBuffer, d.byteOffset, d.byteLength), frame.width, frame.height), 0, 0);
+    let pixels: ImageData;
+    if (frame.light) {
+      if (this.sdr?.width !== frame.width || this.sdr.height !== frame.height)
+        this.sdr = new ImageData(frame.width, frame.height);
+      toSDR(frame.light, d, this.sdr.data);
+      pixels = this.sdr;
+    } else
+      pixels = new ImageData(
+        new Uint8ClampedArray(
+          d.buffer as ArrayBuffer,
+          d.byteOffset,
+          d.byteLength,
+        ),
+        frame.width,
+        frame.height,
+      );
+    this.ownG.putImageData(pixels, 0, 0);
     this.g.drawImage(this.own, at.x, at.y, at.w, at.h);
   }
 
@@ -90,39 +122,160 @@ struct Out {
 
 @group(0) @binding(0) var pick: sampler;
 @group(0) @binding(1) var frame: texture_2d<f32>;
-
+// 0 for standard video, 1 for PQ, 2 for HLG.
+@group(0) @binding(2) var<uniform> kind: u32;
+${wgsl}
 @fragment fn fs(o: Out) -> @location(0) vec4f {
-  return vec4f(textureSample(frame, pick, o.uv).rgb, 1);
+  return vec4f(shown(textureSample(frame, pick, o.uv).rgb, kind), 1);
 }
 `;
 
+// What each light's frames are on the GPU: 8 bits a colour for standard
+// video, and for HDR 10 bits a colour with red lowest, X2BGR10, which is
+// rgb10a2unorm, see framewire.Picture.
+const formats: Record<Light, { format: GPUTextureFormat; kind: number }> = {
+  "": { format: "rgba8unorm", kind: 0 },
+  pq: { format: "rgb10a2unorm", kind: 1 },
+  hlg: { format: "rgb10a2unorm", kind: 2 },
+};
+
 const target: GPUTextureFormat = "rgba16float";
 
-// A frame of colours in 8 bits, see picture.ts, is written to a texture as
-// it is and drawn on the canvas, where 1.0 is white. GPUTextureUsage's
-// COPY_DST and TEXTURE_BINDING: TypeScript knows the types, not the values.
-const frameUsage = 0x02 | 0x04;
+// GPUTextureUsage's COPY_SRC, COPY_DST, TEXTURE_BINDING and
+// RENDER_ATTACHMENT, and GPUBufferUsage's MAP_READ, COPY_DST, COPY_SRC and
+// UNIFORM: TypeScript knows the types, not the values.
+const TEXTURE = {
+  copySrc: 0x01,
+  copyDst: 0x02,
+  binding: 0x04,
+  attachment: 0x10,
+};
+const BUFFER = { mapRead: 0x01, copySrc: 0x04, copyDst: 0x08, uniform: 0x40 };
+
+async function gpuDevice(): Promise<GPUDevice | null> {
+  if (typeof navigator === "undefined" || !navigator.gpu) return null;
+  const adapter = await navigator.gpu.requestAdapter();
+  return adapter ? adapter.requestDevice() : null;
+}
+
+// Draws frames with one device: each frame is written to a texture as it
+// is and drawn where it is told, in light where 1.0 is white.
+class Painter {
+  private pipeline: GPURenderPipeline;
+  private sampler: GPUSampler;
+  private lightBuffer: GPUBuffer;
+  private texture: GPUTexture | null = null;
+  private light: Light = "";
+  private binding: GPUBindGroup | null = null;
+
+  constructor(readonly device: GPUDevice) {
+    const module = device.createShaderModule({ code: shader });
+    this.pipeline = device.createRenderPipeline({
+      layout: "auto",
+      vertex: { module, entryPoint: "vs" },
+      fragment: { module, entryPoint: "fs", targets: [{ format: target }] },
+    });
+    this.sampler = device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+    });
+    this.lightBuffer = device.createBuffer({
+      size: 16,
+      usage: BUFFER.uniform | BUFFER.copyDst,
+    });
+  }
+
+  // The texture the frame is written to, kept while frames keep their size
+  // and their light.
+  private textureFor(w: number, h: number, light: Light): GPUTexture {
+    if (
+      this.texture &&
+      this.texture.width === w &&
+      this.texture.height === h &&
+      this.light === light
+    )
+      return this.texture;
+    this.texture?.destroy();
+    const { format, kind } = formats[light];
+    this.texture = this.device.createTexture({
+      size: [w, h],
+      format,
+      usage: TEXTURE.copyDst | TEXTURE.binding,
+    });
+    this.light = light;
+    this.device.queue.writeBuffer(
+      this.lightBuffer,
+      0,
+      new Uint32Array([kind, 0, 0, 0]),
+    );
+    this.binding = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 1, resource: this.texture.createView() },
+        { binding: 2, resource: { buffer: this.lightBuffer } },
+      ],
+    });
+    return this.texture;
+  }
+
+  // The frame on a target of width by height, black around it, encoded
+  // but not yet submitted.
+  paint(
+    encoder: GPUCommandEncoder,
+    view: GPUTextureView,
+    width: number,
+    height: number,
+    frame: Picture | null,
+  ) {
+    const d = frame?.data;
+    const at = frame && d && fit(width, height, frame.width, frame.height);
+    if (at) {
+      const texture = this.textureFor(frame.width, frame.height, frame.light);
+      this.device.queue.writeTexture(
+        { texture },
+        d as Uint8Array<ArrayBuffer>,
+        { bytesPerRow: frame.width * 4 },
+        [frame.width, frame.height],
+      );
+    }
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        { view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] },
+      ],
+    });
+    if (at && this.binding) {
+      pass.setViewport(at.x, at.y, at.w, at.h, 0, 1);
+      pass.setPipeline(this.pipeline);
+      pass.setBindGroup(0, this.binding);
+      pass.draw(3);
+    }
+    pass.end();
+  }
+
+  destroy() {
+    this.texture?.destroy();
+    this.lightBuffer.destroy();
+  }
+}
 
 class GPUScreen implements Screen {
   readonly kind = "webgpu";
   onRestored?: () => void;
-  private pipeline!: GPURenderPipeline;
-  private sampler!: GPUSampler;
-  private texture: GPUTexture | null = null;
-  private binding: GPUBindGroup | null = null;
+  private painter!: Painter;
   private closed = false;
   private complained = false;
 
   private constructor(
     private canvas: HTMLCanvasElement,
     private ctx: GPUCanvasContext,
-    private device: GPUDevice,
+    device: GPUDevice,
   ) {
-    this.setUp();
+    this.setUp(device);
   }
 
   static async open(canvas: HTMLCanvasElement): Promise<GPUScreen | null> {
-    const device = await GPUScreen.device();
+    const device = await gpuDevice();
     if (!device) return null;
     const ctx = canvas.getContext("webgpu") as GPUCanvasContext | null;
     if (!ctx) {
@@ -132,14 +285,7 @@ class GPUScreen implements Screen {
     return new GPUScreen(canvas, ctx, device);
   }
 
-  private static async device(): Promise<GPUDevice | null> {
-    if (typeof navigator === "undefined" || !navigator.gpu) return null;
-    const adapter = await navigator.gpu.requestAdapter();
-    return adapter ? adapter.requestDevice() : null;
-  }
-
-  private setUp() {
-    const device = this.device;
+  private setUp(device: GPUDevice) {
     this.ctx.configure({
       device,
       format: target,
@@ -147,25 +293,16 @@ class GPUScreen implements Screen {
       alphaMode: "opaque",
       toneMapping: { mode: "extended" },
     });
-    const module = device.createShaderModule({ code: shader });
-    this.pipeline = device.createRenderPipeline({
-      layout: "auto",
-      vertex: { module, entryPoint: "vs" },
-      fragment: { module, entryPoint: "fs", targets: [{ format: target }] },
-    });
-    this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
-    this.texture = null;
-    this.binding = null;
+    this.painter = new Painter(device);
     device.onuncapturederror = (e) => this.complain(e.error.message);
     // A GPU can be lost, to sleep or to a driver that restarts. The
     // canvas cannot become a 2D canvas then, so a new device is asked for.
     void device.lost.then(async (info) => {
       if (this.closed || info.reason === "destroyed") return;
       console.warn("video preview: the GPU was lost,", info.message);
-      const next = await GPUScreen.device().catch(() => null);
+      const next = await gpuDevice().catch(() => null);
       if (!next || this.closed) return;
-      this.device = next;
-      this.setUp();
+      this.setUp(next);
       this.onRestored?.();
     });
   }
@@ -176,44 +313,21 @@ class GPUScreen implements Screen {
     console.error("video preview:", what);
   }
 
-  // The texture the frame is copied to, kept while frames keep their size.
-  private textureFor(w: number, h: number): GPUTexture {
-    if (this.texture && this.texture.width === w && this.texture.height === h) return this.texture;
-    this.texture?.destroy();
-    this.texture = this.device.createTexture({ size: [w, h], format: "rgba8unorm", usage: frameUsage });
-    this.binding = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: this.sampler },
-        { binding: 1, resource: this.texture.createView() },
-      ],
-    });
-    return this.texture;
-  }
-
   draw(frame: Picture | null) {
     if (this.closed) return;
     const c = this.canvas;
     if (!c.width || !c.height) return;
     try {
-      const d = frame?.data;
-      const at = frame && d && fit(c.width, c.height, frame.width, frame.height);
-      if (at) {
-        const texture = this.textureFor(frame.width, frame.height);
-        this.device.queue.writeTexture({ texture }, d as Uint8Array<ArrayBuffer>, { bytesPerRow: frame.width * 4 }, [frame.width, frame.height]);
-      }
-      const encoder = this.device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: this.ctx.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }],
-      });
-      if (at && this.binding) {
-        pass.setViewport(at.x, at.y, at.w, at.h, 0, 1);
-        pass.setPipeline(this.pipeline);
-        pass.setBindGroup(0, this.binding);
-        pass.draw(3);
-      }
-      pass.end();
-      this.device.queue.submit([encoder.finish()]);
+      const device = this.painter.device;
+      const encoder = device.createCommandEncoder();
+      this.painter.paint(
+        encoder,
+        this.ctx.getCurrentTexture().createView(),
+        c.width,
+        c.height,
+        frame,
+      );
+      device.queue.submit([encoder.finish()]);
     } catch (e) {
       this.complain(String(e));
     }
@@ -222,8 +336,104 @@ class GPUScreen implements Screen {
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.texture?.destroy();
+    this.painter.destroy();
     this.ctx.unconfigure();
-    this.device.destroy();
+    this.painter.device.destroy();
   }
 }
+
+// A half float to a number.
+function half(h: number): number {
+  const sign = h & 0x8000 ? -1 : 1;
+  const exp = (h >> 10) & 0x1f;
+  const frac = h & 0x3ff;
+  if (exp === 0) return sign * Math.pow(2, -14) * (frac / 1024);
+  if (exp === 31) return frac ? NaN : sign * Infinity;
+  return sign * Math.pow(2, exp - 15) * (1 + frac / 1024);
+}
+
+// What the GPU gives the canvas for each frame, the middle pixel of a
+// frame drawn at its own size, red, green and blue as the extended canvas
+// takes them. For the walks, which cannot read a WebGPU canvas back in
+// headless Chromium and check the drawing this way, see
+// preview/walks/bridge.mjs. Null without WebGPU.
+export async function checkScreen(
+  frames: Picture[],
+): Promise<number[][] | null> {
+  const device = await gpuDevice();
+  if (!device) return null;
+  const painter = new Painter(device);
+  const out: number[][] = [];
+  for (const frame of frames) {
+    const drawn = device.createTexture({
+      size: [frame.width, frame.height],
+      format: target,
+      usage: TEXTURE.attachment | TEXTURE.copySrc,
+    });
+    // A row of a copy is a multiple of 256 bytes, 32 pixels of 8.
+    const buffer = device.createBuffer({
+      size: 256,
+      usage: BUFFER.mapRead | BUFFER.copyDst,
+    });
+    const encoder = device.createCommandEncoder();
+    painter.paint(
+      encoder,
+      drawn.createView(),
+      frame.width,
+      frame.height,
+      frame,
+    );
+    encoder.copyTextureToBuffer(
+      { texture: drawn, origin: [frame.width >> 1, frame.height >> 1] },
+      { buffer, bytesPerRow: 256 },
+      [1, 1],
+    );
+    device.queue.submit([encoder.finish()]);
+    await buffer.mapAsync(1);
+    const h = new Uint16Array(buffer.getMappedRange().slice(0, 8));
+    out.push([half(h[0]), half(h[1]), half(h[2])]);
+    buffer.unmap();
+    buffer.destroy();
+    drawn.destroy();
+  }
+  painter.destroy();
+  device.destroy();
+  return out;
+}
+
+// A pixel as the Go side sends it, 4 bytes, drawn by the GPU and worked
+// out here on the processor by light.ts, both as the extended canvas
+// takes it, for the walks to hold one to the other.
+export async function checkPixels(
+  pixels: { light: Light; bytes: number[] }[],
+): Promise<{ gpu: number[][]; cpu: number[][] } | null> {
+  const frames = pixels.map(
+    (p) =>
+      new Picture(
+        new Uint8Array([...p.bytes, ...p.bytes, ...p.bytes, ...p.bytes]),
+        2,
+        2,
+        0,
+        p.light,
+      ),
+  );
+  const gpu = await checkScreen(frames);
+  if (!gpu) return null;
+  const cpu = pixels.map(({ light, bytes }) => {
+    if (!light) return bytes.slice(0, 3).map((b) => b / 255);
+    const w =
+      (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0;
+    const l = lightOfPixel(
+      light,
+      (w & 1023) / 1023,
+      ((w >>> 10) & 1023) / 1023,
+      ((w >>> 20) & 1023) / 1023,
+    );
+    return l.map((v) => Math.sign(v) * srgb(Math.abs(v)));
+  });
+  return { gpu, cpu };
+}
+
+if (typeof window !== "undefined")
+  (window as { __checkPixels?: typeof checkPixels }).__checkPixels =
+    checkPixels;

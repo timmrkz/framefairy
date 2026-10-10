@@ -319,11 +319,18 @@ not yet for a canvas, as far as can be found:
 So the video preview draws on a WebGPU canvas, for every file, and asks
 for the extended mode:
 
-- ffmpeg converts each frame to half floats in which 1.0 is the reference
-  white of BT.2408 and the highlights go above it, and the interface
-  hands them to the canvas as they come. The colour is still ffmpeg's.
-  The conversion of HLG and PQ needs zimg in our build of ffmpeg, which
-  has a permissive licence.
+- ffmpeg turns each frame of HDR into red, green and blue with 10 bits
+  each, from the file's own range and matrix, and leaves it in the file's
+  curve, PQ or HLG, with BT.2020's colours. That is 4 bytes a pixel, as
+  much as standard video, and 10 bits is what an HDR file has. The GPU
+  turns it into light by BT.2100's formulas, in which 1.0 is the
+  reference white of BT.2408, 203 nits, the white of the interface, and
+  the highlights go above it, in BT.709's colours, `lib/frames/light.ts`.
+  This was to be half floats made by ffmpeg with zimg, and is not: our
+  ffmpeg's scaler makes no half floats, and the formulas are short and
+  fixed. So the build needs no zimg. HDR is known by the file's transfer
+  tag, `framewire.LightOf`, and every pull of its frames says so,
+  `X-Frames-Light`.
 - Where the webview gives the extended mode and the screen is HDR, the
   video preview shows the HDR short as it is.
 - Where it does not, the system squeezes everything above white, and the
@@ -413,14 +420,25 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    screenshot cannot hold HDR and shows none of this. So WebKit gives a
    canvas HDR today, and the video preview takes the WebGPU canvas. It is removed before the
    step is merged.
+   HDR is drawn as HDR now, see The video preview under HDR. The walk
+   `the GPU draws standard video as it is and HDR as BT.2100's light`
+   holds what the GPU gives the canvas to `light.ts` worked out on the
+   processor, and to the anchors: HDR's reference white is the app's
+   white, PQ at 1000 nits is 1.99 and a green of BT.2020 lies outside
+   BT.709. `TestTheEpisodesDecoderMakesFFmpegsColours` holds files tagged
+   HLG and PQ to the ffmpeg program's conversion like the rest, in 10
+   bits. Where there is no WebGPU, and for a colour taken from the
+   picture, HDR is cut at white, as an SDR screen shows it.
    The video preview draws on that canvas now, `lib/frames/screen.ts`,
    for every file, where the webview has WebGPU, and on a 2D canvas where
    it has none. A frame is the app's own, `lib/frames/picture.ts`, its
    bytes as they came from the Go side, and no longer a WebCodecs
    `VideoFrame`: a VideoFrame holds nothing brighter than white, and
    handing one to WebGPU took Chromium's GPU process down in the cloud,
-   where the bytes written as they are draw on every system. The walks
-   run with WebGPU on, so they draw the way the app does.
+   where the bytes written as they are draw on every system. Headless
+   Chromium gives nothing back from a WebGPU canvas, so the walks, which
+   read the frame on screen from the canvas, draw the video preview on a
+   2D canvas and check what the GPU draws on its own.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.

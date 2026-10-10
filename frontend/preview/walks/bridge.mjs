@@ -55,10 +55,16 @@ export async function open(url) {
   // The episode the way the bridge found it, whatever the walk before did.
   const reset = await fetch(new URL("/reset", url), { method: "POST" });
   if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
-  // WebGPU on, which headless Chromium on Linux only gives when asked, so
-  // the video preview draws the way it does in the app, see screen.ts.
+  // WebGPU on, which headless Chromium on Linux only gives when asked, for
+  // the step that checks what the GPU draws, ["screen light"]. The video
+  // preview itself draws on a 2D canvas here, __flatScreen, because
+  // headless Chromium gives nothing back from a WebGPU canvas, and the
+  // walks read the frame on screen from the canvas. See screen.ts.
   const browser = await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] });
   const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  await page.addInitScript(() => {
+    window.__flatScreen = true;
+  });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto(url);

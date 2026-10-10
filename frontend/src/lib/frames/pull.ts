@@ -7,6 +7,7 @@
 // it never holds up the page while a hand is on the clip timeline, and on
 // the page itself where a Worker will not have it.
 
+import { lightOf, type Light } from "./light";
 import { Picture } from "./picture";
 
 export type Pulled = {
@@ -22,6 +23,8 @@ export type Pulled = {
   // first frame: "started,opened,first" in milliseconds, see
   // engine.PreviewTimes.
   times: string;
+  // How the frames code their brightness, see light.ts.
+  light: Light;
   // Each frame's pixels, see Picture. They are bytes rather than a
   // Picture so they can come from a Worker, see pictures.
   frames: { at: number; data: ArrayBuffer }[];
@@ -29,20 +32,21 @@ export type Pulled = {
 
 // The frames of a pull as Pictures of width by height.
 export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture }[] {
-  return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6)) }));
+  return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
 }
 
 // The frames are colours ready to draw, see engine.PreviewFrames. Nothing
 // here decides colour.
 export async function pull(url: string, width: number, height: number): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", frames: [] };
+  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
     error: res.headers.get("X-Frames-Error") ?? "",
     closed: !!res.headers.get("X-Frames-Closed"),
     times: res.headers.get("X-Frames-Times") ?? "",
+    light: lightOf(res.headers.get("X-Frames-Light")),
     frames: [],
   };
   if (!res.ok || !res.body) return out;

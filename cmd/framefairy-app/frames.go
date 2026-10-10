@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/framewire"
 )
 
 // The picture of the episode, decoded on the Go side by the episode's
@@ -86,6 +87,9 @@ type preview struct {
 	// once, with the first pull that has a frame. Nil for sound.
 	times *engine.PreviewTimes
 	told  atomic.Bool
+	// How the frames code their brightness, said with every pull that has
+	// a frame, see framewire.Picture. Nil for sound.
+	light func() framewire.Light
 }
 
 type atomicTime struct {
@@ -160,6 +164,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
 	var times *engine.PreviewTimes
+	var light func() framewire.Light
 	if r.URL.Path == "/frames/sound" {
 		rate, _ := strconv.Atoi(q.Get("rate"))
 		channels, _ := strconv.Atoi(q.Get("ch"))
@@ -183,6 +188,9 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 		}
 		times = engine.NewPreviewTimes()
 		dec, err := p.decoder(path)
+		if err == nil {
+			light = dec.Light
+		}
 		run = func(ctx context.Context, got func(float64, []byte) error) error {
 			if err != nil {
 				return err
@@ -194,7 +202,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if r.URL.Path == "/frames/sound" {
 		kind = "sound"
 	}
-	id := p.start(kind, times, run)
+	id := p.start(kind, times, light, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -204,12 +212,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // Streams of sound and of frames are counted apart, so that seeks of a
 // play, each with a sound stream of its own, never close the frames the
 // video preview is drawing, nor frames the sound.
-func (p *previews) start(kind string, times *engine.PreviewTimes, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -417,6 +425,13 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 				}
 				w.Header().Set("X-Frames-Times", fmt.Sprintf("%d,%d,%d,%d",
 					s.times.Started.Load(), s.times.Opened.Load(), s.times.First.Load(), file))
+			}
+			// HDR frames are 10 bits a colour in the file's own curve, and
+			// the page draws them as such, see framewire.Picture.
+			if s.light != nil {
+				if light := s.light(); light != framewire.SDR {
+					w.Header().Set("X-Frames-Light", string(light))
+				}
 			}
 			if !put(f) {
 				return
