@@ -240,7 +240,12 @@ side, see `lib/frames/app.ts`, and the walk fails at its start when the
 picture did not come that way. The sequence "a picture the browser's
 decoder fails on comes from the Go side" makes Chromium's decoder say yes
 and then fail on the first frame, the way WebKit's does with Tim's
-`start.mp4`.
+`start.mp4`. The sequence "the picture comes back after the playhead
+reached the end of the episode" drags the clip's end to the end of the
+episode, plays to it, and then clicks four places along the clip
+timeline, each of which has to show its frame. With the episode's
+decoder from before 2.166 in [GUI-PLAN.md](GUI-PLAN.md) the video
+preview stays black from the end on, and it fails at the first click.
 
 **The layout under a dragged edge.** The sequence "the app dragged a pixel
 at a time moves every part one way, the sides equal and set by the width"
