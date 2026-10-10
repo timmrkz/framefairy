@@ -1,10 +1,14 @@
 // Reading a pull of frames from the Go side, see cmd/framefairy-app/
 // frames.go: each frame is where it starts, 8 bytes, then the frame in
-// 8-bit I420. Each frame is read straight into a buffer of its own as the
-// answer arrives and handed to its VideoFrame without another copy, so a
-// frame is copied once on its way in, not twice. It runs in a Worker, see
-// pull.worker.ts, so it never holds up the page while a hand is on the
-// clip timeline, and on the page itself where a Worker will not have it.
+// colours, RGBA with 8 bits each and an opaque alpha, which ffmpeg made
+// from the file's tags. Each frame is read straight into a buffer of its
+// own as the answer arrives and kept as it is, so a frame is copied once
+// on its way in, not twice. It runs in a Worker, see pull.worker.ts, so
+// it never holds up the page while a hand is on the clip timeline, and on
+// the page itself where a Worker will not have it.
+
+import { lightOf, type Light } from "./light";
+import { Picture } from "./picture";
 
 export type Pulled = {
   // The answer's status, 404 for a stream the Go side has closed.
@@ -19,39 +23,34 @@ export type Pulled = {
   // first frame: "started,opened,first" in milliseconds, see
   // engine.PreviewTimes.
   times: string;
-  frames: { at: number; frame: VideoFrame }[];
+  // How the frames code their brightness, see light.ts.
+  light: Light;
+  // Each frame's pixels, see Picture. They are bytes rather than a
+  // Picture so they can come from a Worker, see pictures.
+  frames: { at: number; data: ArrayBuffer }[];
 };
 
-// Whether a VideoFrame can take a buffer over instead of copying it.
-let transfers = true;
-
-function frameFrom(buffer: ArrayBuffer, width: number, height: number, at: number, colour: VideoColorSpaceInit): VideoFrame {
-  const init = { format: "I420" as const, codedWidth: width, codedHeight: height, timestamp: Math.round(at * 1e6), colorSpace: colour };
-  if (transfers) {
-    try {
-      return new VideoFrame(buffer, { ...init, transfer: [buffer] } as VideoFrameBufferInit);
-    } catch {
-      transfers = false;
-    }
-  }
-  return new VideoFrame(buffer, init);
+// The frames of a pull as Pictures of width by height.
+export function pictures(got: Pulled, width: number, height: number): { at: number; frame: Picture }[] {
+  return got.frames.map(({ at, data }) => ({ at, frame: new Picture(data, width, height, Math.round(at * 1e6), got.light) }));
 }
 
-// The frames are in the picture's colours and in full range, which the Go
-// side makes them in, see engine.PreviewFrames.
-export async function pull(url: string, width: number, height: number, colour: VideoColorSpaceInit): Promise<Pulled> {
+// The frames are colours ready to draw, see engine.PreviewFrames. Nothing
+// here decides colour.
+export async function pull(url: string, width: number, height: number): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", frames: [] };
+  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
     error: res.headers.get("X-Frames-Error") ?? "",
     closed: !!res.headers.get("X-Frames-Closed"),
     times: res.headers.get("X-Frames-Times") ?? "",
+    light: lightOf(res.headers.get("X-Frames-Light")),
     frames: [],
   };
   if (!res.ok || !res.body) return out;
-  const size = (width * height * 3) / 2;
+  const size = width * height * 4;
   const head = new Uint8Array(8);
   let headHas = 0;
   let body: ArrayBuffer | null = null;
@@ -79,7 +78,7 @@ export async function pull(url: string, width: number, height: number, colour: V
       at += n;
       if (bodyHas === size) {
         const when = new DataView(head.buffer).getFloat64(0, true);
-        out.frames.push({ at: when, frame: frameFrom(body!, width, height, when, colour) });
+        out.frames.push({ at: when, data: body! });
         headHas = 0;
         body = null;
       }

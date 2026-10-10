@@ -102,6 +102,15 @@
 //                      presses the bin of the "language" model on this
 //                      machine, under Downloaded models, or of the
 //                      "speech" model
+//   ["screen light"]   draws pixels of standard video, of PQ and of HLG with
+//                      the video preview's GPU drawing, and holds what the
+//                      GPU gives the canvas to light.ts worked out on the
+//                      processor, standard video to QuickTime's look with
+//                      every 10-bit step a step of its own, and HDR to
+//                      BT.2100's own anchors: HDR's
+//                      reference white is the app's white, its highlights
+//                      are brighter, and a green of BT.2020 lies outside
+//                      BT.709. Says so and checks nothing without WebGPU
 //   ["play to the end"]
 //                      drags the clip's end to the end of the episode,
 //                      puts the playhead three seconds before it with a
@@ -843,6 +852,12 @@ export const sequences = [
       ["box", "als mich dem Schulhof irgendein"],
       ["spans", "start"],
     ],
+  },
+  {
+    // The video preview draws on a WebGPU canvas in the extended mode,
+    // so an HDR episode shines on an HDR screen. Step 4 of 2.156.
+    name: "the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light",
+    steps: [["screen light"]],
   },
   {
     // One engine: every frame comes from ffmpeg on the Go side, so a
@@ -1873,6 +1888,55 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "changed": {
         const now = await modelsNamed(page);
         if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
+        break;
+      }
+      case "screen light": {
+        // A pixel of 10 bits a colour, red lowest, as the Go side sends
+        // every frame.
+        const word = (r, g, b) => {
+          const w = (r | (g << 10) | (b << 20)) >>> 0;
+          return [w & 255, (w >>> 8) & 255, (w >>> 16) & 255, w >>> 24];
+        };
+        // PQ's signals for 203 and 1000 nits, and HLG's 75 percent.
+        const pqWhite = Math.round(0.5806 * 1023);
+        const pq1000 = Math.round(0.7518 * 1023);
+        const hlgWhite = Math.round(0.75 * 1023);
+        const pixels = [
+          { light: "", bytes: word(514, 257, 803), name: "a colour of standard video" },
+          // A grey of 22 in 255 is shown as 25, QuickTime's look.
+          { light: "", bytes: word(88, 88, 88), name: "a dark grey of standard video", shown: 25 / 255 },
+          // The next value in 10 bits: in floats it is a step of its own,
+          // where 8 bits made a step of 3 in the dark and banded.
+          { light: "", bytes: word(89, 89, 89), name: "the next dark grey", above: 1 },
+          { light: "pq", bytes: word(pqWhite, pqWhite, pqWhite), name: "PQ's reference white", white: true },
+          { light: "pq", bytes: word(pq1000, pq1000, pq1000), name: "PQ at 1000 nits", bright: true },
+          { light: "hlg", bytes: word(hlgWhite, hlgWhite, hlgWhite), name: "HLG's reference white", white: true },
+          { light: "hlg", bytes: word(1023, 1023, 1023), name: "HLG's peak", bright: true },
+          { light: "pq", bytes: word(0, pqWhite, 0), name: "a green of BT.2020", outside: true },
+        ];
+        const got = await page.evaluate((p) => window.__checkPixels?.(p) ?? null, pixels.map(({ light, bytes }) => ({ light, bytes })));
+        if (!got) {
+          console.log("        no WebGPU in this browser, so what the GPU draws is not checked");
+          break;
+        }
+        const problems = [];
+        pixels.forEach((p, i) => {
+          const gpu = got.gpu[i];
+          const cpu = got.cpu[i];
+          // Half floats hold 3 figures, and 10 bits sampled on the GPU may
+          // round a step apart.
+          const off = Math.max(...gpu.map((v, c) => Math.abs(v - cpu[c]) / Math.max(1, Math.abs(cpu[c]))));
+          if (!(off < 0.01)) problems.push(`${p.name}: the GPU gives ${gpu.map((v) => v.toFixed(4))}, light.ts ${cpu.map((v) => v.toFixed(4))}`);
+          if (p.white && gpu.some((v) => Math.abs(v - 1) > 0.01)) problems.push(`${p.name} is ${gpu.map((v) => v.toFixed(4))}, not the app's white`);
+          if (p.bright && gpu.some((v) => v < 1.5)) problems.push(`${p.name} is ${gpu.map((v) => v.toFixed(4))}, not brighter than white`);
+          if (p.outside && !(gpu[0] < 0)) problems.push(`${p.name} has a red of ${gpu[0].toFixed(4)}, inside BT.709`);
+          if (p.shown !== undefined && gpu.some((v) => Math.abs(v - p.shown) > 0.5 / 255)) problems.push(`${p.name} is ${gpu.map((v) => (v * 255).toFixed(2))} in 255, not ${(p.shown * 255).toFixed(0)}`);
+          if (p.above !== undefined) {
+            const step = (gpu[0] - got.gpu[p.above][0]) * 255;
+            if (!(step > 0 && step < 1)) problems.push(`${p.name} is ${step.toFixed(2)} above the one before in 255, not a step of its own below 1`);
+          }
+        });
+        if (problems.length) wrong = problems.join("\n");
         break;
       }
       case "play to the end": {

@@ -30,6 +30,8 @@
 //   and sound arriving, and by the animation frame that draws while
 //   playing.
 import { AppFrames, AppPictures } from "./app";
+import type { Picture } from "./picture";
+import { screenOf, type Screen } from "./screen";
 import { findMoov, MP4Error, parseMoov, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
 import {
   AudioPlan,
@@ -71,7 +73,7 @@ export type Shown = {
 };
 
 export type Stats = {
-  // VideoFrames open now, and the most there ever were.
+  // Frames open now, and the most there ever were.
   open: number;
   mostOpen: number;
   decoded: number;
@@ -89,6 +91,9 @@ export type Stats = {
   soundScheduled: number;
   reads: number;
   bytesRead: number;
+  // What the canvas draws with, webgpu or 2d, see screen.ts, and nothing
+  // until it is set up.
+  screen: string;
   errors: string[];
 };
 
@@ -509,7 +514,7 @@ const NO_DATA = new Uint8Array(0);
 // goes, in samples, and its samples, one array a channel.
 type Chunk = { out: number; length: number; data: Float32Array<ArrayBuffer>[] };
 
-type Held = { frame: VideoFrame; rank: number };
+type Held = { frame: Picture; rank: number };
 
 // One picture decoder and the run it is on.
 type Slot = {
@@ -561,12 +566,17 @@ export class FrameQueue {
     soundScheduled: 0,
     reads: 0,
     bytesRead: 0,
+    screen: "",
     errors: [],
   };
 
   private reader: Reader;
   private canvas: HTMLCanvasElement;
-  private draw2d: CanvasRenderingContext2D;
+  // The canvas's screen, kept with the canvas, see screen.ts, and null
+  // until it is set up. Whether the canvas holds this episode's own frame
+  // from a queue before this one, see the constructor.
+  private screen: Screen | null = null;
+  private known: boolean;
   private listeners = new Set<(s: Shown) => void>();
   private video: VideoTrack | null = null;
   private sound: AudioTrack | null = null;
@@ -605,7 +615,7 @@ export class FrameQueue {
   // the newest ask of the Go side's frames made when it was put up.
   private putFor = -1;
   private shownAsked = 0;
-  private shown: { frame: VideoFrame; run: number; rank: number } | null = null;
+  private shown: { frame: Picture; run: number; rank: number } | null = null;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
   private m0 = 0;
@@ -636,12 +646,7 @@ export class FrameQueue {
   // this queue replaces it.
   constructor(canvas: HTMLCanvasElement, url: string, known: Movie | null = null) {
     this.canvas = canvas;
-    const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) throw new Error("the canvas has no 2d context");
-    this.draw2d = ctx;
-    // Black until the first frame, never the last frame of an episode
-    // drawn on this canvas before.
-    if (!known) this.paint();
+    this.known = known !== null;
     this.reader = new Reader(url, known);
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
@@ -652,8 +657,14 @@ export class FrameQueue {
   }
 
   private async open() {
-    if (typeof VideoFrame === "undefined") throw new MP4Error("the app cannot draw video on this system");
-    const movie = await this.reader.open();
+    const [screen, movie] = await Promise.all([screenOf(this.canvas), this.reader.open()]);
+    if (this.closed) throw new Error("closed");
+    this.screen = screen;
+    this.stats.screen = screen.kind;
+    screen.onRestored = () => this.paint();
+    // Black until the first frame, never the last frame of an episode
+    // drawn on this canvas before. A workspace woken again keeps its own.
+    if (!this.known) this.paint();
     this.stats.reads = this.reader.reads;
     this.stats.bytesRead = this.reader.bytes;
     if (this.closed) throw new Error("closed");
@@ -970,7 +981,7 @@ export class FrameQueue {
 
   // The frame on the canvas, in its own pixels, for a colour taken from the
   // picture, or null.
-  picture(): VideoFrame | null {
+  picture(): Picture | null {
     return this.shown?.frame ?? null;
   }
 
@@ -1005,14 +1016,14 @@ export class FrameQueue {
     });
   }
 
-  private closeFrame(f: VideoFrame) {
+  private closeFrame(f: Picture) {
     f.close();
     this.stats.open--;
   }
 
   // Draws a frame and closes the one it replaces. One passing is put up
   // on the way to the frame asked for, see passing.
-  private put(frame: VideoFrame, run: number, rank: number, passing = false) {
+  private put(frame: Picture, run: number, rank: number, passing = false) {
     if (this.shown && this.shown.frame !== frame) this.closeFrame(this.shown.frame);
     this.shown = { frame, run, rank };
     if (!passing) {
@@ -1031,28 +1042,18 @@ export class FrameQueue {
   // 50 ms against 16. So every frame came for a place already left, none
   // was drawn, and the picture stood still for the whole drag, found by
   // Tim on start.mp4. Nothing is reported: the playhead is the hand's.
-  private passing(rank: number, frame: VideoFrame, seq: number) {
+  private passing(rank: number, frame: Picture, seq: number) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
     this.shownAsked = seq;
     if (this.shown?.rank === rank) return;
     this.stats.open++;
-    this.put(new VideoFrame(frame, { timestamp: frame.timestamp }), -1, rank, true);
+    this.put(frame.clone(), -1, rank, true);
   }
 
-  // The frame on screen, as large as the canvas allows and in its own
-  // shape, in the middle, on whole pixels, and black around it.
+  // The frame on screen, see screen.ts.
   private paint() {
-    const c = this.canvas;
-    const g = this.draw2d;
-    g.fillStyle = "#000";
-    g.fillRect(0, 0, c.width, c.height);
-    const f = this.shown?.frame;
-    if (!f || !f.displayWidth || !f.displayHeight) return;
-    const scale = Math.min(c.width / f.displayWidth, c.height / f.displayHeight);
-    const w = Math.round(f.displayWidth * scale);
-    const h = Math.round(f.displayHeight * scale);
-    g.drawImage(f, Math.round((c.width - w) / 2), Math.round((c.height - h) / 2), w, h);
+    this.screen?.draw(this.shown?.frame ?? null);
   }
 
   private shownAt(rank: number): number {
@@ -1458,7 +1459,7 @@ export class FrameQueue {
     }
   }
 
-  private frameOut(slot: Slot, frame: VideoFrame) {
+  private frameOut(slot: Slot, frame: Picture) {
     this.stats.open++;
     this.stats.mostOpen = Math.max(this.stats.mostOpen, this.stats.open);
     this.stats.decoded++;
