@@ -70,9 +70,9 @@
   const map = [
     ["The beam", "New, Cancel, Pause, Render, Check again, and the pause mark in the clip list head"],
     ["The motes", "wherever the beam is, they are part of it"],
-    ["The fill", "in New, in Pause and in Render while their work has a number, and as a track in Activity"],
+    ["The fill", "in New, in Pause and in Render while their work has a number"],
     ["The shimmer", "the clips not found yet, the part of the clip timeline the transcript has not reached, the window on the range picker while a search runs"],
-    ["The pulse", "the dot beside an episode in the sidebar, the dot on Activity on the rail, and the dot on a running job"],
+    ["The pulse", "the dot beside an episode in the sidebar"],
   ];
 </script>
 
@@ -154,23 +154,6 @@
       {#key drained}
         <div class="busyhost gone"><Busy drain={10} onend={() => drained++} /><span>Removed</span></div>
       {/key}
-    </div>
-  </section>
-
-  <section>
-    <h2>The fill, as a track</h2>
-    <p class="muted">
-      The same fill where a job has no control of its own, which is Activity.
-      It is Busy with no rim and no motes, in a track, so it is the fill
-      above and cannot become another. A light travels over what is
-      already done, so it lives even when the number stands still. Work
-      that cannot say how far it has come shuttles across the track instead
-      of standing at a number it does not have.
-    </p>
-    <div class="tracks">
-      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle fraction={share} /></div>
-      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle fraction={0.35} /></div>
-      <div class="progress busyhost"><Busy rim={false} motes={false} shuttle /></div>
     </div>
   </section>
 
@@ -322,12 +305,6 @@
     background: color-mix(in srgb, var(--err) 14%, transparent);
     color: var(--err);
     font-weight: 600;
-  }
-
-  .tracks {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap);
   }
 
   .way {

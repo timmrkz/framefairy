@@ -409,6 +409,14 @@ export async function fromSidebar(page, click) {
   await click();
   await page.mouse.move(750, 400);
   await page.waitForTimeout(400);
+  // An episode picked is built behind the one on screen and takes its
+  // place once it is ready, see App.svelte. Until then there are two, and
+  // whatever a walk reads next is about the one it picked.
+  await page.waitForFunction(
+    () => document.querySelectorAll(".workspace").length <= 1 && !document.querySelector(".workspace.behind"),
+    null,
+    { polling: "raf", timeout: 15000 },
+  );
 }
 
 // What a picture shows, in a band across it from a tenth of its height

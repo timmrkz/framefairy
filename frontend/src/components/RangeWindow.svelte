@@ -140,8 +140,9 @@
     return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
   });
   onMount(() => {
+    // Nothing measured while the workspace is put away, see App.svelte.
     const observer = new ResizeObserver(() => {
-      width = track.clientWidth;
+      if (track.isConnected && track.clientWidth) width = track.clientWidth;
     });
     observer.observe(track);
     return () => observer.disconnect();

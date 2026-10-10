@@ -1,5 +1,5 @@
 // Shared state: the job list, kept current from the Go side's events.
-import { api, onJob, type Job, type EngineEvent, type Lane } from "./api";
+import { api, onJob, type Job, type Lane } from "./api";
 import { mergeJob } from "./flow";
 import type { EpisodeOrder } from "./order";
 
@@ -11,7 +11,6 @@ const recheck = 5000;
 
 class JobStore {
   list = $state<Job[]>([]);
-  log = $state<Record<string, EngineEvent[]>>({});
 
   // A snapshot of a job, kept unless the list already has a later one.
   apply(job: Job) {
@@ -23,13 +22,7 @@ class JobStore {
     // Listening starts before the list is read, so nothing that happens
     // while it is read is missed. What was heard in the meantime and what
     // the list says are merged by their numbers.
-    onJob(({ job, event }) => {
-      this.apply(job);
-      if (event && event.kind !== "progress" && event.kind !== "idle") {
-        const lines = this.log[job.id] ?? [];
-        this.log[job.id] = [...lines.slice(-199), event];
-      }
-    });
+    onJob(({ job }) => this.apply(job));
     await this.resync();
     setInterval(() => {
       if (this.busy > 0) void this.resync();
@@ -78,25 +71,12 @@ class JobStore {
   get busy(): number {
     return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
   }
-
-  async clear() {
-    await api.clearJobs();
-    this.list = this.list.filter((j) => j.state === "running" || j.state === "queued" || stays(j));
-  }
 }
 
 export const jobs = new JobStore();
 
-// A search or a render that stopped, cut off or failed, and has not been
-// carried on or called off yet. It is not finished, so clearing the
-// finished leaves it: it says so where its work was until it is acted on.
-export function stays(j: Job): boolean {
-  return j.state === "interrupted" || (j.state === "failed" && !!j.record);
-}
-
 export type View =
   | { name: "episode"; path: string }
-  | { name: "jobs" }
   | { name: "settings" }
   | { name: "updates" }
   | { name: "acknowledgements" }

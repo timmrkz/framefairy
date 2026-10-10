@@ -363,3 +363,39 @@ func TestTheFramesRouteKeepsTheDecoderOfAnOpenEpisode(t *testing.T) {
 		t.Errorf("a hold of a file outside the library answered %d, want 404", rec.Code)
 	}
 }
+
+// Let go of, no more than decodersSpare decoders stand running, the ones
+// used last, however many episodes were open: the app builds ten
+// workspaces as it starts, each holding its decoder until it sleeps.
+func TestOnlyAFewDecodersNobodyHoldsStandRunning(t *testing.T) {
+	var p previews
+	p.decoders = map[string]*engine.EpisodeFrames{}
+	p.held = map[string]int{}
+	var paths []string
+	for i := range 6 {
+		path := fmt.Sprintf("/episode-%d.mp4", i)
+		paths = append(paths, path)
+		// Never started: a decoder runs nothing until it is first asked.
+		p.decoders[path] = engine.NewEpisodeFrames("framefairy-frames", path)
+		p.held[path] = 1
+		time.Sleep(2 * time.Millisecond)
+	}
+	// Each let go of in turn, the way the workspaces go to sleep.
+	for _, path := range paths[:5] {
+		p.release(path)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.decoders) != 1+decodersSpare {
+		t.Fatalf("%d decoders stand, wanted the one held and %d spare", len(p.decoders), decodersSpare)
+	}
+	if p.decoders[paths[5]] == nil {
+		t.Error("the decoder still held was closed")
+	}
+	// The spares are the ones used last.
+	for _, path := range paths[5-decodersSpare : 5] {
+		if p.decoders[path] == nil {
+			t.Errorf("%s, used last, was closed", path)
+		}
+	}
+}

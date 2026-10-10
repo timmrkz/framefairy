@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     clock,
@@ -25,7 +25,6 @@
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
-  import Jobs from "./screens/Jobs.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
   import ColourTest from "./screens/ColourTest.svelte";
@@ -83,6 +82,8 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // Whether the library has been read once.
+  let libraryRead = $state(false);
   // The list as the sidebar shows it. The trigger is the sort mark Apple's
   // own apps put on a sort menu, and says what it does rather than which
   // order is on: a clock alone read as anything but sorting. The rows say
@@ -93,6 +94,124 @@
     { value: "added", label: "Added", icon: "sort-added" },
     { value: "name", label: "Name", icon: "sort-name" },
   ];
+  // The workspaces of the episodes opened last are kept, so going back to
+  // one is one frame: it stands where it stood, with everything it had on
+  // it. Only the one in front is awake. The others are asleep, out of the
+  // page, see shelf, and hold their page and the file's index and nothing
+  // costly, no decoder and no sound card, see sleeping in Player.svelte. Tim found
+  // every episode picked took half a second to be built again from
+  // nothing, a chain of questions to the Go side, the file's index and
+  // ffmpeg starting, all of it thrown away again on leaving.
+  //
+  // An episode not kept is built behind the one on screen, and the two
+  // change places in one frame once the new one has its episode on it, see
+  // ready in Episode.svelte, or after a second at most, so a slow disk
+  // never keeps the old episode up. It was torn down and built again in
+  // front of the person, empty first and then a part at a time, and Tim saw
+  // that as a flicker on every episode picked.
+  const KEPT = 10;
+  const asked = $derived(nav.view.name === "episode" ? nav.view.path : "");
+  // The one in front, and the ones kept, the last opened first.
+  let onScreen = $state("");
+  let kept = $state<string[]>([]);
+  // The kept ones that have had their episode on them once.
+  let readied = $state<Record<string, true>>({});
+  $effect(() => {
+    const coming = asked;
+    if (!coming) return;
+    // So the app opens on it again as it starts, see Opened in chosen.go.
+    api.openEpisode(coming).catch(() => {});
+    untrack(() => {
+      kept = [coming, ...kept.filter((p) => p !== coming)].slice(0, KEPT);
+      for (const p of Object.keys(readied)) if (!kept.includes(p)) delete readied[p];
+      if (warming && !kept.includes(warming)) warming = "";
+      if (readied[coming]) onScreen = coming;
+    });
+  });
+  // As the app starts, it opens on the episode that was open when it was
+  // left, the way a Mac app comes back with the document it had open, and
+  // the workspaces of the episodes opened before it are built, so the
+  // first one picked is on screen in one frame too. One at a time, behind
+  // whatever is on screen, and only while no episode that was picked is
+  // being built: each is built awake, so it has its frame on its canvas,
+  // and goes to sleep once it is ready, or after three seconds.
+  let toWarm = $state<string[]>([]);
+  let warming = $state("");
+  // Whether the app knows yet where it was left. Until it does, the page
+  // for no episode stays blank rather than show for a moment.
+  let placed = $state(false);
+  onMount(() => {
+    api
+      .opened(KEPT)
+      .then((list) => {
+        toWarm = list;
+        if (list.length && nav.view.name === "empty") nav.go({ name: "episode", path: list[0] });
+      })
+      .catch(() => {})
+      .finally(() => (placed = true));
+  });
+  $effect(() => {
+    if (warming || (asked && asked !== onScreen) || kept.length >= KEPT) return;
+    const known = new Set(episodes.map((e) => e.source));
+    const next = toWarm.find((p) => known.has(p) && !kept.includes(p));
+    if (!next) return;
+    untrack(() => {
+      toWarm = toWarm.filter((p) => p !== next);
+      warming = next;
+      kept = [...kept, next];
+    });
+  });
+  $effect(() => {
+    const now = warming;
+    if (!now) return;
+    const late = setTimeout(() => {
+      if (warming === now) warming = "";
+    }, 3000);
+    return () => clearTimeout(late);
+  });
+  // An episode removed from the library takes its workspace with it.
+  $effect(() => {
+    const known = new Set(episodes.map((e) => e.source));
+    untrack(() => {
+      if (kept.some((p) => !known.has(p) && p !== asked)) kept = kept.filter((p) => known.has(p) || p === asked);
+    });
+  });
+  $effect(() => {
+    const coming = asked;
+    if (!coming || coming === onScreen) return;
+    const late = setTimeout(() => {
+      if (asked === coming) onScreen = coming;
+    }, 1000);
+    return () => clearTimeout(late);
+  });
+  // A kept workspace that sleeps is taken out of the page and put back as
+  // it was. Out of the page, it costs no layout when the app is resized,
+  // and nothing that looks the workspace up by the document finds it. It
+  // keeps everything it holds, its canvases with what is drawn on them
+  // among it. Its slot stays where it was for it to go back into.
+  function shelf(node: HTMLElement, away: boolean) {
+    const home = node.parentElement!;
+    let kept: number | null = null;
+    const put = (now: boolean) => {
+      if (now && node.isConnected) {
+        // Taken out of the page, a list forgets how far it was scrolled.
+        kept = node.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? null;
+        node.remove();
+      } else if (!now && !node.isConnected) {
+        home.append(node);
+        const list = node.querySelector<HTMLElement>(".pane .list");
+        if (list && kept !== null) list.scrollTop = kept;
+      }
+    };
+    put(away);
+    return { update: put };
+  }
+
+  // The one asked for comes first in the document, so whatever looks the
+  // workspace up finds the episode that was picked, and the one going is
+  // drawn over it until they change places.
+  const workspaces = $derived(asked ? [asked, ...kept.filter((p) => p !== asked)] : kept);
+
   // What is on screen, said once, in the bar at the top. The
   // screens do not write their own name any more.
   const title = $derived.by(() => {
@@ -100,7 +219,6 @@
       const path = nav.view.path;
       return episodes.find((ep) => ep.source === path)?.name ?? "";
     }
-    if (nav.view.name === "jobs") return "Activity";
     if (nav.view.name === "settings") return "Settings";
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
@@ -129,6 +247,7 @@
     } catch (err) {
       problem = errorText(err);
     }
+    libraryRead = true;
   }
 
   async function add() {
@@ -181,7 +300,12 @@
       // The workspace goes first. Left open, it went on reading the
       // episode it showed, which was no longer in the library, and every
       // read came back as "file does not exist".
-      if (nav.view.name === "episode" && nav.view.path === ep.source) nav.go({ name: "empty" });
+      // The episode opened before it comes back, the way closing a tab
+      // shows the one before it.
+      if (nav.view.name === "episode" && nav.view.path === ep.source) {
+        const before = kept.find((p) => p !== ep.source);
+        nav.go(before ? { name: "episode", path: before } : { name: "empty" });
+      }
       removing = null;
       await refresh();
     } catch (err) {
@@ -473,10 +597,6 @@
             </button>
           </span>
         </li>
-      {:else}
-        <li class="empty muted">
-          Add an episode with the plus below to start. Any mp4, mov, m4v or mkv works.
-        </li>
       {/each}
     </ul>
     <div class="foot">
@@ -487,23 +607,6 @@
       >
         <Icon name="plus" />
         <span class="label">Add</span>
-      </button>
-      <button
-        class="quiet nav"
-        class:current={nav.view.name === "jobs"}
-        onclick={() => nav.go({ name: "jobs" })}
-        title={jobs.busy
-          ? jobs.busy === 1
-            ? "Activity, one job running"
-            : `Activity, ${jobs.busy} jobs running`
-          : "Activity"}
-      >
-        <!-- No dot of its own. Work in hand is the dot beside the episode
-             it is for, and a second one here said the same thing twice. -->
-        <span class="mark">
-          <Icon name="activity" />
-        </span>
-        <span class="label">Activity</span>
       </button>
       <button
         class="quiet nav"
@@ -542,12 +645,37 @@
     {#if problem}
       <p class="error banner selectable">{problem}</p>
     {/if}
+    <!-- The kept workspaces stay while another screen is open, out of the
+         way, so coming back from the settings is one frame as well. -->
+    {#if workspaces.length}
+      <div class="workspaces" class:gone={!asked}>
+        {#each workspaces as path (path)}
+          <div class="slot">
+            <div
+              class="workspace"
+              data-path={path}
+              class:behind={path !== onScreen}
+              class:front={path === onScreen}
+              inert={path !== onScreen || path !== asked}
+              use:shelf={path !== onScreen && path !== asked && path !== warming}
+            >
+              <Episode
+                {path}
+                away={path !== asked && path !== warming}
+                onchange={refresh}
+                onready={() => {
+                  readied[path] = true;
+                  if (path === warming) warming = "";
+                  if (path === asked) onScreen = path;
+                }}
+              />
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
     {#if nav.view.name === "episode"}
-      {#key nav.view.path}
-        <Episode path={nav.view.path} onchange={refresh} />
-      {/key}
-    {:else if nav.view.name === "jobs"}
-      <Jobs />
+      <!-- The workspaces above. -->
     {:else if nav.view.name === "updates"}
       <UpdatesScreen />
     {:else if nav.view.name === "settings"}
@@ -556,13 +684,21 @@
       <Acknowledgements />
     {:else if nav.view.name === "colourtest"}
       <ColourTest />
+    {:else if !placed || !libraryRead}
+      <!-- Where the app was left is on its way. -->
+    {:else if !episodes.length}
+      <div class="welcome">
+        <h1>Add an episode</h1>
+        <p class="muted">
+          The app transcribes it on this machine, finds the moments worth clipping and renders
+          them as vertical shorts. Any mp4, mov, m4v or mkv works.
+        </p>
+        <button class="primary" onclick={add}>Add</button>
+      </div>
     {:else}
       <div class="welcome">
         <h1>Pick an episode</h1>
-        <p class="muted">
-          Choose one on the left, or add a new one. The app transcribes it on this machine, finds
-          the moments worth clipping and renders them as vertical shorts.
-        </p>
+        <p class="muted">Choose one on the left, or add a new one.</p>
       </div>
     {/if}
   </main>
@@ -824,11 +960,9 @@
      and what it has wait for the room, and so do the two marks, which need
      a pointer on the row anyway. The row keeps its height, so the lamp is
      in the same place shut and open and nothing moves as the sidebar
-     goes over. An episode nobody has added yet has nothing to show on the
-     rail at all. */
+     goes over. */
   aside:not(.open) .episode .name,
-  aside:not(.open) .tools,
-  aside:not(.open) li.empty {
+  aside:not(.open) .tools {
     display: none;
   }
 
@@ -995,10 +1129,6 @@
     font-size: var(--size-s);
   }
 
-  .empty {
-    padding: 8px;
-  }
-
   .foot {
     border-top: 1px solid var(--line);
     padding: 8px 4px;
@@ -1051,6 +1181,7 @@
   /* The sidebar is out of the flow, so the workspace has to be told to
      stay in the second column and leave the rail alone. */
   main {
+    position: relative;
     grid-column: 2;
     display: flex;
     flex-direction: column;
@@ -1060,6 +1191,47 @@
 
   .banner {
     padding: var(--gap) var(--edge);
+  }
+
+  /* The workspace in front and the one being opened behind it stand in
+     the same place, one cell of a grid, so the one behind is laid out to
+     the pixel as it will be shown and changing places moves nothing. */
+  .workspaces {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  }
+
+  /* Kept while another screen is open, where they stand when shown and
+     unseen, so one being built as the app starts is laid out to the pixel
+     and its canvases keep their size. */
+  .workspaces.gone {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+  }
+
+  .workspace {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .workspace.behind {
+    visibility: hidden;
+  }
+
+  .workspace.front {
+    z-index: 1;
+  }
+
+  /* What a workspace stands in. An empty one, its workspace put away,
+     takes no room. */
+  .slot {
+    display: contents;
   }
 
   /* In the middle of the workspace, so the sidebar can lie over the left of
@@ -1077,6 +1249,10 @@
 
   .welcome p {
     max-width: 52ch;
+  }
+
+  .welcome button {
+    margin-top: var(--gap);
   }
 
   .welcome h1 {

@@ -22,3 +22,13 @@ export function asking(): boolean {
 export function keysElsewhere(): boolean {
   return typing() || asking();
 }
+
+// A workspace that is not the one in front of the person takes no keys.
+// Opening another episode builds its workspace behind the one on screen,
+// and the two stand together until the new one is ready, see App.svelte.
+// Both are inert meanwhile, and the space bar must not play either of
+// them, nor an arrow walk the clips of the one going. A workspace kept
+// for later is out of the page altogether, and listens all the same.
+export function asleep(here: Element | null | undefined): boolean {
+  return !here || !here.isConnected || !!here.closest("[inert]");
+}

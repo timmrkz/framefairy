@@ -14,11 +14,11 @@ import { Picture } from "./picture";
 export interface Screen {
   readonly kind: "webgpu" | "2d";
   // Draws the frame, or black for none. The frame is only read, never
-  // kept, so whoever owns it may close it straight after.
+  // kept, so whoever owns it may close it straight after. What is drawn
+  // stays until the next draw.
   draw(frame: Picture | null): void;
   // Called once a lost GPU is back, so the frame can be drawn again.
   onRestored?: () => void;
-  close(): void;
 }
 
 // Where a frame of fw by fh goes on a canvas of cw by ch: as large as the
@@ -36,14 +36,28 @@ export function fit(
   return { x: Math.round((cw - w) / 2), y: Math.round((ch - h) / 2), w, h };
 }
 
-// The screen for this canvas. A canvas keeps the first kind of context it
-// is asked for, so a GPU device is in hand before the canvas is asked for
-// WebGPU, and only without one is it asked for the 2D context.
+const screens = new WeakMap<HTMLCanvasElement, Promise<Screen>>();
+
+// The screen of this canvas, made once and kept with the canvas, so the
+// frame on it stays when the queue that drew it closes, until a queue
+// after it draws, see sleeping in Player.svelte.
+export function screenOf(canvas: HTMLCanvasElement): Promise<Screen> {
+  let screen = screens.get(canvas);
+  if (!screen) {
+    screen = openScreen(canvas);
+    screens.set(canvas, screen);
+  }
+  return screen;
+}
+
+// A canvas keeps the first kind of context it is asked for, so a GPU
+// device is in hand before the canvas is asked for WebGPU, and only
+// without one is it asked for the 2D context.
 //
 // The walks read the video preview back from its canvas, which headless
 // Chromium does not give for a WebGPU canvas, so they ask for the 2D
 // canvas with __flatScreen and check what the GPU draws with checkPixels.
-export async function openScreen(canvas: HTMLCanvasElement): Promise<Screen> {
+async function openScreen(canvas: HTMLCanvasElement): Promise<Screen> {
   const flat = (globalThis as { __flatScreen?: boolean }).__flatScreen === true;
   const gpu = flat
     ? null
@@ -101,8 +115,6 @@ class FlatScreen implements Screen {
     this.ownG.putImageData(pixels, 0, 0);
     this.g.drawImage(this.own, at.x, at.y, at.w, at.h);
   }
-
-  close() {}
 }
 
 const shader = `
@@ -263,7 +275,6 @@ class GPUScreen implements Screen {
   readonly kind = "webgpu";
   onRestored?: () => void;
   private painter!: Painter;
-  private closed = false;
   private complained = false;
 
   private constructor(
@@ -298,10 +309,10 @@ class GPUScreen implements Screen {
     // A GPU can be lost, to sleep or to a driver that restarts. The
     // canvas cannot become a 2D canvas then, so a new device is asked for.
     void device.lost.then(async (info) => {
-      if (this.closed || info.reason === "destroyed") return;
+      if (info.reason === "destroyed") return;
       console.warn("video preview: the GPU was lost,", info.message);
       const next = await gpuDevice().catch(() => null);
-      if (!next || this.closed) return;
+      if (!next) return;
       this.setUp(next);
       this.onRestored?.();
     });
@@ -314,7 +325,6 @@ class GPUScreen implements Screen {
   }
 
   draw(frame: Picture | null) {
-    if (this.closed) return;
     const c = this.canvas;
     if (!c.width || !c.height) return;
     try {
@@ -333,13 +343,6 @@ class GPUScreen implements Screen {
     }
   }
 
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    this.painter.destroy();
-    this.ctx.unconfigure();
-    this.painter.device.destroy();
-  }
 }
 
 // A half float to a number.

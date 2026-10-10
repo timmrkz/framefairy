@@ -35,9 +35,8 @@ it is about to do and does it: the download starts by itself and reports how
 far it has come, with the same fill every other piece of work in the app
 wears, and **Cancel** stops it. The row says what the model is, what it
 covers, what the download costs and what it costs on disk, before anything
-starts. It is a job like any other, in the lane of hearing, so it shows in
-**Activity** too, and a search that comes to hearing waits for the model
-rather than failing on it.
+starts. It is a job like any other, in the lane of hearing, and a search that
+comes to hearing waits for the model rather than failing on it.
 
 **Finding clips** is the question. A model in the cloud, Anthropic's or
 OpenAI's with a key of your own, works on any machine and
@@ -105,6 +104,13 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+The app opens on the episode that was open when it was left. With no
+episode in the library, the page says **Add an episode** and has the
+**Add** button on it, since there is nothing to pick. Removing the
+episode that is open goes to the one opened before it, the way closing a
+tab shows the one before, and the page for no episode shows only when
+there is none left to show.
+
 The episodes are listed in the order they were added, the newest at the
 foot, where one just added is brought into view. Once there are two, the
 sort mark at the right of the head of the sidebar, an arrow up beside an
@@ -122,16 +128,17 @@ opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
 come back. Closed, it leaves room for the settings column of the workspace,
-which is exactly what it covers when it opens. **Add episode**, **Activity**,
+which is exactly what it covers when it opens. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
 its mark says a newer one is ready. Its page has the build and its commit,
 the channel it follows, where things stand, and Check or Relaunch. See
 [UPDATES.md](UPDATES.md). Every mark is in the same place on the rail as it is in the open
 sidebar, to the pixel, so opening the sidebar never moves the mark out from
-under the pointer that came for it. The Activity mark has no dot of its
-own: work in hand is the lamp of the episode it is for, and a second dot
-said the same thing twice.
+under the pointer that came for it. There is no page of jobs: work in
+hand is the lamp of the episode it is for and shows where it was started,
+and a page that listed it all again said everything twice. It was
+removed, see below under **Work in the background**.
 
 The episodes stay on the rail too, as their lamps. **An episode's row is
 one line and the rail's own 36 pixel box**, so shut it is a square around
@@ -193,7 +200,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Activity**, **Settings** or **Acknowledgements**. No screen
+screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -386,7 +393,11 @@ in the video preview, `/frames/hold`, until it closes, `/frames/release`:
 the decoder starts at once and opens its cursors on the file before any
 frame is asked for, and a held decoder is never closed for standing
 unused, so a click after an hour paused is as quick as the first. One
-nobody holds is closed after a minute unused. The webview's
+nobody holds is closed after a minute unused, and at once when more than
+two stand unheld, the one used longest ago first, `decodersSpare` in
+`frames.go`: every workspace kept holds its decoder while it is awake, and
+the ten built as the app starts left ten programs running for a minute.
+The webview's
 decoders and the Mac's own below are still in the code, unused, until the
 step that removes them. Each stream of frames says, with its first frame,
 where its time went, in milliseconds from when it was asked for: until
@@ -564,6 +575,77 @@ way` reads every frame drawn from the click on, and where the playhead
 stood as the window was asked, which only the opening asks. The coverage
 and the room are read again whenever work elsewhere ends, so they cannot
 say what came first.
+
+**Picking another episode changes the workspace in one frame.** The new
+episode's workspace is built behind the one on screen, unseen and inert,
+in the same place, and the two change places once the new one has the
+episode on it: its window on the range picker, a frame on the canvas, its
+clip timeline drawn and the captions of the clip it opened on, `ready` in
+`Episode.svelte`. A second at most, so a slow disk never keeps the old
+episode up. Meanwhile neither takes clicks or keys, `asleep` in
+`lib/keys.ts`, and an episode left while it plays goes quiet at once. The
+workspace was torn down and built again in front of the person, empty for
+a moment and then a part at a time as each answer came in, and Tim saw
+that as a flicker on every episode picked. It is the pending state of
+React's transitions, which keep what is on screen until what replaces it
+is ready rather than going back to nothing first.
+
+**The workspaces of the last ten episodes opened are kept**, `KEPT` in
+`App.svelte`, so going back to one is one frame, from another episode and
+from the settings alike. Only the one in front is awake. A kept one is
+taken out of the page, `shelf` in `App.svelte`, so a resize of the app
+lays out one workspace and nothing that looks the workspace up by the
+document finds a second one, and it keeps what is drawn on its canvases
+and how far its clip list was scrolled. Its video preview lets go of
+everything costly, `sleeping` in `Player.svelte`:
+the frame queue is closed, with its decoder on the Go side, the frames it
+kept and its sound card, and only the file's index and the frame on the
+canvas stay. Waking, a new queue starts from that index, in the task
+after the frame that shows the workspace again, so starting a sound card
+and a decoder does not hold that frame back. Nothing is read from the
+file then but its length and when it was written, and the index is read
+again if either changed, an episode exported again under its name.
+Nothing of the file is taken from the webview's cache, which took a file
+written long ago as unchanged for minutes. The workspace reads the
+episode and the settings again behind what it already shows. Asleep, it
+reads nothing by itself. An
+eleventh episode opened lets go of the one opened longest ago. Asleep,
+a workspace is its page, its canvases and the file's index, about 10 MB,
+so ten is about 100 MB. As the app starts, it opens on the episode that
+was open when it was left, the way a Mac app comes back with the document
+it had open, and the workspaces of the episodes opened before it are
+built one at a time behind it. `Opened` on the Go side lists them by when
+each was last put on screen, which `OpenEpisode` notes in the episode's
+`chosen.json`. An episode opened only before that was noted comes after
+the rest, by when its `chosen.json` was last written. The workspaces are
+built one at a
+time behind whatever is on screen and put to sleep once each has its
+frame, so the first episode picked is on screen in one frame too. Building a
+workspace from nothing took 70 to 215 ms in the walks' browser for an
+episode of an hour, a chain of calls each waiting on the one before, and
+longer on the Mac. Going back to a kept one is the layout of the
+workspace put back and nothing else, 17 to 30 ms in the same browser, and
+it has its picture, its clip timeline and its captions in that frame.
+Only a picture is the video preview being ready: the sound stopping before
+the first frame once counted, and a workspace built as the app started
+went to sleep with nothing on its canvas.
+
+An episode that is not kept is built the moment it is picked, and the
+parts of that are started together rather than one after another. The
+file's index and the episode's decoder are asked for as the workspace
+starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
+the workspace knows what the episode is, and the frame queue takes the
+index read ahead. The clip timeline asks for its words and its waveform
+once the episode has answered, and never twice for the same view. The
+Go side keeps the transcripts of the last ten episodes read, `keptReads`
+in `words.go`, and reads one once however many calls ask for it at the
+same moment: a workspace opening asked for the same transcript up to
+seven times, and each read it from the file. The longest window the range
+picker may draw is worked out without a search from every line, which
+took forty milliseconds of an hour's transcript in the frame the
+workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
+kept is on screen in 200 ms in the walks' browser, from 240, and what is
+left is the workspace itself being laid out and the file's index read.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
@@ -1532,8 +1614,7 @@ bubble scrolled by those eight pixels.
   within a second rather than after everything before it. The clip
   timeline reads its view again while what it read had a gap in it and
   more has been measured. An episode added before this was there is measured the first time
-  it is opened. It is not a job: nobody starts it or waits for it, so it
-  has no row in Activity. At most two episodes are measured at a time.
+  it is opened. It is not a job: nobody starts it or waits for it. At most two episodes are measured at a time.
 - **Before the first transcription** there are no words. That is where
   every episode starts, so the captions band simply waits. The words
   appear as the transcript grows past them, without anything being
@@ -1829,15 +1910,7 @@ things and no others, and each one means one thing.
   stops: no beam, no motes, no light over the fill, and the head keeps its
   line without the glow ahead of it. Running and paused are told apart by
   movement. The range picker shows a transcription stopped at a window,
-  or waiting while a search has the machine, this way. In
-  Activity, where a job has no control of its own, the same fill lies in a
-  track of its own. It is `Busy.svelte` with no rim and no motes, not a
-  bar drawn apart, so it cannot drift from the fill in New and Render.
-  With no words over it, the track sets the wash to the app's colour
-  itself, a brighter light over it and a rounded head, and nothing else
-  about it is its own. Work that cannot say how far it has come shuttles
-  across that track instead of standing at a number it does not have,
-  which is Busy's `shuttle`.
+  or waiting while a search has the machine, this way.
 - **The shimmer.** A place that is not filled yet: the rows the clip list
   will have, which are already rows of the list and brighten under the
   pointer the way a clip's row does while they go on breathing, the part of the clip timeline the transcript has not reached,
@@ -1853,8 +1926,7 @@ things and no others, and each one means one thing.
   chosen. They all stay in `make motion` to be compared again, where they
   cost the app nothing.
 - **The pulse.** Work running somewhere else. The dot beside an episode in
-  the sidebar and the dot on **Activity** on the rail keep their size and
-  their place, and a ring widens out of them and fades.
+  the sidebar keeps its size and its place, and a ring widens out of them and fades.
 
 The colours are the app's own throughout, mixed from the accent, so
 changing it in the settings moves the beam, the fill and the shimmer with
@@ -1929,16 +2001,25 @@ It has to be in that episode's own logs folder, so a plan of one episode
 given with the path of another is refused, rather than edited against the
 wrong video, the wrong words and the wrong history.
 
-### Activity
+### Work in the background
 
-Everything that runs in the background, with progress, a log per job and
-**Cancel**, which wears the beam while the job winds down so the click is
-seen at once. One job is one
-row, parted from the next by a line across the page, and clicking a finished
-row opens its log. Transcription runs in its own lane, so finding and
-rendering clips never wait for it.
+Every piece of work shows where it was started and nowhere else: a
+transcription on the episode's lamp and the range picker, a search in the
+clip list with **Cancel** and **Continue**, a render on its button, a
+model being fetched on its row in the settings. Transcription runs in its
+own lane, so finding and rendering clips never wait for it.
 
-The list is kept current by the news the Go side sends about every job.
+There used to be an **Activity** page that listed every job again, with
+its progress, **Cancel**, **Clear finished** and the job's log. Nobody
+used it, because everything on it was already on screen where the work
+was, so it was removed. What only it had, the log, is a file now: every
+job of an episode writes what it says, detail lines too, to
+`jobs/<time>-<kind>.log` in the episode's work folder, beside the records of its jobs, and the newest
+twenty are kept, see `engine.OpenJobLog`. That file is where a failure is
+looked into. Work that belongs to no episode, a model being fetched,
+keeps none.
+
+The list of jobs is kept current by the news the Go side sends about every job.
 Each piece of news carries a number that grows with every change, so a
 piece that arrives late never puts a job back to where it was. While
 anything runs, the list is also read again every five seconds, so a piece
@@ -2222,8 +2303,7 @@ the app is made of or brings with it,
 grouped by where it is: the app, its interface, speech recognition, ffmpeg,
 llama-server, the caption fonts, and the models the app fetches from their
 makers. A row is the name, the version and the licence, and it opens to what
-the licence asks to be said and to the licence's own text, the way a finished
-job opens to its log in **Activity**. The list is built into the app from
+the licence asks to be said and to the licence's own text. The list is built into the app from
 `notices/`, and how it is made and kept complete is in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
@@ -2299,7 +2379,7 @@ interface's types.
 
 | Folder | What |
 | --- | --- |
-| `frontend/src/screens/` | the workspace, activity and settings |
+| `frontend/src/screens/` | the workspace, settings, updates and acknowledgements |
 | `frontend/src/components/` | player, timelines, clip list, work in hand |
 | `frontend/src/lib/` | calls into Go and the shared state |
 | `frontend/src/app.css` | colours, sizes and the base styles |

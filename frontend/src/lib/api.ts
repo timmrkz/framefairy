@@ -513,6 +513,9 @@ export const api = {
   // The clip of an episode that was last worked on, so opening it again
   // opens on the same one. It is the clip's key, or an empty string.
   chosenClip: (path: string) => call<string>("ChosenClip", path),
+  // The episodes opened last, newest first, at most n.
+  opened: (n: number) => call<string[]>("Opened", n),
+  openEpisode: (path: string) => call<void>("OpenEpisode", path),
   chooseClip: (path: string, key: string) => call<void>("ChooseClip", path, key),
   // The window an episode's range picker was left with, so opening it
   // again, after a restart too, opens on the same one. length is how long
@@ -685,7 +688,6 @@ export const api = {
   redo: (path: string) => call<Undone>("Redo", path),
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
-  clearJobs: () => call<void>("ClearJobs"),
   reveal: (path: string) => call<void>("Reveal", path),
   // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
   // newer build downloads by itself and waits for a restart.
@@ -701,7 +703,6 @@ export const api = {
 
 export interface JobUpdate {
   job: Job;
-  event?: EngineEvent;
 }
 
 export function onJob(fn: (u: JobUpdate) => void): () => void {
