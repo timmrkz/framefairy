@@ -580,6 +580,13 @@ export class FrameQueue {
   // and size last asked for again, see sharpen.
   private sized = false;
   private sharpened = "";
+  // Settled the first time the canvas is told its size. No frame is asked
+  // for before: a frame is decoded at the canvas's size, and a canvas
+  // nobody has sized is 300 by 150. The first frame of every workspace was
+  // asked for at that, the stylesheet's size a frame later, and stayed
+  // blurred until a play asked for frames again, found by Tim.
+  private laidOut: Promise<void>;
+  private sizeKnown = () => {};
   // The canvas's screen, kept with the canvas, see screen.ts, and null
   // until it is set up. Whether the canvas holds this episode's own frame
   // from a queue before this one, see the constructor.
@@ -660,6 +667,7 @@ export class FrameQueue {
     this.reader = new Reader(url, known);
     // For the walks, which listen to what it plays, see the sequences.
     (globalThis as unknown as { __frameQueue?: FrameQueue }).__frameQueue = this;
+    this.laidOut = new Promise((done) => (this.sizeKnown = done));
     this.ready = this.open().catch((e) => {
       throw new Error(sentence(e));
     });
@@ -698,6 +706,10 @@ export class FrameQueue {
     this.out = this.audio.createGain();
     this.out.connect(this.audio.destination);
     for (let i = 0; i < 2; i++) this.slots.push(this.makeSlot());
+    // A file that cannot be played has said so by now. What can be waits
+    // until the canvas has its size, see laidOut.
+    await this.laidOut;
+    if (this.closed) throw new Error("closed");
     if (this.sound) await this.openSound(this.sound);
     if (this.closed) throw new Error("closed");
   }
@@ -749,15 +761,7 @@ export class FrameQueue {
   // file's own.
   private previewSize(): { width: number; height: number } {
     const v = this.video!;
-    let w = this.canvas.width;
-    let h = this.canvas.height;
-    // Not told its size yet: a size that is sharp in most windows. A
-    // canvas nobody has sized is 300 by 150, which is a size, and the
-    // first frame of every workspace was decoded at it, blurred until a
-    // play asked for frames again, found by Tim. See resize for the frame
-    // asked for again once the size is known.
-    if (!this.sized) [w, h] = [1280, 720];
-    const scale = Math.min(1, w / v.width, h / v.height);
+    const scale = Math.min(1, this.canvas.width / v.width, this.canvas.height / v.height);
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
     return { width: even(v.width * scale), height: even(v.height * scale) };
   }
@@ -987,6 +991,8 @@ export class FrameQueue {
   close() {
     if (this.closed) return;
     this.closed = true;
+    // A queue closed before its canvas had a size stops waiting for one.
+    this.sizeKnown();
     this.stopPlay();
     for (const s of this.slots) {
       this.release(s);
@@ -1005,15 +1011,15 @@ export class FrameQueue {
   //
   // A paused frame decoded at another size than the canvas has now is
   // asked for again at the new one, so the picture is as sharp as the
-  // canvas lets it be whenever it stands still: the first frame, asked
-  // for before the stylesheet had laid the canvas out, and the frame on
-  // screen after the app grew. A play asks for every frame at the size of
+  // canvas lets it be whenever it stands still: the frame on screen after
+  // the app grew or shrank, and one asked for just before. A play asks for every frame at the size of
   // the moment anyway. See sharpen.
   resize(width: number, height: number) {
     const w = Math.max(1, Math.round(width));
     const h = Math.max(1, Math.round(height));
     const first = !this.sized;
     this.sized = true;
+    this.sizeKnown();
     if (!first && this.canvas.width === w && this.canvas.height === h) return;
     this.canvas.width = w;
     this.canvas.height = h;
@@ -1092,8 +1098,8 @@ export class FrameQueue {
     if (!passing) {
       this.putFor = this.ticket;
       this.shownAsked = this.app?.asked ?? 0;
-      // A frame asked for before the canvas was told its size, or before
-      // it last changed, comes at the size it was asked at.
+      // A frame asked for before the canvas last changed its size comes at
+      // the size it was asked at.
       setTimeout(() => this.sharpen());
     }
     this.paint();
