@@ -19,6 +19,7 @@
   // inside the crop the way the render will burn them in. On the video the
   // video preview shows the video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
+  import { said } from "../lib/said";
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
@@ -193,7 +194,20 @@
     q.listen((s) => {
       if (queue === q) heard(s);
     });
+    // What the video preview had when it still showed no picture, for the
+    // app's log, see lib/said.ts. Plan row 2.185.
+    const name = path.split("/").pop();
+    said(`video preview: opening ${name}`);
+    for (const after of [5, 15])
+      setTimeout(() => {
+        if (queue !== q || pictured || sleeping) return;
+        const frames = (window as unknown as { __appFrames?: { stats: unknown } }).__appFrames?.stats;
+        said(
+          `video preview: no picture of ${name} ${after} s after it opened, playhead ${time.toFixed(3)}, ${paused ? "paused" : "playing"}, opening ${opening}, trouble "${trouble}", queue ${JSON.stringify(q.stats)}, movie ${JSON.stringify(q.movie && { duration: q.movie.duration, video: q.movie.video && { width: q.movie.video.width, height: q.movie.video.height, codec: q.movie.video.codec, frame: q.movie.video.frame, samples: q.movie.video.samples.count } })}, frames ${JSON.stringify(frames)}`,
+        );
+      }, after * 1000);
     q.ready.catch((e: Error) => {
+      said(`video preview: ${name} could not be opened: ${e.message}`);
       if (queue !== q) return;
       failed = e.message;
       paused = true;

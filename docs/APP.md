@@ -2367,6 +2367,17 @@ the licence asks to be said and to the licence's own text. The list is built int
   change what captions show, never the stored transcript.
 - **Training records:** in `<episode>.framefairy/training/`. The app writes them
   and shows nothing about them. See [TRAINING.md](TRAINING.md).
+- **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
+  where the Console app shows it, and `Frame Fairy/logs/app.log` in the
+  user's cache folder elsewhere. It holds what nobody sees on screen: each
+  start with its build, the window's warnings and errors, anything thrown
+  and not caught, what the episode's decoder says, and what the video
+  preview had when a video it opened still showed no picture five and
+  fifteen seconds later. A line said again straight after itself is
+  counted, not written again. Past 4 MB it starts over, with the one before
+  kept as `app.1.log`. It is the log plan row R.8 asks for, and a report of
+  a problem will carry it. See `cmd/framefairy-app/applog.go` and
+  `frontend/src/lib/said.ts`.
 
 The app only shows files that belong to an episode in its list. It finds
 Homebrew's ffmpeg and llama-server even when it is started from Finder.

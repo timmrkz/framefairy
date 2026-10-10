@@ -73,6 +73,7 @@ func main() {
 			app.Event.Emit("episode", episode)
 		}
 	}
+	theLog.started()
 	svc := &FrameFairy{store: st}
 	svc.jobs = newQueue(st, emit, notify)
 	// The searches and renders that were cut off or failed the last time

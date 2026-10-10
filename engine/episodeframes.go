@@ -14,6 +14,11 @@ import (
 	"framefairy/internal/framewire"
 )
 
+// DecoderSaid, when set, hears every line an episode's decoder writes on
+// its error stream, which the app keeps in its log. It is set once, before
+// any decoder starts.
+var DecoderSaid func(video, line string)
+
 // EpisodeFrames is the episode's decoder as the Go side sees it: one
 // framefairy-frames for one episode, started when the episode opens in the
 // video preview, see Ready, and kept while it is open, with the file open
@@ -166,6 +171,9 @@ func (f *EpisodeFrames) start() error {
 		lines := bufio.NewScanner(errs)
 		for lines.Scan() {
 			said.add(lines.Text())
+			if DecoderSaid != nil {
+				DecoderSaid(f.path, lines.Text())
+			}
 		}
 	}()
 	go func() {
