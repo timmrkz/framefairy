@@ -22,7 +22,7 @@
   import Busy from "./Busy.svelte";
   import Info from "./Info.svelte";
   import { scrub as scrubPlayhead } from "../lib/scrub";
-  import { fitsAt, rulerStep, timeWidth } from "../lib/ruler";
+  import { fitsAt, pickerSteps, rulerStep, timeWidth } from "../lib/ruler";
 
   let {
     duration,
@@ -309,7 +309,7 @@
   const ticks = $derived.by(() => {
     if (!duration || !width) return [];
     const label = timeWidth(clock(duration));
-    const step = rulerStep(duration, width, label, [60, 300, 600, 900, 1800, 3600, 7200]);
+    const step = rulerStep(duration, width, label, pickerSteps(duration));
     const out: { t: number; label: boolean }[] = [];
     for (let t = step; t < duration; t += step) {
       out.push({ t, label: fitsAt(share(t) * width, timeWidth(clock(t)), width) });

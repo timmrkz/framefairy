@@ -69,6 +69,9 @@ type PlanOptions struct {
 	Record bool
 	// Local plans on this machine instead of through the API.
 	Local *LocalModel
+	// Whole makes the one clip of an episode shorter than a clip at its
+	// shortest out of all of it, without asking the model, see wholeClip.
+	Whole bool
 	// PlanPath is where each clip is written the moment it is framed. The
 	// first one replaces whatever plan was there.
 	PlanPath string
@@ -197,6 +200,9 @@ const fitKeep = 30 * time.Second
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
+	if opts.Whole {
+		return e.wholeClip(ctx, sourcePath, source, lines, opts)
+	}
 	recipe := opts.recipe()
 	units := recipe.units(lines)
 	prompt := recipe.Request(lines, units, opts)
@@ -643,4 +649,33 @@ func windowFits(lines []Line, opts PlanOptions) error {
 	}
 	return renderErr("the transcript of this window is %s characters, and %s reads at most %s "+
 		"at once. Choose a shorter window.", commas(have), name, commas(room.Chars))
+}
+
+// wholeClip is the one clip of an episode shorter than a clip at its
+// shortest: every line of it, shaped, framed and written by the plan
+// builder the way every clip is, so its edges still lose their filler and
+// its long pauses are still cut. Nobody chose it, so there is no answer
+// to record and nothing to train on.
+func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source SourceInfo,
+	lines []Line, opts PlanOptions) (*PlanFile, error) {
+	if len(lines) == 0 {
+		return nil, errors.New("no speech was found in the audio")
+	}
+	opts.Count = 1
+	build := e.newPlanBuilder(ctx, sourcePath, source, lines, nil, opts, "")
+	defer build.stop()
+	all := [2]int{1, len(lines)}
+	build.propose(PlanEntry{Keep: [][2]int{all}, Heart: all})
+	clips, _, _, err := build.finish()
+	if err != nil {
+		return nil, err
+	}
+	if len(clips) == 0 {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, renderErr("there is nothing to make a clip of in this episode")
+	}
+	e.Log.OK("the episode is shorter than a clip at its shortest, so it is the clip")
+	return &PlanFile{Source: filepath.Base(sourcePath), PlannedWith: build.stamp, Clips: clips}, nil
 }

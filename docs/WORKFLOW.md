@@ -157,26 +157,20 @@ request can fall behind `main`, or stop merging, with nobody told.
 closes that gap. On every push to `main` it runs
 [`scripts/main-moved.sh`](../scripts/main-moved.sh), which tries merging
 `main` into the branch of every open pull request and leaves one comment on
-each one `main` is not already in:
+each one it no longer merges into, naming the files that conflict. A pull
+request that still merges is left alone: merging `main` into it would only
+add a commit, a CI run and a build to take, and change nothing being
+tested.
 
-- **conflicts:** which files, and that `main` has to be merged in and
-  resolved
-- **merges cleanly:** that `main` should be merged in, so the pull request is
-  tested against what it will land on
-
-The comment is what wakes the session. It merges `main` in, reads
-`CLAUDE.md` again and pushes. A merge without conflicts is pushed at once,
-with no tests in the session: what `main` brings was tested on `main`, the
-branch's own change was tested around its last push, and CI tests the two
-together on the push. Waiting for the same tests in the session held a
-reply up by as much as ten minutes. A merge with conflicts is
-tested like a change of the session's own, because resolving them writes
-new code: the tests of what the resolution touches before the push, and
-`make changed` after it.
+The comment is what wakes the session. It merges `main` in at once,
+without asking, resolves the conflict, reads `CLAUDE.md` again and pushes,
+because GitHub runs no CI on a pull request that conflicts with `main`.
+The merge is tested like a change of the session's own, because resolving
+it writes new code: the tests of what the resolution touches before the
+push, and `make changed` after it.
 Reading `CLAUDE.md` again is in the comment on purpose: a session reads it
 once when it starts, so a rule that lands on `main` while the session runs
-would otherwise reach it only in its next session. Every move of `main`
-hands it to every open pull request. The workflow itself never
+would otherwise reach it only in its next session. The workflow itself never
 pushes, because a merge made there would reach the branch untested. It
 comments once per pull request for each move of `main`, and leaves pull
 requests from forks alone.

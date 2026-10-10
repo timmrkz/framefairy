@@ -1,13 +1,15 @@
 #!/bin/sh
-# Tells every open pull request that main has moved, with a comment, and
-# says whether main still merges into it and which files do not.
+# Tells every open pull request main no longer merges into, with a
+# comment, and says which files conflict.
 #
 # A comment on a pull request is what reaches the Claude session watching
 # it. A push to main is not: the session is subscribed to its own pull
 # request, and nothing on it changes when main does. That is how a pull
 # request sat with conflicts nobody knew about. So this runs on every push
 # to main, from .github/workflows/main-moved.yml, and speaks up on each
-# pull request main does not already sit in.
+# pull request main no longer merges into. One that still merges is left
+# alone: merging main into it would only add a commit and a build, see
+# CLAUDE.md.
 #
 # It only reads the branches. Merging main in, resolving what conflicts
 # and testing the result is the work of whoever drives the pull request,
@@ -56,10 +58,8 @@ gh pr list --base main --state open --limit 100 \
 				"<!-- main-moved $short -->")
 			echo "#$number: conflicts in $(printf '%s' "$conflicts" | tr '\n' ' ')"
 		else
-			body=$(printf '%s\n\n%s' \
-				"main moved to $short, $subject. It merges into this branch without conflicts. Merge it in, read CLAUDE.md again, because main may have changed the rules, and push straight away, with no test run first: CI tests the merge against what it will land on." \
-				"<!-- main-moved $short -->")
 			echo "#$number: merges cleanly"
+			continue
 		fi
 		# One comment per pull request per move of main, even when the
 		# workflow runs twice for the same push.
