@@ -33,14 +33,6 @@
 //                      holds it still again, then lets go, reading the
 //                      playhead, the frame on screen and the play button on
 //                      every animation frame
-//   ["play from", where, seconds]
-//                      clicks the clip timeline "before" the clip, halfway
-//                      between the track's left end and the clip's start,
-//                      which puts the playhead on the video, or "in" it, a
-//                      fifth of the way along, which puts it on the clip,
-//                      presses the space bar, reads what the video preview
-//                      lays over the picture on every animation frame for
-//                      so many seconds of play, and pauses
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -97,12 +89,6 @@
 //                      presses the bin of the "language" model on this
 //                      machine, under Downloaded models, or of the
 //                      "speech" model
-//   ["play to the end"]
-//                      drags the clip's end to the end of the episode,
-//                      puts the playhead three seconds before it with a
-//                      click on the clip timeline and plays until the play
-//                      stops there, so the episode's decoder reads to the
-//                      end of the file
 //   ["no browser decoder"]
 //                      takes the browser's picture and sound decoders away,
 //                      every one, and opens the episode again
@@ -145,20 +131,6 @@
 //                      press and again where the hand moved to, the button
 //                      said Pause the whole time, and the play went on
 //                      from where the hand let go
-//   ["only the video", "across cuts"], ["the clip shown", "across cuts"]
-//                      the same, and the play crossed a cut: it stood in
-//                      two pieces of the clip or more, and on the video
-//                      went through the part cut out between them
-//   ["only the video"] since "play from", the playhead was on the video
-//                      on every frame and played two seconds or more of
-//                      the clip's own moments, and the video preview laid
-//                      nothing over the picture, no crop frame, no shade
-//                      and no captions
-//   ["the clip shown"] since "play from", the playhead was on the clip on
-//                      every frame and played two seconds or more inside
-//                      it, the crop frame stood over the picture on every
-//                      one of them, and the captions on every one where the
-//                      engine has a caption, a few at least
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -273,8 +245,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames } from "./bridge.mjs";
-import { Watch, same, describe, overlaid } from "./rules.mjs";
+import { Watch, same, describe } from "./rules.mjs";
 
 export const sequences = [
   {
@@ -701,39 +672,6 @@ export const sequences = [
     ],
   },
   {
-    // Tim saw the captions stay up in the video preview while the episode
-    // played on through the chosen clip, with the clip dimmed on the clip
-    // timeline. On the video the video preview shows the video alone, and
-    // on the clip its crop frame and its captions. The clip starts with
-    // the episode, so its start is trimmed first to leave room before it.
-    name: "the episode played through a clip shows only the video, and the clip its frame and captions",
-    steps: [
-      ["trim", "start", 300],
-      ["play from", "before", 6],
-      ["only the video"],
-      ["play from", "in", 4],
-      ["the clip shown"],
-    ],
-  },
-  {
-    // The same with cuts in the clip, which Tim asked for: the episode
-    // plays straight through the parts cut out and the pieces either side
-    // of them, on the video the whole way, and the clip jumps its cuts,
-    // on the clip the whole way. Neither may show the clip on the video,
-    // in a piece or in a cut, nor lose it on the clip after a jump.
-    name: "the episode played through a clip with cuts shows only the video, and the clip its frame and captions",
-    steps: [
-      ["trim", "start", 300],
-      ["cut at", 0.25],
-      ["cut at", 0.55],
-      ["cuts", 2],
-      ["play from", "before", 13],
-      ["only the video", "across cuts"],
-      ["play from", "in", 9],
-      ["the clip shown", "across cuts"],
-    ],
-  },
-  {
     // Tim pressed the clip timeline while the clip played, to get a drag
     // ready, and the play ran on from the press at once, away from the
     // hand. A press holds the play under the hand, like a nail, until the
@@ -788,14 +726,6 @@ export const sequences = [
     // would decode it and then failed on the first frame.
     name: "the picture comes from the Go side with no decoder in the browser",
     steps: [["no browser decoder"], ["from the app", 4]],
-  },
-  {
-    // The video preview stayed black once the playhead had been to the end
-    // of the episode, until the app started again: the cursor of the
-    // episode's decoder that read to the end ended every stream after it
-    // at once. Plan row 2.166.
-    name: "the picture comes back after the playhead reached the end of the episode",
-    steps: [["play to the end"], ["from the app", 4]],
   },
   {
     // Tim recorded the range picker sawing up and down while he dragged
@@ -1303,9 +1233,6 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   let episodeBefore = "";
   // The Updates page in the frame after a channel was picked.
   let picked = null;
-  // What the video preview laid over the picture on every animation frame
-  // of the last "play from", and the clip the engine had then.
-  let played = null;
   let wrong = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -1440,32 +1367,6 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.waitForTimeout(700);
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
-        break;
-      }
-      case "play from": {
-        const [where, seconds] = arg;
-        const g = await handles(page);
-        const from = g.start.x + g.start.w;
-        const x = where === "before" ? (g.track.x + g.start.x) / 2 : from + 0.2 * (g.end.x - from);
-        if (where === "before" && g.start.x - g.track.x < 40) {
-          wrong = "there is no room on the clip timeline before the clip";
-          break;
-        }
-        await page.mouse.click(x, high(g.track));
-        await settle(page);
-        const state = await engineState(page, watch.at);
-        const stop = await recordFrames(page, 1 / (await rate(page)));
-        await page.evaluate(() => document.body.focus());
-        await page.keyboard.press("Space");
-        await page.waitForTimeout(seconds * 1000);
-        await page.evaluate(() => {
-          if (document.querySelector('button[aria-label="Play"]')) return;
-          const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-          document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-          document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-        });
-        played = { overlays: (await stop()).overlays, state, fps: await rate(page) };
-        await watch.step("play", s);
         break;
       }
       case "reset": {
@@ -1798,67 +1699,6 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (JSON.stringify(now) === JSON.stringify(named)) wrong = `the settings still name ${JSON.stringify(now)}`;
         break;
       }
-      case "play to the end": {
-        // Far to the right first, which the clip timeline takes as far as
-        // it shows, and then onto the end of the episode where the clip
-        // timeline shows it now.
-        const { duration, fps } = await ask(page, "Source", await episodeOn(page));
-        let g = await handles(page);
-        await drag(page, middle(g.end), high(g.track), 4000, false);
-        await watch.step("trim", s);
-        g = await handles(page);
-        await drag(page, middle(g.end), high(g.track), (await xOf(page, duration)) - middle(g.end), false);
-        await watch.step("trim", s);
-        const { segments } = await engineState(page, watch.at);
-        const end = segments[segments.length - 1].end;
-        if (Math.abs(end - duration) > 0.05) {
-          wrong = `the clip ends at ${end.toFixed(2)}, not at the end of the episode, ${duration.toFixed(2)}`;
-          break;
-        }
-        // Three seconds before the end, so the click lands on the clip
-        // timeline clear of the end's handle.
-        if (!(await seekTo(page, end - 3, fps))) {
-          wrong = `the video preview never showed the frame at ${(end - 3).toFixed(2)}`;
-          break;
-        }
-        await page.keyboard.press("Space");
-        const stopped = await page
-          .waitForFunction(
-            (end) =>
-              document.querySelector('button[aria-label="Play"]') !== null &&
-              Number(document.querySelector(".screen").dataset.playhead) >= end - 0.1,
-            end,
-            { polling: 50, timeout: 10000 },
-          )
-          .then(() => true, () => false);
-        if (!stopped) {
-          wrong = `the play did not stop at the end of the episode, ${end.toFixed(2)}`;
-          break;
-        }
-        // The playhead stays at the end, drawn on the clip timeline and on
-        // the range picker, where the hand can take hold of it again. A
-        // playhead a hair past the end was drawn on neither, plan row 2.172.
-        const lost = await page.evaluate((duration) => {
-          const at = Number(document.querySelector(".screen").dataset.playhead);
-          if (at > duration) return `the playhead stopped at ${at.toFixed(3)}, past the end of the episode, ${duration.toFixed(3)}`;
-          const on = (line, track) => {
-            if (!line || !track) return false;
-            const l = line.getBoundingClientRect();
-            const t = track.getBoundingClientRect();
-            const x = l.left + l.width / 2;
-            return l.width > 0 && l.height > 0 && x >= t.left - 1 && x <= t.right + 1;
-          };
-          const timeline = document.querySelector(".clip-timeline");
-          if (!on(timeline?.querySelector(".at .playhead"), timeline?.querySelector(".track")))
-            return "the clip timeline shows no playhead at the end of the episode";
-          const picker = [...document.querySelectorAll(".playhead")].find((e) => !e.closest(".clip-timeline"));
-          const track = [...document.querySelectorAll(".track")].find((e) => !e.closest(".clip-timeline"));
-          if (!on(picker, track)) return "the range picker shows no playhead at the end of the episode";
-          return "";
-        }, duration);
-        if (lost) wrong = lost;
-        break;
-      }
       case "no browser decoder": {
         await page.addInitScript(() => {
           for (const name of ["VideoDecoder", "AudioDecoder", "EncodedVideoChunk", "EncodedAudioChunk"]) {
@@ -1960,50 +1800,6 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "mark":
         marks[arg] = await engineState(page, watch.at);
         break;
-      case "only the video":
-      case "the clip shown": {
-        if (!played) {
-          wrong = `${what} with nothing played`;
-          break;
-        }
-        const { overlays, state, fps } = played;
-        const video = what === "only the video";
-        const frame = 1 / fps;
-        // With "across cuts" the play has to have crossed a cut: the
-        // episode through the part cut out, from a piece before it to a
-        // piece after it, and the clip from one piece on into the next.
-        const pieceOf = (at) => state.segments.findIndex((p) => at >= p.start + frame && at < p.end - frame);
-        const played_ = overlays.filter((o) => o.playing);
-        const pieces = new Set(played_.map((o) => pieceOf(o.at)).filter((i) => i >= 0));
-        const inCut = played_.some((o) => state.segments.some((p, i) => i > 0 && o.at > state.segments[i - 1].end + frame && o.at < p.start - frame));
-        if (arg === "across cuts" && state.segments.length < 2) {
-          wrong = `the clip has ${state.segments.length} piece, so no cut to play across`;
-          break;
-        }
-        if (arg === "across cuts" && pieces.size < 2) {
-          wrong = `the play stood in ${pieces.size} piece of the clip, so it crossed no cut`;
-          break;
-        }
-        if (arg === "across cuts" && video && !inCut) {
-          wrong = "the episode played through no part cut out of the clip";
-          break;
-        }
-        // The frames of the play that stood in one of the clip's pieces,
-        // which is where a clip's frame and captions could show.
-        const inside = overlays.filter((o) => o.playing && state.segments.some((p) => o.at >= p.start + frame && o.at < p.end - frame));
-        const span = inside.length ? inside[inside.length - 1].at - inside[0].at : 0;
-        const elsewhere = overlays.filter((o) => o.playing && o.video !== video);
-        if (elsewhere.length) {
-          wrong = `the playhead was on the ${video ? "clip" : "video"} at ${elsewhere[0].at.toFixed(3)} while it played`;
-        } else if (span < 2) {
-          wrong = `the play stood inside the clip for ${span.toFixed(2)} s of the episode, in ${inside.length} animation frames`;
-        } else if (!video && !inside.some((o) => o.captions)) {
-          wrong = "the clip played with no caption shown";
-        } else {
-          wrong = overlaid(overlays, state, frame);
-        }
-        break;
-      }
       case "opened on the clip": {
         // The video preview of an episode that opens on a clip draws the
         // clip's first frame and nothing before it: no frame of the
@@ -2022,14 +1818,11 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         // only as it opens, is asked with the playhead on the clip. The
         // coverage and the room are read again whenever work elsewhere
         // ends, a search of the episode added before, so they say nothing
-        // about the order the workspace opens in. A workspace kept from
-        // before, see App.svelte, is woken rather than built and asks
-        // neither the clip it opens on nor the window: it has them.
+        // about the order the workspace opens in.
         const asked = await page.evaluate(() => window.__asked ?? []);
         const after = ["ChosenWindow"];
-        const built = asked.some(([name]) => name === "ChosenClip");
         const early = asked.filter(([name, at]) => after.includes(name) && Math.abs(at - clip.start) > 0.002);
-        if (!wrong && built && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
+        if (!wrong && !asked.some(([name]) => after.includes(name))) wrong = `the workspace opened asking none of ${after.join(", ")}`;
         else if (!wrong && early.length) {
           wrong = `the workspace asked ${early.map(([n, at]) => `${n} with the playhead at ${at}`).join(", ")}, before the playhead was on its clip at ${clip.start}`;
         }

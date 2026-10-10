@@ -20,7 +20,7 @@
   // video preview shows the video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { insideClip, litWord, type Piece } from "../lib/flow";
-  import { onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
+  import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import type { Movie } from "../lib/frames/mp4";
   import Info from "./Info.svelte";
@@ -236,19 +236,19 @@
         time = clipEnd;
         placed = playedToEnd(placed, false);
       } else {
-        time = s.at;
+        time = inEpisode(s.at, source.duration);
       }
       playedClip = false;
       return;
     }
     if (s.playing) {
-      time = s.at;
+      time = inEpisode(s.at, source.duration);
       return;
     }
     // Paused: where the queue stopped, or where it was sent, which is
     // where the playhead already is. A correction holds the caption on its
     // own moment, frozen, so this changes nothing under the caret.
-    time = s.at;
+    time = inEpisode(s.at, source.duration);
   }
 
   // What play plays for a place: on the video the whole episode straight
