@@ -53,6 +53,7 @@
     type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
+  import type { About } from "../lib/playhead";
   import {
     Reach,
     fitWindow,
@@ -993,7 +994,7 @@
   // Putting the playhead somewhere is a jump, not a drift, so the clip
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
-  function seekTo(t: number, about?: "clip") {
+  function seekTo(t: number, about?: About) {
     player?.seek(t, about);
     timeline?.fit(t);
   }

@@ -105,6 +105,14 @@ describe("a gesture puts the playhead on the clip or on the video", () => {
     expect(placeOf(pieces, key, end + 0.5, fps, "clip").place).toBe("end");
   });
 
+  test("a step while the episode plays on the video stays on the video", () => {
+    // Skipping ahead through a clip the play started outside of does not
+    // light the clip up, not inside it, not at its end, not in a cut.
+    expect(placeOf(pieces, key, start, fps, "video")).toEqual(onVideo);
+    expect(placeOf(pieces, key, 1680, fps, "video")).toEqual(onVideo);
+    expect(placeOf(pieces, key, end, fps, "video")).toEqual(onVideo);
+  });
+
   test("with no clip chosen it is on the video", () => {
     expect(placeOf([], key, 1680, fps)).toEqual(onVideo);
     expect(placeOf(pieces, "", 1680, fps)).toEqual(onVideo);
