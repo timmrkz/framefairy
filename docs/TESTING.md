@@ -188,6 +188,7 @@ quarter of a second:
 | Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
+| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, within a moment of the step, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
