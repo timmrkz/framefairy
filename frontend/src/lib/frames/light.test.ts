@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { hlgScene, lightOfPixel, pqNits, srgb, toSDR } from "./light";
+import { hlgScene, lift, lightOfPixel, pqNits, srgb, toSDR } from "./light";
 
-// A pixel of 10 bits a colour as the Go side sends HDR, red lowest.
+// A pixel of 10 bits a colour as the Go side sends every frame, red lowest.
 function word(r: number, g: number, b: number): number {
   return (r | (g << 10) | (b << 20)) >>> 0;
 }
@@ -59,5 +59,23 @@ describe("HDR cut at white, for a 2D canvas and a colour taken from the picture"
     const out = new Uint8ClampedArray(4);
     toSDR("hlg", new Uint8Array(new Uint32Array([word(code, code, code)]).buffer), out);
     expect(out[0]).toBeGreaterThanOrEqual(254);
+  });
+});
+
+// The look of the video preview, QuickTime's, which Tim picked in the
+// side-by-side test: black stays black, white stays white, and the
+// shadows and middle tones are lifted as the Mac shows standard video, as
+// measured on Tim's screen beside QuickTime. Plan row 2.156, step 4.
+describe("standard video with QuickTime's look", () => {
+  test("black stays black, white white, and the greys between are lifted as QuickTime lifts them", () => {
+    for (const [grey, shown] of [[0, 0], [3, 3], [11, 12], [22, 25], [46, 52], [81, 92], [128, 138], [255, 255]])
+      expect(Math.round(255 * lift(grey / 255))).toBe(shown);
+  });
+
+  test("on a 2D canvas it is the same look in 8 bits", () => {
+    const code = Math.round((22 / 255) * 1023);
+    const out = new Uint8ClampedArray(4);
+    toSDR("", new Uint8Array(new Uint32Array([word(code, 0, 1023)]).buffer), out);
+    expect([...out]).toEqual([25, 0, 255, 255]);
   });
 });

@@ -1,16 +1,24 @@
-// How a frame of HDR turns into light on the screen. The Go side sends HDR
-// as it is in the file, red, green and blue with 10 bits each in the
-// file's own curve, PQ or HLG, with BT.2020's colours, see
-// framewire.Picture. Here that becomes light, in units of the reference
-// white of BT.2408, 203 nits, the white of the interface, in BT.709's
-// colours, the canvas's. Above 1 is brighter than white, which the WebGPU
-// canvas in the extended mode shows on an HDR screen, see screen.ts. Where
-// there is no such canvas, or for a colour taken from the picture,
-// everything above white is cut at white, as an SDR screen shows it. The
-// formulas are BT.2100's, written once here for the GPU, wgsl, and once
-// for the processor, the functions below.
+// How a frame turns into light on the screen. The Go side sends every
+// frame with 10 bits a colour, red lowest, see framewire.Picture, and the
+// colours are turned into what the canvas is given here, in floats, so no
+// step of the file is lost on the way.
+//
+// Standard video is already in the screen's curve and gets the look of
+// the video preview, QuickTime's, which Tim picked: its shadows and middle
+// tones lifted the way the Mac shows video, see lift.
+//
+// HDR is in the file's own curve, PQ or HLG, with BT.2020's colours, and
+// becomes light, in units of the reference white of BT.2408, 203 nits,
+// the white of the interface, in BT.709's colours, the canvas's. Above 1
+// is brighter than white, which the WebGPU canvas in the extended mode
+// shows on an HDR screen, see screen.ts. Where there is no such canvas,
+// or for a colour taken from the picture, everything above white is cut
+// at white, as an SDR screen shows it. The formulas are BT.2100's.
+//
+// Everything is written once here for the GPU, wgsl, and once for the
+// processor, the functions below.
 
-// "" is standard video, whose frames are colours ready to draw.
+// "" is standard video, whose frames are colours in the screen's curve.
 export type Light = "" | "pq" | "hlg";
 
 export function lightOf(said: string | null): Light {
@@ -68,27 +76,54 @@ export function lightOfPixel(light: Light, r: number, g: number, b: number): [nu
   return TO_709.map((row) => row[0] * l[0] + row[1] * l[1] + row[2] * l[2]) as [number, number, number];
 }
 
+// QuickTime's look for standard video, measured on Tim's screen from
+// start.mp4 beside QuickTime: a value v of 0 to 1 is shown as v to the
+// power of 0.98 - 0.31 v, never below 0.891, which is 1.961 over 2.2,
+// the Mac's curve for video over the screen's. Black stays black and
+// white white, a grey of 22 in 255 is shown as 25 and one of 81 as 92.
+export function lift(v: number): number {
+  const c = Math.min(Math.max(v, 0), 1);
+  return Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
+}
+
 // sRGB's curve, light of 0 to 1 to a signal of 0 to 1.
 export function srgb(l: number): number {
   return l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;
 }
 
-// A frame of HDR as 8-bit colours with an opaque alpha, everything above
-// white cut at white. The signals of each colour are looked up rather
-// than worked out, 1024 of them, so a frame of 1280 by 720 costs one
-// power a pixel, HLG's, and none for PQ.
+// A frame as 8-bit colours with an opaque alpha, as a 2D canvas takes
+// them, standard video with its look and HDR with everything above white
+// cut at white. The signals of each colour are looked up rather than
+// worked out, 1024 of them, so a frame of 1280 by 720 costs one power a
+// pixel, HLG's, and none otherwise.
 const tables = new Map<Light, Float32Array>();
 const out8 = new Uint8Array(4096);
 for (let i = 0; i < 4096; i++) out8[i] = Math.round(255 * srgb(i / 4095));
+let lifted: Uint8Array | null = null;
 
 export function toSDR(light: Light, data: Uint8Array, into: Uint8ClampedArray) {
+  const words = new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4);
+  if (!light) {
+    if (!lifted) {
+      lifted = new Uint8Array(1024);
+      for (let i = 0; i < 1024; i++) lifted[i] = Math.round(255 * lift(i / 1023));
+    }
+    for (let p = 0; p < words.length; p++) {
+      const w = words[p];
+      const i = p * 4;
+      into[i] = lifted[w & 1023];
+      into[i + 1] = lifted[(w >>> 10) & 1023];
+      into[i + 2] = lifted[(w >>> 20) & 1023];
+      into[i + 3] = 255;
+    }
+    return;
+  }
   let table = tables.get(light);
   if (!table) {
     table = new Float32Array(1024);
     for (let i = 0; i < 1024; i++) table[i] = light === "pq" ? pqNits(i / 1023) / WHITE : hlgScene(i / 1023);
     tables.set(light, table);
   }
-  const words = new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4);
   const to = (v: number) => out8[Math.round(Math.min(Math.max(v, 0), 1) * 4095)];
   for (let p = 0; p < words.length; p++) {
     const w = words[p];
@@ -114,8 +149,8 @@ const row = (r: number[]) => r.map(f).join(", ");
 
 // The same for the GPU: a function from a frame's sampled colour to what
 // the canvas is given, sRGB's curve carried on past 0 and 1, as the
-// extended canvas takes it. kind is 0 for standard video, 1 for PQ, 2 for
-// HLG.
+// extended canvas takes it. kind is 0 for standard video, which gets its
+// look, 1 for PQ, 2 for HLG.
 export const wgsl = `
 fn pqNits(e: vec3f) -> vec3f {
   let p = pow(max(e, vec3f(0)), vec3f(1.0 / ${f(M2)}));
@@ -133,9 +168,14 @@ fn srgb(l: vec3f) -> vec3f {
   return sign(l) * select(1.055 * pow(a, vec3f(1.0 / 2.4)) - 0.055, 12.92 * a, a <= vec3f(0.0031308));
 }
 
+fn lift(c: vec3f) -> vec3f {
+  let v = clamp(c, vec3f(0), vec3f(1));
+  return pow(max(v, vec3f(1e-7)), max(vec3f(0.891), 0.98 - 0.31 * v));
+}
+
 fn shown(c: vec3f, kind: u32) -> vec3f {
   if (kind == 0u) {
-    return c;
+    return lift(c);
   }
   let nits = select(hlgNits(c), pqNits(c), kind == 1u);
   let to709 = transpose(mat3x3f(

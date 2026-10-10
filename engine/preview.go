@@ -117,21 +117,6 @@ func (e *Engine) PreviewFrames(ctx context.Context, path string, from float64, w
 	return e.previewFrames(ctx, path, from, width, height, false, got)
 }
 
-// lightOf is how the file's picture codes its brightness, from its
-// transfer tag, and standard video where the tag cannot be read.
-func (e *Engine) lightOf(ctx context.Context, path string) framewire.Light {
-	info, err := e.Probe(ctx, path)
-	if err != nil {
-		return framewire.SDR
-	}
-	for _, c := range info.Colour {
-		if c[0] == "color_trc" {
-			return framewire.LightOf(c[1])
-		}
-	}
-	return framewire.SDR
-}
-
 // gpuScaleFails is set once scaling on the graphics chip has failed.
 var gpuScaleFails atomic.Bool
 
@@ -149,15 +134,12 @@ func (e *Engine) previewFrames(ctx context.Context, path string, from float64, w
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "info"}
-	// Colours ready to draw, converted by ffmpeg from the file's own
-	// range and matrix with the look of the video preview, the same chain
-	// as the episode's decoder, so the interface decides nothing about
-	// colour.
-	light := e.lightOf(ctx, path)
-	scale := "showinfo," + framewire.Picture(width, height, light)
+	// Colours converted by ffmpeg from the file's own range and matrix,
+	// the same chain as the episode's decoder.
+	scale := "showinfo," + framewire.Picture(width, height)
 	if gpu {
 		args = append(args, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
-		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,", width, height) + framewire.Picture(width, height, light)
+		scale = fmt.Sprintf("showinfo,scale_vt=w=%d:h=%d,hwdownload,format=nv12|p010le,", width, height) + framewire.Picture(width, height)
 	} else {
 		args = append(args, e.decodeFlags()...)
 	}

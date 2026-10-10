@@ -140,19 +140,22 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 
 var errStop = errors.New("enough")
 
+// meanDiff is how far apart two frames made by framewire.Picture are on
+// average, colour by colour, in steps of 8 bits.
 func meanDiff(a, b []byte) float64 {
 	if len(a) != len(b) {
 		return math.Inf(1)
 	}
+	ca, cb := colours(a), colours(b)
 	sum := 0
-	for i := range a {
-		d := int(a[i]) - int(b[i])
+	for i := range ca {
+		d := ca[i] - cb[i]
 		if d < 0 {
 			d = -d
 		}
 		sum += d
 	}
-	return float64(sum) / float64(len(a))
+	return float64(sum) / 4 / float64(len(ca))
 }
 
 // Everything the Go side does to the episode's decoder at once: streams
@@ -584,7 +587,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 				args = append(args, "-hwaccel", "videotoolbox")
 			}
 			args = append(args, "-i", path, "-frames:v", "1",
-				"-vf", framewire.Picture(w, h, wantLight), "-f", "rawvideo", "-")
+				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-")
 			out, err := exec.Command("ffmpeg", args...).Output()
 			if err != nil {
 				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
@@ -604,7 +607,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		// may be another version than the one the decoder is built on, and
 		// two versions of its scaler can round a value one apart, in 8 bits
 		// or in 10.
-		mine, theirs := colours(frame, light), colours(want, light)
+		mine, theirs := colours(frame), colours(want)
 		most, at := 0, 0
 		for i := range mine {
 			d := mine[i] - theirs[i]
@@ -615,13 +618,9 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 				most, at = d, i/3
 			}
 		}
-		limit, bits := 2, ""
-		if light != framewire.SDR {
-			// 2 in 8 bits is 8 in 10.
-			limit, bits = 8, ", in 10 bits"
-		}
-		if most > limit {
-			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v%s", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3], bits)
+		// 2 in 8 bits is 8 in 10.
+		if most > 8 {
+			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v, in 10 bits", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3])
 		}
 		got[f.name] = frame
 	}
@@ -640,41 +639,12 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 }
 
 // colours are the red, green and blue of every pixel of a frame made by
-// framewire.Picture for light: 8 bits each for standard video, 10 for HDR.
-func colours(frame []byte, light framewire.Light) []int {
+// framewire.Picture, 10 bits each.
+func colours(frame []byte) []int {
 	out := make([]int, 0, len(frame)/4*3)
 	for p := 0; p+4 <= len(frame); p += 4 {
-		if light == framewire.SDR {
-			out = append(out, int(frame[p]), int(frame[p+1]), int(frame[p+2]))
-			continue
-		}
 		v := binary.LittleEndian.Uint32(frame[p:])
 		out = append(out, int(v&1023), int(v>>10&1023), int(v>>20&1023))
 	}
 	return out
-}
-
-// The look of the video preview, QuickTime's, which Tim picked in the
-// side-by-side test: black stays black, white stays white, and the
-// shadows and middle tones are lifted as the Mac shows standard video,
-// as measured on Tim's screen beside QuickTime. Plan row 2.156, step 4.
-func TestThePreviewsLookIsQuickTimes(t *testing.T) {
-	ffmpegtest.Need(t)
-	for _, c := range [][2]int{{0, 0}, {3, 3}, {11, 12}, {22, 25}, {46, 52}, {81, 92}, {128, 138}, {255, 255}} {
-		grey := fmt.Sprintf("color=c=0x%02x%02x%02x:s=16x16,format=rgb24", c[0], c[0], c[0])
-		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", grey, "-frames:v", "1",
-			"-vf", framewire.Picture(16, 16, framewire.SDR), "-f", "rawvideo", "-").Output()
-		if err != nil {
-			t.Fatalf("a grey of %d: %v", c[0], err)
-		}
-		if len(out) != 16*16*4 {
-			t.Fatalf("a grey of %d came out as %d bytes", c[0], len(out))
-		}
-		for i := range 3 {
-			if int(out[i]) != c[1] {
-				t.Errorf("a grey of %d is shown as %v, want %d", c[0], out[:3], c[1])
-				break
-			}
-		}
-	}
 }

@@ -4,11 +4,11 @@
 // episode can shine on an HDR screen, see docs/VIDEO-PREVIEW.md, HDR.
 // Where it has none it is a 2D canvas, which ends at white. Either way a
 // frame is drawn as large as the canvas allows, in its own shape, in the
-// middle, on whole pixels, and black around it. Nothing here decides
-// colour: the frames are ffmpeg's colours and are drawn as they come, and
-// HDR is turned into light by BT.2100's formulas, see light.ts.
+// middle, on whole pixels, and black around it. The frames are ffmpeg's
+// colours, which light.ts gives the look of standard video or turns from
+// HDR into light.
 
-import { lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
+import { lift, lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
 import { Picture } from "./picture";
 
 export interface Screen {
@@ -74,7 +74,8 @@ class FlatScreen implements Screen {
   // The frame at its own size, which is then drawn to fit.
   private own = document.createElement("canvas");
   private ownG: CanvasRenderingContext2D;
-  // HDR cut at white, as an SDR screen shows it.
+  // The frame as 8-bit colours, HDR cut at white, as an SDR screen shows
+  // it.
   private sdr: ImageData | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -96,23 +97,10 @@ class FlatScreen implements Screen {
       this.own.width = frame.width;
       this.own.height = frame.height;
     }
-    let pixels: ImageData;
-    if (frame.light) {
-      if (this.sdr?.width !== frame.width || this.sdr.height !== frame.height)
-        this.sdr = new ImageData(frame.width, frame.height);
-      toSDR(frame.light, d, this.sdr.data);
-      pixels = this.sdr;
-    } else
-      pixels = new ImageData(
-        new Uint8ClampedArray(
-          d.buffer as ArrayBuffer,
-          d.byteOffset,
-          d.byteLength,
-        ),
-        frame.width,
-        frame.height,
-      );
-    this.ownG.putImageData(pixels, 0, 0);
+    if (this.sdr?.width !== frame.width || this.sdr.height !== frame.height)
+      this.sdr = new ImageData(frame.width, frame.height);
+    toSDR(frame.light, d, this.sdr.data);
+    this.ownG.putImageData(this.sdr, 0, 0);
     this.g.drawImage(this.own, at.x, at.y, at.w, at.h);
   }
 }
@@ -142,14 +130,11 @@ ${wgsl}
 }
 `;
 
-// What each light's frames are on the GPU: 8 bits a colour for standard
-// video, and for HDR 10 bits a colour with red lowest, X2BGR10, which is
-// rgb10a2unorm, see framewire.Picture.
-const formats: Record<Light, { format: GPUTextureFormat; kind: number }> = {
-  "": { format: "rgba8unorm", kind: 0 },
-  pq: { format: "rgb10a2unorm", kind: 1 },
-  hlg: { format: "rgb10a2unorm", kind: 2 },
-};
+// Every frame is 10 bits a colour with red lowest, X2BGR10, which is
+// rgb10a2unorm on the GPU, see framewire.Picture. The kind says what the
+// shader makes of it.
+const format: GPUTextureFormat = "rgb10a2unorm";
+const kinds: Record<Light, number> = { "": 0, pq: 1, hlg: 2 };
 
 const target: GPUTextureFormat = "rgba16float";
 
@@ -208,7 +193,7 @@ class Painter {
     )
       return this.texture;
     this.texture?.destroy();
-    const { format, kind } = formats[light];
+    const kind = kinds[light];
     this.texture = this.device.createTexture({
       size: [w, h],
       format,
@@ -342,7 +327,6 @@ class GPUScreen implements Screen {
       this.complain(String(e));
     }
   }
-
 }
 
 // A half float to a number.
@@ -423,15 +407,13 @@ export async function checkPixels(
   const gpu = await checkScreen(frames);
   if (!gpu) return null;
   const cpu = pixels.map(({ light, bytes }) => {
-    if (!light) return bytes.slice(0, 3).map((b) => b / 255);
     const w =
       (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0;
-    const l = lightOfPixel(
-      light,
-      (w & 1023) / 1023,
-      ((w >>> 10) & 1023) / 1023,
-      ((w >>> 20) & 1023) / 1023,
+    const c = [w & 1023, (w >>> 10) & 1023, (w >>> 20) & 1023].map(
+      (v) => v / 1023,
     );
+    if (!light) return c.map(lift);
+    const l = lightOfPixel(light, c[0], c[1], c[2]);
     return l.map((v) => Math.sign(v) * srgb(Math.abs(v)));
   });
   return { gpu, cpu };

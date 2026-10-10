@@ -249,14 +249,24 @@ brighter: a grey the video preview showed as 22 QuickTime showed as 25,
 what reads as deeper. The curve fitted to it is a value v of 0 to 1
 shown as v to the power of 0.98 - 0.31 v, never below 0.891, which is
 1.961 over 2.2, the Mac's curve for video over the screen's. It meets
-the measured points within 2, keeps black and white where they are, and
-is the end of `framewire.Picture`, the one chain the episode's decoder
-and `engine.PreviewFrames` build, held by
-`TestThePreviewsLookIsQuickTimes`. It is the same on every system, so
+the measured points within 2 and keeps black and white where they are.
+It is `lift` in `frontend/src/lib/frames/light.ts`, put on in floats on
+the GPU and in the same numbers on the processor for a 2D canvas. It is
+the same on every system, so
 on Windows and Linux the video preview looks as QuickTime does on a Mac,
 a little brighter in the middle than most players there show the same
 file. Above the brightest grey of start.mp4, 93, the curve is not
-measured, and an HDR file is not yet drawn as HDR.
+measured.
+
+**Every frame comes in 10 bits**, standard video too. Tim saw banding
+in the dark of start.mp4 with the look first made in ffmpeg, in 8 bits:
+the curtain in stripes and a block on the black shirt, where QuickTime
+showed smooth gradients. Video range spreads 220 values over 256, and the
+look lifts the shadows further, so in 8 bits a value of the file became
+a step of 3 in the dark, with the values between left out. In 10 bits
+from `framewire.Picture` every value of the file keeps a colour of its
+own, and the look on the GPU in floats makes each a step of about 0.27
+of 255 there. The frames are no bigger, 4 bytes a pixel either way.
 
 ## HDR
 
@@ -395,10 +405,9 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    Mac first, then the video preview on the WebGPU canvas and the HDR
    short with its captions at the reference white.
    The frames are colours now: the episode's decoder scales each frame
-   and turns it into 8-bit red, green and blue, RGBA with an opaque
-   alpha, from the file's
-   range and matrix, and the interface draws them as they come, with no
-   colour space of its own. `TestTheEpisodesDecoderMakesFFmpegsColours`
+   and turns it into red, green and blue from the file's range and
+   matrix, first in 8 bits and now in 10, see Colour, and the interface
+   draws them with no colour space of its own. `TestTheEpisodesDecoderMakesFFmpegsColours`
    holds every value to within 2 of the ffmpeg program's own conversion
    of the same frame, on files tagged BT.601, BT.709 and BT.2020, in
    video and full range, in 8 and 10 bits, and on a file with no tags,
@@ -421,7 +430,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    canvas HDR today, and the video preview takes the WebGPU canvas. It is removed before the
    step is merged.
    HDR is drawn as HDR now, see The video preview under HDR. The walk
-   `the GPU draws standard video as it is and HDR as BT.2100's light`
+   `the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light`
    holds what the GPU gives the canvas to `light.ts` worked out on the
    processor, and to the anchors: HDR's reference white is the app's
    white, PQ at 1000 nits is 1.99 and a green of BT.2020 lies outside

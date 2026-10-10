@@ -1,12 +1,11 @@
 // A frame of the video preview: its pixels as ffmpeg made them on the Go
-// side, 4 bytes each, kept as the bytes they came as, see pull.ts. For
-// standard video that is red, green, blue and an opaque alpha with 8 bits
-// each, and for HDR red, green and blue with 10 bits each in the file's
-// own curve, see light.ts. The bytes are never changed once
-// they are here, so a frame shared by two holders is the same bytes, not
-// a copy. It is the app's own frame rather than WebCodecs' VideoFrame,
-// because the WebGPU canvas takes bytes on every system, see screen.ts,
-// and VideoFrame holds nothing brighter than white.
+// side, red, green and blue with 10 bits each, red lowest, 4 bytes a
+// pixel, kept as the bytes they came as, see pull.ts. Standard video is in
+// the screen's curve and HDR in the file's own, see light.ts. The bytes
+// are never changed once they are here, so a frame shared by two holders
+// is the same bytes, not a copy. It is the app's own frame rather than
+// WebCodecs' VideoFrame, because the WebGPU canvas takes bytes on every
+// system, see screen.ts, and VideoFrame holds nothing brighter than white.
 
 import { toSDR, type Light } from "./light";
 
@@ -45,8 +44,9 @@ export class Picture {
     this.bytes = null;
   }
 
-  // The pixels of a piece of the frame, as a 2D canvas takes them, HDR cut
-  // at white. What lies outside the frame is left clear.
+  // The pixels of a piece of the frame, as a 2D canvas takes them, with
+  // the look of standard video and HDR cut at white. What lies outside the
+  // frame is left clear.
   imageData(x: number, y: number, w: number, h: number): ImageData {
     const out = new ImageData(w, h);
     const src = this.bytes;
@@ -59,8 +59,7 @@ export class Picture {
       if (to <= from) continue;
       const piece = src.subarray((sy * this.width + from) * 4, (sy * this.width + to) * 4);
       const at = (row * w + from - x) * 4;
-      if (this.light) toSDR(this.light, piece, out.data.subarray(at, at + piece.length));
-      else out.data.set(piece, at);
+      toSDR(this.light, piece, out.data.subarray(at, at + piece.length));
     }
     return out;
   }

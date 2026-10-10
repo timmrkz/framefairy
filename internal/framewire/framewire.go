@@ -128,33 +128,27 @@ func LightOf(trc string) Light {
 
 // Picture is the chain that makes a decoded frame what the video preview
 // draws, scaled to width by height and turned into colours from the
-// file's own range and matrix, 4 bytes a pixel.
+// file's own range and matrix: red, green and blue with 10 bits each,
+// X2BGR10 in little endian, red lowest, 4 bytes a pixel.
 //
-// Standard video is RGBA with 8 bits each and an opaque alpha, so a 2D
-// canvas draws the bytes as they are where the webview has no WebGPU, and
-// given the look Tim picked in the side-by-side test of step 4,
-// docs/VIDEO-PREVIEW.md. That look is QuickTime's: the shadows and middle
-// tones of standard video lifted the way the Mac shows them, measured on
-// Tim's screen from start.mp4 beside QuickTime. A value v of 0 to 1 is
-// shown as v to the power of 0.98 - 0.31 v, never below 0.891, which is
-// 1.961 over 2.2, the Mac's curve for video over the screen's. So black
-// stays black and white white, a grey of 22 is shown as 25 and one of 81
-// as 92.
+// 10 bits for every file, standard video too, though most of it has 8.
+// Colours made from 8-bit video in 8 bits lose steps: video range spreads
+// 220 values over 256, and the look of the video preview, QuickTime's,
+// lifts the shadows further, so in a dark gradient one value of the file
+// became a step of 3 on the screen, banding Tim saw on start.mp4 where
+// QuickTime showed none. In 10 bits every value of the file keeps its own
+// colour, and the look is put on in the video preview, on the GPU in
+// floats, see frontend/src/lib/frames/light.ts.
 //
-// HDR is red, green and blue with 10 bits each, X2BGR10 in little endian,
-// red lowest, still in the file's own curve, PQ or HLG, and its own
-// primaries. The video preview turns that into light on the screen, see
-// frontend/src/lib/frames/screen.ts. 10 bits is what an HDR file has.
+// Standard video is still in the screen's curve and HDR in the file's
+// own, PQ or HLG, with its own primaries, which the video preview turns
+// into light on the screen. 10 bits is what an HDR file has.
 //
 // The short is never changed by any of it: its numbers are the file's.
 // The episode's decoder and engine.PreviewFrames build the same chain from
 // here.
-func Picture(width, height int, light Light) string {
-	if light != SDR {
-		return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
-	}
-	const lift = "clip(round(255*pow(val/255,max(0.891,0.98-0.31*val/255))),0,255)"
-	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=rgb24,lutrgb=r='%s':g='%s':b='%s',format=rgba", width, height, lift, lift, lift)
+func Picture(width, height int) string {
+	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
 }
 
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
