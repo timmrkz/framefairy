@@ -495,17 +495,22 @@ func (r *runner) plan(ctx context.Context) error {
 	logsDir, planPath, experiment := r.logsDir, r.planPath, r.experiment
 	outW, outH := r.rs.OutW, r.rs.OutH
 	var err error
+	// An episode shorter than a clip at its shortest has one clip in it,
+	// the whole of it, and no model is needed to say so. Refused, a
+	// fifteen second episode failed its first search and had no clip at
+	// all.
+	whole := source.Duration > 0 && source.Duration < opts.Min
 	// Transcription takes minutes, so a missing key is reported before it
 	// rather than after. A saved reply can make the key unnecessary, so
 	// with one around this is only a warning.
 	var local *LocalModel
-	if opts.Planner == "local" {
+	if opts.Planner == "local" && !whole {
 		local, err = resolveLocal(opts)
 		if err != nil {
 			return err
 		}
 	}
-	if opts.Planner == "api" {
+	if opts.Planner == "api" && !whole {
 		if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
 			saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
 			if len(saved) == 0 || opts.Replan {
@@ -517,7 +522,7 @@ func (r *runner) plan(ctx context.Context) error {
 	// Clips at their shortest, one after another, have to fit in the
 	// window, or the model is asked for more than is there. This is
 	// the same sum the app holds its settings to, see Holds.
-	if !Holds(span, opts.Count, opts.Min) {
+	if !whole && !Holds(span, opts.Count, opts.Min) {
 		return fmt.Errorf("%d clips of at least %ss need %s, and the window is %s. Ask for fewer "+
 			"clips, shorter ones, or a longer window", opts.Count, trimFloat(opts.Min),
 			HMS(float64(opts.Count)*opts.Min), HMS(span.End-span.Start))
@@ -531,9 +536,13 @@ func (r *runner) plan(ctx context.Context) error {
 		return errors.New("no speech was found in the audio")
 	}
 	e.SummariseLines(transcript, lines, span)
+	count := opts.Count
+	if whole {
+		count = 1
+	}
 	plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
 		PlanOptions{
-			Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
+			Count: count, Whole: whole, MinLen: opts.Min, MaxLen: opts.Max,
 			Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
 			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,

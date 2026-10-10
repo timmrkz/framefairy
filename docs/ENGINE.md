@@ -977,7 +977,10 @@ minutes.
 
 The window also has to hold the clips asked for: the count at the shortest
 length, one after another. A run that asks for more is refused before it
-transcribes.
+transcribes. An episode shorter than a clip at its shortest is the one
+exception: it has one clip, the whole of it, shaped and framed like any
+other, and the model is not asked. Nothing chose it, so nothing about it
+is recorded for training.
 
 ## Planning on your machine
 
