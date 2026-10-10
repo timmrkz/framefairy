@@ -16,10 +16,14 @@ entries=$(mktemp -d)
 trap 'rm -rf "$entries"' EXIT
 gh release download dev --pattern 'channel-*.json' --dir "$entries" || true
 
-# Every open pull request with its newest commit, one a line.
+# Every open pull request with its newest commit and whether it still
+# merges into main, one a line. GitHub says CONFLICTING for one that does
+# not, and UNKNOWN while it has not worked it out yet, which is said as
+# nothing until the list is written again.
 newest=""
-if open=$(gh pr list --state open --limit 1000 --json number,headRefOid \
-	--jq '.[] | "\(.number) \(.headRefOid)"'); then
+conflict=""
+if open=$(gh pr list --state open --limit 1000 --json number,headRefOid,mergeable \
+	--jq '.[] | "\(.number) \(.headRefOid) \(.mergeable)"'); then
 	for entry in "$entries"/channel-pr-*.json; do
 		[ -e "$entry" ] || continue
 		number=${entry##*/channel-pr-}
@@ -37,6 +41,12 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid \
 			rm -f "$entry"
 			continue
 		fi
+		# One that no longer merges into main is still listed, because its
+		# build is of the branch as it is, and the app says it conflicts.
+		if [ "$(printf '%s\n' "$open" | awk -v n="$number" '$1 == n { print $3 }')" = CONFLICTING ]; then
+			echo "pull request $number no longer merges into main"
+			conflict="$conflict -conflict pr-$number"
+		fi
 		# A newer commit than the one built, with a build to come, is said
 		# beside the build, by the same rule the build goes by. One that
 		# only changes the docs has no build coming, and a list that said
@@ -49,12 +59,28 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid \
 	done
 fi
 
+# main's newest commit, when it is not the one built. Every push to main
+# is built, docs too, so any other commit is one still to come. Without
+# this the page said main was up to date for three days while every
+# publish of main waited behind one that never started.
+if [ -e "$entries/channel-main.json" ] &&
+	head=$(gh api "repos/${GH_REPO:-${GITHUB_REPOSITORY:-}}/commits/main" --jq .sha); then
+	built=$(jq -r '.commit // empty' "$entries/channel-main.json")
+	case $head in
+	"$built"*) ;;
+	*)
+		echo "main has $head still to be built"
+		newest="$newest -newest main=$(echo "$head" | cut -c1-12)"
+		;;
+	esac
+fi
+
 set -- "$entries"/*.json
 [ -e "$1" ] || set --
-# $newest is words the loop above made of a number and a commit, so it is
-# split on purpose.
+# $newest and $conflict are words the loop above made, of a flag and a
+# channel, so they are split on purpose.
 # shellcheck disable=SC2086
-go run ./cmd/framefairy-release list -out channels.json $newest "$@"
+go run ./cmd/framefairy-release list -out channels.json $newest $conflict "$@"
 cat channels.json
 
 # The new list goes up under a name of its own and is then renamed into

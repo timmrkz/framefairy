@@ -421,10 +421,13 @@ with its newest build, so one fetch is the whole check:
 ```
 
 - **The workflow keeps it true.** A push to a pull request builds it and
-  refreshes its entry. `newest` is there while a pull request has a
-  commit whose build has not come yet: the list is written again the
-  moment a push starts, beside its build, and once more when the build is
-  published, which takes it away. The page then says **A newer commit is
+  refreshes its entry. `newest` is there while a pull request, or main,
+  has a commit whose build has not come yet: the list is written again
+  the moment a push starts, beside its build, and once more when the
+  build is published, which takes it away. A publish that waits half an
+  hour to enter the `updates` environment is cancelled, because it would
+  hold its channel's queue for good, which kept main on one build for
+  three days in October. The page then says **A newer commit is
   being built** and names it, rather than offering the build before as
   the newest. That build can still be installed. A commit that only
   changes the docs has no build coming and is never named. A pull request that is merged or closed has its
@@ -433,6 +436,20 @@ with its newest build, so one fetch is the whole check:
   because GitHub runs nothing for a pull request that no longer merges
   into main: #24 was closed in that state, the close was never seen, and
   the app went on offering it.
+- **A pull request in conflict says so.** One that no longer merges into
+  main keeps its entry, because its build is of the branch as it is and
+  can still be tried, and the list marks it with `"conflict": true`. The
+  Updates page then names it **PR #20, conflicts**,
+  the way it names a closed one, in the list and on the trigger when it is
+  followed. GitHub runs no CI on such a pull request, so the mark says its
+  build was not tested. Followed, the list wears the colour of a warning,
+  and the line under the build starts with the warning triangle and says
+  CI has not tested it. While a build of it is looked for, downloads or
+  waits for Relaunch, the line keeps its dot, in the colour of a warning. The workflow asks GitHub whether each pull request
+  merges every time it writes the list, which is on every build, main's
+  included, so a pull request main moved away from is marked once main's
+  build is published. While GitHub has not worked it out yet, nothing is
+  marked until the next writing. Like `newest`, it is not signed.
 - **Nothing in it is trusted.** Anybody on the way could change the file.
   What makes a build safe is two signatures, made with the development key
   and checked against the public half built into the app. The
@@ -511,8 +528,8 @@ with its newest build, so one fetch is the whole check:
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.
 6. **#18 is merged.** Its channel goes from the list, and an app still on
-   it downloads nothing. The page says **Pull request #18 is closed**,
-   the list names it, closed, in the colour of a warning, and nothing
+   it downloads nothing. The page says **PR #18 is closed** after the
+   warning triangle, the list names it, closed, in the colour of a warning, and nothing
    downloads until another channel is picked. The build kept for it is
    removed the next time the list is read, and so is any build a newer
    push has replaced: nothing is kept that the list does not name. It
@@ -590,7 +607,7 @@ minutes. Once a channel is picked, another channel is what follows it.
 | The channel list and the source | `updates/` | reads and checks the list, picks the channel followed, and hands Wails' updater the build, its checksum and its signature. A channel that has gone is followed by nothing, never by main by itself. Every build downloads into the user's caches first and goes on to the end whoever still waits for it, so a channel picked again has its build at once or on its way, and whatever the list stops naming is removed each time it is read, unless it is still arriving |
 | The swap | Wails' `pkg/updater` | downloads, checks the checksum and the signature, unpacks the `.app`, and after the restart swaps it in with a backup |
 | The app's side | `cmd/framefairy-app/updates.go` | whether this build can update at all and why not, the check the moment it starts and every ten minutes after for a build from a channel, every twenty seconds while the channel has a commit being built, a newer build in place of one that is ready once it is whole, the picked channel in `updates.json` beside the settings, when the last check ended, the restart into a new build, which waits for work in hand |
-| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or Pull request #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
+| The interface | Updates, the last row of the sidebar, and its own page | the row says which build is running and wears a dot when a newer one is ready. The page is one card: the build and its commit, which opens on GitHub, and the list of channels, which names the channel and nothing more, Branch main or PR #18, says Choose a channel while a build made on the Mac follows none, opens from its right edge, and says in its title what it is for. Under it one line says where things stand, up to date and when it last looked, a newer build downloading with how far, or ready, with the one thing to do at its end: Check while a channel is followed, or Relaunch, Chrome's word for it, which restarts into the new build. The dot on the row only comes once the build is on disk, so Relaunch never waits. Looking is shown for at least 1.4 seconds, because a check that finds nothing is over before anybody can read that it happened. Check for Updates in the app menu opens it |
 | The key and the signing | `cmd/framefairy-release` | `key` makes the pair, `sign` signs a build and refuses a key that is not the app's, `list` writes the channel list |
 | The build | `.github/workflows/builds.yml` | builds main and every push to a branch with an open pull request of this repository on macOS, and leaves the zip as an artifact. It runs the branch's code, so it gets no secret and no token that can write. A commit built already, or one that only changes docs against the build there is, gets no build, decided by `scripts/needs-build.sh` |
 | The publishing | `.github/workflows/publish.yml` | runs from main whenever a build starts or ends. It works out which channel, commit and version a build is from GitHub's record of the run, signs the zip, uploads it and its entry to the `dev` release, writes the list at the start of a push and when its build is done, and marks a pull request's commit Ready to update to |

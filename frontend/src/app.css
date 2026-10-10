@@ -588,8 +588,14 @@ input[type="password"] {
   }
 }
 
+/* Work on something that needs a look, a pull request in conflict with
+   main: the same dot and the same pulse, in the colour of a warning. */
 .dot.warn {
   background: var(--warn);
+}
+
+.dot.warn::after {
+  border-color: var(--warn);
 }
 
 .dot.err {
@@ -742,6 +748,14 @@ button:has(> .beam):disabled {
 
 .card .mark.ok {
   color: var(--ok);
+}
+
+.card .mark.warn {
+  color: var(--warn);
+}
+
+.card .mark.err {
+  color: var(--err);
 }
 
 .card .words {

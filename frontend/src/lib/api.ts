@@ -969,6 +969,9 @@ export interface UpdateChannel {
   id: string;
   name: string;
   version: string;
+  // A pull request that no longer merges into main. Its build can still
+  // be installed.
+  conflict: boolean;
 }
 
 export interface UpdateState {

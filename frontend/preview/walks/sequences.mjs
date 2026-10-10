@@ -141,7 +141,8 @@
 //                      as how says: from the channel how.from, or made on
 //                      the Mac without it, with how.stored picked by a
 //                      build before it, and the channels how.list on the
-//                      list, each with a newer build
+//                      list, each with a newer build, and those in
+//                      how.conflict said to no longer merge into main
 //   ["follow", name]   picks the channel of this name in the Updates
 //                      page's list, and reads the page in the next frame
 //   ["words again"]    the speech stand-in says its sentences again from
@@ -299,6 +300,12 @@
 //                      the line under the build comes to say this head, in
 //                      ten seconds at most, and more somewhere after it
 //   ["no check"]       the line under the build offers no button
+//   ["mark", what]     the line under the build starts with this mark,
+//                      "check", "triangle" or "dot", and ", warning" when
+//                      it wears the colour of a warning
+//   ["warned"]         the list wears the colour of a warning
+//   ["fits"]           the list's trigger is as wide as the channel it
+//                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
 //                      channel picked and the line under it this head
 //
@@ -923,14 +930,14 @@ export const sequences = [
     steps: [
       ["updates", { stored: "pr-143", list: "main,pr-143" }],
       ["channel", "Choose a channel"],
-      ["choices", ["Branch main", "Pull request #143"], ""],
+      ["choices", ["Branch main", "PR #143"], ""],
       ["status", "Built on this Mac", "It stays as it is until you choose a channel to follow."],
       ["no check"],
       ["follow", "Branch main"],
       ["at once", "Looking for a newer build"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "Branch main"],
-      ["choices", ["Branch main", "Pull request #143"], "Branch main"],
+      ["choices", ["Branch main", "PR #143"], "Branch main"],
     ],
   },
   {
@@ -938,16 +945,34 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
-      ["choices", ["Branch main", "Pull request #20"], "Branch main"],
+      ["choices", ["Branch main", "PR #20"], "Branch main"],
     ],
   },
   {
     name: "a pull request followed that closed says closed in the list and in the line under it",
     steps: [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
-      ["status", "Pull request #143 is closed", "Nothing downloads until you choose what to follow next."],
-      ["channel", "Pull request #143, closed"],
-      ["choices", ["Branch main", "Pull request #143, closed"], "Pull request #143, closed"],
+      ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
+      ["mark", "triangle, warning"],
+      ["warned"],
+      ["channel", "PR #143, closed"],
+      ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
+    ],
+  },
+  {
+    // Tim asked for a pull request in conflict with main to be in the list
+    // and say so, the way a closed one does. Its build is of the branch as
+    // it is, so it can still be followed and installed.
+    name: "a pull request in conflict with main says so in the list and can still be followed",
+    steps: [
+      ["updates", { from: "main", list: "main,pr-20,pr-21", conflict: "pr-20" }],
+      ["choices", ["Branch main", "PR #21", "PR #20, conflicts"], "Branch main"],
+      ["fits"],
+      ["follow", "PR #20, conflicts"],
+      ["status", "A newer build is ready", "Relaunch to finish updating"],
+      ["channel", "PR #20, conflicts"],
+      ["mark", "dot, warning"],
+      ["warned"],
     ],
   },
 ];
@@ -963,7 +988,32 @@ function readUpdates() {
     head: text(line?.querySelector(".head")),
     more: text(line?.querySelector(".words .muted")),
     button: text(line?.querySelector("button")),
+    mark: markOf(line?.querySelector(".mark")),
+    warned: !!document.querySelector("#channel")?.classList.contains("warn"),
+    // What the trigger has beside the name it says: its padding, the gap
+    // and the mark, about 54 pixels, and more once room is kept for a
+    // longer name.
+    slack: (() => {
+      const trigger = document.querySelector("#channel");
+      const said = trigger?.querySelector(".said > span:not(.room)");
+      return trigger && said ? trigger.getBoundingClientRect().width - said.getBoundingClientRect().width : -1;
+    })(),
   };
+
+  // The mark by its shape, and whether it is drawn in the colour of a
+  // warning, read from what is painted rather than from a class.
+  function markOf(mark) {
+    if (!mark) return "";
+    const probe = document.createElement("span");
+    probe.style.color = "var(--warn)";
+    document.body.append(probe);
+    const warn = getComputedStyle(probe).color;
+    probe.remove();
+    const dot = mark.querySelector(".dot");
+    const shape = dot ? "dot" : mark.querySelector('svg path[d$="Z"]') ? "triangle" : mark.querySelector("svg") ? "check" : "";
+    const colour = dot ? getComputedStyle(dot).backgroundColor : getComputedStyle(mark).color;
+    return colour === warn ? `${shape}, warning` : shape;
+  }
 }
 const updatesPage = (page) => page.evaluate(readUpdates);
 
@@ -2608,7 +2658,12 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await control(url, "/speech?ms=0&from=0");
         break;
       case "updates": {
-        const q = new URLSearchParams({ from: arg.from ?? "", stored: arg.stored ?? "", list: arg.list ?? "" });
+        const q = new URLSearchParams({
+          from: arg.from ?? "",
+          stored: arg.stored ?? "",
+          list: arg.list ?? "",
+          conflict: arg.conflict ?? "",
+        });
         await control(url, `/updates?${q}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Updates", { exact: true }).first().click());
         await page.locator("#channel").waitFor();
@@ -2655,6 +2710,21 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const now = await updatesComeTo(page, (u) => u.head === head);
         if (now.head !== head) wrong = `the line under the build says ${now.head || "nothing"}, not ${head}`;
         else if (more && !now.more.includes(more)) wrong = `under ${head} it says ${JSON.stringify(now.more)}, not ${JSON.stringify(more)}`;
+        break;
+      }
+      case "mark": {
+        const now = await updatesComeTo(page, (u) => u.mark === arg);
+        if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "warned": {
+        const now = await updatesComeTo(page, (u) => u.warned);
+        if (!now.warned) wrong = `the list does not wear the colour of a warning`;
+        break;
+      }
+      case "fits": {
+        const now = await updatesPage(page);
+        if (now.slack < 0 || now.slack > 60) wrong = `the list's trigger keeps ${Math.round(now.slack)} px beside ${now.channel}, room for a longer name`;
         break;
       }
       case "no check": {

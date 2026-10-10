@@ -97,14 +97,24 @@
   // by its number. The pull request's title says what it is about, which
   // is not what is being picked here. Customers will see releases the same
   // way, by their version.
-  const channelName = (id: string) => (id.startsWith("pr-") ? `Pull request #${id.slice(3)}` : `Branch ${id}`);
+  const channelName = (id: string) => (id.startsWith("pr-") ? `PR #${id.slice(3)}` : `Branch ${id}`);
   // The channel followed, as updates.Followed has it: the one picked, or
   // the one a build from a channel came from. Empty for a build made on
   // the Mac until a channel is chosen.
   const following = $derived(update ? update.picked || update.follows || update.gone || update.channel || "" : "");
   const followingName = $derived(following ? channelName(following) : "");
+  // The pull request followed no longer merges into main. Its builds
+  // still come, but CI does not run on them, so the page wears the colour
+  // of a warning for it, the way it does for one that closed.
+  const conflicted = $derived(!!update?.channels?.some((c) => c.id === following && c.conflict));
   const channelOptions = $derived.by(() => {
-    const listed = (update?.channels ?? []).map((c) => ({ value: c.id, label: channelName(c.id) }));
+    // A pull request that no longer merges into main says so in its name,
+    // the way a closed one does. Its build is of the branch as it is, so
+    // it is still there to try.
+    const listed = (update?.channels ?? []).map((c) => ({
+      value: c.id,
+      label: c.conflict ? `${channelName(c.id)}, conflicts` : channelName(c.id),
+    }));
     // A pull request that was followed and has since gone stays in the
     // list for as long as it is followed, so the trigger never names
     // nothing and says what became of it. Closed only when a list that was
@@ -156,7 +166,8 @@
         return { mark: "look", head: "Looking for a newer build", more: following ? `Of ${followingName}.` : "" };
       case "downloading": {
         const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
-        return { mark: "new", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
+        // Work running, so the pulse, the same as looking.
+        return { mark: "look", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
       }
       case "ready":
         return {
@@ -174,6 +185,12 @@
             mark: "look",
             head: "A newer commit is being built",
             more: `${building}. This is the build before it, the newest of ${followingName} so far. ${when(u.checked)}`.trim(),
+          };
+        if (conflicted)
+          return {
+            mark: "warn",
+            head: "Up to date",
+            more: `This is the newest build of ${followingName}. It conflicts with main, so CI has not tested it. ${when(u.checked)}`.trim(),
           };
         return {
           mark: "ok",
@@ -276,8 +293,9 @@
             label="Channel"
             placeholder="Choose a channel"
             align="right"
+            fit
             title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
-            tone={update.phase === "gone" ? "warn" : undefined}
+            tone={update.phase === "gone" || conflicted ? "warn" : undefined}
             disabled={channelOptions.length === 0}
           />
         {/if}
@@ -285,16 +303,22 @@
 
       <!-- Where things stand, and the one thing to do about it. -->
       <div class="item" class:on={update.phase === "ready"}>
+        <!-- A dot is work, running or waiting to be picked up. Something
+             that needs a look is the triangle, the way the settings mark a
+             missing key, in the colour of a warning or of a failure. Work
+             on a pull request in conflict keeps its dot, in the colour of
+             a warning. -->
         <span class="mark {standing.mark}" aria-hidden="true">
           {#if standing.mark === "ok"}
-            <Icon name="check" size={14} />
+            <Icon name="check" />
+          {:else if standing.mark === "warn" || standing.mark === "err"}
+            <Icon name="warn" />
           {:else}
             <span
               class="dot"
               class:busy={standing.mark === "look"}
               class:ready={standing.mark === "new"}
-              class:err={standing.mark === "err"}
-              class:warn={standing.mark === "warn"}
+              class:warn={conflicted && (standing.mark === "look" || standing.mark === "new")}
             ></span>
           {/if}
         </span>
@@ -363,9 +387,9 @@
     flex: none;
   }
 
-  /* The list is as wide as what its trigger says and no wider, the same
-     as every list in the settings. It hangs from the trigger's right edge,
-     the edge of the card, and grows away from it into the card. */
+  /* The trigger is as wide as the channel it names and no wider, see fit
+     in Pick. The list hangs from its right edge, the edge of the card, and
+     grows away from it into the card as far as its longest name needs. */
   .build :global(button.pick) {
     width: max-content;
   }

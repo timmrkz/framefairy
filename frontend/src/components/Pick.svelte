@@ -62,6 +62,13 @@
     // What the trigger says while nothing in the list is picked. It is a
     // state, not a row: a list never offers nothing as a choice.
     placeholder = "",
+    // A trigger as wide as what it says now, rather than as wide as the
+    // longest thing it could say. For a list that stands alone at the end
+    // of a row, where nothing beside it moves when it changes width, and
+    // whose longest name would leave the short ones in a wide empty box:
+    // the channel on the Updates page, where PR #175 sat in a box made for
+    // PR #20, conflicts.
+    fit = false,
   }: {
     // What is picked. It goes one way only, and nothing here ever writes
     // it back: what the trigger says is what the caller says is true, and
@@ -92,6 +99,7 @@
     onopenchange?: (open: boolean) => void;
     refuse?: () => boolean;
     placeholder?: string;
+    fit?: boolean;
   } = $props();
 
   const picked = $derived(options.find((o) => o.value === value));
@@ -175,7 +183,7 @@
           <Icon name={icon ?? picked?.icon ?? "pick"} />
         {:else}
           <span class="said">
-            <span class="room" aria-hidden="true">{longest}</span>
+            {#if !fit}<span class="room" aria-hidden="true">{longest}</span>{/if}
             <span class:unpicked>{shown}</span>
           </span>
           <span class="mark"><Icon name="pick" size={12} /></span>
