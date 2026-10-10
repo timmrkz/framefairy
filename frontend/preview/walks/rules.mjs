@@ -33,6 +33,47 @@ export function expectedTimeline(segments) {
   return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
 }
 
+// What the video preview lays over the picture, held to where the
+// playhead is, for samples as recordFrames and overlay read them, against
+// the engine's clip, state, in an episode of frames a frame long.
+//
+// On the video the video preview shows the video and nothing else: no crop
+// frame, no shade beside it, no caption box, wherever the playhead is,
+// the chosen clip's own moments included. Tim saw the captions stay up
+// while the episode played through a clip. On the clip, with the playhead
+// a frame or more inside one of its pieces, the crop frame stands over the
+// picture, and the caption box with it wherever the engine has a caption,
+// a tenth of a second or more inside it. Says what broke, or null.
+export function overlaid(samples, state, frame) {
+  const pieces = state?.segments ?? [];
+  const clipTime = (t) => {
+    let sum = 0;
+    for (const p of pieces) {
+      if (t < p.start) return sum;
+      if (t < p.end) return sum + (t - p.start);
+      sum += p.end - p.start;
+    }
+    return sum;
+  };
+  const inPiece = (t) => pieces.some((p) => t >= p.start + frame && t < p.end - frame);
+  const captioned = (t) => {
+    const c = clipTime(t);
+    return (state?.captions ?? []).some((x) => c >= x.start + 0.1 && c < x.end - 0.1);
+  };
+  for (const o of samples) {
+    const at = Number.isFinite(o.at) ? o.at.toFixed(3) : "nowhere";
+    const how = o.playing ? "playing" : "paused";
+    if (o.video) {
+      const over = [o.crop && "the crop frame", o.shade && "the shade", o.captions && "the captions"].filter(Boolean);
+      if (over.length) return `on the video at ${at}, ${how}, the video preview shows ${over.join(" and ")}`;
+    } else if (inPiece(o.at)) {
+      if (!o.crop) return `on the clip at ${at}, ${how}, the video preview shows no crop frame`;
+      if (captioned(o.at) && !o.captions) return `on the clip at ${at}, ${how}, the engine has a caption and the video preview shows none`;
+    }
+  }
+  return null;
+}
+
 // Watches one page through the steps made on it.
 export class Watch {
   constructor(page, at, errors) {

@@ -521,7 +521,12 @@ before its end, and the clip playing to its end, leave it on the clip at
 its end. Any frame before or after the clip is on the video, and so is
 having no clip chosen. It goes by frames and not by seconds because what
 is on screen is a frame: a clip's start kept to the millisecond can lie a
-hair before its frame, and a step onto that frame is on the clip.
+hair before its frame, and a step onto that frame is on the clip. A step
+taken while the episode plays on the video is the one exception: an arrow,
+with Shift or without, skips through the episode and leaves the playhead
+on the video, through the clip and its cuts, so a hand that skips ahead
+through a dimmed clip does not light it up. Paused, or on the clip, a step
+lands where its frame says.
 
 On the clip, the space bar plays the clip from the playhead: its cuts are
 jumped and it stops at its end, or with loop on goes back to its start.
@@ -532,15 +537,18 @@ playhead, through the chosen clip and its cuts, with no jump and no stop,
 so any part of the episode can be heard with a clip chosen. Playing through
 the clip leaves the playhead on the video, and loop changes nothing there.
 While the playhead is on the video the chosen clip is dimmed as one thing,
-wherever it is drawn: the crop frame in the video preview, its mark on the
-range picker, and on the clip timeline everything drawn for it, its frame,
-its pieces, its cuts and their edges, its trim edges, its caption blocks and
-their edges and its thumbnails. So it shows that the clip's rules are not in
-play. It is one rule, `.chosen.dim` with `.frame.dim` and
-`.clipmark.selected.dim` in `app.css`, at the brightness of a button that
-cannot be pressed, `--dimmed`, and it changes in the frame the playhead
-does. With the hand on the clip somewhere else, its card or its mark, it is
-lit whole.
+wherever it is drawn: its mark on the range picker, and on the clip
+timeline everything drawn for it, its frame, its pieces, its cuts and their
+edges, its trim edges, its caption blocks and their edges and its
+thumbnails. So it shows that the clip's rules are not in play. It is one
+rule, `.chosen.dim` with `.clipmark.selected.dim` in `app.css`, at the
+brightness of a button that cannot be pressed, `--dimmed`, and it changes
+in the frame the playhead does. With the hand on the clip somewhere else,
+its card or its mark, it is lit whole. The video preview then shows the
+video alone, with no crop frame, no shade and no captions, even while the
+episode plays on through the clip's own moments: what plays is the
+episode, not the short. On the clip, the crop frame and the captions are
+back in the same frame.
 
 It used to be measured: the clip played when the playhead was within half
 a frame of its start. The paused video element on the Mac answered with
@@ -1307,6 +1315,10 @@ bubble scrolled by those eight pixels.
       they took before, and a second is nothing in particular. It lands in
       the middle of a word as often as not, it walks four words at a time
       where someone speaks quickly and none at all across a pause.
+      While the episode plays on the video, they walk the words of the
+      transcript and stay on the video, see the place of the playhead
+      above. Found by Tim, who skipped ahead through a dimmed clip and
+      had it light up.
       - **It walks the words the caption lights up, not the words the
         transcript holds.** They are not the same list. A correction that
         reads as two words is two words in the caption and one in the
