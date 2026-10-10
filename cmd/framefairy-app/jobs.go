@@ -234,7 +234,7 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 	q.mu.Lock()
 	if q.closed[episode] > 0 {
 		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the episode is being removed")
+		return q.refuse(episode, kind, label, "the video is being removed")
 	}
 	if q.shut {
 		q.mu.Unlock()
@@ -280,7 +280,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	q.mu.Lock()
 	if q.closed[episode] > 0 {
 		q.mu.Unlock()
-		return q.refuse(episode, kind, label, "the episode is being removed", prepare)
+		return q.refuse(episode, kind, label, "the video is being removed", prepare)
 	}
 	if q.shut {
 		q.mu.Unlock()

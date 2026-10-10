@@ -203,7 +203,7 @@ func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
 		}
 		tried = append(tried, candidate.Name)
 	}
-	return Encoder{}, renderErr("this episode is HDR, and this ffmpeg has no encoder of HEVC in 10 bits "+
+	return Encoder{}, renderErr("this video is HDR, and this ffmpeg has no encoder of HEVC in 10 bits "+
 		"to keep it HDR: %s.", strings.Join(tried, ", "))
 }
 

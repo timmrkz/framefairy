@@ -48,7 +48,7 @@ func (s *FrameFairy) ChooseFolder(title string) (string, error) {
 // AddEpisodes asks for video files and adds them to the library.
 func (s *FrameFairy) AddEpisodes() ([]string, error) {
 	dialog := s.app.Dialog.OpenFile().
-		SetTitle("Add episodes").
+		SetTitle("Add videos").
 		CanChooseFiles(true).
 		AddFilter("Video", "*.mp4;*.mov;*.m4v;*.mkv")
 	paths, err := dialog.PromptForMultipleSelection()
@@ -164,8 +164,8 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 		// in it. Removing it again once the work has stopped does what it
 		// says.
 		if !s.jobs.waitEpisode(path) {
-			return errors.New("something is still running on this episode and would not stop, " +
-				"so nothing was deleted. Remove the episode again in a moment")
+			return errors.New("something is still running on this video and would not stop, " +
+				"so nothing was deleted. Remove the video again in a moment")
 		}
 		if err := engine.DeleteWork(path); err != nil {
 			return err

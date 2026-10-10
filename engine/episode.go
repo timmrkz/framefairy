@@ -244,7 +244,7 @@ func IsVideo(name string) bool {
 // transcript is for an older version of the file or another speech model. It
 // is a state every episode starts in, not a failure, so what only reads the
 // transcript answers with nothing instead of passing it on.
-var ErrNoTranscript = errors.New("this episode has no current transcript yet")
+var ErrNoTranscript = errors.New("this video has no current transcript yet")
 
 // Transcript returns the whole-episode transcript from the cache. It never
 // transcribes, so it returns ErrNoTranscript if Transcribe has not run.
