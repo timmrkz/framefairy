@@ -374,7 +374,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
-      The whole episode, with its clips as marks. Press or drag anywhere to move the playhead, and
+      The whole video, with its clips as marks. Press or drag anywhere to move the playhead, and
       press a mark to work on its clip. The marks at the four corners are where New looks next: drag
       a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
       double-click to put it back. It is at least as long as its clips need and at most as long as

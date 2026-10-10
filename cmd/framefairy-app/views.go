@@ -191,5 +191,5 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 			return entryOf(plan, c, s.cropWidth(info), info.Width), nil
 		}
 	}
-	return ClipEntry{}, fmt.Errorf("the clip %s is not in this episode's clips any more: %w", clipID, os.ErrNotExist)
+	return ClipEntry{}, fmt.Errorf("the clip %s is not in this video's clips any more: %w", clipID, os.ErrNotExist)
 }

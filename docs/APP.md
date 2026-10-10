@@ -40,7 +40,7 @@ comes to hearing waits for the model rather than failing on it.
 
 **Finding clips** is the question. A model in the cloud, Anthropic's or
 OpenAI's with a key of your own, works on any machine and
-costs a few cents an episode. A model on this machine is free to run and
+costs a few cents a video. A model on this machine is free to run and
 needs the memory to hold it. Either way only the words are read: the video
 and the audio never leave the machine. The answer is saved the moment it is
 given and can be changed later in the settings.
@@ -105,7 +105,7 @@ the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
 The app opens on the episode that was open when it was left. With no
-episode in the library, the page says **Add an episode** and has the
+episode in the library, the page says **Add a video** and has the
 **Add** button on it, since there is nothing to pick. Removing the
 episode that is open goes to the one opened before it, the way closing a
 tab shows the one before, and the page for no episode shows only when
@@ -2114,7 +2114,7 @@ list offers, and what the line says and how it stands in every state, are
 in `frontend/src/lib/finding.ts`, and `finding.test.ts` walks every state
 somebody can click their way into, run by `make interface` and CI.
 
-The line under the choice says what it costs: a few cents an episode and
+The line under the choice says what it costs: a few cents a video and
 which company, or who made the model, the memory it needs and whether it fits.
 Beside each model in the list is what it would cost to fetch, or that it is
 the best here, or that it is too big for this machine. The list holds any
@@ -2239,9 +2239,9 @@ check before it once it is there, what it covers and the room it takes.
 Removing the speech model means the app asks for one again the next time it
 starts, because nothing can be transcribed without it.
 
-**Shorts** says where rendered shorts go, next to each episode unless a
+**Shorts** says where rendered shorts go, next to each video unless a
 folder is chosen with **Choose…**, which
-opens the system's own folder dialog. **Next to episode** goes back to the
+opens the system's own folder dialog. **Next to video** goes back to the
 default. In a folder chosen here, each episode's shorts go into a folder
 of their own, named after the episode's file, so `Folge 12.mp4` renders
 into `Shorts/Folge 12/`. A short is named after its clip's words, without
