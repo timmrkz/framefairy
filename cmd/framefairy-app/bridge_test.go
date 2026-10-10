@@ -355,7 +355,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if l := q.Get("list"); l != "" {
 			list = strings.Split(l, ",")
 		}
-		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list))
+		var conflict []string
+		if c := q.Get("conflict"); c != "" {
+			conflict = strings.Split(c, ",")
+		}
+		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list, conflict))
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -497,13 +501,14 @@ type bridge struct {
 // updatesAs gives the app updates the way a walk asks for them: a build
 // from the channel from, or one made on the Mac when from is empty, with
 // stored in updates.json, picked by a run before, and these channels on
-// the list. It is the app's own updating and Wails' updater, reading a
+// the list, those in conflict said to no longer merge into main. It is
+// the app's own updating and Wails' updater, reading a
 // channel list served on this machine, the one the Go tests of updates
 // use, so nothing reaches the network. Every channel has a build newer
 // than the one running, which downloads in a moment. The app opened again
 // has none, the way the bridge started.
-func (b *bridge) updatesAs(from, stored string, list []string) error {
-	for _, ch := range append([]string{from, stored}, list...) {
+func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
+	for _, ch := range append(append([]string{from, stored}, list...), conflict...) {
 		if ch != "" && !updates.ValidChannel(ch) {
 			return fmt.Errorf("%q is not a channel", ch)
 		}
@@ -514,6 +519,12 @@ func (b *bridge) updatesAs(from, stored string, list []string) error {
 	}
 	cs := b.channels
 	b.mu.Unlock()
+	cs.mu.Lock()
+	cs.conflict = map[string]bool{}
+	for _, ch := range conflict {
+		cs.conflict[ch] = true
+	}
+	cs.mu.Unlock()
 	var builds [][3]string
 	for _, ch := range list {
 		builds = append(builds, [3]string{ch, "0.3.0-" + strings.ReplaceAll(ch, "-", "") + ".1", ch})

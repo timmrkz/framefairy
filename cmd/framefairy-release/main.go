@@ -9,9 +9,10 @@
 //	framefairy-release sign -zip F -channel C -name N -version V -commit X -url U -out F
 //	    sign a build with the private half, read from FRAMEFAIRY_UPDATE_KEY,
 //	    and write its entry for the channel list
-//	framefairy-release list -out F [-newest CHANNEL=COMMIT]... ENTRY...
+//	framefairy-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
-//	    newest commit of each channel that has one still to be built
+//	    newest commit of each channel that has one still to be built, and
+//	    the pull requests that no longer merge into main
 package main
 
 import (
@@ -189,6 +190,17 @@ func list(args []string) error {
 		newest[channel] = commit
 		return nil
 	})
+	// The pull requests that no longer merge into main. Like the newest
+	// commit, the workflow knows it when it writes the list, and the
+	// entry cannot.
+	conflict := map[string]bool{}
+	fs.Func("conflict", "a pull request that no longer merges into main, as its channel", func(v string) error {
+		if !updates.ValidChannel(v) || v == "main" {
+			return fmt.Errorf("%q is not the channel of a pull request", v)
+		}
+		conflict[v] = true
+		return nil
+	})
 	_ = fs.Parse(args)
 	text, err := os.ReadFile(publicKeyFile)
 	if err != nil {
@@ -226,6 +238,7 @@ func list(args []string) error {
 			}
 		}
 		b.Newest = newest[b.Channel]
+		b.Conflict = conflict[b.Channel]
 		l.Channels = append(l.Channels, b)
 	}
 	// When it was written, so the app can tell the newer of the list's

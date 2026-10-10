@@ -1500,14 +1500,6 @@
     color: var(--warn);
   }
 
-  .mark.warn {
-    color: var(--warn);
-  }
-
-  .mark.err {
-    color: var(--err);
-  }
-
   /* A row that opens what is under it: the whole row is the button, and
      the chevron at its end turns, the way a row in the Mac's own settings
      leads on. */
