@@ -30,13 +30,15 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 )
 
 // What a record holds.
 const (
 	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in 8-bit I420 at the cursor's size, or a chunk
-	// of sound, 32-bit floats with the channels of a moment side by side.
+	// body is the picture in colours, 4 bytes a pixel as Picture makes
+	// them, at the cursor's size, or a chunk of sound, 32-bit floats with
+	// the channels of a moment side by side.
 	Frame byte = iota
 	// The batch a next asked for is done.
 	Done
@@ -46,7 +48,8 @@ const (
 	Failed
 	// An open is done: the cursor is at its place. The body is "file" when
 	// the open had to open the file and a decoder first, and empty when it
-	// moved a cursor that had them.
+	// moved a cursor that had them. A cursor of picture adds its Light
+	// after a space: "file hlg", " pq".
 	Opened
 )
 
@@ -75,8 +78,81 @@ func Write(w io.Writer, r Record) error {
 	return err
 }
 
+// Light is how a picture's brightness is coded: standard video, or HDR
+// with the curve of PQ or of HLG, from the file's transfer tag. It is the
+// word an open answers with after "file", see Opened.
+type Light string
+
+const (
+	SDR Light = ""
+	PQ  Light = "pq"
+	HLG Light = "hlg"
+)
+
+// OpenedBody is the body of an Opened record: whether the open opened the
+// file, and the light of the cursor's picture.
+func OpenedBody(file bool, light Light) []byte {
+	body := ""
+	if file {
+		body = "file"
+	}
+	if light != SDR {
+		body += " " + string(light)
+	}
+	return []byte(body)
+}
+
+// ReadOpened reads the body of an Opened record. A light it does not know
+// is standard video, which is what it was before HDR came.
+func ReadOpened(body []byte) (file bool, light Light) {
+	word, rest, _ := strings.Cut(string(body), " ")
+	switch Light(rest) {
+	case PQ, HLG:
+		light = Light(rest)
+	}
+	return word == "file", light
+}
+
+// LightOf is the light of a file whose transfer tag is trc, as ffmpeg
+// names it: smpte2084 is PQ, arib-std-b67 HLG, and everything else,
+// no tag included, standard video.
+func LightOf(trc string) Light {
+	switch trc {
+	case "smpte2084":
+		return PQ
+	case "arib-std-b67":
+		return HLG
+	}
+	return SDR
+}
+
+// Picture is the chain that makes a decoded frame what the video preview
+// draws, scaled to width by height and turned into colours from the
+// file's own range and matrix: red, green and blue with 10 bits each,
+// X2BGR10 in little endian, red lowest, 4 bytes a pixel.
+//
+// 10 bits for every file, standard video too, though most of it has 8.
+// Colours made from 8-bit video in 8 bits lose steps: video range spreads
+// 220 values over 256, and the look of the video preview, QuickTime's,
+// lifts the shadows further, so in a dark gradient one value of the file
+// became a step of 3 on the screen, banding Tim saw on start.mp4 where
+// QuickTime showed none. In 10 bits every value of the file keeps its own
+// colour, and the look is put on in the video preview, on the GPU in
+// floats, see frontend/src/lib/frames/light.ts.
+//
+// Standard video is still in the screen's curve and HDR in the file's
+// own, PQ or HLG, with its own primaries, which the video preview turns
+// into light on the screen. 10 bits is what an HDR file has.
+//
+// The short is never changed by any of it: its numbers are the file's.
+// The episode's decoder and engine.PreviewFrames build the same chain from
+// here.
+func Picture(width, height int) string {
+	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
+}
+
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
-const MaxBody = 7680 * 4320 * 3 / 2
+const MaxBody = 7680 * 4320 * 4
 
 // Read reads the next record. The body is a buffer of its own, which the
 // caller may keep.

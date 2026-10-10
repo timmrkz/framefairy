@@ -43,6 +43,9 @@ type EpisodeFrames struct {
 	// soundSeek, found once.
 	picture      float64
 	pictureKnown bool
+	// How the picture's brightness is coded, as the decoder found it in
+	// the file when a cursor of picture first opened it.
+	light framewire.Light
 }
 
 // The two kinds of cursor.
@@ -252,9 +255,19 @@ func (f *EpisodeFrames) give(id uint32, kind int, failed bool) {
 	_ = f.send(f.gone, "close %d", id)
 }
 
+// Light is how the episode's picture codes its brightness, standard video
+// or HDR, known once a stream of its frames has opened. Its frames are
+// made by framewire.Picture for it.
+func (f *EpisodeFrames) Light() framewire.Light {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.light
+}
+
 // Stream hands over the frames of the episode from the moment from on,
-// scaled to width by height in 8-bit I420, each with the moment it starts
-// at and in a buffer of its own, the way PreviewFrames does with the
+// scaled to width by height in colours as framewire.Picture makes them for
+// the episode's Light, each with the moment it starts at and in a buffer
+// of its own, the way PreviewFrames does with the
 // ffmpeg program. It runs until got says no more, the context ends or the
 // episode does.
 func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height int,
@@ -353,8 +366,14 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 			switch rec.Kind {
 			case framewire.Opened:
 				// The cursor is at from: a file opened, or a cursor moved.
-				if times != nil && string(rec.Body) == "file" {
+				file, light := framewire.ReadOpened(rec.Body)
+				if times != nil && file {
 					times.File.Store(true)
+				}
+				if kind == pictureCursor {
+					f.mu.Lock()
+					f.light = light
+					f.mu.Unlock()
 				}
 				times.mark(timeOpened)
 			case framewire.Frame:

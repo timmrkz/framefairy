@@ -35,9 +35,15 @@ window.__heard = [];
 // pixels, the highest bit first, so what is on the canvas can be read back
 // rather than taken on trust.
 const read = params.has("read");
-const looks = canvas.getContext("2d")!;
+// The canvas may be a WebGPU canvas, which has no 2D context, so the row
+// is copied to a 2D canvas to be read.
+const strip = document.createElement("canvas");
+const looks = strip.getContext("2d", { willReadFrequently: true })!;
 function pictured(): number {
-  const row = looks.getImageData(0, 27, canvas.width, 1).data;
+  if (strip.width !== canvas.width) strip.width = canvas.width;
+  strip.height = 1;
+  looks.drawImage(canvas, 0, 27, canvas.width, 1, 0, 0, canvas.width, 1);
+  const row = looks.getImageData(0, 0, canvas.width, 1).data;
   let n = 0;
   for (let b = 0; b < 16; b++) {
     const x = Math.round(((b * 12 + 6) * canvas.width) / 192);
