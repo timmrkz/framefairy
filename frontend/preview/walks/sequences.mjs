@@ -446,6 +446,20 @@ export const sequences = [
     ],
   },
   {
+    name: "a caption block pops for neither edge dragged in, with the playhead on it",
+    steps: [
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["start", "Schulhof"]],
+      ["pops", 0],
+      ["undo"],
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["end", "Schulhof"]],
+      ["pops", 0],
+    ],
+  },
+  {
     name: "a caption's edges moved by hand leave the captions beside them alone",
     steps: [
       ["mark", "start"],
@@ -1841,6 +1855,29 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         if (!held || !left || Math.abs(left.x - held.x) > 1) {
           wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+        }
+        break;
+      }
+      case "count pops":
+      case "pops": {
+        // How often a caption block on the clip timeline pops, counted from
+        // "count pops" on. The playhead stands still, so any pop is one an
+        // edit made.
+        if (what === "count pops") {
+          await page.waitForTimeout(400);
+          await page.evaluate(() => {
+            window.__pops = 0;
+            if (!window.__popsHeard) {
+              window.__popsHeard = true;
+              document.addEventListener("animationstart", (e) => {
+                if (e.animationName === "pop" && e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+              });
+            }
+          });
+        } else {
+          await page.waitForTimeout(400);
+          const n = await page.evaluate(() => window.__pops);
+          if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
         }
         break;
       }

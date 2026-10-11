@@ -362,8 +362,10 @@ that caption removed in the caption box, with `gone last` and `gone
 first`, that caption reading as it did at a mark less its last or first
 word, `drawn in`, the captions reading as they did at a mark and that
 caption drawn in at its first or last edge from where it was at `start`,
-and `others`, every other caption appearing and going when it did at a
-mark. What has to come of them: `box`, what
+`others`, every other caption appearing and going when it did at a
+mark, `edge put back`, a double-click on an edge of the caption holding a
+word, and `count pops` and `pops`, how often a caption block popped
+since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer

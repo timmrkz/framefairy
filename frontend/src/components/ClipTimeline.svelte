@@ -1186,9 +1186,34 @@
       const parts = cuePieces
         .map((p) => ({ from: Math.max(from, p.start), to: Math.min(to, p.end) }))
         .filter((part) => part.to > part.from);
-      return { i, c: shownCues[i], from, to, parts: parts.length ? parts : [{ from, to }] };
+      // Where the caption is as saved, which is what lights it and pops it
+      // while one of its edges is dragged, see wordHere.
+      const saved = shownCues[i];
+      const rest =
+        capDraft && saved !== c
+          ? { from: inEpisode(cuePieces, saved.start), to: endInEpisode(cuePieces, Math.min(saved.end, clipLength)) }
+          : { from, to };
+      return { i, c: saved, from, to, rest, parts: parts.length ? parts : [{ from, to }] };
     });
   });
+
+  // Which word of a block the playhead is on, by when it starts on the
+  // clip's clock, or -2 when the playhead is not on the block. The block
+  // is lit while it is on a word and pops when the word changes, the way
+  // the pill does in the video preview, so it pops as the playhead moves
+  // and never because an edge is dragged: while one is, it is read from
+  // the caption as saved. A word is known by when it starts rather than by
+  // where it is in the caption, so taking out a word before it is no new
+  // word. The block popped each time a dragged left edge passed the
+  // playhead, which a click on the block puts at its first word, and a
+  // dragged right edge never came near it, so the two edges looked
+  // different, found by Tim.
+  function wordHere(b: { c: CaptionCue; rest: { from: number; to: number } }): number {
+    if (time < b.rest.from || time >= b.rest.to) return -2;
+    const k = wordNow(b.c);
+    const word = (b.c.lines ?? []).flatMap((l) => l.words)[k];
+    return word ? word.start : -1;
+  }
 
   // A caption block clicked is picked, the way a file is in the Finder,
   // and delete removes it: the key marked delete on the Mac, which is
@@ -1672,12 +1697,12 @@
             <!-- Drawn afresh on every word of the caption shown, which is what
                  starts its pop again. A key on the list would not do it: the
                  list is only looked at again when the captions change. -->
-            {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
+            {#key wordHere(b)}
               {#each b.parts as part, k (k)}
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
                 <div
                   class="caption"
-                  class:showing={time >= b.from && time < b.to}
+                  class:showing={wordHere(b) !== -2}
                   class:picked={b.c.first !== undefined && picked === b.c.first}
                   data-first={b.c.first}
                   style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {b.i}"

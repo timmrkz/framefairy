@@ -1925,7 +1925,13 @@ moved by hand, on the clip timeline.
   colour over its box, with its own opacity, the pill the spoken word
   wears, and pops with the same animation that pill makes in the video
   preview, on every word as the pill does, so walking the words with shift
-  and the arrow keys pops the pill and the block together. A block takes no focus, so no focus ring is left
+  and the arrow keys pops the pill and the block together. It pops when
+  the playhead comes to a new word and never because an edge is dragged:
+  while one is, the block is lit as the caption is saved, and a word is
+  known by when it starts, so taking out a word before it is no new word.
+  The block popped as a dragged left edge passed the playhead, which a
+  click on the block puts at its first word, and a dragged right edge
+  never came near it, so the two edges looked different, found by Tim. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
