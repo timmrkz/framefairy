@@ -3,8 +3,8 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,62 +58,219 @@ func rotations(t *testing.T, path string) ([]int, []*int) {
 	return turns, crops
 }
 
-// The part is what plays straight on: the two pieces before the cut turn
-// together, the one after it stays as it is. Four turns bring the part
-// back, with the framing its shots were found with.
-func TestRotateTurnsThePartBetweenCutsAndFourTurnsBringItBack(t *testing.T) {
+// rotate presses R at a moment of the clip of rotatablePlan.
+func rotate(t *testing.T, path string, at float64) {
+	t.Helper()
+	if err := RotatePart(path, "01", at, at25); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reshape makes a gesture on the clip of rotatablePlan.
+func reshape(t *testing.T, path string, g Gesture) {
+	t.Helper()
+	if g.Frames.FPSNum == 0 {
+		g.Frames = at25
+	}
+	if err := Reshape(path, "01", g, editableTranscript(), 0.1); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// pieceAt is the piece of the clip of rotatablePlan holding a moment.
+func pieceAt(t *testing.T, path string, at float64) Segment {
+	t.Helper()
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range clips[0].Segments {
+		if at >= s.Start && at < s.End {
+			return s
+		}
+	}
+	t.Fatalf("no piece holds %.3f s", at)
+	return Segment{}
+}
+
+// R turns the stretch of the video the part shows: the two pieces before
+// the cut turn together, from the start of the video to the frame nearest
+// the middle of the cut, 12.52 s at 25 frames a second, and the piece
+// after it stays as it is. Four turns bring the part
+// back, with the crops it had, which turning never touched.
+func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 	path := rotatablePlanPath(t)
 	for i, want := range []int{90, 180, 270, 0} {
-		if err := RotatePart(path, "01", 11.5); err != nil {
-			t.Fatal(err)
-		}
+		rotate(t, path, 11.5)
 		turns, crops := rotations(t, path)
 		if turns[0] != want || turns[1] != want || turns[2] != 0 {
 			t.Fatalf("after %d turns the pieces are rotated %v, not %d, %d and 0", i+1, turns, want, want)
 		}
 		if want != 0 && (crops[0] != nil || crops[1] != nil) {
-			t.Errorf("after %d turns the rotated crop is not in the middle: %v %v", i+1, *crops[0], *crops[1])
+			t.Errorf("after %d turns the rotated crop is not in the middle: %v %v", i+1, crops[0], crops[1])
 		}
 		if crops[2] == nil || *crops[2] != 120 {
 			t.Errorf("after %d turns the piece after the cut lost its crop", i+1)
 		}
+		_, clips, _ := LoadClips(path)
+		if want != 0 {
+			spans := clips[0].Rotations
+			if len(spans) != 1 || !math.IsInf(spans[0].From, -1) || spans[0].To != 12.52 || spans[0].Deg != want {
+				t.Errorf("after %d turns the rotations are %+v, not from the start to 12.52 at %d", i+1, spans, want)
+			}
+		} else if len(clips[0].Rotations) != 0 {
+			t.Errorf("turned back, the clip keeps the rotations %+v", clips[0].Rotations)
+		}
 	}
 	_, crops := rotations(t, path)
 	if crops[0] == nil || *crops[0] != 120 || crops[1] == nil || *crops[1] != 300 {
-		t.Errorf("rotated back, the part does not have the crops it was found with")
+		t.Errorf("rotated back, the part does not have the crops it had")
 	}
 }
 
-// A crop moved by hand on a rotated part moves the rotated part only, not
-// the pieces of the same shot that stand as they were filmed.
-func TestACropOnARotatedPartStaysOnIt(t *testing.T) {
+// A crop placed by hand on a rotated piece moves the pieces of its shot
+// rotated alike and no other: not the pieces of that shot standing as
+// filmed, and not a piece of another shot. Rotating used to forget which
+// shot a piece shows, and a crop then spread to every rotated piece.
+func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	path := rotatablePlanPath(t)
-	if err := RotatePart(path, "01", 13.5); err != nil {
-		t.Fatal(err)
-	}
+	rotate(t, path, 13.5)
 	if err := SetCrop(path, "01", 13.5, 400); err != nil {
 		t.Fatal(err)
 	}
 	_, crops := rotations(t, path)
 	if crops[0] == nil || *crops[0] != 120 {
-		t.Errorf("the crop of a piece that is not rotated moved with the rotated one")
+		t.Errorf("the crop of a piece of the shot standing as filmed moved with the rotated one")
 	}
 	if crops[2] == nil || *crops[2] != 400 {
 		t.Errorf("the rotated part did not take its crop")
 	}
+	// Both parts turned: the first piece is the same shot as the last,
+	// the second another shot.
+	rotate(t, path, 10.5)
+	if err := SetCrop(path, "01", 13.5, 500); err != nil {
+		t.Fatal(err)
+	}
+	turns, crops := rotations(t, path)
+	if turns[0] != 90 || turns[1] != 90 || turns[2] != 90 {
+		t.Fatalf("the pieces are rotated %v, not all 90", turns)
+	}
+	if crops[0] == nil || *crops[0] != 500 || crops[2] == nil || *crops[2] != 500 {
+		t.Errorf("the shot's two rotated pieces do not share the crop placed on one: %v %v", crops[0], crops[2])
+	}
+	if crops[1] != nil {
+		t.Errorf("a piece of another shot took the crop, %d", *crops[1])
+	}
 }
 
-func TestAPlanRotatesOnlyByQuarters(t *testing.T) {
-	for _, value := range []string{`45`, `-90`, `360`, `"left"`, `90.5`} {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "clips.json")
-		plan := `{"clips": [{"id": "01", "segments": [{"start": 1, "end": 3, "rotate": ` + value + `}]}]}`
+// An edit leaves what it is not about alone: the crop placed by hand on a
+// rotated part survives a crop put back on another part, in the file and
+// as the render reads it.
+func TestAnEditElsewhereLeavesARotatedCropAlone(t *testing.T) {
+	path := rotatablePlanPath(t)
+	rotate(t, path, 13.5)
+	if err := SetCrop(path, "01", 13.5, 500); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ResetCrop(path, "01", 10.5); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pieceAt(t, path, 13.5); got.CropX == nil || *got.CropX != 500 || !got.Moved {
+		t.Errorf("the rotated piece reads as %+v after a crop put back elsewhere", got)
+	}
+	if strings.Count(string(before), "crop_x_turned") != strings.Count(string(after), "crop_x_turned") {
+		t.Errorf("putting back a crop elsewhere changed the rotated crops in the file:\n%s", after)
+	}
+}
+
+// A rotation belongs to the video's time, so cutting, joining and
+// trimming never change it: a frame is turned by the stretch its moment
+// lies in, and a crop placed on a rotated piece goes where its frames go.
+// Before, the rotation was kept on each piece, and a cut put back and made
+// again lost it with its crop, found by the review of #188. Tim dragged
+// the end of a clip out past a rotated part, and the frames it brought
+// back stood as filmed.
+func TestARotationStaysWithTheVideoAsTheClipIsCut(t *testing.T) {
+	t.Run("the end dragged out", func(t *testing.T) {
+		path := rotatablePlanPath(t)
+		rotate(t, path, 13.5)
+		reshape(t, path, Gesture{Kind: "trim", Edge: "end", From: 15})
+		if got := pieceAt(t, path, 14.5); got.Rotate != 90 {
+			t.Errorf("what the end brought back is rotated %d, not 90", got.Rotate)
+		}
+	})
+	t.Run("the start dragged out", func(t *testing.T) {
+		path := rotatablePlanPath(t)
+		rotate(t, path, 10.5)
+		reshape(t, path, Gesture{Kind: "trim", Edge: "start", From: 9})
+		if got := pieceAt(t, path, 9.5); got.Rotate != 90 {
+			t.Errorf("what the start brought back is rotated %d, not 90", got.Rotate)
+		}
+	})
+	t.Run("the cut put back and made again", func(t *testing.T) {
+		path := rotatablePlanPath(t)
+		rotate(t, path, 13.5)
+		if err := SetCrop(path, "01", 13.5, 700); err != nil {
+			t.Fatal(err)
+		}
+		reshape(t, path, Gesture{Kind: "join", From: 12.5})
+		for at, want := range map[float64]int{10.5: 0, 12.2: 0, 12.7: 90, 13.5: 90} {
+			if got := pieceAt(t, path, at); got.Rotate != want {
+				t.Errorf("joined, %.1f s is rotated %d, not %d", at, got.Rotate, want)
+			}
+		}
+		reshape(t, path, Gesture{Kind: "cut", From: 12.2, To: 12.8})
+		got := pieceAt(t, path, 13.5)
+		if got.Rotate != 90 || got.CropX == nil || *got.CropX != 700 {
+			t.Errorf("cut again, the part reads as %+v, not rotated 90 with its crop of 700", got)
+		}
+		if got := pieceAt(t, path, 10.5); got.Rotate != 0 {
+			t.Errorf("cut again, the part before is rotated %d", got.Rotate)
+		}
+	})
+}
+
+// A plan's rotations are read as they are written or not at all: a
+// stretch turned by anything but a quarter, a half or three quarters, one
+// that ends before it starts, and two that overlap are refused, never
+// read some other way.
+func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
+	for _, rotations := range []string{
+		`[{"to": 3, "deg": 45}]`, `[{"to": 3, "deg": -90}]`, `[{"to": 3, "deg": 360}]`,
+		`[{"to": 3, "deg": "left"}]`, `[{"to": 3, "deg": 90.5}]`, `[{"to": 3, "deg": 0}]`,
+		`[{"to": 3}]`, `[{"from": 3, "to": 2, "deg": 90}]`,
+		`[{"to": 3, "deg": 90}, {"from": 2, "deg": 180}]`, `{"deg": 90}`,
+	} {
+		path := filepath.Join(t.TempDir(), "clips.json")
+		plan := `{"clips": [{"id": "01", "segments": [{"start": 1, "end": 3}], "rotations": ` + rotations + `}]}`
 		if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := LoadClips(path); err == nil {
-			t.Errorf("a piece rotated by %s was taken", value)
+			t.Errorf("the rotations %s were taken", rotations)
 		}
+	}
+	path := filepath.Join(t.TempDir(), "clips.json")
+	plan := `{"clips": [{"id": "01", "segments": [{"start": 1, "end": 2}, {"start": 2, "end": 3, "crop_x": 40, "crop_x_turned": 8}],
+	  "rotations": [{"from": 2, "deg": 270}]}]}`
+	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, clips, err := LoadClips(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs := clips[0].Segments
+	if segs[0].Rotate != 0 || segs[1].Rotate != 270 || segs[1].CropX == nil || *segs[1].CropX != 8 || !segs[1].Moved {
+		t.Errorf("the pieces read as %+v", segs)
 	}
 }
 
@@ -257,119 +414,4 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		t.Errorf("the decoder's frame of a phone's video differs from ffmpeg's by %.2f on average, "+
 			"so it does not stand up the way the short does", d)
 	}
-}
-
-// A rotated part stays rotated when its edges move: what an edge brings back
-// joins the part it is dragged out of, rotated as the part is. Tim dragged
-// the end of a clip out past a rotated part, and the frames it brought back
-// stood as filmed. Put back, a cut's moments join the part before it.
-func TestARotatedPartKeepsItsRotationWhenItsEdgesMove(t *testing.T) {
-	tr := editableTranscript()
-	for _, c := range []struct {
-		name     string
-		at       float64
-		g        Gesture
-		from, to float64
-	}{
-		{"the end dragged out", 13.5, Gesture{Kind: "trim", Edge: "end", From: 15, Frames: at25}, 13, 15},
-		{"the start dragged out", 10.5, Gesture{Kind: "trim", Edge: "start", From: 9, Frames: at25}, 9, 12},
-		{"the cut after it put back", 10.5, Gesture{Kind: "join", From: 12.5}, 10, 14},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			path := rotatablePlanPath(t)
-			if err := RotatePart(path, "01", c.at); err != nil {
-				t.Fatal(err)
-			}
-			if err := Reshape(path, "01", c.g, tr, 0.1); err != nil {
-				t.Fatal(err)
-			}
-			_, clips, err := LoadClips(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, seg := range clips[0].Segments {
-				inside := seg.Start >= c.from-1e-9 && seg.End <= c.to+1e-9
-				if inside && seg.Rotate != 90 {
-					t.Errorf("%.3f to %.3f, in the rotated part, is rotated %d", seg.Start, seg.End, seg.Rotate)
-				}
-				if !inside && seg.Rotate != 0 {
-					t.Errorf("%.3f to %.3f, outside the rotated part, is rotated %d", seg.Start, seg.End, seg.Rotate)
-				}
-			}
-		})
-	}
-}
-
-// A part has one rotation. Putting back the cut before a rotated part
-// joins it to the part before, and the joined part stands the way that
-// part does, rather than turning halfway through. And a plan written
-// before this, by a build that let a piece dragged out of a rotated part
-// come back as filmed, reads as the part's first piece stands. Tim saw the
-// picture turn back between two frames of one part, #188.
-func TestAPartHasOneRotation(t *testing.T) {
-	t.Run("the cut before a rotated part put back", func(t *testing.T) {
-		path := rotatablePlanPath(t)
-		if err := RotatePart(path, "01", 13.5); err != nil {
-			t.Fatal(err)
-		}
-		if err := Reshape(path, "01", Gesture{Kind: "join", From: 12.5}, editableTranscript(), 0.1); err != nil {
-			t.Fatal(err)
-		}
-		turns, _ := rotations(t, path)
-		for i, turn := range turns {
-			if turn != 0 {
-				t.Errorf("piece %d of the joined part is rotated %d, the part before the cut %d: %v", i, turn, 0, turns)
-			}
-		}
-		// What the file holds, not only what it reads as: a cut made
-		// again inside the joined part must not bring the rotation back.
-		if err := Reshape(path, "01", Gesture{Kind: "cut", From: 12.4, To: 12.6}, editableTranscript(), 0.1); err != nil {
-			t.Fatal(err)
-		}
-		turns, _ = rotations(t, path)
-		for i, turn := range turns {
-			if turn != 0 {
-				t.Errorf("after a new cut, piece %d is rotated %d: %v", i, turn, turns)
-			}
-		}
-	})
-	t.Run("a plan with a part rotated halfway", func(t *testing.T) {
-		path := rotatablePlanPath(t)
-		mixed := strings.Replace(rotatablePlan, `{"start": 10.0, "end": 11.1, "crop_x": 120}`, `{"start": 10.0, "end": 11.1, "rotate": 90}`, 1)
-		if err := os.WriteFile(path, []byte(mixed), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		turns, crops := rotations(t, path)
-		if turns[0] != 90 || turns[1] != 90 || turns[2] != 0 {
-			t.Fatalf("the pieces read as rotated %v, not 90, 90 and 0", turns)
-		}
-		if crops[1] != nil {
-			t.Errorf("the piece read as rotated keeps the crop %d of its picture as filmed", *crops[1])
-		}
-		// The first edit writes it the way it reads.
-		if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 14.5, Frames: at25}, editableTranscript(), 0.1); err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var plan struct {
-			Clips []struct {
-				Segments []struct {
-					Rotate int `json:"rotate"`
-				} `json:"segments"`
-			} `json:"clips"`
-		}
-		if err := json.Unmarshal(data, &plan); err != nil {
-			t.Fatal(err)
-		}
-		var held []int
-		for _, seg := range plan.Clips[0].Segments {
-			held = append(held, seg.Rotate)
-		}
-		if len(held) != 3 || held[0] != 90 || held[1] != 90 || held[2] != 0 {
-			t.Errorf("the file holds pieces rotated %v, not 90, 90 and 0", held)
-		}
-	})
 }

@@ -21,8 +21,9 @@ type Segment struct {
 	// Moved means a person placed the crop by hand. The automatic placement
 	// is kept in the plan as crop_x_auto.
 	Moved bool
-	// Rotate is how far a person rotated the piece, in degrees to the
-	// left: 0, 90, 180 or 270. The crop is placed on the picture rotated.
+	// Rotate is how far the piece is rotated, in degrees to the left: 0,
+	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
+	// The crop is placed on the picture rotated.
 	Rotate int
 }
 
@@ -35,6 +36,9 @@ type Clip struct {
 	Slug     string
 	Title    string
 	Segments []Segment
+	// Rotations is the stretches of the video a person rotated, in order,
+	// see Rotation. Each piece's Rotate is read from them.
+	Rotations []Rotation
 	// Rejected clips stay in the plan but are left out of a full render.
 	Rejected bool
 	// CaptionY is where the captions sit in this clip, as the distance from
@@ -303,6 +307,10 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			return Plan{}, nil, renderErr("clip %d has %d segments, the limit is %d",
 				index, len(rawSegments), MaxSegments)
 		}
+		spans, rerr := readRotations(entry[keyRotations])
+		if rerr != nil {
+			return Plan{}, nil, renderErr("clip %d: %s", index, rerr.Error())
+		}
 		var segments []Segment
 		for _, segAny := range rawSegments {
 			seg, ok := segAny.(map[string]any)
@@ -354,31 +362,27 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				return Plan{}, nil, renderErr("clip %d: a segment lies outside the video, "+
 					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
 			}
-			rotate := 0
-			if value, present := seg[keyRotate]; present && value != nil {
-				f, ok := toFloat(value)
-				n := int(f)
-				if _, isText := value.(string); isText || !ok || float64(n) != f || !validRotate(n) {
-					return Plan{}, nil, renderErr("clip %d: a piece is rotated by %s, "+
-						"which is not 0, 90, 180 or 270", index, Scrub(pyReprAny(value), 40))
-				}
-				rotate = n
-			}
+			// A piece in a stretch a person rotated has its crop on the
+			// picture as it stands rotated, kept apart from the crop it
+			// has unrotated, see keyCropXTurned.
 			_, moved := seg[keyCropXAuto]
+			rotate := RotationAt(spans, start)
+			if rotate != 0 {
+				cropX, moved = nil, false
+				if value, present := seg[keyCropXTurned]; present && value != nil {
+					n, ok := toInt(value)
+					if !ok || !(-1_000_000 < n && n < 1_000_000) {
+						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
+							index, Scrub(pyReprAny(value), 40))
+					}
+					cropX, moved = &n, true
+				}
+			}
 			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
 		}
 		if len(segments) == 0 {
 			continue
 		}
-		// A part is rotated as one, the way its first piece is. A plan
-		// written before every edit kept that reads as it, see onePerPart.
-		for i := 1; i < len(segments); i++ {
-			s, before := &segments[i], segments[i-1]
-			if s.Start-before.End <= 0.0005 && s.Rotate != before.Rotate {
-				s.Rotate, s.CropX, s.Moved = before.Rotate, nil, false
-			}
-		}
-
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]
 		idText := fallback
@@ -411,6 +415,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
 			Segments:     segments,
+			Rotations:    spans,
 		})
 	}
 

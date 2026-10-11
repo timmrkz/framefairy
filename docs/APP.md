@@ -1838,17 +1838,17 @@ lies on its side. Plan row 3.25, the design is in
   video preview, not with the playhead, which runs ahead of its frames
   when it is dragged: over a cut, the picture turns when the first frame
   from the other side is there.
-- **A rotated part stays rotated as its edges move.** What the clip's
-  edge brings back when it is dragged out joins the part it is dragged
-  out of, rotated as that part is.
-- **A part has one rotation.** Putting back the cut before a rotated part
-  joins it to the part before, and the whole of it then stands the way
-  that part does. A plan from an earlier build with a part rotated only
-  halfway reads as the part's first piece stands, and its next edit
-  writes it so.
+- **A rotation belongs to the video, not to the cuts.** Rotate turns the
+  stretch of the video the part shows, from the middle of the cut before
+  it to the middle of the cut after, where the phone was turned. A part at
+  the edge of the clip turns to that end of the video, so dragging the
+  clip's edge out keeps showing the footage turned. Putting a cut back or
+  making a new one never changes how a frame is turned, and a crop placed
+  on a rotated part stays with its frames.
 - **The crop of a rotated part starts in the middle** of the picture
-  rotated, and is dragged like any other. Rotated back all the way, the
-  part has the crop its shot was found with again.
+  rotated, and is dragged like any other. It moves the pieces of its shot
+  rotated alike and no other. Rotated back all the way, the part has the
+  crop it had before, which rotating never touched.
 - **A rotated part shows the Rotate icon** at its start, in the top left
   corner of the part on the clip timeline. It takes no click.
 - **Undo** takes a rotation back like any other edit.

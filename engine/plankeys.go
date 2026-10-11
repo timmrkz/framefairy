@@ -55,8 +55,16 @@ const (
 	// keyCropXAuto is where the crop was placed before a person moved it,
 	// kept so it can be put back.
 	keyCropXAuto = "crop_x_auto"
-	// keyRotate is how far a person rotated the piece, in degrees to the
-	// left, 90, 180 or 270, on top of the turn the file asks for itself.
-	// Absent is not rotated.
-	keyRotate = "rotate"
+	// keyCropXTurned is the crop of a piece that is rotated, placed by
+	// hand on the picture as it stands rotated. Absent, it stands in the
+	// middle. The crop the piece has unrotated stays as it was, so a
+	// stretch rotated back has it again.
+	keyCropXTurned = "crop_x_turned"
+
+	// keyRotations is the stretches of the video a person rotated, each
+	// from, to and deg, the degrees to the left, on top of the turn the
+	// file asks for itself, see Rotation. A stretch without from or to
+	// runs to that end of the video.
+	keyRotations = "rotations"
+	keyDeg       = "deg"
 )

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -197,14 +196,8 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 			}
 		}
 	}
-	for _, c := range clips {
-		onePerPart(c)
-	}
 	if err := change(top, clips); err != nil {
 		return err
-	}
-	for _, c := range clips {
-		onePerPart(c)
 	}
 	revision := 0
 	if raw, ok := top.get(keyRevision); ok {
@@ -482,31 +475,22 @@ func autoCrop(seg *object) any {
 	return value
 }
 
-// rotationOf is how far a person rotated a piece, in degrees to the left.
-func rotationOf(seg *object) int {
-	value, ok := seg.get(keyRotate)
-	if !ok {
-		return 0
-	}
-	n, _ := toInt(value)
-	return n
-}
-
-// angleOf is the camera angle a piece shows, as a crop moved by hand sees
-// it: the shot's automatic crop, and the way the piece is rotated. A part
-// rotated upright is framed apart from the pieces of its shot that are not.
-func angleOf(seg *object) string {
-	return fmt.Sprint(autoCrop(seg)) + "/" + strconv.Itoa(rotationOf(seg))
-}
-
 // RotatePart rotates the part of a clip a moment is in a quarter turn to
 // the left, the way Preview and Photos rotate. A part is the pieces between
 // two cuts, or between a cut and an edge of the clip: what plays straight
-// on. Four turns bring it back. A rotated part's crop stands in the middle
-// of the rotated picture until it is placed, and a part rotated back takes
-// the framing its shot was found with. Framing is not a judgement of the
+// on. What turns is the stretch of the video the part shows, see Rotation,
+// from the middle of the cut before it to the middle of the cut after,
+// where the phone was turned and the cut took the turn out. A part at an
+// edge of the clip turns as far as that end of the video, so its edge
+// dragged out shows the footage turned. Each edge of the stretch stands
+// on the start of a frame, the only place a video is cut. Four turns bring
+// it back.
+//
+// The crop of a rotated piece stands in the middle of the picture rotated
+// until it is placed, and the crop it has unrotated is kept as it was, so
+// a part rotated back has it again. Framing is not a judgement of the
 // clip, so nothing is recorded for training.
-func RotatePart(planPath, clipID string, at float64) error {
+func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
 	return editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
@@ -517,58 +501,25 @@ func RotatePart(planPath, clipID string, at float64) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		found := foundPieces(c)
-		if _, ok := c.values[keyFoundSegments]; !ok && len(found) > 0 {
-			kept := make([]any, len(found))
-			for i, f := range found {
-				kept[i] = copyObject(f.seg)
-			}
-			c.set(keyFoundSegments, kept)
-		}
+		spans := rotationsOf(c)
 		first, last := partOf(pieces, target)
-		turned := (rotationOf(pieces[target]) + 90) % 360
-		for _, seg := range pieces[first : last+1] {
-			turnPiece(seg, turned, found)
+		from, to := math.Inf(-1), math.Inf(1)
+		if first > 0 {
+			from = frames.frameStartNear((number(pieces[first-1].values[keyEnd]) + number(pieces[first].values[keyStart])) / 2)
+		}
+		if last+1 < len(pieces) {
+			to = frames.frameStartNear((number(pieces[last].values[keyEnd]) + number(pieces[last+1].values[keyStart])) / 2)
+		}
+		turned := (rotationOf(pieces[target], spans) + 90) % 360
+		spans = turnStretch(spans, from, to, turned)
+		setRotations(c, spans)
+		for _, seg := range pieces {
+			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
+				seg.remove(keyCropXTurned)
+			}
 		}
 		return nil
 	})
-}
-
-// turnPiece rotates a piece to so many degrees. Its crop stands in the
-// middle of the rotated picture until it is placed, and a piece rotated
-// back takes the crop its shot was found with.
-func turnPiece(seg *object, turned int, found []foundPiece) {
-	seg.remove(keyCropXAuto)
-	seg.remove(keyCropX)
-	if turned != 0 {
-		seg.set(keyRotate, turned)
-		return
-	}
-	seg.remove(keyRotate)
-	if crop, ok := foundCropAt(found, number(seg.values[keyStart])); ok {
-		seg.set(keyCropX, crop)
-	}
-}
-
-// onePerPart gives every piece of a part the rotation of the part's first
-// piece, since a part is rotated as one. Putting back the cut before a
-// rotated part joins it to the part before, which it then stands like. A
-// plan written by a build that let a piece dragged out of a rotated part
-// come back as filmed is put right by its next edit. Tim saw the picture
-// turn back between two frames of one part, #188.
-func onePerPart(c *object) {
-	pieces := segmentObjects(c)
-	var found []foundPiece
-	for i := 1; i < len(pieces); i++ {
-		turn := rotationOf(pieces[i-1])
-		if number(pieces[i].values[keyStart])-number(pieces[i-1].values[keyEnd]) > 0.0005 || rotationOf(pieces[i]) == turn {
-			continue
-		}
-		if found == nil {
-			found = foundPieces(c)
-		}
-		turnPiece(pieces[i], turn, found)
-	}
 }
 
 // partOf is the first and last of the pieces around one that play straight
@@ -582,28 +533,6 @@ func partOf(pieces []*object, i int) (int, int) {
 		last++
 	}
 	return first, last
-}
-
-// foundCropAt is the automatic crop of the shot the clip was found with at
-// a moment, the one its found piece there was given.
-func foundCropAt(found []foundPiece, at float64) (any, bool) {
-	k := -1
-	for i, f := range found {
-		if f.start <= at+0.0005 {
-			k = i
-		}
-	}
-	if k < 0 && len(found) > 0 {
-		k = 0
-	}
-	if k < 0 {
-		return nil, false
-	}
-	value, ok := found[k].seg.get(keyCropXAuto)
-	if !ok {
-		value, ok = found[k].seg.get(keyCropX)
-	}
-	return value, ok && value != nil
 }
 
 func segmentObjects(c *object) []*object {
@@ -712,7 +641,7 @@ func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) 
 		}
 		before := segmentObjects(c)
 		found := foundPieces(c)
-		out, err := checkedPieces(change, before, found, frames)
+		out, err := checkedPieces(change, before, found, rotationsOf(c), frames)
 		if err != nil {
 			return err
 		}
@@ -754,11 +683,12 @@ func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) 
 // checkedPieces makes a change to a clip's pieces, puts their edges on
 // the episode's frames, see PieceOnFrames, and checks that what comes
 // back is a clip a person can still watch and the render can still make.
-func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, frames SourceInfo) ([]*object, error) {
+func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, spans []Rotation, frames SourceInfo) ([]*object, error) {
 	out, err := change(pieces, found)
 	if err != nil {
 		return nil, err
 	}
+	out = partedAtTurns(out, spans)
 	if out, err = piecesOnFrames(out, frames); err != nil {
 		return nil, err
 	}
@@ -900,9 +830,16 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := angleOf(pieces[target])
+		spans := rotationsOf(c)
+		angle := angleOf(pieces[target], spans)
 		for _, seg := range pieces {
-			if angleOf(seg) != angle {
+			if angleOf(seg, spans) != angle {
+				continue
+			}
+			// A rotated piece's crop is on the picture rotated, kept
+			// apart from the one it has as filmed, see keyCropXTurned.
+			if rotationOf(seg, spans) != 0 {
+				seg.set(keyCropXTurned, left)
 				continue
 			}
 			if _, moved := seg.get(keyCropXAuto); !moved {
@@ -1182,14 +1119,20 @@ func ResetCrop(planPath, clipID string, at float64) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := angleOf(pieces[target])
+		spans := rotationsOf(c)
+		angle := angleOf(pieces[target], spans)
 		for _, seg := range pieces {
-			auto, moved := seg.get(keyCropXAuto)
-			if !moved || angleOf(seg) != angle {
+			if angleOf(seg, spans) != angle {
 				continue
 			}
-			seg.set(keyCropX, auto)
-			seg.remove(keyCropXAuto)
+			if rotationOf(seg, spans) != 0 {
+				seg.remove(keyCropXTurned)
+				continue
+			}
+			if auto, moved := seg.get(keyCropXAuto); moved {
+				seg.set(keyCropX, auto)
+				seg.remove(keyCropXAuto)
+			}
 		}
 		return nil
 	})

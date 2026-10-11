@@ -904,15 +904,25 @@ portrait phone video for a landscape one: the render worked out a
 landscape crop and cut it from the portrait picture, and the video
 preview showed it on its side.
 
-**A rotated piece.** A person can rotate the part of a clip between two
+**A rotated stretch.** A person can rotate the part of a clip between two
 cuts a quarter turn to the left at a time, for a phone that was turned
-while it recorded, `RotatePart` in `engine/edit.go`. Each of its pieces
-keeps `rotate`, 90, 180 or 270, and the render rotates the piece before it
-crops it, so the crop is the shape of the short in the picture rotated. A
-rotated part's crop stands in the middle until it is placed, it is framed
-apart from the pieces of its shot that are not rotated, and rotated back
-it takes the crop its shot was found with. See
-[ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
+while it recorded, `RotatePart` in `engine/edit.go`. What turns is the
+stretch of the video the part shows, kept in the clip as `rotations`, each
+`from`, `to` and `deg`, see `Rotation` in `engine/rotation.go`. It runs from
+the frame nearest the middle of the cut before the part to the one nearest
+the middle of the cut after, and a part at an edge of the clip runs to
+that end of the video. A frame is turned by the stretch its start lies
+in, `RotationAt`, in the render and in the video preview alike, so cutting,
+joining and trimming never touch a rotation. A piece never runs over the
+edge of a stretch: a gesture that would make one parts it there,
+`partedAtTurns`. The render rotates a piece before it crops it, so the crop
+is the shape of the short in the picture rotated. A rotated piece keeps
+its crop on the rotated picture as `crop_x_turned`, apart from the one it
+has as filmed, which stays as it was. Absent, it stands in the middle. A
+crop placed by hand moves every piece of one shot rotated alike, `angleOf`.
+`LoadClips` checks the rotations and refuses a plan whose stretches
+overlap or turn by anything but a quarter, and reads every piece's turn
+from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing

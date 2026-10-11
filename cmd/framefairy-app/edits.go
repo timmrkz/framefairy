@@ -40,7 +40,11 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	if err := s.edit(path, func() error { return engine.RotatePart(plan, clipID, at) }); err != nil {
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := s.edit(path, func() error { return engine.RotatePart(plan, clipID, at, info) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

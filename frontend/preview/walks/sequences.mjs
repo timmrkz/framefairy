@@ -788,11 +788,12 @@ export const sequences = [
     ],
   },
   {
-    // A part has one rotation: putting back the cut before a rotated part
-    // joins it to the part before, and the whole of it then stands the way
-    // that part does. Tim saw the picture turn back between two frames of
-    // one part, #188.
-    name: "a rotated part joined to the part before it by putting its cut back stands as one",
+    // A rotation belongs to the video's time, not to the cuts: putting back
+    // the cut before a rotated part leaves the footage after the turn
+    // rotated and the footage before it as filmed, and making the cut
+    // again finds the part as it was. The review of #188 found the
+    // rotation lost when it was kept on each piece.
+    name: "a rotated part keeps its rotation when the cut before it is put back and made again",
     steps: [
       ["add", 30, "25", "turned"],
       ["wait for", "New"],
@@ -803,7 +804,10 @@ export const sequences = [
       ["turned", [0, 90]],
       ["join", 1],
       ["cuts", 0],
-      ["turned", [0, 0]],
+      ["turned", [0, 90]],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["turned", [0, 90]],
     ],
   },
   {
