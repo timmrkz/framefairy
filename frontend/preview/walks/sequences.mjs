@@ -155,6 +155,19 @@
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
+//   ["rotate at", share]
+//                      puts the playhead in the clip, this share of the
+//                      way along it, with a click on the clip timeline, and
+//                      presses R, which rotates the part of the clip there,
+//                      and the video preview has to show it rotated within
+//                      300 ms, before a held answer comes
+//   ["scrub", from, to] reads the frame on the video preview's canvas, by
+//                      its bands, and how far the video preview turns it on
+//                      every animation frame, while the hand presses the
+//                      clip timeline this share of the way along the clip
+//                      and drags the playhead quickly back and forth three
+//                      times over the middle of the clip, where its cut is,
+//                      and then on to that share
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -334,6 +347,29 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["turned", quarters]
+//                      the engine has the clip's pieces rotated so many
+//                      degrees each, in order, and with the playhead put in
+//                      the middle of each by a click on the clip timeline,
+//                      the video preview shows the piece rotated that far,
+//                      the other way round from the video where a quarter
+//                      turn says so, with no black along the top or the
+//                      bottom of the picture, where a frame squeezed into
+//                      the wrong shape leaves it, and the clip timeline
+//                      marks the start of every rotated part
+//   ["turned with its frames"]
+//                      since "scrub", of a video standing up by its display
+//                      matrix: every frame read off the canvas was turned
+//                      as far as the Go side has the piece it belongs to,
+//                      the way the short turns it, and a frame of a cut as
+//                      far as the clip's rotations have its start, a few
+//                      hundred frames of the rotated part and of the rest
+//   ["upright"]        the short Render wrote, read back from disk, holds
+//                      as many frames as the clip's pieces, and in every
+//                      piece rotated a quarter each frame is the right
+//                      frame of the episode, read across its top, while in
+//                      the pieces not rotated most are not, since there it
+//                      lies on its side
 //   ["fits"]           the list's trigger is as wide as the channel it
 //                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
@@ -725,6 +761,77 @@ export const sequences = [
       ["cuts", 2],
       ["render"],
       ["as previewed", "30/1"],
+    ],
+  },
+  {
+    // Plan row 3.25: a phone turned while it recorded leaves a part of the
+    // video lying on its side. The video here stands up by its display
+    // matrix, so its frame number runs down its right side, and the part
+    // after the cut, rotated a quarter to the left with R, reads across
+    // its top again, in the video preview and in its short.
+    // TestRotateTurnsThePartBetweenCutsAndFourTurnsBringItBack and
+    // TestARotatedPieceIsRotatedBeforeItsCrop hold the engine to it, this
+    // the app.
+    name: "a part of a phone's video rotated with R stands up in the video preview and in its short",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["hold", "RotatePart", 1000],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["render"],
+      ["upright"],
+    ],
+  },
+  {
+    // Found by Tim on #188: dragging the playhead back over the cut before
+    // a rotated part, the video preview turned the picture as the playhead
+    // crossed the cut, before the frame from the other side had come, so a
+    // frame stood turned the wrong way for a moment and the picture flipped
+    // back and forth. And dragging the clip's end out past a rotated part
+    // brought its frames back as filmed, not rotated.
+    name: "a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["scrub", 0.95, 0.05],
+      ["turned with its frames"],
+      ["scrub", 0.05, 0.95],
+      ["turned with its frames"],
+      ["trim", "end", -60],
+      ["trim", "end", 40],
+      ["turned", [0, 90]],
+    ],
+  },
+  {
+    // A rotation belongs to the video's time, not to the cuts: putting back
+    // the cut before a rotated part leaves the footage after the turn
+    // rotated and the footage before it as filmed, and making the cut
+    // again finds the part as it was. The review of #188 found the
+    // rotation lost when it was kept on each piece.
+    name: "a rotated part keeps its rotation when the cut before it is put back and made again",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["join", 1],
+      ["cuts", 0],
+      ["turned", [0, 90]],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["turned", [0, 90]],
     ],
   },
   {
@@ -3062,6 +3169,211 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "edges as rendered":
         wrong = await edgesAsRendered(page);
         break;
+      case "rotate at": {
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await settle(page);
+        const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
+        const before = await turn();
+        const pressed = Date.now();
+        await page.keyboard.press("r");
+        const took = await page
+          .waitForFunction((b) => Number(document.querySelector(".screen").dataset.turn) !== b, before, { polling: "raf", timeout: 3000 })
+          .then(() => Date.now() - pressed, () => -1);
+        if (took < 0) wrong = `R left the video preview rotated ${before}`;
+        else if (took > 300) wrong = `the video preview rotated ${took} ms after R, not at once`;
+        await watch.step("press", s);
+        break;
+      }
+      case "turned": {
+        const on = await chosen(page);
+        const pieces = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.segments ?? [];
+        let got = [];
+        for (let i = 0; i < 50; i++) {
+          got = (await pieces()).map((p) => p.rotate ?? 0);
+          if (JSON.stringify(got) === JSON.stringify(arg)) break;
+          await page.waitForTimeout(100);
+        }
+        if (JSON.stringify(got) !== JSON.stringify(arg)) {
+          wrong = `the engine has the pieces rotated ${got.join(" ")}, not ${arg.join(" ")}`;
+          break;
+        }
+        const src = await ask(page, "Source", on.path);
+        const problems = [];
+        for (const [i, p] of (await pieces()).entries()) {
+          const g = await handles(page);
+          await page.mouse.click(await xOf(page, (p.start + p.end) / 2), high(g.track));
+          await settle(page);
+          await page
+            .waitForFunction((want) => Number(document.querySelector(".screen").dataset.turn) === want, arg[i], { timeout: 2000 })
+            .catch(() => {});
+          const seen = await page.evaluate(() => {
+            const el = document.querySelector(".screen");
+            const b = el.getBoundingClientRect();
+            // How bright the picture is along its top and its bottom, where
+            // a frame squeezed into the wrong shape leaves black.
+            const c = el.querySelector("canvas");
+            const s = document.createElement("canvas");
+            s.width = Math.max(1, Math.floor(c.width / 2));
+            s.height = 1;
+            const t = s.getContext("2d", { willReadFrequently: true });
+            const row = (y) => {
+              t.drawImage(c, Math.floor(c.width / 4), y, s.width, 1, 0, 0, s.width, 1);
+              const d = t.getImageData(0, 0, s.width, 1).data;
+              let sum = 0;
+              for (let k = 0; k < d.length; k += 4) sum += d[k];
+              return sum / (d.length / 4);
+            };
+            return {
+              turn: Number(el.dataset.turn),
+              wide: b.width > b.height,
+              edges: [row(Math.floor(c.height * 0.03)), row(Math.floor(c.height * 0.97))],
+            };
+          });
+          const wide = arg[i] % 180 === 0 ? src.width > src.height : src.height > src.width;
+          if (seen.turn !== arg[i]) problems.push(`piece ${i + 1} shows rotated ${seen.turn}, not ${arg[i]}`);
+          if (seen.wide !== wide) problems.push(`piece ${i + 1} shows a ${seen.wide ? "wide" : "tall"} picture, not a ${wide ? "wide" : "tall"} one`);
+          if (Math.min(...seen.edges) < 15) {
+            problems.push(`piece ${i + 1} shows black along the top or the bottom of its picture, ${seen.edges.map((e) => e.toFixed(0)).join(" and ")}, so its frame is squeezed`);
+          }
+        }
+        const all = await pieces();
+        // A mark where a rotated stretch starts: at the start of a part,
+        // or inside one where a cut put back joined two turned apart.
+        const parts = all.filter((p, i) => arg[i] !== 0 && (i === 0 || p.start - all[i - 1].end > 0.0005 || arg[i - 1] !== arg[i])).length;
+        const marks = await page.evaluate(() => document.querySelectorAll(".clip-timeline .turnmark").length);
+        if (marks !== parts) problems.push(`the clip timeline marks ${marks} rotated parts, not ${parts}`);
+        if (problems.length) wrong = problems.join("\n");
+        break;
+      }
+      case "scrub": {
+        const [from, to] = arg;
+        const g = await handles(page);
+        const left = g.start.x + g.start.w;
+        const span = g.end.x - left;
+        const y = high(g.track);
+        await page.evaluate(
+          ([bits, band]) => {
+            // The frame number of a filmed video standing up by its display
+            // matrix: its bands run down the right side, the highest bit
+            // furthest right, see makeTurnedEpisode in bridge_test.go.
+            const c = document.querySelector(".screen canvas");
+            const s = document.createElement("canvas");
+            const t = s.getContext("2d", { willReadFrequently: true });
+            const read = () => {
+              if (!c || !c.width || !c.height) return -1;
+              const h = Math.max(1, Math.floor(c.height / 2));
+              s.width = 1;
+              s.height = h;
+              let n = 0;
+              for (let b = 0; b < bits; b++) {
+                const x = Math.floor(c.width * (1 - ((b + 0.5) * band) / 180));
+                t.drawImage(c, x, Math.floor(c.height / 4), 1, h, 0, 0, 1, h);
+                const col = t.getImageData(0, 0, 1, h).data;
+                let sum = 0;
+                for (let i = 0; i < col.length; i += 4) sum += col[i];
+                n = n * 2 + (sum / (col.length / 4) > 110 ? 1 : 0);
+              }
+              return n;
+            };
+            window.__scrubbed = [];
+            window.__scrubbing = true;
+            const tick = () => {
+              if (!window.__scrubbing) return;
+              const el = document.querySelector(".screen");
+              window.__scrubbed.push([Number(el.dataset.turn), read(), Number(el.dataset.playhead)]);
+              requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          },
+          [11, 4],
+        );
+        // Over the cut and back, quickly, the way a hand looks for a frame,
+        // so the playhead crosses it more often than its frames keep up.
+        const path = [from, 0.42, 0.62, 0.42, 0.62, 0.42, 0.62, to];
+        await page.mouse.move(left + from * span, y);
+        await page.mouse.down();
+        for (let leg = 1; leg < path.length; leg++) {
+          const [a, b] = [path[leg - 1], path[leg]];
+          for (let i = 1; i <= 12; i++) {
+            await page.mouse.move(left + (a + ((b - a) * i) / 12) * span, y);
+            await page.waitForTimeout(16);
+          }
+        }
+        await page.mouse.up();
+        await page.waitForTimeout(1000);
+        await page.evaluate(() => (window.__scrubbing = false));
+        await watch.step("scrub", s);
+        break;
+      }
+      case "turned with its frames": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const { fps } = await ask(page, "Source", on.path);
+        const seen = await page.evaluate(() => window.__scrubbed ?? []);
+        // The turn the short gives frame n: its piece's, as the Go side
+        // reads it, and for a frame of a cut, which no short holds, the
+        // stretch of the clip's rotations its start lies in.
+        const turnOf = (n) => {
+          const at = n / fps;
+          const p = entry.segments.find((q) => at >= q.start - 0.001 && at < q.end - 0.001);
+          if (p) return p.rotate ?? 0;
+          const r = (entry.rotations ?? []).find((q) => at >= (q.from ?? -Infinity) - 0.001 && at < (q.to ?? Infinity) - 0.001);
+          return r ? r.deg : 0;
+        };
+        const read = seen.filter(([, n]) => n >= 0 && n < 30 * fps);
+        const bad = read.filter(([turn, n]) => turn !== turnOf(n));
+        const rotated = read.filter(([, n]) => turnOf(n) !== 0).length;
+        const said = [];
+        if (read.length < 0.8 * seen.length || !seen.length) {
+          said.push(`only ${read.length} of ${seen.length} frames on the canvas could be read`);
+        } else if (!rotated || rotated === read.length) {
+          said.push(`the playhead showed ${rotated} frames of the rotated part out of ${read.length}, not both kinds`);
+        }
+        if (bad.length) {
+          said.push(`${bad.length} of ${read.length} animation frames were turned wrong:`);
+          for (const [turn, n, at] of bad.slice(0, 6)) {
+            said.push(`frame ${n}, of a piece rotated ${turnOf(n)}, was turned ${turn} with the playhead at ${at.toFixed(3)}`);
+          }
+        }
+        if (said.length) wrong = said.join("\n");
+        break;
+      }
+      case "upright": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const { fps } = await ask(page, "Source", on.path);
+        const short = await shortOf(page, on);
+        if (!short || !existsSync(short)) {
+          wrong = `the clip has no short${short ? ` at ${short}` : ""}`;
+          break;
+        }
+        const { frames, modulo } = shortFrames(short);
+        const want = [];
+        for (const p of entry.segments) {
+          const first = Math.round(p.start * fps);
+          const end = Math.max(Math.round(p.end * fps), first + 1);
+          for (let k = first; k < end; k++) want.push({ k, rotate: p.rotate ?? 0 });
+        }
+        if (frames.length !== want.length) {
+          wrong = `the short has ${frames.length} frames, its pieces hold ${want.length}`;
+          break;
+        }
+        const read = { rotated: [0, 0], lying: [0, 0] };
+        want.forEach(({ k, rotate }, i) => {
+          const r = read[rotate % 180 ? "rotated" : "lying"];
+          r[1]++;
+          if (frames[i] === k % modulo) r[0]++;
+        });
+        if (!read.rotated[1]) wrong = "the clip has no piece rotated a quarter";
+        else if (read.rotated[0] !== read.rotated[1]) {
+          wrong = `${read.rotated[1] - read.rotated[0]} of the ${read.rotated[1]} frames rotated a quarter are not the right frame read across their top`;
+        } else if (read.lying[0] * 2 > read.lying[1]) {
+          wrong = `${read.lying[0]} of the ${read.lying[1]} frames not rotated read across their top, so the video did not lie on its side`;
+        }
+        break;
+      }
       case "short": {
         const on = await chosen(page);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);

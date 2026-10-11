@@ -35,6 +35,7 @@
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
+  import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
 
   let {
     path,
@@ -240,6 +241,11 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
+    frameStart = s.frame;
+    if (s.passing) {
+      if (s.drew) pictured = true;
+      return;
+    }
     // A picture: the video preview has what it is going to show. A file
     // that cannot be opened at all says so where the picture would be, see
     // open. Trouble on the way is no picture: the sound stopping said the
@@ -451,18 +457,72 @@
     return best;
   });
 
+  // Where the frame on the canvas begins, in the episode, as the queue
+  // says it drew it. NaN before the first.
+  let frameStart = $state(NaN);
+  // The moment the frame on the canvas starts, which the picture is turned
+  // for and its crop stands for, see lib/rotate.ts.
+  const frameAt = $derived(shownAt(frameStart, time));
+  // How far that frame is turned, by the clip's rotations: the picture is
+  // drawn rotated, and the crop and the captions stand on it rotated. On
+  // the video, the episode shows as filmed. Plan row 3.25.
+  const turn = $derived(clip && place !== "video" ? rotationAt(clip.rotations, frameAt) : 0);
+  // The piece that frame belongs to, or -1 for a frame of a cut or from
+  // outside the clip.
+  const framed = $derived(clip && place !== "video" ? pieceHolding(clip.segments, frameAt) : -1);
+  // The picture the piece shows, rotated or not, and its crop.
+  const picture = $derived(pictureOf(source, turn));
+  // The piece whose crop stands on the picture: the one the frame shows,
+  // or with a frame of a cut on the canvas the one nearest the playhead.
+  const cropped = $derived(framed >= 0 ? framed : piece);
+
+  // For the app's log, see docs/LOGGING.md: the pieces of the clip in
+  // front each time they change, with how each is turned and whether its
+  // crop was placed, and every time the picture turns, with the frame it
+  // turned for and the playhead. A part that turned back halfway, or a
+  // picture turned for the wrong frame, is then read in the log rather
+  // than guessed at from a screenshot, #188.
+  let saidPieces = "";
+  $effect(() => {
+    if (!clip) return;
+    const pieces = clip.segments
+      .map((s) => `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}`)
+      .join(", ");
+    const turns = (clip.rotations ?? []).map((r) => `${r.from ?? "start"}-${r.to ?? "end"} ${r.deg}`).join(", ");
+    const line = `video preview: clip ${clip.id} has the pieces ${pieces}${turns ? `, rotated ${turns}` : ""}`;
+    if (line === saidPieces) return;
+    saidPieces = line;
+    said(line, { video: untrack(() => path) });
+  });
+  // The turn is said once it has held a moment, so a playhead dragged
+  // back and forth over a cut says where it came to rest, not every frame.
+  let saidTurn = 0;
+  $effect(() => {
+    const now = turn;
+    if (now === saidTurn) return;
+    const settled = setTimeout(() => {
+      const was = saidTurn;
+      saidTurn = now;
+      said(
+        `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${framed} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
+        { video: path },
+      );
+    }, 300);
+    return () => clearTimeout(settled);
+  });
+
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
-    if (!clip || piece < 0 || !source.width || !source.cropWidth) return null;
-    const auto = clip.cropLefts[piece] ?? (source.width - source.cropWidth) / 2;
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
+    const auto = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
     const left = dragLeft ?? auto;
     return {
-      left: (left / source.width) * 100,
-      width: (source.cropWidth / source.width) * 100,
+      left: (left / picture.width) * 100,
+      width: (picture.cropWidth / picture.width) * 100,
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
       inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
-      moved: clip.segments[piece]?.moved ?? false,
+      moved: clip.segments[cropped]?.moved ?? false,
     };
   });
 
@@ -986,9 +1046,9 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const start = clip.cropLefts[piece] ?? (source.width - source.cropWidth) / 2;
-    const scale = source.width / screen.clientWidth;
-    const most = source.width - source.cropWidth;
+    const start = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+    const scale = picture.width / screen.clientWidth;
+    const most = picture.width - picture.cropWidth;
     let moved = false;
     const move = (e: PointerEvent) => {
       if (Math.abs(e.clientX - startX) > 2) moved = true;
@@ -1150,7 +1210,15 @@
        own box, so the crop and the captions are in shares of the picture
        and not of the viewer. -->
   <div class="viewer">
-  <div class="screen asks" bind:this={screen} data-playhead={time}>
+  <div
+    class="screen asks"
+    class:turned={turn !== 0}
+    class:sideways={turn % 180 !== 0}
+    bind:this={screen}
+    data-playhead={time}
+    data-turn={turn}
+    style="--turn: {-turn}deg"
+  >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
       <Info label="What you can do with the picture" side="right">
@@ -1366,6 +1434,34 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  .turned canvas {
+    transform: rotate(var(--turn));
+  }
+
+  /* A piece rotated a quarter turn shows the picture the other way up: as
+     big as it can be in the viewer, the viewer's own shape kept, the way a
+     video player shows a picture of another shape. Its box is the
+     picture's box turned and made smaller by the shorter side over the
+     longer, so it still fits, and in the middle of the viewer on a whole
+     pixel. Everything over the picture stands in it, the crop and the
+     captions, rotated with it. The canvas is the episode's frame lying as
+     the file has it, as tall as the box is wide, turned into the box. */
+  .screen.sideways {
+    --fit: min(var(--ar), calc(1 / var(--ar)));
+    width: round(down, calc(var(--pic-h) * var(--fit)), 1px);
+    height: round(down, calc(var(--pic-w) * var(--fit)), 1px);
+    margin-left: round(down, calc((var(--mid-w) - var(--pic-h) * var(--fit)) / 2), 1px);
+    margin-top: round(down, calc((var(--pic-h) - var(--pic-w) * var(--fit)) / 2), 1px);
+  }
+
+  .sideways canvas {
+    inset: auto;
+    left: round(down, calc((100cqw - 100cqh) / 2), 1px);
+    top: round(down, calc((100cqh - 100cqw) / 2), 1px);
+    width: 100cqh;
+    height: 100cqw;
   }
 
   /* Why the episode cannot be shown, where the picture would be, and why

@@ -63,6 +63,12 @@
     {:else}
       <path d="M10.5 11.1h5" />
     {/if}
+  {:else if name === "rotate"}
+    <!-- Preview's Rotate Left: the picture, and an arrow turning to the
+         left over its corner. -->
+    <rect x="5.5" y="6.5" width="8" height="7" rx="1.5" />
+    <path d="M10 3H6.2a3.4 3.4 0 0 0-3.4 3.4v2.1" />
+    <path d="M1.2 7.1l1.6 1.6 1.6-1.6" />
   {:else if name === "locate"}
     <circle cx="8" cy="8" r="3.6" />
     <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />
