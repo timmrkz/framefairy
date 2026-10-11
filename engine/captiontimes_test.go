@@ -326,8 +326,8 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 
 // An edge moved out past where its words put it goes in to where the words
 // left put it when its word is removed in the caption box, the same as
-// when the edge is dragged in over the word, and it is then no longer where
-// the hand put it. Typed back, the word takes the edge back out.
+// when the edge is dragged in over the word. Typed back, the word takes
+// the edge back out.
 func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
@@ -346,7 +346,8 @@ func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[1] != "2.20-3.30 vier" || view.Captions[1].StartMoved {
+	// It can be put back with drei, see TestAnEdgePutBackBringsBackItsWords.
+	if got := shownCaptions(t, path, tr); got[1] != "2.20-3.30 vier" || !view.Captions[1].StartMoved {
 		t.Errorf("drei removed in the caption box: %q, moved %v", got, view.Captions[1].StartMoved)
 	}
 	if err := SetWordText(logs, 12.0, "drei", tr); err != nil {
@@ -433,5 +434,61 @@ func TestOnlyACaptionEdgeIsMoved(t *testing.T) {
 		if _, err := ShapeCaptionTime(logs, path, "01", c.word, c.edge, 10.7, tr, nil); err == nil {
 			t.Errorf("the %s of a caption on the word at %.1f was shown moved", c.edge, c.word)
 		}
+	}
+}
+
+// A double-click on an edge puts it back where all its words put it, the
+// words its drag took out among them, however often it was dragged. Tim
+// dragged a right edge in over a word and put it back, then dragged it in
+// again and double-clicked, and the edge stayed where it was: putting it
+// back only took it to where the words left put it, with the words still
+// out, which after a drag is about where it already stood.
+func TestAnEdgePutBackBringsBackItsWords(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	was := shownCaptions(t, path, tr)
+	for _, drag := range []float64{10.7, 10.3} {
+		if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", drag, tr, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := shownCaptions(t, path, tr); got[0] == was[0] {
+			t.Fatalf("dragged to %.1f: %q", drag, got)
+		}
+		done, err := SetCaptionTime(logs, path, "01", 10.6, "end", math.NaN(), tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := shownCaptions(t, path, tr); got[0] != was[0] || got[1] != was[1] || done.Back != 1 {
+			t.Errorf("put back after a drag to %.1f: %q, %d back, was %q", drag, got, done.Back, was)
+		}
+	}
+	// The same after the word was removed in the caption box, and the edge
+	// says it can be put back.
+	if err := SetWordText(logs, 10.6, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	view, err := ClipCaptionsView(path, "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.Captions[0].EndMoved {
+		t.Error("an edge drawn in with its word does not say it can be put back")
+	}
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", math.NaN(), tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[0] != was[0] {
+		t.Errorf("put back after a removal in the caption box: %q, was %q", got, was)
+	}
+	// And a start, over the first word.
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", 12.5, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", math.NaN(), tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[1] != was[1] || got[0] != was[0] {
+		t.Errorf("a start put back: %q, was %q", got, was)
 	}
 }

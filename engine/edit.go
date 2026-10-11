@@ -1019,6 +1019,11 @@ type captionEdge struct {
 // caption the edge crosses go, or come back, see trimCaption, in
 // corrections and in t, which are a copy for it to change.
 //
+// An edge put back, at not a number, is where all its words put it: the
+// words taken out at that edge come back, by a drag or in the caption box
+// alike, so a double-click undoes any drag of it. It used to keep them
+// out, and an edge dragged in and put back stayed about where it was.
+//
 // The edge stays where it is put, never past the caption beside it. Kept
 // against the caption beside it as it is now, the edge never moves another
 // caption, see moveCaptions. A word taken out by moving the edge leaves it
@@ -1068,6 +1073,16 @@ func moveCaptionEdge(corrections map[string]string, planPath, clipID string, wor
 			return out, err
 		}
 		out.at = roundTo(at, 3)
+	} else {
+		// Put back where all its words put it, the ones taken out at that
+		// edge among them: an edge dragged out past every word there.
+		past := clipLength(clip) + 1
+		if edge == "start" {
+			past = -1
+		}
+		if out.done, err = trimCaption(corrections, clip, laid[i], edge, past, t); err != nil {
+			return out, err
+		}
 	}
 	times := maps.Clone(clip.CaptionTimes)
 	if times == nil {

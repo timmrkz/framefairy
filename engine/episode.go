@@ -666,8 +666,9 @@ type CaptionView struct {
 	// what a caption moved by hand is kept against, see Caption.Opens.
 	First float64 `json:"first"`
 	Last  float64 `json:"last"`
-	// StartMoved and EndMoved say the caption appears or goes where it was
-	// put by hand rather than where its words put it.
+	// StartMoved and EndMoved say the caption appears or goes other than
+	// where all its words put it: moved by hand, or drawn in with a word
+	// taken out at that edge. Either is put back, see SetCaptionTime.
 	StartMoved bool `json:"startMoved,omitempty"`
 	EndMoved   bool `json:"endMoved,omitempty"`
 }
@@ -832,7 +833,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			item.First, item.Last = c.Opens, c.Closes
-			item.StartMoved, item.EndMoved = c.startMoved, c.endMoved
+			item.StartMoved, item.EndMoved = c.startMoved || c.trimStart, c.endMoved || c.trimEnd
 		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}

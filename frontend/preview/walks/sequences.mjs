@@ -434,6 +434,18 @@ export const sequences = [
     ],
   },
   {
+    name: "a caption's right edge dragged in and double-clicked, twice, is back where it was with its words",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+    ],
+  },
+  {
     name: "a caption's edges moved by hand leave the captions beside them alone",
     steps: [
       ["mark", "start"],
@@ -1830,6 +1842,22 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!held || !left || Math.abs(left.x - held.x) > 1) {
           wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
         }
+        break;
+      }
+      case "edge put back": {
+        // A double-click on an edge of the caption holding a word.
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const i = now.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
+        if (i < 0 || !box) {
+          wrong = `there is no edge "${label}"`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step(what, s);
+        for (let k = 0; k < 20 && same(await engineState(page, watch.at), now); k++) await page.waitForTimeout(100);
         break;
       }
       case "drawn in": {

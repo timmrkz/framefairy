@@ -1902,9 +1902,15 @@ moved by hand, on the clip timeline.
   was put, and one moved out comes in with the word. The captions beside
   it keep their time, so the room the word took stays empty. Before, the
   caption kept the time the word had, and the two ways of taking a word
-  off its edge ended differently, which Tim found. An edge that drew in
-  with its word no longer says it was put by hand, and the word typed back
-  takes it back out to where the hand put it.
+  off its edge ended differently, which Tim found. The word typed back
+  takes the edge back out to where the hand put it.
+- **A double-click puts an edge back where all its words put it**, the
+  words taken out at that edge coming back with it, whether a drag or the
+  caption box took them. It can be done to any edge moved by hand or
+  drawn in with its word, so it undoes any number of drags. It used to
+  leave the words out, which put a dragged edge only where the words left
+  put it, about where it already stood: Tim dragged a right edge in and
+  double-clicked twice, and the second time nothing moved.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
