@@ -2278,11 +2278,15 @@
     z-index: 7;
   }
 
+  /* The diamond of the keyframe button, Lucide's, filled: its own path
+     with the line it is drawn with, so the corners are rounded the same
+     and the shape scales with the box. Plan row 2.199. */
   .cropdot::before,
   .cropdot::after {
     content: "";
     grid-area: 1 / 1;
-    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41L13.7 2.71a2.41 2.41 0 0 0-3.41 0z' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / contain no-repeat;
   }
 
   .cropdot::before {

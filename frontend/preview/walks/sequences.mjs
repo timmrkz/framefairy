@@ -3862,14 +3862,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           await page.waitForTimeout(100);
         }
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
-        // Drawn as a diamond, the shape editors draw a keyframe in.
+        // Drawn as a diamond, the shape editors draw a keyframe in, and
+        // the keyframe button's own: Lucide's diamond, filled.
         const shapes = await page.evaluate(() =>
-          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").clipPath),
+          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").maskImage),
         );
         if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
         else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
         else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
-        else if (shapes.some((c) => c.replaceAll(" ", "") !== "polygon(50%0px,100%50%,50%100%,0px50%)"))
+        else if (shapes.some((c) => !c.includes("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
           wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
         break;
       }
