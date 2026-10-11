@@ -349,8 +349,12 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		}
 	}
 
-	log.Info("source: %dx%d @ %s fps, %s min", source.Width, source.Height,
-		fixed(source.FPS(), 3), fixed(source.Duration/60, 1))
+	turned := ""
+	if source.Turned != 0 {
+		turned = fmt.Sprintf(", stood up by the file's turn of %d", source.Turned)
+	}
+	log.Info("source: %dx%d @ %s fps, %s min%s", source.Width, source.Height,
+		fixed(source.FPS(), 3), fixed(source.Duration/60, 1), turned)
 
 	// Working a long episode in passes. Only the audio inside the window is
 	// transcribed and sent, and the plan for each window is kept in its own

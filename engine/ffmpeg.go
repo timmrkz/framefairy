@@ -681,11 +681,7 @@ func fileRotation(sideData any) int {
 		if !ok || !isFinite(value) {
 			continue
 		}
-		quarter := math.Round(value / 90)
-		if math.Abs(value-quarter*90) > 1 {
-			return 0
-		}
-		return ((int(quarter)%4 + 4) % 4) * 90
+		return framewire.Quarter(value)
 	}
 	return 0
 }

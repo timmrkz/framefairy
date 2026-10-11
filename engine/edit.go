@@ -522,14 +522,20 @@ func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
 	})
 }
 
+// PiecesMeet is the most two pieces of a clip may stand apart and still
+// play straight on, with no cut between them: a camera switch a search
+// parted a clip at, not a cut. The window reads pieces by the same rule,
+// partOf in lib/rotate.ts.
+const PiecesMeet = 0.0005
+
 // partOf is the first and last of the pieces around one that play straight
 // on from each other, with no cut between them.
 func partOf(pieces []*object, i int) (int, int) {
 	first, last := i, i
-	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= 0.0005 {
+	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= PiecesMeet {
 		first--
 	}
-	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= 0.0005 {
+	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= PiecesMeet {
 		last++
 	}
 	return first, last

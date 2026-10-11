@@ -484,4 +484,15 @@ describe("a picture a phone stored lying down", () => {
     expect([picture(turnedTkhd(-1, 0, 0, -1)).width, picture(turnedTkhd(-1, 0, 0, -1)).height]).toEqual([320, 180]);
     expect([picture(tkhd()).width, picture(tkhd()).height]).toEqual([320, 180]);
   });
+  // ffmpeg turns a track by the movie's matrix after its own, so a turn in
+  // mvhd stands the picture up too, and two quarter turns stand it on its
+  // head, the shape it was stored in.
+  test("is turned by the movie's matrix as well as the track's", () => {
+    const turnedMvhd = full("mvhd", 0, u32(0), u32(0), u32(1000), u32(0), zeros(16),
+      u32(0), u32(0x10000), u32(0), u32(-0x10000 >>> 0), u32(0), zeros(44));
+    const inMovie = (head: number[]) =>
+      parseMoov(new Uint8Array(box("moov", turnedMvhd, trak(head, "vide", 1000, avc1(320, 180), [stts([[2, 40]]), stsz([1, 1]), stsc([[1, 2]]), stco([0])])))).video!;
+    expect([inMovie(tkhd()).width, inMovie(tkhd()).height]).toEqual([180, 320]);
+    expect([inMovie(turnedTkhd(0, 1, -1, 0)).width, inMovie(turnedTkhd(0, 1, -1, 0)).height]).toEqual([320, 180]);
+  });
 });

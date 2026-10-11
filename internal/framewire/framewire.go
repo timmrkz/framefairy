@@ -167,6 +167,22 @@ func Rotate(degrees int) string {
 	return ""
 }
 
+// Quarter is the quarter turn to the left, 0, 90, 180 or 270, that a
+// display matrix's rotation asks for, given in degrees to the left the way
+// ffprobe reports it, or nought for a turn that is not within a degree of
+// a quarter. The engine reads it from ffprobe and the episode's decoder
+// from the stream, and both stand a picture up by it with Rotate.
+func Quarter(left float64) int {
+	if math.IsNaN(left) || math.IsInf(left, 0) {
+		return 0
+	}
+	q := math.Round(left / 90)
+	if math.Abs(left-q*90) > 1 {
+		return 0
+	}
+	return ((int(q)%4 + 4) % 4) * 90
+}
+
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
 const MaxBody = 7680 * 4320 * 4
 

@@ -96,10 +96,10 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 			cut.sound,
 			"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo",
 		}
-		if i == 0 || seg.Start-clip.Segments[i-1].End > 0.0005 {
+		if i == 0 || seg.Start-clip.Segments[i-1].End > PiecesMeet {
 			achain = append(achain, fmt.Sprintf("afade=t=in:st=0:d=%s", pyFloatRepr(Fade)))
 		}
-		if i+1 == len(clip.Segments) || clip.Segments[i+1].Start-seg.End > 0.0005 {
+		if i+1 == len(clip.Segments) || clip.Segments[i+1].Start-seg.End > PiecesMeet {
 			achain = append(achain, fmt.Sprintf("afade=t=out:st=%s:d=%s", fixed(fadeOutAt, 4), pyFloatRepr(Fade)))
 		}
 		parts = append(parts, fmt.Sprintf("[%d:a]%s[a%d];", 2*i+1, strings.Join(achain, ","), i))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -331,60 +332,82 @@ func TestRotatingLeftPutsTheTopOnTheLeft(t *testing.T) {
 	}
 }
 
+// phoneVideos writes, into dir, a video lying down 320 by 180, and the
+// same turned by a display matrix 90, 180 and 270 degrees, the way a
+// phone keeps what it records: once as mpeg4, and once as HEVC with
+// B-frames, stored out of the order they show in, which is what a phone
+// writes. A machine whose ffmpeg has no x265 skips the HEVC ones.
+func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
+	t.Helper()
+	videos := map[string]string{}
+	for _, codec := range []struct{ name, args string }{
+		{"mpeg4", "-c:v mpeg4 -q:v 3"},
+		{"hevc", "-c:v libx265 -x265-params bframes=3:log-level=error -tag:v hvc1"},
+	} {
+		lying := filepath.Join(dir, codec.name+".mp4")
+		args := append([]string{"-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=" + seconds},
+			strings.Fields(codec.args)...)
+		if out, err := exec.Command("ffmpeg", append(args, lying)...).CombinedOutput(); err != nil {
+			if codec.name == "hevc" {
+				t.Logf("no HEVC video, this ffmpeg cannot write one: %v %s", err, out)
+				continue
+			}
+			ffmpegtest.Unusable(t, "ffmpeg made no video: %v %s", err, out)
+		}
+		if codec.name == "hevc" {
+			out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+				"-show_entries", "stream=has_b_frames", "-of", "csv=p=0", lying).Output()
+			if err != nil || strings.TrimSpace(string(out)) == "0" {
+				t.Fatalf("the HEVC video has no B-frames: %v %q", err, out)
+			}
+		}
+		videos[codec.name+" 0"] = lying
+		for _, turn := range []string{"90", "180", "270"} {
+			phone := filepath.Join(dir, codec.name+"-"+turn+".mp4")
+			if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", turn,
+				"-i", lying, "-c", "copy", phone).CombinedOutput(); err != nil {
+				ffmpegtest.Unusable(t, "ffmpeg cannot write a display matrix: %v %s", err, out)
+			}
+			videos[codec.name+" "+turn] = phone
+		}
+	}
+	return videos
+}
+
 // A phone that records upright stores the picture lying down and says how
 // to stand it up. ffmpeg stands it up before anything else sees it, so the
 // engine has to know the picture's size standing up, or the crop is worked
 // out for a landscape picture and cut from a portrait one.
 func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 	ffmpegtest.Need(t)
-	dir := t.TempDir()
-	lying := filepath.Join(dir, "lying.mp4")
-	phone := filepath.Join(dir, "phone.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=1", "-c:v", "mpeg4", lying).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg made no video: %v %s", err, out)
-	}
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", "90",
-		"-i", lying, "-c", "copy", phone).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg cannot write a display matrix: %v %s", err, out)
-	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
-	info, err := e.Probe(context.Background(), phone)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Width != 180 || info.Height != 320 || info.Turned != 90 {
-		t.Errorf("the phone's video stands %dx%d turned %d, not 180x320 turned 90",
-			info.Width, info.Height, info.Turned)
-	}
-	info, err = e.Probe(context.Background(), lying)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Width != 320 || info.Height != 180 || info.Turned != 0 {
-		t.Errorf("a video with no turn stands %dx%d turned %d", info.Width, info.Height, info.Turned)
+	for name, path := range phoneVideos(t, t.TempDir(), "1") {
+		info, err := e.Probe(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		turn := 0
+		fmt.Sscanf(name[strings.LastIndex(name, " ")+1:], "%d", &turn)
+		w, h := 320, 180
+		if turn%180 != 0 {
+			w, h = 180, 320
+		}
+		if info.Width != w || info.Height != h || info.Turned != turn {
+			t.Errorf("%s stands %dx%d turned %d, not %dx%d turned %d",
+				name, info.Width, info.Height, info.Turned, w, h, turn)
+		}
 	}
 }
 
 // The video preview of a phone's video stands up the way its short does:
 // the episode's decoder turns the picture the file asks for, as the ffmpeg
-// program does, so its frames agree with ffmpeg's at the size standing up.
+// program does, so its frames agree with ffmpeg's at the size standing up,
+// at every turn and for a phone's HEVC too.
 func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
-	}
-	dir := t.TempDir()
-	lying := filepath.Join(dir, "lying.mp4")
-	phone := filepath.Join(dir, "phone.mp4")
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
-		"-i", "testsrc2=s=320x180:r=25:d=2", "-c:v", "mpeg4", "-q:v", "3", lying).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg made no video: %v %s", err, out)
-	}
-	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-display_rotation", "90",
-		"-i", lying, "-c", "copy", phone).CombinedOutput(); err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg cannot write a display matrix: %v %s", err, out)
 	}
 	e := NewEngine(NewLog(nil, false, false))
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
@@ -399,19 +422,26 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		}
 		return frame
 	}
-	want := first(func(got func(float64, []byte) error) error {
-		return e.PreviewFrames(context.Background(), phone, 0.5, 90, 160, got)
-	})
-	dec := NewEpisodeFrames(program, phone)
-	defer dec.Close()
-	frame := first(func(got func(float64, []byte) error) error {
-		return dec.Stream(context.Background(), 0.5, 90, 160, got)
-	})
-	if len(frame) != len(want) || len(want) == 0 {
-		t.Fatalf("the decoder gave %d bytes and ffmpeg %d", len(frame), len(want))
-	}
-	if d := meanDiff(frame, want); d > 2 {
-		t.Errorf("the decoder's frame of a phone's video differs from ffmpeg's by %.2f on average, "+
-			"so it does not stand up the way the short does", d)
+	for name, phone := range phoneVideos(t, t.TempDir(), "2") {
+		w, h := 160, 90
+		if strings.HasSuffix(name, " 90") || strings.HasSuffix(name, " 270") {
+			w, h = 90, 160
+		}
+		want := first(func(got func(float64, []byte) error) error {
+			return e.PreviewFrames(context.Background(), phone, 0.5, w, h, got)
+		})
+		dec := NewEpisodeFrames(program, phone)
+		frame := first(func(got func(float64, []byte) error) error {
+			return dec.Stream(context.Background(), 0.5, w, h, got)
+		})
+		dec.Close()
+		if len(frame) != len(want) || len(want) == 0 {
+			t.Errorf("%s: the decoder gave %d bytes and ffmpeg %d", name, len(frame), len(want))
+			continue
+		}
+		if d := meanDiff(frame, want); d > 2 {
+			t.Errorf("%s: the decoder's frame differs from ffmpeg's by %.2f on average, "+
+				"so it does not stand up the way the short does", name, d)
+		}
 	}
 }

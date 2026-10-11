@@ -17,13 +17,17 @@ export function pictureOf(source: SourceView, rotate: number): { width: number; 
   return { width: source.width, height: source.height, cropWidth: source.cropWidth };
 }
 
+// The most two pieces may stand apart and play straight on, with no cut
+// between them: engine.PiecesMeet.
+export const PIECES_MEET = 0.0005;
+
 // The first and last of the pieces around the one at i that play straight
 // on from each other, with no cut between them: engine.partOf.
 export function partOf(pieces: { start: number; end: number }[], i: number): [number, number] {
   let first = i;
   let last = i;
-  while (first > 0 && pieces[first].start - pieces[first - 1].end <= 0.0005) first--;
-  while (last + 1 < pieces.length && pieces[last + 1].start - pieces[last].end <= 0.0005) last++;
+  while (first > 0 && pieces[first].start - pieces[first - 1].end <= PIECES_MEET) first--;
+  while (last + 1 < pieces.length && pieces[last + 1].start - pieces[last].end <= PIECES_MEET) last++;
   return [first, last];
 }
 

@@ -81,12 +81,8 @@ func turnedOf(s *astiav.Stream) int {
 	if !ok {
 		return 0
 	}
-	left := -m.Rotation()
-	quarter := math.Round(left / 90)
-	if math.Abs(left-quarter*90) > 1 {
-		return 0
-	}
-	return ((int(quarter)%4 + 4) % 4) * 90
+	// astiav gives the rotation clockwise, ffprobe to the left.
+	return framewire.Quarter(-m.Rotation())
 }
 
 // info writes a line for the app's log alone, see engine.DecoderInfo: what
