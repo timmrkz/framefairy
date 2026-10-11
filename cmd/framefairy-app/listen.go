@@ -54,9 +54,29 @@ type listening struct {
 	count int
 	// say tells the window what is being written down, see Dictation.
 	say func(Dictation)
+	// loud tells the window how loud the microphone is, see Loudness.
+	loud func(Loudness)
 	// every is how often what is being said is written down again, 0 for
-	// listenEvery. The tests take it shorter.
+	// listenEvery, quiet how long a recording goes on with no new words,
+	// 0 for listenQuiet, and most the longest a recording is, in samples,
+	// 0 for listenMost. The tests take them shorter.
 	every time.Duration
+	quiet time.Duration
+	most  int
+}
+
+// listenQuiet is how long a recording goes on with no new words before it
+// stops by itself and keeps what was said. Tim left one running and came
+// back to find it had heard nothing for minutes. One minute is too short
+// to think about what to say next, he said, so it is two.
+const listenQuiet = 2 * time.Minute
+
+// Loudness is how loud the microphone is, from 0 for a quiet room to 1
+// for a raised voice, told to the window ten times a second while it
+// records, so the button can move with the voice. Plan row 2.189.
+type Loudness struct {
+	Recording int     `json:"recording"`
+	Level     float64 `json:"level"`
 }
 
 // listenEvery is how often the words appear while somebody talks. A pass
@@ -73,8 +93,10 @@ type Dictation struct {
 	Recording int      `json:"recording"`
 	Said      []string `json:"said"`
 	Hearing   string   `json:"hearing"`
-	// Error is why the recording ended by itself.
+	// Error is why the recording could not go on, and Ended why it
+	// stopped by itself, with Said all of what was said.
 	Error string `json:"error,omitempty"`
+	Ended string `json:"ended,omitempty"`
 }
 
 // recording is one press of the button, from Listen to StopListening or
@@ -89,6 +111,13 @@ type recording struct {
 	// slice of it taken under the lock can be read after.
 	mu      sync.Mutex
 	samples []float32
+	most    int
+	// The loudest the microphone was since it was last asked, in dB, and
+	// whether the recording is as long as it may be.
+	peak float64
+	full atomic.Bool
+	// over is closed once the recording is written down or dropped.
+	over chan struct{}
 	// ended is closed when the person stops, kept says whether what they
 	// said is wanted, and written is what the hearing gives at the end.
 	ended   chan struct{}
@@ -105,8 +134,28 @@ type writtenDown struct {
 func (r *recording) heard(samples []float32) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	room := listenMost - len(r.samples)
+	room := r.most - len(r.samples)
 	r.samples = append(r.samples, samples[:min(len(samples), max(room, 0))]...)
+	if len(r.samples) >= r.most {
+		r.full.Store(true)
+	}
+	power := 0.0
+	for _, s := range samples {
+		power += float64(s) * float64(s)
+	}
+	if len(samples) > 0 {
+		r.peak = max(r.peak, 10*math.Log10(power/float64(len(samples))+1e-20))
+	}
+}
+
+// loudness is how loud the microphone was since it was last asked, from
+// 0 at -55 dB, a quiet room, to 1 at -15 dB, a raised voice.
+func (r *recording) loudness() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	db := r.peak
+	r.peak = -200
+	return math.Round(min(max((db+55)/40, 0), 1)*100) / 100
 }
 
 func (r *recording) recorded() []float32 {
@@ -159,15 +208,16 @@ func (f *FrameFairy) Listen() (int, error) {
 		return 0, errNoSpeechModel
 	}
 	l.count++
-	r := &recording{id: l.count, mic: openMicrophone(), started: time.Now(),
-		ended: make(chan struct{}), written: make(chan writtenDown, 1)}
+	r := &recording{id: l.count, mic: openMicrophone(), started: time.Now(), most: cmp.Or(l.most, listenMost),
+		peak: -200, over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
 	if err := r.mic.start(r.heard); err != nil {
 		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
 		return 0, fmt.Errorf("the microphone could not start: %s", err)
 	}
 	l.now = r
 	every := cmp.Or(l.every, listenEvery)
-	go l.write(r, dir, every)
+	go l.write(r, dir, every, cmp.Or(l.quiet, listenQuiet))
+	go l.measure(r)
 	theLog.line(zerolog.InfoLevel, "listen").Msg("recording for a report")
 	return r.id, nil
 }
@@ -198,8 +248,9 @@ func (l *listening) tell(r *recording, d Dictation) {
 // so often: what came before the last pause is settled and never written
 // again, and what follows it is heard again on the next pass, with more
 // of it. When the person stops, the rest is written down.
-func (l *listening) write(r *recording, dir string, every time.Duration) {
+func (l *listening) write(r *recording, dir string, every, quiet time.Duration) {
 	var out writtenDown
+	defer close(r.over)
 	defer func() { r.written <- out }()
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -218,6 +269,7 @@ func (l *listening) write(r *recording, dir string, every time.Duration) {
 	defer rec.Close()
 	var said []string
 	settled, passed, hearing := 0, 0, ""
+	worded := time.Now()
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
@@ -226,6 +278,23 @@ func (l *listening) write(r *recording, dir string, every time.Duration) {
 			out = l.finish(r, rec, said, settled)
 			return
 		case <-tick.C:
+		}
+		// Nobody has said anything for a long while, or the recording is
+		// as long as it may be: it stops by itself and keeps what was
+		// said, unless the person stopped it at the same moment.
+		why := ""
+		if time.Since(worded) > quiet {
+			why = fmt.Sprintf("stopped listening after %s without a word", minutes(quiet))
+		} else if r.full.Load() {
+			why = fmt.Sprintf("stopped listening after %s, the longest a recording can be", minutes(time.Duration(r.most)*time.Second/engine.SampleRate))
+		}
+		if why != "" && l.take(r) != nil {
+			r.mic.stop()
+			r.kept = true
+			out = l.finish(r, rec, said, settled)
+			theLog.line(zerolog.InfoLevel, "listen").Str("why", why).Msg("the recording stopped by itself")
+			l.tell(r, Dictation{Said: append([]string{}, out.said...), Ended: why, Error: errText(out.err)})
+			return
 		}
 		samples := r.recorded()
 		// Nothing new since the last pass, or too little yet to be a word.
@@ -244,10 +313,49 @@ func (l *listening) write(r *recording, dir string, every time.Duration) {
 			settled += cut
 		}
 		if changed || now != hearing {
+			if changed || now != "" {
+				worded = time.Now()
+			}
 			hearing = now
 			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now})
 		}
 	}
+}
+
+// measure tells the window how loud the microphone is until the
+// recording is over.
+func (l *listening) measure(r *recording) {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.over:
+			return
+		case <-r.ended:
+			return
+		case <-tick.C:
+			if l.loud != nil && !r.dropped.Load() {
+				l.loud(Loudness{Recording: r.id, Level: r.loudness()})
+			}
+		}
+	}
+}
+
+// minutes says a duration the way a person would, "2 minutes".
+func minutes(d time.Duration) string {
+	if m := int(d.Round(time.Minute).Minutes()); m == 1 {
+		return "a minute"
+	} else if m > 1 {
+		return fmt.Sprintf("%d minutes", m)
+	}
+	return fmt.Sprintf("%d seconds", int(d.Round(time.Second).Seconds()))
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // listenAround is how much of what was settled is heard again before

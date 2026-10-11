@@ -2409,14 +2409,21 @@ rather than typing it, plan row 2.189, the way dictation on claude.ai
 works. Pressed, it says **Stop** and wears the beam while the app
 listens, and the words appear where the cursor was while they are said,
 grey and slanted until they are kept, and the field keeps its last line
-in view. What follows the last pause is still being heard and changes as
-more of it is, so it is drawn after a mark and cannot be typed in. What
+in view. The microphone in the button grows and shrinks with the voice it
+hears, about ten times a second, so the person sees they are heard. The
+beam stays the sign that it listens, because running work shows the beam
+on the control it was started from. What follows the last pause is still
+being heard and changes as more of it is, so it is plain text in a mark
+that cannot be typed in. What
 came before a pause of 0.6 s is settled: it is text in the field, still
 grey, and can be corrected while the person talks on. Settled words are
 put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking
 undo and redo only what was typed. **Stop** or Enter keeps all of it,
 the last piece a moment later, written in as one step Cmd+Z takes back,
-and Escape removes everything said since Dictate was pressed. The field
+and Escape removes everything said since Dictate was pressed. It also
+stops by itself, keeping what was said, after 2 minutes without a word
+or once a recording is 10 minutes long, and says why under the field
+where the problem would be. The field
 is a `contenteditable` of plain text rather than a textarea, because a
 textarea cannot show some of its words grey.
 The app records, not the window, through malgo, see
@@ -2428,7 +2435,8 @@ that said no hands the app nothing but zeros, and the page says where to
 allow it. One copy of the speech model loads while the person talks.
 About every 0.4 s it writes down again what followed the last pause,
 `engine.Settled` says where that is, and a stretch with no pause is
-settled before it is 20 s long. It is given the 5 s before that pause
+settled before it is 12 s long, so words do not change far behind the
+person. It is given the 5 s before that pause
 too, and everything after it, and the words are told apart by when they
 start, so a pause in the middle of a sentence gives it no full stop and
 the words after it no capital. Each `dictation` event carries every

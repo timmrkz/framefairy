@@ -84,6 +84,7 @@ func (d *desk) start(st *store) {
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
+	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	if d.bus != nil {
 		d.svc.levels = newMeasuring(func(episode string) { d.bus.send("levels", episode) })
 	}

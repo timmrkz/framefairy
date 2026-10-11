@@ -853,6 +853,19 @@ export interface Dictation {
   said: string[];
   hearing: string;
   error?: string;
+  // Why the recording stopped by itself, with said all of it.
+  ended?: string;
+}
+
+// How loud the microphone is while it records, from 0 for a quiet room to
+// 1 for a raised voice, ten times a second. See listen.go.
+export interface Loudness {
+  recording: number;
+  level: number;
+}
+
+export function onLoudness(fn: (n: Loudness) => void): () => void {
+  return Events.On("loudness", (ev) => fn(ev.data as Loudness));
 }
 
 export function onDictation(fn: (d: Dictation) => void): () => void {

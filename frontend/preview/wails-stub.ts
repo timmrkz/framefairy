@@ -1848,7 +1848,14 @@ const licenceListeners = new Set<(ev: unknown) => void>();
 // Dictation, see Listen above. Every 250 ms another word is heard, and
 // two steps after the last word of a sentence it is settled.
 const dictListeners = new Set<(ev: unknown) => void>();
-const dictScript = ["The picture stopped when I pressed play.", "It came back when I clicked the clip again."];
+const loudListeners = new Set<(ev: unknown) => void>();
+// ?talk=N says the two sentences N times over, a word every 40 ms, for a
+// long dictation.
+const dictTalk = Number(new URLSearchParams(location.search).get("talk") ?? 1);
+const dictScript = Array.from({ length: dictTalk }, (_, i) => [
+  `The picture stopped when I pressed play${dictTalk > 1 ? ` ${i + 1}` : ""}.`,
+  "It came back when I clicked the clip again.",
+]).flat();
 let dictCount = 0;
 let dict: { id: number; step: number; timer: ReturnType<typeof setInterval> } | null = null;
 // What has been said after so many steps: the sentences settled and the
@@ -1877,8 +1884,21 @@ function dictateStart(): number {
       now.step++;
       if (location.search.includes("deaf")) return;
       const heard = dictHeard(now.step);
+      // A voice that rises and falls while there are words, and a quiet
+      // room after them.
+      const level = heard.hearing ? 0.4 + 0.4 * Math.abs(Math.sin(now.step * 1.7)) : 0.05;
+      loudListeners.forEach((fn) => fn({ data: { recording: id, level } }));
+      // ?ends stops by itself once the sentences are said, the way the Go
+      // side does after two minutes without a word.
+      if (location.search.includes("ends") && !heard.hearing && now.step > 4) {
+        dictateDrop();
+        dictListeners.forEach((fn) =>
+          fn({ data: { recording: id, said: heard.said, hearing: "", ended: "stopped listening after 2 minutes without a word" } }),
+        );
+        return;
+      }
       dictListeners.forEach((fn) => fn({ data: { recording: id, ...heard } }));
-    }, 250),
+    }, dictTalk > 1 ? 40 : 250),
   };
   dict = now;
   return id;
@@ -1938,6 +1958,10 @@ export const Events = {
     if (name === "dictation") {
       dictListeners.add(fn);
       return () => dictListeners.delete(fn);
+    }
+    if (name === "loudness") {
+      loudListeners.add(fn);
+      return () => loudListeners.delete(fn);
     }
     if (name === "updates") {
       updListeners.add(fn);

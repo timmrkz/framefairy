@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, onDictation } from "../lib/api";
+  import { api, onDictation, onLoudness } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
@@ -36,7 +36,10 @@
   // its end that draws what is still being heard. The settled words go
   // in by hand rather than as typing, so they are no steps of their own
   // for Cmd+Z, and Cmd+Z and Cmd+Y while talking undo and redo only what
-  // was typed.
+  // was typed. What is still being heard is plain text in the mark, which
+  // cannot be typed in. It was drawn by the mark's ::after from an
+  // attribute, and on Tim's Mac the end of a long report was left painted
+  // where it had been, grey under white, in lines that did not line up.
   let said: HTMLSpanElement | null = null;
   let mark: HTMLSpanElement | null = null;
   // Where the cursor was in the field, kept while the button has the
@@ -58,6 +61,11 @@
     const sel = getSelection();
     if (sel?.rangeCount && field?.contains(sel.anchorNode)) cursor = sel.getRangeAt(0).cloneRange();
   }
+
+  // How loud the microphone is, which the button moves with, and why the
+  // last recording stopped by itself.
+  let loud = $state(0);
+  let note = $state("");
 
   // The text of the field before and after a node in it.
   function around(node: Node): [string, string] {
@@ -95,11 +103,20 @@
     getSelection()?.addRange(after);
   }
 
+  // What has been settled so far, without what is still being heard.
+  function settled(): string {
+    const at = document.createRange();
+    at.selectNodeContents(said!);
+    at.setEndBefore(mark!);
+    return at.toString();
+  }
+
   // add puts a settled piece in at the end of what has been said.
   function add(piece: string) {
     if (!said || !mark) return;
     if (!field.contains(said)) begin();
-    const text = (said.textContent!.trim() && !/\s$/.test(said.textContent!) ? " " : "") + piece;
+    const before = settled();
+    const text = (before.trim() && !/\s$/.test(before) ? " " : "") + piece;
     const last = mark.previousSibling;
     if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(text);
     else mark.before(text);
@@ -110,8 +127,9 @@
   function show(now: string) {
     if (!said || !mark) return;
     const rest = around(said)[1];
-    mark.dataset.hearing =
-      (now && said.textContent!.trim() ? " " : "") + now + (/^\S/.test(rest) && (now || said.textContent!.trim()) ? " " : "");
+    const before = settled().trim();
+    const text = (now && before ? " " : "") + now + (/^\S/.test(rest) && (now || before) ? " " : "");
+    if (mark.textContent !== text) mark.textContent = text;
     // At the end of the report, down to its padding. Tim talked past the
     // field's last line and could not see what was written down.
     if (rest.trim()) mark.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -156,11 +174,20 @@
   }
 
   onMount(() =>
+    onLoudness((n) => {
+      if (listening && (!recording || n.recording === recording)) loud = n.level;
+    }),
+  );
+
+  onMount(() =>
     onDictation((d) => {
       if (!listening || (recording && d.recording !== recording)) return;
-      if (d.error) {
-        problem = sentence(d.error);
+      if (d.error || d.ended) {
+        if (d.error) problem = sentence(d.error);
+        if (d.ended) note = sentence(d.ended) + ".";
         listening = false;
+        loud = 0;
+        catchUp(d.said ?? []);
         finish(true);
         return;
       }
@@ -173,6 +200,7 @@
     if (hearing) return;
     if (listening) return keep();
     problem = "";
+    note = "";
     listening = true;
     recording = 0;
     placed = 0;
@@ -191,6 +219,7 @@
   async function keep() {
     if (!listening) return;
     listening = false;
+    loud = 0;
     hearing = true;
     try {
       const d = await api.stopListening();
@@ -207,6 +236,7 @@
   function drop() {
     if (!listening) return;
     listening = false;
+    loud = 0;
     api.cancelListening().catch(() => {});
     finish(false);
   }
@@ -232,6 +262,7 @@
     if (making) return;
     making = true;
     problem = "";
+    note = "";
     try {
       const path = await api.reportProblem(what, video ?? "");
       made = path.split(/[\\/]/).pop() ?? path;
@@ -278,6 +309,7 @@
         onclick={dictate}
         disabled={hearing || making}
         aria-pressed={listening}
+        style:--loud={loud}
         title={listening
           ? "Keeps what you said. Enter does the same, and Escape removes it"
           : "Say what happened. The speech model on this Mac writes it into the field as you talk, and you can correct it while it does"}
@@ -293,6 +325,8 @@
           <span>Listening…</span>
         {:else if hearing}
           <span>Writing down what you said…</span>
+        {:else if note}
+          <span>{note}</span>
         {:else if made}
           <span class="selectable">Saved on the Desktop as {made}</span>
         {:else}
@@ -381,14 +415,19 @@
     font-style: italic;
   }
 
-  .telling :global(.hearing)::after {
-    content: attr(data-hearing);
-  }
 
   /* Room for the longer wording, Make Report, so the row keeps still. */
   .act {
     min-width: 116px;
     flex: none;
+  }
+
+  /* The microphone moves with the voice it hears, so the person sees they
+     are heard. It grows by up to a third, about its middle, which moves
+     nothing else in the row. */
+  .act.dictate :global(svg) {
+    transform: scale(calc(1 + var(--loud, 0) / 3));
+    transition: transform 100ms linear;
   }
 
   /* Room for Writing… beside the microphone. */

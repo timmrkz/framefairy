@@ -227,13 +227,16 @@ func hush(seconds float64) []float32 {
 
 // dictating starts a recording on a microphone the test talks into, and
 // gives what the window is told about it.
-func dictating(t *testing.T) (*FrameFairy, *talkingMicrophone, chan Dictation) {
+func dictating(t *testing.T, set ...func(*listening)) (*FrameFairy, *talkingMicrophone, chan Dictation) {
 	t.Helper()
 	f, _ := listenWith(t, nil)
 	mic := &talkingMicrophone{}
 	openMicrophone = func() microphone { return mic }
 	told := make(chan Dictation, 100)
 	f.listening.say = func(d Dictation) { told <- d }
+	for _, s := range set {
+		s(&f.listening)
+	}
 	if _, err := f.Listen(); err != nil {
 		t.Fatal(err)
 	}
@@ -376,5 +379,70 @@ func TestAPauseIsNoFullStop(t *testing.T) {
 	}
 	if len(stopped.Said) != 2 || !strings.HasPrefix(stopped.Said[1], "wort ") || !strings.HasSuffix(stopped.Said[1], "wort.") {
 		t.Errorf("stopping gave %q, want the second piece to go on the sentence and end it", stopped.Said)
+	}
+}
+
+// A recording nobody talks into any more stops by itself and keeps what
+// was said, and so does one that has reached the longest a recording can
+// be, rather than going on listening and hearing nothing, which is what
+// Tim found after ten minutes. Plan row 2.189.
+func TestListeningStopsByItself(t *testing.T) {
+	f, mic, told := dictating(t, func(l *listening) { l.quiet = 300 * time.Millisecond })
+	mic.say(tone(1))
+	d := awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
+	if !strings.Contains(d.Ended, "without a word") || len(d.Said) != 1 || !strings.HasPrefix(d.Said[0], "wort") {
+		t.Errorf("after the quiet the window was told %q with %q", d.Ended, d.Said)
+	}
+	if stopped, err := f.StopListening(); len(stopped.Said) != 0 || err != nil {
+		t.Errorf("stopping after it stopped by itself gave %q, %v", stopped.Said, err)
+	}
+
+	f, mic, told = dictating(t, func(l *listening) { l.most = 2 * engine.SampleRate })
+	mic.say(tone(1), tone(1), tone(1))
+	d = awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
+	if !strings.Contains(d.Ended, "longest") || len(d.Said) == 0 {
+		t.Errorf("at the longest the window was told %q with %q", d.Ended, d.Said)
+	}
+	if _, err := f.Listen(); err != nil {
+		t.Errorf("listening again: %v", err)
+	}
+	f.CancelListening()
+}
+
+// The window is told how loud the microphone is, a few times a second, so
+// the button can move with the voice and the person sees they are heard.
+// Plan row 2.189.
+func TestTheMicrophoneSaysHowLoud(t *testing.T) {
+	var mu sync.Mutex
+	var levels []float64
+	f, mic, _ := dictating(t, func(l *listening) {
+		l.loud = func(n Loudness) {
+			mu.Lock()
+			levels = append(levels, n.Level)
+			mu.Unlock()
+		}
+	})
+	defer f.CancelListening()
+	heard := func(ok func(float64) bool, samples []float32) bool {
+		for range 50 {
+			mic.say(samples)
+			time.Sleep(20 * time.Millisecond)
+			mu.Lock()
+			last := -1.0
+			if len(levels) > 0 {
+				last = levels[len(levels)-1]
+			}
+			mu.Unlock()
+			if last >= 0 && ok(last) {
+				return true
+			}
+		}
+		return false
+	}
+	if !heard(func(l float64) bool { return l > 0.5 }, tone(0.1)) {
+		t.Errorf("a voice was told as %v", levels)
+	}
+	if !heard(func(l float64) bool { return l < 0.2 }, hush(0.1)) {
+		t.Errorf("a quiet room was told as %v", levels)
 	}
 }

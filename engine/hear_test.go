@@ -112,8 +112,8 @@ func TestSettledAtAPause(t *testing.T) {
 	}
 	// Talking on without a pause is settled at the quietest moment before
 	// the piece is longer than the speech model takes.
-	long := dictated(dictateLongest+1, [2]float64{17, 17.2})
-	near(t, Settled(long), 17.1)
+	long := dictated(dictateLongest+1, [2]float64{dictateLongest - 3, dictateLongest - 2.8})
+	near(t, Settled(long), dictateLongest-2.9)
 	if at := Settled(dictated(dictateLongest - 1)); at != 0 {
 		t.Errorf("%.0f s without a pause settled at %.2f s", dictateLongest-1, float64(at)/SampleRate)
 	}

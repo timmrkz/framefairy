@@ -607,7 +607,9 @@ export const sequences = [
       ["undo"],
       ["dictate", "settled"],
       ["redo"],
-      ["report reads", "It *X froze."],
+      // The space before X is the one the words being heard keep, so
+      // what is said never runs into what was typed after it.
+      ["report reads", "It * X froze."],
       ["dictate", "enter"],
       ["report reads", "It * X froze."],
     ],
@@ -2308,11 +2310,21 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         // The words appear while they are heard, before anything stops.
         const heard = await page
-          .waitForFunction(() => document.querySelector(".telling .hearing")?.dataset.hearing, null, { timeout: 10000 })
+          .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
           .then(() => true)
           .catch(() => false);
         if (!heard) {
           wrong = "nothing appeared in the report while it was listening";
+          break;
+        }
+        // The microphone moves with the voice it hears, so a person knows
+        // they are heard. The bridge's microphone plays a tone.
+        const moved = await page
+          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.style.getPropertyValue("--loud")) > 0.3, null, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!moved) {
+          wrong = "the microphone did not move while it heard a voice";
           break;
         }
         await watch.step("hearing", s);

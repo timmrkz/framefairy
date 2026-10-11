@@ -116,11 +116,16 @@ func frameDB(samples []float32) float32 {
 // quietestCut picks where to end a chunk: the middle of the quietest 300 ms
 // between chunkMin and chunkMax.
 func quietestCut(frames []float32) int {
+	return quietestBetween(frames, chunkMin, chunkMax)
+}
+
+// quietestBetween is quietestCut between any two lengths, in seconds.
+func quietestBetween(frames []float32, shortest, longest float64) int {
 	const window = 30
-	low := int(chunkMin / FrameSeconds)
-	high := min(int(chunkMax/FrameSeconds), len(frames)) - window
+	low := int(shortest / FrameSeconds)
+	high := min(int(longest/FrameSeconds), len(frames)) - window
 	if high <= low {
-		return min(int(chunkMax/FrameSeconds), len(frames))
+		return min(int(longest/FrameSeconds), len(frames))
 	}
 	best, bestAt := math.Inf(1), low
 	running := 0.0
@@ -184,10 +189,11 @@ func Joined(words []Cue) string {
 const settlePause = 60
 
 // dictateLongest is how long, in seconds, a piece being dictated may grow
-// without a pause before it is settled anyway, at its quietest moment. It
-// is written down again on every pass, so it is kept well short of what
-// the speech model takes in one go.
-const dictateLongest = 20.0
+// without a pause before it is settled anyway, at its quietest moment
+// in its second half. Until then it is written down again on every pass,
+// and every pass may write it a little differently, so it is kept short:
+// at 20 s Tim watched words change well behind what he was saying.
+const dictateLongest = 12.0
 
 // Settled is where the words of a recording still being made can be
 // written down for good, in samples: the middle of the last pause of at
@@ -235,7 +241,7 @@ func Settled(samples []float32) int {
 		}
 	}
 	if at == 0 && float64(len(samples))/SampleRate > dictateLongest {
-		at = quietestCut(frames) * frameSamples
+		at = quietestBetween(frames, dictateLongest/2, dictateLongest) * frameSamples
 	}
 	return at
 }

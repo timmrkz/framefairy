@@ -82,6 +82,11 @@ func main() {
 			app.Event.Emit("dictation", d)
 		}
 	})
+	svc.listening.loud = quietly(func(n Loudness) {
+		if app != nil {
+			app.Event.Emit("loudness", n)
+		}
+	})
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.jobs.restore(st.Episodes())

@@ -392,8 +392,8 @@ whether to remove opened, `changed`, the settings name another model,
 and `hearing`, a search still hears. For Report a Problem: `menu`
 `report` picks it in the menu bar, `write` types into its field and
 puts the cursor so many characters in, `dictate` presses Dictate, sees
-it say Stop in the same frame and the words appear grey while it
-listens, then ends it with Stop, Enter or Escape, or with `start` only
+it say Stop in the same frame, the words appear grey while it
+listens and the microphone move with the hum, then ends it with Stop, Enter or Escape, or with `start` only
 starts it and with `settled` waits for the words before the pause,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
