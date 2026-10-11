@@ -1209,7 +1209,7 @@
        Everything drawn over the picture stands in .screen, the picture's
        own box, so the crop and the captions are in shares of the picture
        and not of the viewer. -->
-  <div class="stage">
+  <div class="stack">
   <div class="viewer">
   <div
     class="screen asks"
@@ -1422,7 +1422,7 @@
      in shares of it by the stylesheet, see px. */
   /* The viewer and the crop frame's line over it, in one cell, so the
      two are laid out by the same rules and stand in the same place. */
-  .stage {
+  .stack {
     display: grid;
   }
 
