@@ -390,8 +390,8 @@ export const sequences = [
     steps: [
       ["mark", "start"],
       ["edge in", ["start", "Schulhof"]],
-      ["gone first", ["start", "Schulhof"]],
       ["others", ["start", "Schulhof"]],
+      ["gone first", ["start", "Schulhof"]],
       ["edge out", ["start", "Schulhof"]],
       ["fewer", "start", 0],
       ["others", ["start", "Schulhof"]],
