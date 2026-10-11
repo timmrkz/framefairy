@@ -25,6 +25,10 @@ type Segment struct {
 	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
 	// The crop is placed on the picture rotated.
 	Rotate int
+	// Marks is the crop marks that steer the piece's crop, those of its
+	// camera angle in its part, in time order. With any, the crop glides
+	// over them and CropX is not used, see CropMark.
+	Marks []CropMark
 }
 
 // Duration of the segment in seconds.
@@ -56,6 +60,10 @@ type Clip struct {
 	// here: one a trim or a cut left outside stays in the plan and comes
 	// back when the piece does.
 	Thumbnails []float64
+	// CropMarks are the crops placed by hand on frames of the clip, in
+	// time order, see CropMark. Only marks inside a kept piece are here,
+	// the way only such thumbnails are.
+	CropMarks []CropMark
 	// Found is where the clip's outer edges were before anything changed
 	// them, start and end in seconds of the episode, so a double-click on an
 	// edge can put it back. It is written the first time a clip's pieces
@@ -312,6 +320,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			return Plan{}, nil, renderErr("clip %d: %s", index, rerr.Error())
 		}
 		var segments []Segment
+		var angles []string
 		for _, segAny := range rawSegments {
 			seg, ok := segAny.(map[string]any)
 			if !ok {
@@ -379,10 +388,18 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				}
 			}
 			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
+			angles = append(angles, angleKey(seg, rotate))
 		}
 		if len(segments) == 0 {
 			continue
 		}
+		var marks []CropMark
+		for _, m := range readCropMarks(entry[keyCropMarks]) {
+			if insidePieces(segments, m.At) {
+				marks = append(marks, m)
+			}
+		}
+		markedPieces(segments, angles, marks)
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]
 		idText := fallback
@@ -410,6 +427,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			CaptionY:     captionY,
 			CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
 			Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
+			CropMarks:    marks,
 			Found:        readFound(entry[keyFound]),
 			ID:           SanitiseName(idText, fallback),
 			Slug:         SanitiseName(slugText, ""),

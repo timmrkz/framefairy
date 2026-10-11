@@ -202,6 +202,17 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
+  // The crop marks that steer the piece's crop, which glides over them,
+  // see lib/glide.ts. With none the crop stands at cropX.
+  marks?: CropMark[];
+}
+
+// A crop placed by hand on one frame: the moment the frame starts, and the
+// left edge of the crop there, on the picture as it stands, see
+// engine.CropMark.
+export interface CropMark {
+  at: number;
+  x: number;
 }
 
 // A stretch of the video a person rotated deg degrees to the left, 90,
@@ -236,6 +247,8 @@ export interface ClipView {
   // The moments of the episode the render takes a picture of the short at,
   // in time order.
   thumbnails: number[];
+  // The crops placed by hand on frames of the clip, in time order.
+  cropMarks?: CropMark[];
   // Where the clip's outer edges were before anything changed them, start
   // and end, which a double-click on an edge puts it back to.
   found: [number, number];

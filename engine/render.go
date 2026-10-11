@@ -65,13 +65,17 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropW, cropH := CropWindow(upright, rs.OutW, rs.OutH)
 		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
-		cropX := ClampCropX(seg.CropX, cropW, upright.Width)
+		cropX := source.cropXOf(seg, cropW, upright.Width)
+		if len(seg.Marks) > 0 {
+			e.Log.Detail("clip %s, piece %d at %ss: the crop glides over the marks %s",
+				clip.ID, i+1, fixed(seg.Start, 3), marksText(seg.Marks))
+		}
 
 		chain := []string{cut.picture + "setpts=PTS-STARTPTS"}
 		if rotate := framewire.Rotate(seg.Rotate); rotate != "" {
 			chain = append(chain, rotate)
 		}
-		chain = append(chain, fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, cropX, cropY))
+		chain = append(chain, fmt.Sprintf("crop=%d:%d:%s:%d", cropW, cropH, cropX, cropY))
 		if rs.ScaleUp && (cropW != rs.OutW || cropH != rs.OutH) {
 			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
 		}

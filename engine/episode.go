@@ -390,6 +390,9 @@ type ClipView struct {
 	// Thumbnails are the moments of the episode the render takes a picture
 	// of the short at, in time order.
 	Thumbnails []float64 `json:"thumbnails"`
+	// CropMarks are the crops placed by hand on frames of the clip, in
+	// time order, see CropMark.
+	CropMarks []CropMarkView `json:"cropMarks"`
 	// Found is where the clip's outer edges were before anything changed
 	// them, start and end, which a double-click on an edge puts it back to.
 	// A clip never changed is where it was found.
@@ -406,6 +409,9 @@ type SegmentView struct {
 	// Rotate is how far a person rotated the piece, in degrees to the left,
 	// and the crop is on the picture rotated, see Segment.Rotate.
 	Rotate int `json:"rotate"`
+	// Marks is the crop marks that steer the piece's crop, which glides
+	// over them, see Segment.Marks. With none, the crop stands at CropX.
+	Marks []CropMarkView `json:"marks"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -487,12 +493,13 @@ func (s PlanSummary) View() *PlanView {
 				v.Reason = Scrub(reason, 300)
 			}
 		}
+		v.CropMarks = cropMarkViews(c.CropMarks)
 		v.Rotations = []RotationView{}
 		for _, r := range c.Rotations {
 			v.Rotations = append(v.Rotations, rotationView(r))
 		}
 		for _, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate})
+			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks)})
 		}
 		v.Rendered = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {

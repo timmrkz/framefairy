@@ -838,18 +838,18 @@ func TestCropByHand(t *testing.T) {
 		return out
 	}
 	// Moving the first angle moves both of its pieces, not the others.
-	if err := SetCrop(path, "01", 2, 501); err != nil {
+	if err := SetCrop(path, "01", 2, 501, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "500* 1200 500* centre " {
 		t.Errorf("after moving %q", got)
 	}
 	// Moving it again keeps the automatic placement from the first time.
-	if err := SetCrop(path, "01", 11, 600); err != nil {
+	if err := SetCrop(path, "01", 11, 600, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	// A centred piece can be moved and reset too.
-	if err := SetCrop(path, "01", 16, 100); err != nil {
+	if err := SetCrop(path, "01", 16, 100, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "600* 1200 600* 100* " {
@@ -868,7 +868,7 @@ func TestCropByHand(t *testing.T) {
 	if strings.Contains(string(body), "crop_x_auto") {
 		t.Errorf("reset left the automatic value behind\n%s", body)
 	}
-	if err := SetCrop(path, "01", 2, -4); err == nil {
+	if err := SetCrop(path, "01", 2, -4, SourceInfo{}, 0); err == nil {
 		t.Errorf("a negative crop was accepted")
 	}
 }

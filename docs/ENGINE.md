@@ -924,6 +924,27 @@ crop placed by hand moves every piece of one shot rotated alike, `angleOf`.
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
+**A crop that follows.** A person can put crop marks on frames of a clip,
+the way thumbnails are put, each with the crop where it stands on that
+frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
+`crop_marks`, each `at`, the start of its frame, and `x`, the left edge of
+the crop there, read like thumbnails: a mark that is not a number and a
+whole left edge is left out, and so is one outside every piece, which stays
+in the plan and comes back with its piece. A mark steers the pieces of its
+camera angle in its part, `markedPieces`, so no glide crosses a cut. With
+no mark, or one, the crop stands still. With two or more it glides from
+each to the next over the whole time between them by smoothstep, `glideX`,
+on the frames of the video and on even pixels. The render gives ffmpeg's
+crop filter the same sum as an expression in the frame, `glideExpr`, step
+by step in the same order, and the video preview works it out in
+`lib/glide.ts`, so the three agree to the pixel, held to one table,
+`frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
+frame moves that mark, and anywhere else it moves the angle's crop and
+every mark of the angle as far as the crop shown there moved, `SetCrop`.
+Automatic crop removes the angle's marks, and a rotation removes the marks
+of the stretch it turns, since they were placed on a picture of another
+shape.
+
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing
 decodes only what a clip keeps, and each kept span once. One ffmpeg run per
