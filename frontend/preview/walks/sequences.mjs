@@ -3174,7 +3174,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           }
         }
         const all = await pieces();
-        const parts = all.filter((p, i) => arg[i] !== 0 && (i === 0 || p.start - all[i - 1].end > 0.0005)).length;
+        // A mark where a rotated stretch starts: at the start of a part,
+        // or inside one where a cut put back joined two turned apart.
+        const parts = all.filter((p, i) => arg[i] !== 0 && (i === 0 || p.start - all[i - 1].end > 0.0005 || arg[i - 1] !== arg[i])).length;
         const marks = await page.evaluate(() => document.querySelectorAll(".clip-timeline .turnmark").length);
         if (marks !== parts) problems.push(`the clip timeline marks ${marks} rotated parts, not ${parts}`);
         if (problems.length) wrong = problems.join("\n");
