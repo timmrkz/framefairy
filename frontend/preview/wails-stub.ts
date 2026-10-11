@@ -897,6 +897,30 @@ const Answers = {
       case "ReportProblem":
         (window as any).__reported = { what: args[0], video: args[1] };
         return new Promise((done) => setTimeout(() => done("/Users/tim/Desktop/Frame Fairy report 2026-10-10 21.40.zip"), 400));
+      // Dictate: a recording that hears a sentence, written down in a
+      // second, the way the speech model takes a moment. ?deaf is a Mac
+      // that has not let the app use the microphone.
+      case "Listen":
+        (window as any).__listening = true;
+        return Promise.resolve(null);
+      case "StopListening": {
+        const was = (window as any).__listening;
+        (window as any).__listening = false;
+        if (!was) return Promise.resolve("");
+        if (location.search.includes("deaf"))
+          return new Promise((_, fail) =>
+            setTimeout(
+              () =>
+                fail(
+                  new Error(
+                    "the microphone heard nothing. If Frame Fairy may not use it, allow it in System Settings, Privacy & Security, Microphone.",
+                  ),
+                ),
+              300,
+            ),
+          );
+        return new Promise((done) => setTimeout(() => done("The picture stopped when I pressed play."), 1000));
+      }
       case "Licences":
         return Promise.resolve(noticeList);
       case "LicenceText":

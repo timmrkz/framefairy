@@ -560,6 +560,10 @@ export const api = {
   // Writes a report of a problem to the Desktop and shows it in Finder,
   // and gives its path, see screens/Report.svelte.
   reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
+  // Starts recording what the person says for a report, and stopping
+  // gives it written down by the speech model, see listen.go.
+  listen: () => call<void>("Listen"),
+  stopListening: () => call<string>("StopListening"),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or

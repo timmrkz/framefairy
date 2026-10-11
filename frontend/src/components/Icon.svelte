@@ -28,6 +28,11 @@
   {:else if name === "info"}
     <circle cx="8" cy="8" r="6.2" />
     <path d="M8 7.3v4M8 4.9v.8" />
+  <!-- The microphone the Mac draws for dictation: a capsule on a stand. -->
+  {:else if name === "mic"}
+    <rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" />
+    <path d="M3.2 7.4a4.8 4.8 0 0 0 9.6 0" />
+    <path d="M8 12.2v2.2" />
   {:else if name === "close"}
     <path d="M4 4l8 8M12 4l-8 8" />
   {:else if name === "pause"}
