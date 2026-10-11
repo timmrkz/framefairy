@@ -65,7 +65,6 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		cropW, cropH := CropWindow(upright, rs.OutW, rs.OutH)
 		cropY := (upright.Height - cropH) / 2
 		cropY -= cropY % 2
-		cropX := source.cropXOf(seg, cropW, upright.Width)
 		if len(seg.Marks) > 0 {
 			e.Log.Detail("clip %s, piece %d at %ss: the crop glides over the marks %s",
 				clip.ID, i+1, fixed(seg.Start, 3), marksText(seg.Marks))
@@ -75,17 +74,18 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if rotate := framewire.Rotate(seg.Rotate); rotate != "" {
 			chain = append(chain, rotate)
 		}
-		chain = append(chain, fmt.Sprintf("crop=%d:%d:%s:%d", cropW, cropH, cropX, cropY))
-		if rs.ScaleUp && (cropW != rs.OutW || cropH != rs.OutH) {
-			chain = append(chain, fmt.Sprintf("scale=%d:%d:flags=%s", rs.OutW, rs.OutH, flags))
-		}
 		// Standard video in 8 bits, HDR in 10, each with the episode's own
 		// colour tags on every frame, see colourParams.
-		pixels := "format=yuv420p"
+		pixels, deep := "yuv420p", "yuv444p"
 		if source.Light() != framewire.SDR {
-			pixels = "format=yuv420p10le"
+			pixels, deep = "yuv420p10le", "yuv444p10le"
 		}
-		chain = append(chain, "fps="+source.FPSString(), pixels, "setsar=1")
+		outW, outH := cropW, cropH
+		if rs.ScaleUp {
+			outW, outH = rs.OutW, rs.OutH
+		}
+		chain = append(chain, source.cropFilters(seg, cropW, cropH, cropY, upright.Width, outW, outH, "flags="+flags, deep)...)
+		chain = append(chain, "fps="+source.FPSString(), "format="+pixels, "setsar=1")
 		if tags := source.colourParams(); tags != "" {
 			chain = append(chain, tags)
 		}

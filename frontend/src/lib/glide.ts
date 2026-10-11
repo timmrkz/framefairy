@@ -18,8 +18,11 @@ export function frameOf(at: number, fps: number, videoStart = 0): number {
 
 // The left edge of the crop on frame k, gliding over marks on frames in
 // order: still before the first and after the last, and between two the
-// whole way by smoothstep, u²(3-2u), on an even pixel. Each step is the
-// engine's glideX, in its order, so the two agree to the pixel.
+// whole way by smoothstep, u²(3-2u). It is not rounded to a pixel of the
+// picture, because a slow glide moves less than one a frame and rounded
+// it stood and then jumped, see glideCrop in engine/cropmarks.go, which
+// places it to the pixel of the short. Each step is the engine's glideX,
+// in its order, so the two agree.
 export function glideX(marks: FrameMark[], k: number): number {
   if (k <= marks[0][0]) return marks[0][1];
   for (let i = 1; i < marks.length; i++) {
@@ -28,8 +31,7 @@ export function glideX(marks: FrameMark[], k: number): number {
     const [ka, xa] = marks[i - 1];
     const u = (k - ka) / (kb - ka);
     const ease = u * u * (3 - 2 * u);
-    const x = xa + (xb - xa) * ease;
-    return 2 * Math.floor(x / 2 + 0.5);
+    return xa + (xb - xa) * ease;
   }
   return marks[marks.length - 1][1];
 }

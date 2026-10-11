@@ -3,11 +3,14 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"math"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -44,21 +47,47 @@ func TestTheGlideEasesBetweenMarksAndHoldsBeyondThem(t *testing.T) {
 	marks := []frameMark{{10, 100}, {20, 300}, {21, 40}, {31, 40}}
 	for _, c := range []struct {
 		k    int64
-		want int
+		want float64
 	}{
 		{0, 100}, {10, 100},
-		// A tenth of the way, smoothstep has moved 2.8 %, 105.6 to the
-		// even pixel 106. Half way is half way, 200.
-		{11, 106}, {15, 200}, {19, 294},
+		// A tenth of the way, smoothstep has moved 2.8 %, to 105.6. Half
+		// way is half way, 200.
+		{11, 105.6}, {15, 200}, {19, 294.4},
 		{20, 300}, {21, 40}, {25, 40}, {40, 40},
 	} {
-		if got := glideX(marks, c.k); got != c.want {
-			t.Errorf("on frame %d the crop is at %d, not %d", c.k, got, c.want)
+		if got := glideX(marks, c.k); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("on frame %d the crop is at %v, not %v", c.k, got, c.want)
 		}
 	}
 	// The glide starts more slowly than it moves in the middle.
 	if early, middle := glideX(marks, 11)-glideX(marks, 10), glideX(marks, 15)-glideX(marks, 14); early >= middle {
-		t.Errorf("the glide moves %d px on its first frame and %d in the middle", early, middle)
+		t.Errorf("the glide moves %v px on its first frame and %v in the middle", early, middle)
+	}
+}
+
+// A slow glide moves on every frame of the short. Rounded to an even
+// pixel of the picture, a glide of 300 pixels over four seconds stood
+// still for three frames at a time and then jumped 2 pixels, 3.6 in the
+// short, which Tim saw on #192 as a crop frame that stutters.
+func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
+	t.Parallel()
+	const cropW, width, scaled = 608, 1920, 1084
+	marks := []frameMark{{0, 400}, {100, 700}}
+	cut, off := glideCrop(glideX(marks, 0), cropW, width, scaled)
+	was := float64(cut) + float64(off)*float64(cropW+glideMargin)/scaled
+	for k := int64(1); k < 100; k++ {
+		x := glideX(marks, k)
+		cut, off := glideCrop(x, cropW, width, scaled)
+		at := float64(cut) + float64(off)*float64(cropW+glideMargin)/scaled
+		// The short shows the picture from at, within half a pixel of the
+		// short of where the glide is.
+		if math.Abs(at-x) > 0.5*float64(cropW+glideMargin)/scaled+1e-9 {
+			t.Errorf("on frame %d the glide is at %.3f, the short shows it from %.3f", k, x, at)
+		}
+		if step := at - was; k > 5 && k < 95 && step <= 0 {
+			t.Errorf("on frame %d the short stands still or goes back, %.3f px of the picture", k, step)
+		}
+		was = at
 	}
 }
 
@@ -73,8 +102,8 @@ func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	var fixture struct {
-		Marks  [][2]int64 `json:"marks"`
-		Frames [][2]int64 `json:"frames"`
+		Marks  [][2]int64   `json:"marks"`
+		Frames [][2]float64 `json:"frames"`
 	}
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
@@ -84,16 +113,38 @@ func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 		marks = append(marks, frameMark{k: m[0], x: int(m[1])})
 	}
 	for _, f := range fixture.Frames {
-		if got := glideX(marks, f[0]); got != int(f[1]) {
-			t.Errorf("on frame %d the crop is at %d, the window has %d", f[0], got, f[1])
+		if got := glideX(marks, int64(f[0])); got != f[1] {
+			t.Errorf("on frame %v the crop is at %v, the window has %v", f[0], got, f[1])
 		}
 	}
 }
 
-// The render crops every frame where glideX says: the crop filter of a
-// piece with crop marks, run on a picture whose every column says how far
-// from the left it is, leaves on each frame the column the glide put the
-// crop's left edge on.
+// renderedLefts runs the crop filters of a piece on a picture 480 wide
+// whose every column says how far from the left it is, in 16 bits, and
+// gives the column each frame starts on.
+func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []int {
+	t.Helper()
+	filters := source.cropFilters(seg, 152, 270, 0, 480, 152, 270, "flags=lanczos", "gray16le")
+	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
+		"-i", "color=black:s=480x270:r=25:d=10,format=gray16le,geq=lum=X*64",
+		"-vf", strings.Join(filters, ",")+",format=gray16le", "-frames:v", strconv.Itoa(frames),
+		"-f", "rawvideo", "-").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ffmpeg would not crop by %s: %v %s", filters, err, out)
+	}
+	if len(out) != frames*152*270*2 {
+		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
+	}
+	lefts := make([]int, frames)
+	for n := range frames {
+		lefts[n] = int(binary.LittleEndian.Uint16(out[n*152*270*2:])) / 64
+	}
+	return lefts
+}
+
+// The render crops every frame where the glide is, to the pixel: the
+// crop filters of a piece with crop marks leave on each frame the column
+// glideCrop puts the left edge on, within half a pixel of glideX.
 func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
@@ -101,36 +152,32 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	seg := Segment{Start: 0.4, End: 3.0, Marks: []CropMark{
 		{At: 0.8, X: 0}, {At: 1.6, X: 328}, {At: 1.64, X: 100}, {At: 2.6, X: 201},
 	}}
+	first, _ := source.pieceFrames(seg.Start, seg.End)
+	marks := source.onFrames(seg.Marks, 152, 480)
+	for n, got := range renderedLefts(t, source, seg, 65) {
+		x := glideX(marks, first+int64(n))
+		cut, off := glideCrop(x, 152, 480, 154)
+		if got != cut+off || math.Abs(float64(got)-x) > 0.5 {
+			t.Errorf("frame %d of the piece is cropped at %d, the glide is at %.3f", n, got, x)
+		}
+	}
+
+	// Scaled to the short, the glide is cut glideMargin wider, scaled,
+	// and cropped again, and the frames come out the short's size.
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
-		source, RenderSettings{OutW: 1080, OutH: 1920}, "")
+		source, RenderSettings{OutW: 1080, OutH: 1920, ScaleUp: true}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	crop := regexp.MustCompile(`crop=152:270:'[^']+':0`).FindString(graph)
-	if crop == "" {
-		t.Fatalf("the piece has no crop that glides: %s", graph)
+	chain := regexp.MustCompile(`crop=154:270:'[^']+':0,scale=1094:1920:flags=lanczos,format=yuv444p,crop=1080:1920:'[^']+':0:exact=1`).FindString(graph)
+	if chain == "" {
+		t.Fatalf("the piece has no crop that glides to the pixel of the short: %s", graph)
 	}
-	// Each column of the picture is as bright as half its distance from
-	// the left, so the left edge of what is cropped is twice the first
-	// byte of each row.
-	frames := 65
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
-		"-i", "color=black:s=480x270:r=25:d=3,format=gray,geq=lum=X/2",
-		"-vf", crop+",format=gray", "-frames:v", "65", "-f", "rawvideo", "-").Output()
-	if err != nil {
-		ffmpegtest.Unusable(t, "ffmpeg cropped nothing: %v", err)
-	}
-	if len(out) != frames*152*270 {
-		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
-	}
-	first, _ := source.pieceFrames(seg.Start, seg.End)
-	marks := source.onFrames(seg.Marks, 152, 480)
-	for n := range frames {
-		got := 2 * int(out[n*152*270])
-		if want := glideX(marks, first+int64(n)); got != want {
-			t.Errorf("frame %d of the piece is cropped at %d, the glide says %d", n, got, want)
-		}
+	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=480x270:r=25:d=3",
+		"-vf", chain, "-frames:v", "65", "-f", "rawvideo", "-pix_fmt", "gray", "-").CombinedOutput()
+	if err != nil || len(out) != 65*1080*1920 {
+		t.Errorf("the glide scaled to the short gave %d bytes, not 65 frames of 1080 by 1920: %v %s", len(out), err, out[:min(len(out), 200)])
 	}
 }
 
@@ -145,31 +192,11 @@ func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
 	for i := range MaxCropMarks {
 		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329})
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
-	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
-		source, RenderSettings{OutW: 1080, OutH: 1920}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	crop := regexp.MustCompile(`crop=152:270:'[^']+':0`).FindString(graph)
-	if crop == "" {
-		t.Fatalf("the piece has no crop that glides: %s", graph)
-	}
-	frames := 215
-	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
-		"-i", "color=black:s=480x270:r=25:d=9,format=gray,geq=lum=X/2",
-		"-vf", crop+",format=gray", "-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-").CombinedOutput()
-	if err != nil {
-		t.Fatalf("ffmpeg would not crop by the glide of %d marks: %v %s", MaxCropMarks, err, out)
-	}
-	if len(out) != frames*152*270 {
-		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
-	}
 	marks := source.onFrames(seg.Marks, 152, 480)
-	for n := range frames {
-		got := 2 * int(out[n*152*270])
-		if want := glideX(marks, int64(n)); got != want {
-			t.Errorf("frame %d is cropped at %d, the glide says %d", n, got, want)
+	for n, got := range renderedLefts(t, source, seg, 215) {
+		x := glideX(marks, int64(n))
+		if cut, off := glideCrop(x, 152, 480, 154); got != cut+off {
+			t.Errorf("frame %d is cropped at %d, the glide is at %.3f", n, got, x)
 		}
 	}
 }
@@ -342,7 +369,7 @@ func TestACropMarkMovedWithItsAngleStaysInThePicture(t *testing.T) {
 	seg := loadedClip(t, path).Segments[0]
 	for _, at := range []float64{10.0, 10.2, 10.5, 10.8, 11.0} {
 		if got := src.CropAt(seg, at, cropW, src.Width); got != most-100 {
-			t.Errorf("dragged to %d at 10.5 s, the crop at %.1f s stands at %d", most-100, at, got)
+			t.Errorf("dragged to %d at 10.5 s, the crop at %.1f s stands at %v", most-100, at, got)
 		}
 	}
 }

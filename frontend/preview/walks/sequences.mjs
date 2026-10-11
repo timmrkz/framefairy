@@ -4172,8 +4172,7 @@ function glideOf(marks, src) {
       if (k >= kb) continue;
       const [ka, xa] = on[i - 1];
       const u = (k - ka) / (kb - ka);
-      const x = xa + (xb - xa) * (u * u * (3 - 2 * u));
-      return 2 * Math.floor(x / 2 + 0.5);
+      return xa + (xb - xa) * (u * u * (3 - 2 * u));
     }
     return on[on.length - 1][1];
   };

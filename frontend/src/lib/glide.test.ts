@@ -33,8 +33,8 @@ describe("the glide of a crop over its marks", () => {
       { at: 10.8, x: 300 },
     ];
     // Frame 263 lies 8 of the 15 frames on, where smoothstep has gone
-    // 55 % of the way: 210, as the engine's test has it.
-    expect(glidingLeft(marks, 10.52, 25, 0, 608, 1920)).toBe(210);
+    // 55 % of the way: 209.985.
+    expect(glidingLeft(marks, 10.52, 25, 0, 608, 1920)).toBeCloseTo(209.985, 3);
     expect(glidingLeft(marks, 9, 25, 0, 608, 1920)).toBe(100);
     expect(glidingLeft(marks, 12, 25, 0, 608, 1920)).toBe(300);
   });

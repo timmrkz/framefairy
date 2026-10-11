@@ -192,16 +192,21 @@ func (s SourceInfo) onFrames(marks []CropMark, cropW, width int) []frameMark {
 // frames in order. Before the first mark it stands where the first is,
 // after the last where the last is. Between two it moves the whole way,
 // by smoothstep, u²(3-2u), which starts and settles gently the way a
-// camera operator pans, and lands on an even pixel.
+// camera operator pans.
+//
+// The edge is not rounded to a pixel of the picture. A slow glide moves
+// less than a pixel a frame, and rounded it stood still for frames and
+// then jumped, which was the stutter Tim saw on #192. The render places
+// it to the pixel of the short instead, see glideCrop.
 //
 // The render works the same sum out in ffmpeg, see glideExpr, and the
 // video preview in lib/glide.ts, step by step in the same order, each a
-// double rounded on its own, so the three agree to the pixel. Each step
-// is converted on its own here, which keeps Go from fusing a multiply and
-// an add into one instruction, as it may on arm64.
-func glideX(marks []frameMark, k int64) int {
+// double rounded on its own, so the three agree. Each step is converted
+// on its own here, which keeps Go from fusing a multiply and an add into
+// one instruction, as it may on arm64.
+func glideX(marks []frameMark, k int64) float64 {
 	if k <= marks[0].k {
-		return marks[0].x
+		return float64(marks[0].x)
 	}
 	for i := 1; i < len(marks); i++ {
 		b := marks[i]
@@ -211,14 +216,33 @@ func glideX(marks []frameMark, k int64) int {
 		a := marks[i-1]
 		u := float64(k-a.k) / float64(b.k-a.k)
 		ease := float64(float64(u*u) * float64(3-float64(2*u)))
-		x := float64(a.x) + float64(float64(b.x-a.x)*ease)
-		return 2 * int(math.Floor(float64(x/2)+0.5))
+		return float64(a.x) + float64(float64(b.x-a.x)*ease)
 	}
-	return marks[len(marks)-1].x
+	return float64(marks[len(marks)-1].x)
+}
+
+// glideMargin is how much wider than the crop the render first cuts a
+// gliding crop out of the picture, on an even pixel, so the rest of the
+// way can be taken to the pixel of the short.
+const glideMargin = 2
+
+// glideCrop is how the render places a gliding crop whose left edge is x
+// on a picture so wide: first a cut glideMargin wider than the crop, on
+// the even pixel at or left of x, kept inside the picture, and then, once
+// that is scaled to wide pixels, the crop from off pixels into it. scaled
+// is how many pixels wide the cut is once scaled, and its own width where
+// it is not. glideExpr writes the same steps for ffmpeg.
+func glideCrop(x float64, cropW, width, scaled int) (cut, off int) {
+	most := width - cropW - glideMargin
+	most -= most % 2
+	at := min(float64(2*math.Floor(float64(x/2))), float64(most))
+	in := float64(float64(float64(x-at)*float64(scaled)) / float64(cropW+glideMargin))
+	return int(at), int(math.Floor(float64(in + 0.5)))
 }
 
 // glideExpr is glideX as an ffmpeg expression for the crop filter of a
-// piece whose first frame is frame first of the video. The crop filter
+// piece whose first frame is frame first of the video, see glideCrop for
+// the two steps the render takes with it. The crop filter
 // counts the frames it is given as n, from nought, so frame k of the video
 // is n+first. Every step is written in the order glideX takes it. The
 // stretches between marks are found by halving, so the expression nests
@@ -241,7 +265,7 @@ func glideExpr(marks []frameMark, first int64) string {
 		if lo == hi {
 			a, b := marks[lo-1], marks[lo]
 			u := fmt.Sprintf("((%s-%d)/%d)", k, a.k, b.k-a.k)
-			return fmt.Sprintf("2*floor((%d+%d*(%s*%s*(3-2*%s)))/2+0.5)", a.x, b.x-a.x, u, u, u)
+			return fmt.Sprintf("(%d+%d*(%s*%s*(3-2*%s)))", a.x, b.x-a.x, u, u, u)
 		}
 		mid := (lo + hi + 1) / 2
 		return fmt.Sprintf("if(lt(%s,%d),%s,%s)", k, marks[mid-1].k, between(lo, mid-1), between(mid, hi))
@@ -249,29 +273,58 @@ func glideExpr(marks []frameMark, first int64) string {
 	return fmt.Sprintf("if(lte(%s,%d),%d,if(gte(%s,%d),%d,%s))", k, marks[0].k, marks[0].x, k, last.k, last.x, between(1, len(marks)-1))
 }
 
-// cropXOf is the left edge of a piece's crop for the render: a number for
-// a crop that stands still, and an ffmpeg expression in the frame for one
-// that glides, quoted for the filter graph.
-func (s SourceInfo) cropXOf(seg Segment, cropW, width int) string {
+// cropFilters are the filters that crop a piece for the render and scale
+// it to outW by outH, or leave it as cropped where those are the crop's
+// own size. A crop that stands still is one cut on an even pixel. One
+// that glides is cut glideMargin wider on an even pixel, scaled, and
+// cropped again to the pixel of the short, see glideCrop, in deep, the
+// picture's colours with no chroma shared between two columns, so the
+// last crop can start on any of them.
+func (s SourceInfo) cropFilters(seg Segment, cropW, cropH, cropY, width, outW, outH int, scale, deep string) []string {
+	still := func(x int) []string {
+		out := []string{fmt.Sprintf("crop=%d:%d:%d:%d", cropW, cropH, x, cropY)}
+		if outW != cropW || outH != cropH {
+			out = append(out, fmt.Sprintf("scale=%d:%d:%s", outW, outH, scale))
+		}
+		return out
+	}
 	if len(seg.Marks) == 0 {
-		return strconv.Itoa(ClampCropX(seg.CropX, cropW, width))
+		return still(ClampCropX(seg.CropX, cropW, width))
 	}
 	marks := s.onFrames(seg.Marks, cropW, width)
 	first := s.markFrame(seg.Start)
 	if s.FPSNum > 0 && s.FPSDen > 0 {
 		first, _ = s.pieceFrames(seg.Start, seg.End)
 	}
-	if len(marks) == 1 || s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return strconv.Itoa(glideX(marks, first))
+	moves := false
+	for _, m := range marks {
+		moves = moves || m.x != marks[0].x
 	}
-	return "'" + glideExpr(marks, first) + "'"
+	if !moves || width-cropW < glideMargin || s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return still(ClampCropX(intPtr(int(glideX(marks, first))), cropW, width))
+	}
+	scaled := cropW + glideMargin
+	if outW != cropW || outH != cropH {
+		scaled = int(math.Round(float64(scaled) * float64(outW) / float64(cropW)))
+	}
+	most := width - cropW - glideMargin
+	most -= most % 2
+	x := glideExpr(marks, first)
+	at := fmt.Sprintf("min(2*floor(%s/2),%d)", x, most)
+	out := []string{fmt.Sprintf("crop=%d:%d:'%s':%d", cropW+glideMargin, cropH, at, cropY)}
+	if scaled != cropW+glideMargin {
+		out = append(out, fmt.Sprintf("scale=%d:%d:%s", scaled, outH, scale))
+	}
+	return append(out, "format="+deep,
+		fmt.Sprintf("crop=%d:%d:'floor((%s-%s)*%d/%d+0.5)':0:exact=1", outW, outH, x, at, scaled, cropW+glideMargin))
 }
 
 // CropAt is the left edge of a piece's crop on the frame that holds a
-// moment, as the render places it: still, or gliding over its marks.
-func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) int {
+// moment, on the picture: still, or gliding over its marks, where the
+// render places it to the pixel of the short.
+func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) float64 {
 	if len(seg.Marks) == 0 {
-		return ClampCropX(seg.CropX, cropW, width)
+		return float64(ClampCropX(seg.CropX, cropW, width))
 	}
 	return glideX(s.onFrames(seg.Marks, cropW, width), s.frameHolding(at))
 }
@@ -438,7 +491,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 		if width <= cropW {
 			width = math.MaxInt32
 		}
-		left := glideX(frames.onFrames(marks, cropW, width), frames.frameHolding(at))
+		left := int(math.Round(glideX(frames.onFrames(marks, cropW, width), frames.frameHolding(at))))
 		return &left
 	}
 	key := keyCropX

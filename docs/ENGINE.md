@@ -934,11 +934,18 @@ in the plan and comes back with its piece. A mark steers the pieces of its
 camera angle in its part, `markedPieces`, so no glide crosses a cut. With
 no mark, or one, the crop stands still. With two or more it glides from
 each to the next over the whole time between them by smoothstep, `glideX`,
-on the frames of the video and on even pixels. The render gives ffmpeg's
-crop filter the same sum as an expression in the frame, `glideExpr`, step
-by step in the same order, and the video preview works it out in
-`lib/glide.ts`, so the three agree to the pixel, held to one table,
-`frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
+on the frames of the video. The left edge is not rounded to a pixel of the
+picture: a slow glide moves less than one a frame, and rounded to even
+pixels it stood still for frames and then jumped, which read as a crop
+frame that stutters. The render gives ffmpeg the same sum as an
+expression in the frame, `glideExpr`, step by step in the same order, and
+places it to the pixel of the short, `glideCrop`: it cuts the picture two
+pixels wider than the crop on an even pixel, scales that, and crops it
+again at the pixel of the short nearest the glide, in colours with no
+chroma shared between two columns. That is within half a pixel of the
+short of the glide on every frame, and a slow glide moves on every frame.
+The video preview works the glide out in `lib/glide.ts`, and the two are
+held to one table, `frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
 frame moves that mark, and anywhere else it moves the angle's crop and
 every mark of the angle as far as the crop shown there moved, `SetCrop`.
 Automatic crop removes the angle's marks, and a rotation removes the marks

@@ -176,8 +176,10 @@ two above:
 - **The engine.** `CropWindow` takes the rotated shape of a part.
   `BuildFilterGraph` puts `transpose` before the crop of a rotated piece
   and gives the crop a left edge that changes with the frame, an ffmpeg
-  expression in `t` built from the marks, worked out on whole frames and
-  even pixels, so the render and the video preview agree to the pixel.
+  expression in the frame built from the marks, worked out on whole
+  frames, and placed to the pixel of the short, see `glideCrop` in
+  docs/ENGINE.md, so the render and the video preview agree within half a
+  pixel of the short.
   The face finder samples rotated frames for a rotated part, so its
   automatic crop is found on the upright picture.
 - **The app.** The video preview rotates the frame it draws, with a
