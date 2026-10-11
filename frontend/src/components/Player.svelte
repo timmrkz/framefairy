@@ -1248,7 +1248,7 @@
          picture. The shade is the shadow of the inside of the frame, so
          it follows the frame's rounded corners and lies under its line,
          with nothing of the picture left bright between the two. The line
-         itself is drawn in .over, above the viewer's rounded corners. -->
+         itself is drawn in .atop, above the viewer's rounded corners. -->
     {#if crop?.inside}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
@@ -1387,7 +1387,7 @@
        picture's edge too. A box of the picture's own size and place, in
        the same cell as the viewer, takes no clicks: the crop under it is
        what the hand moves. -->
-  <div class="over">
+  <div class="atop">
     <div class="lid" class:sideways={turn % 180 !== 0}>
       {#if crop?.inside}
         <div class="frame" class:lit={dragLeft !== null} style="left: {crop.left}%; width: {crop.width}%"></div>
@@ -1427,7 +1427,7 @@
   }
 
   .viewer,
-  .over {
+  .atop {
     grid-area: 1 / 1;
     display: flex;
     height: var(--pic-h);
@@ -1441,7 +1441,7 @@
 
   /* Over the crop and under the captions, the way the frame always lay:
      the same layer as the crop, and after it. */
-  .over {
+  .atop {
     z-index: 2;
     pointer-events: none;
   }
