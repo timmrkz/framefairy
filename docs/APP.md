@@ -1308,8 +1308,8 @@ bubble scrolled by those eight pixels.
   where the playhead stands, and while clips are being found, the part
   being searched.
     - **At rest the window is marked at its corners, not drawn.** A bar
-      runs just outside the top border and one just outside the bottom
-      border, over the window's width, and a triangle hangs from each end
+      lies on the top border and one on the bottom border, over them,
+      across the window's width, and a triangle hangs from each end
       of them with its tip reaching into the track. Nothing else of it
       lies over the track, so it hides no clip and does not read as a
       window. It says where New looks next, which the app decides, see
@@ -1691,6 +1691,11 @@ bubble scrolled by those eight pixels.
       frame round the wash, nearly three times as tall as the rest. Zoomed out, the
       track is the episode with all its clips, the way an editor's
       timeline shows every clip on it.
+    - **A frame lies on the border of its track.** The chosen clip's frame
+      on the clip timeline, and the window on the range picker, at rest
+      and while it is searched, lie over the track's top and bottom border
+      rather than just inside or just outside it, so no grey line runs
+      beside them. Found by Tim on #192.
     - **Detail comes in as there is room for it.** The caption blocks are
       drawn only while the caption in the middle of the clip is at least
       as wide as a block is tall, 16 pixels. Narrower, a block's line has
@@ -1888,7 +1893,7 @@ or walks across the picture. Plan row 3.26, the design is in
   crop of the whole shot, every mark of it by the same distance.
 - **The video preview follows the glide frame by frame** while the clip
   plays, so what plays is what renders.
-- **Each crop mark is a dot** on the foot line of the clip timeline, under
+- **Each crop mark is a dot** on the clip's bottom rule on the clip timeline, under
   the thumbnails, in the app's colour, filled white while the playhead is
   on its frame. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a

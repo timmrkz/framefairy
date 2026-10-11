@@ -1614,18 +1614,6 @@
          while the playhead is on the video, see .chosen.dim in app.css.
          It lays nothing out: each part is still placed on the track. -->
     <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
-      <!-- The clip, whole, from its first piece to its last. The rules above
-           and below run the length of it whatever is cut out in between,
-           because the holes are inside one clip and not between several: a
-           rule that broke at every cut would read as three clips standing in
-           a row. -->
-      {#if wholeClip}
-        <div
-          class="span frame"
-          class:lit={!!clip && clip.key === hovered}
-          style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
-        ></div>
-      {/if}
       {#each drawnPieces as p, i (i)}
         <div
           class="piece"
@@ -1820,13 +1808,34 @@
       {/if}
     </div>
   </div>
+    {#if wholeClip}
+      <!-- The clip, whole, from its first piece to its last. The rules above
+           and below run the length of it whatever is cut out in between,
+           because the holes are inside one clip and not between several: a
+           rule that broke at every cut would read as three clips standing in
+           a row. Drawn over the track rather than in it, so its rules lie on
+           the track's top and bottom border, the way the window lies on the
+           range picker's, where inside the track they stood just within the
+           border with a grey line showing past them. See .frames. -->
+      <div class="frames">
+        <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+          <div
+            class="span frame"
+            class:lit={!!clip && clip.key === hovered}
+            style="left: calc(1px + (100% - 2px) * {x(wholeClip.start) / 100}); width: calc((100% - 2px) * {(x(wholeClip.end) - x(wholeClip.start)) / 100})"
+          ></div>
+        </div>
+      </div>
+    {/if}
     {#if clip}
-      <!-- The crop marks, each a dot centred on the foot line of the track,
-           half in it and half under it, so on the frame of a thumbnail the
+      <!-- The crop marks, each a dot centred on the clip's bottom rule, half
+           in the track and half under it, so on the frame of a thumbnail the
            dot sits just under it and each takes its own hand. They are
            drawn over the track, like the playhead, because the track clips
-           what is inside it. Taken hold of the way a thumbnail is. Plan row
-           3.26. -->
+           what is inside it, and on the track's inside, see .inside, so a
+           dot stands on its frame where the waveform has it. Taken hold of
+           the way a thumbnail is. Plan row 3.26. -->
+      <div class="inside">
       <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
         {#each cropDots as m, i (m.at)}
           <div
@@ -1845,6 +1854,7 @@
             ondblclick={(e) => removeMark("crop", m.at, e)}
           ></div>
         {/each}
+      </div>
       </div>
     {/if}
     {#if time >= view.from && time <= view.to}
@@ -1929,6 +1939,30 @@
     font-size: 11px;
     color: var(--faint);
     white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Over the track, its whole box, rounded the same, so the clip's frame
+     lies on the track's border and a clip that runs out of view is cut at
+     the track's edge. A share across it is a share of the track's inside,
+     a pixel in from either side, where the waveform and the pieces are
+     drawn, so the frame is placed with that pixel added. */
+  .frames {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-m);
+    overflow: clip;
+    pointer-events: none;
+  }
+
+  /* Over the track, as wide as its inside, so a share across it is where
+     the same moment is in the track. */
+  .inside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 1px;
+    right: 1px;
     pointer-events: none;
   }
 
@@ -2215,13 +2249,16 @@
     color: #fff;
   }
 
-  /* A crop mark: a dot of the app's colour centred on the foot line of
-     the track, in a box wide enough to take hold of. It is filled white
+  /* A crop mark: a dot of the app's colour centred on the clip's bottom
+     rule, in a box wide enough to take hold of. It is filled white
      while the playhead is on its frame, under the hand or being dragged,
      the way a thumbnail sits on a chip then. Whole pixels throughout. */
   .cropdot {
     position: absolute;
-    bottom: -6px;
+    /* Its middle on the middle of the clip's bottom rule, which lies on
+       the track's border and a pixel in from it. */
+    bottom: calc(var(--frame-line) / 2 - 6px);
+    pointer-events: auto;
     width: 12px;
     height: 12px;
     margin-left: -6px;

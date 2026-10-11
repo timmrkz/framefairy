@@ -293,6 +293,14 @@
 //                      nothing bright left there, the inside of the frame
 //                      is not shaded and the picture beside it is, and the
 //                      line stands where the crop the hand moves stands
+//   ["on borders"]     the chosen clip's frame on the clip timeline and the
+//                      bars of the window at rest on the range picker lie
+//                      on their track's top and bottom border, read off a
+//                      screenshot: the outermost rows of the track's box
+//                      are the app's colour, as deep as the line is thick,
+//                      and the row just outside it is not, so no grey of
+//                      the border shows beside them, away from the
+//                      playhead and the marks that stand on the lines
 //   ["frame whole", "turned"]
 //                      the same on a part rotated a quarter, whose picture
 //                      stands inside the viewer rather than filling it
@@ -1346,6 +1354,14 @@ export const sequences = [
     // the picture in the frame's own rounded corners, where the shade
     // beside it stopped short of them. An app this size makes the picture
     // fill the viewer, so its corners are the viewer's. Plan row 2.195.
+    // Found by Tim on #192: the clip's frame on the clip timeline stood
+    // just inside the track's border, with the grey of the border showing
+    // above and below it, and the window's bars on the range picker stood
+    // just outside it, with the border showing under them.
+    name: "the clip's frame and the window's bars lie on their track's borders",
+    steps: [["on borders"]],
+  },
+  {
     name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
     steps: [
       ["app size", 1000, 1000],
@@ -3584,6 +3600,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "frame whole":
         wrong = await frameWhole(page, arg === "turned");
         break;
+      case "on borders":
+        wrong = await onBorders(page);
+        break;
       case "edges as rendered":
         wrong = await edgesAsRendered(page);
         break;
@@ -4202,4 +4221,94 @@ async function frameWhole(page, turned) {
     },
     { shot, at, clip },
   );
+}
+
+// What is wrong with where the frames lie on the two tracks, or null, read
+// off a screenshot of each: the chosen clip's frame on the clip timeline
+// and the bars of the window at rest on the range picker. Each lies on its
+// track's top and bottom border, so the outermost rows of the track's box
+// are the app's colour as deep as the line is thick, and the row just
+// outside the box is not. Columns near the playhead and the marks standing
+// on a line are left out, and so are the frame's rounded ends. See
+// ["on borders"].
+async function onBorders(page) {
+  const at = await page.evaluate(() => {
+    const box = (e) => e?.getBoundingClientRect().toJSON();
+    const span = document.querySelector(".clip-timeline .span");
+    const aim = document.querySelector(".aim");
+    const bar = aim?.querySelector(".bar.top");
+    // The app's colour and its lighter shade, the frame under the hand,
+    // as numbers, whether the browser says them as rgb() or color(srgb).
+    const colour = (css) => {
+      const e = document.createElement("i");
+      e.style.color = css;
+      document.body.append(e);
+      const said = getComputedStyle(e).color;
+      e.remove();
+      const n = said.match(/[\d.]+/g).map(Number);
+      return said.startsWith("color(") ? n.slice(0, 3).map((v) => Math.round(v * 255)) : n.slice(0, 3);
+    };
+    const away = [...document.querySelectorAll(".playhead, .head, .cropdot, .thumb, .tip")].map((e) => box(e));
+    return {
+      dpr: devicePixelRatio,
+      accent: [colour("var(--accent)"), colour("var(--accent-hi)")],
+      clip: span && { track: box(document.querySelector(".clip-timeline .track")), from: box(span).left, to: box(span).right, deep: parseFloat(getComputedStyle(span).borderTopWidth) },
+      range: aim && { track: box(aim.parentElement.querySelector(".track")), from: box(aim).left, to: box(aim).right, deep: parseFloat(getComputedStyle(bar, null).backgroundSize.split(" ")[1]) },
+      away,
+    };
+  });
+  if (!at.clip) return "the clip timeline shows no frame for the chosen clip";
+  if (!at.range) return "the range picker shows no window at rest";
+  const problems = [];
+  for (const [name, t] of [["the clip's frame on the clip timeline", at.clip], ["the window's bars on the range picker", at.range]]) {
+    const clip = { x: Math.floor(t.track.left) - 2, y: Math.floor(t.track.top) - 4, width: Math.ceil(t.track.width) + 4, height: Math.ceil(t.track.height) + 8 };
+    const shot = (await page.screenshot({ clip })).toString("base64");
+    const found = await page.evaluate(
+      async ({ shot, at, t, clip, name }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${shot}`;
+        await img.decode();
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const g = c.getContext("2d", { willReadFrequently: true });
+        g.drawImage(img, 0, 0);
+        const data = g.getImageData(0, 0, c.width, c.height).data;
+        const d = at.dpr;
+        // The pixel in the middle of a CSS pixel of the page.
+        const px = (x, y) => {
+          const i = (Math.floor((y - clip.y + 0.5) * d) * c.width + Math.floor((x - clip.x + 0.5) * d)) * 4;
+          return [data[i], data[i + 1], data[i + 2]];
+        };
+        const accent = (p) => at.accent.some((a) => p.every((v, k) => Math.abs(v - a[k]) <= 24));
+        const say = (p) => `rgb(${p.join(", ")})`;
+        const near = (x) => at.away.some((b) => b && x > b.left - 4 && x < b.right + 4);
+        const problems = [];
+        let looked = 0;
+        for (let x = Math.ceil(t.from) + 12; x < Math.floor(t.to) - 12; x += 3) {
+          if (near(x)) continue;
+          looked++;
+          for (const [side, edge, inward] of [["top", t.track.top, 1], ["bottom", t.track.bottom - 1, -1]]) {
+            for (let k = 0; k < t.deep; k++) {
+              const p = px(x, edge + inward * k);
+              if (!accent(p)) {
+                problems.push(`${name} does not cover the ${side} border at ${(x - t.from).toFixed(0)} px along it: ${k} px in from the track's edge is ${say(p)}`);
+                return problems;
+              }
+            }
+            const out = px(x, edge - inward);
+            if (accent(out)) {
+              problems.push(`${name} stands outside the ${side} border at ${(x - t.from).toFixed(0)} px along it: the row just past the track's edge is the app's colour`);
+              return problems;
+            }
+          }
+        }
+        if (looked < 5) problems.push(`${name} had only ${looked} places to look at away from the playhead and the marks`);
+        return problems;
+      },
+      { shot, at, t, clip, name },
+    );
+    problems.push(...found);
+  }
+  return problems.length ? problems.join("; ") : null;
 }

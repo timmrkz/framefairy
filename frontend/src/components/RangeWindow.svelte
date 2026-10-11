@@ -4,8 +4,8 @@
   // being found, or a search stands stopped, the window it is about is
   // drawn over the track, with how far the episode has been read for it.
   // At rest the window is not drawn at all, only marked at its corners: a
-  // bar just outside the top border and one just outside the bottom
-  // border, with a triangle at each end whose tip reaches into the track.
+  // bar on the top border and one on the bottom border, over them, with a
+  // triangle at each end whose tip reaches into the track.
   // Laid over a short episode searched whole, the window hid every clip
   // just found, and a frame round it read as the same window, so nothing
   // of the mark lies over the track but the tips. It says where New looks
@@ -408,9 +408,9 @@
 {/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
-       the track. A bar just outside the top border and one just outside
-       the bottom border join the marks, and only the tips of the
-       triangles reach into the track, so nothing lies over a clip. It is
+       the track. A bar on the top border and one on the bottom border
+       join the marks, and past them only the tips of the triangles reach
+       into the track, so nothing lies over a clip. It is
        drawn beside the track rather than in it, because the track clips
        what is inside it. The four triangles are the handles, the left two
        for where the window starts and the right two for where it ends, and
@@ -576,9 +576,10 @@
   }
 
   /* The window at rest, marked at its corners. A bar three pixels thick
-     runs just outside the top border and just outside the bottom one, and
-     a triangle hangs from each end of it, its tip reaching seven pixels
-     into the track along the window's edge. The bars and the triangles
+     lies on the top border and on the bottom one, over it, the way the
+     clip's frame lies on the clip timeline's, and a triangle hangs from
+     each end of it, its tip reaching seven pixels past the bar along the
+     window's edge. The bars and the triangles
      are what takes the pointer, each more to the hand than it is drawn,
      and the whole of the mark lights up while any of it is under the
      pointer or held, because it is one thing. */
@@ -620,12 +621,12 @@
   }
 
   .bar.top {
-    top: -6px;
+    top: -3px;
     background-position: 0 3px;
   }
 
   .bar.bottom {
-    bottom: -6px;
+    bottom: -3px;
     background-position: 0 3px;
   }
 
@@ -654,11 +655,11 @@
   }
 
   .tip.top {
-    top: -6px;
+    top: -3px;
   }
 
   .tip.bottom {
-    bottom: -6px;
+    bottom: -3px;
   }
 
   .tip.top::after {
