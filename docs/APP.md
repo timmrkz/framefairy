@@ -1836,6 +1836,19 @@ moved by hand, on the clip timeline.
   caption appears, and the one before goes with it, so nothing is left bare
   that was not bare before. Nothing overlaps, because the picture shows one
   caption at a time. An edge lands on a whole frame.
+- **An edge dragged over a word removes it.** Dragged in, an edge takes
+  out of its caption every word whose middle it passes, the way delete
+  removes a word, so pulling the left edge of "one two three" past "one"
+  reads "two three", and the right edge past "three" reads "one two".
+  Dragged back out over a word it took, the word comes back. The last word
+  stays, because delete removes a caption whole. The caption box in the
+  video preview leaves the words out while the edge moves, and Cmd+Z takes
+  back the words and the edge in one step, `SetCaptionTime` and
+  `trimCaption` in the engine. An edge moved by hand is kept against the
+  word its caption was laid out from, a removed word among them, so it
+  stays where it was put when that word is removed. It was kept against the
+  last word shown, so Tim shortened a caption, found its word still there,
+  removed it in the caption box, and the caption grew back to its old size.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
