@@ -31,15 +31,8 @@
 </script>
 
 <section class="scroll">
-  <div class="card asks">
-    <span class="ask corner">
-      <Info label="What a report holds" side="right">
-        What you write here, the app's log of what it did, which build this is and what Mac it runs on, and your
-        settings. Never a video, its words or its captions, and your home folder is written as ~. It is saved on the
-        Desktop as one zip file, which Finder shows, and you can look inside before you send it.
-      </Info>
-    </span>
-    <div class="item words-row">
+  <div class="card">
+    <div class="item">
       <textarea
         class="selectable"
         bind:value={what}
@@ -58,6 +51,17 @@
           <span class="muted">Saved on the Desktop as one zip file</span>
         {/if}
       </div>
+      <!-- Beside the button rather than in the card's corner, where it
+           pushed the field off the middle of its row, and always there,
+           as Tim asked, since what goes in a report is worth seeing
+           before it is made. -->
+      <span class="ask always">
+        <Info label="What a report holds" side="right">
+          What you write here, the app's log of what it did, which build this is and what Mac it runs on, and your
+          settings. Never a video, its words or its captions, and your home folder is written as ~. It is saved on the
+          Desktop as one zip file, which Finder shows, and you can look inside before you send it.
+        </Info>
+      </span>
       <button class="act primary" onclick={make} disabled={making} title="Saves the report on the Desktop and shows it in Finder">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Make Report"}
@@ -81,14 +85,9 @@
     margin: 0 auto;
   }
 
-  /* The info mark sits in the card's top right corner, see .ask.corner
-     in app.css, and the field keeps clear of it. */
-  .card {
-    position: relative;
-  }
-
-  .words-row {
-    padding-right: 28px;
+  .always {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   /* A field of ten whole lines of the card's 19 px, with the padding of a

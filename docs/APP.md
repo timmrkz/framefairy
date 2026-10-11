@@ -2362,7 +2362,7 @@ In the Help menu too, where Mac apps keep it. One field for what happened
 and **Make Report**, which saves one zip file on the Desktop and shows it
 in Finder: what was written, the app's log, the build and the Mac, and
 the settings, with the home folder written as ~ and nothing of a video
-but its file name. The info mark in the card's corner says what goes in.
+but its file name. The info mark beside **Make Report** says what goes in.
 See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
 
 ## Where things are kept
