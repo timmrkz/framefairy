@@ -819,13 +819,13 @@ func (q *queue) runJob(job *Job) {
 		}
 	})
 	q.mu.Lock()
-	state, failed := job.State, job.Error
+	state, failed, written := job.State, job.Error, job.Written
 	q.mu.Unlock()
 	ended := theLog.jobLine(zerolog.InfoLevel, job)
 	if state == JobFailed {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
-	ended.Str("state", string(state)).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
+	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

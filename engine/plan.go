@@ -95,6 +95,10 @@ type PlanOptions struct {
 	// the model as lines to leave, and a clip that is mostly those lines
 	// all the same is left out, see takenLines.
 	Taken []Window
+	// Listed are the parts of Taken whose clips are still in the list,
+	// not removed. An episode shorter than a clip has one moment only, so
+	// it is made again once its clip was removed, see wholeClip.
+	Listed []Window
 }
 
 // ByHand is the clip set made with I and O, see PlanOptions.By.
@@ -662,6 +666,10 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 		return nil, errors.New("no speech was found in the audio")
 	}
 	opts.Count = 1
+	// The episode is the one moment there is. A clip of it still in the
+	// list is the clip, and a search finds nothing new. One removed is no
+	// answer to a search asked for since, which is asking for it again.
+	opts.Taken = opts.Listed
 	build := e.newPlanBuilder(ctx, sourcePath, source, lines, nil, opts, "")
 	defer build.stop()
 	all := [2]int{1, len(lines)}
@@ -670,10 +678,21 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 	if err != nil {
 		return nil, err
 	}
-	if len(clips) == 0 {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	if len(clips) == 0 && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if len(clips) == 0 && len(build.taken) > 0 {
+		// Searched again with its clip in the list, the same answer as a
+		// window of a long episode with nothing beyond its clips, see
+		// BuildPlan.
+		if err := build.none(); err != nil {
+			return nil, err
 		}
+		e.Log.OK("the episode is shorter than a clip and its clip is in the list, so there is nothing new")
+		return &PlanFile{Source: filepath.Base(sourcePath), PlanID: build.planID,
+			PlannedWith: build.stamp, Clips: []PlanClip{}}, nil
+	}
+	if len(clips) == 0 {
 		return nil, renderErr("there is nothing to make a clip of in this video")
 	}
 	e.Log.OK("the episode is shorter than a clip at its shortest, so it is the clip")

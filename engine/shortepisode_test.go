@@ -49,3 +49,69 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 		t.Errorf("the clip runs %.2f to %.2f, want the whole episode", from, to)
 	}
 }
+
+// The clip of a short episode taken out of the list does not stop the
+// episode from having one. Tim removed the one clip of a fifteen second
+// video and searched again, and every search failed with "there is
+// nothing to make a clip of in this video": the removed clip still
+// counted as the moment taken, and it was the only moment there is. A
+// search with the clip still in the list finds nothing new, and that is
+// not a failure either.
+func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
+	source := testEpisode(t, "15")
+	ownTrainingDir(t)
+	var heard, asked int32
+	server := fakeModel(t, &asked)
+	defer server.Close()
+
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	base := DefaultOptions()
+	base.LLMURL = server.URL
+	base.ASRModel = t.TempDir()
+	base.Width, base.Height = 360, 640
+	p := NewProject(e, source, base)
+	ctx := context.Background()
+	req := PlanRequest{Count: 1, Min: 20, Max: 30}
+
+	first, err := p.Search(ctx, req, nil)
+	if err != nil {
+		t.Fatalf("first search: %v %s", err, p.LastError())
+	}
+
+	// Searched again with the clip in the list: nothing new, no failure.
+	again, err := p.Search(ctx, req, nil)
+	if err != nil {
+		t.Fatalf("a search with the clip still there failed: %v %s", err, p.LastError())
+	}
+	if _, clips, _ := LoadClips(again); len(clips) != 0 {
+		t.Errorf("a search with the clip still there made %d clips more", len(clips))
+	}
+
+	_, clips, err := LoadClips(first)
+	if err != nil || len(clips) != 1 {
+		t.Fatalf("first plan: %d clips, %v", len(clips), err)
+	}
+	if err := SetRejected(first, clips[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := p.Search(ctx, req, nil)
+	if err != nil {
+		t.Fatalf("search after the clip was removed: %v %s", err, p.LastError())
+	}
+	_, clips, err = LoadClips(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clips) != 1 {
+		t.Fatalf("%d clips after the removed one, want the episode again", len(clips))
+	}
+	segs := clips[0].Segments
+	if from, to := float64(segs[0].Start), float64(segs[len(segs)-1].End); from > 0.5 || to < 14 {
+		t.Errorf("the clip runs %.2f to %.2f, want the whole episode", from, to)
+	}
+	if asked != 0 {
+		t.Errorf("the model was asked %d times about a clip there is only one of", asked)
+	}
+}

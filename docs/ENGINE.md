@@ -1010,7 +1010,10 @@ length, one after another. A run that asks for more is refused before it
 transcribes. An episode shorter than a clip at its shortest is the one
 exception: it has one clip, the whole of it, shaped and framed like any
 other, and the model is not asked. Nothing chose it, so nothing about it
-is recorded for training.
+is recorded for training. Searched again, it is held only to the clips
+still in the list, `PlanOptions.Listed`: with its clip there the search
+finds nothing new, and with its clip removed the search makes it again,
+since the episode has no other moment to offer.
 
 ## Planning on your machine
 

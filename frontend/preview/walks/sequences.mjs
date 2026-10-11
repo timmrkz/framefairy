@@ -160,6 +160,8 @@
 //                      and drags the playhead quickly back and forth three
 //                      times over the middle of the clip, where its cut is,
 //                      and then on to that share
+//   ["remove clip"]    presses the bin of the clip on screen in the clip
+//                      list, and waits until the Go side has it removed
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -228,8 +230,9 @@
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
 //   ["cards", n]       the clip list holds n clips
-//   ["whole clip", s]  the episode on screen, s seconds long, has one clip,
-//                      and it runs from its first second to its last
+//   ["whole clip", s]  the episode on screen, s seconds long, has one clip
+//                      in the list, and it runs from its first second to
+//                      its last
 //   ["waveform"]       the clip timeline draws the waveform across the whole
 //                      of its view within ten seconds, read from its canvas
 //   ["rulers fit", s]  the range picker has lines and times on it, every
@@ -598,6 +601,26 @@ export const sequences = [
       ["cards", 1],
       ["whole clip", 15],
       ["rulers fit", 15],
+    ],
+  },
+  {
+    // Tim removed the one clip of a video of 15 s and pressed New, and
+    // every search failed with "there is nothing to make a clip of in
+    // this video": the clip removed still counted as the one moment the
+    // video has. New brings it back, and New with it in the list finds
+    // nothing more and fails nothing either.
+    name: "a video shorter than a clip gets its clip again once it was removed",
+    steps: [
+      ["add", 15],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      ["remove clip"],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
     ],
   },
   {
@@ -2604,7 +2627,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "whole clip": {
-        const clips = await ask(page, "Clips", await episodeOn(page));
+        const clips = (await ask(page, "Clips", await episodeOn(page)))?.filter((c) => !c.rejected);
         if (clips?.length !== 1) wrong = `the episode has ${clips?.length} clips, not its one`;
         else if (clips[0].start > 1 || clips[0].end < arg - 1.5) {
           wrong = `the clip runs ${clips[0].start} to ${clips[0].end}, not the episode of ${arg} s`;
@@ -2919,6 +2942,23 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
+        break;
+      }
+      case "remove clip": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        // The bin shows while the pointer is on the card, as it does for
+        // a hand.
+        const bin = page.locator(`button[aria-label="Remove ${entry.title || entry.slug}"]`);
+        await page.hover(`li:has(> button[aria-label="Remove ${entry.title || entry.slug}"])`);
+        await bin.click();
+        let gone = false;
+        for (let i = 0; i < 50 && !gone; i++) {
+          await page.waitForTimeout(100);
+          gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
+        }
+        if (!gone) wrong = "the bin left the clip in the list";
+        await watch.step("remove clip", s);
         break;
       }
       case "thumbnail": {

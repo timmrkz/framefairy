@@ -104,6 +104,9 @@ type Options struct {
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
 	Taken []Window
+	// Listed are the parts of Taken whose clips are not removed, see
+	// PlanOptions.Listed.
+	Listed []Window
 	// NoRecord stops training records from being written.
 	NoRecord bool
 	// TrainingDir is the one folder the records go in. Empty means the
@@ -551,7 +554,7 @@ func (r *runner) plan(ctx context.Context) error {
 			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
-			Pass: opts.Pass, Taken: opts.Taken,
+			Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
 			Recipe:   opts.Recipe,
 			Switches: opts.Switches,
 			PlanPath: planPath,
