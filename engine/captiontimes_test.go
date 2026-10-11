@@ -62,18 +62,34 @@ func TestACaptionIsShownEarlier(t *testing.T) {
 	if got := Captions(clip, timedWords(), 38, nil); !near(got[1].Start, 3.0) {
 		t.Errorf("a start in what the clip cuts out: %+v", got[1])
 	}
-	// Earlier than the caption before it may run: that one goes when this
-	// one comes, and never later than it.
-	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(11.9), nil)}
-	got = Captions(clip, timedWords(), 38, nil)
-	if !near(got[1].Start, 1.9) || got[0].End > got[1].Start+1e-9 {
-		t.Errorf("an early start over the caption before: %+v", got)
+	// Earlier than the caption before it goes: it stops where that one
+	// goes, and that one stays as it was. Moving one caption changes no
+	// other, found by Tim, who pulled the left edge of a caption in and
+	// saw the caption before it grow into the room he had cleared.
+	for _, early := range []float64{11.9, 0} {
+		clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(early), nil)}
+		got = Captions(clip, timedWords(), 38, nil)
+		if !near(got[0].Start, natural[0].Start) || !near(got[0].End, natural[0].End) ||
+			!near(got[1].Start, natural[0].End) {
+			t.Errorf("a start moved to %.1f over the caption before: %+v, was %+v", early, got, natural)
+		}
 	}
-	// And never before the caption before it has been shown at all.
-	clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(0), nil)}
-	got = Captions(clip, timedWords(), 38, nil)
-	if got[1].Start < got[0].Start+shortestMoved-1e-9 {
-		t.Errorf("a caption was put before the one before it: %+v", got)
+}
+
+// A caption that appears later leaves the caption before it as it was,
+// where the two met. It used to take it along.
+func TestACaptionShownLaterLeavesTheOneBeforeAlone(t *testing.T) {
+	clip := timedClip()
+	words := []Cue{{10.1, 10.4, "Als"}, {10.4, 10.7, "Kind"}, {10.7, 11.0, "stand."},
+		{11.0, 11.3, "Und"}, {11.3, 11.6, "dann"}, {11.6, 12.0, "ich."}}
+	natural := Captions(clip, words, 12, nil)
+	if len(natural) < 2 || !near(natural[0].End, natural[1].Start) {
+		t.Fatalf("two captions that meet were wanted: %+v", natural)
+	}
+	clip.CaptionTimes = map[string]CaptionTime{wordKey(natural[1].Opens): moved(at(EpisodeTime(clip, natural[1].Start)+0.3), nil)}
+	got := Captions(clip, words, 12, nil)
+	if !near(got[0].End, natural[0].End) || !near(got[1].Start, natural[1].Start+0.3) {
+		t.Errorf("shown later: %+v, was %+v", got, natural)
 	}
 }
 
@@ -206,14 +222,14 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	if err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.7, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.70 eins" || got[1] != was[1] {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins" || got[1] != was[1] {
 		t.Errorf("the right edge dragged over zwei: %q, was %q", got, was)
 	}
 	// Back out over it, and zwei is back, the edge where it was let go.
 	if err := SetCaptionTime(logs, path, "01", 10.6, "end", 11.05, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.05 eins zwei" || got[1] != was[1] {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.10 eins zwei" || got[1] != was[1] {
 		t.Errorf("the right edge dragged back over zwei: %q, was %q", got, was)
 	}
 	// The start of "drei vier" over the middle of "drei", 12.2 in the
@@ -221,7 +237,7 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	if err := SetCaptionTime(logs, path, "01", 12.0, "start", 12.5, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); !strings.HasPrefix(got[1], "1.70-") || !strings.HasSuffix(got[1], " vier") {
+	if got := shownCaptions(t, path, tr); !strings.HasPrefix(got[1], "2.20-") || !strings.HasSuffix(got[1], " vier") {
 		t.Errorf("the left edge dragged over drei: %q", got)
 	}
 	// And over every word: the last one stays, since delete removes a
@@ -229,7 +245,7 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	if err := SetCaptionTime(logs, path, "01", 10.0, "start", 10.95, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); !strings.HasSuffix(got[0], " zwei") {
+	if got := shownCaptions(t, path, tr); got[0] != "0.60-1.10 zwei" {
 		t.Errorf("the left edge dragged over the whole caption: %q", got)
 	}
 }

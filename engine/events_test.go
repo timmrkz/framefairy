@@ -565,12 +565,14 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	if got := laid(tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
-	// A caption whose first word is removed appears when that word is
-	// said, as it did. Found by a walk: it waited for the word after.
+	// A caption whose first word is removed appears with the word after,
+	// the way it does when its left edge is dragged in over the word, and
+	// the caption before it still goes when it did. Tim asked for the two
+	// to end the same.
 	if err := SetWordText(logs, 61.5, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	want = strings.Replace(want, " irgendein Typ]", " Typ]", 1)
+	want = strings.Replace(want, "[1.55-2.70 irgendein Typ]", "[2.05-2.70 Typ]", 1)
 	if got := laid(tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}

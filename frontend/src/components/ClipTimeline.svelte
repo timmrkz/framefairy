@@ -1102,10 +1102,11 @@
   // its last word when a pause follows, and where that is a little off
   // from what is heard, either edge is dragged. The two sides of the line
   // between two captions are two edges: the left side is where the one
-  // before goes, the right side where the one after appears. Dragging the
-  // first leaves a gap, dragging the second takes the one before along.
-  // An edge dragged in over a word removes the word from the caption, and
-  // dragged back out over it puts it back, see draftCaptions.
+  // before goes, the right side where the one after appears. An edge moves
+  // its own caption and no other: dragged in it leaves a gap, dragged out
+  // it stops at the caption beside it. Dragged in over a word it removes
+  // the word, and dragged back out over it puts it back, and the edge then
+  // lands where the words put it, see draftCaptions.
   let capDraft = $state<CaptionDraft | null>(null);
   let capMoving = $state(false);
   let capSaving = $state(false);
@@ -1296,7 +1297,7 @@
       let at = Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame;
       const shortest = 0.1;
       if (edge === "start") {
-        const low = i > 0 ? captions[i - 1].start + shortest : 0;
+        const low = i > 0 ? captions[i - 1].end : 0;
         at = Math.min(Math.max(at, low), c.end - shortest);
       } else {
         const high = i + 1 < captions.length ? captions[i + 1].start : clipLength;

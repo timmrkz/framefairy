@@ -376,28 +376,61 @@ export const sequences = [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["gone last", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
       ["undo"],
       ["same", "start"],
       ["edge in", ["end", "Schulhof"]],
       ["edge out", ["end", "Schulhof"]],
       ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
     ],
   },
   {
-    name: "a caption's left edge dragged in over its first word removes the word",
+    name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
     steps: [
       ["mark", "start"],
       ["edge in", ["start", "Schulhof"]],
       ["gone first", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["edge out", ["start", "Schulhof"]],
+      ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
     ],
   },
   {
-    name: "a caption's right edge moved by hand stays where it was put when its last word is removed",
+    name: "a caption's edges moved by hand leave the captions beside them alone",
     steps: [
+      ["mark", "start"],
+      ["edge nudge", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
       ["edge nudge", ["end", "Schulhof"]],
-      ["mark", "moved"],
-      ["remove last", "Schulhof"],
-      ["spans", "moved"],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's last word and dragging its right edge over it end the same",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["last", "Schulhof"]],
+      ["spans", "dragged"],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's first word and dragging its left edge over it end the same",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["start", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["spans", "dragged"],
+      ["others", ["start", "Schulhof"]],
     ],
   },
   {
@@ -1688,21 +1721,42 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!now) wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, await engineState(page, watch.at))}`;
         break;
       }
-      case "remove last": {
-        // The last word of the caption holding a word framed and removed
-        // in the caption box.
+      case "remove edge word": {
+        // The first or last word of the caption holding a word framed and
+        // removed in the caption box.
+        const [which, text] = arg;
         const now = await engineState(page, watch.at);
-        const c = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))));
-        const last = c.lines.flatMap((l) => l.words).at(-1).text;
-        for (let i = 0; i < 80 && !(await word(last).count()); i++) {
+        const c = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const all = c.lines.flatMap((l) => l.words);
+        const edgeWord = (which === "last" ? all.at(-1) : all[0]).text;
+        for (let i = 0; i < 80 && !(await word(edgeWord).count()); i++) {
           await page.keyboard.press("Shift+ArrowRight");
           await page.waitForTimeout(100);
         }
-        await word(last).click();
+        await word(edgeWord).click();
         await page.keyboard.press("Escape");
         await watch.step("frame", s);
         await page.keyboard.press("Backspace");
         await watch.step("press", await shown(page));
+        break;
+      }
+      case "others": {
+        // Every caption but the one holding a word at a mark appears and
+        // goes when it did then.
+        const [label, text] = arg;
+        const was = marks[label];
+        const now = await engineState(page, watch.at);
+        const mine = was.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const span = (c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`;
+        const moved = was.captions
+          .filter((c) => c !== mine)
+          .filter((c) => {
+            const n = now.captions.find((d) => Math.abs(d.first - c.first) < 1e-6);
+            return !n || span(n) !== span(c);
+          });
+        if (moved.length) {
+          wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
+        }
         break;
       }
       case "gone": {

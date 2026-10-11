@@ -413,21 +413,10 @@ describe("draftCaptions", () => {
     { start: 4.5, end: 6 },
   ];
 
-  test("a caption that appears later keeps the one before up until it does", () => {
+  test("a caption that appears later leaves the one before as it was", () => {
     const got = draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
-    expect(got[0].end).toBe(2.4);
+    expect(got[0].end).toBe(2);
     expect(got[1].start).toBe(2.4);
-  });
-
-  test("a caption that appears earlier ends the one before", () => {
-    const got = draftCaptions(three, { index: 1, edge: "start", at: 1.6 });
-    expect(got[0].end).toBe(1.6);
-  });
-
-  test("after a pause, appearing later leaves the one before alone", () => {
-    const got = draftCaptions(three, { index: 2, edge: "start", at: 4.8 });
-    expect(got[1].end).toBe(3.5);
-    expect(got[2].start).toBe(4.8);
   });
 
   test("going earlier leaves a gap and moves nothing else", () => {

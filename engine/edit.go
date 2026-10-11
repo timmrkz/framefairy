@@ -874,14 +874,14 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 //
 // An edge moved across words of its caption takes them out of it, or puts
 // back the ones it took, see trimCaption: the words are in the caption
-// that its edges hold. logsDir is where the corrections are kept, and
+// that its edges hold. That edge is then where the words put it, as when
+// the word is removed in the caption box, and keeps no time of its own. logsDir is where the corrections are kept, and
 // overrides the caption look the captions are laid out in.
 //
 // It is kept against the word rather than the caption, because captions
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
-// removed among them, see Caption.Opens, so removing the word an edge is
-// kept against leaves the edge where it was put.
+// removed among them, see Caption.Opens.
 func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, overrides map[string]any) error {
 	if edge != "start" && edge != "end" {
@@ -913,6 +913,15 @@ func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string,
 	if cue == nil {
 		return renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
+	// The words first: an edge that took words out or put them back is
+	// where its words put it, and keeps no time of its own.
+	if !reset {
+		changed, err := trimCaption(logsDir, clip, *cue, edge, ClipTime(clip, at), t)
+		if err != nil {
+			return err
+		}
+		reset = changed
+	}
 	err = editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
@@ -943,10 +952,7 @@ func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string,
 		}
 		return nil
 	})
-	if err != nil || reset {
-		return err
-	}
-	return trimCaption(logsDir, clip, *cue, edge, ClipTime(clip, at), t)
+	return err
 }
 
 // SetThumbnail adds, moves or removes a thumbnail of a clip: a moment of

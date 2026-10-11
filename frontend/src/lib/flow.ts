@@ -350,10 +350,9 @@ export interface CaptionDraft {
   at: number;
 }
 
-// The captions with one edge where it is being dragged, the way the engine
-// will put them once it is let go: a caption that appears earlier or later
-// takes the one before it along where the two met, and never lies over it.
-// The words the edge is dragged in over leave the caption as it moves: a
+// The captions with one edge where it is being dragged. The edge moves its
+// own caption and no other, the way the engine keeps it, see moveCaptions
+// in engine/lines.go. The words the edge is dragged in over leave the caption as it moves: a
 // word goes once the edge passes its middle, and the last word stays, the
 // way trimCaption in engine/corrections.go takes them out when it is let
 // go. Anything that shows the captions while an edge is dragged shows
@@ -379,16 +378,8 @@ export function draftCaptions<
         .filter((l) => l.words.length);
     }
   }
-  if (draft.edge === "end") {
-    out[i].end = draft.at;
-    return out;
-  }
-  const was = out[i].start;
-  out[i].start = draft.at;
-  const before = out[i - 1];
-  if (before && (Math.abs(before.end - was) < 0.001 || before.end > draft.at)) {
-    before.end = draft.at;
-  }
+  if (draft.edge === "end") out[i].end = draft.at;
+  else out[i].start = draft.at;
   return out;
 }
 

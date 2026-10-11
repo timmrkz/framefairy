@@ -20,9 +20,12 @@ type Caption struct {
 	// Opens and Closes are when the first and the last word it was laid
 	// out from start in the episode, a word removed among them. They are
 	// the words its edges are kept against, see CaptionTimes, and they stay
-	// the same when a word at either end is removed, which is what keeps
-	// an edge moved by hand where it was put.
+	// the same when a word at either end is removed, so the caption is
+	// still known by them, to remove it or to put the word back.
 	Opens, Closes float64
+	// trimStart and trimEnd say the word it opens or closes on was
+	// removed, so that edge is where the words shown put it.
+	trimStart, trimEnd bool
 }
 
 // Cue is the caption without its words.

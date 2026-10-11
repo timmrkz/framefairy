@@ -261,9 +261,11 @@ export class Watch {
             .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
             .join(" ");
         if (far(before) !== far(after)) this.broke("an edit stays where it was made", describe(before, after));
-        // Taking a word out takes out the word and changes no caption:
-        // every caption still there appears when it did and goes when it
-        // did. A caption whose words were all removed goes and leaves its
+        // Taking a word out takes out the word and changes no other
+        // caption: every caption still there appears when it did and goes
+        // when it did, and the one the word was in only draws in to the
+        // words it still shows, the way dragging its edge over the word
+        // does. A caption whose words were all removed goes and leaves its
         // time empty. The one before it used to stay up through that time,
         // and its block on the clip timeline grew across the place, which
         // Tim read as two captions merging.
@@ -273,12 +275,15 @@ export class Watch {
         if (whole || last.args[4] === "") {
           const near = (a, b) => Math.abs(a - b) < 1e-3;
           const kept = after.captions.every((c) => {
-            const i = before.captions.findIndex((b) => near(b.start, c.start));
-            return i >= 0 && near(c.end, before.captions[i].end);
+            const b = before.captions.find((b) => near(b.first, c.first));
+            if (!b) return false;
+            const held = !whole && where >= b.first - 1e-3 && where <= b.last + 1e-3;
+            if (held) return c.start >= b.start - 1e-3 && c.end <= b.end + 1e-3;
+            return near(c.start, b.start) && near(c.end, b.end);
           });
           if (!kept) {
             const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
-            this.broke("a removal changes no caption", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
+            this.broke("a removal changes no other caption", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
           }
         }
       }

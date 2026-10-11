@@ -247,10 +247,12 @@ func removeParts(logsDir string, t *Transcript, order []float64, whole map[float
 // removes a caption whole.
 //
 // to is where the edge is let go, on the clip's clock. The caption is the
-// one laid out now, with the edge where it stands.
-func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float64, t *Transcript) error {
+// one laid out now, with the edge where it stands. It says whether any word
+// changed: the edge is then where the words put it, see Captions, the same
+// as when the word is removed in the caption box.
+func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float64, t *Transcript) (bool, error) {
 	if len(clip.Segments) == 0 {
-		return nil
+		return false, nil
 	}
 	from := c.Start
 	if edge == "end" {
@@ -258,6 +260,16 @@ func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float
 	}
 	low, high := math.Min(from, to), math.Max(from, to)
 	in := (edge == "start") == (to > from)
+	if !in && len(c.Words) > 0 {
+		// An edge whose word was taken out stands where the words shown
+		// put it, which may be past the middle of that word already. Out
+		// from there, the words past the words shown are what it crosses.
+		if edge == "end" {
+			low = math.Min(low, c.Words[len(c.Words)-1].End)
+		} else {
+			high = math.Max(high, c.Words[0].Start)
+		}
+	}
 	// The words the caption was laid out from, the removed ones among them.
 	near := t.captionWordsIn(clip.Segments[0].Start-captionReach,
 		clip.Segments[len(clip.Segments)-1].End+captionReach)
@@ -292,7 +304,7 @@ func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float
 	}
 	for _, w := range back {
 		if err := SetWordText(logsDir, w.Start, w.Text, t); err != nil {
-			return err
+			return true, err
 		}
 	}
 	whole := map[float64]string{}
@@ -315,5 +327,5 @@ func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float
 			parts[at][t.PartOf(heard, w)] = true
 		}
 	}
-	return removeParts(logsDir, t, order, whole, parts)
+	return len(back)+len(order) > 0, removeParts(logsDir, t, order, whole, parts)
 }
