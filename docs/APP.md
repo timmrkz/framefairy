@@ -2365,6 +2365,21 @@ the settings, with the home folder written as ~ and nothing of a video
 but its file name. The info mark beside **Make Report** says what goes in.
 See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
 
+**Dictate**, at the left of the same row, is for saying what happened
+rather than typing it, plan row 2.189. Pressed, it says **Stop** and
+wears the beam while the app listens, then **Writing…** while the speech
+model on the machine writes it down. The words go in where the cursor
+was, or over what was selected, as if typed, so Cmd+Z takes them back.
+The app records, not the window, through malgo, see
+`cmd/framefairy-app/listen.go`: WKWebView on macOS would ask for the
+microphone in a box of its own on every launch, naming the page as
+wails://wails. The app gets the one prompt from macOS, with the words of
+`NSMicrophoneUsageDescription`, and macOS remembers the answer. A Mac
+that said no hands the app nothing but zeros, and the page says where to
+allow it. One copy of the speech model loads while the person talks, so
+writing it down waits only for the hearing. The log says how long the
+recording was and how many words came of it, never what they were.
+
 ## Where things are kept
 
 - **Models:** in `~/.framefairy/models`. A speech model is a folder, a

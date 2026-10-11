@@ -576,6 +576,9 @@ func openBridge(t *testing.T) *bridge {
 		o.Preset = "ultrafast"
 	}
 	standIns.Store(&fakes)
+	// Dictate on Report a Problem records three seconds of a hum, which
+	// the stand-in hears as words.
+	openMicrophone = func() microphone { return &playingMicrophone{samples: tone(3)} }
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.bus = newBus()

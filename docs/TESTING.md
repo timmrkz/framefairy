@@ -389,7 +389,12 @@ language model or of the speech model, and `speech` slows the speech
 model down. Then `refused`, the card shook and no list and no box opened
 and the settings name the models they named, `asks`, the box asking
 whether to remove opened, `changed`, the settings name another model,
-and `hearing`, a search still hears. For a clip of two shots: `add cameras`, a video filmed by two cameras,
+and `hearing`, a search still hears. For Report a Problem: `menu`
+`report` picks it in the menu bar, `write` types into its field and
+puts the cursor so many characters in, `dictate` presses Dictate, sees
+it say Stop in the same frame, presses Stop and waits for the words,
+and `report reads`, the field reads so, with `*` for whatever the speech
+model heard. The bridge's microphone plays three seconds of a hum. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
 which puts the playhead in its middle with a click on the clip timeline

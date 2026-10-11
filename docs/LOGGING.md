@@ -159,5 +159,9 @@ jq -c 'select(.video == "start.mp4")' app.log
    act the person is at, and a job keeps the act that asked for it
    however long it runs. Its start and end are lines of `jobs`.
 3. Done. Help → Report a Problem…, the page and the zip above. It is
-   R.8 without the address. Plan row 2.189 adds a microphone to the
-   field and questions from the model.
+   R.8 without the address.
+4. Under way, plan row 2.189. **Dictate** beside the field: the person
+   says what happened, and the speech model on the machine writes it
+   into the field to be corrected there, see Report a Problem in
+   [APP.md](APP.md). Questions from the model about what is missing come
+   after.
