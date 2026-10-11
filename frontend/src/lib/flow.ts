@@ -353,15 +353,32 @@ export interface CaptionDraft {
 // The captions with one edge where it is being dragged, the way the engine
 // will put them once it is let go: a caption that appears earlier or later
 // takes the one before it along where the two met, and never lies over it.
-// Anything that shows the captions while an edge is dragged shows these, so
-// the timeline and the video preview move together.
-export function draftCaptions<T extends { start: number; end: number }>(
-  captions: T[],
-  draft: CaptionDraft | null,
-): T[] {
+// The words the edge is dragged in over leave the caption as it moves: a
+// word goes once the edge passes its middle, and the last word stays, the
+// way trimCaption in engine/corrections.go takes them out when it is let
+// go. Anything that shows the captions while an edge is dragged shows
+// these, so the timeline and the video preview move together.
+export function draftCaptions<
+  T extends { start: number; end: number; lines?: { words: { start: number; end: number }[] }[] },
+>(captions: T[], draft: CaptionDraft | null): T[] {
   if (!draft || !captions[draft.index]) return captions;
   const out = captions.map((c) => ({ ...c }));
   const i = draft.index;
+  const lines = out[i].lines;
+  if (lines) {
+    const inside = (w: { start: number; end: number }) => {
+      const mid = (w.start + w.end) / 2;
+      return draft.edge === "end" ? mid < draft.at : mid > draft.at;
+    };
+    const words = lines.flatMap((l) => l.words);
+    const kept = words.filter(inside);
+    if (kept.length < words.length) {
+      const stays = kept.length ? kept : [draft.edge === "end" ? words[0] : words[words.length - 1]];
+      out[i].lines = lines
+        .map((l) => ({ ...l, words: l.words.filter((w) => stays.includes(w)) }))
+        .filter((l) => l.words.length);
+    }
+  }
   if (draft.edge === "end") {
     out[i].end = draft.at;
     return out;

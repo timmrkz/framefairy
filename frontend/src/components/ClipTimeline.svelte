@@ -1104,6 +1104,8 @@
   // between two captions are two edges: the left side is where the one
   // before goes, the right side where the one after appears. Dragging the
   // first leaves a gap, dragging the second takes the one before along.
+  // An edge dragged in over a word removes the word from the caption, and
+  // dragged back out over it puts it back, see draftCaptions.
   let capDraft = $state<CaptionDraft | null>(null);
   let capMoving = $state(false);
   let capSaving = $state(false);
@@ -1651,8 +1653,8 @@
               aria-label="When caption {b.i + 1} appears"
               aria-valuenow={b.c.start}
               title={b.c.startMoved
-                ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
-                : "When this caption appears. Drag to move it."}
+                ? "When this caption appears, put here by hand. Drag to move it, over a word to remove the word, and double-click to put it back where its words put it."
+                : "When this caption appears. Drag to move it, over a word to remove the word."}
               onpointerdown={(e) => grabCaption(b.i, "start", e)}
               ondblclick={(e) => {
                 e.stopPropagation();
@@ -1668,8 +1670,8 @@
               aria-label="When caption {b.i + 1} goes"
               aria-valuenow={b.c.end}
               title={b.c.endMoved
-                ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
-                : "When this caption goes. Drag to move it."}
+                ? "When this caption goes, put here by hand. Drag to move it, over a word to remove the word, and double-click to put it back where its words put it."
+                : "When this caption goes. Drag to move it, over a word to remove the word."}
               onpointerdown={(e) => grabCaption(b.i, "end", e)}
               ondblclick={(e) => {
                 e.stopPropagation();

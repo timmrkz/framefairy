@@ -212,6 +212,15 @@ func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcrip
 	if len(order) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
+	return removeParts(logsDir, t, order, whole, parts)
+}
+
+// removeParts removes heard words, each started at a moment of order, the
+// way SetWordText removes one. whole is what each reads, and parts the
+// words of it a correction made several of that go, or nil when all of it
+// goes.
+func removeParts(logsDir string, t *Transcript, order []float64, whole map[float64]string,
+	parts map[float64]map[int]bool) error {
 	for _, at := range order {
 		var kept []string
 		if parts[at] != nil {
@@ -226,4 +235,85 @@ func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcrip
 		}
 	}
 	return nil
+}
+
+// TrimCaption is what dragging an edge of a caption across its words does
+// to them. Dragged in, the words the edge passes leave the caption, removed
+// the way SetWordText removes one, so pulling the left edge of "one two
+// three" past "one" reads "two three", and the right edge past "three"
+// reads "one two". Dragged back out, the words of the caption removed
+// before that it passes come back. A word is passed when the edge crosses
+// its middle. A caption keeps at least one word this way, because delete
+// removes a caption whole.
+//
+// to is where the edge is let go, on the clip's clock. The caption is the
+// one laid out now, with the edge where it stands.
+func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float64, t *Transcript) error {
+	if len(clip.Segments) == 0 {
+		return nil
+	}
+	from := c.Start
+	if edge == "end" {
+		from = c.End
+	}
+	low, high := math.Min(from, to), math.Max(from, to)
+	in := (edge == "start") == (to > from)
+	// The words the caption was laid out from, the removed ones among them.
+	near := t.captionWordsIn(clip.Segments[0].Start-captionReach,
+		clip.Segments[len(clip.Segments)-1].End+captionReach)
+	var gone, back []Cue
+	shown := 0
+	for _, w := range Said(clip, near) {
+		if w.Start < c.Opens-0.0005 || w.Start > c.Closes+0.0005 {
+			continue
+		}
+		text, removed := removedText(w.Text)
+		if !removed {
+			shown++
+		}
+		mid := ClipTime(clip, (w.Start+w.End)/2)
+		if mid <= low || mid >= high {
+			continue
+		}
+		switch {
+		case in && !removed:
+			gone = append(gone, w)
+		case !in && removed && text != "":
+			back = append(back, Cue{w.Start, w.End, text})
+		}
+	}
+	if len(gone) > 0 && len(gone) == shown {
+		// The word at the other edge stays.
+		if edge == "end" {
+			gone = gone[1:]
+		} else {
+			gone = gone[:len(gone)-1]
+		}
+	}
+	for _, w := range back {
+		if err := SetWordText(logsDir, w.Start, w.Text, t); err != nil {
+			return err
+		}
+	}
+	whole := map[float64]string{}
+	parts := map[float64]map[int]bool{}
+	var order []float64
+	for _, w := range gone {
+		heard, ok := t.HeardAt(w.Start)
+		if !ok {
+			continue
+		}
+		at := heard.Start
+		if _, seen := whole[at]; !seen {
+			whole[at] = heard.Text
+			parts[at] = map[int]bool{}
+			order = append(order, at)
+		}
+		if len(strings.Fields(heard.Text)) < 2 {
+			parts[at] = nil
+		} else if parts[at] != nil {
+			parts[at][t.PartOf(heard, w)] = true
+		}
+	}
+	return removeParts(logsDir, t, order, whole, parts)
 }

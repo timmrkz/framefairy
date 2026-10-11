@@ -408,12 +408,6 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	if len(words) == 0 {
 		return nil
 	}
-	shown := make([]Cue, 0, len(said))
-	for _, w := range said {
-		if _, gone := removedText(w.Text); !gone {
-			shown = append(shown, w)
-		}
-	}
 	// The pause after a word, as long as it is in the episode, from where
 	// the words removed after it end.
 	pauseAfter := func(i int) float64 { return was[i+1].Start - wasReach[i] }
@@ -567,10 +561,12 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 			// Too brief to read on its own, so it rides with the one before.
 			prev := out[len(out)-1]
 			out[len(out)-1] = Caption{Start: prev.Start, End: end,
-				Text: prev.Text + " " + text(g.words), Words: append(prev.Words, g.words...)}
+				Text: prev.Text + " " + text(g.words), Words: append(prev.Words, g.words...),
+				Opens: prev.Opens, Closes: allWas[g.lastK].Start}
 			continue
 		}
-		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words})
+		out = append(out, Caption{Start: start, End: end, Text: text(g.words), Words: g.words,
+			Opens: allWas[g.firstK].Start, Closes: allWas[g.lastK].Start})
 		lastAlone = g.alone
 	}
 	// Held a second past the end when it is on screen at the end. Constant
@@ -589,7 +585,7 @@ func Captions(clip Clip, said []Cue, maxChars int, alone func(string) bool) []Ca
 	if out[0].Start < 0.12 {
 		out[0].Start = 0
 	}
-	return moveCaptions(clip, shown, out)
+	return moveCaptions(clip, out)
 }
 
 // removedMark comes before the text of a word removed, in the words the
@@ -616,17 +612,13 @@ const shortestMoved = 0.1
 // A caption that goes earlier leaves the gap it makes, and one that stays
 // longer stops where the next one begins. Nothing ever overlaps, because
 // the picture shows one caption at a time.
-func moveCaptions(clip Clip, said []Cue, captions []Caption) []Caption {
+func moveCaptions(clip Clip, captions []Caption) []Caption {
 	if len(clip.CaptionTimes) == 0 || len(captions) == 0 {
 		return captions
 	}
 	out := append([]Caption(nil), captions...)
 	for i := range out {
-		key, ok := captionAnchor(clip, said, out[i], false)
-		if !ok {
-			continue
-		}
-		t := clip.CaptionTimes[key]
+		t := clip.CaptionTimes[wordKey(out[i].Opens)]
 		if t.Start == nil {
 			continue
 		}
@@ -648,11 +640,7 @@ func moveCaptions(clip Clip, said []Cue, captions []Caption) []Caption {
 		out[i].Start = start
 	}
 	for i := range out {
-		key, ok := captionAnchor(clip, said, out[i], true)
-		if !ok {
-			continue
-		}
-		t := clip.CaptionTimes[key]
+		t := clip.CaptionTimes[wordKey(out[i].Closes)]
 		if t.End == nil {
 			continue
 		}
@@ -663,23 +651,6 @@ func moveCaptions(clip Clip, said []Cue, captions []Caption) []Caption {
 		out[i].End = min(max(ClipTime(clip, *t.End), out[i].Start+shortestMoved), high)
 	}
 	return out
-}
-
-// captionAnchor is the word a caption begins on, or ends on, as the key its
-// timing is kept under: the millisecond it starts in the episode.
-func captionAnchor(clip Clip, said []Cue, c Caption, last bool) (string, bool) {
-	if len(c.Words) == 0 {
-		return "", false
-	}
-	w := c.Words[0]
-	if last {
-		w = c.Words[len(c.Words)-1]
-	}
-	word, ok := SaidWord(clip, said, (w.Start+w.End)/2)
-	if !ok {
-		return "", false
-	}
-	return wordKey(word.Start), true
 }
 
 // EpisodeTime is the moment of the episode a moment of a clip shows.

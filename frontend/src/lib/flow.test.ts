@@ -436,7 +436,35 @@ describe("draftCaptions", () => {
     expect(got[1].start).toBe(2);
   });
 
+  // "one two three", a word a second.
+  const words = [
+    {
+      start: 0,
+      end: 3,
+      lines: [{ words: [{ start: 0, end: 1 }, { start: 1, end: 2 }] }, { words: [{ start: 2, end: 3 }] }],
+    },
+  ];
+  const read = (c: (typeof words)[0]) => c.lines.flatMap((l) => l.words.map((w) => w.start));
+
+  test("the right edge dragged in over the middle of the last word leaves it out", () => {
+    const got = draftCaptions(words, { index: 0, edge: "end", at: 2.4 });
+    expect(read(got[0])).toEqual([0, 1]);
+    expect(got[0].lines).toHaveLength(1);
+    expect(read(draftCaptions(words, { index: 0, edge: "end", at: 2.6 })[0])).toEqual([0, 1, 2]);
+  });
+
+  test("the left edge dragged in over the middle of the first word leaves it out", () => {
+    expect(read(draftCaptions(words, { index: 0, edge: "start", at: 0.6 })[0])).toEqual([1, 2]);
+  });
+
+  test("an edge dragged over every word leaves the one at the other edge", () => {
+    expect(read(draftCaptions(words, { index: 0, edge: "end", at: 0.1 })[0])).toEqual([0]);
+    expect(read(draftCaptions(words, { index: 0, edge: "start", at: 2.9 })[0])).toEqual([2]);
+  });
+
   test("changes nothing it is handed", () => {
+    draftCaptions(words, { index: 0, edge: "end", at: 0.1 });
+    expect(read(words[0])).toEqual([0, 1, 2]);
     draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
     expect(three[0].end).toBe(2);
     expect(draftCaptions(three, null)).toBe(three);

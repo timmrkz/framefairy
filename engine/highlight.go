@@ -17,6 +17,12 @@ type Caption struct {
 	End   float64
 	Text  string
 	Words []Cue
+	// Opens and Closes are when the first and the last word it was laid
+	// out from start in the episode, a word removed among them. They are
+	// the words its edges are kept against, see CaptionTimes, and they stay
+	// the same when a word at either end is removed, which is what keeps
+	// an edge moved by hand where it was put.
+	Opens, Closes float64
 }
 
 // Cue is the caption without its words.

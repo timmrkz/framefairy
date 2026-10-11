@@ -192,8 +192,10 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 }
 
 // SetCaptionTime moves the caption of a clip that begins or ends on a word,
-// to appear or go at a moment of the episode. A moment below nought puts it
-// back where its words put it, because JSON has no way to say not a number.
+// to appear or go at a moment of the episode, and takes the words it is
+// moved in over out of it, or puts back the ones it is moved back over, in
+// one step to undo. A moment below nought puts it back where its words put
+// it, because JSON has no way to say not a number.
 func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
@@ -201,12 +203,14 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
-	t, err := s.words(path)
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	// Read fresh, as SetWord does: an edit works on the words themselves.
+	t, err := p.Transcript()
 	if err != nil {
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.SetCaptionTime(plan, clipID, word, edge, at, t)
+		return engine.SetCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 	}); err != nil {
 		return ClipEntry{}, err
 	}
