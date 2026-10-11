@@ -1798,8 +1798,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   for a moment noticed only once it has passed, and grows it back. Either
   grows a line at a time until it is as long as **Shortest**, never past
   **Longest**, and then its far edge goes onto a sentence the way every
-  clip's does. The two letters are buttons in the row under the clip
-  timeline too. No model is asked: the pauses are cut and the crop placed
+  clip's does. Mark In and Mark Out are buttons in the row under the clip
+  timeline too, with the square brackets editors draw on them, and the
+  key is named in each one's title. No model is asked: the pauses are cut and the crop placed
   exactly as for a clip a search found, and after that it is an ordinary
   clip.
   - **Only where no clip is.** With the playhead anywhere from a clip's
@@ -1874,9 +1875,9 @@ or walks across the picture. Plan row 3.26, the design is in
 - **The crop mark button**, beside the thumbnail button under the clip
   timeline, puts a crop mark on the frame under the playhead, with the
   crop where it stands there now. **C** does the same. Like the thumbnail
-  button it is not a mode: its icon is the crop glyph with a plus, and
-  with a minus while the playhead stands on a crop mark, where a click
-  removes it.
+  button it is not a mode: its icon is the diamond editors draw for a
+  keyframe, with a plus, and with a minus while the playhead stands on a
+  crop mark, where a click removes it.
 - **No mark, or one, is a crop that stands still.** With two or more the
   crop glides from each to the next over the whole time between them,
   starting and settling gently, the way a camera operator pans. The
