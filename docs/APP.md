@@ -1814,9 +1814,43 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - **A mark is dragged** to another frame. The playhead goes with it, so the
   video preview shows the frame under the hand, and the mark stays inside
   the pieces the clip keeps. It is saved when the hand lets go.
+- **A double-click on a mark** removes it, the way it removes a cut.
 - **Undo** takes back adding, moving and removing one.
 - A trim or a cut that leaves a thumbnail outside the clip hides it. It
   comes back with the part it was in.
+
+### Crop marks
+
+A crop that moves while a clip plays, for a person who shifts in the seat
+or walks across the picture. Plan row 3.26, the design is in
+[ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
+
+- **The crop mark button**, beside the thumbnail button under the clip
+  timeline, puts a crop mark on the frame under the playhead, with the
+  crop where it stands there now. **C** does the same. Like the thumbnail
+  button it is not a mode: its icon is the crop glyph with a plus, and
+  with a minus while the playhead stands on a crop mark, where a click
+  removes it.
+- **No mark, or one, is a crop that stands still.** With two or more the
+  crop glides from each to the next over the whole time between them,
+  starting and settling gently, the way a camera operator pans. The
+  tempo is where the marks are: two marks far apart are a slow drift, and
+  two a frame apart are an instant move. No glide crosses a cut, and a
+  mark moves only the crop of its own shot.
+- **Dragging the crop frame places the crop, and nothing else.** With the
+  playhead on a crop mark it moves that mark. Anywhere else it moves the
+  crop of the whole shot, every mark of it by the same distance.
+- **The video preview follows the glide frame by frame** while the clip
+  plays, so what plays is what renders.
+- **Each crop mark is a dot** on the foot line of the clip timeline, under
+  the thumbnails, in the app's colour, filled white while the playhead is
+  on its frame. It is the thumbnail's kind of mark: a click puts the
+  playhead on it, a drag moves it to another frame with its crop, and a
+  double-click removes it.
+- **Automatic crop** removes every crop mark of the shot and brings back
+  the crop the engine found. Rotating a part removes the crop marks in
+  it, which were placed on the picture as it stood.
+- **Undo** takes back adding, moving and removing one.
 
 ### Rotate
 

@@ -41,7 +41,9 @@ describe("the glide of a crop over its marks", () => {
 
   test("finds the mark on the playhead's frame", () => {
     const marks = [{ at: 10.52, x: 100 }];
+    // The playhead anywhere in the frame, the last moment of it too.
     expect(markOn(marks, 10.53, 25)).toEqual(marks[0]);
+    expect(markOn(marks, 10.559, 25)).toEqual(marks[0]);
     expect(markOn(marks, 10.56, 25)).toBeNull();
   });
 });

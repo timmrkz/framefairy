@@ -362,6 +362,42 @@
 //                      frame of the episode, read across its top, while in
 //                      the pieces not rotated most are not, since there it
 //                      lies on its side
+//   ["crop mark at", share]
+//                      puts the playhead in the clip, this share of the
+//                      way along it, with a click on the clip timeline, and
+//                      presses C, and the clip timeline has to show a crop
+//                      mark lit on the playhead's frame within 300 ms,
+//                      before a held answer comes
+//   ["thumbnail at", share]
+//                      puts the playhead in the clip, this share of the
+//                      way along it, with a click on the clip timeline, and
+//                      presses T, and the engine has a thumbnail more
+//   ["under the hand", kind]
+//                      moves the pointer onto the first "thumbnail" or
+//                      "crop" mark on the clip timeline: the mark is what
+//                      is under the pointer, it takes the hover, and it
+//                      lights the way it does under the hand
+//   ["remove mark", kind]
+//                      double-clicks the first "thumbnail" or "crop" mark
+//                      on the clip timeline, and the engine has one fewer,
+//                      and no cut more
+//   ["drag crop", px]  drags the crop frame in the video preview sideways
+//                      by px, in ten steps, and lets go
+//   ["crop marks", n]  the engine has n crop marks on the clip, at as many
+//                      left edges, and the clip timeline draws n dots
+//   ["glides"]         with the playhead put by a click on the clip
+//                      timeline on the first crop mark, a quarter, half
+//                      and three quarters of the way to the next and on
+//                      it, the crop frame in the video preview stands on
+//                      each frame read off the canvas where smoothstep from
+//                      the one mark to the next puts it, as the engine's
+//                      render does
+//   ["glides while playing"]
+//                      plays from the first crop mark for two seconds and
+//                      reads the frame on the canvas and the crop frame on
+//                      every animation frame: on each, the crop frame
+//                      stands where the glide puts it for that frame, and
+//                      it moves on many frames, not once
 //   ["fits"]           the list's trigger is as wide as the channel it
 //                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
@@ -809,6 +845,45 @@ export const sequences = [
       ["cut at", 0.5],
       ["cuts", 1],
       ["turned", [0, 90]],
+    ],
+  },
+  {
+    // Plan row 3.26: crop marks put with C, the second dragged to another
+    // place, glide the crop from the one to the other, in the video
+    // preview frame by frame while it plays as the render crops it.
+    // TestTheRenderGlidesTheCropOverTheMarks holds the render to the same
+    // glide, and glide.cases.json the window and the engine to each other.
+    name: "crop marks put with C glide the crop from one to the next in the video preview, frame by frame",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["hold", "SetCropMark", 1000],
+      ["crop mark at", 0.2],
+      ["crop mark at", 0.8],
+      ["drag crop", 60],
+      ["crop marks", 2],
+      ["glides"],
+      ["glides while playing"],
+      ["under the hand", "crop"],
+      ["remove mark", "crop"],
+      ["crop marks", 1],
+    ],
+  },
+  {
+    // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
+    // react to the pointer, and was removed only by putting the playhead
+    // on it and pressing T. It is the crop mark's kind of mark, lit under
+    // the hand and removed with a double-click, the way a cut is.
+    name: "a thumbnail mark lights under the hand and a double-click removes it",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["thumbnail at", 0.5],
+      ["thumbnail at", 0.2],
+      ["under the hand", "thumbnail"],
+      ["remove mark", "thumbnail"],
     ],
   },
   {
@@ -3121,6 +3196,188 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await watch.step("press", s);
         break;
       }
+      case "crop mark at": {
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await settle(page);
+        const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+        const before = await count();
+        const pressed = Date.now();
+        await page.keyboard.press("c");
+        const took = await page
+          .waitForFunction(
+            (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
+            before,
+            { polling: "raf", timeout: 3000 },
+          )
+          .then(() => Date.now() - pressed, () => -1);
+        if (took < 0) wrong = "C put no crop mark on the playhead's frame";
+        else if (took > 300) wrong = `the crop mark showed ${took} ms after C, not at once`;
+        await watch.step("press", s);
+        await settle(page);
+        break;
+      }
+      case "thumbnail at": {
+        const on = await chosen(page);
+        const count = async () => ((await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.thumbnails ?? []).length;
+        const before = await count();
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await settle(page);
+        await page.keyboard.press("t");
+        await watch.step("press", s);
+        await settle(page);
+        if ((await count()) !== before + 1) wrong = "T made no thumbnail";
+        break;
+      }
+      case "under the hand": {
+        // A mark the playhead is not on, so only the hand can light it,
+        // tagged so it is the same element all the way through.
+        const kind = arg === "crop" ? ".cropdot" : ".thumb";
+        const tagged = await page.evaluate((kind) => {
+          const el = [...document.querySelectorAll(`.clip-timeline ${kind}`)].find((m) => !m.classList.contains("here"));
+          el?.setAttribute("data-probe", "");
+          return !!el;
+        }, kind);
+        const box = tagged ? await page.locator("[data-probe]").boundingBox() : null;
+        if (!box) {
+          wrong = `the clip timeline shows no ${arg} mark off the playhead`;
+          break;
+        }
+        const paint = () =>
+          page.evaluate(() => {
+            const el = document.querySelector("[data-probe]");
+            const look = getComputedStyle(el, el.classList.contains("cropdot") ? "::after" : null);
+            return `${look.backgroundColor} ${look.color}`;
+          });
+        const away = await paint();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        await page.mouse.move(x, y);
+        await page.waitForTimeout(100);
+        const got = await page.evaluate(
+          ({ x, y }) => {
+            const el = document.querySelector("[data-probe]");
+            return { top: document.elementFromPoint(x, y)?.closest("[data-probe]") === el, hover: el.matches(":hover") };
+          },
+          { x, y },
+        );
+        const lit = await paint();
+        await page.evaluate(() => document.querySelector("[data-probe]")?.removeAttribute("data-probe"));
+        if (!got.top) wrong = `something else lies over the ${arg} mark, so the pointer never reaches it`;
+        else if (!got.hover) wrong = `the ${arg} mark does not take the hover`;
+        else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
+        break;
+      }
+      case "remove mark": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const count = (c) => (arg === "crop" ? c?.cropMarks ?? [] : c?.thumbnails ?? []).length;
+        const was = await entry();
+        const box = await page.locator(arg === "crop" ? ".clip-timeline .cropdot" : ".clip-timeline .thumb").first().boundingBox();
+        if (!box) {
+          wrong = `the clip timeline shows no ${arg} mark`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step("double-click", s);
+        await settle(page);
+        const now = await entry();
+        if (count(now) !== count(was) - 1) wrong = `a double-click left the clip ${count(now)} ${arg} marks, not ${count(was) - 1}`;
+        else if (now.segments.length !== was.segments.length) wrong = `a double-click on the ${arg} mark cut the clip`;
+        break;
+      }
+      case "drag crop": {
+        const box = await page.locator(".screen .frame").boundingBox();
+        if (!box) {
+          wrong = "the video preview shows no crop frame to drag";
+          break;
+        }
+        const y = box.y + box.height / 2;
+        const x = box.x + box.width / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x + (arg * i) / 10, y);
+        await page.mouse.up();
+        await watch.step("drag", s);
+        await settle(page);
+        break;
+      }
+      case "crop marks": {
+        const on = await chosen(page);
+        const marks = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
+        let got = [];
+        for (let i = 0; i < 50; i++) {
+          got = await marks();
+          if (got.length === arg && new Set(got.map((m) => m.x)).size === arg) break;
+          await page.waitForTimeout(100);
+        }
+        const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+        if (got.length !== arg) wrong = `the engine has ${got.length} crop marks, not ${arg}`;
+        else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the crop marks stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
+        else if (dots !== arg) wrong = `the clip timeline draws ${dots} crop marks, not ${arg}`;
+        break;
+      }
+      case "glides":
+      case "glides while playing": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const piece = entry?.segments.find((p) => (p.marks ?? []).length >= 2);
+        if (!piece) {
+          wrong = "no piece of the clip has two crop marks to glide between";
+          break;
+        }
+        const glide = glideOf(piece.marks, src);
+        const [a, b] = piece.marks;
+        const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
+        if (what === "glides") {
+          const problems = [];
+          for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+            // Half a frame in, so the click lands in the frame meant.
+            const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
+            if (!(await seekTo(page, at, src.fps))) {
+              problems.push(`no frame came for ${at.toFixed(3)} s`);
+              continue;
+            }
+            const k = (await preview(page, 1)).frame;
+            const got = await crop();
+            if (got !== glide(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${glide(k)}`);
+          }
+          const ends = [glide(Math.round(a.at * src.fps)), glide(Math.round(b.at * src.fps))];
+          if (ends[0] === ends[1]) problems.push(`the two crop marks stand at ${ends[0]} both, so nothing glides`);
+          if (problems.length) wrong = problems.join("; ");
+          break;
+        }
+        await seekTo(page, a.at + 0.5 / src.fps, src.fps);
+        await page.evaluate(() => {
+          window.__glide = [];
+          const read = () => {
+            const el = document.querySelector(".screen");
+            window.__glide.push({ k: window.__pictured(), crop: Number(el.dataset.crop) });
+            if (window.__glide.length < 2000) window.__glideRaf = requestAnimationFrame(read);
+          };
+          window.__glideRaf = requestAnimationFrame(read);
+        });
+        await page.keyboard.press(" ");
+        await page.waitForTimeout(2000);
+        await page.keyboard.press(" ");
+        const seen = await page.evaluate(() => {
+          cancelAnimationFrame(window.__glideRaf);
+          return window.__glide;
+        });
+        await settle(page);
+        const off = seen.filter((r) => r.k >= 0 && r.crop !== glide(r.k));
+        const places = new Set(seen.filter((r) => r.k >= 0).map((r) => r.crop));
+        if (off.length) {
+          wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
+        } else if (places.size < 10) {
+          wrong = `while playing, the crop frame stood in ${places.size} places, not following the glide`;
+        }
+        break;
+      }
       case "turned": {
         const on = await chosen(page);
         const pieces = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.segments ?? [];
@@ -3330,3 +3587,28 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   await browser.close();
 }
 process.exit(failures ? 1 : 0);
+
+// The left edge of the crop on each frame of the video, gliding over a
+// piece's crop marks by smoothstep, the way the engine's glideX and
+// lib/glide.ts work it out, see glide.cases.json, for frame numbers
+// counted from the picture's first frame.
+function glideOf(marks, src) {
+  const v0 = src.videoStart ?? 0;
+  const most = src.width - src.cropWidth;
+  const on = marks.map((m) => {
+    const x = Math.max(0, Math.min(m.x, most));
+    return [Math.floor((m.at - v0) * src.fps + 0.5), x - (x % 2)];
+  });
+  return (k) => {
+    if (k <= on[0][0]) return on[0][1];
+    for (let i = 1; i < on.length; i++) {
+      const [kb, xb] = on[i];
+      if (k >= kb) continue;
+      const [ka, xa] = on[i - 1];
+      const u = (k - ka) / (kb - ka);
+      const x = xa + (xb - xa) * (u * u * (3 - 2 * u));
+      return 2 * Math.floor(x / 2 + 0.5);
+    }
+    return on[on.length - 1][1];
+  };
+}

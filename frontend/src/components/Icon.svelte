@@ -58,6 +58,17 @@
     {:else}
       <path d="M10.5 11.1h5" />
     {/if}
+  <!-- A crop mark: the crop glyph every photo app draws, two corners of a
+       frame crossing, made smaller like the thumbnail's, with a plus to
+       put one and a minus to remove the one here. Plan row 3.26. -->
+  {:else if name === "crop-mark-add" || name === "crop-mark-remove"}
+    <path d="M3.4 0.8v7.8h7.8" />
+    <path d="M0.8 3.4h7.8v7.8" />
+    {#if name === "crop-mark-add"}
+      <path d="M13 9.6v5M10.5 12.1h5" />
+    {:else}
+      <path d="M10.5 12.1h5" />
+    {/if}
   {:else if name === "rotate"}
     <!-- Preview's Rotate Left: the picture, and an arrow turning to the
          left over its corner. -->

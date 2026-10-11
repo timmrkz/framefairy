@@ -196,11 +196,11 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 // to be in the clip, and one frame holds one.
 func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 	path := rotatablePlanPath(t)
-	if err := SetCropMark(path, "01", -1, 10.517, 300, at25); err != nil {
+	if err := SetCropMark(path, "01", -1, 10.557, 300, at25); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, path).CropMarks; len(got) != 1 || got[0] != (CropMark{10.52, 300}) {
-		t.Fatalf("C at 10.517 s made %v, not a mark on the frame at 10.52 s", got)
+		t.Fatalf("C at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
 	}
 	for _, c := range []struct {
 		name     string
@@ -218,10 +218,10 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 	if err := SetCropMark(path, "01", 10.52, 11.3, -1, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.32, 300}) {
-		t.Fatalf("the mark dragged to 11.3 s is %v", got)
+	if got := loadedClip(t, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.28, 300}) {
+		t.Fatalf("the mark dragged to 11.3 s is %v, not on the frame from 11.28 s", got)
 	}
-	if err := SetCropMark(path, "01", 11.32, -1, -1, at25); err != nil {
+	if err := SetCropMark(path, "01", 11.28, -1, -1, at25); err != nil {
 		t.Fatal(err)
 	}
 	if got := loadedClip(t, path).CropMarks; len(got) != 0 {
@@ -248,11 +248,11 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 		t.Fatalf("the crop placed on the mark at 10.8 s left the marks %v", got)
 	}
 
-	// At 10.5 s, on frame 263, the crop of the first angle has glided
-	// 55 % of the way from 100 to 300, to 210. Placed at 250 there, it
-	// moves 40, and so does every mark of the angle, the one in the other
-	// part too.
-	if err := SetCrop(path, "01", 10.5, 250, at25, 152); err != nil {
+	// At 10.5 s, in the frame from 10.48 s, the crop of the first angle
+	// has glided 45 % of the way from 100 to 300, to 190. Placed at 230
+	// there, it moves 40, and so does every mark of the angle, the one in
+	// the other part too.
+	if err := SetCrop(path, "01", 10.5, 230, at25, 152); err != nil {
 		t.Fatal(err)
 	}
 	got := loadedClip(t, path).CropMarks
@@ -262,8 +262,8 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 			t.Fatalf("the glide moved by 40 left the marks %v, not %v", got, want)
 		}
 	}
-	if seg := pieceAt(t, path, 13.2); seg.CropX == nil || *seg.CropX != 250 {
-		t.Errorf("the crop of the angle is %v, not 250", seg.CropX)
+	if seg := pieceAt(t, path, 13.2); seg.CropX == nil || *seg.CropX != 230 {
+		t.Errorf("the crop of the angle is %v, not 230", seg.CropX)
 	}
 
 	if err := ResetCrop(path, "01", 10.5); err != nil {

@@ -861,7 +861,7 @@ func SetCrop(planPath, clipID string, at float64, left int, frames SourceInfo, c
 		marks := cropMarksOf(c)
 		ofAngle := marksOfAngle(marks, pieces, spans, angle)
 		for i := range marks {
-			if ofAngle[i] && frames.markFrame(marks[i].At) == frames.markFrame(at) {
+			if ofAngle[i] && frames.markFrame(marks[i].At) == frames.frameHolding(at) {
 				marks[i].X = left
 				setCropMarks(c, marks)
 				return nil

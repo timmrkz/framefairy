@@ -141,6 +141,29 @@ func (s SourceInfo) markFrame(at float64) int64 {
 	return s.nearestFrame(at)
 }
 
+// frameHolding is the frame of the video that holds a moment, the one the
+// video preview shows with the playhead there: the last to start at or
+// before it, give or take frameHair, see frameAt in lib/flow.ts. The
+// millisecond where the rate is not known.
+func (s SourceInfo) frameHolding(at float64) int64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return int64(math.Round(at * 1000))
+	}
+	num, den := int64(s.FPSNum), int64(s.FPSDen)
+	us := int64(math.Round((at+frameHair)*1_000_000)) - int64(math.Round(s.VideoStart*1_000_000))
+	return floorDiv(max(us, 0)*num, den*1_000_000)
+}
+
+// frameStartHolding is the start of the frame that holds a moment, to the
+// millisecond the plan keeps, or the moment itself where the rate is not
+// known.
+func (s SourceInfo) frameStartHolding(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return roundTo(at, 3)
+	}
+	return s.keptAt(s.frameHolding(at))
+}
+
 // frameMark is a crop mark on its frame, with its left edge kept inside
 // the picture.
 type frameMark struct {
@@ -231,13 +254,13 @@ func (s SourceInfo) cropXOf(seg Segment, cropW, width int) string {
 	return "'" + glideExpr(marks, first) + "'"
 }
 
-// CropAt is the left edge of a piece's crop on the frame a moment means,
-// as the render places it: still, or gliding over its marks.
+// CropAt is the left edge of a piece's crop on the frame that holds a
+// moment, as the render places it: still, or gliding over its marks.
 func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) int {
 	if len(seg.Marks) == 0 {
 		return ClampCropX(seg.CropX, cropW, width)
 	}
-	return glideX(s.onFrames(seg.Marks, cropW, width), s.markFrame(at))
+	return glideX(s.onFrames(seg.Marks, cropW, width), s.frameHolding(at))
 }
 
 // cropMarksOf is the crop marks a clip of a plan being edited has, as the
@@ -292,8 +315,9 @@ func marksOfAngle(marks []CropMark, pieces []*object, spans []Rotation, angle st
 // SetThumbnail does a thumbnail: from is the mark as it is and to where it
 // goes, both in seconds of the video. A from below nought adds one at to
 // with its crop at x, and a to below nought removes the one at from. A
-// mark lands on the start of the frame it means, and has to be inside a
-// piece the clip keeps, because a moment that was cut is not in the short.
+// mark lands on the start of the frame that holds its moment, the frame
+// the video preview shows there, and has to be inside a piece the clip
+// keeps, because a moment that was cut is not in the short.
 // Framing is not a judgement of the clip, so nothing is recorded for
 // training.
 func SetCropMark(planPath, clipID string, from, to float64, x int, frames SourceInfo) error {
@@ -320,7 +344,7 @@ func SetCropMark(planPath, clipID string, from, to float64, x int, frames Source
 		var moving *CropMark
 		if !adding {
 			for i := range marks {
-				if moving == nil && frames.markFrame(marks[i].At) == frames.markFrame(from) {
+				if moving == nil && frames.markFrame(marks[i].At) == frames.frameHolding(from) {
 					m := marks[i]
 					moving = &m
 					continue
@@ -334,7 +358,7 @@ func SetCropMark(planPath, clipID string, from, to float64, x int, frames Source
 			kept = marks
 		}
 		if !removing {
-			at := frames.frameStartNear(to)
+			at := frames.frameStartHolding(to)
 			if pieceHolding(pieces, at) < 0 {
 				return renderErr("%s is not in the clip", HMS(to))
 			}
@@ -375,7 +399,7 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 		for _, m := range marks {
 			on = append(on, frameMark{k: frames.markFrame(m.At), x: m.X})
 		}
-		left := glideX(on, frames.markFrame(at))
+		left := glideX(on, frames.frameHolding(at))
 		return &left
 	}
 	key := keyCropX

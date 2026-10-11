@@ -36,6 +36,7 @@
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
+  import { glidingLeft } from "../lib/glide";
 
   let {
     path,
@@ -486,7 +487,10 @@
   $effect(() => {
     if (!clip) return;
     const pieces = clip.segments
-      .map((s) => `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}`)
+      .map(
+        (s) =>
+          `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}${s.marks?.length ? ` gliding over ${s.marks.map((m) => `${m.at.toFixed(3)}@${m.x}`).join(" ")}` : ""}`,
+      )
       .join(", ");
     const turns = (clip.rotations ?? []).map((r) => `${r.from ?? "start"}-${r.to ?? "end"} ${r.deg}`).join(", ");
     const line = `video preview: clip ${clip.id} has the pieces ${pieces}${turns ? `, rotated ${turns}` : ""}`;
@@ -511,18 +515,36 @@
     return () => clearTimeout(settled);
   });
 
+  // The left edge of the crop on the frame on the canvas, in pixels of the
+  // picture: gliding over the piece's crop marks frame by frame while the
+  // clip plays, the way the render crops it, or standing still. Plan row
+  // 3.26.
+  const cropLeft = $derived.by(() => {
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
+    const gliding =
+      place !== "video"
+        ? glidingLeft(clip.segments[cropped]?.marks, frameAt, source.fps, source.videoStart ?? 0, picture.cropWidth, picture.width)
+        : null;
+    return gliding ?? clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+  });
+
+  // The crop's left edge as the video preview shows it now, which a crop
+  // mark put on this frame keeps.
+  export function cropLeftNow(): number | null {
+    return cropLeft;
+  }
+
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
-    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
-    const auto = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
-    const left = dragLeft ?? auto;
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth || cropLeft === null) return null;
+    const left = dragLeft ?? cropLeft;
     return {
       left: (left / picture.width) * 100,
       width: (picture.cropWidth / picture.width) * 100,
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
       inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
-      moved: clip.segments[cropped]?.moved ?? false,
+      moved: !!clip.segments[cropped]?.moved || !!clip.segments[cropped]?.marks?.length,
     };
   });
 
@@ -1046,7 +1068,7 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const start = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+    const start = cropLeft ?? (picture.width - picture.cropWidth) / 2;
     const scale = picture.width / screen.clientWidth;
     const most = picture.width - picture.cropWidth;
     let moved = false;
@@ -1200,7 +1222,8 @@
 <div class="player" bind:this={shell}>
   <!-- data-playhead says where the playhead is. Nothing on screen reads
        it: it is there so a probe can follow the playhead across a cut on
-       every frame, the way the caption words say their moments. -->
+       every frame, the way the caption words say their moments. data-crop
+       is the crop's left edge in pixels of the picture, for the same. -->
   <!-- The viewer: as wide as the middle column and as tall as the picture
        may be, black, with the picture in the middle of it. The columns
        beside it take their width from the app's width alone, so on an app
@@ -1217,6 +1240,7 @@
     bind:this={screen}
     data-playhead={time}
     data-turn={turn}
+    data-crop={crop?.inside ? (dragLeft ?? cropLeft) : null}
     style="--turn: {-turn}deg"
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->

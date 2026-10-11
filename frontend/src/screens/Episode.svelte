@@ -81,6 +81,7 @@
   import Colour from "../components/Colour.svelte";
   import { said } from "../lib/said";
   import { rotated } from "../lib/rotate";
+  import { markOn } from "../lib/glide";
 
   let {
     path,
@@ -1175,6 +1176,47 @@
     }
   }
 
+  // The crop mark on the frame under the playhead, told by the frame the
+  // playhead is in, the way thumbHere is. Plan row 3.26.
+  const cropHere = $derived(current && source ? markOn(current.cropMarks, time, source.fps, source.videoStart ?? 0) : null);
+
+  // A crop mark added, moved or removed: the dot shows at once, and the
+  // glide it makes comes back with the clip. A from below nought adds one
+  // at to with its crop at x, a to below nought removes the one at from.
+  async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
+    problem = "";
+    const ms = (t: number) => Math.round(t * 1000);
+    const was = clip.cropMarks ?? [];
+    const moving = was.find((m) => from >= 0 && ms(m.at) === ms(from));
+    const next = was.filter((m) => m !== moving);
+    if (to >= 0) next.push({ at: Math.round(to * 1000) / 1000, x: moving?.x ?? x });
+    next.sort((a, b) => a.at - b.at);
+    clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: next } : c));
+    try {
+      const updated = await api.setCropMark(path, clip.plan, clip.id, from, to, x);
+      putClip(updated);
+    } catch (err) {
+      problem = errorText(err);
+      clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: was } : c));
+    }
+  }
+
+  // The button and C: a crop mark on the frame under the playhead, with
+  // the crop where it stands there now, or the one there removed, so what
+  // one click adds one click takes away.
+  function toggleCropMark() {
+    if (!current || renderingCurrent) return;
+    if (cropHere !== null) {
+      void setCropMark(current, cropHere.at, -1, -1);
+      return;
+    }
+    const left = player?.cropLeftNow();
+    if (!inShort || left === null || left === undefined) return;
+    // The start of the frame, the moment a mark is kept at.
+    const at = frameStart + frameAt(time, frameLen, frameStart) * frameLen;
+    void setCropMark(current, -1, at, Math.round(left));
+  }
+
   // The button and T: the frame under the playhead becomes a thumbnail, or
   // stops being one, so what one click adds one click takes away.
   function toggleThumbnail() {
@@ -1334,6 +1376,18 @@
     if (!current) return;
     event.preventDefault();
     void rotatePart();
+  }
+
+  // C puts a crop mark on the frame under the playhead, or removes the one
+  // there, the crop mark button's key, the way T is the thumbnail's.
+  function cropMarkKey(event: KeyboardEvent) {
+    if (event.key !== "c" && event.key !== "C") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    if (keysElsewhere() || asleep(root)) return;
+    if (!current) return;
+    event.preventDefault();
+    toggleCropMark();
   }
 
   function thumbnailKey(event: KeyboardEvent) {
@@ -2337,12 +2391,14 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", cropMarkKey);
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
       window.removeEventListener("keydown", loopKey);
       window.removeEventListener("keydown", inOutKey);
@@ -2880,6 +2936,8 @@
         playing={!paused}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        cropMarks={current?.cropMarks ?? []}
+        oncropmark={(from, to) => (current ? setCropMark(current, from, to, -1) : Promise.resolve())}
         {marks}
         {hovered}
         onhover={hoverClip}
@@ -2951,6 +3009,23 @@
                 : "Put the playhead in the clip to make a thumbnail of the frame there"}
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
+          </button>
+          <!-- A crop mark on the frame under the playhead, made the way a
+               thumbnail is: a plus to put one with the crop where it stands,
+               a minus when the playhead stands on one. With two or more the
+               crop glides from each to the next. Plan row 3.26. -->
+          <button
+            class="glyph"
+            aria-label={cropHere !== null ? "Remove this crop mark" : "Put a crop mark on this frame"}
+            disabled={renderingCurrent || (cropHere === null && !inShort)}
+            onclick={toggleCropMark}
+            title={cropHere !== null
+              ? "Remove the crop mark at the playhead. C does the same"
+              : inShort
+                ? "Put a crop mark on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
+                : "Put the playhead in the clip to put a crop mark on the frame there"}
+          >
+            <Icon name={cropHere !== null ? "crop-mark-remove" : "crop-mark-add"} />
           </button>
           <!-- Rotate Left, the way Preview and Photos rotate: the part of
                the clip between two cuts the playhead stands in, a quarter

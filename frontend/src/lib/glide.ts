@@ -5,6 +5,7 @@
 // file and the engine to the same left edge on every frame.
 
 import type { CropMark } from "./api";
+import { frameAt } from "./flow";
 
 // A crop mark on its frame of the video, with its left edge.
 export type FrameMark = [frame: number, left: number];
@@ -40,9 +41,9 @@ export function clampLeft(left: number, cropWidth: number, width: number): numbe
   return x - (x % 2);
 }
 
-// The left edge of a piece's crop on the frame that starts at a moment,
-// gliding over the piece's marks, or null for a piece with none, whose
-// crop stands still.
+// The left edge of a piece's crop on the frame that holds a moment, the
+// frame on the canvas, gliding over the piece's marks, or null for a piece
+// with none, whose crop stands still.
 export function glidingLeft(
   marks: CropMark[] | undefined,
   at: number,
@@ -59,12 +60,13 @@ export function glidingLeft(
     if (last && last[0] === mark[0]) onFrames[onFrames.length - 1] = mark;
     else onFrames.push(mark);
   }
-  return glideX(onFrames, frameOf(at, fps, videoStart));
+  return glideX(onFrames, frameAt(at, 1 / fps, videoStart));
 }
 
-// The crop mark of a clip on the frame a moment means, or null.
+// The crop mark of a clip on the frame that holds a moment, the playhead's,
+// or null.
 export function markOn(marks: CropMark[] | undefined, at: number, fps: number, videoStart = 0): CropMark | null {
   if (!marks?.length || !(fps > 0)) return null;
-  const k = frameOf(at, fps, videoStart);
+  const k = frameAt(at, 1 / fps, videoStart);
   return marks.find((m) => frameOf(m.at, fps, videoStart) === k) ?? null;
 }

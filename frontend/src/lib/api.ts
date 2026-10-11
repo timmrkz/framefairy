@@ -732,6 +732,11 @@ export const api = {
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>
     call<ClipEntry>("SetThumbnail", path, plan, clip, from, to),
+  // A crop mark added, moved or removed. A from below nought adds one at to
+  // with its crop at x, a to below nought removes the one at from, and
+  // both move it with its crop.
+  setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number) =>
+    call<ClipEntry>("SetCropMark", path, plan, clip, from, to, x),
   clipPlayed: (plan: string, clip: string) => call<void>("ClipPlayed", plan, clip),
   removeClip: (path: string, plan: string, clip: string, removed: boolean) =>
     call<ClipEntry>("RemoveClip", path, plan, clip, removed),
