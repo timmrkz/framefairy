@@ -351,7 +351,13 @@ as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `trim` an edge by some
-pixels, `reset` an edge and click the caption `block` holding a word. What has to come of them: `box`, what
+pixels, `reset` an edge and click the caption `block` holding a word,
+drag an edge of the caption holding a word `edge in` over the middle of
+its word at that edge, `edge out` back to where it was at the mark
+`start`, or `edge nudge` a little short of any word, and `remove last`,
+the last word of that caption removed in the caption box, with `gone last`
+and `gone first`, that caption reading as it did at a mark less its last
+or first word. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer
