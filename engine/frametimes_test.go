@@ -63,7 +63,7 @@ type timesCase struct {
 	video []string
 	out   []string
 	file  string
-	// The frame rate the short has.
+	// The frame rate the short has, not checked where it is empty.
 	rate string
 	// How long the episode is, seven seconds when nought.
 	seconds int
@@ -117,7 +117,9 @@ var timesCases = []timesCase{
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
-	{name: "mpegts", file: "ts.ts", rate: "30000/1001",
+	// Its rate is not checked: the Mac's encoder stamps its frames
+	// unevenly in MPEG-TS, and the probe then makes it 30.
+	{name: "mpegts", file: "ts.ts",
 		gop: 60, previewOnly: true},
 }
 

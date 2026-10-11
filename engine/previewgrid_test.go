@@ -40,7 +40,7 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 				t.Fatal(err)
 			}
 			grid := info.Grid()
-			if got := info.FPSString(); got != c.rate {
+			if got := info.FPSString(); c.rate != "" && got != c.rate {
 				t.Errorf("the grid has %s frames a second, the short %s", got, c.rate)
 			}
 			if info.SoundRate != 48000 || info.SoundChannels != 1 {
