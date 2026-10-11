@@ -296,9 +296,9 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			b.picks = nil
 			b.mu.Unlock()
 			if len(picked) == 0 {
-				return nil, nil
+				return Added{Added: []string{}}, nil
 			}
-			return b.d.svc.addEpisodes(picked)
+			return b.d.svc.takeFiles("add", picked), nil
 		},
 	}
 	mux.Handle("/call", callHandler(svc, own, b.held))
@@ -317,8 +317,21 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("namesake") == "1")
+			q.Get("namesake") == "1", q.Get("box") != "0")
 		answer(w, path, err)
+	})
+	// Files dropped on the app, which the window hands over the way the
+	// runtime does once the drop landed on a drop target, see
+	// wails-bridge.ts: what WindowFilesDropped does in main.go.
+	mux.HandleFunc("/drop", func(w http.ResponseWriter, r *http.Request) {
+		var files []string
+		if err := json.NewDecoder(r.Body).Decode(&files); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		dropped := b.d.svc.dropFiles(files)
+		b.d.bus.send("dropped", dropped)
+		answer(w, dropped, nil)
 	})
 	// A file of sound alone, named like a video, which Add has to leave
 	// out: the episode's decoder finds no picture in it.
@@ -781,7 +794,7 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
 // own kind is filmed by two cameras that switch then, see twoCameras, and
 // with hevc it is HEVC with 10-bit colour.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake bool) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -817,9 +830,11 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake boo
 	if err != nil {
 		return "", err
 	}
-	b.mu.Lock()
-	b.picks = append(b.picks, path)
-	b.mu.Unlock()
+	if box {
+		b.mu.Lock()
+		b.picks = append(b.picks, path)
+		b.mu.Unlock()
+	}
 	return path, nil
 }
 

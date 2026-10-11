@@ -65,3 +65,52 @@ export const Events = {
     return () => set.delete(fn);
   },
 };
+
+// What the runtime does with a file dragged from the system over the app,
+// which a browser cannot be handed: on macOS and Linux the Go side calls
+// these, see window.ts in @wailsio/runtime 3.0.0-beta.23, the version the
+// app pins. A drag starts with handleDragEnter, and handleDragOver lights
+// nothing before it. While a file is held over a drop target, the nearest
+// element marked data-file-drop-target wears file-drop-target-active, and
+// a drop that lands on one goes to the Go side, which adds what it can,
+// see drop.go. A drop anywhere else is ignored, as the runtime ignores it,
+// and so is everything while the app's window takes no drops, which
+// EnableFileDrop in main.go says. A walk drags and drops with these.
+const TARGET = "data-file-drop-target";
+const ACTIVE = "file-drop-target-active";
+const wails = ((window as any)._wails ??= {});
+wails.flags = { ...(wails.flags ?? {}), enableFileDrop: true };
+let dragging = false;
+let lit: Element | null = null;
+function unlight() {
+  dragging = false;
+  lit?.classList.remove(ACTIVE);
+  lit = null;
+}
+const target = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(`[${TARGET}]`) ?? null;
+Object.assign(wails, {
+  handleDragEnter() {
+    if (wails.flags.enableFileDrop === false) return;
+    dragging = true;
+  },
+  handleDragOver(x: number, y: number) {
+    if (!dragging || wails.flags.enableFileDrop === false) return;
+    const over = target(x, y);
+    if (over !== lit) lit?.classList.remove(ACTIVE);
+    over?.classList.add(ACTIVE);
+    lit = over;
+  },
+  handleDragLeave: unlight,
+  async handlePlatformFileDrop(filenames: string[], x: number, y: number): Promise<boolean> {
+    if (wails.flags.enableFileDrop === false) return false;
+    const on = target(x, y);
+    unlight();
+    if (!on) return false;
+    await fetch("/drop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(filenames),
+    });
+    return true;
+  },
+});

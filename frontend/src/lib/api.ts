@@ -656,7 +656,10 @@ export const api = {
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
-  addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  addEpisodes: () => call<Added>("AddEpisodes"),
+  // Which files the app takes as videos, in words, from the one list there
+  // is, VideoExtensions in engine/episode.go.
+  videoNames: () => call<string>("VideoNames"),
   // Asks for a folder and says which one, or nothing when it was cancelled.
   chooseFolder: (title: string) => call<string>("ChooseFolder", title),
   // Loads the local model for the first search of an episode while the
@@ -874,6 +877,15 @@ export function onReport(fn: () => void): () => void {
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
+}
+
+// What became of files given to the app, picked with Add or dropped on
+// it, see Added in drop.go: the videos added, the one to open and why
+// anything was left out.
+export type Added = { added: string[]; open?: string; error?: string };
+
+export function onDropped(fn: (d: Added) => void): () => void {
+  return Events.On("dropped", (ev) => fn(ev.data as Added));
 }
 
 // The loudness of an episode was measured further, about twice a second
