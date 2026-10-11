@@ -18,6 +18,8 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["button", label]  clicks the button that says label, and waits until
+//                      it has done its work
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
 //   ["mark", label]    remembers the engine's captions and pieces
@@ -1014,13 +1016,9 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
-    // react to the pointer, and was removed only by putting the playhead
-    // on it and pressing T. It is the crop mark's kind of mark, lit under
-    // the hand and removed with a double-click, the way a cut is.
-    name: "a crop mark goes on a clip's first and last frame with C, and comes off with C",
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
     // only one frame in.
+    name: "a crop mark goes on a clip's first and last frame with C, and comes off with C",
     steps: [
       ["add", 30, "25"],
       ["wait for", "New"],
@@ -1030,6 +1028,30 @@ export const sequences = [
     ],
   },
   {
+    // Found on #192: Automatic crop took the crop marks of the angle away
+    // with the crop, and Put the crop back brought back the crop alone,
+    // so the glide was lost to one click.
+    name: "Put the crop back after Automatic crop brings back the crop marks and their glide",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["crop mark at", 0.2],
+      ["crop mark at", 0.8],
+      ["drag crop", 400],
+      ["crop marks", 2],
+      ["button", "Automatic crop"],
+      ["crop marks", 0],
+      ["button", "Put the crop back"],
+      ["crop marks", 2],
+      ["glides"],
+    ],
+  },
+  {
+    // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
+    // react to the pointer, and was removed only by putting the playhead
+    // on it and pressing T. It is the crop mark's kind of mark, lit under
+    // the hand and removed with a double-click, the way a cut is.
     name: "a thumbnail mark lights under the hand and a double-click removes it",
     steps: [
       ["add", 30, "25"],
@@ -2203,6 +2225,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await word(arg).click();
         await watch.step("click", s);
         break;
+      case "button": {
+        const button = page.getByRole("button", { name: arg, exact: true });
+        await button.click();
+        await page.waitForFunction(
+          (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled),
+          arg,
+        );
+        break;
+      }
       case "press":
         await page.keyboard.press(arg);
         await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s);

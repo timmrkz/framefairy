@@ -31,6 +31,7 @@
     snapCaptionY,
     type CaptionsView,
     type ClipEntry,
+    type CropMark,
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
@@ -48,6 +49,7 @@
     oncaptionmoved,
     oncrop,
     onresetcrop,
+    oncropmark,
     oncaptiony,
     onword,
     locked = false,
@@ -80,6 +82,9 @@
     oncaptionmoved?: (y: number) => void;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
+    // Puts a crop mark back at a moment with its crop, the way the clip
+    // timeline puts one, for the marks a reset took away.
+    oncropmark?: (from: number, to: number, x: number) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -130,9 +135,16 @@
   let savingCaptions = $state(false);
 
   // Going back to the automatic crop is one click, so taking that back has
-  // to be one click too. What a reset threw away is kept until the clip
-  // changes or it is placed by hand again.
-  let undoCrop = $state<{ key: string; piece: number; at: number; left: number } | null>(null);
+  // to be one click too. What a reset threw away, the crop and the crop
+  // marks of the angle, is kept until the clip changes or it is placed by
+  // hand again.
+  let undoCrop = $state<{
+    key: string;
+    piece: number;
+    at: number;
+    left: number | null;
+    marks: CropMark[];
+  } | null>(null);
 
   // The episode, played from its own file onto the canvas by the frame
   // queue, see lib/frames/. Every frame drawn, playing or paused, comes
@@ -1109,11 +1121,14 @@
     if (!clip || !onresetcrop) return;
     const at = cropMoment();
     const was = piece;
-    const had = clip.cropLefts[was];
+    const had = clip.cropLefts[was] ?? null;
+    const marked = clip.cropMarks ?? [];
     savingCrop = true;
     try {
       await onresetcrop(at);
-      if (had !== undefined && had !== null) undoCrop = { key: clip.key, piece: was, at, left: had };
+      const still = clip?.cropMarks ?? [];
+      const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
+      if (had !== null || marks.length) undoCrop = { key: clip!.key, piece: was, at, left: had, marks };
     } finally {
       savingCrop = false;
     }
@@ -1124,7 +1139,8 @@
     if (!back || !oncrop) return;
     savingCrop = true;
     try {
-      await oncrop(back.at, back.left);
+      if (back.left !== null) await oncrop(back.at, back.left);
+      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x);
       undoCrop = null;
     } finally {
       savingCrop = false;

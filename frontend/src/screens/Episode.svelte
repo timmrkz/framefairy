@@ -2847,6 +2847,7 @@
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
+          oncropmark={(from, to, x) => (current ? setCropMark(current, from, to, x) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
           locked={renderingCurrent}

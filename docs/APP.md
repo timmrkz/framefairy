@@ -1030,8 +1030,9 @@ bubble scrolled by those eight pixels.
   off. The frame is there while the playhead is in the clip, and only
   then. The new place applies to every piece of the clip filmed from the same
   camera angle. **Automatic crop** appears once a crop was moved and brings
-  back the automatic placement for that angle, and **Put the crop back**
-  takes that click back again. A click on the frame without dragging plays
+  back the automatic placement for that angle, removing its crop marks
+  with it, and **Put the crop back** takes that click back again, crop
+  marks and all. A click on the frame without dragging plays
   or pauses.
 - **Clip list:** beside the player, exactly as tall as the video preview with
   the range picker under it, every clip found, in time order, with its start
