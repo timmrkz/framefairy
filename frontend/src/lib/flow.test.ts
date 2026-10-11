@@ -18,7 +18,6 @@ import {
   inEpisode,
   endInEpisode,
   inClip,
-  draftCaptions,
   litWord,
   frameAt,
   frameMiddle,
@@ -402,44 +401,6 @@ describe("insideClip", () => {
 
   test("no pieces, nowhere inside", () => {
     expect(insideClip([], 5, frame)).toBe(false);
-  });
-});
-
-describe("draftCaptions", () => {
-  // Two captions that meet at 2, and a third after a pause.
-  const three = [
-    { start: 0, end: 2 },
-    { start: 2, end: 3.5 },
-    { start: 4.5, end: 6 },
-  ];
-
-  test("a caption that appears later keeps the one before up until it does", () => {
-    const got = draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
-    expect(got[0].end).toBe(2.4);
-    expect(got[1].start).toBe(2.4);
-  });
-
-  test("a caption that appears earlier ends the one before", () => {
-    const got = draftCaptions(three, { index: 1, edge: "start", at: 1.6 });
-    expect(got[0].end).toBe(1.6);
-  });
-
-  test("after a pause, appearing later leaves the one before alone", () => {
-    const got = draftCaptions(three, { index: 2, edge: "start", at: 4.8 });
-    expect(got[1].end).toBe(3.5);
-    expect(got[2].start).toBe(4.8);
-  });
-
-  test("going earlier leaves a gap and moves nothing else", () => {
-    const got = draftCaptions(three, { index: 0, edge: "end", at: 1.5 });
-    expect(got[0].end).toBe(1.5);
-    expect(got[1].start).toBe(2);
-  });
-
-  test("changes nothing it is handed", () => {
-    draftCaptions(three, { index: 1, edge: "start", at: 2.4 });
-    expect(three[0].end).toBe(2);
-    expect(draftCaptions(three, null)).toBe(three);
   });
 });
 

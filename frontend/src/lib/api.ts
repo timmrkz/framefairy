@@ -715,6 +715,17 @@ export const api = {
     edge: "start" | "end",
     at: number,
   ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
+  // The captions as they would be with a caption edge moved, worked out by
+  // the engine while the hand moves and saved by setCaptionTime when it
+  // lets go, so what is drawn is what is saved. Nothing is written.
+  shapeCaptionTime: (
+    path: string,
+    plan: string,
+    clip: string,
+    word: number,
+    edge: "start" | "end",
+    at: number,
+  ) => call<CaptionsView>("ShapeCaptionTime", path, plan, clip, word, edge, at),
   // A thumbnail added, moved or removed. A from below nought adds one at
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>
