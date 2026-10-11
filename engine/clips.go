@@ -21,6 +21,10 @@ type Segment struct {
 	// Moved means a person placed the crop by hand. The automatic placement
 	// is kept in the plan as crop_x_auto.
 	Moved bool
+	// Rotate is how far the piece is rotated, in degrees to the left: 0,
+	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
+	// The crop is placed on the picture rotated.
+	Rotate int
 }
 
 // Duration of the segment in seconds.
@@ -32,6 +36,9 @@ type Clip struct {
 	Slug     string
 	Title    string
 	Segments []Segment
+	// Rotations is the stretches of the video a person rotated, in order,
+	// see Rotation. Each piece's Rotate is read from them.
+	Rotations []Rotation
 	// Rejected clips stay in the plan but are left out of a full render.
 	Rejected bool
 	// CaptionY is where the captions sit in this clip, as the distance from
@@ -300,6 +307,10 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			return Plan{}, nil, renderErr("clip %d has %d segments, the limit is %d",
 				index, len(rawSegments), MaxSegments)
 		}
+		spans, rerr := readRotations(entry[keyRotations])
+		if rerr != nil {
+			return Plan{}, nil, renderErr("clip %d: %s", index, rerr.Error())
+		}
 		var segments []Segment
 		for _, segAny := range rawSegments {
 			seg, ok := segAny.(map[string]any)
@@ -351,13 +362,27 @@ func LoadClips(path string) (Plan, []Clip, error) {
 				return Plan{}, nil, renderErr("clip %d: a segment lies outside the video, "+
 					"which cannot be longer than %d hours", index, MaxEpisodeSeconds/3600)
 			}
+			// A piece in a stretch a person rotated has its crop on the
+			// picture as it stands rotated, kept apart from the crop it
+			// has unrotated, see keyCropXTurned.
 			_, moved := seg[keyCropXAuto]
-			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved})
+			rotate := RotationAt(spans, start)
+			if rotate != 0 {
+				cropX, moved = nil, false
+				if value, present := seg[keyCropXTurned]; present && value != nil {
+					n, ok := toInt(value)
+					if !ok || !(-1_000_000 < n && n < 1_000_000) {
+						return Plan{}, nil, renderErr("clip %d: a rotated piece has its crop at %s",
+							index, Scrub(pyReprAny(value), 40))
+					}
+					cropX, moved = &n, true
+				}
+			}
+			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
 		}
 		if len(segments) == 0 {
 			continue
 		}
-
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]
 		idText := fallback
@@ -390,6 +415,7 @@ func LoadClips(path string) (Plan, []Clip, error) {
 			Slug:         SanitiseName(slugText, ""),
 			Title:        Scrub(titleText, 200),
 			Segments:     segments,
+			Rotations:    spans,
 		})
 	}
 
@@ -422,6 +448,21 @@ func LoadClips(path string) (Plan, []Clip, error) {
 // --------------------------------------------------------------------------
 // geometry
 // --------------------------------------------------------------------------
+
+// validRotate says whether a piece may be rotated by so many degrees: a
+// quarter of a circle at a time, the way Preview and Photos rotate.
+func validRotate(degrees int) bool {
+	return degrees == 0 || degrees == 90 || degrees == 180 || degrees == 270
+}
+
+// Rotated is the picture as a piece rotated by so many degrees to the left
+// shows it: a quarter turn either way swaps its width and its height.
+func (s SourceInfo) Rotated(degrees int) SourceInfo {
+	if degrees == 90 || degrees == 270 {
+		s.Width, s.Height = s.Height, s.Width
+	}
+	return s
+}
 
 // CropWindow is the source-pixel rectangle that fills the output aspect
 // ratio. Height is used in full whenever the source is wider than the target

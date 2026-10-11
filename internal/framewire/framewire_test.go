@@ -70,3 +70,15 @@ func TestAnOpenSaysItsLight(t *testing.T) {
 		}
 	}
 }
+
+// A display matrix's rotation is read as a quarter turn to the left, the
+// way ffprobe gives it, with a degree of slack, and anything else as none.
+func TestQuarterReadsATurnToTheLeft(t *testing.T) {
+	for left, want := range map[float64]int{
+		0: 0, 90: 90, -90: 270, 180: 180, -180: 180, 270: 270, 89.6: 90, 450: 90, 45: 0, 92: 0,
+	} {
+		if got := Quarter(left); got != want {
+			t.Errorf("a turn of %v is read as %d, not %d", left, got, want)
+		}
+	}
+}

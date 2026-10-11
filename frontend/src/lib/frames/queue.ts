@@ -70,6 +70,10 @@ export type Shown = {
   // Why the sound cannot be played, or the picture stopped decoding, in a
   // sentence, or nothing.
   trouble: string;
+  // The frame drawn is one passing on the way to the playhead under a hand
+  // that drags it, see passing: only frame is news, the playhead is the
+  // hand's.
+  passing?: boolean;
 };
 
 export type Stats = {
@@ -1120,7 +1124,7 @@ export class FrameQueue {
     for (const fn of this.listeners) fn(s);
   }
 
-  private report(drew = false) {
+  private report(drew = false, passing = false) {
     this.emit({
       at: this.at,
       frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
@@ -1129,6 +1133,7 @@ export class FrameQueue {
       ended: this.state === "ended",
       drawnAt: performance.now(),
       trouble: this.trouble,
+      passing,
     });
   }
 
@@ -1164,7 +1169,10 @@ export class FrameQueue {
   // and a frame takes longer to come than the hand takes to move, 30 to
   // 50 ms against 16. So every frame came for a place already left, none
   // was drawn, and the picture stood still for the whole drag, found by
-  // Tim on start.mp4. Nothing is reported: the playhead is the hand's.
+  // Tim on start.mp4. The playhead is the hand's, so the report says only
+  // which frame is up: what stands over the picture, and how far it is
+  // turned, follows the frame. Tim saw a part rotated in the clip turn
+  // with the hand while the frame from before its cut was still up, #188.
   private passing(rank: number, frame: Picture, seq: number) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || this.putFor === this.ticket) return;
     if (seq <= this.shownAsked) return;
@@ -1172,6 +1180,7 @@ export class FrameQueue {
     if (this.shown?.rank === rank) return;
     this.stats.open++;
     this.put(frame.clone(), -1, rank, true);
+    this.report(true, true);
   }
 
   // The frame on screen, see screen.ts.

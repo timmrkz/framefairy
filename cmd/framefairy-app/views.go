@@ -28,11 +28,10 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	if err != nil {
 		return nil, err
 	}
-	cw := s.cropWidth(info)
 	out := []ClipEntry{}
 	for _, summary := range plansOf(path) {
 		for _, c := range summary.View().Clips {
-			out = append(out, entryOf(summary.Path, c, cw, info.Width))
+			out = append(out, s.entryOf(summary.Path, c, info))
 		}
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Start < out[b].Start })
@@ -47,18 +46,23 @@ func plansOf(path string) []engine.PlanSummary {
 	return engine.PlanSummaries(engine.LogsDir(path))
 }
 
-// cropWidth is how wide the crop of a short is in the episode's pixels.
+// cropWidth is how wide the crop of a short is in the episode's pixels,
+// of a piece that is not rotated.
 func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
 	o := s.store.Settings().options()
 	cw, _ := engine.CropWindow(info, o.Width, o.Height)
 	return cw
 }
 
-// entryOf is a clip of the plan at plan as the clip list holds it.
-func entryOf(plan string, c engine.ClipView, cw, width int) ClipEntry {
+// entryOf is a clip of the plan at plan as the clip list holds it. A
+// rotated piece has its crop on the picture rotated, so its crop is worked
+// out on that, see SourceView.TurnedCropWidth.
+func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo) ClipEntry {
 	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
 	for _, seg := range c.Segments {
-		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, width))
+		upright := info.Rotated(seg.Rotate)
+		cw := s.cropWidth(upright)
+		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
 	}
 	return entry
 }
@@ -188,7 +192,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	}
 	for _, c := range view.Clips {
 		if c.ID == clipID {
-			return entryOf(plan, c, s.cropWidth(info), info.Width), nil
+			return s.entryOf(plan, c, info), nil
 		}
 	}
 	return ClipEntry{}, fmt.Errorf("the clip %s is not in this video's clips any more: %w", clipID, os.ErrNotExist)

@@ -475,6 +475,72 @@ func autoCrop(seg *object) any {
 	return value
 }
 
+// RotatePart rotates the part of a clip a moment is in a quarter turn to
+// the left, the way Preview and Photos rotate. A part is the pieces between
+// two cuts, or between a cut and an edge of the clip: what plays straight
+// on. What turns is the stretch of the video the part shows, see Rotation,
+// from the middle of the cut before it to the middle of the cut after,
+// where the phone was turned and the cut took the turn out. A part at an
+// edge of the clip turns as far as that end of the video, so its edge
+// dragged out shows the footage turned. Each edge of the stretch stands
+// on the start of a frame, the only place a video is cut. Four turns bring
+// it back.
+//
+// The crop of a rotated piece stands in the middle of the picture rotated
+// until it is placed, and the crop it has unrotated is kept as it was, so
+// a part rotated back has it again. Framing is not a judgement of the
+// clip, so nothing is recorded for training.
+func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
+	return editPlan(planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		pieces := segmentObjects(c)
+		target := segmentAt(pieces, at)
+		if target < 0 {
+			return renderErr("clip %s has no pieces", clipID)
+		}
+		spans := rotationsOf(c)
+		first, last := partOf(pieces, target)
+		from, to := math.Inf(-1), math.Inf(1)
+		if first > 0 {
+			from = frames.frameStartNear((number(pieces[first-1].values[keyEnd]) + number(pieces[first].values[keyStart])) / 2)
+		}
+		if last+1 < len(pieces) {
+			to = frames.frameStartNear((number(pieces[last].values[keyEnd]) + number(pieces[last+1].values[keyStart])) / 2)
+		}
+		turned := (rotationOf(pieces[target], spans) + 90) % 360
+		spans = turnStretch(spans, from, to, turned)
+		setRotations(c, spans)
+		for _, seg := range pieces {
+			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
+				seg.remove(keyCropXTurned)
+			}
+		}
+		return nil
+	})
+}
+
+// PiecesMeet is the most two pieces of a clip may stand apart and still
+// play straight on, with no cut between them: a camera switch a search
+// parted a clip at, not a cut. The window reads pieces by the same rule,
+// partOf in lib/rotate.ts.
+const PiecesMeet = 0.0005
+
+// partOf is the first and last of the pieces around one that play straight
+// on from each other, with no cut between them.
+func partOf(pieces []*object, i int) (int, int) {
+	first, last := i, i
+	for first > 0 && number(pieces[first].values[keyStart])-number(pieces[first-1].values[keyEnd]) <= PiecesMeet {
+		first--
+	}
+	for last+1 < len(pieces) && number(pieces[last+1].values[keyStart])-number(pieces[last].values[keyEnd]) <= PiecesMeet {
+		last++
+	}
+	return first, last
+}
+
 func segmentObjects(c *object) []*object {
 	list, _ := c.values[keySegments].([]any)
 	var pieces []*object
@@ -581,7 +647,7 @@ func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) 
 		}
 		before := segmentObjects(c)
 		found := foundPieces(c)
-		out, err := checkedPieces(change, before, found, frames)
+		out, err := checkedPieces(change, before, found, rotationsOf(c), frames)
 		if err != nil {
 			return err
 		}
@@ -623,11 +689,12 @@ func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) 
 // checkedPieces makes a change to a clip's pieces, puts their edges on
 // the episode's frames, see PieceOnFrames, and checks that what comes
 // back is a clip a person can still watch and the render can still make.
-func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, frames SourceInfo) ([]*object, error) {
+func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, spans []Rotation, frames SourceInfo) ([]*object, error) {
 	out, err := change(pieces, found)
 	if err != nil {
 		return nil, err
 	}
+	out = partedAtTurns(out, spans)
 	if out, err = piecesOnFrames(out, frames); err != nil {
 		return nil, err
 	}
@@ -769,9 +836,16 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := fmt.Sprint(autoCrop(pieces[target]))
+		spans := rotationsOf(c)
+		angle := angleOf(pieces[target], spans)
 		for _, seg := range pieces {
-			if fmt.Sprint(autoCrop(seg)) != angle {
+			if angleOf(seg, spans) != angle {
+				continue
+			}
+			// A rotated piece's crop is on the picture rotated, kept
+			// apart from the one it has as filmed, see keyCropXTurned.
+			if rotationOf(seg, spans) != 0 {
+				seg.set(keyCropXTurned, left)
 				continue
 			}
 			if _, moved := seg.get(keyCropXAuto); !moved {
@@ -1051,14 +1125,20 @@ func ResetCrop(planPath, clipID string, at float64) error {
 		if target < 0 {
 			return renderErr("clip %s has no pieces", clipID)
 		}
-		angle := fmt.Sprint(autoCrop(pieces[target]))
+		spans := rotationsOf(c)
+		angle := angleOf(pieces[target], spans)
 		for _, seg := range pieces {
-			auto, moved := seg.get(keyCropXAuto)
-			if !moved || fmt.Sprint(auto) != angle {
+			if angleOf(seg, spans) != angle {
 				continue
 			}
-			seg.set(keyCropX, auto)
-			seg.remove(keyCropXAuto)
+			if rotationOf(seg, spans) != 0 {
+				seg.remove(keyCropXTurned)
+				continue
+			}
+			if auto, moved := seg.get(keyCropXAuto); moved {
+				seg.set(keyCropX, auto)
+				seg.remove(keyCropXAuto)
+			}
 		}
 		return nil
 	})

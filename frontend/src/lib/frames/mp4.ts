@@ -238,6 +238,7 @@ export function parseMoov(bytes: Uint8Array): Movie {
   const mvhd = child(v, moov, "mvhd");
   if (!mvhd) fail("the file has no mvhd box");
   const movieScale = v.u8(mvhd.body) === 1 ? v.u32(mvhd.body + 20) : v.u32(mvhd.body + 12);
+  const movieTurn = turnOf(v, mvhd, v.u8(mvhd.body) === 1 ? 48 : 36);
   if (!movieScale) fail("the movie has no time scale");
   const movie: Movie = { duration: 0 };
   const tracks: (VideoTrack | AudioTrack)[] = [];
@@ -252,7 +253,7 @@ export function parseMoov(bytes: Uint8Array): Movie {
   let origin = Infinity;
   for (const trak of boxesIn(v, moov.body, moov.end)) {
     if (trak.type !== "trak") continue;
-    const track = parseTrak(v, trak, movieScale);
+    const track = parseTrak(v, trak, movieScale, movieTurn);
     if (!track) continue;
     tracks.push(track);
     const s = track.samples;
@@ -292,7 +293,28 @@ function editDelay(v: View, trak: Box, movieScale: number): number {
   return delay;
 }
 
-function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTrack | undefined {
+// Whether a track's display matrix stands its picture up a quarter turn
+// either way, the way a phone that recorded upright stores it lying down.
+// The app's decoder turns the frames as ffmpeg does, see framefairy-frames,
+// so the picture is the size it stands at, the size the engine's probe
+// gives too. Read lying down, its frames were asked for lying down, and a
+// standing picture was squeezed into them. #188.
+// The movie's own matrix in mvhd turns every track after the track's own,
+// the way ffmpeg reads them, so the two turns add up.
+function sideways(movieTurn: number, v: View, tkhd: Box): boolean {
+  const turn = movieTurn + turnOf(v, tkhd, v.u8(tkhd.body) === 1 ? 52 : 40);
+  return Math.abs(Math.sin(turn)) > Math.abs(Math.cos(turn));
+}
+
+// How far the matrix at an offset into a box's body turns the picture, in
+// radians, or nought where the box is too short to hold one.
+function turnOf(v: View, box: Box, offset: number): number {
+  const matrix = box.body + offset;
+  if (matrix + 20 > box.end) return 0;
+  return Math.atan2(v.i32(matrix + 4), v.i32(matrix));
+}
+
+function parseTrak(v: View, trak: Box, movieScale: number, movieTurn: number): VideoTrack | AudioTrack | undefined {
   const tkhd = child(v, trak, "tkhd");
   // A track that is switched off, like a second camera angle kept beside
   // the first, is not played.
@@ -314,7 +336,10 @@ function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTr
   const entry = [...boxesIn(v, stsd.body + 8, stsd.end)][0];
   if (!entry) fail("a track has no sample description");
   const shift = editShift(v, trak, movieScale, timescale);
-  if (handler === "vide") return videoEntry(v, entry, parseSamples(v, stbl, shift, timescale, true));
+  if (handler === "vide") {
+    const video = videoEntry(v, entry, parseSamples(v, stbl, shift, timescale, true));
+    return tkhd && sideways(movieTurn, v, tkhd) ? { ...video, width: video.height, height: video.width } : video;
+  }
   // Plain sound counts every moment of every channel as a sample of its
   // own, so four hours of it are hundreds of millions of samples. It is
   // read by the chunk instead.
