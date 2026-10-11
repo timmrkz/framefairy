@@ -67,10 +67,10 @@ type timesCase struct {
 	rate string
 	// How long the episode is, seven seconds when nought.
 	seconds int
-	// How the picture and the sound are coded, MPEG-4 Part 2 in GOPs of 30
-	// and PCM when nil.
-	codec []string
-	sound []string
+	// H.264 with B-frames and a key frame every gop frames where it is
+	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
+	// PCM where it is.
+	gop int
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
 	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
@@ -113,19 +113,13 @@ var timesCases = []timesCase{
 	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
 		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
 		out:   []string{"-fps_mode", "passthrough"},
-		codec: h264, sound: aac, previewOnly: true},
+		gop:   30, previewOnly: true},
 	// MPEG-TS, which OBS also records and camcorders write, has no index
 	// of its key frames, so a seek lands between two. A key frame every
 	// two seconds puts every jump of the test inside a GOP.
 	{name: "mpegts", file: "ts.ts", rate: "30000/1001",
-		codec: []string{"-c:v", "libx264", "-bf", "2", "-g", "60", "-sc_threshold", "0", "-pix_fmt", "yuv420p"}, sound: aac,
-		previewOnly: true},
+		gop: 60, previewOnly: true},
 }
-
-var (
-	h264 = []string{"-c:v", "libx264", "-bf", "2", "-g", "30", "-pix_fmt", "yuv420p"}
-	aac  = []string{"-c:a", "aac"}
-)
 
 // timesEpisode makes the episode of a case: its frames carry their
 // numbers in bars, and its sound says which moment of a second it is.
@@ -144,14 +138,9 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	args = append(args, "-f", "lavfi", "-i", picture,
 		"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
 	args = append(args, c.out...)
-	codec, sound := c.codec, c.sound
-	if codec == nil {
-		codec = []string{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}
-	} else if !hasEncoder(encodersHere(), codec[1]) {
-		t.Skipf("the ffmpeg on the path has no %s to make the test episode with", codec[1])
-	}
-	if sound == nil {
-		sound = []string{"-c:a", "pcm_s16le"}
+	codec, sound := []string{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}, []string{"-c:a", "pcm_s16le"}
+	if c.gop > 0 {
+		codec, sound = h264(t, c.gop), []string{"-c:a", "aac"}
 	}
 	args = append(args, codec...)
 	args = append(args, sound...)
@@ -162,9 +151,24 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	return source
 }
 
-// encodersHere is the encoders of the ffmpeg on the path. The one CI's
-// Mac runs is the one we ship, which encodes H.264 on the graphics chip
-// only.
+// h264 is how the ffmpeg on the path codes H.264 with two B-frames and a
+// key frame every gop frames. The one CI's Mac runs is the one we ship,
+// which has no libx264 and encodes H.264 on the graphics chip.
+func h264(t *testing.T, gop int) []string {
+	t.Helper()
+	encoders := encodersHere()
+	g := strconv.Itoa(gop)
+	switch {
+	case hasEncoder(encoders, "libx264"):
+		return []string{"-c:v", "libx264", "-bf", "2", "-g", g, "-sc_threshold", "0", "-pix_fmt", "yuv420p"}
+	case hasEncoder(encoders, "h264_videotoolbox"):
+		return []string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"}
+	}
+	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of H.264")
+	return nil
+}
+
+// encodersHere is the encoders of the ffmpeg on the path.
 var encodersHere = sync.OnceValue(func() string {
 	out, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
 	return string(out)
