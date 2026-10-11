@@ -91,9 +91,11 @@ than read with the eye:
 | `msg` | what happened, in words |
 
 Other fields come where they mean something: `stream` for the frames,
-`job` for a search or a render, `clip`, `edge`, `word`, `at`, `removed`
-and `back` for an edit to a clip, a word by when it starts and never by
-what it reads, `ms` for how long something took,
+`job` for a search or a render, `clip`, `edge`, `word`, `at` and
+`reset` for an edit to a clip, a word by when it starts and never by what
+it reads, `removed` for a word corrected to nothing, `out` and `back` for
+how many words a caption edge took out and put back, `ms` for how long
+something took,
 `status`, `bytes` and `said` for a call, `build` when the app starts.
 
 ### Acts

@@ -1844,19 +1844,28 @@ moved by hand, on the clip timeline.
   out of its caption every word whose middle it passes, the way delete
   removes a word, so pulling the left edge of "one two three" past "one"
   reads "two three", and the right edge past "three" reads "one two".
-  Dragged back out over a word it took, the word comes back. The last word
-  stays, because delete removes a caption whole. The caption box in the
-  video preview leaves the words out while the edge moves. When the edge
-  is let go it lands where the words it shows put it, and Cmd+Z takes back
-  the words and the edge in one step, `SetCaptionTime` and `trimCaption`
-  in the engine.
-- **Removing a word at an edge ends the same as dragging over it.** A
-  caption whose first or last word is removed in the caption box draws in
-  to the words it shows: it appears with its first word shown and goes a
-  moment after its last. The captions beside it keep their time, so the
-  room the word took stays empty. Before, the caption kept the time the
-  word had, and the two ways of taking a word off its edge ended
-  differently, which Tim found.
+  Dragged back out over a word it took, the word comes back. The middle
+  is of the part of the word the clip shows, so a word the start of the
+  clip cuts into is passed in that part. The last word stays, because
+  delete removes a caption whole. Which words an edge passes and where it
+  stops is the engine's to say, `ShapeCaptionTime`: the clip timeline asks
+  it while the hand moves and draws its answer, and the caption box in the
+  video preview shows the words it leaves. When the edge is let go it is
+  saved where it was drawn, `SetCaptionTime`, with the words, and Cmd+Z
+  takes back the words and the edge in one step. The interface once kept a
+  copy of the rule, which drifted from the engine's: an edge was drawn in
+  one place and saved in another, and a word the start of the clip cut
+  into left the caption box during the drag and came back when let go.
+- **Removing a word at an edge draws the caption in, as dragging over it
+  does.** A caption whose first or last word is removed in the caption box
+  draws in to the words it shows: it appears with its first word shown and
+  goes a moment after its last. An edge moved in by hand stays where it
+  was put, and one moved out comes in with the word. The captions beside
+  it keep their time, so the room the word took stays empty. Before, the
+  caption kept the time the word had, and the two ways of taking a word
+  off its edge ended differently, which Tim found. An edge that drew in
+  with its word no longer says it was put by hand, and the word typed back
+  takes it back out to where the hand put it.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as

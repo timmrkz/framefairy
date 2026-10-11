@@ -340,6 +340,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		errs["SetCaptionSwitch"] = svc.SetCaptionSwitch(ctx, mine, wrong, "text", false)
 		_, errs["SetThumbnail"] = svc.SetThumbnail(ctx, mine, wrong, "01", 1, 2)
 		_, errs["SetCaptionTime"] = svc.SetCaptionTime(ctx, mine, wrong, "01", 1, "start", 1.1)
+		_, errs["ShapeCaptionTime"] = svc.ShapeCaptionTime(mine, wrong, "01", 1, "start", 1.1)
 		_, errs["ResetCrop"] = svc.ResetCrop(ctx, mine, wrong, "01", 1)
 		_, errs["RemoveClip"] = svc.RemoveClip(ctx, mine, wrong, "01", true)
 		_, errs["Shape"] = svc.Shape(mine, wrong, "01", g)

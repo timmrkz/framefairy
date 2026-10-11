@@ -736,6 +736,20 @@ func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause 
 	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, overrides)}, nil
 }
 
+// ShapeCaptionTime works out the captions of a clip with the edge of one
+// where the hand has it, the words it crosses taken out or put back, and
+// writes nothing. It is what SetCaptionTime saves when the hand lets go,
+// see moveCaptionEdge.
+func ShapeCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
+	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+	work := *t
+	moved, err := moveCaptionEdge(LoadCorrections(logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	if err != nil {
+		return nil, err
+	}
+	return captionsView(moved.plan, moved.clip, &work, overrides), nil
+}
+
 // planClip finds one clip of a plan.
 func planClip(planPath, clipID string) (Plan, Clip, error) {
 	plan, clips, err := LoadClips(planPath)
@@ -808,8 +822,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
 			item.First, item.Last = c.Opens, c.Closes
-			item.StartMoved = clip.CaptionTimes[wordKey(c.Opens)].Start != nil
-			item.EndMoved = clip.CaptionTimes[wordKey(c.Closes)].End != nil
+			item.StartMoved, item.EndMoved = c.startMoved, c.endMoved
 		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}

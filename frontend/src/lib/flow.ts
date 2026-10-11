@@ -343,44 +343,13 @@ export function frameMiddle(k: number, frame: number, start = 0): number {
   return start + (k + 0.5) * frame;
 }
 
-// A caption edge being dragged, on the clip's clock.
+// A caption edge being dragged, on the clip's clock. Where it lands and
+// what it does to the words is the engine's to say, see ShapeCaptionTime
+// in engine/episode.go.
 export interface CaptionDraft {
   index: number;
   edge: "start" | "end";
   at: number;
-}
-
-// The captions with one edge where it is being dragged. The edge moves its
-// own caption and no other, the way the engine keeps it, see moveCaptions
-// in engine/lines.go. The words the edge is dragged in over leave the caption as it moves: a
-// word goes once the edge passes its middle, and the last word stays, the
-// way trimCaption in engine/corrections.go takes them out when it is let
-// go. Anything that shows the captions while an edge is dragged shows
-// these, so the timeline and the video preview move together.
-export function draftCaptions<
-  T extends { start: number; end: number; lines?: { words: { start: number; end: number }[] }[] },
->(captions: T[], draft: CaptionDraft | null): T[] {
-  if (!draft || !captions[draft.index]) return captions;
-  const out = captions.map((c) => ({ ...c }));
-  const i = draft.index;
-  const lines = out[i].lines;
-  if (lines) {
-    const inside = (w: { start: number; end: number }) => {
-      const mid = (w.start + w.end) / 2;
-      return draft.edge === "end" ? mid < draft.at : mid > draft.at;
-    };
-    const words = lines.flatMap((l) => l.words);
-    const kept = words.filter(inside);
-    if (kept.length < words.length) {
-      const stays = kept.length ? kept : [draft.edge === "end" ? words[0] : words[words.length - 1]];
-      out[i].lines = lines
-        .map((l) => ({ ...l, words: l.words.filter((w) => stays.includes(w)) }))
-        .filter((l) => l.words.length);
-    }
-  }
-  if (draft.edge === "end") out[i].end = draft.at;
-  else out[i].start = draft.at;
-  return out;
 }
 
 // Which word of a caption is lit at a moment on the clip's clock, counted

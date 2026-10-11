@@ -248,8 +248,44 @@ export class Watch {
       // and its time.
       // A caption removed whole is its words removed, from its first to
       // its last, so the same holds around all of them.
-      const last = [...calls].reverse().find((c) => c.name === "SetWord" || c.name === "RemoveCaption");
-      if (last) {
+      const last = [...calls]
+        .reverse()
+        .find((c) => c.name === "SetWord" || c.name === "RemoveCaption" || c.name === "SetCaptionTime");
+      const near = (a, b) => Math.abs(a - b) < 1e-3;
+      const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
+      // The words a caption shows, first and last, on the episode's clock.
+      const shown = (c) => {
+        const said = (c.lines ?? []).flatMap((l) => l.words.map((w) => w.said)).filter((at) => at !== undefined);
+        return [said[0], said[said.length - 1]];
+      };
+      if (last?.name === "SetCaptionTime") {
+        // Moving an edge of a caption moves that edge and nothing else: the
+        // other edge of the caption stays, every other caption appears and
+        // goes when it did, and the words outside the caption are as they
+        // were. The caption before used to grow into the place a start was
+        // dragged in from, found by Tim.
+        const [, , , word, edge] = last.args;
+        const cue = before.captions.find((c) => near(edge === "start" ? c.first : c.last, word));
+        if (!cue) this.broke("an edge moved was there", `no caption ${edge === "start" ? "began" : "ended"} on ${word}`);
+        else {
+          const far = (caps) =>
+            words(caps)
+              .filter((w) => w.said === undefined || w.said < cue.first - 1e-3 || w.said > cue.last + 1e-3)
+              .map((w) => `${w.text}@${w.start.toFixed(3)}-${w.end.toFixed(3)}`)
+              .join(" ");
+          const kept =
+            far(before) === far(after) &&
+            after.captions.length === before.captions.length &&
+            after.captions.every((c, k) => {
+              const b = before.captions[k];
+              if (b !== cue) return near(c.start, b.start) && near(c.end, b.end);
+              return edge === "start" ? near(c.end, b.end) : near(c.start, b.start);
+            });
+          if (!kept) {
+            this.broke("an edge moves its own caption only", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
+          }
+        }
+      } else if (last) {
         const whole = last.name === "RemoveCaption";
         const where = last.args[3];
         const cue = whole ? before.captions.find((c) => Math.abs((c.first ?? NaN) - where) < 1e-6) : null;
@@ -265,24 +301,26 @@ export class Watch {
         // caption: every caption still there appears when it did and goes
         // when it did, and the one the word was in only draws in to the
         // words it still shows, the way dragging its edge over the word
-        // does. A caption whose words were all removed goes and leaves its
-        // time empty. The one before it used to stay up through that time,
-        // and its block on the clip timeline grew across the place, which
-        // Tim read as two captions merging.
+        // does, and only at the edge the word was at. A caption whose words
+        // were all removed goes and leaves its time empty. The one before
+        // it used to stay up through that time, and its block on the clip
+        // timeline grew across the place, which Tim read as two captions
+        // merging.
         if (whole && cue && after.captions.some((c) => Math.abs((c.first ?? NaN) - where) < 1e-6)) {
           this.broke("a caption removed is gone", describe(before, after));
         }
         if (whole || last.args[4] === "") {
-          const near = (a, b) => Math.abs(a - b) < 1e-3;
           const kept = after.captions.every((c) => {
             const b = before.captions.find((b) => near(b.first, c.first));
             if (!b) return false;
-            const held = !whole && where >= b.first - 1e-3 && where <= b.last + 1e-3;
-            if (held) return c.start >= b.start - 1e-3 && c.end <= b.end + 1e-3;
-            return near(c.start, b.start) && near(c.end, b.end);
+            const [first, final] = whole ? [NaN, NaN] : shown(b);
+            const starts = near(where, first);
+            const ends = near(where, final);
+            const startOk = starts ? c.start >= b.start - 1e-3 : near(c.start, b.start);
+            const endOk = ends ? c.end <= b.end + 1e-3 : near(c.end, b.end);
+            return startOk && endOk;
           });
           if (!kept) {
-            const spans = (caps) => caps.captions.map((c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`).join(" ");
             this.broke("a removal changes no other caption", `${describe(before, after)}\nthen ${spans(before)}\nnow  ${spans(after)}`);
           }
         }

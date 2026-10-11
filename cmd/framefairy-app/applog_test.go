@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"framefairy/engine"
 
 	"github.com/rs/zerolog"
 )
@@ -274,14 +276,82 @@ func TestTheRecentTraceLinesAreTheLast(t *testing.T) {
 // the clip, at info when it was made and at warn with the reason when it
 // was refused. Plan row 2.191.
 func TestEditsAreLogged(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}, {11.0, 11.4, "drei"}})
 	_, read := testLog(t)
-	editLine(editLevel(nil), "/films/ep.mp4", "01", 0).Str("edge", "end").Int("removed", 1).Msg("a caption edge was moved")
-	editLine(editLevel(errors.New("the clip has no caption there")), "/films/ep.mp4", "01", 0).
-		Err(errors.New("the clip has no caption there")).Msg("a caption edge was moved")
-	lines := read()
-	if len(lines) != 2 {
-		t.Fatalf("%d lines", len(lines))
+	ctx := context.Background()
+	view, err := svc.Captions(mine, plan, "01")
+	if err != nil || len(view.Captions) == 0 {
+		t.Fatalf("captions %+v: %v", view, err)
 	}
-	has(t, lines[0], map[string]any{"level": "info", "from": "edits", "video": "ep.mp4", "clip": "01", "edge": "end", "removed": 1})
-	has(t, lines[1], map[string]any{"level": "warn", "error": "the clip has no caption there"})
+	c := view.Captions[0]
+	// The answers describe the clip for the interface, which needs the
+	// video read, and this one is not a video. The edits are made either
+	// way, and logged before.
+	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", c.Last, "end", 11.0)
+	_, _ = svc.SetWord(ctx, mine, plan, "01", 10.1, "")
+	_, _ = svc.RemoveCaption(ctx, mine, plan, "01", c.First)
+	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", 10.5, "start", 10.6)
+	lines := read()
+	moved := find(lines, "a caption edge was moved")
+	if moved == nil {
+		t.Fatalf("no caption edge in %v", lines)
+	}
+	has(t, moved, map[string]any{"level": "info", "from": "edits", "video": "ep.mp4", "clip": "01",
+		"edge": "end", "word": c.Last, "at": 11.0, "out": 1, "back": 0})
+	has(t, find(lines, "a word was corrected"), map[string]any{"level": "info", "word": 10.1, "removed": true})
+	has(t, find(lines, "a caption was removed"), map[string]any{"level": "info", "word": c.First})
+	// A word the caption does not begin on is refused, and said to be.
+	refused := lines[len(lines)-1]
+	has(t, refused, map[string]any{"level": "error", "msg": "a caption edge was moved", "edge": "start"})
+	if refused["error"] == nil {
+		t.Errorf("a refused edge says nothing of why: %v", refused)
+	}
+	// No line holds a word of the video.
+	for _, l := range lines {
+		for _, word := range []string{"eins", "zwei", "drei"} {
+			if strings.Contains(fmt.Sprint(l), word) {
+				t.Errorf("a line holds %q: %v", word, l)
+			}
+		}
+	}
+}
+
+// heardEpisode gives an episode of the library a transcript of these
+// words, as far as seconds, the way a transcription leaves it.
+func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
+	t.Helper()
+	p := engine.NewProject(nil, path, svc.store.Settings().options())
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := svc.store.Settings().options().ASRModel
+	if model == "" {
+		model = engine.DefaultModelDir()
+	}
+	file := map[string]any{
+		"version": 3, "model": filepath.Base(filepath.Clean(model)),
+		"source": map[string]any{"name": filepath.Base(path), "size": info.Size(),
+			"modified": info.ModTime().UTC().Format(time.RFC3339Nano)},
+		"from": 0, "to": seconds, "mean": -20, "parts": [][2]float64{{0, seconds}}, "end": seconds,
+		"words": words,
+	}
+	body, err := json.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	frames := make([]byte, 4*int(seconds/engine.FrameSeconds))
+	if err := os.WriteFile(filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Transcript(); err != nil {
+		t.Fatalf("the transcript written is not read: %v", err)
+	}
 }

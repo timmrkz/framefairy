@@ -16,7 +16,7 @@ import (
 // was refused, and the person's own act otherwise.
 func editLevel(err error) zerolog.Level {
 	if err != nil {
-		return zerolog.WarnLevel
+		return zerolog.ErrorLevel
 	}
 	return zerolog.InfoLevel
 }
@@ -247,11 +247,32 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	} else {
 		line = line.Float64("at", at)
 	}
-	line.Int("removed", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
+	line.Int("out", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
 	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// ShapeCaptionTime works out the captions of a clip with the edge of one
+// where the hand has it on the clip timeline, the words it crosses taken
+// out or put back, and writes nothing. It is what SetCaptionTime saves when
+// the hand lets go, so the timeline and the video preview show while the
+// hand moves what is saved, and the interface keeps no rule of its own
+// about which words an edge crosses. See engine.ShapeCaptionTime.
+func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, edge string, at float64) (*engine.CaptionsView, error) {
+	if !s.store.PlanOf(path, plan) {
+		return nil, errNotInLibrary
+	}
+	if at < 0 {
+		at = math.NaN()
+	}
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	return engine.ShapeCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a

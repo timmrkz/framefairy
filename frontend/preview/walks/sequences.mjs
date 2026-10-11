@@ -408,7 +408,7 @@ export const sequences = [
     ],
   },
   {
-    name: "removing a caption's last word and dragging its right edge over it end the same",
+    name: "removing a caption's last word draws it in like dragging its right edge over the word",
     steps: [
       ["mark", "start"],
       ["edge in", ["end", "Schulhof"]],
@@ -416,12 +416,12 @@ export const sequences = [
       ["undo"],
       ["same", "start"],
       ["remove edge word", ["last", "Schulhof"]],
-      ["spans", "dragged"],
+      ["drawn in", ["dragged", "Schulhof", "last"]],
       ["others", ["start", "Schulhof"]],
     ],
   },
   {
-    name: "removing a caption's first word and dragging its left edge over it end the same",
+    name: "removing a caption's first word draws it in like dragging its left edge over the word",
     steps: [
       ["mark", "start"],
       ["edge in", ["start", "Schulhof"]],
@@ -429,7 +429,7 @@ export const sequences = [
       ["undo"],
       ["same", "start"],
       ["remove edge word", ["first", "Schulhof"]],
-      ["spans", "dragged"],
+      ["drawn in", ["dragged", "Schulhof", "first"]],
       ["others", ["start", "Schulhof"]],
     ],
   },
@@ -1697,9 +1697,49 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         // From the middle of the edge's handle to the moment itself, since
         // the timeline reads where the pointer is, not how far it went.
+        // Held there a moment before it is let go, so what the timeline
+        // draws under the hand can be held against what it saves: the
+        // edge is where the drag showed it, and does not jump when let go.
         const x = box.x + box.width / 2;
-        await drag(page, x, box.y + box.height / 2, (await xOf(page, into(to))) - x, false);
+        const y = box.y + box.height / 2;
+        const target = await xOf(page, into(to));
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let k = 1; k <= 6; k++) {
+          await page.mouse.move(x + ((target - x) * k) / 6, y);
+          await page.waitForTimeout(30);
+        }
+        await page.waitForTimeout(300);
+        const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
+        const held = await handle.boundingBox();
+        await page.mouse.up();
         await watch.step(what, s);
+        let left = null;
+        for (let k = 0; k < 20; k++) {
+          left = await handle.boundingBox();
+          if (held && left && Math.abs(left.x - held.x) <= 1) break;
+          await page.waitForTimeout(100);
+        }
+        if (!held || !left || Math.abs(left.x - held.x) > 1) {
+          wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+        }
+        break;
+      }
+      case "drawn in": {
+        // The captions read as they did at a mark, and the caption holding
+        // a word draws in at its first or last edge from where it was at
+        // "start", never out, its other edge where it was.
+        const [label, text, which] = arg;
+        const read = (caps) => JSON.stringify(caps.captions.map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text))));
+        const now = await engineState(page, watch.at);
+        const i = marks.start.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const was = marks.start.captions[i];
+        const c = now.captions[i];
+        const near = (a, b) => Math.abs(a - b) < 1e-3;
+        const inward = which === "last" ? near(c.start, was.start) && c.end < was.end - 1e-3 : near(c.end, was.end) && c.start > was.start + 1e-3;
+        if (read(now) !== read(marks[label]) || !inward) {
+          wrong = `the caption with "${text}" did not draw in at its ${which} edge as it did at "${label}"\n${describe(marks[label], now)}`;
+        }
         break;
       }
       case "gone last":

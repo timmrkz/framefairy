@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,16 +64,16 @@ func TestACaptionIsShownEarlier(t *testing.T) {
 	if got := Captions(clip, timedWords(), 38, nil); !near(got[1].Start, 3.0) {
 		t.Errorf("a start in what the clip cuts out: %+v", got[1])
 	}
-	// Earlier than the caption before it goes: it stops where that one
-	// goes, and that one stays as it was. Moving one caption changes no
-	// other, found by Tim, who pulled the left edge of a caption in and
-	// saw the caption before it grow into the room he had cleared.
+	// Earlier than the caption before it goes, which a plan of an older
+	// version kept: it is shown where it was put, and the caption before
+	// goes there, the way that version showed it. Moving an edge now never
+	// puts it there, see TestACaptionEdgeStopsAtTheCaptionBeside.
 	for _, early := range []float64{11.9, 0} {
 		clip.CaptionTimes = map[string]CaptionTime{wordKey(20.2): moved(at(early), nil)}
 		got = Captions(clip, timedWords(), 38, nil)
-		if !near(got[0].Start, natural[0].Start) || !near(got[0].End, natural[0].End) ||
-			!near(got[1].Start, natural[0].End) {
-			t.Errorf("a start moved to %.1f over the caption before: %+v, was %+v", early, got, natural)
+		want := math.Max(ClipTime(clip, early), natural[0].Start+shortestMoved)
+		if !near(got[0].Start, natural[0].Start) || !near(got[1].Start, want) || !near(got[0].End, want) {
+			t.Errorf("a start kept at %.1f over the caption before: %+v, was %+v", early, got, natural)
 		}
 	}
 }
@@ -218,26 +220,29 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 		t.Fatalf("the clip reads %q", was)
 	}
 	// The end of "eins zwei" over the middle of "zwei", 10.8 in the
-	// episode, to 10.7.
+	// episode, to 10.7. The edge stays where it was let go, which is where
+	// the drag showed it.
 	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.7, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins" || got[1] != was[1] {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.70 eins" || got[1] != was[1] {
 		t.Errorf("the right edge dragged over zwei: %q, was %q", got, was)
 	}
 	// Back out over it, and zwei is back, the edge where it was let go.
 	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 11.05, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.10 eins zwei" || got[1] != was[1] {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.05 eins zwei" || got[1] != was[1] {
 		t.Errorf("the right edge dragged back over zwei: %q, was %q", got, was)
 	}
+	before := shownCaptions(t, path, tr)[0]
 	// The start of "drei vier" over the middle of "drei", 12.2 in the
-	// episode, to 12.5.
+	// episode, to 12.5, which is 1.7 on the clip's clock. The caption
+	// before stays as it was.
 	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", 12.5, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); !strings.HasPrefix(got[1], "2.20-") || !strings.HasSuffix(got[1], " vier") {
+	if got := shownCaptions(t, path, tr); got[0] != before || got[1] != "1.70-3.30 vier" {
 		t.Errorf("the left edge dragged over drei: %q", got)
 	}
 	// And over every word: the last one stays, since delete removes a
@@ -245,33 +250,188 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	if _, err := SetCaptionTime(logs, path, "01", 10.0, "start", 10.95, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.60-1.10 zwei" {
+	if got := shownCaptions(t, path, tr); got[0] != "0.95-1.05 zwei" {
 		t.Errorf("the left edge dragged over the whole caption: %q", got)
 	}
 }
 
+// An edge is moved no further out than the caption beside it, so moving
+// one changes no other: not the edge beside it, and not later, when that
+// one is put back where its words put it. The caption before used to grow
+// into the place a start had been moved to when its end was put back.
+func TestACaptionEdgeStopsAtTheCaptionBeside(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	was := shownCaptions(t, path, tr)
+	// The start of "drei vier" out to 10.5, over all of "eins zwei".
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", 10.5, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[0] != was[0] || got[1] != "1.10-3.30 drei vier" {
+		t.Fatalf("a start moved over the caption before: %q, was %q", got, was)
+	}
+	// The end of "eins zwei" in to 10.9, and then put back: it stops where
+	// "drei vier" appears, which stays where it was put.
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.9, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", math.NaN(), tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[0] != was[0] || got[1] != "1.10-3.30 drei vier" {
+		t.Errorf("an end put back: %q, was %q", got, was)
+	}
+	// The end of "eins zwei" out over "drei vier" stops where it appears.
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", math.NaN(), tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 12.6, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.20 eins zwei" || got[1] != was[1] {
+		t.Errorf("an end moved over the caption after: %q, was %q", got, was)
+	}
+}
+
 // An edge moved by hand stays where it was put when the word it is kept
-// against is removed, in the caption box or by the edge itself. It is kept
-// against the last word the caption was laid out from, and a removed word
-// is still laid out. It was kept against the last word shown, so the
-// caption Tim had shortened grew back to where its words put it the
-// moment he removed its last word.
+// against is removed in the caption box. It is kept against the last word
+// the caption was laid out from, and a removed word is still laid out. It
+// was kept against the last word shown, so the caption Tim had shortened
+// grew back to where its words put it the moment he removed its last word.
+// The moment it is moved to, 0.85 on the clip's clock, is not where the
+// words would put it, 0.9, so the test sees which of the two it is.
 func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
 	tr := editableTranscript()
-	// The end of "eins zwei" moved from 1.1 to 0.9, short of the middle
-	// of "zwei", which stays.
-	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.9, tr, nil); err != nil {
+	// The end of "eins zwei" moved from 1.1 to 0.85, short of the middle
+	// of "zwei", 0.8, which stays.
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.85, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins zwei" {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.85 eins zwei" {
 		t.Fatalf("moved: %q", got)
 	}
 	if err := SetWordText(logs, 10.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins" {
+	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.85 eins" {
 		t.Errorf("zwei removed in the caption box: %q", got)
+	}
+	if view, _ := ClipCaptionsView(path, "01", tr, nil); !view.Captions[0].EndMoved {
+		t.Error("the edge where the hand put it is not said to be")
+	}
+}
+
+// An edge moved out past where its words put it goes in to where the words
+// left put it when its word is removed in the caption box, the same as
+// when the edge is dragged in over the word, and it is then no longer where
+// the hand put it. Typed back, the word takes the edge back out.
+func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	// The start of "drei vier" moved out from 1.2 to 1.15.
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", 11.95, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[1] != "1.15-3.30 drei vier" {
+		t.Fatalf("moved: %q", got)
+	}
+	if err := SetWordText(logs, 12.0, "", tr); err != nil {
+		t.Fatal(err)
+	}
+	view, err := ClipCaptionsView(path, "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[1] != "2.20-3.30 vier" || view.Captions[1].StartMoved {
+		t.Errorf("drei removed in the caption box: %q, moved %v", got, view.Captions[1].StartMoved)
+	}
+	if err := SetWordText(logs, 12.0, "drei", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); got[1] != "1.15-3.30 drei vier" {
+		t.Errorf("drei typed back: %q", got)
+	}
+}
+
+// A word that the start of the clip cuts into is passed by the start of
+// its caption in the part of it the clip shows: "eins" is 10.0 to 10.5 in
+// the episode and the clip starts at 10.3, so it shows 0 to 0.2 of it, and
+// a start moved to 0.15 takes it out. The word keeps its own time on the
+// clip's clock, -0.3 to 0.2, whose middle the start can never pass, so it
+// stayed, while the drag had hidden it.
+func TestAWordTheClipCutsIntoIsPassed(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	if err := TrimClip(path, "01", 10.3, 13.1, tr, 0, ToFrames); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); !strings.HasSuffix(got[0], " eins zwei") {
+		t.Fatalf("the clip reads %q", got)
+	}
+	if _, err := SetCaptionTime(logs, path, "01", 10.0, "start", 10.45, tr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownCaptions(t, path, tr); !strings.HasSuffix(got[0], " zwei") || strings.Contains(got[0], "eins") {
+		t.Errorf("the start moved over the part of eins the clip shows: %q", got)
+	}
+}
+
+// What moving an edge shows while the hand moves is what letting go of it
+// saves, and showing it writes nothing.
+func TestAnEdgeShowsWhatItSaves(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	plan, _ := os.ReadFile(path)
+	for _, step := range []struct {
+		word float64
+		edge string
+		at   float64
+	}{{10.6, "end", 10.7}, {10.6, "end", 11.05}, {12.0, "start", 12.5}, {12.0, "start", 10.5}, {10.0, "start", 10.95}} {
+		view, err := ShapeCaptionTime(logs, path, "01", step.word, step.edge, step.at, tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if now, _ := os.ReadFile(path); !bytes.Equal(now, plan) {
+			t.Fatal("showing an edge wrote the plan")
+		}
+		if _, err := os.Stat(correctionsPath(logs)); err == nil && step.at == 10.7 {
+			t.Fatal("showing an edge wrote the corrections")
+		}
+		if _, err := SetCaptionTime(logs, path, "01", step.word, step.edge, step.at, tr, nil); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := ClipCaptionsView(path, "01", tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(view.Captions, saved.Captions) {
+			t.Errorf("%s moved to %.2f showed %+v and saved %+v", step.edge, step.at, view.Captions, saved.Captions)
+		}
+		plan, _ = os.ReadFile(path)
+	}
+}
+
+// Only an edge of a caption is moved: a word in the middle of one is no
+// edge, and a start is not an end.
+func TestOnlyACaptionEdgeIsMoved(t *testing.T) {
+	path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	tr := editableTranscript()
+	for _, c := range []struct {
+		word float64
+		edge string
+	}{{10.6, "start"}, {10.0, "end"}, {13.0, "start"}} {
+		if _, err := SetCaptionTime(logs, path, "01", c.word, c.edge, 10.7, tr, nil); err == nil {
+			t.Errorf("the %s of a caption on the word at %.1f was moved", c.edge, c.word)
+		}
+		if _, err := ShapeCaptionTime(logs, path, "01", c.word, c.edge, 10.7, tr, nil); err == nil {
+			t.Errorf("the %s of a caption on the word at %.1f was shown moved", c.edge, c.word)
+		}
 	}
 }

@@ -24,8 +24,13 @@ type Caption struct {
 	// still known by them, to remove it or to put the word back.
 	Opens, Closes float64
 	// trimStart and trimEnd say the word it opens or closes on was
-	// removed, so that edge is where the words shown put it.
+	// removed, so that edge is where the words shown put it, unless the
+	// hand put it in past the middle of the word removed there, which is
+	// at startPast or endPast on the clip's clock, see moveCaptions.
 	trimStart, trimEnd bool
+	startPast, endPast float64
+	// startMoved and endMoved say the edge is where it was put by hand.
+	startMoved, endMoved bool
 }
 
 // Cue is the caption without its words.
