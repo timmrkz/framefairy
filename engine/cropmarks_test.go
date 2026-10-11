@@ -315,6 +315,60 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 	}
 }
 
+// Marks moved with the rest of their angle stay in the picture. A mark
+// pushed past the edge would be held there by the render while the
+// others moved on, and the next drag would move it from a place nobody
+// sees: dragged back, the part would no longer stand where it was put.
+func TestACropMarkMovedWithItsAngleStaysInThePicture(t *testing.T) {
+	src := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
+	const cropW, most = 608, 1312
+	path := rotatablePlanPath(t)
+	cropMarks(t, path, CropMark{10.2, 1000}, CropMark{10.8, 1300}, CropMark{13.6, 100})
+	// The angle's other part has one mark, so its crop stands at 100.
+	// Dragged to the right edge there, every mark moves 1212.
+	if err := SetCrop(path, "01", 13.2, most, src, cropW); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range loadedClip(t, path).CropMarks {
+		if m.X > most {
+			t.Errorf("the mark %v lies outside the picture, a crop %d wide starts at %d at most", m, cropW, most)
+		}
+	}
+	// The first part now stands at the right edge throughout. Dragged 100
+	// to the left there, it stands 100 to the left throughout.
+	if err := SetCrop(path, "01", 10.5, most-100, src, cropW); err != nil {
+		t.Fatal(err)
+	}
+	seg := loadedClip(t, path).Segments[0]
+	for _, at := range []float64{10.0, 10.2, 10.5, 10.8, 11.0} {
+		if got := src.CropAt(seg, at, cropW, src.Width); got != most-100 {
+			t.Errorf("dragged to %d at 10.5 s, the crop at %.1f s stands at %d", most-100, at, got)
+		}
+	}
+}
+
+// A plan written by hand, or by an older version, can have a mark that
+// is not on the start of its frame, or two marks on one frame. The one
+// shown on a frame is found by its own moment, and taking it away takes
+// away every mark on that frame, so the frame has none left.
+func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
+	path := writePlanAt(t, `{"source": "ep.mp4", "clips": [{"id": "01",
+	  "segments": [{"start": 10.0, "end": 12.0, "crop_x": 100}],
+	  "crop_marks": [{"at": 10.55, "x": 100}, {"at": 11.01, "x": 200}, {"at": 11.015, "x": 300}, {"at": 11.6, "x": 400}]}]}`)
+	// 10.55 s is late in the frame from 10.52 s, nearer the next one.
+	if err := SetCropMark(path, "01", 10.55, 10.9, -1, at25); err != nil {
+		t.Fatalf("the mark at 10.55 s could not be dragged: %v", err)
+	}
+	if err := SetCropMark(path, "01", 11.015, -1, -1, at25); err != nil {
+		t.Fatalf("the marks at 11.01 s and 11.015 s could not be removed: %v", err)
+	}
+	want := []CropMark{{10.88, 100}, {11.6, 400}}
+	got := loadedClip(t, path).CropMarks
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("the marks are %v, not %v", got, want)
+	}
+}
+
 // A rotated stretch has a picture of another shape, so the marks placed on
 // it as it stood are removed with the turn. Marks outside it stay.
 func TestRotatingAPartRemovesItsCropMarks(t *testing.T) {

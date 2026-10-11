@@ -870,14 +870,21 @@ func SetCrop(planPath, clipID string, at float64, left int, frames SourceInfo, c
 			}
 		}
 		if len(ofAngle) > 0 {
-			shown := (frames.Rotated(rotationOf(pieces[target], spans)).Width - cropW) / 2
-			if x := cropShown(c, pieces, target, at, frames); x != nil {
+			width := frames.Rotated(rotationOf(pieces[target], spans)).Width
+			shown := (width - cropW) / 2
+			if x := cropShown(c, pieces, target, at, frames, cropW, width); x != nil {
 				shown = *x
 			}
+			// A mark moved with the rest stays in the picture, or the
+			// render would hold it at the edge while the others move on,
+			// and the next drag would move it from a place nobody sees.
 			for i := range marks {
 				if ofAngle[i] {
-					marks[i].X = max(0, marks[i].X+left-shown)
-					marks[i].X -= marks[i].X % 2
+					x := max(0, marks[i].X+left-shown)
+					if width > cropW {
+						x = min(x, width-cropW)
+					}
+					marks[i].X = x - x%2
 				}
 			}
 			setCropMarks(c, marks)

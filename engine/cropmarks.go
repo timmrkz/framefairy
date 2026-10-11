@@ -356,8 +356,12 @@ func SetCropMark(planPath, clipID string, from, to float64, x int, frames Source
 		var kept []CropMark
 		var moving *CropMark
 		if !adding {
+			// from is the mark's own moment, so it is found on its own
+			// frame, wherever in the frame a hand edit or an older plan
+			// put it. Two marks a hand edit put on one frame go together,
+			// the later one moving, because the glide only ever used it.
 			for i := range marks {
-				if moving == nil && frames.markFrame(marks[i].At) == frames.frameHolding(from) {
+				if frames.markFrame(marks[i].At) == frames.markFrame(from) {
 					m := marks[i]
 					moving = &m
 					continue
@@ -395,10 +399,12 @@ func SetCropMark(planPath, clipID string, from, to float64, x int, frames Source
 }
 
 // cropShown is the left edge of the crop a piece of a plan being edited
-// shows on the frame a moment means, before it is kept inside the picture:
-// gliding over the marks of its angle in its part, or the crop of its
-// angle, or nil where it stands in the middle.
-func cropShown(c *object, pieces []*object, target int, at float64, frames SourceInfo) *int {
+// shows on the frame a moment means: gliding over the marks of its angle
+// in its part, each kept inside a picture so wide for a crop so wide the
+// way the render keeps it, or the crop of its angle, or nil where it
+// stands in the middle. A width no wider than the crop is a picture not
+// known, and the marks are taken as they are.
+func cropShown(c *object, pieces []*object, target int, at float64, frames SourceInfo, cropW, width int) *int {
 	spans := rotationsOf(c)
 	segments := make([]Segment, len(pieces))
 	angles := make([]string, len(pieces))
@@ -408,11 +414,10 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 	}
 	markedPieces(segments, angles, cropMarksOf(c))
 	if marks := segments[target].Marks; len(marks) > 0 {
-		var on []frameMark
-		for _, m := range marks {
-			on = append(on, frameMark{k: frames.markFrame(m.At), x: m.X})
+		if width <= cropW {
+			width = math.MaxInt32
 		}
-		left := glideX(on, frames.frameHolding(at))
+		left := glideX(frames.onFrames(marks, cropW, width), frames.frameHolding(at))
 		return &left
 	}
 	key := keyCropX
