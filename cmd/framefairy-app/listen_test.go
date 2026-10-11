@@ -1,11 +1,15 @@
 package main
 
 import (
+	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"framefairy/asr"
 	"framefairy/engine"
 )
 
@@ -115,6 +119,39 @@ func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 		t.Errorf("without a speech model Listen gives %v and the microphone started %v", err, started)
 	}
 }
+
+// The settings name no speech model folder until somebody types one in,
+// and the installed model is then the one in its usual place, as for a
+// search. Tim pressed Dictate with Parakeet installed and was told it was
+// not. Plan row 2.189.
+func TestListeningFindsTheInstalledSpeechModel(t *testing.T) {
+	listenWith(t, nil)
+	standIns.Store(nil)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("FRAMEFAIRY_ASR_MODEL", "")
+	dir := engine.DefaultModelDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range asr.Files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The microphone does not start, so nothing tries to load the files.
+	openMicrophone = func() microphone { return brokenMicrophone{} }
+	f := &FrameFairy{store: &store{dir: t.TempDir(), settings: defaultSettings()}}
+	f.store.settings.ASRModel = ""
+	if err := f.Listen(); err == nil || err == errNoSpeechModel {
+		t.Errorf("with the speech model in its usual place Listen gives %v, want it to reach the microphone", err)
+	}
+}
+
+// brokenMicrophone is a microphone that cannot start.
+type brokenMicrophone struct{}
+
+func (brokenMicrophone) start(func([]float32)) error { return errors.New("no input device") }
+func (brokenMicrophone) stop()                       {}
 
 // The button can be pressed again and again, from a window that sends its
 // calls without waiting: every recording ends with words or nothing, never

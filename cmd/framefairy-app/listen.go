@@ -107,9 +107,14 @@ func (f *FrameFairy) Listen() error {
 	if l.now != nil {
 		return nil
 	}
+	// The folder the settings name, or the installed model's usual place
+	// when they name none, the way a search finds it.
 	dir := ""
 	if f.store != nil {
 		dir = f.store.Settings().ASRModel
+	}
+	if dir == "" {
+		dir = engine.DefaultModelDir()
 	}
 	if standIns.Load() == nil && asr.Check(dir) != nil {
 		return errNoSpeechModel
