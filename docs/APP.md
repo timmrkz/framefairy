@@ -1196,7 +1196,7 @@ bubble scrolled by those eight pixels.
       with no clip beyond the ones in the list, a window searched again
       or a video shorter than Shortest with its clip in the list, leaves
       one row after the clips, **Nothing new found**, with its window or
-      **The video is its one clip** under it and why in its title. It is
+      **All clips already found** under it and why in its title. It is
       news, not a state, so it runs down in grey for as long as a removed
       clip's row can be put back, stands still under the pointer, and
       closes. Its time runs on while another video is open. Each search

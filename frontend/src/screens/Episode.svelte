@@ -762,9 +762,9 @@
     if (duration > 0 && duration < min) {
       return {
         what: "Nothing new found",
-        left: "The video is its one clip",
+        left: "All clips already found",
         fades,
-        full: "The video is shorter than Shortest, so its one clip is all of it, and that clip is in the list. Remove it, and New makes it again",
+        full: "The video is shorter than Shortest, so it holds one clip, and that clip is already in the list",
       };
     }
     return {
