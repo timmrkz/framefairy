@@ -12,15 +12,15 @@
   import Pause from "@lucide/svelte/icons/pause";
   import Play from "@lucide/svelte/icons/play";
   import Repeat from "@lucide/svelte/icons/repeat";
-  import Image from "@lucide/svelte/icons/image";
-  import ImagePlus from "@lucide/svelte/icons/image-plus";
-  import ImageMinus from "@lucide/svelte/icons/image-minus";
+  import RepeatOff from "@lucide/svelte/icons/repeat-off";
+  import Camera from "@lucide/svelte/icons/camera";
+  import CameraOff from "@lucide/svelte/icons/camera-off";
   import DiamondPlus from "@lucide/svelte/icons/diamond-plus";
   import DiamondMinus from "@lucide/svelte/icons/diamond-minus";
-  import RotateCcwSquare from "@lucide/svelte/icons/rotate-ccw-square";
   import Locate from "@lucide/svelte/icons/locate";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
-  import RotateCw from "@lucide/svelte/icons/rotate-cw";
+  import Undo2 from "@lucide/svelte/icons/undo-2";
+  import Redo2 from "@lucide/svelte/icons/redo-2";
   import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -52,22 +52,27 @@
     close: X,
     pause: Pause,
     play: Play,
+    // The loop, and with it on, the loop crossed out: what a click does,
+    // the way pause shows while playing.
     loop: Repeat,
-    thumbnail: Image,
-    "thumbnail-add": ImagePlus,
-    "thumbnail-remove": ImageMinus,
+    "loop-off": RepeatOff,
+    // A thumbnail is a picture taken of a frame, so a camera, and crossed
+    // out where a click removes the one at the playhead.
+    thumbnail: Camera,
+    "thumbnail-add": Camera,
+    "thumbnail-remove": CameraOff,
     // A crop mark is a keyframe of the crop, and editors draw a keyframe
     // as a diamond. Plan row 3.26.
     "crop-mark-add": DiamondPlus,
     "crop-mark-remove": DiamondMinus,
-    // Rotate Left, as Preview and Photos have it: the picture with an
-    // arrow turning left over its corner.
-    rotate: RotateCcwSquare,
+    // Rotate Left: an arrow turning anticlockwise, and nothing else, so
+    // it still reads at the size of a button.
+    rotate: RotateCcw,
     locate: Locate,
-    // Put back as it started, and put back as you had it: one turns
-    // anticlockwise, the other clockwise.
-    back: RotateCcw,
-    forward: RotateCw,
+    // Put back as it started, and put back as you had it: undo and redo,
+    // so neither looks like Rotate.
+    back: Undo2,
+    forward: Redo2,
     pick: ChevronsUpDown,
     chevron: ChevronRight,
     warn: TriangleAlert,

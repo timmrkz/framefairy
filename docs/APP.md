@@ -1367,7 +1367,9 @@ bubble scrolled by those eight pixels.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
-  thumbnail's, as the three marks anyone knows. Loop switched on or off
+  thumbnail's, as the three marks anyone knows. Like play, which shows
+  pause while it plays, the loop shows itself crossed out while it is on,
+  which is what a click does then. Loop switched on or off
   while the clip plays changes nothing that plays: the loop only says
   where the play ends. The play works out the next time through before
   the clip's end, and when the loop goes off it keeps it but stops at
@@ -1846,12 +1848,12 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a
-  picture with a plus adds one, and a picture with a minus, shown while
-  the playhead stands on a thumbnail, removes it. It can only be pressed
+  camera adds one, and the camera crossed out, shown while the playhead
+  stands on a thumbnail, removes it. It can only be pressed
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
 - **Each thumbnail is a mark** along the foot of the clip timeline, the
-  same picture icon in the app's colour, so a click on the button is seen
+  same camera in the app's colour, so a click on the button is seen
   leaving its picture on the timeline. It sits on a chip of the app's
   colour while the playhead is on its frame.
 - **With the playhead on a thumbnail**, the button or **T** removes it.

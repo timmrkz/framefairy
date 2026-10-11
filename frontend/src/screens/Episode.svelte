@@ -2985,9 +2985,11 @@
             aria-pressed={looping}
             aria-label="Loop the clip"
             onclick={() => (looping = !looping)}
-            title="Play the clip again at its end. L does the same"
+            title={looping
+              ? "Stop looping, so the clip stops at its end. L does the same"
+              : "Play the clip again at its end. L does the same"}
           >
-            <Icon name="loop" />
+            <Icon name={looping ? "loop-off" : "loop"} />
           </button>
         {/if}
         {#if current}
