@@ -138,6 +138,33 @@ func quietestCut(frames []float32) int {
 	return bestAt + window/2
 }
 
+// Hear writes down what a recording says, samples at SampleRate: cut
+// into pieces the way an episode's audio is, at the quietest moment
+// between chunkMin and chunkMax, and the words of every piece joined in
+// the order they were said. Report a Problem's microphone, plan row 2.189.
+func Hear(rec Recognizer, samples []float32) string {
+	frames := make([]float32, len(samples)/frameSamples)
+	for i := range frames {
+		frames[i] = frameDB(samples[i*frameSamples : (i+1)*frameSamples])
+	}
+	var words []string
+	hear := func(piece []float32) {
+		for _, w := range TokensToWords(rec.Recognize(piece, SampleRate), 0) {
+			words = append(words, w.Text)
+		}
+	}
+	at := 0
+	for float64(len(samples)-at)/SampleRate > chunkMax {
+		cut := quietestCut(frames[at/frameSamples:]) * frameSamples
+		hear(samples[at : at+cut])
+		at += cut
+	}
+	if at < len(samples) {
+		hear(samples[at:])
+	}
+	return strings.Join(words, " ")
+}
+
 // TokensToWords joins tokens into words. Punctuation that arrives as its own
 // token belongs to the word before it.
 //
