@@ -65,3 +65,39 @@ export const Events = {
     return () => set.delete(fn);
   },
 };
+
+// What the runtime does with a file dragged from the system over the app,
+// which a browser cannot be handed: on macOS and Linux the Go side calls
+// these, see window.ts in @wailsio/runtime. While a file is held over a
+// drop target, the nearest element marked data-file-drop-target wears
+// file-drop-target-active, and a drop that lands on one goes to the Go
+// side, which adds what it can, see drop.go. A drop anywhere else is
+// ignored, as the runtime ignores it. A walk drags and drops with these.
+const TARGET = "data-file-drop-target";
+const ACTIVE = "file-drop-target-active";
+let lit: Element | null = null;
+function unlight() {
+  lit?.classList.remove(ACTIVE);
+  lit = null;
+}
+(window as any)._wails = {
+  ...((window as any)._wails ?? {}),
+  handleDragOver(x: number, y: number) {
+    const target = document.elementFromPoint(x, y)?.closest(`[${TARGET}]`) ?? null;
+    if (target !== lit) unlight();
+    target?.classList.add(ACTIVE);
+    lit = target;
+  },
+  handleDragLeave: unlight,
+  async handlePlatformFileDrop(filenames: string[], x: number, y: number): Promise<boolean> {
+    const target = document.elementFromPoint(x, y)?.closest(`[${TARGET}]`);
+    unlight();
+    if (!target) return false;
+    await fetch("/drop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(filenames),
+    });
+    return true;
+  },
+};

@@ -320,6 +320,23 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			q.Get("namesake") == "1")
 		answer(w, path, err)
 	})
+	// Files dropped on the app, which the window hands over the way the
+	// runtime does once the drop landed on a drop target, see
+	// wails-bridge.ts: what WindowFilesDropped does in main.go. A video
+	// made with /pick and dropped is no longer there for Add's box.
+	mux.HandleFunc("/drop", func(w http.ResponseWriter, r *http.Request) {
+		var files []string
+		if err := json.NewDecoder(r.Body).Decode(&files); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		b.mu.Lock()
+		b.picks = slices.DeleteFunc(b.picks, func(p string) bool { return slices.Contains(files, p) })
+		b.mu.Unlock()
+		dropped := b.d.svc.dropFiles(files)
+		b.d.bus.send("dropped", dropped)
+		answer(w, dropped, nil)
+	})
 	// A file of sound alone, named like a video, which Add has to leave
 	// out: the episode's decoder finds no picture in it.
 	mux.HandleFunc("/pick-sound", func(w http.ResponseWriter, r *http.Request) {

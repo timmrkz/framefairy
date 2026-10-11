@@ -104,6 +104,16 @@ The sidebar lists your episodes and how far each one is. **Add episode**, at
 the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
 Transcription starts right away in the background.
 
+A video dragged from Finder and dropped anywhere on the app is added the
+same way, whatever page is open, and opens. While a file is held over
+the app, the app wears the frame of what is chosen, with the accent's
+wash inside it. A video already in the list opens rather than being added
+twice, and a file that is not a video is left out, by its name, where Add
+says why it left a file out. The window marks the whole page as where a
+drop lands, `data-file-drop-target`, once the first-run setup is done,
+and the Go side adds the files, `dropFiles` in `drop.go`, through the same
+`addEpisodes` as Add. Plan row 2.192.
+
 The app opens on the episode that was open when it was left. With no
 episode in the library, the page says **Add a video** and has the
 **Add** button on it, since there is nothing to pick. Removing the
