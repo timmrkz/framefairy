@@ -88,7 +88,9 @@
     // removed and nothing is on its way: said in the first row still to
     // come, the way a search that stopped says so there, so an empty list
     // reads as something that happened rather than something broken.
-    emptied?: { what: string; left: string } | null;
+    // A search that found nothing new says so the same way, with why in
+    // full where the pointer reads it.
+    emptied?: { what: string; left: string; full?: string } | null;
     onselect: (key: string) => void;
     // Takes a clip out of the list. It stays in the plan, so it can come
     // back.
@@ -297,7 +299,7 @@
       class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
       class:lit={!!clip && clip.key === hovered}
-      title={lead && !next ? stopped?.full : undefined}
+      title={lead && !next ? (stopped?.full ?? emptied?.full) : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
       {@attach clip ? hoverClip(clip.key, onhover) : undefined}
     >

@@ -716,6 +716,32 @@
     if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
     return { what: "All clips removed", left: "New finds others" };
   });
+  // The newest search ended and found nothing beyond the clips there are,
+  // which is an answer, not a failure. The row its next clip would have
+  // appeared in says so until the next search: Tim pressed New on a video
+  // with its one clip, and the row that said Finding closed again with
+  // nothing to say what had come of it.
+  const foundNothing = $derived.by(() => {
+    if (busy || stopped) return null;
+    const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
+    if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
+    const start = last.from ?? 0;
+    const end = last.to && last.to > 0 ? last.to : duration;
+    const window = `Window ${clock(start)} to ${clock(end)}`;
+    if (duration > 0 && duration < min) {
+      return {
+        what: "Nothing new found",
+        left: "The video is its one clip",
+        full: "The video is shorter than Shortest, so its one clip is all of it, and that clip is in the list. Remove it, and New makes it again",
+      };
+    }
+    return {
+      what: "Nothing new found",
+      left: window,
+      full: `${window}. The search found no moments beyond the clips there are`,
+    };
+  });
+  const note = $derived(emptied ?? foundNothing);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -728,7 +754,7 @@
           ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            unread + (stopped ? 1 : 0)),
+            unread + (stopped || foundNothing ? 1 : 0)),
   );
   // Whether the window has been searched before, all of it or a part.
   // New then looks there again, for moments its searches did not bring,
@@ -2838,7 +2864,7 @@
               {carry}
               {stopped}
               removed={removedRows}
-              {emptied}
+              emptied={note}
               onforget={forget}
               onheld={held}
               onclosed={closed}

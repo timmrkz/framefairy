@@ -709,7 +709,8 @@ export const sequences = [
     // every search failed with "there is nothing to make a clip of in
     // this video": the clip removed still counted as the one moment the
     // video has. New brings it back, and New with it in the list finds
-    // nothing more and fails nothing either.
+    // nothing more, fails nothing either, and says so where its clip
+    // would have appeared.
     name: "a video shorter than a clip gets its clip again once it was removed",
     steps: [
       ["add", 15],
@@ -722,6 +723,8 @@ export const sequences = [
       ["head"],
       ["wait for", "New"],
       ["whole clip", 15],
+      // Tim saw the row of that search close again with nothing to say.
+      ["row", "Nothing new found"],
     ],
   },
   {

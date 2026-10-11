@@ -1192,6 +1192,14 @@ bubble scrolled by those eight pixels.
       only once the last removed row has closed, so they never push it
       down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
+    - **A search that found nothing new says so.** A search that ends
+      with no clip beyond the ones in the list, a window searched again
+      or a video shorter than Shortest with its clip in the list, leaves
+      one row after the clips, **Nothing new found**, with its window or
+      **The video is its one clip** under it and why in its title. It
+      stays until the next search. Its row used to close again with
+      nothing said. It is not kept across a restart, since there is
+      nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
       **New** becomes **Continue**. *Interrupted. Click Continue* is a
