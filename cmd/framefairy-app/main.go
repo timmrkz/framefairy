@@ -296,9 +296,11 @@ type FrameFairy struct {
 	// Finding and installing a newer build of the app, see updates.go.
 	updates *updating
 	// What Cmd+Q does, see quit.go.
-	leave  *leaving
-	mu     sync.Mutex
-	probed map[string]engine.SourceInfo
+	leave *leaving
+	// The recording for a report, see listen.go.
+	listening listening
+	mu        sync.Mutex
+	probed    map[string]engine.SourceInfo
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]
