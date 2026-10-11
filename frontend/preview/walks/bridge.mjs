@@ -354,8 +354,8 @@ async function overlayReader(page) {
         at: Number(screen?.dataset.playhead),
         playing: !!document.querySelector('button[aria-label="Pause"]'),
         video: !chosen || chosen.classList.contains("dim"),
-        crop: !!screen?.querySelector(".frame"),
-        shade: !!screen?.querySelector(".shade"),
+        crop: !!document.querySelector(".over .frame"),
+        shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),
       };
     };
@@ -558,7 +558,7 @@ export async function seekTo(page, at, fps) {
 // clip and there is no frame.
 export async function cropFrame(page) {
   const got = await page.evaluate(() => {
-    const frame = document.querySelector(".screen .frame");
+    const frame = document.querySelector(".over .frame");
     const canvas = document.querySelector(".screen canvas");
     if (!frame || !canvas?.width) return null;
     const f = frame.getBoundingClientRect();
