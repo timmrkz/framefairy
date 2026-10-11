@@ -35,7 +35,7 @@
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
-  import { pictureOf, pieceHolding, shownMoment } from "../lib/rotate";
+  import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
 
   let {
     path,
@@ -460,17 +460,16 @@
   // Where the frame on the canvas begins, in the episode, as the queue
   // says it drew it. NaN before the first.
   let frameStart = $state(NaN);
-  // The piece the frame on the canvas belongs to, or -1 for a frame of a cut
-  // or from outside the clip. The picture turns with its frame, not with the
-  // playhead, which runs ahead of the frames: turned with the playhead, a
-  // frame from before a cut stood turned the way the part after it is,
-  // and back, as the playhead was dragged over the cut. Tim saw it on #188.
-  const framed = $derived(
-    clip && place !== "video" ? pieceHolding(clip.segments, shownMoment(time, frameStart, oneFrame)) : -1,
-  );
-  // How far that piece was rotated: the picture is drawn rotated, and the
-  // crop and the captions stand on it rotated. Plan row 3.25.
-  const turn = $derived(clip && framed >= 0 ? (clip.segments[framed]?.rotate ?? 0) : 0);
+  // The moment the frame on the canvas starts, which the picture is turned
+  // for and its crop stands for, see lib/rotate.ts.
+  const frameAt = $derived(shownAt(frameStart, time));
+  // How far that frame is turned, by the clip's rotations: the picture is
+  // drawn rotated, and the crop and the captions stand on it rotated. On
+  // the video, the episode shows as filmed. Plan row 3.25.
+  const turn = $derived(clip && place !== "video" ? rotationAt(clip.rotations, frameAt) : 0);
+  // The piece that frame belongs to, or -1 for a frame of a cut or from
+  // outside the clip.
+  const framed = $derived(clip && place !== "video" ? pieceHolding(clip.segments, frameAt) : -1);
   // The picture the piece shows, rotated or not, and its crop.
   const picture = $derived(pictureOf(source, turn));
   // The piece whose crop stands on the picture: the one the frame shows,
@@ -489,23 +488,27 @@
     const pieces = clip.segments
       .map((s) => `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}`)
       .join(", ");
-    const line = `video preview: clip ${clip.id} has the pieces ${pieces}`;
+    const turns = (clip.rotations ?? []).map((r) => `${r.from ?? "start"}-${r.to ?? "end"} ${r.deg}`).join(", ");
+    const line = `video preview: clip ${clip.id} has the pieces ${pieces}${turns ? `, rotated ${turns}` : ""}`;
     if (line === saidPieces) return;
     saidPieces = line;
     said(line, { video: untrack(() => path) });
   });
+  // The turn is said once it has held a moment, so a playhead dragged
+  // back and forth over a cut says where it came to rest, not every frame.
   let saidTurn = 0;
   $effect(() => {
     const now = turn;
     if (now === saidTurn) return;
-    const was = saidTurn;
-    saidTurn = now;
-    untrack(() =>
+    const settled = setTimeout(() => {
+      const was = saidTurn;
+      saidTurn = now;
       said(
         `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${framed} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
         { video: path },
-      ),
-    );
+      );
+    }, 300);
+    return () => clearTimeout(settled);
   });
 
   // Its crop, as shares of the video preview, with a drag applied.

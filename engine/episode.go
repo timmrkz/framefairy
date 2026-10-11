@@ -376,6 +376,9 @@ type ClipView struct {
 	Start    float64       `json:"start"`
 	End      float64       `json:"end"`
 	Segments []SegmentView `json:"segments"`
+	// Rotations is the stretches of the video a person rotated, see
+	// Rotation, which the video preview turns its frames by.
+	Rotations []RotationView `json:"rotations"`
 	Rejected bool          `json:"rejected"`
 	Rendered string        `json:"rendered,omitempty"`
 	Preview  string        `json:"preview,omitempty"`
@@ -483,6 +486,10 @@ func (s PlanSummary) View() *PlanView {
 			if reason, ok := extra[keyReason].(string); ok {
 				v.Reason = Scrub(reason, 300)
 			}
+		}
+		v.Rotations = []RotationView{}
+		for _, r := range c.Rotations {
+			v.Rotations = append(v.Rotations, rotationView(r))
 		}
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate})

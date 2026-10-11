@@ -1359,11 +1359,16 @@
       shown: thumbDrag && thumbDrag.from === at ? thumbDrag.to : at,
     })),
   );
-  // Where each rotated part of the clip starts, and how far it is rotated:
-  // the first piece of every part with no cut inside it, see lib/rotate.ts.
+  // Where each rotated stretch of the clip starts, and how far it is
+  // rotated: the first piece of a part, or the piece where a part that
+  // had its cut put back turns, see lib/rotate.ts.
   const rotatedParts = $derived(
     segments
-      .map((p, i) => ({ at: p.start, rotate: p.rotate ?? 0, starts: i === partOf(segments, i)[0] }))
+      .map((p, i) => ({
+        at: p.start,
+        rotate: p.rotate ?? 0,
+        starts: i === partOf(segments, i)[0] || (segments[i - 1].rotate ?? 0) !== (p.rotate ?? 0),
+      }))
       .filter((r) => r.starts && r.rotate !== 0),
   );
 

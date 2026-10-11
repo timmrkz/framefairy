@@ -198,9 +198,19 @@ export interface Segment {
   end: number;
   cropX: number | null;
   moved: boolean;
-  // How far a person rotated the piece, in degrees to the left: 0, 90, 180
-  // or 270. Its crop is on the picture rotated, see lib/rotate.ts.
+  // How far the piece is rotated, in degrees to the left: 0, 90, 180 or
+  // 270, by the stretch of the clip's rotations it lies in. Its crop is on
+  // the picture rotated, see lib/rotate.ts.
   rotate?: number;
+}
+
+// A stretch of the video a person rotated deg degrees to the left, 90,
+// 180 or 270. A null from or to runs to that end of the video. See
+// engine.Rotation.
+export interface Rotation {
+  from: number | null;
+  to: number | null;
+  deg: number;
 }
 
 export interface ClipView {
@@ -213,6 +223,9 @@ export interface ClipView {
   start: number;
   end: number;
   segments: Segment[];
+  // The stretches of the video a person rotated, which a frame is turned
+  // by, see lib/rotate.ts.
+  rotations?: Rotation[];
   rejected: boolean;
   rendered?: string;
   preview?: string;

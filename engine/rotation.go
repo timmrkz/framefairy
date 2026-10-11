@@ -237,3 +237,24 @@ func (s SourceInfo) frameStartNear(at float64) float64 {
 	start, _ := s.PieceOnFrames(at, at)
 	return start
 }
+
+// RotationView is a stretch of a clip's rotations as the window reads it.
+// From or To is null where the stretch runs to that end of the video.
+type RotationView struct {
+	From *float64 `json:"from"`
+	To   *float64 `json:"to"`
+	Deg  int      `json:"deg"`
+}
+
+func rotationView(r Rotation) RotationView {
+	v := RotationView{Deg: r.Deg}
+	if !math.IsInf(r.From, 0) {
+		from := r.From
+		v.From = &from
+	}
+	if !math.IsInf(r.To, 0) {
+		to := r.To
+		v.To = &to
+	}
+	return v
+}

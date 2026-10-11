@@ -352,8 +352,9 @@
 //   ["turned with its frames"]
 //                      since "scrub", of a video standing up by its display
 //                      matrix: every frame read off the canvas was turned
-//                      as far as the piece it belongs to, and the frames of
-//                      a cut and from outside the clip not at all, a few
+//                      as far as the Go side has the piece it belongs to,
+//                      the way the short turns it, and a frame of a cut as
+//                      far as the clip's rotations have its start, a few
 //                      hundred frames of the rotated part and of the rest
 //   ["upright"]        the short Render wrote, read back from disk, holds
 //                      as many frames as the clip's pieces, and in every
@@ -3244,10 +3245,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
         const { fps } = await ask(page, "Source", on.path);
         const seen = await page.evaluate(() => window.__scrubbed ?? []);
+        // The turn the short gives frame n: its piece's, as the Go side
+        // reads it, and for a frame of a cut, which no short holds, the
+        // stretch of the clip's rotations its start lies in.
         const turnOf = (n) => {
-          const at = (n + 0.5) / fps;
-          const p = entry.segments.find((q) => at >= q.start && at < q.end);
-          return p ? (p.rotate ?? 0) : 0;
+          const at = n / fps;
+          const p = entry.segments.find((q) => at >= q.start - 0.001 && at < q.end - 0.001);
+          if (p) return p.rotate ?? 0;
+          const r = (entry.rotations ?? []).find((q) => at >= (q.from ?? -Infinity) - 0.001 && at < (q.to ?? Infinity) - 0.001);
+          return r ? r.deg : 0;
         };
         const read = seen.filter(([, n]) => n >= 0 && n < 30 * fps);
         const bad = read.filter(([turn, n]) => turn !== turnOf(n));
