@@ -3266,10 +3266,14 @@
      than a word: the three of them are known everywhere, and a mark cannot
      change length as you use it. They are as tall as every other control in
      the row and as wide as they are tall. */
+  /* Square, as tall as every control and as wide, and never squeezed: in
+     a row narrower than its controls a button gave way first, and stood
+     taller than it was wide. Found by Tim on #192. */
   .detail .row .glyph {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: none;
     width: var(--control-h);
     padding: 0;
   }

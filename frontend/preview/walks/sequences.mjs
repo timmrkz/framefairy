@@ -267,6 +267,9 @@
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
 //   ["app size", w, h] makes the app w by h pixels
+//   ["square buttons"] every button in the row under the clip timeline
+//                      that wears an icon or a key's letter is as wide as
+//                      it is tall, and as tall as every control
 //   ["sharp"]          the frame on the video preview, as the workspace
 //                      opened and before anything played, was decoded at
 //                      the size of the canvas, no larger than the file's
@@ -1360,6 +1363,12 @@ export const sequences = [
     // just outside it, with the border showing under them.
     name: "the clip's frame and the window's bars lie on their track's borders",
     steps: [["on borders"]],
+  },
+  {
+    // Found by Tim on #192: in a narrow app the buttons under the clip
+    // timeline gave way first and stood taller than they were wide.
+    name: "the buttons under the clip timeline stay square in a narrow app",
+    steps: [["square buttons"], ["app size", 900, 800], ["square buttons"]],
   },
   {
     name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
@@ -3025,6 +3034,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.waitForTimeout(600);
         await settle(page);
         break;
+      case "square buttons": {
+        const got = await page.evaluate(() => {
+          const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h"));
+          return { h, sizes: [...document.querySelectorAll(".detail .row .glyph")].map((b) => [b.title || b.textContent.trim(), b.getBoundingClientRect().width, b.getBoundingClientRect().height]) };
+        });
+        const off = got.sizes.filter(([, w, h]) => Math.abs(w - got.h) > 0.01 || Math.abs(h - got.h) > 0.01);
+        if (got.sizes.length < 5) wrong = `the row under the clip timeline has ${got.sizes.length} buttons with an icon, not the row`;
+        else if (off.length) wrong = `${off.length} of ${got.sizes.length} buttons are not ${got.h} by ${got.h}, the first, "${off[0][0].slice(0, 40)}", is ${off[0][1].toFixed(2)} by ${off[0][2].toFixed(2)}`;
+        break;
+      }
       case "sharp": {
         // The playhead stands still and nothing plays, so the frame on the
         // canvas is the one asked for while paused.
