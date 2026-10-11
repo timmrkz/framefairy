@@ -305,8 +305,11 @@ func (f *EpisodeFrames) Light() framewire.Light {
 // ends or the grid does.
 func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int,
 	got func(at float64, frame []byte) error) error {
-	if !grid.Valid() {
+	if grid.Num <= 0 || grid.Den <= 0 {
 		return errors.New("the video has no frame rate to count its frames by")
+	}
+	if !grid.Valid() {
+		return fmt.Errorf("the frames of the video cannot be counted: the grid %+v", grid)
 	}
 	if math.IsNaN(from) || math.IsInf(from, 0) {
 		from = 0

@@ -247,7 +247,8 @@ func (s SourceInfo) frameBegins(k int64) float64 {
 // the frame of the file that holds its moment, the way byTimes and cutOf
 // take it. The episode's decoder makes them by it, so the video preview
 // counts on the frames the engine names and reads nothing of the file
-// itself. See docs/VIDEO-PREVIEW.md, step 5. No grid without a rate.
+// itself. See docs/VIDEO-PREVIEW.md, step 5. No grid without a rate, and
+// none longer than framewire.MaxFrames.
 func (s SourceInfo) Grid() framewire.Grid {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return framewire.Grid{}
@@ -258,7 +259,10 @@ func (s SourceInfo) Grid() framewire.Grid {
 	if math.IsNaN(frames) || frames < 1 {
 		frames = 1
 	}
-	return framewire.Grid{Start: start, Num: s.FPSNum, Den: s.FPSDen, Count: int(min(frames, 1<<31-1))}
+	// The grid names the clock it counts from, so the decoder counts from
+	// the moment the engine does and never reads it a second time.
+	return framewire.Grid{Origin: s.origin, Start: start, Num: s.FPSNum, Den: s.FPSDen,
+		Count: int(min(frames, framewire.MaxFrames))}
 }
 
 // PieceOnFrames is a piece of a clip with both its edges on the start of

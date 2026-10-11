@@ -432,16 +432,16 @@ type cursor struct {
 	height int
 	// How the picture's brightness is coded, from the file's transfer tag.
 	light framewire.Light
-	// Where the file starts on its own clock, in seconds: every moment the
-	// cursor speaks of is counted from there, as the engine counts them.
-	start float64
 	// The grid of the last open, the frame of it to hand over next, and
-	// the picture made for it, which is shown up to the frame until.
-	grid      framewire.Grid
-	rank      int
-	shown     []byte
-	until     int
-	from      float64
+	// the picture made for it, which is shown up to the frame until. Every
+	// moment the cursor speaks of is counted from the grid's origin, the
+	// file's start as the engine read it.
+	grid  framewire.Grid
+	rank  int
+	shown []byte
+	until int
+	// How often this open sought again for a seek that landed too late.
+	retries   int
 	sentEOF   bool
 	graphEOF  bool
 	failedWhy string
@@ -450,9 +450,11 @@ type cursor struct {
 	said      string
 	keys      []string
 	graphKeys []string
-	// Sound: the rate and channels asked for, the moment its samples
-	// start, decoded samples not yet handed over, how many chunks were,
-	// and whether the episode's sound has ended.
+	// Sound: where the cut starts on the file's clock, the rate and
+	// channels asked for, the moment its samples start, decoded samples not
+	// yet handed over, how many chunks were, and whether the episode's
+	// sound has ended.
+	from           float64
 	rate, channels int
 	soundFrom      float64
 	// When the last open was asked, and whether its first frame was said
@@ -534,9 +536,6 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		}
 		c.v = v
 		c.light = lightOf(v.stream.CodecParameters().ColorTransferCharacteristic())
-		if start := v.fc.StartTime(); start != astiav.NoPtsValue {
-			c.start = float64(start) / 1e6
-		}
 		c.own(&c.keys, v.fc, v.dec)
 		c.pkt = astiav.AllocPacket()
 		c.decoded = astiav.AllocFrame()
@@ -550,12 +549,12 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		c.freeGraph()
 	}
 	from := grid.At(frame)
+	c.grid, c.rank, c.until, c.shown, c.retries = grid, frame, frame, nil, 0
 	if err := c.seek(from + framewire.Hair); err != nil {
 		c.fail(err.Error())
 		return
 	}
-	c.width, c.height, c.from = w, h, from
-	c.grid, c.rank, c.until, c.shown = grid, frame, frame, nil
+	c.width, c.height = w, h
 	how := "moved"
 	if opened {
 		how = "opened the file"
@@ -580,7 +579,7 @@ func lightOf(trc astiav.ColorTransferCharacteristic) framewire.Light {
 // file, with what the decoder held dropped.
 func (c *cursor) seek(from float64) error {
 	tb := c.v.stream.TimeBase().Float64()
-	at := from + c.start
+	at := from + c.grid.Origin
 	ts, err := c.keyBefore(at, int64(math.Floor(at/tb)))
 	if err == nil {
 		err = c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
@@ -601,33 +600,54 @@ func (c *cursor) seek(from float64) error {
 // be decoded and are dropped when a decoder starts at that key. So a seek
 // to one of those frames landed on a key frame shown after it, and the
 // frame asked for never came: start.mp4 stood without a picture and would
-// not play, plan row 2.186. The key frame a seek lands on is read, and
+// not play, plan row 2.186. The key frame a seek leads to is read, and
 // while it is shown after from, the seek goes to the key before it.
+//
+// A file with no index of its key frames, MPEG-TS above all, lands a seek
+// on whatever packet is stamped before the moment, mostly one between two
+// key frames. The decoder drops everything up to the next key frame, and
+// that was shown for every frame before it. So the key frame a seek leads
+// to is the first packet with the key flag from where it landed, and where
+// a seek to just before that key leads to the same key again, the seek
+// goes a second further back, then two, until it finds the key before.
 func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 	tb := c.v.stream.TimeBase().Float64()
-	landed := int64(math.MaxInt64)
-	for range 16 {
+	floor := c.v.stream.StartTime()
+	if floor == astiav.NoPtsValue {
+		floor = math.MinInt64
+	}
+	landed, back := int64(math.MaxInt64), int64(math.Ceil(1/tb))
+	for range 24 {
 		if err := c.v.fc.SeekFrame(c.v.stream.Index(), ts, astiav.NewSeekFlags(astiav.SeekFlagBackward)); err != nil {
 			return 0, err
 		}
-		pts, dts, err := c.firstPacket()
-		if err != nil || pts == astiav.NoPtsValue || dts == astiav.NoPtsValue || dts >= landed ||
+		pts, dts, err := c.firstKey()
+		if err != nil || pts == astiav.NoPtsValue || dts == astiav.NoPtsValue ||
 			float64(pts)*tb <= from+1e-6 {
 			return ts, nil
 		}
-		landed, ts = dts, dts-1
+		switch {
+		case dts < landed:
+			landed, ts = dts, dts-1
+		case ts <= floor:
+			// The first key frame of the file: the picture begins after
+			// from.
+			return ts, nil
+		default:
+			ts, back = ts-back, back*2
+		}
 	}
 	return ts, nil
 }
 
-// firstPacket is when the next packet of the picture is shown and when it
+// firstKey is when the next key frame of the picture is shown and when it
 // is decoded. It is read and let go, so a seek has to follow it.
-func (c *cursor) firstPacket() (pts, dts int64, err error) {
+func (c *cursor) firstKey() (pts, dts int64, err error) {
 	for {
 		if err := c.v.fc.ReadFrame(c.pkt); err != nil {
 			return 0, 0, err
 		}
-		if c.pkt.StreamIndex() != c.v.stream.Index() {
+		if c.pkt.StreamIndex() != c.v.stream.Index() || !c.pkt.Flags().Has(astiav.PacketFlagKey) {
 			c.pkt.Unref()
 			continue
 		}
@@ -712,6 +732,17 @@ func (c *cursor) advance() error {
 		}
 		first := c.grid.FirstShown(begins)
 		held := c.holding
+		if !held && first > c.rank && !c.firstOfFile() {
+			// The first frame after a seek begins after the moment asked
+			// for, and it is not the file's first frame, which stands for
+			// the moments before the picture begins: the seek landed too
+			// late, and that frame would stand for every frame before it.
+			c.decoded.Unref()
+			if err := c.seekBack(begins); err != nil {
+				return err
+			}
+			continue
+		}
 		c.decoded, c.held = c.held, c.decoded
 		c.holding = true
 		if held && first > c.rank {
@@ -719,6 +750,27 @@ func (c *cursor) advance() error {
 		}
 		c.decoded.Unref()
 	}
+}
+
+// firstOfFile tells whether the frame in decoded is the first frame of
+// the picture.
+func (c *cursor) firstOfFile() bool {
+	start := c.v.stream.StartTime()
+	return start != astiav.NoPtsValue && c.decoded.Pts() <= start
+}
+
+// seekBack seeks again, a second further back than the last seek of this
+// open went and twice as far each time, for the cursor's frame of the grid
+// that a seek reached too late, at a frame that begins at landed.
+func (c *cursor) seekBack(landed float64) error {
+	if c.retries >= 6 {
+		return fmt.Errorf("the frame at %.3f s cannot be reached: a seek to it lands on a frame at %.3f s", c.grid.At(c.rank), landed)
+	}
+	c.retries++
+	back := float64(int(1) << (c.retries - 1))
+	c.say(fmt.Sprintf("a seek for frame %d at %.3f s landed on a frame at %.3f s, seeking %.0f s further back",
+		c.rank, c.grid.At(c.rank), landed, back))
+	return c.seek(c.grid.At(c.rank) + framewire.Hair - back)
 }
 
 // decode puts the next frame out of the decoder in decoded, with when it
@@ -738,7 +790,7 @@ func (c *cursor) decode() (float64, error) {
 				continue
 			}
 			c.decoded.SetPts(pts)
-			return float64(pts)*tb - c.start, nil
+			return float64(pts)*tb - c.grid.Origin, nil
 		case errors.Is(err, astiav.ErrEof):
 			return 0, astiav.ErrEof
 		case errors.Is(err, astiav.ErrEagain):

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -45,7 +46,7 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
 	for _, c := range timesCases {
-		if c.evenOnly {
+		if c.previewOnly {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
@@ -66,9 +67,15 @@ type timesCase struct {
 	rate string
 	// How long the episode is, seven seconds when nought.
 	seconds int
-	// A file whose frames keep to their rate, which only the video
-	// preview's test takes, see TestTheVideoPreviewShowsTheFramesOfTheShort.
-	evenOnly bool
+	// How the picture and the sound are coded, MPEG-4 Part 2 in GOPs of 30
+	// and PCM when nil.
+	codec []string
+	sound []string
+	// A file only the video preview's test takes, see
+	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
+	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
+	// short is not right yet, plan rows 2.200 and 2.201.
+	previewOnly bool
 }
 
 var timesCases = []timesCase{
@@ -97,9 +104,28 @@ var timesCases = []timesCase{
 		out: []string{"-fps_mode", "passthrough"}},
 	// Frames that keep to their rate, in MP4 and in Matroska, whose
 	// times are whole milliseconds.
-	{name: "even_mp4", file: "even.mp4", rate: "30000/1001", evenOnly: true},
-	{name: "even_mkv", file: "even.mkv", rate: "30000/1001", evenOnly: true},
+	{name: "even_mp4", file: "even.mp4", rate: "30000/1001", previewOnly: true},
+	{name: "even_mkv", file: "even.mkv", rate: "30000/1001", previewOnly: true},
+	// What OBS records, the file Tim found the video preview could not
+	// read: H.264 with B-frames, so frames are decoded out of the order
+	// they are shown in, and AAC, whose priming starts the sound before
+	// the picture, in Matroska, with frames left out under load.
+	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
+		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
+		out:   []string{"-fps_mode", "passthrough"},
+		codec: h264, sound: aac, previewOnly: true},
+	// MPEG-TS, which OBS also records and camcorders write, has no index
+	// of its key frames, so a seek lands between two. A key frame every
+	// two seconds puts every jump of the test inside a GOP.
+	{name: "mpegts", file: "ts.ts", rate: "30000/1001",
+		codec: []string{"-c:v", "libx264", "-bf", "2", "-g", "60", "-sc_threshold", "0", "-pix_fmt", "yuv420p"}, sound: aac,
+		previewOnly: true},
 }
+
+var (
+	h264 = []string{"-c:v", "libx264", "-bf", "2", "-g", "30", "-pix_fmt", "yuv420p"}
+	aac  = []string{"-c:a", "aac"}
+)
 
 // timesEpisode makes the episode of a case: its frames carry their
 // numbers in bars, and its sound says which moment of a second it is.
@@ -118,12 +144,31 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	args = append(args, "-f", "lavfi", "-i", picture,
 		"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
 	args = append(args, c.out...)
-	args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30", "-c:a", "pcm_s16le", "-t", seconds, source)
+	codec, sound := c.codec, c.sound
+	if codec == nil {
+		codec = []string{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}
+	} else if !hasEncoder(encodersHere(), codec[1]) {
+		t.Skipf("the ffmpeg on the path has no %s to make the test episode with", codec[1])
+	}
+	if sound == nil {
+		sound = []string{"-c:a", "pcm_s16le"}
+	}
+	args = append(args, codec...)
+	args = append(args, sound...)
+	args = append(args, "-t", seconds, source)
 	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
 	return source
 }
+
+// encodersHere is the encoders of the ffmpeg on the path. The one CI's
+// Mac runs is the one we ship, which encodes H.264 on the graphics chip
+// only.
+var encodersHere = sync.OnceValue(func() string {
+	out, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	return string(out)
+})
 
 func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	ctx := context.Background()
@@ -211,9 +256,15 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 // one that begins less than frameHair after a moment holds it.
 func frameHolding(t *testing.T, source string) func(at float64) int {
 	t.Helper()
-	// When each frame of the episode begins, by its own timestamp, and
-	// which frame it is by its bars.
-	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+	// When each frame of the episode begins, by its own timestamp counted
+	// from the start of the file the way every time in a clip is, and which
+	// frame it is by its bars.
+	out, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=start_time", "-of", "csv=p=0", source).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "packet=pts_time", "-of", "csv=p=0", source).Output()
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +272,7 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 	var begins []float64
 	for _, field := range strings.Fields(string(out)) {
 		if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
-			begins = append(begins, v)
+			begins = append(begins, v-start)
 		}
 	}
 	sort.Float64s(begins)
@@ -230,10 +281,14 @@ func frameHolding(t *testing.T, source string) func(at float64) int {
 		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
 	}
 	return func(at float64) int {
-		k := sort.Search(len(begins), func(i int) bool { return begins[i] > at+frameHair })
+		// In whole microseconds, the way the render's fps filter counts,
+		// so a frame that begins exactly a Hair after a moment holds it.
+		k := sort.Search(len(begins), func(i int) bool { return wholeMicros(begins[i]) > wholeMicros(at)+wholeMicros(frameHair) })
 		return numbers[max(k-1, 0)]
 	}
 }
+
+func wholeMicros(t float64) int64 { return int64(math.Round(t * 1e6)) }
 
 // barNumbers is the number the eight bars of each frame of a video say.
 func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {

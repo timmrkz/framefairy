@@ -17,8 +17,10 @@ import (
 // frame of it the frame of the episode the render takes there, the one
 // that holds its moment. On the episodes TestARenderShowsTheFrameThatHoldsEachMoment
 // renders, frames at uneven times, frames left out, a picture that starts
-// after the sound, and on files whose frames keep to their rate, in MP4
-// and in Matroska. The video preview counts on the same grid and reads
+// after the sound, on files whose frames keep to their rate, in MP4 and
+// in Matroska, on what OBS records, H.264 with B-frames and AAC in
+// Matroska, and on MPEG-TS, which has no index of its key frames, so a
+// jump lands between two. The video preview counts on the same grid and reads
 // nothing of the file itself, so a Matroska file plays as an MP4 does.
 // Plan row 2.198, docs/VIDEO-PREVIEW.md step 5.
 func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
