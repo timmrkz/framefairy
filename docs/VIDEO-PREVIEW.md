@@ -5,9 +5,9 @@ and its sound from here on, and what is removed on the way. Decided with
 Tim on 8 October 2026, after the history below. Plan row 2.156. Steps 1
 and 2 are built, every file's picture through ffmpeg and the episode's
 decoder for it, in one pull request, #157, as Tim asked. Step 3, one
-engine, is built in #162 and tried on Tim's Mac. Step 4 is being built
-in #168. What is
-not built yet says so where it is described.
+engine, is built in #162 and tried on Tim's Mac. Step 4 is built in
+#168. Step 5 is built in #195, found needed by a video in Matroska. What
+is not built yet says so where it is described.
 
 Three parts of the app are named here. **The interface** is the
 TypeScript and Svelte in `frontend/`, which runs in the webview and draws
@@ -391,7 +391,7 @@ the Mac alone, against rule 2. It is not planned.
 
 | What | Where | Lines today |
 | --- | --- | ---: |
-| Our reader of MP4 and MOV | `frontend/src/lib/frames/mp4.ts` and its tests | 851 and 457 |
+| Our reader of MP4 and MOV | `frontend/src/lib/frames/mp4.ts` and its tests | 851 and 457, removed in step 5 |
 | The Mac's decoder through cgo | `engine/pictures*.go`, `frontend/src/lib/frames/native.ts`, `/frames/native` and `/frames/decode` | about 600, and 148 of tests, removed in step 3 |
 | WebKit's decoders | `WebPictures`, `PlainSound` and the reader of byte ranges in `queue.ts` | about 200, removed in step 3 |
 | The choice between decoders | `fromGoSide`, `pictureFailed`, `nativeFailed`, `replaceDecoders` in `queue.ts` | about 100, removed in step 3 |
@@ -481,7 +481,30 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
 5. **The interface stops reading the file.** The program counts on the
    frames the engine names, the picture's start and the short's rate, and
    a piece is asked for by the render's own code. `mp4.ts` is removed.
-   Ends 2.155.
+   Ends 2.155. Built in #195, after Tim added a video OBS recorded in
+   Matroska and the video preview said it had no moov box.
+   `SourceInfo.Grid` in `engine/render.go` names the frames of the
+   short: the short's rate, from the first frame of it inside the file to
+   the file's end. The app hands it to the interface with the source, with
+   the sound's rate and channels, and `lib/frames/movie.ts` makes what the
+   queue plays from it: every frame of the grid, each one a decoder can
+   start at, and the sound in packets of 1024 moments one after another.
+   An open asks the episode's decoder for a frame of the grid, and the
+   decoder makes each frame of it from the file's frames by
+   `framewire.Grid`: the frame that holds its moment, the last to begin
+   at or before it, give or take a millisecond, and the file's first
+   before the picture begins, counted in whole microseconds the way the
+   render's `fps` filter counts in `byTimes`. A frame of the file that
+   stands for no frame of the grid is let go unscaled, and one that stands
+   for two is scaled once. Times count from the start of the file, as the
+   engine and the sound count them, where the picture had counted by the
+   file's own stamps, off by as much as a file starts late.
+   `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
+   render's rule on a phone's uneven frames, a screen recorder's left-out
+   frames, left-out frames the probe does not see, a picture that starts
+   late in MOV and in Matroska and even frames in MP4 and in Matroska, and
+   the walk `a video in Matroska shows in the video preview the frames its
+   short has` holds the video preview to the short.
 
 ## What it costs
 

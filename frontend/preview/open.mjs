@@ -24,11 +24,11 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 // episode, the video preview says it cannot read the file, and a probe
 // that needs one has to say so rather than pass.
 //
-// VP9 and Opus in an MP4. An MP4, because the video preview reads the
-// file itself, see frontend/src/lib/frames/, and it reads MP4 and MOV.
-// VP9 and Opus, because the Chromium that comes with Playwright is built
-// without the proprietary codecs and decodes no H.264 or AAC. The app
-// itself runs in a WebKit view and decodes what the Mac decodes.
+// VP9 and Opus in an MP4, from when the webview decoded the episode and
+// the Chromium that comes with Playwright decoded no H.264 or AAC. The
+// video preview reads nothing of the file now: the frames the engine
+// names come with the source, see the stub's Source, and the sound from
+// the Go side, which ffmpeg stands in for here, see sound() below.
 //
 // The picture says which frame it is. Its top half is the frame number in
 // bars, the highest bit on the left, light for one and dark for nought, so
@@ -97,26 +97,6 @@ export function framesEpisode() {
   return made(framesAt, { seconds: 600, bits: 16, bar: 12, height: 108, climb: 1, picture: "200k", sound: "96k" });
 }
 
-// ?fragmented serves the workspace a fragmented MP4 instead, ten seconds
-// of the frame queue's episode written the way a live recording is, which
-// the video preview cannot read, so a probe sees what it says about a file
-// it cannot play.
-export const fragmentedAt = join(tmpdir(), "framefairy-preview-fragmented-v1.mp4");
-async function fragmented() {
-  try {
-    await stat(fragmentedAt);
-    return fragmentedAt;
-  } catch {}
-  const from = await framesEpisode();
-  if (!from) return null;
-  try {
-    await run("ffmpeg", ["-v", "error", "-i", from, "-t", "10", "-c", "copy", "-movflags", "frag_keyframe+empty_moov", fragmentedAt, "-y"]);
-    return fragmentedAt;
-  } catch {
-    return null;
-  }
-}
-
 // The files, read once each. A file was read from disk on every range
 // request, and the video preview asks for a great many of them.
 const bodies = new Map();
@@ -128,8 +108,8 @@ async function body(file) {
 
 // The video preview reads the file a range at a time, so the range is
 // answered rather than the whole file.
-async function media(res, range, frames = false, broken = false) {
-  const data = await body(frames ? await framesEpisode() : broken ? await fragmented() : await episode());
+async function media(res, range, frames = false) {
+  const data = await body(frames ? await framesEpisode() : await episode());
   if (!data) {
     res.writeHead(404).end("no ffmpeg, so no episode to play");
     return;
@@ -263,7 +243,7 @@ export async function screen({
     }
     if (url.pathname.startsWith("/media/")) {
       if (slowread) await new Promise((r) => setTimeout(r, slowread));
-      await media(res, req.headers.range, url.searchParams.get("path") === "/frames.mp4", /[?&]fragmented/.test(query));
+      await media(res, req.headers.range, url.searchParams.get("path") === "/frames.mp4");
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;

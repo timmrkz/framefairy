@@ -204,7 +204,7 @@ console.log(`frames from inside a cut     ${shownInCut.join(" ") || "none"}`);
 console.log(`not the next frame, off a cut ${notNext}`);
 console.log(`canvas not the frame said    ${wrongPicture}`);
 console.log(`at the end                   ${last.ended ? "ended" : last.playing ? "playing" : "paused"}, playhead ${last.at.toFixed(3)}, frame ${last.frame.toFixed(2)}`);
-console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, decoded ${rec.stats.decoded}, closed unseen ${rec.stats.unseen}, most frames open ${rec.stats.mostOpen}, reads ${rec.stats.reads}`);
+console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, decoded ${rec.stats.decoded}, closed unseen ${rec.stats.unseen}, most frames open ${rec.stats.mostOpen}`);
 
 // ---- The sound
 

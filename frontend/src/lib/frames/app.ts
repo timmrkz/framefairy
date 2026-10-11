@@ -1,12 +1,11 @@
-// The picture of a file the webview cannot decode, decoded on the Go side
-// and pulled from it a few frames at a time, see
-// cmd/framefairy-app/frames.go. WebKit says yes to HEVC with 10-bit colour
-// and its decoder then fails on the first frame. The frame queue plays
-// these frames the way it plays the ones WebKit decodes: AppPictures
-// answers the calls it makes of a VideoDecoder.
+// The picture of the episode, decoded on the Go side by the episode's
+// decoder and pulled from it a few frames at a time, see
+// cmd/framefairy-app/frames.go: the frames of the short, on the grid the
+// engine names, see movie.ts. AppPictures answers the calls the frame
+// queue makes of a decoder.
 //
-// What makes it quick, since every new stream costs ffmpeg starting,
-// reading the file's index and decoding from the key frame before:
+// What makes it quick, since every new stream costs moving a cursor of
+// the episode's decoder and decoding from the key frame before:
 //
 // - A stream that will reach a frame soon is waited for rather than a new
 //   one started, so the arrow key stepping on, and a paused play going on,
@@ -17,7 +16,7 @@
 // - A frame is decoded at the size of the canvas and no larger.
 // - The queue's second decoder asks for the piece after a cut while the
 //   first plays, so a stream for it is open before it is needed.
-import { rankOf, type VideoTrack } from "./mp4";
+import { rankOf, type VideoTrack } from "./movie";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
 
@@ -70,7 +69,9 @@ class Stream {
   ) {
     this.first = first;
     this.position = first - 1;
-    const from = Math.max(0, owner.ptsOf(first) - owner.track.frame / 2);
+    // The frame's own moment: the Go side starts at the frame of the grid
+    // that holds it, which is this one, see movie.ts.
+    const from = owner.ptsOf(first);
     const q = new URLSearchParams({ path: owner.path, from: from.toFixed(6), w: String(width), h: String(height) });
     this.id = fetch(`/frames/open?${q}`)
       .then(async (r) => {

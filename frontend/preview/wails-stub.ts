@@ -1182,7 +1182,21 @@ const Answers = {
         // The frame rate of the episode the harness plays, see harnessFps.
         // Without it the app took 30, and the frame on screen was a second
         // behind a playing clock half the time.
-        return Promise.resolve({ duration: 14423, width: 1920, height: 1080, cropWidth: 608, cropHeight: 1080, fps: harnessFps });
+        // The grid and the sound are what the engine would say of the
+        // episode open.mjs makes, see episode() there: its picture at
+        // harnessFps from the start, its sound Opus, decoded at 48 kHz, in
+        // one channel.
+        return Promise.resolve({
+          duration: 14423,
+          width: 1920,
+          height: 1080,
+          cropWidth: 608,
+          cropHeight: 1080,
+          fps: harnessFps,
+          grid: { start: 0, num: harnessFps, den: 1, count: 14423 * harnessFps },
+          soundRate: 48000,
+          soundChannels: 1,
+        });
       case "Clips": {
         const made = [
           ...found.map((f) => clip(f.n + (fresh ? 0 : 4), f.start, "Ein Moment " + f.n, false)),

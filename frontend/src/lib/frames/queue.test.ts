@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { movieOf } from "./movie";
 import { FrameQueue, GoSound, GoSoundStream, SOUND_CHUNK, soundChunks, type Shown } from "./queue";
 
-// The queue without a browser: a canvas that draws nothing and no decoders,
-// so the file is never opened and every play stays starting. That is
+// The queue without a browser: a canvas that draws nothing, no sound card
+// and no decoders, so the queue never opens and every play stays starting. That is
 // enough for what the queue says while a play starts, which is all a click
 // while playing sees in its own frame.
 function canvas(): HTMLCanvasElement {
@@ -20,7 +21,11 @@ afterAll(() => {
 });
 
 function playing(at: number) {
-  const q = new FrameQueue(canvas(), "/episode.mp4");
+  const q = new FrameQueue(
+    canvas(),
+    "/episode.mp4",
+    movieOf({ duration: 120, width: 2, height: 2, grid: { start: 0, num: 25, den: 1, count: 3000 } }),
+  );
   q.seek(at);
   q.play();
   const said: Shown[] = [];

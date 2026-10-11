@@ -507,8 +507,8 @@ whole episode into memory while the page stood paused. A stream nobody
 pulls from for 20 seconds is closed, and at most six are open. Like
 `/media/`, it only reads a file of an episode in the library.
 
-What makes it quick, since a new stream costs ffmpeg starting, reading the
-file's index and decoding from the key frame before:
+What makes it quick, since a new stream costs moving a cursor of the
+episode's decoder and decoding from the key frame before:
 
 - A stream that will reach a frame within a second and a half is waited
   for rather than a new one started, and the frames it passes on the way
@@ -655,18 +655,18 @@ document finds a second one, and it keeps what is drawn on its canvases
 and how far its clip list was scrolled. Its video preview lets go of
 everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
-kept and its sound card, and only the file's index and the frame on the
-canvas stay. Waking, a new queue starts from that index, in the task
+kept and its sound card, and only what it played and the frame on the
+canvas stay. Waking, a new queue starts from what it played, in the task
 after the frame that shows the workspace again, so starting a sound card
-and a decoder does not hold that frame back. Nothing is read from the
-file then but its length and when it was written, and the index is read
-again if either changed, an episode exported again under its name.
+and a decoder does not hold that frame back. What it plays is the frames
+the engine names for the episode and its sound, from the source, see
+`lib/frames/movie.ts`, and nothing of the file is read by the interface.
 Nothing of the file is taken from the webview's cache, which took a file
 written long ago as unchanged for minutes. The workspace reads the
 episode and the settings again behind what it already shows. Asleep, it
 reads nothing by itself. An
 eleventh episode opened lets go of the one opened longest ago. Asleep,
-a workspace is its page, its canvases and the file's index, about 10 MB,
+a workspace is its page, its canvases and the frames it plays, about 10 MB,
 so ten is about 100 MB. As the app starts, it opens on the episode that
 was open when it was left, the way a Mac app comes back with the document
 it had open, and the workspaces of the episodes opened before it are
@@ -688,10 +688,9 @@ went to sleep with nothing on its canvas.
 
 An episode that is not kept is built the moment it is picked, and the
 parts of that are started together rather than one after another. The
-file's index and the episode's decoder are asked for as the workspace
-starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
-the workspace knows what the episode is, and the frame queue takes the
-index read ahead. The clip timeline asks for its words and its waveform
+episode's decoder is asked for as the workspace starts to build,
+`holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
+knows what the episode is. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
 Go side keeps the transcripts of the last ten episodes read, `keptReads`
 in `words.go`, and reads one once however many calls ask for it at the
@@ -701,7 +700,7 @@ picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
 workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
 kept is on screen in 200 ms in the walks' browser, from 240, and what is
-left is the workspace itself being laid out and the file's index read.
+left is the workspace itself being laid out.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
@@ -2545,7 +2544,7 @@ See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
     longer than half a second or came more than 60 in a second, which
     workspace is asked for and in front, each step of a workspace
     opening and what it still waits for when it is slow, and each step
-    of the video preview: the canvas, the file's index, the sound card,
+    of the video preview: the canvas, what it plays, the sound card,
     the first frame, every play and pause with how it went, and what a
     play that does not start waits for.
   - `files`: every read of the video's file, every stream of frames or

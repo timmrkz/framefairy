@@ -7,6 +7,7 @@
 //           drawn, which costs a read of the canvas each time
 //   ?hear   records every sample the sound card was handed, with the
 //           sound card's own frame it was played at
+import { movieOf } from "../../src/lib/frames/movie";
 import { FrameQueue, type Shown } from "../../src/lib/frames/queue";
 
 type Drawn = Shown & { pictured?: number };
@@ -22,8 +23,14 @@ declare global {
 
 const params = new URLSearchParams(location.search);
 const canvas = document.querySelector("canvas")!;
-const src = params.get("src") ?? `/media/?path=${encodeURIComponent("/frames.mp4")}`;
-const queue = new FrameQueue(canvas, src);
+// What the engine would say of the episode open.mjs makes for this page:
+// ten minutes at 25 frames a second, 192 by 108, with its sound in Opus,
+// which is decoded at 48 kHz, in one channel.
+const queue = new FrameQueue(
+  canvas,
+  "/frames.mp4",
+  movieOf({ duration: 600, width: 192, height: 108, grid: { start: 0, num: 25, den: 1, count: 15000 }, soundRate: 48000, soundChannels: 1 }),
+);
 // The canvas is as many device pixels as the stylesheet makes it, the way
 // the video preview tells it.
 queue.resize(canvas.clientWidth * devicePixelRatio, canvas.clientHeight * devicePixelRatio);

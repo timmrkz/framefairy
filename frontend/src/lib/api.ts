@@ -320,6 +320,14 @@ export interface SourceView {
   // Where the picture's first frame begins, in seconds into the file, and
   // with it the grid its frames are on. Nought for most files.
   videoStart?: number;
+  // The frames the video preview shows, the frames of the short, as the
+  // engine names them, see lib/frames/movie.ts. The video preview reads
+  // nothing of the file itself.
+  grid?: { start: number; num: number; den: number; count: number };
+  // The sound's samples a second and its channels, nought for a video
+  // with no sound.
+  soundRate?: number;
+  soundChannels?: number;
 }
 
 export interface ClipEntry extends ClipView {
