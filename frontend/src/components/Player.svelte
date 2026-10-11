@@ -1232,6 +1232,7 @@
        Everything drawn over the picture stands in .screen, the picture's
        own box, so the crop and the captions are in shares of the picture
        and not of the viewer. -->
+  <div class="stack">
   <div class="viewer">
   <div
     class="screen asks"
@@ -1267,17 +1268,20 @@
          on it. Anywhere else, and on the video playing on through the clip,
          the picture is the episode, not the short, so nothing is laid over
          it. -->
+    <!-- What the crop takes hold of, and the shade over the rest of the
+         picture. The shade is the shadow of the inside of the frame, so
+         it follows the frame's rounded corners and lies under its line,
+         with nothing of the picture left bright between the two. The line
+         itself is drawn in .atop, above the viewer's rounded corners. -->
     {#if crop?.inside}
-      <div class="shade" style="left: 0; width: {crop.left}%"></div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="frame"
-        class:lit={dragLeft !== null}
+        class="crop"
+        class:held={dragLeft !== null}
         style="left: {crop.left}%; width: {crop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}
       ></div>
-      <div class="shade" style="left: {crop.left + crop.width}%; right: 0"></div>
     {/if}
     {#if dragCaptions !== null}
       <div
@@ -1400,6 +1404,21 @@
     {/if}
   </div>
   </div>
+  <!-- The crop frame's line, over the viewer rather than in it. The
+       viewer's rounded corners clip the picture and everything on it, and
+       the frame is not on the picture: it says what of the picture is
+       chosen, so it is drawn whole wherever the crop stands, at the
+       picture's edge too. A box of the picture's own size and place, in
+       the same cell as the viewer, takes no clicks: the crop under it is
+       what the hand moves. -->
+  <div class="atop">
+    <div class="lid" class:sideways={turn % 180 !== 0}>
+      {#if crop?.inside}
+        <div class="frame" class:lit={dragLeft !== null} style="left: {crop.left}%; width: {crop.width}%"></div>
+      {/if}
+    </div>
+  </div>
+  </div>
   <div class="under">
     {@render strip?.()}
   </div>
@@ -1425,29 +1444,53 @@
      size of the app itself. Nothing here measures anything. */
   /* A container for its size, so what is drawn over the picture is sized
      in shares of it by the stylesheet, see px. */
-  .viewer {
+  /* The viewer and the crop frame's line over it, in one cell, so the
+     two are laid out by the same rules and stand in the same place. */
+  .stack {
+    display: grid;
+  }
+
+  .viewer,
+  .atop {
+    grid-area: 1 / 1;
     display: flex;
     height: var(--pic-h);
+  }
+
+  .viewer {
     background: #000;
     border-radius: var(--radius-m);
     overflow: hidden;
   }
 
+  /* Over the crop and under the captions, the way the frame always lay:
+     the same layer as the crop, and after it. */
+  .atop {
+    z-index: 2;
+    pointer-events: none;
+  }
+
   /* In the middle of the viewer, on a whole pixel: half of an odd
-     difference is a half, and a picture between two pixels is soft. */
-  .screen {
+     difference is a half, and a picture between two pixels is soft. The
+     lid is the same box over the viewer, for the crop frame's line. */
+  .screen,
+  .lid {
     position: relative;
     container-type: size;
     flex: none;
     margin-left: calc((var(--mid-w) - var(--pic-w)) / 2);
     height: var(--pic-h);
     width: var(--pic-w);
+  }
+
+  .screen {
     background: #000;
     overflow: hidden;
   }
 
   @supports (width: round(down, 3px, 2px)) {
-    .screen {
+    .screen,
+    .lid {
       margin-left: round(down, calc((var(--mid-w) - var(--pic-w)) / 2), 1px);
     }
   }
@@ -1472,7 +1515,8 @@
      pixel. Everything over the picture stands in it, the crop and the
      captions, rotated with it. The canvas is the episode's frame lying as
      the file has it, as tall as the box is wide, turned into the box. */
-  .screen.sideways {
+  .screen.sideways,
+  .lid.sideways {
     --fit: min(var(--ar), calc(1 / var(--ar)));
     width: round(down, calc(var(--pic-h) * var(--fit)), 1px);
     height: round(down, calc(var(--pic-w) * var(--fit)), 1px);
@@ -1512,18 +1556,9 @@
     bottom: var(--edge);
   }
 
-  .shade {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 2;
-    background: var(--backdrop);
-    pointer-events: none;
-  }
-
-  /* The crop. Its line and corners are the frame in app.css, the same
-     as the window on the range picker and the clip on the clip timeline. */
-  .frame {
+  /* The crop, as the hand takes hold of it: the frame's box, with nothing
+     drawn but the shade around it. */
+  .crop {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -1532,8 +1567,31 @@
     touch-action: none;
   }
 
-  .frame.lit {
+  .crop.held {
     cursor: grabbing;
+  }
+
+  /* The shade over the picture beside the crop is the shadow of the
+     inside of the frame: the box inside its line, with the corners of the
+     inside of its line, so it reaches into the frame's rounded corners
+     and its edge lies under the line, where nothing shows between them.
+     The screen clips it to the picture. */
+  .crop::before {
+    content: "";
+    position: absolute;
+    inset: var(--frame-line);
+    border-radius: max(0px, calc(var(--frame-radius) - var(--frame-line)));
+    box-shadow: 0 0 0 100vmax var(--backdrop);
+    pointer-events: none;
+  }
+
+  /* The crop frame's line. Its line and corners are the frame in app.css,
+     the same as the window on the range picker and the clip on the clip
+     timeline. */
+  .frame {
+    position: absolute;
+    top: 0;
+    bottom: 0;
   }
 
   /* The captions, drawn where the render burns them into the crop. */
