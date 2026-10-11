@@ -28,7 +28,6 @@
     type CropMark,
   } from "../lib/api";
   import {
-    draftCaptions,
     heardIn,
     inClip,
     inEpisode,
@@ -71,7 +70,7 @@
     arriving = false,
     captionLook = null,
     oncaptiontime,
-    oncaptiondraft,
+    oncaptionshape,
     onremovecaption,
     onshape,
     thumbnails = [],
@@ -163,10 +162,10 @@
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
     oncaptiontime?: (word: number, edge: "start" | "end", at: number) => Promise<boolean>;
-    // A caption edge while it is being dragged, on the clip's clock, so
-    // the caption box in the video preview can follow it. Null once the
-    // captions have come back with it saved.
-    oncaptiondraft?: (draft: CaptionDraft | null) => void;
+    // The captions as the engine has them with a caption edge where the
+    // hand is, so the caption box in the video preview follows the drag.
+    // Null once the captions have come back with it saved.
+    oncaptionshape?: (cues: CaptionCue[] | null) => void;
     // A caption block clicked and then removed with delete, known by the
     // moment its first word starts in the episode. It throws when the
     // caption could not be removed, and the block comes back.
@@ -1113,15 +1112,67 @@
   // its last word when a pause follows, and where that is a little off
   // from what is heard, either edge is dragged. The two sides of the line
   // between two captions are two edges: the left side is where the one
-  // before goes, the right side where the one after appears. Dragging the
-  // first leaves a gap, dragging the second takes the one before along.
+  // before goes, the right side where the one after appears. An edge moves
+  // its own caption and no other: dragged in it leaves a gap, dragged out
+  // it stops at the caption beside it. Dragged in over a word it removes
+  // the word, and dragged back out over it puts it back.
+  //
+  // Where the edge lands and which words it crosses is the engine's to
+  // say, see ShapeCaptionTime in engine/episode.go, the same way a gesture
+  // on the clip is, see shape above: the timeline asks while the hand
+  // moves, one question at a time and always about where the hand is now,
+  // and draws the captions it answers with, and the video preview shows
+  // them. Letting go saves the same edge, so what is drawn is what is
+  // saved. The interface kept a copy of the rule, and the two drifted
+  // apart: a word the start of the clip cuts into went from the drag and
+  // came back when it was let go.
   let capDraft = $state<CaptionDraft | null>(null);
   let capMoving = $state(false);
   let capSaving = $state(false);
+  let capShaped = $state<CaptionCue[] | null>(null);
   // The captions a draft was made against. The draft is let go of when
   // they come back changed, so the block never jumps back to where it was
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
+  let capNext: { word: number; edge: "start" | "end"; at: number } | null = null;
+  let capAsking = false;
+  let capFor = 0;
+
+  function askCaption(word: number, edge: "start" | "end", at: number) {
+    capNext = { word, edge, at };
+    void capAsk();
+  }
+
+  async function capAsk() {
+    if (capAsking || !capNext || !clip) return;
+    const q = capNext;
+    const asked = clip;
+    const mine = capFor;
+    capNext = null;
+    capAsking = true;
+    try {
+      const answer = await api.shapeCaptionTime(path, asked.plan, asked.id, q.word, q.edge, q.at);
+      if (mine === capFor && clip?.key === asked.key && capDraft && answer) {
+        capShaped = answer.captions ?? [];
+        oncaptionshape?.(capShaped);
+      }
+    } catch {
+      // An edge the engine says no to shows the last answer it gave.
+      // Letting go says what is wrong.
+    } finally {
+      capAsking = false;
+      void capAsk();
+    }
+  }
+
+  // Letting go of the draft, and of any answer still on its way.
+  function dropCaption() {
+    capFor++;
+    capNext = null;
+    capDraft = null;
+    capShaped = null;
+    oncaptionshape?.(null);
+  }
 
   // The clip as a gesture shapes it goes to the video preview too, so it
   // shows the same clip as the timeline while the hand moves.
@@ -1135,7 +1186,7 @@
 
   const captionBlocks = $derived.by(() => {
     if (!clip || !shownCues?.length || !cuePieces.length) return [];
-    const list = shapedShown ? shownCues : draftCaptions(shownCues, capDraft);
+    const list = shapedShown ? shownCues : capDraft && capShaped?.length === shownCues.length ? capShaped : shownCues;
     return list.map((c, i) => {
       const from = inEpisode(cuePieces, c.start);
       const to = endInEpisode(cuePieces, Math.min(c.end, clipLength));
@@ -1145,9 +1196,34 @@
       const parts = cuePieces
         .map((p) => ({ from: Math.max(from, p.start), to: Math.min(to, p.end) }))
         .filter((part) => part.to > part.from);
-      return { i, c: shownCues[i], from, to, parts: parts.length ? parts : [{ from, to }] };
+      // Where the caption is as saved, which is what lights it and pops it
+      // while one of its edges is dragged, see wordHere.
+      const saved = shownCues[i];
+      const rest =
+        capDraft && saved !== c
+          ? { from: inEpisode(cuePieces, saved.start), to: endInEpisode(cuePieces, Math.min(saved.end, clipLength)) }
+          : { from, to };
+      return { i, c: saved, from, to, rest, parts: parts.length ? parts : [{ from, to }] };
     });
   });
+
+  // Which word of a block the playhead is on, by when it starts on the
+  // clip's clock, or -2 when the playhead is not on the block. The block
+  // is lit while it is on a word and pops when the word changes, the way
+  // the pill does in the video preview, so it pops as the playhead moves
+  // and never because an edge is dragged: while one is, it is read from
+  // the caption as saved. A word is known by when it starts rather than by
+  // where it is in the caption, so taking out a word before it is no new
+  // word. The block popped each time a dragged left edge passed the
+  // playhead, which a click on the block puts at its first word, and a
+  // dragged right edge never came near it, so the two edges looked
+  // different, found by Tim.
+  function wordHere(b: { c: CaptionCue; rest: { from: number; to: number } }): number {
+    if (time < b.rest.from || time >= b.rest.to) return -2;
+    const k = wordNow(b.c);
+    const word = (b.c.lines ?? []).flatMap((l) => l.words)[k];
+    return word ? word.start : -1;
+  }
 
   // A caption block clicked is picked, the way a file is in the Finder,
   // and delete removes it: the key marked delete on the Mac, which is
@@ -1278,10 +1354,7 @@
   }
 
   $effect(() => {
-    if (capDraft && !capMoving && !capSaving && captions !== capHeld) {
-      capDraft = null;
-      oncaptiondraft?.(null);
-    }
+    if (capDraft && !capMoving && !capSaving && captions !== capHeld) dropCaption();
   });
 
   function grabCaption(i: number, edge: "start" | "end", event: PointerEvent) {
@@ -1292,27 +1365,24 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const from = event.clientX;
+    const word = edge === "start" ? c.first : c.last;
+    // The moment on the episode's clock, the start of a piece for a start
+    // and the end of one for an end, where the two meet at a cut.
+    const onEpisode = (at: number) => (edge === "start" ? inEpisode : endInEpisode)(segments, at);
     capHeld = captions;
+    capFor++;
     let moved = false;
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) {
         moved = true;
         capMoving = true;
       }
-      if (!moved) return;
-      // On the clip's clock, a whole frame at a time, and never over the
-      // caption beside it or past its own other edge.
-      let at = Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame;
-      const shortest = 0.1;
-      if (edge === "start") {
-        const low = i > 0 ? captions[i - 1].start + shortest : 0;
-        at = Math.min(Math.max(at, low), c.end - shortest);
-      } else {
-        const high = i + 1 < captions.length ? captions[i + 1].start : clipLength;
-        at = Math.min(Math.max(at, c.start + shortest), high);
-      }
+      if (!moved || word === undefined) return;
+      // On the clip's clock, a whole frame at a time, inside the clip. How
+      // far the edge may go is the engine's to say.
+      const at = Math.min(Math.max(Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame, 0), clipLength);
       capDraft = { index: i, edge, at };
-      oncaptiondraft?.(capDraft);
+      askCaption(word, edge, onEpisode(at));
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
@@ -1320,12 +1390,10 @@
       target.removeEventListener("pointercancel", up);
       capMoving = false;
       const d = capDraft;
-      const word = edge === "start" ? c.first : c.last;
       if (!moved || !d || word === undefined) {
         // A click on an edge puts the playhead on it, the way a clip edge
         // does, which is how a caption is heard from where it appears.
-        capDraft = null;
-        oncaptiondraft?.(null);
+        dropCaption();
         if (!moved)
           onseek(
             edge === "start" ? inEpisode(segments, c.start) : endInEpisode(segments, Math.min(c.end, clipLength)),
@@ -1334,20 +1402,18 @@
         return;
       }
       capSaving = true;
-      const saved = await oncaptiontime(word, edge, (edge === "start" ? inEpisode : endInEpisode)(segments, d.at));
+      const saved = await oncaptiontime(word, edge, onEpisode(d.at));
       capSaving = false;
-      if (!saved) {
-        capDraft = null;
-        oncaptiondraft?.(null);
-      }
+      if (!saved) dropCaption();
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
   }
 
-  // A double-click on an edge put there by hand puts it back where its
-  // words put it.
+  // A double-click on an edge moved by hand, or drawn in with its word,
+  // puts it back where all its words put it, the words taken out at that
+  // edge with it, see SetCaptionTime.
   function resetCaption(i: number, edge: "start" | "end") {
     const c = captions?.[i];
     if (!c || !oncaptiontime || locked) return;
@@ -1657,12 +1723,12 @@
             <!-- Drawn afresh on every word of the caption shown, which is what
                  starts its pop again. A key on the list would not do it: the
                  list is only looked at again when the captions change. -->
-            {#key time >= b.from && time < b.to ? wordNow(b.c) : -2}
+            {#key wordHere(b)}
               {#each b.parts as part, k (k)}
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
                 <div
                   class="caption"
-                  class:showing={time >= b.from && time < b.to}
+                  class:showing={wordHere(b) !== -2}
                   class:picked={b.c.first !== undefined && picked === b.c.first}
                   data-first={b.c.first}
                   style="left: {x(part.from)}%; width: calc({Math.max(x(part.to) - x(part.from), 0)}% - 2px); --i: {b.i}"
@@ -1691,8 +1757,8 @@
               aria-label="When caption {b.i + 1} appears"
               aria-valuenow={b.c.start}
               title={b.c.startMoved
-                ? "When this caption appears, put here by hand. Drag to move it, double-click to put it back where its words put it."
-                : "When this caption appears. Drag to move it."}
+                ? "When this caption appears, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
+                : "When this caption appears. Drag to move it, over a word to remove the word."}
               onpointerdown={(e) => grabCaption(b.i, "start", e)}
               ondblclick={(e) => {
                 e.stopPropagation();
@@ -1708,8 +1774,8 @@
               aria-label="When caption {b.i + 1} goes"
               aria-valuenow={b.c.end}
               title={b.c.endMoved
-                ? "When this caption goes, put here by hand. Drag to move it, double-click to put it back where its words put it."
-                : "When this caption goes. Drag to move it."}
+                ? "When this caption goes, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
+                : "When this caption goes. Drag to move it, over a word to remove the word."}
               onpointerdown={(e) => grabCaption(b.i, "end", e)}
               ondblclick={(e) => {
                 e.stopPropagation();

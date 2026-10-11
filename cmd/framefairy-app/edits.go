@@ -4,9 +4,30 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
+	"time"
+
+	"github.com/rs/zerolog"
 
 	"framefairy/engine"
 )
+
+// editLevel is the level of a line about an edit: a warning for one that
+// was refused, and the person's own act otherwise.
+func editLevel(err error) zerolog.Level {
+	if err != nil {
+		return zerolog.ErrorLevel
+	}
+	return zerolog.InfoLevel
+}
+
+// editLine starts a line of the log about an edit to a clip, see
+// LOGGING.md. It names the video and the clip, and never the words: a
+// report holds no word of a video.
+func editLine(level zerolog.Level, path, clipID string, took time.Duration) *zerolog.Event {
+	return theLog.line(level, "edits").Str("video", filepath.Base(path)).Str("clip", clipID).
+		Int64("ms", took.Milliseconds())
+}
 
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels, and returns the clip as it is now.
@@ -254,8 +275,10 @@ func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string,
 }
 
 // SetCaptionTime moves the caption of a clip that begins or ends on a word,
-// to appear or go at a moment of the episode. A moment below nought puts it
-// back where its words put it, because JSON has no way to say not a number.
+// to appear or go at a moment of the episode, and takes the words it is
+// moved in over out of it, or puts back the ones it is moved back over, in
+// one step to undo. A moment below nought puts it back where its words put
+// it, because JSON has no way to say not a number.
 func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
@@ -263,16 +286,55 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
-	t, err := s.words(path)
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	// Read fresh, as SetWord does: an edit works on the words themselves.
+	t, err := p.Transcript()
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error {
-		return engine.SetCaptionTime(plan, clipID, word, edge, at, t)
-	}); err != nil {
+	began := time.Now()
+	var done engine.CaptionEdit
+	err = s.edit(path, func() error {
+		var err error
+		done, err = engine.SetCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		return err
+	})
+	// Which edge, of the caption on which word, where to, and what it did
+	// to the words: a caption that ended up other than the person meant is
+	// read back from these.
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line = line.Str("edge", edge).Float64("word", word)
+	if math.IsNaN(at) {
+		line = line.Bool("reset", true)
+	} else {
+		line = line.Float64("at", at)
+	}
+	line.Int("out", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// ShapeCaptionTime works out the captions of a clip with the edge of one
+// where the hand has it on the clip timeline, the words it crosses taken
+// out or put back, and writes nothing. It is what SetCaptionTime saves when
+// the hand lets go, so the timeline and the video preview show while the
+// hand moves what is saved, and the interface keeps no rule of its own
+// about which words an edge crosses. See engine.ShapeCaptionTime.
+func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, edge string, at float64) (*engine.CaptionsView, error) {
+	if !s.store.PlanOf(path, plan) {
+		return nil, errNotInLibrary
+	}
+	if at < 0 {
+		at = math.NaN()
+	}
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	p := engine.NewProject(nil, path, s.store.Settings().options())
+	return engine.ShapeCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a

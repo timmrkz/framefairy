@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"framefairy/engine"
 )
@@ -144,9 +146,14 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error {
+	began := time.Now()
+	err = s.edit(path, func() error {
 		return engine.SetWordText(p.LogsDir(), start, text, t)
-	}); err != nil {
+	})
+	// Where the word is and whether it was removed, never what it reads.
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line.Float64("word", start).Bool("removed", strings.TrimSpace(text) == "").Msg("a word was corrected")
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -164,9 +171,13 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error {
+	began := time.Now()
+	err = s.edit(path, func() error {
 		return engine.RemoveCaption(p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
-	}); err != nil {
+	})
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line.Float64("word", first).Msg("a caption was removed")
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
