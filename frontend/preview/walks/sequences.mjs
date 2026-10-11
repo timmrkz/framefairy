@@ -426,6 +426,95 @@ export const sequences = [
     ],
   },
   {
+    name: "a caption's right edge dragged in over its last word removes the word, and back out puts it back",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["gone last", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["undo"],
+      ["same", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge out", ["end", "Schulhof"]],
+      ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["gone first", ["start", "Schulhof"]],
+      ["edge out", ["start", "Schulhof"]],
+      ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "a caption's right edge dragged in and double-clicked, twice, is back where it was with its words",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+    ],
+  },
+  {
+    name: "a caption block pops for neither edge dragged in, with the playhead on it",
+    steps: [
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["start", "Schulhof"]],
+      ["pops", 0],
+      ["undo"],
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["end", "Schulhof"]],
+      ["pops", 0],
+    ],
+  },
+  {
+    name: "a caption's edges moved by hand leave the captions beside them alone",
+    steps: [
+      ["mark", "start"],
+      ["edge nudge", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["edge nudge", ["end", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's last word draws it in like dragging its right edge over the word",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["last", "Schulhof"]],
+      ["drawn in", ["dragged", "Schulhof", "last"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's first word draws it in like dragging its left edge over the word",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["start", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["drawn in", ["dragged", "Schulhof", "first"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
     name: "a caption block clicked, then a word walked to, delete removes only the word",
     steps: [
       ["mark", "start"],
@@ -1740,6 +1829,188 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
         await watch.step("block", s);
+        break;
+      }
+      case "edge in":
+      case "edge out":
+      case "edge nudge": {
+        // An edge of the caption holding a word dragged: in, just over
+        // the middle of the word at that edge, out, back past where that
+        // word was at "start", or a little in, short of any word's middle.
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const was = what === "edge out" ? marks.start : now;
+        const i = was.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        if (i < 0) {
+          wrong = `no caption has "${text}"`;
+          break;
+        }
+        const words = was.captions[i].lines.flatMap((l) => l.words);
+        const w = edge === "end" ? words.at(-1) : words[0];
+        const mid = (w.start + w.end) / 2;
+        const into = (t) => {
+          let sum = 0;
+          for (const p of now.segments) {
+            if (t <= sum + p.end - p.start) return p.start + t - sum;
+            sum += p.end - p.start;
+          }
+          return now.segments.at(-1).end;
+        };
+        const c = now.captions[i];
+        const from = edge === "end" ? c.end : c.start;
+        let to;
+        if (what === "edge in") to = edge === "end" ? (w.start + mid) / 2 : (mid + w.end) / 2;
+        else if (what === "edge out") to = edge === "end" ? was.captions[i].end : was.captions[i].start;
+        else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
+        if (!box) {
+          wrong = `there is no edge "${label}"`;
+          break;
+        }
+        // From the middle of the edge's handle to the moment itself, since
+        // the timeline reads where the pointer is, not how far it went.
+        // Held there a moment before it is let go, so what the timeline
+        // draws under the hand can be held against what it saves: the
+        // edge is where the drag showed it, and does not jump when let go.
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        const target = await xOf(page, into(to));
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let k = 1; k <= 6; k++) {
+          await page.mouse.move(x + ((target - x) * k) / 6, y);
+          await page.waitForTimeout(30);
+        }
+        await page.waitForTimeout(300);
+        const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
+        const held = await handle.boundingBox();
+        await page.mouse.up();
+        await watch.step(what, s);
+        let left = null;
+        for (let k = 0; k < 20; k++) {
+          left = await handle.boundingBox();
+          if (held && left && Math.abs(left.x - held.x) <= 1) break;
+          await page.waitForTimeout(100);
+        }
+        if (!held || !left || Math.abs(left.x - held.x) > 1) {
+          wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+        }
+        break;
+      }
+      case "count pops":
+      case "pops": {
+        // How often a caption block on the clip timeline pops, counted from
+        // "count pops" on. The playhead stands still, so any pop is one an
+        // edit made.
+        if (what === "count pops") {
+          await page.waitForTimeout(400);
+          await page.evaluate(() => {
+            window.__pops = 0;
+            if (!window.__popsHeard) {
+              window.__popsHeard = true;
+              document.addEventListener("animationstart", (e) => {
+                if (e.animationName === "pop" && e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+              });
+            }
+          });
+        } else {
+          await page.waitForTimeout(400);
+          const n = await page.evaluate(() => window.__pops);
+          if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
+        }
+        break;
+      }
+      case "edge put back": {
+        // A double-click on an edge of the caption holding a word.
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const i = now.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
+        if (i < 0 || !box) {
+          wrong = `there is no edge "${label}"`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step(what, s);
+        for (let k = 0; k < 20 && same(await engineState(page, watch.at), now); k++) await page.waitForTimeout(100);
+        break;
+      }
+      case "drawn in": {
+        // The captions read as they did at a mark, and the caption holding
+        // a word draws in at its first or last edge from where it was at
+        // "start", never out, its other edge where it was.
+        const [label, text, which] = arg;
+        const read = (caps) => JSON.stringify(caps.captions.map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text))));
+        const now = await engineState(page, watch.at);
+        const i = marks.start.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const was = marks.start.captions[i];
+        const c = now.captions[i];
+        const near = (a, b) => Math.abs(a - b) < 1e-3;
+        const inward = which === "last" ? near(c.start, was.start) && c.end < was.end - 1e-3 : near(c.end, was.end) && c.start > was.start + 1e-3;
+        if (read(now) !== read(marks[label]) || !inward) {
+          wrong = `the caption with "${text}" did not draw in at its ${which} edge as it did at "${label}"\n${describe(marks[label], now)}`;
+        }
+        break;
+      }
+      case "gone last":
+      case "gone first": {
+        // The caption holding a word at a mark reads as it did with its
+        // last or first word left out, and every other caption as it did.
+        const [label, text] = arg;
+        const read = (c) => c.lines.flatMap((l) => l.words.map((w) => w.text));
+        const was = marks[label];
+        let now = null;
+        for (let k = 0; k < 20; k++) {
+          now = await engineState(page, watch.at);
+          if (now.captions.length === was.captions.length) {
+            const i = was.captions.findIndex((c) => read(c).some((w) => w.includes(text)));
+            const want = what === "gone last" ? read(was.captions[i]).slice(0, -1) : read(was.captions[i]).slice(1);
+            if (read(now.captions[i]).join(" ") === want.join(" ")) break;
+          }
+          await page.waitForTimeout(100);
+          now = null;
+        }
+        if (!now) wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, await engineState(page, watch.at))}`;
+        break;
+      }
+      case "remove edge word": {
+        // The first or last word of the caption holding a word framed and
+        // removed in the caption box.
+        const [which, text] = arg;
+        const now = await engineState(page, watch.at);
+        const c = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const all = c.lines.flatMap((l) => l.words);
+        const edgeWord = (which === "last" ? all.at(-1) : all[0]).text;
+        for (let i = 0; i < 80 && !(await word(edgeWord).count()); i++) {
+          await page.keyboard.press("Shift+ArrowRight");
+          await page.waitForTimeout(100);
+        }
+        await word(edgeWord).click();
+        await page.keyboard.press("Escape");
+        await watch.step("frame", s);
+        await page.keyboard.press("Backspace");
+        await watch.step("press", await shown(page));
+        break;
+      }
+      case "others": {
+        // Every caption but the one holding a word at a mark appears and
+        // goes when it did then.
+        const [label, text] = arg;
+        const was = marks[label];
+        const now = await engineState(page, watch.at);
+        const mine = was.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const span = (c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`;
+        const moved = was.captions
+          .filter((c) => c !== mine)
+          .filter((c) => {
+            const n = now.captions.find((d) => Math.abs(d.first - c.first) < 1e-6);
+            return !n || span(n) !== span(c);
+          });
+        if (moved.length) {
+          wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
+        }
         break;
       }
       case "gone": {

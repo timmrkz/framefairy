@@ -958,8 +958,10 @@ bubble scrolled by those eight pixels.
     out, see `Captions` in `engine/lines.go`. What it read is kept with the
     removal in `corrections.json`, behind a mark no typed word can have. The
     time it held is no pause, the room it took on its line stays taken, so
-    no word of the next caption is pulled up into it, and a caption whose
-    first word it was appears when that word is said. A caption whose
+    no word of the next caption is pulled up into it, and no other caption
+    moves. A caption whose first or last word it was draws in to the words
+    it still shows, the same as when its edge is dragged in over the word,
+    see **Caption timing**. A caption whose
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
@@ -1912,13 +1914,47 @@ moved by hand, on the clip timeline.
   block from where it appears to where it goes, on the same clock as
   everything else on it. A click on a block puts the playhead on that
   caption's first word.
-- **Either edge is dragged.** Where two captions meet, the line between
-  them has two sides: the left side is where the one before goes, the
-  right side where the one after appears. Dragging the left side leaves a
-  gap and moves nothing else. Dragging the right side moves when the next
-  caption appears, and the one before goes with it, so nothing is left bare
-  that was not bare before. Nothing overlaps, because the picture shows one
-  caption at a time. An edge lands on a whole frame.
+- **Either edge is dragged, and moves its own caption only.** Where two
+  captions meet, the line between them has two sides: the left side is
+  where the one before goes, the right side where the one after appears.
+  An edge dragged in leaves a gap, and dragged out it stops at the caption
+  beside it. No other caption ever moves. Dragging the right side used to
+  take the caption before along, so pulling a left edge in over a word
+  drew the caption before into the room Tim had just cleared. Nothing
+  overlaps, because the picture shows one caption at a time. An edge
+  lands on a whole frame.
+- **An edge dragged over a word removes it.** Dragged in, an edge takes
+  out of its caption every word whose middle it passes, the way delete
+  removes a word, so pulling the left edge of "one two three" past "one"
+  reads "two three", and the right edge past "three" reads "one two".
+  Dragged back out over a word it took, the word comes back. The middle
+  is of the part of the word the clip shows, so a word the start of the
+  clip cuts into is passed in that part. The last word stays, because
+  delete removes a caption whole. Which words an edge passes and where it
+  stops is the engine's to say, `ShapeCaptionTime`: the clip timeline asks
+  it while the hand moves and draws its answer, and the caption box in the
+  video preview shows the words it leaves. When the edge is let go it is
+  saved where it was drawn, `SetCaptionTime`, with the words, and Cmd+Z
+  takes back the words and the edge in one step. The interface once kept a
+  copy of the rule, which drifted from the engine's: an edge was drawn in
+  one place and saved in another, and a word the start of the clip cut
+  into left the caption box during the drag and came back when let go.
+- **Removing a word at an edge draws the caption in, as dragging over it
+  does.** A caption whose first or last word is removed in the caption box
+  draws in to the words it shows: it appears with its first word shown and
+  goes a moment after its last. An edge moved in by hand stays where it
+  was put, and one moved out comes in with the word. The captions beside
+  it keep their time, so the room the word took stays empty. Before, the
+  caption kept the time the word had, and the two ways of taking a word
+  off its edge ended differently, which Tim found. The word typed back
+  takes the edge back out to where the hand put it.
+- **A double-click puts an edge back where all its words put it**, the
+  words taken out at that edge coming back with it, whether a drag or the
+  caption box took them. It can be done to any edge moved by hand or
+  drawn in with its word, so it undoes any number of drags. It used to
+  leave the words out, which put a dragged edge only where the words left
+  put it, about where it already stood: Tim dragged a right edge in and
+  double-clicked twice, and the second time nothing moved.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
@@ -1933,7 +1969,13 @@ moved by hand, on the clip timeline.
   colour over its box, with its own opacity, the pill the spoken word
   wears, and pops with the same animation that pill makes in the video
   preview, on every word as the pill does, so walking the words with shift
-  and the arrow keys pops the pill and the block together. A block takes no focus, so no focus ring is left
+  and the arrow keys pops the pill and the block together. It pops when
+  the playhead comes to a new word and never because an edge is dragged:
+  while one is, the block is lit as the caption is saved, and a word is
+  known by when it starts, so taking out a word before it is no new word.
+  The block popped as a dragged left edge passed the playhead, which a
+  click on the block puts at its first word, and a dragged right edge
+  never came near it, so the two edges looked different, found by Tim. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on

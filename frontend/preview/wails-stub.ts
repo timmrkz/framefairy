@@ -1414,6 +1414,25 @@ const Answers = {
         }
         return Promise.resolve(clipOf(id));
       }
+      // The captions with the edge moved, and no word taken out: the
+      // words an edge crosses are the engine's, which the walks drive.
+      case "ShapeCaptionTime": {
+        const [, , id, word, edge, at] = args as [string, string, string, number, string, number];
+        const cues = captionCues(id).map((c: any) => ({ ...c }));
+        const i = cues.findIndex((c: any) => (edge === "start" ? c.first : c.last) === word);
+        if (i < 0) return Promise.reject(new Error("the clip has no caption there"));
+        // On the clip's clock, counted through the pieces.
+        let into = 0;
+        for (const p of clipOf(id).segments) {
+          if (at <= p.end) {
+            into += Math.max(at - p.start, 0);
+            break;
+          }
+          into += p.end - p.start;
+        }
+        cues[i][edge] = into;
+        return Promise.resolve({ captions: cues, style: {} });
+      }
       case "SetCaptionTime": {
         const [, , id, word, edge, at] = args as [string, string, string, number, string, number];
         const moved = ((window as any).__captionTimes ??= {}) as Record<string, number>;

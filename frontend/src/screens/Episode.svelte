@@ -35,7 +35,6 @@
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import {
-    draftCaptions,
     waitShare,
     Heard,
     covers,
@@ -50,7 +49,6 @@
     onGrid,
     frameAt,
     frameMiddle,
-    type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import type { About } from "../lib/playhead";
@@ -1482,10 +1480,10 @@
     });
   });
 
-  // A caption edge being dragged on the clip timeline. The caption box in
-  // the video preview follows it on the way, so what is seen while dragging
-  // is what will be saved.
-  let captionDraft = $state<CaptionDraft | null>(null);
+  // The captions as the engine has them while a caption edge is dragged on
+  // the clip timeline. The caption box in the video preview follows it on
+  // the way, so what is seen while dragging is what will be saved.
+  let captionShape = $state<NonNullable<CaptionsView["captions"]> | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
   let colourDraft = $state<{
@@ -1543,7 +1541,7 @@
     if (!captions) return captions;
     let view = captions;
     if (reshaped) view = { ...view, captions: reshaped.cues };
-    if (captionDraft) view = { ...view, captions: draftCaptions(view.captions ?? [], captionDraft) };
+    if (captionShape) view = { ...view, captions: captionShape };
     if (colourDraft) {
       view = {
         ...view,
@@ -2901,7 +2899,7 @@
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
-        oncaptiondraft={(draft) => (captionDraft = draft)}
+        oncaptionshape={(cues) => (captionShape = cues)}
         onshape={(next) => (reshaped = next)}
       />
       <!-- One row under the clip up close, so the range picker and the

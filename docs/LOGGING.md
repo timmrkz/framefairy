@@ -85,13 +85,17 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `run` | one start of the app, so a restart is seen and two runs never mix |
-| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `wails` |
+| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `wails` |
 | `video` | the video it is about, by file name, where there is one |
 | `act` | what the person did that led to it, see below |
 | `msg` | what happened, in words |
 
 Other fields come where they mean something: `stream` for the frames,
-`job` for a search or a render, `ms` for how long something took,
+`job` for a search or a render, `clip`, `edge`, `word`, `at` and
+`reset` for an edit to a clip, a word by when it starts and never by what
+it reads, `removed` for a word corrected to nothing, `out` and `back` for
+how many words a caption edge took out and put back, `ms` for how long
+something took,
 `status`, `bytes` and `said` for a call, `build` when the app starts.
 
 ### Acts
