@@ -1695,8 +1695,10 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           wrong = `there is no edge "${label}"`;
           break;
         }
+        // From the middle of the edge's handle to the moment itself, since
+        // the timeline reads where the pointer is, not how far it went.
         const x = box.x + box.width / 2;
-        await drag(page, x, box.y + box.height / 2, (await xOf(page, into(to))) - (await xOf(page, into(from))), false);
+        await drag(page, x, box.y + box.height / 2, (await xOf(page, into(to))) - x, false);
         await watch.step(what, s);
         break;
       }
