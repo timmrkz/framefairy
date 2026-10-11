@@ -185,6 +185,24 @@
 //                      first frame of the chosen clip and no other, and the
 //                      playhead was on the clip before the workspace asked
 //                      for the window
+//   ["drop", seconds, where]
+//                      makes a new video of so many seconds, opens the
+//                      "settings", "updates" or stays on the "workspace",
+//                      holds the file over the app the way the runtime
+//                      reports a drag from Finder, and drops it there. The
+//                      app has to wear its frame while the file is held
+//                      over it and not after the drop
+//   ["drop again", where]
+//                      the same with the video dropped last
+//   ["drop not a video", where]
+//                      the same with a PDF
+//   ["dropped in front"]
+//                      the video dropped last is the one on screen, and in
+//                      the library once
+//   ["not a video"]    the PDF dropped last is not in the library, and the
+//                      app says by its name that it is not a video
+//   ["no reason"]      the app says nothing was left out: a reason from
+//                      files given before is gone once the next are taken
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      where the app says what went wrong, and the library
 //                      does not hold it
@@ -383,7 +401,8 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
@@ -1041,6 +1060,24 @@ export const sequences = [
     // reason, where before it was taken and the video preview failed on it.
     name: "a file with sound and no picture is left out by Add, with the reason",
     steps: [["add sound alone"], ["left out", "nur-ton-"]],
+  },
+  {
+    // Plan row 2.192. Tim asked for a video dropped anywhere on the app,
+    // whatever page it is on, to do what Add does: it is added, it opens,
+    // and its first search finds its clips with no click.
+    name: "a video dropped on any page is added and opens, the way Add adds one",
+    steps: [
+      ["drop", 30, "settings"],
+      ["dropped in front"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["dropped in front"],
+      ["drop again", "updates"],
+      ["dropped in front"],
+      ["no reason"],
+    ],
   },
   {
     // Tim saw the play stutter, the playhead with it, as he dragged the
@@ -1792,6 +1829,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   let played = null;
   let loopEnd = null;
   let wrong = null;
+  // The video and the other file dropped last.
+  let droppedVideo = "";
+  let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
 
@@ -2406,6 +2446,60 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
+        break;
+      }
+      case "drop":
+      case "drop again":
+      case "drop not a video": {
+        const where = what === "drop" ? arg[1] : arg;
+        let file;
+        if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}&box=0`);
+        else if (what === "drop again") file = droppedVideo;
+        else {
+          file = droppedOther = join(tmpdir(), `notizen-${process.pid}.pdf`);
+          writeFileSync(file, "%PDF-1.4\n");
+        }
+        if (where !== "workspace") {
+          const name = where === "settings" ? "Settings" : "Updates";
+          await fromSidebar(page, () => page.locator("aside").getByText(name, { exact: true }).first().click());
+          await settle(page);
+        }
+        wrong = await dropOn(page, [file]);
+        if (what === "drop not a video") rmSync(file, { force: true });
+        await watch.step("add", s);
+        break;
+      }
+      case "no reason": {
+        await page.waitForTimeout(500);
+        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        if (said.trim()) wrong = `the app still says "${said.trim()}" after the next files were taken`;
+        break;
+      }
+      case "dropped in front": {
+        const name = basename(droppedVideo);
+        let on = null;
+        for (let i = 0; i < 100 && on !== droppedVideo; i++) {
+          await page.waitForTimeout(100);
+          on = await episodeOn(page);
+        }
+        const library = await ask(page, "Library");
+        const times = library.filter((e) => e.source === droppedVideo).length;
+        if (on !== droppedVideo) wrong = `${on ? basename(on) : "no video"} is on screen, not ${name}, which was dropped`;
+        else if (times !== 1) wrong = `${name} is in the library ${times} times`;
+        else if (!(await page.locator(".workspace.front").count())) wrong = `${name} is in the sidebar, and its workspace is not open`;
+        await settle(page);
+        break;
+      }
+      case "not a video": {
+        const name = basename(droppedOther);
+        let said = "";
+        for (let i = 0; i < 50 && !said.includes(name); i++) {
+          await page.waitForTimeout(100);
+          said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        }
+        const library = await ask(page, "Library");
+        if (!said.includes(`${name} is not a video`)) wrong = `the app says "${said.trim()}", not that ${name} is not a video`;
+        else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
         break;
       }
       case "add sound alone": {
@@ -3643,6 +3737,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   await browser.close();
 }
 process.exit(failures ? 1 : 0);
+
+// Holds files over the app and drops them, the way the runtime reports a
+// drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
+// middle and below it, over whatever the page has there. Says what was
+// wrong, or null: the app has to wear its frame while the files are held
+// over it, take the drop, and wear no frame after it.
+async function dropOn(page, files) {
+  const { width, height } = page.viewportSize();
+  const [x, y] = [Math.round(width * 0.4), Math.round(height * 0.6)];
+  const landing = () => page.evaluate(() => {
+      const frame = document.querySelector(".landing");
+      return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
+    });
+  await page.evaluate(([x, y]) => {
+    window._wails.handleDragEnter();
+    window._wails.handleDragOver(x, y);
+  }, [x, y]);
+  await page.waitForTimeout(300);
+  const held = await landing();
+  if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
+  const took = await page.evaluate(([f, x, y]) => window._wails.handlePlatformFileDrop(f, x, y), [files, x, y]);
+  if (!took) return `the drop at ${x}, ${y} landed on no drop target`;
+  await page.waitForTimeout(300);
+  const after = await landing();
+  if (after !== "0") return `the app still wore its frame after the drop, its opacity was ${after}`;
+  return null;
+}
 
 // What is wrong with how the crop frame is drawn over the video preview,
 // or null, read off a screenshot. The picture under it is made white for

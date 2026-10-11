@@ -1125,8 +1125,10 @@ const Answers = {
       // by name. The library keeps the order added, the way the Go side does.
       case "AddEpisodes": {
         const n = ((window as any).__added = ((window as any).__added ?? 0) + 1);
-        return Promise.resolve([`/eps/neu${n}.mp4`]);
+        return Promise.resolve({ added: [`/eps/neu${n}.mp4`], open: `/eps/neu${n}.mp4` });
       }
+      case "VideoNames":
+        return Promise.resolve("mp4, mov, m4v or mkv");
       case "Library":
         return Promise.resolve([
           { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, heard: [[0, 14423]], transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },

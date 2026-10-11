@@ -101,8 +101,29 @@ never decides on somebody's behalf, so an app that has never been asked asks.
 ### Episodes
 
 The sidebar lists your episodes and how far each one is. **Add episode**, at
-the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
+the bottom of it, opens a file dialog. Which files it takes is said once,
+in [Which files are videos](#which-files-are-videos).
 Transcription starts right away in the background.
+
+A video dragged from Finder and dropped anywhere on the app is added the
+same way, whatever page is open, and opens. While a file is held over
+the app, the app wears the frame of what is chosen, with the accent's
+wash inside it. A video already in the list opens rather than being added
+twice, and a file that is not a video is left out, by its name, where Add
+says why it left a file out. Add and a drop are one path, `takeFiles` in
+`drop.go`: the same files are taken, the same reasons given, and the
+video just added opens, or a video given again. The reason stays until
+the next files are taken. The window marks the whole page as where a
+drop lands, `data-file-drop-target`, once the first-run setup is done,
+and not while a box asks first or the app asks about quitting. Plan row
+2.192.
+
+A drop is the one way into the library that does not come from a box the
+system draws. Wails hands the dropped paths to the page and the page
+hands them back, so the paths pass through the page on their way. They
+meet the same checks as Add's: a video's extension, a picture the
+decoder can read, and no link, see `linkedEpisode`. That was decided
+knowingly, since the page is the app's own.
 
 The app opens on the episode that was open when it was left. With no
 episode in the library, the page says **Add a video** and has the
@@ -195,6 +216,29 @@ a warning, so it is read before it is clicked rather than after. Making it
 the default would mean that Enter, or a second Return still held down from
 somewhere else, throws work away, and the whole reason this box exists is
 that a click which throws work away has to be a click you meant.
+
+### Which files are videos
+
+This is the one place in the docs that says which files the app takes as
+videos, and `VideoExtensions` in `engine/episode.go` is the one place in
+the code. Add's box, a drop on the app, `ScanFolder` and the words the
+app shows on the Add button and the page for no video all read that list.
+`TestVideosAreNamedOnce` in `engine/videos_test.go` fails when this
+section and the list disagree, or when any other doc, code or interface
+text names the endings itself.
+
+A file is added as a video when all of this holds:
+
+| Check | Where |
+| --- | --- |
+| Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
+| The decoder reads a first frame from it | `undecodable` in `cmd/framefairy-app/library.go` |
+| Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
+| No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
+
+The ending decides first. A file with another ending is left out by its
+name, whatever it holds, and a file with one of these endings that holds
+no picture the decoder can read is left out with the decoder's reason.
 
 ### The bar
 
