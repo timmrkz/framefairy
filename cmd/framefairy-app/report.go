@@ -51,16 +51,15 @@ func dirExists(path string) bool {
 
 // aboutMachine is what a report says about the app and the machine.
 type aboutMachine struct {
-	Made        string `json:"made"`
-	Build       string `json:"build"`
-	Run         string `json:"run"`
-	OS          string `json:"os"`
-	OSVersion   string `json:"osVersion,omitempty"`
-	Arch        string `json:"arch"`
-	Chip        string `json:"chip,omitempty"`
-	MemoryGB    int64  `json:"memoryGB,omitempty"`
-	DetailedLog bool   `json:"detailedLog"`
-	Video       string `json:"video,omitempty"`
+	Made      string `json:"made"`
+	Build     string `json:"build"`
+	Run       string `json:"run"`
+	OS        string `json:"os"`
+	OSVersion string `json:"osVersion,omitempty"`
+	Arch      string `json:"arch"`
+	Chip      string `json:"chip,omitempty"`
+	MemoryGB  int64  `json:"memoryGB,omitempty"`
+	Video     string `json:"video,omitempty"`
 }
 
 // asked runs a short command for a report and gives what it said, or
@@ -79,7 +78,6 @@ func machine(video string) aboutMachine {
 	a := aboutMachine{
 		Made: time.Now().Format(time.RFC3339), Build: runningVersion(), Run: theLog.run,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, MemoryGB: engine.MachineMemory() >> 30,
-		DetailedLog: theLog.trace.Load(),
 	}
 	if video != "" {
 		a.Video = filepath.Base(video)
@@ -139,6 +137,13 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 			continue
 		}
 		if err := add("logs/"+strings.TrimSuffix(filepath.Base(path), ".gz"), data); err != nil {
+			return "", err
+		}
+	}
+	// The trace lines of the last while, kept in memory and in no file,
+	// see appLog.
+	if recent := theLog.recent.all(); len(recent) > 0 {
+		if err := add("logs/recent frames.log", recent); err != nil {
 			return "", err
 		}
 	}

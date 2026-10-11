@@ -2437,8 +2437,9 @@ See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
   [LOGGING.md](LOGGING.md#acts).
   The window sends its lines a quarter of a second after it says them,
   so they can stand a little after the Go side's lines of the same
-  moment. Every line from debug up is always written. Trace lines only
-  while **Help → Detailed Log** is ticked. The log is at most 10 MB, with
+  moment. Every line from debug up is always written. Trace lines, one
+  for every pull of frames, are kept in memory, the last 8000, and a
+  report of a problem carries them. The log is at most 10 MB, with
   three older files compressed beside it. It is the log plan row R.8 asks
   for, and a report of a problem will carry it. See
   `cmd/framefairy-app/applog.go` and `frontend/src/lib/said.ts`.

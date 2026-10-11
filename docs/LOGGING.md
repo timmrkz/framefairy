@@ -30,9 +30,10 @@ report is one zip file on the Desktop, shown in Finder:
 
 - what the person wrote
 - the log and its older files, unpacked
+- the trace lines of the last while, which are kept in memory, see
+  Levels below
 - the build, the macOS version, the chip, the memory, the run of the
-  app, whether the log was detailed, and the file name of the video
-  that was in front
+  app, and the file name of the video that was in front
 - the settings, which hold no keys: those are in the keychain
 
 It never holds the video, its transcript or its captions. That leaves
@@ -122,10 +123,16 @@ guesswork.
 | `debug` | the steps between: a stream opened, a first frame, the sound card's state, a decoder held and let go |
 | `trace` | lines that come with every frame or every pull |
 
-Everything from `debug` up is always written, see above. `trace` is
-written only while **Help → Detailed Log** is ticked, for chasing
-something like a play that stutters. It stays as it was left when the
-app starts again, and the report says whether it was on.
+Everything from `debug` up is always written, see above. `trace` lines
+go to memory instead of the file: the last 8000, about an hour of a
+play, a few MB at most. A report carries them as
+`logs/recent frames.log`. A play that stutters is found by the pattern
+over every frame, and that is exactly what happened just before the
+person reported it, so nobody has to switch anything on beforehand and
+do it all again. An early version had a **Detailed Log** switch in the
+Help menu for this. Tim took it out: a menu tick that changes nothing
+on screen is a switch nobody can judge, and the one moment it is
+needed is the moment it is too late to tick it.
 
 ## Reading a report
 

@@ -141,7 +141,7 @@ func main() {
 	svc.updates = newUpdating(app.Updater, app.Quit, st, svc.jobs.busy, func(u UpdateState) {
 		app.Event.Emit("updates", u)
 	})
-	app.Menu.Set(appMenu(app, st, func() {
+	app.Menu.Set(appMenu(app, func() {
 		go svc.updates.checkNow()
 		app.Event.Emit("show-updates", nil)
 	}))

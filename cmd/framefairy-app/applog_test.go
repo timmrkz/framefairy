@@ -25,7 +25,7 @@ func testLog(t *testing.T) (path string, read func() []map[string]any) {
 	theLog.open(path)
 	t.Cleanup(func() {
 		theLog.close()
-		theLog.detailed(false)
+		theLog.recent.forget()
 		theLog.act.Store(nil)
 	})
 	return path, func() []map[string]any {
@@ -77,7 +77,7 @@ func has(t *testing.T, line map[string]any, want map[string]any) {
 // the window said it, with its level, the video it is about and the run
 // of the app, with what one call may write held to a few hundred lines.
 // Several windows' calls at once keep their lines whole. A trace line is
-// written only while the log is detailed. Plan rows 2.185 and 2.188.
+// kept in memory, not in the file. Plan rows 2.185 and 2.188.
 func TestSaidWritesTheAppLog(t *testing.T) {
 	_, read := testLog(t)
 
@@ -86,11 +86,8 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 	f.Said([]SaidLine{
 		{At: float64(before.UnixMilli()), Level: "error", Text: "frame queue: The app could not decode the picture."},
 		{Video: "/videos/start.mp4", Text: "video preview: opening\n"},
-		{Level: "trace", Text: "a frame, unseen"},
+		{Level: "trace", Text: "a frame"},
 	})
-	theLog.detailed(true)
-	f.Said([]SaidLine{{Level: "trace", Text: "a frame, seen"}})
-	theLog.detailed(false)
 	var lots []SaidLine
 	for i := range 430 {
 		lots = append(lots, SaidLine{Text: fmt.Sprintf("line %d", i)})
@@ -109,10 +106,12 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 		t.Errorf("the line stands at %v, want the moment the window said it, %v", err["time"], before)
 	}
 	has(t, find(lines, "video preview: opening"), map[string]any{"level": "debug", "video": "start.mp4", "msg": "video preview: opening"})
-	if find(lines, "a frame, unseen") != nil {
-		t.Error("a trace line was written while the log was not detailed")
+	if find(lines, "a frame") != nil {
+		t.Error("a trace line was written to the file")
 	}
-	has(t, find(lines, "a frame, seen"), map[string]any{"level": "trace"})
+	if !strings.Contains(string(theLog.recent.all()), `"level":"trace","time"`) || !strings.Contains(string(theLog.recent.all()), `"msg":"a frame"`) {
+		t.Errorf("the trace line is not kept in memory: %s", theLog.recent.all())
+	}
 	has(t, find(lines, "line 399"), map[string]any{"level": "debug"})
 	has(t, find(lines, "and 30 lines more"), map[string]any{"level": "warn", "more": 30})
 	if find(lines, "line 400") != nil {
@@ -128,8 +127,8 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 
 // The video's file and frames say in the log what was asked and how it
 // went, with the video and the stream as fields of their own. A pull of
-// a stream that plays as it should is a trace line, so a play fills the
-// log only while it is detailed. Plan rows 2.185 and 2.188.
+// a stream that plays as it should is a trace line, kept in memory for a
+// report, so a play does not fill the file. Plan rows 2.185 and 2.188.
 func TestFramesRequestsAreLogged(t *testing.T) {
 	_, read := testLog(t)
 
@@ -150,8 +149,6 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	serve("/frames/hold?path=/videos/start.mp4", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the video's decoder could not start", http.StatusInternalServerError)
 	})
-	theLog.detailed(true)
-	serve("/frames/read?id=1dcdec3203858e5a&n=4&skip=2", pull)
 
 	lines := read()
 	has(t, find(lines, "open "), map[string]any{
@@ -165,9 +162,11 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 		"level": "warn", "video": "start.mp4", "status": 500, "said": "the video's decoder could not start",
 	})
 	if find(lines, "read n 4 skip 0") != nil {
-		t.Error("a pull that went as it should was written while the log was not detailed")
+		t.Error("a pull that went as it should was written to the file")
 	}
-	has(t, find(lines, "read n 4 skip 2"), map[string]any{"level": "trace", "bytes": 64})
+	if kept := string(theLog.recent.all()); !strings.Contains(kept, `"msg":"read n 4 skip 0"`) || strings.Contains(kept, "skip 1") {
+		t.Errorf("the memory holds %s, want the pull that went as it should and only that", kept)
+	}
 	if find(lines, "close") != nil {
 		t.Error("the worker's reach probe was written")
 	}
@@ -240,4 +239,32 @@ func TestActsTieTheLinesTheySetOff(t *testing.T) {
 	has(t, find(lines, "open from"), map[string]any{"act": "a7", "from": "files"})
 	has(t, find(lines, "moved to"), map[string]any{"act": "a8"})
 	has(t, find(lines, "the job ended"), map[string]any{"act": "a7", "job": "job-3", "kind": "clip", "video": "start.mp4", "from": "jobs"})
+}
+
+// The trace lines kept in memory are the last few thousand, oldest first,
+// and lines written from many places at once stay whole. Plan row 2.188.
+func TestTheRecentTraceLinesAreTheLast(t *testing.T) {
+	testLog(t)
+	var wg sync.WaitGroup
+	for w := range 4 {
+		wg.Go(func() {
+			for i := range recentMost / 2 {
+				theLog.line(zerolog.TraceLevel, "files").Int("w", w).Int("i", i).Msg("pull")
+			}
+		})
+	}
+	wg.Wait()
+	theLog.line(zerolog.TraceLevel, "files").Msg("the last")
+	kept := strings.Split(strings.TrimSuffix(string(theLog.recent.all()), "\n"), "\n")
+	if len(kept) != recentMost {
+		t.Errorf("%d lines are kept, want %d", len(kept), recentMost)
+	}
+	for _, line := range kept {
+		if !json.Valid([]byte(line)) {
+			t.Fatalf("a kept line is not whole: %s", line)
+		}
+	}
+	if !strings.Contains(kept[len(kept)-1], "the last") {
+		t.Errorf("the newest line is not last: %s", kept[len(kept)-1])
+	}
 }

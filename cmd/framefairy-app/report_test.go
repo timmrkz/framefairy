@@ -14,7 +14,8 @@ import (
 )
 
 // A report of a problem is one zip on the Desktop, shown in Finder, with
-// what the person wrote, the log with its older files unpacked, what the
+// what the person wrote, the log with its older files unpacked and the
+// trace lines kept in memory, what the
 // app and the machine are and the settings. The home folder is written as
 // ~ in all of it, and nothing of the video goes in but its file name. A
 // second report on the same minute does not take the first one's place.
@@ -29,6 +30,7 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 	path, _ := testLog(t)
 	video := filepath.Join(home, "Movies", "start.mp4")
 	theLog.line(zerolog.WarnLevel, "files").Str("path", video).Msg("the stream failed")
+	theLog.line(zerolog.TraceLevel, "files").Str("path", video).Msg("read n 16 skip 0")
 	// An older file of the log, the way lumberjack keeps it.
 	older, err := os.Create(filepath.Join(filepath.Dir(path), "app-2026-10-09T10-00-00.000.log.gz"))
 	if err != nil {
@@ -68,7 +70,7 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	want := []string{"about.json", "logs/app-2026-10-09T10-00-00.000.log", "logs/app.log", "settings.json", "What happened.txt"}
+	want := []string{"about.json", "logs/app-2026-10-09T10-00-00.000.log", "logs/app.log", "logs/recent frames.log", "settings.json", "What happened.txt"}
 	sort.Strings(want)
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Errorf("the report holds %v, want %v", names, want)
@@ -78,6 +80,9 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 	}
 	if !strings.Contains(files["logs/app.log"], `"path":"~/Movies/start.mp4"`) {
 		t.Errorf("the log in the report does not name the video under ~:\n%s", files["logs/app.log"])
+	}
+	if !strings.Contains(files["logs/recent frames.log"], `"path":"~/Movies/start.mp4","msg":"read n 16 skip 0"`) {
+		t.Errorf("the trace lines kept in memory are not in the report:\n%s", files["logs/recent frames.log"])
 	}
 	if !strings.Contains(files["logs/app-2026-10-09T10-00-00.000.log"], "started yesterday") {
 		t.Error("the older file of the log is not in the report, unpacked")

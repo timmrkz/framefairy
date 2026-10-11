@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -37,8 +38,10 @@ import (
 // Every line from debug up is always written, so the steps that led to a
 // fault are there when it happens. What keeps the disk free is the cap
 // below, not a switch. The trace lines, which come with every frame or
-// every pull, are written only while Detailed Log in the Help menu is
-// ticked, or with FRAMEFAIRY_LOG=trace for a build from the checkout.
+// every pull, are kept in memory instead, the last few thousand of them,
+// and a report of a problem carries them: what a play did just before
+// the person reported it is what a stutter is found by, and nobody has
+// to have switched anything on beforehand. See recent.
 type appLog struct {
 	mu   sync.Mutex
 	file *lumberjack.Logger
@@ -46,8 +49,8 @@ type appLog struct {
 	// which is so in the tests that do not open one.
 	root atomic.Pointer[zerolog.Logger]
 	// One start of the app, so a restart is seen and two runs never mix.
-	run   string
-	trace atomic.Bool
+	run    string
+	recent recentLines
 	// The person's last act, which the Go side's lines carry, see Acted.
 	act atomic.Pointer[string]
 }
@@ -97,7 +100,8 @@ func (l *appLog) open(path string) {
 		_ = l.file.Close()
 	}
 	l.file = &lumberjack.Logger{Filename: path, MaxSize: appLogMB, MaxBackups: appLogOlder, Compress: true}
-	l.leveled()
+	lg := zerolog.New(byLevel{file: l.file, recent: &l.recent}).Level(zerolog.TraceLevel)
+	l.root.Store(&lg)
 }
 
 // close stops writing the log, for the tests.
@@ -109,20 +113,6 @@ func (l *appLog) close() {
 		_ = l.file.Close()
 		l.file = nil
 	}
-}
-
-// leveled puts a logger of the level asked for in place. It is called
-// with mu held.
-func (l *appLog) leveled() {
-	if l.file == nil {
-		return
-	}
-	level := zerolog.DebugLevel
-	if l.trace.Load() {
-		level = zerolog.TraceLevel
-	}
-	lg := zerolog.New(l.file).Level(level)
-	l.root.Store(&lg)
 }
 
 // files are the log's files, the older ones first, the one in use last,
@@ -140,12 +130,64 @@ func (l *appLog) files() []string {
 	return append(older, path)
 }
 
-// detailed says whether the trace lines are written as well.
-func (l *appLog) detailed(on bool) {
-	l.trace.Store(on || os.Getenv("FRAMEFAIRY_LOG") == "trace")
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.leveled()
+// byLevel sends the trace lines to memory and every other line to the file.
+// zerolog hands a writer that can tell levels apart each line with its
+// level.
+type byLevel struct {
+	file   io.Writer
+	recent *recentLines
+}
+
+func (s byLevel) Write(p []byte) (int, error) { return s.file.Write(p) }
+
+func (s byLevel) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	if level == zerolog.TraceLevel {
+		return s.recent.Write(p)
+	}
+	return s.file.Write(p)
+}
+
+// The trace lines kept: at about two a second while a video plays, the
+// last hour or so, and a few MB of memory at most.
+const recentMost = 8000
+
+// recentLines are the last trace lines, the oldest given way to the
+// newest.
+type recentLines struct {
+	mu    sync.Mutex
+	lines [][]byte
+	next  int
+}
+
+func (r *recentLines) Write(p []byte) (int, error) {
+	line := append([]byte(nil), p...)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.lines) < recentMost {
+		r.lines = append(r.lines, line)
+	} else {
+		r.lines[r.next] = line
+		r.next = (r.next + 1) % recentMost
+	}
+	return len(p), nil
+}
+
+// all are the lines kept, oldest first.
+func (r *recentLines) all() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []byte
+	for i := range r.lines {
+		out = append(out, r.lines[(r.next+i)%len(r.lines)]...)
+	}
+	return out
+}
+
+// forget lets the kept lines go, for the tests.
+func (r *recentLines) forget() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lines, r.next = nil, 0
 }
 
 // line starts a line of one part of the app at this moment, with the act
@@ -207,8 +249,7 @@ func (l *appLog) slog(from string, least zerolog.Level) *slog.Logger {
 // its build, so what follows is known to be from that build.
 func (l *appLog) started() {
 	l.open(appLogPath())
-	l.line(zerolog.InfoLevel, "app").Str("build", runningVersion()).Str("os", runtime.GOOS).Str("arch", runtime.GOARCH).
-		Bool("detailed", l.trace.Load()).Msg("started")
+	l.line(zerolog.InfoLevel, "app").Str("build", runningVersion()).Str("os", runtime.GOOS).Str("arch", runtime.GOARCH).Msg("started")
 	engine.DecoderSaid = func(video string, level slog.Level, line string) {
 		l.line(fromSlog(level), "decoder").Str("video", filepath.Base(video)).Msg(line)
 	}
