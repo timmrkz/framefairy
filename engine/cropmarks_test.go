@@ -369,6 +369,22 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 	}
 }
 
+// A trim that hides a crop mark does not take it out of its angle.
+// Automatic crop removes it with the rest, so taking the trim back brings
+// back no mark the person had already let go of.
+func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
+	path := rotatablePlanPath(t)
+	cropMarks(t, path, CropMark{10.2, 100}, CropMark{10.8, 200})
+	reshape(t, path, Gesture{Kind: "trim", Edge: "start", From: 10.5})
+	if err := ResetCrop(path, "01", 10.6); err != nil {
+		t.Fatal(err)
+	}
+	reshape(t, path, Gesture{Kind: "trim", Edge: "start", From: 10.0})
+	if got := loadedClip(t, path).CropMarks; len(got) != 0 {
+		t.Errorf("after Automatic crop and the trim taken back the clip has the marks %v", got)
+	}
+}
+
 // A rotated stretch has a picture of another shape, so the marks placed on
 // it as it stood are removed with the turn. Marks outside it stay.
 func TestRotatingAPartRemovesItsCropMarks(t *testing.T) {

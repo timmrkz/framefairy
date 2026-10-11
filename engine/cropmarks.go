@@ -312,16 +312,37 @@ func pieceHolding(pieces []*object, at float64) int {
 	return -1
 }
 
-// marksOfAngle is which of a clip's crop marks lie in a piece of one camera
-// angle, by their index.
+// marksOfAngle is which of a clip's crop marks belong to one camera
+// angle, by their index. A mark lies in a piece of it, or, where a trim or
+// a cut hides it, beside the nearest piece of it, so a crop placed or put
+// back for the angle takes it along too, and a trim taken back brings
+// back a mark that agrees with the rest.
 func marksOfAngle(marks []CropMark, pieces []*object, spans []Rotation, angle string) map[int]bool {
 	out := map[int]bool{}
 	for i, m := range marks {
-		if h := pieceHolding(pieces, m.At); h >= 0 && angleOf(pieces[h], spans) == angle {
+		h := pieceHolding(pieces, m.At)
+		if h < 0 {
+			h = pieceNearest(pieces, m.At)
+		}
+		if h >= 0 && angleOf(pieces[h], spans) == angle {
 			out[i] = true
 		}
 	}
 	return out
+}
+
+// pieceNearest is the piece of a plan being edited whose start or end is
+// nearest a moment, the earlier of two as near, or minus one for a clip
+// with no pieces.
+func pieceNearest(pieces []*object, at float64) int {
+	best, gap := -1, math.Inf(1)
+	for i, seg := range pieces {
+		d := max(number(seg.values[keyStart])-at, at-number(seg.values[keyEnd]), 0)
+		if d < gap {
+			best, gap = i, d
+		}
+	}
+	return best
 }
 
 // SetCropMark adds, moves or removes a crop mark of a clip, the way
