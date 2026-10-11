@@ -379,9 +379,9 @@ type ClipView struct {
 	// Rotations is the stretches of the video a person rotated, see
 	// Rotation, which the video preview turns its frames by.
 	Rotations []RotationView `json:"rotations"`
-	Rejected bool          `json:"rejected"`
-	Rendered string        `json:"rendered,omitempty"`
-	Preview  string        `json:"preview,omitempty"`
+	Rejected  bool           `json:"rejected"`
+	Rendered  string         `json:"rendered,omitempty"`
+	Preview   string         `json:"preview,omitempty"`
 	// CaptionY is where the caption line of this clip sits, as the distance
 	// from the bottom of a 1080x1920 frame, when it was placed by hand.
 	CaptionY float64 `json:"captionY"`
