@@ -579,10 +579,13 @@ export const api = {
   // Writes a report of a problem to the Desktop and shows it in Finder,
   // and gives its path, see screens/Report.svelte.
   reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
-  // Starts recording what the person says for a report, and stopping
-  // gives it written down by the speech model, see listen.go.
-  listen: () => call<void>("Listen"),
-  stopListening: () => call<string>("StopListening"),
+  // Starts recording what the person says for a report and gives the
+  // recording's number. What is said is written down while it is said,
+  // see onDictation, and stopping gives every piece of it. Cancelling
+  // drops it. See listen.go.
+  listen: () => call<number>("Listen"),
+  stopListening: () => call<Dictation>("StopListening"),
+  cancelListening: () => call<void>("CancelListening"),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -840,6 +843,20 @@ export function onQuit(fn: (what: "ask" | "going") => void): () => void {
 
 export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
+}
+
+// What is being written down while somebody dictates: every piece settled
+// so far, in order, and what follows them, still being heard. See
+// listen.go.
+export interface Dictation {
+  recording: number;
+  said: string[];
+  hearing: string;
+  error?: string;
+}
+
+export function onDictation(fn: (d: Dictation) => void): () => void {
+  return Events.On("dictation", (ev) => fn(ev.data as Dictation));
 }
 
 // Report a Problem… in the Help menu.

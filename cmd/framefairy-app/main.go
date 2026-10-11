@@ -77,6 +77,11 @@ func main() {
 	theLog.started()
 	svc := &FrameFairy{store: st}
 	svc.jobs = newQueue(st, emit, notify)
+	svc.listening.say = quietly(func(d Dictation) {
+		if app != nil {
+			app.Event.Emit("dictation", d)
+		}
+	})
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.jobs.restore(st.Episodes())

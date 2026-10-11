@@ -1,13 +1,16 @@
 package main
 
 import (
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gen2brain/malgo"
@@ -46,28 +49,57 @@ var openMicrophone = func() microphone { return &systemMicrophone{} }
 
 // listening holds the recording in hand, at most one at a time.
 type listening struct {
-	mu  sync.Mutex
-	now *recording
+	mu    sync.Mutex
+	now   *recording
+	count int
+	// say tells the window what is being written down, see Dictation.
+	say func(Dictation)
+	// every is how often what is being said is written down again, 0 for
+	// listenEvery. The tests take it shorter.
+	every time.Duration
 }
 
-// recording is one press of the button, from Listen to StopListening. Each
-// keeps what it heard apart, so a recording started while the one before
-// is still being written down never takes its sound.
+// listenEvery is how often the words appear while somebody talks. A pass
+// writes down at most dictateLongest seconds, which the speech model does
+// in a fraction of this on a Mac, so the words keep up with the voice.
+const listenEvery = 400 * time.Millisecond
+
+// Dictation is what the window is told while somebody dictates. Said is
+// every piece written down for good so far, in order, and Hearing is what
+// follows them, written down again on every pass as more of it is heard.
+// Every message carries all the pieces, because an event the window
+// misses is gone, so a missed one costs a piece nothing. Plan row 2.189.
+type Dictation struct {
+	Recording int      `json:"recording"`
+	Said      []string `json:"said"`
+	Hearing   string   `json:"hearing"`
+	// Error is why the recording ended by itself.
+	Error string `json:"error,omitempty"`
+}
+
+// recording is one press of the button, from Listen to StopListening or
+// CancelListening. Each keeps what it heard apart, so a recording started
+// while the one before is still being written down never takes its sound.
 type recording struct {
-	mic microphone
-	// The speech model loads while the person talks, so writing it down
-	// waits only for the hearing.
-	speech  chan loadedSpeech
+	id      int
+	mic     microphone
 	started time.Time
 	// What was recorded, behind a lock of its own, since the microphone
-	// hands it over from a thread of its own.
+	// hands it over from a thread of its own. It only ever grows, so a
+	// slice of it taken under the lock can be read after.
 	mu      sync.Mutex
 	samples []float32
+	// ended is closed when the person stops, kept says whether what they
+	// said is wanted, and written is what the hearing gives at the end.
+	ended   chan struct{}
+	kept    bool
+	dropped atomic.Bool
+	written chan writtenDown
 }
 
-type loadedSpeech struct {
-	rec engine.Recognizer
-	err error
+type writtenDown struct {
+	said []string
+	err  error
 }
 
 func (r *recording) heard(samples []float32) {
@@ -75,6 +107,12 @@ func (r *recording) heard(samples []float32) {
 	defer r.mu.Unlock()
 	room := listenMost - len(r.samples)
 	r.samples = append(r.samples, samples[:min(len(samples), max(room, 0))]...)
+}
+
+func (r *recording) recorded() []float32 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.samples
 }
 
 // openSpeech loads one copy of the speech model, which is enough for a
@@ -97,15 +135,16 @@ func openSpeech(dir string) (engine.Recognizer, error) {
 // down with.
 var errNoSpeechModel = errors.New("the speech model is not installed. Install it in Settings, then try again.")
 
-// Listen starts recording what the person says for a report, and loads
-// the speech model while they talk. A second call while one records does
-// nothing.
-func (f *FrameFairy) Listen() error {
+// Listen starts recording what the person says for a report, and gives
+// the recording's number, which every Dictation about it carries. The
+// speech model loads while they talk and writes down what they say as
+// they say it. A second call while one records gives the same number.
+func (f *FrameFairy) Listen() (int, error) {
 	l := &f.listening
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.now != nil {
-		return nil
+		return l.now.id, nil
 	}
 	// The folder the settings name, or the installed model's usual place
 	// when they name none, the way a search finds it.
@@ -117,74 +156,180 @@ func (f *FrameFairy) Listen() error {
 		dir = engine.DefaultModelDir()
 	}
 	if standIns.Load() == nil && asr.Check(dir) != nil {
-		return errNoSpeechModel
+		return 0, errNoSpeechModel
 	}
-	r := &recording{mic: openMicrophone(), speech: make(chan loadedSpeech, 1), started: time.Now()}
+	l.count++
+	r := &recording{id: l.count, mic: openMicrophone(), started: time.Now(),
+		ended: make(chan struct{}), written: make(chan writtenDown, 1)}
 	if err := r.mic.start(r.heard); err != nil {
 		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
-		return fmt.Errorf("the microphone could not start: %s", err)
+		return 0, fmt.Errorf("the microphone could not start: %s", err)
 	}
-	go func() {
-		defer func() {
-			if caught := recover(); caught != nil {
-				r.speech <- loadedSpeech{err: fmt.Errorf("the speech model stopped unexpectedly: %v", caught)}
-			}
-		}()
-		rec, err := openSpeech(dir)
-		r.speech <- loadedSpeech{rec, err}
-	}()
 	l.now = r
+	every := cmp.Or(l.every, listenEvery)
+	go l.write(r, dir, every)
 	theLog.line(zerolog.InfoLevel, "listen").Msg("recording for a report")
-	return nil
+	return r.id, nil
+}
+
+// take ends the recording in hand, if it is r, or whichever it is when r
+// is nil, and gives it.
+func (l *listening) take(r *recording) *recording {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now
+	if now == nil || (r != nil && now != r) {
+		return nil
+	}
+	l.now = nil
+	return now
+}
+
+// tell says how a recording is coming along, unless it was dropped.
+func (l *listening) tell(r *recording, d Dictation) {
+	if r.dropped.Load() || l.say == nil {
+		return
+	}
+	d.Recording = r.id
+	l.say(d)
+}
+
+// write writes down what is said while the recording runs, a pass every
+// so often: what came before the last pause is settled and never written
+// again, and what follows it is heard again on the next pass, with more
+// of it. When the person stops, the rest is written down.
+func (l *listening) write(r *recording, dir string, every time.Duration) {
+	var out writtenDown
+	defer func() { r.written <- out }()
+	defer func() {
+		if caught := recover(); caught != nil {
+			theLog.line(zerolog.ErrorLevel, "listen").Interface("panic", caught).Msg("the speech model stopped unexpectedly")
+			out = writtenDown{err: fmt.Errorf("the speech model stopped unexpectedly: %v", caught)}
+			l.give(r, out.err)
+		}
+	}()
+	rec, err := openSpeech(dir)
+	if err != nil {
+		theLog.line(zerolog.ErrorLevel, "listen").Err(err).Msg("the speech model could not load")
+		out.err = fmt.Errorf("the speech model could not load: %s", err)
+		l.give(r, out.err)
+		return
+	}
+	defer rec.Close()
+	var said []string
+	settled, passed, hearing := 0, 0, ""
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.ended:
+			out = l.finish(r, rec, said, settled)
+			return
+		case <-tick.C:
+		}
+		samples := r.recorded()
+		// Nothing new since the last pass, or too little yet to be a word.
+		if len(samples)-passed < listenLeast/2 || len(samples)-settled < listenLeast {
+			continue
+		}
+		passed = len(samples)
+		tail := samples[settled:]
+		now := ""
+		if cut := engine.Settled(tail); cut > 0 {
+			if piece := engine.Hear(rec, tail[:cut]); piece != "" {
+				said = append(said, piece)
+				now = "settled"
+			}
+			settled += cut
+			tail = tail[cut:]
+		}
+		changed := now != ""
+		now = ""
+		if len(tail) >= listenLeast {
+			now = engine.Hear(rec, tail)
+		}
+		if changed || now != hearing {
+			hearing = now
+			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now})
+		}
+	}
+}
+
+// give ends a recording that cannot go on, and says why.
+func (l *listening) give(r *recording, err error) {
+	if l.take(r) != nil {
+		r.mic.stop()
+	}
+	l.tell(r, Dictation{Error: err.Error()})
+}
+
+// finish writes down the rest of a recording the person stopped.
+func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, settled int) writtenDown {
+	if !r.kept {
+		return writtenDown{}
+	}
+	samples := r.recorded()
+	seconds := float64(len(samples)) / engine.SampleRate
+	if len(samples) < listenLeast {
+		return writtenDown{}
+	}
+	if silent(samples) {
+		theLog.line(zerolog.WarnLevel, "listen").Float64("seconds", seconds).Msg("the microphone gave only silence")
+		return writtenDown{err: errors.New(heardNothing())}
+	}
+	hearing := time.Now()
+	if rest := samples[settled:]; len(rest) >= listenLeast {
+		if piece := engine.Hear(rec, rest); piece != "" {
+			said = append(said, piece)
+		}
+	}
+	// How much and how long, never what was said: that goes into the
+	// report only if the person keeps it there.
+	words := 0
+	for _, piece := range said {
+		words += len(strings.Fields(piece))
+	}
+	theLog.line(zerolog.InfoLevel, "listen").Float64("seconds", math.Round(seconds*10)/10).
+		Int("words", words).Int("pieces", len(said)).Int64("ms", time.Since(hearing).Milliseconds()).
+		Dur("recorded", time.Since(r.started).Round(time.Millisecond)).Msg("the recording was written down")
+	return writtenDown{said: said}
 }
 
 // listenLeast is the shortest recording written down, a quarter of a
 // second. Anything shorter is a click on the button, not something said.
 const listenLeast = engine.SampleRate / 4
 
-// StopListening ends the recording and gives what was said, written down.
-// Without a recording it gives nothing.
-func (f *FrameFairy) StopListening() (text string, err error) {
+// StopListening ends the recording and gives what was said, written down,
+// every piece of it, the last included. Without a recording it gives
+// nothing.
+func (f *FrameFairy) StopListening() (Dictation, error) {
 	l := &f.listening
-	l.mu.Lock()
-	r := l.now
-	l.now = nil
-	l.mu.Unlock()
+	r := l.take(nil)
 	if r == nil {
-		return "", nil
+		return Dictation{Said: []string{}}, nil
 	}
 	r.mic.stop()
-	r.mu.Lock()
-	samples := r.samples
-	r.mu.Unlock()
-	seconds := float64(len(samples)) / engine.SampleRate
-	loaded := <-r.speech
-	if loaded.err != nil {
-		theLog.line(zerolog.ErrorLevel, "listen").Err(loaded.err).Msg("the speech model could not load")
-		return "", fmt.Errorf("the speech model could not load: %s", loaded.err)
+	r.kept = true
+	close(r.ended)
+	out := <-r.written
+	if out.err != nil {
+		return Dictation{Recording: r.id, Said: []string{}}, out.err
 	}
-	defer loaded.rec.Close()
-	if len(samples) < listenLeast {
-		return "", nil
+	return Dictation{Recording: r.id, Said: append([]string{}, out.said...)}, nil
+}
+
+// CancelListening ends the recording and drops what was said, at once,
+// without waiting for the speech model. Escape on Report a Problem.
+func (f *FrameFairy) CancelListening() {
+	l := &f.listening
+	r := l.take(nil)
+	if r == nil {
+		return
 	}
-	if silent(samples) {
-		theLog.line(zerolog.WarnLevel, "listen").Float64("seconds", seconds).Msg("the microphone gave only silence")
-		return "", errors.New(heardNothing())
-	}
-	defer func() {
-		if caught := recover(); caught != nil {
-			theLog.line(zerolog.ErrorLevel, "listen").Interface("panic", caught).Msg("the speech model stopped unexpectedly")
-			text, err = "", fmt.Errorf("the speech model stopped unexpectedly: %v", caught)
-		}
-	}()
-	hearing := time.Now()
-	text = engine.Hear(loaded.rec, samples)
-	// How much and how long, never what was said: that goes into the
-	// report only if the person keeps it there.
-	theLog.line(zerolog.InfoLevel, "listen").Float64("seconds", math.Round(seconds*10)/10).
-		Int("words", len(strings.Fields(text))).Int64("ms", time.Since(hearing).Milliseconds()).
-		Dur("recorded", time.Since(r.started).Round(time.Millisecond)).Msg("the recording was written down")
-	return text, nil
+	r.dropped.Store(true)
+	r.mic.stop()
+	close(r.ended)
+	theLog.line(zerolog.InfoLevel, "listen").Msg("the recording was dropped")
 }
 
 // silent says whether a recording is nothing but zeros. A microphone that

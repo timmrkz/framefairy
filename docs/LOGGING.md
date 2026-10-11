@@ -162,6 +162,7 @@ jq -c 'select(.video == "start.mp4")' app.log
    R.8 without the address.
 4. Under way, plan row 2.189. **Dictate** beside the field: the person
    says what happened, and the speech model on the machine writes it
-   into the field to be corrected there, see Report a Problem in
+   into the field while they talk, to be corrected there, see Report a
+   Problem in
    [APP.md](APP.md). Questions from the model about what is missing come
    after.

@@ -2405,19 +2405,31 @@ but its file name. The info mark beside **Make Report** says what goes in.
 See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
 
 **Dictate**, at the left of the same row, is for saying what happened
-rather than typing it, plan row 2.189. Pressed, it says **Stop** and
-wears the beam while the app listens, then **Writing…** while the speech
-model on the machine writes it down. The words go in where the cursor
-was, or over what was selected, as if typed, so Cmd+Z takes them back.
+rather than typing it, plan row 2.189, the way dictation on claude.ai
+works. Pressed, it says **Stop** and wears the beam while the app
+listens, and the words appear where the cursor was while they are said.
+What follows the last pause is still being heard and changes as more of
+it is, so it is grey and italic and cannot be typed in. What came before
+a pause of 0.6 s is settled: it goes into the field as if typed, so it
+can be corrected while the person talks on, and Cmd+Z takes it back a
+piece at a time. **Stop** or Enter keeps all of it, the last piece
+written in a moment later, and Escape removes everything said since
+Dictate was pressed, as one step Cmd+Z brings back. The field is a
+`contenteditable` of plain text rather than a textarea, because a
+textarea cannot show some of its words grey.
 The app records, not the window, through malgo, see
 `cmd/framefairy-app/listen.go`: WKWebView on macOS would ask for the
 microphone in a box of its own on every launch, naming the page as
 wails://wails. The app gets the one prompt from macOS, with the words of
 `NSMicrophoneUsageDescription`, and macOS remembers the answer. A Mac
 that said no hands the app nothing but zeros, and the page says where to
-allow it. One copy of the speech model loads while the person talks, so
-writing it down waits only for the hearing. The log says how long the
-recording was and how many words came of it, never what they were.
+allow it. One copy of the speech model loads while the person talks.
+About every 0.4 s it writes down again what followed the last pause,
+`engine.Settled` says where that is, and a stretch with no pause is
+settled before it is 20 s long. Each `dictation` event carries every
+settled piece, so one the window misses costs nothing. The log says how
+long the recording was and how many words came of it, never what they
+were.
 
 ## Where things are kept
 

@@ -110,11 +110,16 @@
 //   ["menu", "report"] picks Help → Report a Problem… in the menu bar
 //   ["write", text, n] types text into the report's field and puts the
 //                      cursor n characters in
-//   ["dictate"]        presses Dictate, and Stop once it says so, and waits
-//                      until what was heard is written down
+//   ["dictate", how]   presses Dictate, waits for the words to appear grey
+//                      while they are heard, and ends the recording how
+//                      says: "button" presses Stop, "enter" presses Enter
+//                      and "escape" Escape. Then waits for Dictate again
 //   ["report reads", text]
 //                      the report's field reads text, where * is
 //                      whatever the speech model heard, a word or more
+//   ["report as before"]
+//                      the report's field reads what it did at the last
+//                      "report reads"
 //   ["episode"]        opens the episode on screen before again
 //   ["episode watched"]
 //                      the same, reading back from the video preview every
@@ -568,17 +573,34 @@ export const sequences = [
   },
   {
     // Plan row 2.189. Tim asked to talk into Report a Problem rather than
-    // type: what he says is written where the cursor was, and Cmd+Z takes
-    // it back like anything typed. The microphone is the bridge's, which
-    // plays three seconds of a hum, and the speech model its stand-in.
-    name: "Dictate writes what was said where the cursor was, and undo takes it back",
+    // type: what he says appears while he says it, where the cursor was,
+    // and Cmd+Z takes it back like anything typed, a piece at a time. The
+    // microphone is the bridge's, which plays a hum with a pause in it,
+    // and the speech model its stand-in. What came before the pause is
+    // written in while it listens, the rest when it stops.
+    name: "Dictate writes what is said while it is said, where the cursor was, and undo takes it back",
     steps: [
       ["menu", "report"],
       ["write", "It froze.", 2],
-      ["dictate"],
+      ["dictate", "button"],
       ["report reads", "It * froze."],
       ["undo"],
+      ["undo"],
       ["report reads", "It froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim asked for dictation the way claude.ai does it:
+    // Enter keeps what was said, as the microphone does, and Escape
+    // removes it.
+    name: "Enter keeps what was dictated and Escape removes it",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "enter"],
+      ["report reads", "It * froze."],
+      ["dictate", "escape"],
+      ["report as before"],
     ],
   },
   {
@@ -2230,9 +2252,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       case "write": {
         const [text, at] = arg;
-        await page.locator("textarea").click();
+        await page.locator(".telling").click();
         await page.keyboard.type(text);
-        await page.evaluate((n) => document.querySelector("textarea").setSelectionRange(n, n), at);
+        await page.evaluate((n) => {
+          const field = document.querySelector(".telling");
+          const at = document.createRange();
+          at.setStart(field.firstChild, n);
+          getSelection().removeAllRanges();
+          getSelection().addRange(at);
+        }, at);
         await watch.step("type", s);
         break;
       }
@@ -2245,17 +2273,30 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
           break;
         }
-        await settle(page);
-        await page.waitForTimeout(500);
-        await button.click();
+        // The words appear while they are heard, before anything stops.
+        const heard = await page
+          .waitForFunction(() => document.querySelector(".telling .hearing")?.dataset.hearing, null, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!heard) {
+          wrong = "nothing appeared in the report while it was listening";
+          break;
+        }
+        await watch.step("hearing", s);
+        if (arg === "button") await button.click();
+        else {
+          await page.locator(".telling").focus();
+          await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
+        }
         await page.waitForFunction(() => document.querySelector("button.dictate")?.textContent.trim() === "Dictate", null, {
           timeout: 20000,
         });
+        if (await page.locator(".telling .hearing").count()) wrong = "what was being heard is still in the report";
         await watch.step("dictate", s);
         break;
       }
       case "report reads": {
-        const have = await page.locator("textarea").inputValue();
+        const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
         const want = new RegExp(
           `^${arg
             .split("*")
@@ -2263,6 +2304,12 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             .join("\\S.*\\S")}$`,
         );
         if (!want.test(have)) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(arg)}`;
+        kept.report = have;
+        break;
+      }
+      case "report as before": {
+        const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+        if (have !== kept.report) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(kept.report)} as before`;
         break;
       }
       case "episode":

@@ -897,30 +897,16 @@ const Answers = {
       case "ReportProblem":
         (window as any).__reported = { what: args[0], video: args[1] };
         return new Promise((done) => setTimeout(() => done("/Users/tim/Desktop/Frame Fairy report 2026-10-10 21.40.zip"), 400));
-      // Dictate: a recording that hears a sentence, written down in a
-      // second, the way the speech model takes a moment. ?deaf is a Mac
-      // that has not let the app use the microphone.
+      // Dictate: a recording that hears two sentences a word at a time,
+      // settling each at the pause after it, the way listen.go does.
+      // ?deaf is a Mac that has not let the app use the microphone.
       case "Listen":
-        (window as any).__listening = true;
+        return Promise.resolve(dictateStart());
+      case "StopListening":
+        return dictateStop();
+      case "CancelListening":
+        dictateDrop();
         return Promise.resolve(null);
-      case "StopListening": {
-        const was = (window as any).__listening;
-        (window as any).__listening = false;
-        if (!was) return Promise.resolve("");
-        if (location.search.includes("deaf"))
-          return new Promise((_, fail) =>
-            setTimeout(
-              () =>
-                fail(
-                  new Error(
-                    "the microphone heard nothing. If Frame Fairy may not use it, allow it in System Settings, Privacy & Security, Microphone.",
-                  ),
-                ),
-              300,
-            ),
-          );
-        return new Promise((done) => setTimeout(() => done("The picture stopped when I pressed play."), 1000));
-      }
       case "Licences":
         return Promise.resolve(noticeList);
       case "LicenceText":
@@ -1859,6 +1845,69 @@ const licenceListeners = new Set<(ev: unknown) => void>();
   for (const fn of licenceListeners) fn({ data: null });
 };
 
+// Dictation, see Listen above. Every 250 ms another word is heard, and
+// two steps after the last word of a sentence it is settled.
+const dictListeners = new Set<(ev: unknown) => void>();
+const dictScript = ["The picture stopped when I pressed play.", "It came back when I clicked the clip again."];
+let dictCount = 0;
+let dict: { id: number; step: number; timer: ReturnType<typeof setInterval> } | null = null;
+// What has been said after so many steps: the sentences settled and the
+// words of the one still being heard.
+function dictHeard(step: number): { said: string[]; hearing: string } {
+  const said: string[] = [];
+  let left = step;
+  for (const s of dictScript) {
+    const words = s.split(" ");
+    if (left >= words.length + 2) {
+      said.push(s);
+      left -= words.length + 2;
+      continue;
+    }
+    return { said, hearing: words.slice(0, Math.min(left, words.length)).join(" ").replace(/\.$/, "") };
+  }
+  return { said, hearing: "" };
+}
+function dictateStart(): number {
+  if (dict) return dict.id;
+  const id = ++dictCount;
+  const now = {
+    id,
+    step: 0,
+    timer: setInterval(() => {
+      now.step++;
+      if (location.search.includes("deaf")) return;
+      const heard = dictHeard(now.step);
+      dictListeners.forEach((fn) => fn({ data: { recording: id, ...heard } }));
+    }, 250),
+  };
+  dict = now;
+  return id;
+}
+function dictateStop(): Promise<unknown> {
+  const was = dict;
+  dictateDrop();
+  if (!was) return Promise.resolve({ recording: 0, said: [] });
+  if (location.search.includes("deaf"))
+    return new Promise((_, fail) =>
+      setTimeout(
+        () =>
+          fail(
+            new Error(
+              "the microphone heard nothing. If Frame Fairy may not use it, allow it in System Settings, Privacy & Security, Microphone.",
+            ),
+          ),
+        300,
+      ),
+    );
+  const heard = dictHeard(was.step);
+  const said = heard.hearing ? [...heard.said, heard.hearing + "."] : heard.said;
+  return new Promise((done) => setTimeout(() => done({ recording: was.id, said }), 300));
+}
+function dictateDrop() {
+  if (dict) clearInterval(dict.timer);
+  dict = null;
+}
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -1885,6 +1934,10 @@ export const Events = {
     if (name === "report") {
       (window as any).__report = () => fn({ data: null });
       return () => delete (window as any).__report;
+    }
+    if (name === "dictation") {
+      dictListeners.add(fn);
+      return () => dictListeners.delete(fn);
     }
     if (name === "updates") {
       updListeners.add(fn);
