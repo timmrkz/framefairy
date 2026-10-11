@@ -222,8 +222,12 @@
     loud = 0;
     hearing = true;
     try {
+      // It may have stopped by itself just before, and then says why.
       const d = await api.stopListening();
-      if (d.recording === recording) catchUp(d.said ?? []);
+      if (d.recording === recording) {
+        catchUp(d.said ?? []);
+        if (d.ended) note = sentence(d.ended) + ".";
+      }
     } catch (e) {
       problem = sentence(e);
     } finally {

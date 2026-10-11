@@ -80,13 +80,18 @@ func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[stri
 
 // What the person says into the microphone is written down by the speech
 // model and handed back, and the log says how long it was and how many
-// words, never what they were. Plan row 2.189.
+// words, never what they were, under the act that started it. Plan row
+// 2.189.
 func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 	f, read := listenWith(t, tone(3))
+	// Its lines carry the act that started it, not the one after it.
+	first, next := "a1", "a2"
+	theLog.act.Store(&first)
 	id, err := f.Listen()
 	if err != nil {
 		t.Fatal(err)
 	}
+	theLog.act.Store(&next)
 	if again, err := f.Listen(); err != nil || again != id {
 		t.Errorf("a second Listen while one records gives %d, %v, want %d", again, err, id)
 	}
@@ -99,7 +104,7 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 		t.Errorf("recording %d written down as %q", d.Recording, text)
 	}
 	lines := read()
-	has(t, find(lines, "the recording was written down"), map[string]any{"from": "listen", "seconds": 3, "words": 5})
+	has(t, find(lines, "the recording was written down"), map[string]any{"from": "listen", "seconds": 3, "words": 5, "act": "a1", "recording": id})
 	for _, l := range lines {
 		if strings.Contains(l["msg"].(string), "wort") {
 			t.Errorf("the log holds what was said: %v", l)
@@ -171,6 +176,9 @@ func (brokenMicrophone) stop()                       {}
 // a hang, a panic or a race. Plan row 2.189.
 func TestListeningAtOnce(t *testing.T) {
 	f, _ := listenWith(t, tone(1))
+	// Some recordings stop by themselves while they are stopped or
+	// dropped.
+	f.listening.quiet = 30 * time.Millisecond
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
@@ -187,8 +195,11 @@ func TestListeningAtOnce(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if d, err := f.StopListening(); len(d.Said) != 0 || err != nil {
-		t.Errorf("a recording was left running: %q, %v", d.Said, err)
+	f.listening.mu.Lock()
+	left := f.listening.now
+	f.listening.mu.Unlock()
+	if left != nil {
+		t.Errorf("recording %d was left running", left.id)
 	}
 }
 
@@ -382,22 +393,107 @@ func TestAPauseIsNoFullStop(t *testing.T) {
 	}
 }
 
+// voices stands in for a speech model that hears a word in every 0.6 s
+// somebody talks in and nothing in a quiet room. Held, each pass waits
+// until it is let go, and says when it has started.
+type voices struct {
+	mu   sync.Mutex
+	held chan struct{}
+	in   chan struct{}
+}
+
+// hold makes the next passes wait for the channel it gives to be closed,
+// and gives one that has a value each time a pass starts.
+func (v *voices) hold() (chan struct{}, chan struct{}) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.held, v.in = make(chan struct{}), make(chan struct{}, 100)
+	return v.held, v.in
+}
+
+func (v *voices) Recognize(samples []float32, rate int) []engine.Token {
+	v.mu.Lock()
+	held, in := v.held, v.in
+	v.mu.Unlock()
+	if held != nil {
+		in <- struct{}{}
+		<-held
+	}
+	step := rate * 6 / 10
+	var tokens []engine.Token
+	for at := 0; at+step/2 <= len(samples); at += step {
+		part := samples[at:min(at+step, len(samples))]
+		power := 0.0
+		for _, s := range part {
+			power += float64(s) * float64(s)
+		}
+		if power/float64(len(part)) > 1e-4 {
+			tokens = append(tokens, engine.Token{Text: " wort", Start: float64(at)/float64(rate) + 0.1, Duration: 0.3})
+		}
+	}
+	return tokens
+}
+
+func (*voices) Close() {}
+
+// dictatingTo is dictating with the speech model heard through v.
+func dictatingTo(t *testing.T, v *voices, set ...func(*listening)) (*FrameFairy, *talkingMicrophone, chan Dictation) {
+	t.Helper()
+	f, mic, told := dictating(t, set...)
+	fakes := func(e *engine.Engine, o *engine.Options) {
+		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
+	}
+	standIns.Store(&fakes)
+	f.CancelListening()
+	if _, err := f.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	return f, mic, told
+}
+
+// room keeps a quiet room going into the microphone until the test ends,
+// the way a real one never stops sending.
+func room(t *testing.T, mic *talkingMicrophone) {
+	done := make(chan struct{})
+	over := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		<-over
+	})
+	go func() {
+		defer close(over)
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(20 * time.Millisecond):
+				mic.say(hush(0.02))
+			}
+		}
+	}()
+}
+
 // A recording nobody talks into any more stops by itself and keeps what
-// was said, and so does one that has reached the longest a recording can
-// be, rather than going on listening and hearing nothing, which is what
-// Tim found after ten minutes. Plan row 2.189.
+// was said, while the room goes on sending its noise, and so does one
+// that has reached the longest a recording can be, rather than going on
+// listening and hearing nothing, which is what Tim found after ten
+// minutes. Stop pressed after that gives the same, once. Plan row 2.189.
 func TestListeningStopsByItself(t *testing.T) {
-	f, mic, told := dictating(t, func(l *listening) { l.quiet = 300 * time.Millisecond })
-	mic.say(tone(1))
+	f, mic, told := dictatingTo(t, &voices{}, func(l *listening) { l.quiet = 300 * time.Millisecond })
+	mic.say(tone(1.2))
+	room(t, mic)
 	d := awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
-	if !strings.Contains(d.Ended, "without a word") || len(d.Said) != 1 || !strings.HasPrefix(d.Said[0], "wort") {
+	if !strings.Contains(d.Ended, "without a word") || strings.Join(d.Said, " ") != "wort wort" {
 		t.Errorf("after the quiet the window was told %q with %q", d.Ended, d.Said)
 	}
+	if stopped, err := f.StopListening(); stopped.Ended != d.Ended || strings.Join(stopped.Said, " ") != "wort wort" || stopped.Recording != d.Recording || err != nil {
+		t.Errorf("Stop pressed after it stopped by itself gave %+v, %v", stopped, err)
+	}
 	if stopped, err := f.StopListening(); len(stopped.Said) != 0 || err != nil {
-		t.Errorf("stopping after it stopped by itself gave %q, %v", stopped.Said, err)
+		t.Errorf("Stop pressed again gave %q, %v", stopped.Said, err)
 	}
 
-	f, mic, told = dictating(t, func(l *listening) { l.most = 2 * engine.SampleRate })
+	f, mic, told = dictatingTo(t, &voices{}, func(l *listening) { l.most = 2 * engine.SampleRate })
 	mic.say(tone(1), tone(1), tone(1))
 	d = awaitTold(t, told, func(d Dictation) bool { return d.Ended != "" })
 	if !strings.Contains(d.Ended, "longest") || len(d.Said) == 0 {
@@ -407,6 +503,36 @@ func TestListeningStopsByItself(t *testing.T) {
 		t.Errorf("listening again: %v", err)
 	}
 	f.CancelListening()
+}
+
+// Stop pressed while a recording that stopped by itself is still being
+// written down waits for it and gives every word, rather than nothing.
+// The review of #190 found the last piece lost that way. Plan row 2.189.
+func TestStopWhileItStopsByItself(t *testing.T) {
+	v := &voices{}
+	f, mic, told := dictatingTo(t, v, func(l *listening) { l.quiet = 300 * time.Millisecond })
+	mic.say(tone(1.2))
+	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+	// No more sound comes, so the next pass is the last one.
+	held, in := v.hold()
+	select {
+	case <-in:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the recording never stopped by itself")
+	}
+	stopped := make(chan Dictation)
+	go func() {
+		d, err := f.StopListening()
+		if err != nil {
+			t.Error(err)
+		}
+		stopped <- d
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(held)
+	if d := <-stopped; strings.Join(d.Said, " ") != "wort wort" {
+		t.Errorf("Stop gave %q", d.Said)
+	}
 }
 
 // The window is told how loud the microphone is, a few times a second, so
