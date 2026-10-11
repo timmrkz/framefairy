@@ -109,10 +109,20 @@ same way, whatever page is open, and opens. While a file is held over
 the app, the app wears the frame of what is chosen, with the accent's
 wash inside it. A video already in the list opens rather than being added
 twice, and a file that is not a video is left out, by its name, where Add
-says why it left a file out. The window marks the whole page as where a
+says why it left a file out. Add and a drop are one path, `takeFiles` in
+`drop.go`: the same files are taken, the same reasons given, and the
+video just added opens, or a video given again. The reason stays until
+the next files are taken. The window marks the whole page as where a
 drop lands, `data-file-drop-target`, once the first-run setup is done,
-and the Go side adds the files, `dropFiles` in `drop.go`, through the same
-`addEpisodes` as Add. Plan row 2.192.
+and not while a box asks first or the app asks about quitting. Plan row
+2.192.
+
+A drop is the one way into the library that does not come from a box the
+system draws. Wails hands the dropped paths to the page and the page
+hands them back, so the paths pass through the page on their way. They
+meet the same checks as Add's: a video's extension, a picture the
+decoder can read, and no link, see `linkedEpisode`. That was decided
+knowingly, since the page is the app's own.
 
 The app opens on the episode that was open when it was left. With no
 episode in the library, the page says **Add a video** and has the

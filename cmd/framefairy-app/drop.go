@@ -11,27 +11,28 @@ import (
 	"framefairy/engine"
 )
 
-// Dropped is what became of files dropped on the app: the videos added,
-// the one to open and why anything was left out. The window opens Open
-// the way it opens a video picked with Add.
-type Dropped struct {
+// Added is what became of files given to the app, picked with Add or
+// dropped anywhere on it: the videos added, the one to open and why
+// anything was left out. The window opens Open, so Add and a drop end the
+// same way, see takeFiles.
+type Added struct {
 	Added []string `json:"added"`
-	// The first video dropped that is in the library now, added by this
-	// drop or there before it, so a video dropped again opens rather than
+	// The first video added, or when none was, the first given that is in
+	// the library already, so a video given again opens rather than
 	// doing nothing.
 	Open  string `json:"open,omitempty"`
 	Error string `json:"error,omitempty"`
 }
 
-// dropFiles adds the videos among files dropped anywhere on the app, the
-// way Add adds the ones picked in its box, see addEpisodes. Anything else
-// is left out with the reason.
-func (s *FrameFairy) dropFiles(files []string) Dropped {
+// takeFiles adds the videos among files given to the app, through
+// addEpisodes, and leaves out anything else with the reason. Add and a
+// drop both come here, so they decide the same things the same way.
+func (s *FrameFairy) takeFiles(how string, files []string) Added {
 	names := make([]string, len(files))
 	for i, f := range files {
 		names[i] = filepath.Base(f)
 	}
-	theLog.line(zerolog.InfoLevel, "app").Strs("files", names).Msg("files dropped on the app")
+	theLog.line(zerolog.InfoLevel, "app").Str("how", how).Strs("files", names).Msg("files given to the app")
 
 	var videos, others []string
 	for _, f := range files {
@@ -42,16 +43,20 @@ func (s *FrameFairy) dropFiles(files []string) Dropped {
 		}
 	}
 	added, err := s.addEpisodes(videos)
-	out := Dropped{Added: added}
+	out := Added{Added: added}
 	if out.Added == nil {
 		out.Added = []string{}
 	}
-	library := s.store.Episodes()
-	for _, v := range videos {
-		abs, absErr := filepath.Abs(v)
-		if absErr == nil && slices.Contains(library, abs) {
-			out.Open = abs
-			break
+	if len(added) > 0 {
+		out.Open = added[0]
+	} else {
+		library := s.store.Episodes()
+		for _, v := range videos {
+			abs, absErr := filepath.Abs(v)
+			if absErr == nil && slices.Contains(library, abs) {
+				out.Open = abs
+				break
+			}
 		}
 	}
 	var why []string
@@ -63,12 +68,16 @@ func (s *FrameFairy) dropFiles(files []string) Dropped {
 	}
 	if len(why) > 0 {
 		out.Error = strings.Join(why, ". And ")
-		theLog.line(zerolog.WarnLevel, "app").Int("added", len(added)).Err(errors.New(out.Error)).Msg("a drop left files out")
+		theLog.line(zerolog.WarnLevel, "app").Str("how", how).Int("added", len(added)).Err(errors.New(out.Error)).Msg("files were left out")
 	} else {
-		theLog.line(zerolog.InfoLevel, "app").Int("added", len(added)).Msg("a drop is in the library")
+		theLog.line(zerolog.InfoLevel, "app").Str("how", how).Int("added", len(added)).Msg("the files are in the library")
 	}
 	return out
 }
+
+// dropFiles takes files dropped anywhere on the app, the way Add takes
+// the ones picked in its box.
+func (s *FrameFairy) dropFiles(files []string) Added { return s.takeFiles("drop", files) }
 
 // notVideos says that files are not videos, by name.
 func notVideos(names []string) string {

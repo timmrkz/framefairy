@@ -15,6 +15,7 @@
     onQuit,
     type Chrome,
     type EpisodeStatus,
+    type Added,
     errorText,
   } from "./lib/api";
   import { jobs, nav, shell } from "./lib/state.svelte";
@@ -260,23 +261,24 @@
 
   async function add() {
     try {
-      const added = await api.addEpisodes();
-      await show(added?.[0]);
+      await took(await api.addEpisodes());
     } catch (err) {
-      // One file that could not be added does not mean none of them were,
-      // so the list is read again either way.
       problem = errorText(err);
       await refresh();
     }
   }
 
-  // Reads the list again after videos came in and opens the one given,
-  // from whatever page the app was on.
-  async function show(path?: string) {
+  // What came of files given to the app, with Add or a drop, the same
+  // either way: the list is read again and the video to open opens, from
+  // whatever page the app was on. The reason something was left out
+  // stays until the next files are given, which replace it, and nothing
+  // given, Add cancelled, changes nothing.
+  async function took(a: Added) {
+    if (a.added.length || a.open || a.error) problem = a.error ?? "";
     await refresh();
-    if (!path) return;
-    said("app: a video added opens", { level: "info", video: path });
-    nav.go({ name: "episode", path });
+    if (!a.open) return;
+    said("app: a video added opens", { level: "info", video: a.open });
+    nav.go({ name: "episode", path: a.open });
     // Added last, it is at the foot of a list that may be longer than
     // the sidebar, so it is brought into view to be seen arriving.
     await tick();
@@ -286,10 +288,12 @@
   // A video dropped anywhere on the app is added the way Add adds one.
   // The whole app is where it may land, marked for the runtime with
   // data-file-drop-target, once the setup is done: before that there is
-  // no list to add to. The Go side adds it and says what came of it,
-  // see drop.go.
+  // no list to add to. Not while a box asks first or the app asks about
+  // quitting either, so nothing is added under a question. The Go side
+  // adds it and says what came of it, see drop.go.
   $effect(() => {
-    document.documentElement.toggleAttribute("data-file-drop-target", settingUp === false);
+    const open = settingUp === false && !leaving && shell.asking === 0;
+    document.documentElement.toggleAttribute("data-file-drop-target", open);
   });
 
   // Cmd+Q heard: the app dims at once and says what happens next. See
@@ -463,10 +467,7 @@
       .then(showLicenceLink);
     refresh();
     const off = onEpisodeChanged(() => refresh());
-    const noDropped = onDropped((d) => {
-      if (d.error) problem = d.error;
-      show(d.open);
-    });
+    const noDropped = onDropped(took);
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
     // The video in front goes with the report by its name, whatever page
     // the menu was picked on, so a second pick keeps the first one's.
@@ -802,9 +803,6 @@
 </div>
 
 <style>
-  /* Cmd+Q heard. The dim is the one a box over the workspace brings,
-     Confirm.svelte, so the app looks the same whenever it is waiting on
-     an answer. The words are the size of a box's title. */
   /* The frame of what is chosen, round the whole app with a gap to its
      edge, the way the crop sits in the video preview, and the wash of a
      chosen clip inside it. The gap keeps the frame's corners clear of the
@@ -824,6 +822,9 @@
     opacity: 1;
   }
 
+  /* Cmd+Q heard. The dim is the one a box over the workspace brings,
+     Confirm.svelte, so the app looks the same whenever it is waiting on
+     an answer. The words are the size of a box's title. */
   .leaving {
     position: fixed;
     inset: 0;

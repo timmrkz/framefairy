@@ -1125,7 +1125,7 @@ const Answers = {
       // by name. The library keeps the order added, the way the Go side does.
       case "AddEpisodes": {
         const n = ((window as any).__added = ((window as any).__added ?? 0) + 1);
-        return Promise.resolve([`/eps/neu${n}.mp4`]);
+        return Promise.resolve({ added: [`/eps/neu${n}.mp4`], open: `/eps/neu${n}.mp4` });
       }
       case "Library":
         return Promise.resolve([

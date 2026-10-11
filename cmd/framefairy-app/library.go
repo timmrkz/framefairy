@@ -45,25 +45,23 @@ func (s *FrameFairy) ChooseFolder(title string) (string, error) {
 		PromptForSingleSelection()
 }
 
-// AddEpisodes asks for video files and adds them to the library.
-func (s *FrameFairy) AddEpisodes() ([]string, error) {
+// AddEpisodes asks for video files and adds them to the library, the way
+// a drop does, see takeFiles. Cancelled, it adds nothing and says nothing.
+func (s *FrameFairy) AddEpisodes() Added {
 	dialog := s.app.Dialog.OpenFile().
 		SetTitle("Add videos").
 		CanChooseFiles(true).
 		AddFilter("Video", "*.mp4;*.mov;*.m4v;*.mkv")
 	paths, err := dialog.PromptForMultipleSelection()
-	if err != nil || len(paths) == 0 {
-		return nil, err
+	if err != nil {
+		return Added{Added: []string{}, Error: err.Error()}
 	}
-	var videos []string
-	for _, p := range paths {
-		if engine.IsVideo(p) {
-			videos = append(videos, p)
-		}
+	if len(paths) == 0 {
+		return Added{Added: []string{}}
 	}
 	// One file that cannot be added is not a reason to drop the others, so
 	// what was added is started either way and the reason travels with it.
-	return s.addEpisodes(videos)
+	return s.takeFiles("add", paths)
 }
 
 // addEpisodes adds videos to the library. A new episode's first search

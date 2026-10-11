@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -59,6 +60,88 @@ func TestNotVideos(t *testing.T) {
 	} {
 		if got := notVideos(c.names); got != c.want {
 			t.Errorf("notVideos(%v) = %q, want %q", c.names, got, c.want)
+		}
+	}
+}
+
+// A drop of nothing but other files adds nothing and opens nothing, and
+// says why. A video whose picture cannot be decoded, dropped with them,
+// is left out in the same sentence, the way Add leaves it out.
+func TestDropOfNoVideoSaysWhy(t *testing.T) {
+	d := open(t)
+	notes := filepath.Join(d.home, "notizen.pdf")
+	broken := filepath.Join(d.home, "kaputt.mp4")
+	for _, f := range []string{notes, broken} {
+		if err := os.WriteFile(f, []byte("no video at all"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := d.svc.dropFiles([]string{notes})
+	if len(got.Added) != 0 || got.Open != "" || got.Error != "notizen.pdf is not a video, so it was left out" {
+		t.Errorf("a PDF dropped: %+v, want nothing added, nothing to open, and why", got)
+	}
+	got = d.svc.dropFiles([]string{broken, notes})
+	if len(got.Added) != 0 || got.Open != "" {
+		t.Errorf("added %v and opens %q, want neither", got.Added, got.Open)
+	}
+	for _, want := range []string{"notizen.pdf is not a video", "the picture of kaputt.mp4 cannot be decoded"} {
+		if !strings.Contains(got.Error, want) {
+			t.Errorf("said %q, want it to say %q", got.Error, want)
+		}
+	}
+	if eps := d.svc.store.Episodes(); len(eps) != 0 {
+		t.Errorf("the library holds %v", eps)
+	}
+}
+
+// Dropped with a video already in the list, the one just added is the
+// one that opens: it is the one the person expects to see arrive.
+func TestDropOpensTheVideoAdded(t *testing.T) {
+	d := open(t)
+	old := d.episode("alt", "12")
+	if got := d.svc.dropFiles([]string{old}); got.Open != old {
+		t.Fatalf("opens %q, want %s", got.Open, filepath.Base(old))
+	}
+	fresh := d.episode("neu", "12")
+	if got := d.svc.dropFiles([]string{old, fresh}); got.Open != fresh {
+		t.Errorf("opens %q, want %s, the one just added", got.Open, filepath.Base(fresh))
+	}
+}
+
+// Every drop is taken on a goroutine of its own, beside Add and the
+// queue, so many at once, while the window reads the jobs and the
+// library, put each video in the library once and start one first
+// search for it.
+func TestDropsAtOnce(t *testing.T) {
+	d := open(t)
+	videos := []string{d.episode("eins", "12"), d.episode("zwei", "12")}
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() {
+			got := d.svc.takeFiles([]string{"drop", "add"}[i%2], []string{videos[i%2], videos[(i+1)%2]})
+			if got.Error != "" {
+				t.Errorf("a drop said %q", got.Error)
+			}
+		})
+		wg.Go(func() {
+			_ = d.svc.Jobs()
+			_ = d.svc.Library()
+		})
+	}
+	wg.Wait()
+	library := d.svc.store.Episodes()
+	for _, v := range videos {
+		if n := len(slices.DeleteFunc(slices.Clone(library), func(p string) bool { return p != v })); n != 1 {
+			t.Errorf("%s is in the library %d times", filepath.Base(v), n)
+		}
+		searches := 0
+		for _, j := range d.svc.Jobs() {
+			if j.Episode == v && j.Kind == "search" {
+				searches++
+			}
+		}
+		if searches != 1 {
+			t.Errorf("%s has %d first searches, want 1", filepath.Base(v), searches)
 		}
 	}
 }

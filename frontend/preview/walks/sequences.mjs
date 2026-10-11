@@ -201,6 +201,8 @@
 //                      the library once
 //   ["not a video"]    the PDF dropped last is not in the library, and the
 //                      app says by its name that it is not a video
+//   ["no reason"]      the app says nothing was left out: a reason from
+//                      files given before is gone once the next are taken
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      where the app says what went wrong, and the library
 //                      does not hold it
@@ -387,7 +389,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
@@ -968,11 +970,12 @@ export const sequences = [
       ["dropped in front"],
       ["wait for", "New"],
       ["cards", 1],
-      ["drop again", "updates"],
-      ["dropped in front"],
       ["drop not a video", "workspace"],
       ["not a video"],
       ["dropped in front"],
+      ["drop again", "updates"],
+      ["dropped in front"],
+      ["no reason"],
     ],
   },
   {
@@ -2148,7 +2151,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "drop not a video": {
         const where = what === "drop" ? arg[1] : arg;
         let file;
-        if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}`);
+        if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}&box=0`);
         else if (what === "drop again") file = droppedVideo;
         else {
           file = droppedOther = join(tmpdir(), `notizen-${process.pid}.pdf`);
@@ -2160,7 +2163,14 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           await settle(page);
         }
         wrong = await dropOn(page, [file]);
+        if (what === "drop not a video") rmSync(file, { force: true });
         await watch.step("add", s);
+        break;
+      }
+      case "no reason": {
+        await page.waitForTimeout(500);
+        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        if (said.trim()) wrong = `the app still says "${said.trim()}" after the next files were taken`;
         break;
       }
       case "dropped in front": {
@@ -3416,7 +3426,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
 process.exit(failures ? 1 : 0);
 
 // Holds files over the app and drops them, the way the runtime reports a
-// drag from Finder and a drop, see wails-bridge.ts, somewhere left of the
+// drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
 // middle and below it, over whatever the page has there. Says what was
 // wrong, or null: the app has to wear its frame while the files are held
 // over it, take the drop, and wear no frame after it.
@@ -3427,7 +3437,10 @@ async function dropOn(page, files) {
       const frame = document.querySelector(".landing");
       return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
     });
-  await page.evaluate(([x, y]) => window._wails.handleDragOver(x, y), [x, y]);
+  await page.evaluate(([x, y]) => {
+    window._wails.handleDragEnter();
+    window._wails.handleDragOver(x, y);
+  }, [x, y]);
   await page.waitForTimeout(300);
   const held = await landing();
   if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
