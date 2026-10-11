@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"framefairy/engine"
+
+	"github.com/rs/zerolog"
 )
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,9 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	before := engine.TakeSnapshot(logs)
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("an edit of the clips was refused")
+	}
 	// A search can land a clip while the edit runs. It is not the edit's.
 	change := engine.ChangeBetween(before, engine.TakeSnapshot(logs)).LeaveOutNewClips()
 	heightNow := s.store.Settings().CaptionY

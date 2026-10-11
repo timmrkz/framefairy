@@ -197,8 +197,14 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 			}
 		}
 	}
+	for _, c := range clips {
+		onePerPart(c)
+	}
 	if err := change(top, clips); err != nil {
 		return err
+	}
+	for _, c := range clips {
+		onePerPart(c)
 	}
 	revision := 0
 	if raw, ok := top.get(keyRevision); ok {
@@ -522,20 +528,47 @@ func RotatePart(planPath, clipID string, at float64) error {
 		first, last := partOf(pieces, target)
 		turned := (rotationOf(pieces[target]) + 90) % 360
 		for _, seg := range pieces[first : last+1] {
-			seg.remove(keyCropXAuto)
-			if turned != 0 {
-				seg.set(keyRotate, turned)
-				seg.remove(keyCropX)
-				continue
-			}
-			seg.remove(keyRotate)
-			seg.remove(keyCropX)
-			if crop, ok := foundCropAt(found, number(seg.values[keyStart])); ok {
-				seg.set(keyCropX, crop)
-			}
+			turnPiece(seg, turned, found)
 		}
 		return nil
 	})
+}
+
+// turnPiece rotates a piece to so many degrees. Its crop stands in the
+// middle of the rotated picture until it is placed, and a piece rotated
+// back takes the crop its shot was found with.
+func turnPiece(seg *object, turned int, found []foundPiece) {
+	seg.remove(keyCropXAuto)
+	seg.remove(keyCropX)
+	if turned != 0 {
+		seg.set(keyRotate, turned)
+		return
+	}
+	seg.remove(keyRotate)
+	if crop, ok := foundCropAt(found, number(seg.values[keyStart])); ok {
+		seg.set(keyCropX, crop)
+	}
+}
+
+// onePerPart gives every piece of a part the rotation of the part's first
+// piece, since a part is rotated as one. Putting back the cut before a
+// rotated part joins it to the part before, which it then stands like. A
+// plan written by a build that let a piece dragged out of a rotated part
+// come back as filmed is put right by its next edit. Tim saw the picture
+// turn back between two frames of one part, #188.
+func onePerPart(c *object) {
+	pieces := segmentObjects(c)
+	var found []foundPiece
+	for i := 1; i < len(pieces); i++ {
+		turn := rotationOf(pieces[i-1])
+		if number(pieces[i].values[keyStart])-number(pieces[i-1].values[keyEnd]) > 0.0005 || rotationOf(pieces[i]) == turn {
+			continue
+		}
+		if found == nil {
+			found = foundPieces(c)
+		}
+		turnPiece(pieces[i], turn, found)
+	}
 }
 
 // partOf is the first and last of the pieces around one that play straight

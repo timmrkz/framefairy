@@ -477,6 +477,37 @@
   // or with a frame of a cut on the canvas the one nearest the playhead.
   const cropped = $derived(framed >= 0 ? framed : piece);
 
+  // For the app's log, see docs/LOGGING.md: the pieces of the clip in
+  // front each time they change, with how each is turned and whether its
+  // crop was placed, and every time the picture turns, with the frame it
+  // turned for and the playhead. A part that turned back halfway, or a
+  // picture turned for the wrong frame, is then read in the log rather
+  // than guessed at from a screenshot, #188.
+  let saidPieces = "";
+  $effect(() => {
+    if (!clip) return;
+    const pieces = clip.segments
+      .map((s) => `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}`)
+      .join(", ");
+    const line = `video preview: clip ${clip.id} has the pieces ${pieces}`;
+    if (line === saidPieces) return;
+    saidPieces = line;
+    said(line, { video: untrack(() => path) });
+  });
+  let saidTurn = 0;
+  $effect(() => {
+    const now = turn;
+    if (now === saidTurn) return;
+    const was = saidTurn;
+    saidTurn = now;
+    untrack(() =>
+      said(
+        `video preview: the picture turned from ${was} to ${now} for the frame at ${frameStart.toFixed(3)} s, piece ${framed} of clip ${clip?.id ?? "none"}, playhead ${time.toFixed(3)} s, ${paused ? "paused" : "playing"}`,
+        { video: path },
+      ),
+    );
+  });
+
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
     if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;

@@ -788,6 +788,25 @@ export const sequences = [
     ],
   },
   {
+    // A part has one rotation: putting back the cut before a rotated part
+    // joins it to the part before, and the whole of it then stands the way
+    // that part does. Tim saw the picture turn back between two frames of
+    // one part, #188.
+    name: "a rotated part joined to the part before it by putting its cut back stands as one",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["join", 1],
+      ["cuts", 0],
+      ["turned", [0, 0]],
+    ],
+  },
+  {
     // Plan row 2.130: a picture that starts after its sound, by an edit
     // list. The clip's start is dragged to before the picture starts,
     // where the render took the picture's frames from its first on and the

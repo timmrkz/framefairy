@@ -370,6 +370,14 @@ func LoadClips(path string) (Plan, []Clip, error) {
 		if len(segments) == 0 {
 			continue
 		}
+		// A part is rotated as one, the way its first piece is. A plan
+		// written before every edit kept that reads as it, see onePerPart.
+		for i := 1; i < len(segments); i++ {
+			s, before := &segments[i], segments[i-1]
+			if s.Start-before.End <= 0.0005 && s.Rotate != before.Rotate {
+				s.Rotate, s.CropX, s.Moved = before.Rotate, nil, false
+			}
+		}
 
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]

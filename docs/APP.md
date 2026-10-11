@@ -1840,8 +1840,12 @@ lies on its side. Plan row 3.25, the design is in
   from the other side is there.
 - **A rotated part stays rotated as its edges move.** What the clip's
   edge brings back when it is dragged out joins the part it is dragged
-  out of, rotated as that part is, and a cut put back joins the part
-  before it.
+  out of, rotated as that part is.
+- **A part has one rotation.** Putting back the cut before a rotated part
+  joins it to the part before, and the whole of it then stands the way
+  that part does. A plan from an earlier build with a part rotated only
+  halfway reads as the part's first piece stands, and its next edit
+  writes it so.
 - **The crop of a rotated part starts in the middle** of the picture
   rotated, and is dragged like any other. Rotated back all the way, the
   part has the crop its shot was found with again.
