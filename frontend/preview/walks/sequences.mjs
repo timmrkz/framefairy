@@ -393,7 +393,8 @@
 //                      the one mark to the next puts it, as the engine's
 //                      render does
 //   ["glides while playing"]
-//                      plays from the first crop mark for two seconds and
+//                      plays from two fifths of the way from the first
+//                      crop mark to the next for two seconds and
 //                      reads the frame on the canvas and the crop frame on
 //                      every animation frame: on each, the crop frame
 //                      stands where the glide puts it for that frame, and
@@ -861,7 +862,7 @@ export const sequences = [
       ["hold", "SetCropMark", 1000],
       ["crop mark at", 0.2],
       ["crop mark at", 0.8],
-      ["drag crop", 60],
+      ["drag crop", 400],
       ["crop marks", 2],
       ["glides"],
       ["glides while playing"],
@@ -3333,16 +3334,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const glide = glideOf(piece.marks, src);
         const [a, b] = piece.marks;
         const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
+        // The episode is a filmed one, at a camera's rate, whose frame
+        // number is read off the canvas from its bands.
+        await filmedOnScreen(page);
         if (what === "glides") {
           const problems = [];
           for (const share of [0, 0.25, 0.5, 0.75, 1]) {
             // Half a frame in, so the click lands in the frame meant.
             const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
-            if (!(await seekTo(page, at, src.fps))) {
+            const g = await handles(page);
+            await page.mouse.click(await xOf(page, at), high(g.track));
+            await settle(page);
+            const came = await page
+              .waitForFunction(
+                (fps) => {
+                  const at = Number(document.querySelector(".screen").dataset.playhead);
+                  // The frame that holds the playhead, see frameAt in lib/flow.ts.
+                  return window.__filmed() === Math.floor((at + 0.001) * fps);
+                },
+                src.fps,
+                { polling: 50, timeout: 5000 },
+              )
+              .then(() => true, () => false);
+            if (!came) {
               problems.push(`no frame came for ${at.toFixed(3)} s`);
               continue;
             }
-            const k = (await preview(page, 1)).frame;
+            const k = await filmedOnScreen(page);
             const got = await crop();
             if (got !== glide(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${glide(k)}`);
           }
@@ -3351,12 +3369,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           if (problems.length) wrong = problems.join("; ");
           break;
         }
-        await seekTo(page, a.at + 0.5 / src.fps, src.fps);
+        const g = await handles(page);
+        // Two fifths of the way, where smoothstep moves the crop fastest.
+        await page.mouse.click(await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
+        await settle(page);
         await page.evaluate(() => {
           window.__glide = [];
           const read = () => {
             const el = document.querySelector(".screen");
-            window.__glide.push({ k: window.__pictured(), crop: Number(el.dataset.crop) });
+            window.__glide.push({ k: window.__filmed(), crop: Number(el.dataset.crop) });
             if (window.__glide.length < 2000) window.__glideRaf = requestAnimationFrame(read);
           };
           window.__glideRaf = requestAnimationFrame(read);
