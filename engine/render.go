@@ -47,7 +47,7 @@ type RenderSettings struct {
 // seeked input.
 //
 // Every segment is a separate -i with its own -ss, so ffmpeg seeks to a
-// keyframe near the segment and decodes only what the clip needs, instead of
+// key frame near the segment and decodes only what the clip needs, instead of
 // decoding the episode from frame zero. A segment has two inputs, its
 // picture from input 2i and its sound from input 2i+1, see soundLead.
 func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceInfo,

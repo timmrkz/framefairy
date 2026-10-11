@@ -490,7 +490,7 @@ func autoCrop(seg *object) any {
 //
 // The crop of a rotated piece stands in the middle of the picture rotated
 // until it is placed, and the crop it has unrotated is kept as it was, so
-// a part rotated back has it again. The crop marks of the stretch are
+// a part rotated back has it again. The keyframes of the stretch are
 // removed, since they were placed on the picture as it stood. Framing is not a judgement of the
 // clip, so nothing is recorded for training.
 func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
@@ -516,7 +516,7 @@ func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
 		turned := (rotationOf(pieces[target], spans) + 90) % 360
 		spans = turnStretch(spans, from, to, turned)
 		setRotations(c, spans)
-		// A crop mark of the stretch was placed on the picture as it stood
+		// A keyframe of the stretch was placed on the picture as it stood
 		// before, which is now another shape.
 		var kept []CropMark
 		marks := cropMarksOf(c)
@@ -837,7 +837,7 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
-// With crop marks, see CropMark, a crop placed on the frame of a mark moves
+// With keyframes, see CropMark, a crop placed on the frame of a mark moves
 // that mark alone. Placed anywhere else, every mark of the angle moves by
 // as far as the crop shown there did, so a glide keeps its shape. frames
 // is the video, for the frame a moment means, and cropW how wide the crop
@@ -1259,7 +1259,7 @@ func ClearCaptionY(planPath string) (int, error) {
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, for every piece with that camera angle, and removes every crop mark
+// clip, for every piece with that camera angle, and removes every keyframe
 // of the angle.
 func ResetCrop(planPath, clipID string, at float64) error {
 	return editPlan(planPath, func(_ *object, clips []*object) error {

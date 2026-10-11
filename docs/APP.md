@@ -1030,7 +1030,7 @@ bubble scrolled by those eight pixels.
   off. The frame is there while the playhead is in the clip, and only
   then. The new place applies to every piece of the clip filmed from the same
   camera angle. **Automatic crop** appears once a crop was moved and brings
-  back the automatic placement for that angle, removing its crop marks
+  back the automatic placement for that angle, removing its keyframes
   with it, and **Put the crop back** takes that click back again, crop
   marks and all. A click on the frame without dragging plays
   or pauses.
@@ -1871,36 +1871,43 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - A trim or a cut that leaves a thumbnail outside the clip hides it. It
   comes back with the part it was in.
 
-### Crop marks
+### Keyframes
 
 A crop that moves while a clip plays, for a person who shifts in the seat
 or walks across the picture. Plan row 3.26, the design is in
 [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
-- **The crop mark button**, beside the thumbnail button under the clip
-  timeline, puts a crop mark on the frame under the playhead, with the
+- **The keyframe button**, beside the thumbnail button under the clip
+  timeline, puts a keyframe on the frame under the playhead, with the
   crop where it stands there now. **C** does the same. Like the thumbnail
-  button it is not a mode: its icon is the crop glyph with a plus, and
-  with a minus while the playhead stands on a crop mark, where a click
-  removes it.
-- **No mark, or one, is a crop that stands still.** With two or more the
+  button it is not a mode: its icon is a diamond with a plus, and with a
+  minus while the playhead stands on a keyframe, where a click removes
+  it.
+- **No keyframe, or one, is a crop that stands still.** With two or more the
   crop glides from each to the next over the whole time between them,
   starting and settling gently, the way a camera operator pans. The
-  tempo is where the marks are: two marks far apart are a slow drift, and
+  tempo is where the keyframes are: two far apart are a slow drift, and
   two a frame apart are an instant move. No glide crosses a cut, and a
-  mark moves only the crop of its own shot.
+  keyframe moves only the crop of its own shot.
 - **Dragging the crop frame places the crop, and nothing else.** With the
-  playhead on a crop mark it moves that mark. Anywhere else it moves the
-  crop of the whole shot, every mark of it by the same distance.
+  playhead on a keyframe it moves that keyframe. Anywhere else it moves
+  the crop of the whole shot, every keyframe of it by the same distance,
+  kept inside the picture.
 - **The video preview follows the glide frame by frame** while the clip
-  plays, so what plays is what renders.
-- **Each crop mark is a dot** on the clip's bottom rule on the clip timeline, under
-  the thumbnails, in the app's colour, filled white while the playhead is
-  on its frame. It is the thumbnail's kind of mark: a click puts the
+  plays, so what plays is what renders. The glide is not rounded to a
+  pixel of the video, and the short places it to its own pixel, so a slow
+  glide moves on every frame instead of standing and jumping.
+- **Each keyframe is a diamond** on the clip's bottom rule on the clip
+  timeline, under the thumbnails, in the app's colour, filled white while
+  the playhead is on its frame, the clip's first and last frame included.
+  It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
   double-click removes it.
-- **Automatic crop** removes every crop mark of the shot and brings back
-  the crop the engine found. Rotating a part removes the crop marks in
+- **Automatic crop** removes every keyframe of the shot and brings back
+  the crop the engine found, and **Put the crop back** brings back the
+  keyframes with the crop. Removing the first of two keyframes leaves the
+  crop standing at the other for the whole clip, as removing a keyframe
+  does in Resolve and Premiere. Rotating a part removes the keyframes in
   it, which were placed on the picture as it stood.
 - **Undo** takes back adding, moving and removing one.
 

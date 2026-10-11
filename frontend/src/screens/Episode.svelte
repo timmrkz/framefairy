@@ -1158,7 +1158,7 @@
     return current.thumbnails?.find((t) => frameAt(t, frameLen, frameStart) === f) ?? null;
   });
   // Whether the short shows the frame on the video preview, which is where
-  // a thumbnail or a crop mark can be. Told by the frame, as the engine
+  // a thumbnail or a keyframe can be. Told by the frame, as the engine
   // tells it, not by the playhead to the millisecond: a play of the clip
   // leaves the playhead on its end, past its last frame, and steps of a
   // frame leave it a hair short of a frame's start, where the clip's first
@@ -1185,13 +1185,13 @@
     }
   }
 
-  // The crop mark on the frame shown, told by the frame, the way thumbHere
+  // The keyframe on the frame shown, told by the frame, the way thumbHere
   // is. Plan row 3.26.
   const cropHere = $derived(
     current && source ? markOn(current.cropMarks, shownMoment, source.fps, source.videoStart ?? 0) : null,
   );
 
-  // A crop mark added, moved or removed: the dot shows at once, and the
+  // A keyframe added, moved or removed: the diamond shows at once, and the
   // glide it makes comes back with the clip. A from below nought adds one
   // at to with its crop at x, a to below nought removes the one at from.
   async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
@@ -1212,7 +1212,7 @@
     }
   }
 
-  // The button and C: a crop mark on the frame under the playhead, with
+  // The button and C: a keyframe on the frame under the playhead, with
   // the crop where it stands there now, or the one there removed, so what
   // one click adds one click takes away.
   function toggleCropMark() {
@@ -1389,8 +1389,8 @@
     void rotatePart();
   }
 
-  // C puts a crop mark on the frame under the playhead, or removes the one
-  // there, the crop mark button's key, the way T is the thumbnail's.
+  // C puts a keyframe on the frame under the playhead, or removes the one
+  // there, the keyframe button's key, the way T is the thumbnail's.
   function cropMarkKey(event: KeyboardEvent) {
     if (event.key !== "c" && event.key !== "C") return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -3024,20 +3024,20 @@
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
-          <!-- A crop mark on the frame under the playhead, made the way a
+          <!-- A keyframe on the frame under the playhead, made the way a
                thumbnail is: a plus to put one with the crop where it stands,
                a minus when the playhead stands on one. With two or more the
                crop glides from each to the next. Plan row 3.26. -->
           <button
             class="glyph"
-            aria-label={cropHere !== null ? "Remove this crop mark" : "Put a crop mark on this frame"}
+            aria-label={cropHere !== null ? "Remove this keyframe" : "Put a keyframe on this frame"}
             disabled={renderingCurrent || (cropHere === null && !inShort)}
             onclick={toggleCropMark}
             title={cropHere !== null
-              ? "Remove the crop mark at the playhead. C does the same"
+              ? "Remove the keyframe at the playhead. C does the same"
               : inShort
-                ? "Put a crop mark on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
-                : "Put the playhead in the clip to put a crop mark on the frame there"}
+                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
+                : "Put the playhead in the clip to put a keyframe on the frame there"}
           >
             <Icon name={cropHere !== null ? "crop-mark-remove" : "crop-mark-add"} />
           </button>

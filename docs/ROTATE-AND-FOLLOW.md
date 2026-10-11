@@ -12,7 +12,7 @@ phone kept writing portrait. So the video has a part where the person
 lies on their side, a quarter turn off, and the moments of the turn itself,
 where the whole picture spins. He wants to mark that part with cuts, rotate
 it upright, and place the crop on a few frames by hand with the movement
-between them worked out for him. No numbers, no curves, no keyframe editor,
+between them worked out for him. No numbers, no curves, no curve editor,
 and nothing changes for a video that is fine as it is.
 
 ## What the app has today
@@ -62,7 +62,7 @@ between a cut and an edge of the clip, is a **part** of the clip below.
   presses.
 - A rotated part shows a small rotate mark at its start on the clip
   timeline, in the top left corner of the part, clear of the thumbnails
-  and crop marks along the foot, so a clip that holds a rotation says so
+  and keyframes along the foot, so a clip that holds a rotation says so
   without playing it.
 - Nothing about it is a setting, and nothing is on screen until a part
   is rotated. A video that was never rotated looks and works as it does
@@ -82,71 +82,71 @@ viewer, with black where it is narrower. The viewer keeps the shape of the
 video, so nothing moves or jumps as the playhead crosses a cut into a
 rotated part.
 
-### 3. A crop that follows: crop marks, made like thumbnails
+### 3. A crop that follows: keyframes, made like thumbnails
 
-Tim decided this on #188: a crop mark is made the way a thumbnail is,
+Tim decided this on #188: a keyframe is made the way a thumbnail is,
 with a button and a key, and dragging the crop frame only places the
 crop.
 
-- **C, and a crop mark button** in the row under the clip timeline beside
-  the thumbnail button, puts a crop mark on the frame under the playhead,
+- **C, and a keyframe button** in the row under the clip timeline beside
+  the thumbnail button, puts a keyframe on the frame under the playhead,
   with the crop where it stands there now. With the playhead on a crop
-  mark, the button or C removes it, the way the thumbnail button does.
+  keyframe, the button or C removes it, the way the thumbnail button does.
   Its icon is the crop frame with a plus, and with a minus while the
-  playhead stands on a mark.
+  playhead stands on a keyframe.
 - **Dragging the crop frame places the crop, and nothing else.** With the
-  playhead on a crop mark, it moves that mark's crop. Anywhere else it
-  moves the crop of the whole camera angle, every mark of it by the same
-  distance, which is today's drag for a clip with no marks.
-- **No mark, or one, is a crop that stands still**, today's behaviour.
-  **Two or more make it move**: it glides from each mark to the next.
-  Before the first mark it stands where the first one is, after the last
+  playhead on a keyframe, it moves that keyframe's crop. Anywhere else it
+  moves the crop of the whole camera angle, every keyframe of it by the same
+  distance, which is today's drag for a clip with no keyframes.
+- **No keyframe, or one, is a crop that stands still**, today's behaviour.
+  **Two or more make it move**: it glides from each keyframe to the next.
+  Before the first keyframe it stands where the first one is, after the last
   it stands where the last one is.
 - **What is happening is shown while it happens.** While a clip plays,
   the crop frame in the video preview follows the glide frame by frame,
   so what plays is what renders.
 
-### 4. The tempo is where the marks are
+### 4. The tempo is where the keyframes are
 
-There is no speed to set. The marks say where the crop is and when, and
+There is no speed to set. The keyframes say where the crop is and when, and
 three rules work out the rest:
 
-- **A glide takes the whole time between two marks.** It starts gently,
+- **A glide takes the whole time between two keyframes.** It starts gently,
   moves steadily and settles gently, the way a camera operator pans. A
-  person who shifts in the seat over ten seconds gets two marks ten
+  person who shifts in the seat over ten seconds gets two keyframes ten
   seconds apart and a slow drift. That is the common case, and it needs
   nothing more.
-- **Two marks close together are a quick move.** Placed a frame apart,
-  the move is instant. A move at one moment after a long hold is a mark
+- **Two keyframes close together are a quick move.** Placed a frame apart,
+  the move is instant. A move at one moment after a long hold is a keyframe
   just before the move, where the crop already stands, and one just after
-  it. Dragging a mark along the clip timeline changes when it applies,
-  so the tempo is changed by moving a dot and never by typing a number.
+  it. Dragging a keyframe along the clip timeline changes when it applies,
+  so the tempo is changed by moving a keyframe and never by typing a number.
 - **A cut is always instant, and no glide crosses one.** Each part between
-  cuts has its own marks. So the rotate case needs nothing at all: the
+  cuts has its own keyframes. So the rotate case needs nothing at all: the
   rotated part begins at the cut over the spin, and its crop is there
   from its first frame.
 
 Later, with 3.28, the engine times a glide by the picture: between two
-marks the crop moves when the face it follows moves, and the even glide
+keyframes the crop moves when the face it follows moves, and the even glide
 is what it does where it finds no face.
 
-### 5. Where the marks are on the clip timeline
+### 5. Where the keyframes are on the clip timeline
 
 The clip timeline already has the waveform, the caption blocks across its
-middle and the thumbnail marks along its foot. Crop marks add no row of
+middle and the thumbnail marks along its foot. Keyframes add no row of
 their own:
 
-- **A crop mark is the same mark as a thumbnail**, one component with
+- **A keyframe is the same mark as a thumbnail**, one component with
   another icon. A click puts the playhead on it, a drag moves it to
   another frame, a double-click removes it, and it lights under the hand
   and while the playhead is on its frame.
 - **They are stacked, not set side by side.** The thumbnail stands inside
-  the track, a few pixels above its foot, as it does today. The crop mark
-  is a small dot centred on the foot line itself, half in the track and
-  half below it. So on the same frame the dot sits just under the
+  the track, a few pixels above its foot, as it does today. The keyframe
+  is a small diamond centred on the foot line itself, half in the track and
+  half below it. So on the same frame the diamond sits just under the
   thumbnail, both on the frame's line, and each takes its own click,
   drag and double-click.
-- **Automatic crop** removes every crop mark of the angle and brings back the
+- **Automatic crop** removes every keyframe of the angle and brings back the
   placement the engine found.
 
 ### 6. What the engine can do by itself, later
@@ -160,23 +160,23 @@ two above:
   detector fires many times in a second. The engine then proposes the cut
   over the spin and the rotation, and R or Undo takes them back.
 - **It follows a subject that moves.** Where the faces in a shot do not
-  settle on one place, the engine puts crop marks at a few moments
+  settle on one place, the engine puts keyframes at a few moments
   itself instead of one, and the glide does the rest. Marks made by
-  hand override its marks.
+  hand override its keyframes.
 
 ## How it is built
 
 - **The plan.** A rotation is kept for a part of the clip as its start and end
   in seconds of the video and a quarter count, the way caption times are
   kept against the video, so trimming a clip or moving a cut's edge does
-  not lose it. The crop marks are kept with the camera angle as pairs of a
+  not lose it. The keyframes are kept with the camera angle as pairs of a
   moment in the video and a left edge. `editPlan` writes both, `LoadClips`
   checks both, and an old plan without them reads as no rotation and one
   still crop. The fuzz targets that read a plan read the new fields.
 - **The engine.** `CropWindow` takes the rotated shape of a part.
   `BuildFilterGraph` puts `transpose` before the crop of a rotated piece
   and gives the crop a left edge that changes with the frame, an ffmpeg
-  expression in the frame built from the marks, worked out on whole
+  expression in the frame built from the keyframes, worked out on whole
   frames, and placed to the pixel of the short, see `glideCrop` in
   docs/ENGINE.md, so the render and the video preview agree within half a
   pixel of the short.
@@ -185,15 +185,15 @@ two above:
 - **The app.** The video preview rotates the frame it draws, with a
   transform on the canvas, and the crop frame reads its left edge from
   the same glide the engine uses, in `lib/`, with a test that compares
-  both on the same marks. The clip timeline draws a crop mark with the thumbnail's mark, one
+  both on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
   component with an icon of its own, and the rotate mark. `Rotate`,
-  `SetCrop`, adding and removing a crop mark go through
+  `SetCrop`, adding and removing a keyframe go through
   `Shape` and the undo history like every other edit of a clip.
 - **Nothing for training.** Framing and rotating are not a judgement of a
   clip, so like the crop today nothing is recorded.
 - **Proof.** A test video in `engine/testdata` with a part rotated a
   quarter: a render test that reads the short back and finds the part
-  upright, a test that the crop of a render with two marks is where the
+  upright, a test that the crop of a render with two keyframes is where the
   glide says on chosen frames, and walks that press R and C and drag the
   crop, checking the canvas and the plan, so Tim does not have to
   try it by hand to know it holds.

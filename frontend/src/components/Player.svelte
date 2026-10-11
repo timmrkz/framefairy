@@ -82,7 +82,7 @@
     oncaptionmoved?: (y: number) => void;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
-    // Puts a crop mark back at a moment with its crop, the way the clip
+    // Puts a keyframe back at a moment with its crop, the way the clip
     // timeline puts one, for the marks a reset took away.
     oncropmark?: (from: number, to: number, x: number) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
@@ -530,7 +530,7 @@
   });
 
   // The left edge of the crop on the frame on the canvas, in pixels of the
-  // picture: gliding over the piece's crop marks frame by frame while the
+  // picture: gliding over the piece's keyframes frame by frame while the
   // clip plays, the way the render crops it, or standing still. Plan row
   // 3.26.
   const cropLeft = $derived.by(() => {

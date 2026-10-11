@@ -253,7 +253,7 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// SetCropMark adds, moves or removes a crop mark of a clip, a crop placed
+// SetCropMark adds, moves or removes a keyframe of a clip, a crop placed
 // by hand on one frame, see engine.CropMark, and returns the clip as it is
 // now. A from below nought adds one at to with its crop at x, a to below
 // nought removes the one at from, and both moments move the mark with its

@@ -632,21 +632,21 @@ every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
 The lead of a fifth of a second that each piece's sound is read with,
-`soundLead`, also settles the decoder. ffmpeg seeks to the keyframe of the
+`soundLead`, also settles the decoder. ffmpeg seeks to the key frame of the
 picture at or before the point and decodes the sound from there, and
 leaves nothing out ahead of it, though its demuxers know how much Opus
 needs, `seek_preroll`, in 8.1 and in 9.0 alike. A decoder that starts
 cold is not settled: Opus needs 80 ms of what came before, RFC 7845
 section 4.6, and gave about 70% of a steady tone at the start of a piece,
 and MP3, which keeps part of a frame in the frames before it, gave
-silence for 40 ms. Where the keyframe was a frame or less before a piece,
+silence for 40 ms. Where the key frame was a frame or less before a piece,
 as in footage where every frame is one, or at a camera switch where an
 encoder put one, the piece started quiet. Read from a fifth of a second
 earlier, more than twice what Opus needs, every codec is settled where
 the piece starts, and none needs a case of its own.
 `TestEveryPieceIsHeardFromItsFirstMoment` in `engine/preroll_test.go`
 renders two cuts and a camera switch from a 29.97 fps episode where every
-frame is a keyframe, with a steady tone in Opus in MP4 and in Matroska,
+frame is a key frame, with a steady tone in Opus in MP4 and in Matroska,
 and in MP3 where the ffmpeg can make it, and checks that every piece is
 at least 90% of the tone from its first moment, after the fade of a cut.
 Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
@@ -924,7 +924,7 @@ crop placed by hand moves every piece of one shot rotated alike, `angleOf`.
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
-**A crop that follows.** A person can put crop marks on frames of a clip,
+**A crop that follows.** A person can put keyframes on frames of a clip,
 the way thumbnails are put, each with the crop where it stands on that
 frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
 `crop_marks`, each `at`, the start of its frame, and `x`, the left edge of

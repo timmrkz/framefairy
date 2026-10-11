@@ -405,7 +405,7 @@
 //                      frame of the episode, read across its top, while in
 //                      the pieces not rotated most are not, since there it
 //                      lies on its side
-//   ["crop mark at", share]
+//   ["keyframe at", share]
 //                      puts the playhead in the clip, this share of the
 //                      way along it, with a click on the clip timeline, and
 //                      presses C, and the clip timeline has to show a crop
@@ -424,23 +424,24 @@
 //                      double-clicks the first "thumbnail" or "crop" mark
 //                      on the clip timeline, and the engine has one fewer,
 //                      and no cut more
-//   ["crop mark on", "last"]
+//   ["keyframe on", "last"]
 //                      a click on the clip's end edge, which leaves the
 //                      playhead on the end with the last frame on the
-//                      video preview, then C: a crop mark comes on the
-//                      clip's last frame and its dot lights, and C again
+//                      video preview, then C: a keyframe comes on the
+//                      clip's last frame and its diamond lights, and C again
 //                      removes it
-//   ["crop mark on", "first"]
+//   ["keyframe on", "first"]
 //                      a click on the clip's start edge and three steps
 //                      on and three back with the arrow keys, which leave
 //                      the playhead a hair off the first frame's start
 //                      with that frame on the video preview, then the same
 //   ["drag crop", px]  drags the crop frame in the video preview sideways
 //                      by px, in ten steps, and lets go
-//   ["crop marks", n]  the engine has n crop marks on the clip, at as many
-//                      left edges, and the clip timeline draws n dots
+//   ["keyframes", n]  the engine has n keyframes on the clip, at as many
+//                      left edges, and the clip timeline draws n
+//                      diamonds
 //   ["glides"]         with the playhead put by a click on the clip
-//                      timeline on the first crop mark, a quarter, half
+//                      timeline on the first keyframe, a quarter, half
 //                      and three quarters of the way to the next and on
 //                      it, the crop frame in the video preview stands on
 //                      each frame read off the canvas where smoothstep from
@@ -448,7 +449,7 @@
 //                      render does
 //   ["glides while playing"]
 //                      plays from two fifths of the way from the first
-//                      crop mark to the next for two seconds and
+//                      keyframe to the next for two seconds and
 //                      reads the frame on the canvas and the crop frame on
 //                      every animation frame: on each, the crop frame
 //                      stands where the glide puts it for that frame, and
@@ -993,64 +994,64 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 3.26: crop marks put with C, the second dragged to another
+    // Plan row 3.26: keyframes put with C, the second dragged to another
     // place, glide the crop from the one to the other, in the video
     // preview frame by frame while it plays as the render crops it.
     // TestTheRenderGlidesTheCropOverTheMarks holds the render to the same
     // glide, and glide.cases.json the window and the engine to each other.
-    name: "crop marks put with C glide the crop from one to the next in the video preview, frame by frame",
+    name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
     steps: [
       ["add", 30, "25"],
       ["wait for", "New"],
       ["cards", 1],
       ["hold", "SetCropMark", 1000],
-      ["crop mark at", 0.2],
-      ["crop mark at", 0.8],
+      ["keyframe at", 0.2],
+      ["keyframe at", 0.8],
       ["drag crop", 400],
-      ["crop marks", 2],
+      ["keyframes", 2],
       ["glides"],
       ["glides while playing"],
       ["under the hand", "crop"],
       ["remove mark", "crop"],
-      ["crop marks", 1],
+      ["keyframes", 1],
     ],
   },
   {
     // Found by Tim on #192: C put no mark on a clip's first or last frame,
     // only one frame in.
-    name: "a crop mark goes on a clip's first and last frame with C, and comes off with C",
+    name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
     steps: [
       ["add", 30, "25"],
       ["wait for", "New"],
       ["cards", 1],
-      ["crop mark on", "last"],
-      ["crop mark on", "first"],
+      ["keyframe on", "last"],
+      ["keyframe on", "first"],
     ],
   },
   {
-    // Found on #192: Automatic crop took the crop marks of the angle away
+    // Found on #192: Automatic crop took the keyframes of the angle away
     // with the crop, and Put the crop back brought back the crop alone,
     // so the glide was lost to one click.
-    name: "Put the crop back after Automatic crop brings back the crop marks and their glide",
+    name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
     steps: [
       ["add", 30, "25"],
       ["wait for", "New"],
       ["cards", 1],
-      ["crop mark at", 0.2],
-      ["crop mark at", 0.8],
+      ["keyframe at", 0.2],
+      ["keyframe at", 0.8],
       ["drag crop", 400],
-      ["crop marks", 2],
+      ["keyframes", 2],
       ["button", "Automatic crop"],
-      ["crop marks", 0],
+      ["keyframes", 0],
       ["button", "Put the crop back"],
-      ["crop marks", 2],
+      ["keyframes", 2],
       ["glides"],
     ],
   },
   {
     // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
     // react to the pointer, and was removed only by putting the playhead
-    // on it and pressing T. It is the crop mark's kind of mark, lit under
+    // on it and pressing T. It is the keyframe's kind of mark, lit under
     // the hand and removed with a double-click, the way a cut is.
     name: "a thumbnail mark lights under the hand and a double-click removes it",
     steps: [
@@ -3696,7 +3697,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await watch.step("press", s);
         break;
       }
-      case "crop mark at": {
+      case "keyframe at": {
         const g = await handles(page);
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
@@ -3712,13 +3713,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             { polling: "raf", timeout: 3000 },
           )
           .then(() => Date.now() - pressed, () => -1);
-        if (took < 0) wrong = "C put no crop mark on the playhead's frame";
-        else if (took > 300) wrong = `the crop mark showed ${took} ms after C, not at once`;
+        if (took < 0) wrong = "C put no keyframe on the playhead's frame";
+        else if (took > 300) wrong = `the keyframe showed ${took} ms after C, not at once`;
         await watch.step("press", s);
         await settle(page);
         break;
       }
-      case "crop mark on": {
+      case "keyframe on": {
         const on = await chosen(page);
         const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
         const src = await ask(page, "Source", on.path);
@@ -3746,21 +3747,21 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
         if (got.length <= before) {
           const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
-          wrong = `C put no crop mark with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+          wrong = `C put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
           break;
         }
         if (!near) {
-          wrong = `C put a crop mark at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+          wrong = `C put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
           break;
         }
         await settle(page);
         if (!(await lit())) {
-          wrong = `the crop mark on the clip's ${arg} frame does not light while that frame is on the video preview`;
+          wrong = `the keyframe on the clip's ${arg} frame does not light while that frame is on the video preview`;
           break;
         }
         await page.keyboard.press("c");
         for (let i = 0; i < 30 && (await marks()).length > before; i++) await page.waitForTimeout(100);
-        if ((await marks()).length > before) wrong = `C again did not remove the crop mark on the clip's ${arg} frame`;
+        if ((await marks()).length > before) wrong = `C again did not remove the keyframe on the clip's ${arg} frame`;
         await settle(page);
         break;
       }
@@ -3851,7 +3852,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await settle(page);
         break;
       }
-      case "crop marks": {
+      case "keyframes": {
         const on = await chosen(page);
         const marks = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
         let got = [];
@@ -3861,9 +3862,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           await page.waitForTimeout(100);
         }
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
-        if (got.length !== arg) wrong = `the engine has ${got.length} crop marks, not ${arg}`;
-        else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the crop marks stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
-        else if (dots !== arg) wrong = `the clip timeline draws ${dots} crop marks, not ${arg}`;
+        // Drawn as a diamond, the shape editors draw a keyframe in.
+        const shapes = await page.evaluate(() =>
+          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").clipPath),
+        );
+        if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
+        else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
+        else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
+        else if (shapes.some((c) => c.replaceAll(" ", "") !== "polygon(50%0px,100%50%,50%100%,0px50%)"))
+          wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
         break;
       }
       case "glides":
@@ -3873,7 +3880,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const src = await ask(page, "Source", on.path);
         const piece = entry?.segments.find((p) => (p.marks ?? []).length >= 2);
         if (!piece) {
-          wrong = "no piece of the clip has two crop marks to glide between";
+          wrong = "no piece of the clip has two keyframes to glide between";
           break;
         }
         const glide = glideOf(piece.marks, src);
@@ -3910,7 +3917,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             if (got !== glide(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${glide(k)}`);
           }
           const ends = [glide(Math.round(a.at * src.fps)), glide(Math.round(b.at * src.fps))];
-          if (ends[0] === ends[1]) problems.push(`the two crop marks stand at ${ends[0]} both, so nothing glides`);
+          if (ends[0] === ends[1]) problems.push(`the two keyframes stand at ${ends[0]} both, so nothing glides`);
           if (problems.length) wrong = problems.join("; ");
           break;
         }
@@ -4155,7 +4162,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
 process.exit(failures ? 1 : 0);
 
 // The left edge of the crop on each frame of the video, gliding over a
-// piece's crop marks by smoothstep, the way the engine's glideX and
+// piece's keyframes by smoothstep, the way the engine's glideX and
 // lib/glide.ts work it out, see glide.cases.json, for frame numbers
 // counted from the picture's first frame.
 function glideOf(marks, src) {

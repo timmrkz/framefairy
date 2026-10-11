@@ -1,5 +1,5 @@
 {
-  "_": "Crop marks on frames, [frame, left edge], and the left edge the crop has on each frame. The engine's glideX and the window's glide in lib/glide.ts are both held to it, see TestTheGlideIsTheOneTheVideoPreviewWorksOut in engine/cropmarks_test.go.",
+  "_": "Keyframes on frames, [frame, left edge], and the left edge the crop has on each frame. The engine's glideX and the window's glide in lib/glide.ts are both held to it, see TestTheGlideIsTheOneTheVideoPreviewWorksOut in engine/cropmarks_test.go.",
   "marks": [[10, 100], [40, 700], [41, 200], [100, 1000], [160, 1000], [161, 0]],
   "frames": [
     [0, 100],

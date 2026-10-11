@@ -16,10 +16,10 @@ import (
 	"framefairy/internal/ffmpegtest"
 )
 
-// A crop that follows, plan row 3.26: crop marks put on frames of a clip,
+// A crop that follows, plan row 3.26: keyframes put on frames of a clip,
 // and the crop gliding from each to the next.
 
-// cropMarks writes crop marks into the clip of rotatablePlan as a person's
+// cropMarks writes keyframes into the clip of rotatablePlan as a person's
 // edits would leave them.
 func cropMarks(t *testing.T, path string, marks ...CropMark) {
 	t.Helper()
@@ -143,7 +143,7 @@ func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []i
 }
 
 // The render crops every frame where the glide is, to the pixel: the
-// crop filters of a piece with crop marks leave on each frame the column
+// crop filters of a piece with keyframes leave on each frame the column
 // glideCrop puts the left edge on, within half a pixel of glideX.
 func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	ffmpegtest.Need(t)
@@ -224,7 +224,7 @@ func TestACropMarkSteersItsAngleInItsPart(t *testing.T) {
 		}
 	}
 	if len(c.CropMarks) != 4 {
-		t.Errorf("the clip has the crop marks %v", c.CropMarks)
+		t.Errorf("the clip has the keyframes %v", c.CropMarks)
 	}
 
 	// The cut taken out of the clip's middle: the pieces of the first
@@ -238,7 +238,7 @@ func TestACropMarkSteersItsAngleInItsPart(t *testing.T) {
 	}
 }
 
-// A plan is untrusted: a crop mark that is not a moment and a whole left
+// A plan is untrusted: a keyframe that is not a moment and a whole left
 // edge is left out, and the rest are read.
 func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 	t.Parallel()
@@ -255,7 +255,7 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 	})
 	want := []CropMark{{10.2, 40}, {10.5, 100}}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("the plan's crop marks read as %v, not %v", got, want)
+		t.Errorf("the plan's keyframes read as %v, not %v", got, want)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 		{"from where there is none", 11, 11.5},
 	} {
 		if err := SetCropMark(path, "01", c.from, c.to, 100, at25); err == nil {
-			t.Errorf("a crop mark %s was taken", c.name)
+			t.Errorf("a keyframe %s was taken", c.name)
 		}
 	}
 	if err := SetCropMark(path, "01", 10.52, 11.3, -1, at25); err != nil {
@@ -297,7 +297,7 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 	}
 	data, _ := os.ReadFile(path)
 	if bytes.Contains(data, []byte(keyCropMarks)) {
-		t.Errorf("a clip with no crop marks keeps the key: %s", data)
+		t.Errorf("a clip with no keyframes keeps the key: %s", data)
 	}
 }
 
@@ -396,7 +396,7 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 	}
 }
 
-// A trim that hides a crop mark does not take it out of its angle.
+// A trim that hides a keyframe does not take it out of its angle.
 // Automatic crop removes it with the rest, so taking the trim back brings
 // back no mark the person had already let go of.
 func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {

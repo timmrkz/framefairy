@@ -1,5 +1,5 @@
-// A crop that follows, plan row 3.26. The crop of a piece with crop marks
-// glides from each mark to the next, see CropMark in engine/cropmarks.go,
+// A crop that follows, plan row 3.26. The crop of a piece with keyframes
+// glides from each keyframe to the next, see CropMark in engine/cropmarks.go,
 // and the video preview places its crop frame by the same sum the render
 // gives ffmpeg, so what plays is what renders. glide.cases.json holds this
 // file and the engine to the same left edge on every frame.
@@ -7,7 +7,7 @@
 import type { CropMark } from "./api";
 import { frameAt } from "./flow";
 
-// A crop mark on its frame of the video, with its left edge.
+// A keyframe on its frame of the video, with its left edge.
 export type FrameMark = [frame: number, left: number];
 
 // The frame of the video a moment means: the one whose start is nearest,
@@ -16,7 +16,7 @@ export function frameOf(at: number, fps: number, videoStart = 0): number {
   return Math.floor((at - videoStart) * fps + 0.5);
 }
 
-// The left edge of the crop on frame k, gliding over marks on frames in
+// The left edge of the crop on frame k, gliding over keyframes on frames in
 // order: still before the first and after the last, and between two the
 // whole way by smoothstep, u²(3-2u). It is not rounded to a pixel of the
 // picture, because a slow glide moves less than one a frame and rounded
@@ -44,7 +44,7 @@ export function clampLeft(left: number, cropWidth: number, width: number): numbe
 }
 
 // The left edge of a piece's crop on the frame that holds a moment, the
-// frame on the canvas, gliding over the piece's marks, or null for a piece
+// frame on the canvas, gliding over the piece's keyframes, or null for a piece
 // with none, whose crop stands still.
 export function glidingLeft(
   marks: CropMark[] | undefined,
@@ -65,7 +65,7 @@ export function glidingLeft(
   return glideX(onFrames, frameAt(at, 1 / fps, videoStart));
 }
 
-// The crop mark of a clip on the frame that holds a moment, the playhead's,
+// The keyframe of a clip on the frame that holds a moment, the playhead's,
 // or null.
 export function markOn(marks: CropMark[] | undefined, at: number, fps: number, videoStart = 0): CropMark | null {
   if (!marks?.length || !(fps > 0)) return null;

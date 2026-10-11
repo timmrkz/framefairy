@@ -25,7 +25,7 @@ type Segment struct {
 	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
 	// The crop is placed on the picture rotated.
 	Rotate int
-	// Marks is the crop marks that steer the piece's crop, those of its
+	// Marks is the keyframes that steer the piece's crop, those of its
 	// camera angle in its part, in time order. With any, the crop glides
 	// over them and CropX is not used, see CropMark.
 	Marks []CropMark
