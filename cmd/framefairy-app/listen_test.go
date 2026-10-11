@@ -538,6 +538,22 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 	}
 }
 
+// A microphone that hands over nothing but zeros is said while it
+// records, so a Mac that may not use it says so before the person has
+// talked for minutes, and once it hears the room the window is told that
+// too. The review of #190 asked for it. Plan row 2.189.
+func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
+	f, mic, told := dictatingTo(t, &voices{})
+	defer f.CancelListening()
+	mic.say(make([]float32, listenUnheard+engine.SampleRate/10))
+	d := awaitTold(t, told, func(d Dictation) bool { return d.Unheard != "" })
+	if !strings.Contains(d.Unheard, "heard nothing") {
+		t.Errorf("told %q", d.Unheard)
+	}
+	mic.say(tone(1))
+	awaitTold(t, told, func(d Dictation) bool { return d.Unheard == "" })
+}
+
 // A machine whose speech model is slower than the words should appear is
 // said in the log once, and the line at the end says how many passes
 // there were and how long the slowest took, so a report from a slower

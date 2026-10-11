@@ -103,7 +103,17 @@ type Dictation struct {
 	// stopped by itself, with Said all of what was said.
 	Error string `json:"error,omitempty"`
 	Ended string `json:"ended,omitempty"`
+	// Unheard is why the microphone has handed over nothing but zeros
+	// for a while, said while it records, so a Mac that may not use it
+	// says so before the person has talked for minutes. It goes on
+	// recording, since the prompt that allows it may still be open.
+	Unheard string `json:"unheard,omitempty"`
 }
+
+// listenUnheard is how long a microphone may hand over nothing but zeros
+// before the window says so, in samples. One that is there hears its
+// room at once.
+const listenUnheard = 2 * engine.SampleRate
 
 // recording is one press of the button, from Listen to StopListening or
 // CancelListening. Each keeps what it heard apart, so a recording started
@@ -304,7 +314,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	}
 	defer rec.Close()
 	var said []string
-	settled, passed, hearing := 0, 0, ""
+	settled, passed, hearing, unheard := 0, 0, "", ""
 	worded := time.Now()
 	tick := time.NewTicker(every)
 	defer tick.Stop()
@@ -352,12 +362,16 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			}
 			settled += cut
 		}
-		if changed || now != hearing {
+		deaf := ""
+		if len(samples) >= listenUnheard && silent(samples) {
+			deaf = heardNothing()
+		}
+		if changed || now != hearing || deaf != unheard {
 			if changed || now != "" {
 				worded = time.Now()
 			}
-			hearing = now
-			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now})
+			hearing, unheard = now, deaf
+			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now, Unheard: deaf})
 		}
 	}
 }
@@ -433,7 +447,9 @@ func heardAround(rec engine.Recognizer, samples []float32, settled, cut int) (be
 	start := float64(settled-from)/engine.SampleRate - slack
 	end := float64(cut-from) / engine.SampleRate
 	var first, second []engine.Cue
-	for _, w := range engine.HearWords(rec, samples[from:]) {
+	// At most about 17 s, the longest a piece grows before it is settled
+	// and listenAround with it, which the speech model takes in one go.
+	for _, w := range engine.TokensToWords(rec.Recognize(samples[from:], engine.SampleRate), 0) {
 		switch {
 		case w.Start < start:
 		case cut > settled && w.Start < end:
@@ -442,7 +458,16 @@ func heardAround(rec engine.Recognizer, samples []float32, settled, cut int) (be
 			second = append(second, w)
 		}
 	}
-	return engine.Joined(first), engine.Joined(second)
+	return joined(first), joined(second)
+}
+
+// joined is words as one text.
+func joined(words []engine.Cue) string {
+	texts := make([]string, len(words))
+	for i, w := range words {
+		texts[i] = w.Text
+	}
+	return strings.Join(texts, " ")
 }
 
 // finish writes down the rest of a recording that ended, if what was

@@ -855,6 +855,8 @@ export interface Dictation {
   error?: string;
   // Why the recording stopped by itself, with said all of it.
   ended?: string;
+  // Why the microphone hears nothing, while it goes on recording.
+  unheard?: string;
 }
 
 // How loud the microphone is while it records, from 0 for a quiet room to

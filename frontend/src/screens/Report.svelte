@@ -20,8 +20,8 @@
   // Dictate, plan row 2.189, the way dictation on claude.ai works: the
   // words appear in the field while they are said, where the cursor was,
   // grey until they are kept. What follows the last pause is still being
-  // heard and changes as more of it is, so it is drawn by a mark and
-  // cannot be typed in. What came before the pause is settled and is text
+  // heard and changes as more of it is, so it is plain text in a mark
+  // that cannot be typed in. What came before the pause is settled and is text
   // in the field, still grey, which can be corrected while the person
   // talks on. Enter or the button keeps all of it, written in as one step
   // Cmd+Z takes back, and Escape removes it. The Go side records and
@@ -51,8 +51,9 @@
     return said.charAt(0).toUpperCase() + said.slice(1);
   };
 
-  // The field's text, as it is sent. What is still being heard is drawn,
-  // not written, so it is not in it.
+  // The field's text, as it is sent. While somebody dictates it holds
+  // what is still being heard too, and Make Report waits until that is
+  // kept.
   const read = () => {
     what = field.innerText.replace(/\n$/, "");
   };
@@ -66,6 +67,8 @@
   // last recording stopped by itself.
   let loud = $state(0);
   let note = $state("");
+  // Why the microphone hears nothing, while it records.
+  let unheard = $state("");
 
   // The text of the field before and after a node in it.
   function around(node: Node): [string, string] {
@@ -191,6 +194,7 @@
         finish(true);
         return;
       }
+      unheard = d.unheard ? sentence(d.unheard) : "";
       catchUp(d.said ?? []);
       show(d.hearing);
     }),
@@ -201,6 +205,7 @@
     if (listening) return keep();
     problem = "";
     note = "";
+    unheard = "";
     listening = true;
     recording = 0;
     placed = 0;
@@ -247,7 +252,7 @@
 
   function key(e: KeyboardEvent) {
     if (!listening) return;
-    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+    if (e.key === "Enter" && !e.isComposing && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       keep();
     } else if (e.key === "Escape") {
@@ -307,16 +312,14 @@
       </div>
     </div>
     <div class="item">
-      <!-- Room for the longest wording, Writing, so the row keeps still. -->
       <button
         class="act dictate"
         onclick={dictate}
         disabled={hearing || making}
-        aria-pressed={listening}
         style:--loud={loud}
         title={listening
           ? "Keeps what you said. Enter does the same, and Escape removes it"
-          : "Say what happened. The speech model on this Mac writes it into the field as you talk, and you can correct it while it does"}
+          : "Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
       >
         {#if listening || hearing}<Busy />{/if}
         <Icon name="mic" />
@@ -325,6 +328,8 @@
       <div class="words">
         {#if problem}
           <span class="error selectable">{problem}</span>
+        {:else if listening && unheard}
+          <span class="error selectable">{unheard}</span>
         {:else if listening}
           <span>Listening…</span>
         {:else if hearing}
@@ -412,15 +417,16 @@
   }
 
   /* What is being said: grey and slanted until it is kept, the way
-     claude.ai shows it. What is still being heard is drawn after the mark
-     and so is not text that can be typed in. */
+     claude.ai shows it. What is still being heard is in a mark that
+     cannot be typed in. */
   .telling :global(.dictated) {
     color: var(--muted);
     font-style: italic;
   }
 
-
-  /* Room for the longer wording, Make Report, so the row keeps still. */
+  /* Room for the longest wording, Make Report, so the row keeps still,
+     and Dictate the same size beside it, with room for Writing… and the
+     microphone. */
   .act {
     min-width: 116px;
     flex: none;
@@ -434,9 +440,7 @@
     transition: transform 100ms linear;
   }
 
-  /* Room for Writing… beside the microphone. */
   .act.dictate {
-    min-width: 108px;
     display: inline-flex;
     align-items: center;
     justify-content: center;

@@ -143,46 +143,6 @@ func quietestBetween(frames []float32, shortest, longest float64) int {
 	return bestAt + window/2
 }
 
-// Hear writes down what a recording says, samples at SampleRate: cut
-// into pieces the way an episode's audio is, at the quietest moment
-// between chunkMin and chunkMax, and the words of every piece joined in
-// the order they were said. Report a Problem's microphone, plan row 2.189.
-func Hear(rec Recognizer, samples []float32) string {
-	return Joined(HearWords(rec, samples))
-}
-
-// HearWords is Hear with the words apart, each timed in seconds from the
-// start of the recording.
-func HearWords(rec Recognizer, samples []float32) []Cue {
-	frames := make([]float32, len(samples)/frameSamples)
-	for i := range frames {
-		frames[i] = frameDB(samples[i*frameSamples : (i+1)*frameSamples])
-	}
-	var words []Cue
-	hear := func(at, end int) {
-		words = append(words, TokensToWords(rec.Recognize(samples[at:end], SampleRate), float64(at)/SampleRate)...)
-	}
-	at := 0
-	for float64(len(samples)-at)/SampleRate > chunkMax {
-		cut := quietestCut(frames[at/frameSamples:]) * frameSamples
-		hear(at, at+cut)
-		at += cut
-	}
-	if at < len(samples) {
-		hear(at, len(samples))
-	}
-	return words
-}
-
-// Joined is words as one text.
-func Joined(words []Cue) string {
-	texts := make([]string, len(words))
-	for i, w := range words {
-		texts[i] = w.Text
-	}
-	return strings.Join(texts, " ")
-}
-
 // settlePause is the shortest quiet, in frames, that ends a thought while
 // somebody dictates: 0.6 s, longer than a breath between two words, so a
 // sentence is not cut in two and given a full stop it never had.
