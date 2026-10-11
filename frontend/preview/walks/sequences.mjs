@@ -113,7 +113,10 @@
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
-//                      and "escape" Escape. Then waits for Dictate again
+//                      and "escape" Escape. Then waits for Dictate again.
+//                      "start" only starts it, "settled" waits for words
+//                      before a pause to be settled, and a recording
+//                      already running is only ended
 //   ["report reads", text]
 //                      the report's field reads text, where * is
 //                      whatever the speech model heard, a word or more
@@ -574,10 +577,11 @@ export const sequences = [
   {
     // Plan row 2.189. Tim asked to talk into Report a Problem rather than
     // type: what he says appears while he says it, where the cursor was,
-    // and Cmd+Z takes it back like anything typed, a piece at a time. The
-    // microphone is the bridge's, which plays a hum with a pause in it,
-    // and the speech model its stand-in. What came before the pause is
-    // written in while it listens, the rest when it stops.
+    // and Cmd+Z takes it back like anything typed, all of it at once. The
+    // microphone is the bridge's, which plays a hum with a pause in it as
+    // fast as it is said, and the speech model its stand-in. What came
+    // before the pause is settled while it listens, the rest when it
+    // stops.
     name: "Dictate writes what is said while it is said, where the cursor was, and undo takes it back",
     steps: [
       ["menu", "report"],
@@ -585,8 +589,27 @@ export const sequences = [
       ["dictate", "button"],
       ["report reads", "It * froze."],
       ["undo"],
-      ["undo"],
       ["report reads", "It froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
+    // did not bring it back: the words that arrived meanwhile were steps
+    // of their own, which emptied what there was to redo. They are not
+    // steps any more, so undo and redo while talking are about what was
+    // typed alone.
+    name: "While dictating, undo and redo are about what was typed",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["type", "X"],
+      ["undo"],
+      ["dictate", "settled"],
+      ["redo"],
+      ["report reads", "It *X froze."],
+      ["dictate", "enter"],
+      ["report reads", "It * X froze."],
     ],
   },
   {
@@ -2266,10 +2289,20 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       }
       case "dictate": {
         const button = page.locator("button.dictate");
-        await button.click();
+        if (arg === "settled") {
+          // The field's text grows by what was said before the pause.
+          const settled = await page
+            .waitForFunction((was) => document.querySelector(".telling").innerText !== was, kept.dictating, { timeout: 10000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!settled) wrong = "nothing said was settled";
+          break;
+        }
+        const running = (await button.textContent()).trim() === "Stop";
+        if (!running) await button.click();
         // Stop the moment it is pressed, see the rules on a click.
         const said = (await button.textContent()).trim();
-        if (said !== "Stop") {
+        if (!running && said !== "Stop") {
           wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
           break;
         }
@@ -2283,6 +2316,10 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           break;
         }
         await watch.step("hearing", s);
+        if (arg === "start") {
+          kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
+          break;
+        }
         if (arg === "button") await button.click();
         else {
           await page.locator(".telling").focus();
@@ -2291,7 +2328,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.waitForFunction(() => document.querySelector("button.dictate")?.textContent.trim() === "Dictate", null, {
           timeout: 20000,
         });
-        if (await page.locator(".telling .hearing").count()) wrong = "what was being heard is still in the report";
+        if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
         await watch.step("dictate", s);
         break;
       }

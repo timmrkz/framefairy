@@ -577,11 +577,11 @@ func openBridge(t *testing.T) *bridge {
 	}
 	standIns.Store(&fakes)
 	// Dictate on Report a Problem records two seconds of a hum, a pause and
-	// a second and a half more, which the stand-in hears as words: the
-	// first part is settled while the recording runs, the second is still
-	// being heard.
+	// a second and a half more, as fast as it would be said, which the
+	// stand-in hears as words: the first part is settled while the
+	// recording runs, the second is still being heard.
 	openMicrophone = func() microphone {
-		return &playingMicrophone{samples: slices.Concat(tone(2), hush(1), tone(1.5))}
+		return &playingMicrophone{samples: slices.Concat(tone(2), hush(1), tone(1.5)), live: true}
 	}
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()

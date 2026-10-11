@@ -233,26 +233,55 @@ func (l *listening) write(r *recording, dir string, every time.Duration) {
 			continue
 		}
 		passed = len(samples)
-		tail := samples[settled:]
-		now := ""
-		if cut := engine.Settled(tail); cut > 0 {
-			if piece := engine.Hear(rec, tail[:cut]); piece != "" {
-				said = append(said, piece)
-				now = "settled"
+		cut := engine.Settled(samples[settled:])
+		before, now := heardAround(rec, samples, settled, settled+cut)
+		changed := false
+		if cut > 0 {
+			if before != "" {
+				said = append(said, before)
+				changed = true
 			}
 			settled += cut
-			tail = tail[cut:]
-		}
-		changed := now != ""
-		now = ""
-		if len(tail) >= listenLeast {
-			now = engine.Hear(rec, tail)
 		}
 		if changed || now != hearing {
 			hearing = now
 			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now})
 		}
 	}
+}
+
+// listenAround is how much of what was settled is heard again before
+// what follows it, in samples. Written down on its own, a piece starts
+// with a capital and ends with a full stop wherever it was cut, so the
+// speech model is given the words around it too: the last few seconds
+// before it, and all that follows it.
+const listenAround = 5 * engine.SampleRate
+
+// heardAround writes down what was said from settled on, in two: what
+// came before cut, and what came after it. A cut at or before settled
+// leaves the first empty. The words are told apart by when they start,
+// and a cut is always in a pause, where no word is.
+func heardAround(rec engine.Recognizer, samples []float32, settled, cut int) (before, after string) {
+	from := max(settled-listenAround, 0)
+	if len(samples)-settled < listenLeast {
+		return "", ""
+	}
+	// A word that starts this close before settled was cut off there and
+	// belongs to what follows.
+	const slack = 0.05
+	start := float64(settled-from)/engine.SampleRate - slack
+	end := float64(cut-from) / engine.SampleRate
+	var first, second []engine.Cue
+	for _, w := range engine.HearWords(rec, samples[from:]) {
+		switch {
+		case w.Start < start:
+		case cut > settled && w.Start < end:
+			first = append(first, w)
+		default:
+			second = append(second, w)
+		}
+	}
+	return engine.Joined(first), engine.Joined(second)
 }
 
 // give ends a recording that cannot go on, and says why.
@@ -278,10 +307,8 @@ func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, s
 		return writtenDown{err: errors.New(heardNothing())}
 	}
 	hearing := time.Now()
-	if rest := samples[settled:]; len(rest) >= listenLeast {
-		if piece := engine.Hear(rec, rest); piece != "" {
-			said = append(said, piece)
-		}
+	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {
+		said = append(said, rest)
 	}
 	// How much and how long, never what was said: that goes into the
 	// report only if the person keeps it there.

@@ -16,10 +16,12 @@ import (
 
 // playingMicrophone stands in for the microphone: it hands over its
 // samples a tenth of a second at a time, from a goroutine of its own the
-// way the system's does, and has handed over all of them by the time it
-// is stopped.
+// way the system's does. Live, it hands them over as fast as they would
+// be said, until it is stopped. Otherwise it hands over all of them at
+// once, before it can be stopped.
 type playingMicrophone struct {
 	samples []float32
+	live    bool
 	stopped chan struct{}
 	done    chan struct{}
 }
@@ -29,6 +31,13 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 	go func() {
 		defer close(m.done)
 		for at := 0; at < len(m.samples); at += engine.SampleRate / 10 {
+			if m.live {
+				select {
+				case <-m.stopped:
+					return
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
 			heard(m.samples[at:min(at+engine.SampleRate/10, len(m.samples))])
 		}
 		<-m.stopped
@@ -319,4 +328,53 @@ func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
 		t.Errorf("listening again after the model failed: %v", err)
 	}
 	f.CancelListening()
+}
+
+// sentences stands in for a speech model that writes what it is given as
+// one sentence: a word every 0.6 s, the first with a capital and the last
+// with a full stop, the way Parakeet ends whatever it is handed.
+type sentences struct{}
+
+func (sentences) Recognize(samples []float32, rate int) []engine.Token {
+	length := float64(len(samples)) / float64(rate)
+	var tokens []engine.Token
+	for at := 0.1; at+0.35 < length; at += 0.6 {
+		tokens = append(tokens, engine.Token{Text: " wort", Start: at, Duration: 0.3})
+	}
+	if len(tokens) > 0 {
+		tokens[0].Text = " Wort"
+		tokens = append(tokens, engine.Token{Text: ".", Start: tokens[len(tokens)-1].Start + 0.3})
+	}
+	return tokens
+}
+
+func (sentences) Close() {}
+
+// A pause settles the words before it, but they are written down with
+// what was said around them, so a pause in the middle of a sentence gives
+// it no full stop and the words after it no capital. Tim got "there
+// should be some text. written right in front of me." Plan row 2.189.
+func TestAPauseIsNoFullStop(t *testing.T) {
+	f, mic, told := dictating(t)
+	fakes := func(e *engine.Engine, o *engine.Options) {
+		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return sentences{}, nil }
+	}
+	standIns.Store(&fakes)
+	f.CancelListening()
+	if _, err := f.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	mic.say(tone(2), hush(1), tone(1.3))
+	d := awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
+	if d.Said[0] != "Wort wort wort wort" {
+		t.Errorf("the words before the pause were written down as %q", d.Said[0])
+	}
+	mic.say(tone(1))
+	stopped, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stopped.Said) != 2 || !strings.HasPrefix(stopped.Said[1], "wort ") || !strings.HasSuffix(stopped.Said[1], "wort.") {
+		t.Errorf("stopping gave %q, want the second piece to go on the sentence and end it", stopped.Said)
+	}
 }

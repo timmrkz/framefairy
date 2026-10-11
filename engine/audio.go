@@ -143,26 +143,39 @@ func quietestCut(frames []float32) int {
 // between chunkMin and chunkMax, and the words of every piece joined in
 // the order they were said. Report a Problem's microphone, plan row 2.189.
 func Hear(rec Recognizer, samples []float32) string {
+	return Joined(HearWords(rec, samples))
+}
+
+// HearWords is Hear with the words apart, each timed in seconds from the
+// start of the recording.
+func HearWords(rec Recognizer, samples []float32) []Cue {
 	frames := make([]float32, len(samples)/frameSamples)
 	for i := range frames {
 		frames[i] = frameDB(samples[i*frameSamples : (i+1)*frameSamples])
 	}
-	var words []string
-	hear := func(piece []float32) {
-		for _, w := range TokensToWords(rec.Recognize(piece, SampleRate), 0) {
-			words = append(words, w.Text)
-		}
+	var words []Cue
+	hear := func(at, end int) {
+		words = append(words, TokensToWords(rec.Recognize(samples[at:end], SampleRate), float64(at)/SampleRate)...)
 	}
 	at := 0
 	for float64(len(samples)-at)/SampleRate > chunkMax {
 		cut := quietestCut(frames[at/frameSamples:]) * frameSamples
-		hear(samples[at : at+cut])
+		hear(at, at+cut)
 		at += cut
 	}
 	if at < len(samples) {
-		hear(samples[at:])
+		hear(at, len(samples))
 	}
-	return strings.Join(words, " ")
+	return words
+}
+
+// Joined is words as one text.
+func Joined(words []Cue) string {
+	texts := make([]string, len(words))
+	for i, w := range words {
+		texts[i] = w.Text
+	}
+	return strings.Join(texts, " ")
 }
 
 // settlePause is the shortest quiet, in frames, that ends a thought while
