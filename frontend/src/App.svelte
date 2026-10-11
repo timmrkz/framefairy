@@ -259,6 +259,10 @@
     libraryRead = true;
   }
 
+  // Which files the app takes as videos, said where Add is. The Go side
+  // has the one list, so the words follow it, see VideoNames.
+  let videoNames = $state("");
+
   async function add() {
     try {
       await took(await api.addEpisodes());
@@ -466,6 +470,10 @@
       .catch(() => (settingUp = false))
       .then(showLicenceLink);
     refresh();
+    api
+      .videoNames()
+      .then((names) => (videoNames = names))
+      .catch(() => {});
     const off = onEpisodeChanged(() => refresh());
     const noDropped = onDropped(took);
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
@@ -637,7 +645,7 @@
       <button
         class="quiet nav"
         onclick={add}
-        title="Add a video. Any mp4, mov, m4v or mkv works"
+        title={videoNames ? `Add a video. Any ${videoNames} works` : "Add a video"}
       >
         <Icon name="plus" />
         <span class="label">Add</span>
@@ -725,7 +733,7 @@
         <h1>Add a video</h1>
         <p class="muted">
           The app transcribes it on this machine, finds the moments worth clipping and renders
-          them as vertical shorts. Any mp4, mov, m4v or mkv works.
+          them as vertical shorts.{videoNames ? ` Any ${videoNames} works.` : ""}
         </p>
         <button class="primary" onclick={add}>Add</button>
       </div>

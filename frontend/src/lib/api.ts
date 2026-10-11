@@ -644,6 +644,9 @@ export const api = {
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
   addEpisodes: () => call<Added>("AddEpisodes"),
+  // Which files the app takes as videos, in words, from the one list there
+  // is, VideoExtensions in engine/episode.go.
+  videoNames: () => call<string>("VideoNames"),
   // Asks for a folder and says which one, or nothing when it was cancelled.
   chooseFolder: (title: string) => call<string>("ChooseFolder", title),
   // Loads the local model for the first search of an episode while the
