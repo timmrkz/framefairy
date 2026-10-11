@@ -20,6 +20,8 @@
 //   ["press", key]     presses a key, as Playwright names it
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
+//   ["undo refused"]   the menu bar's Undo, which the Go side refuses
+//                      because what it would put back has changed since
 //   ["mark", label]    remembers the engine's captions and pieces
 //   ["cut at", share]  double-clicks in the clip, this share of the way
 //                      along it, which cuts a part out there
@@ -229,6 +231,8 @@
 //   ["wait for", word] the clip list's head button comes to say this, in a
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
+//   ["no row", words] no row of the clip list says this
+//   ["no put back"]    no row of the clip list offers a removed clip back
 //   ["row closes", [words, s]]
 //                      a row of the clip list says this, runs down, and
 //                      closes by itself about s seconds later, not much
@@ -723,6 +727,13 @@ export const sequences = [
       ["remove clip"],
       ["head"],
       ["wait for", "New"],
+      ["whole clip", 15],
+      // The clip made again is the clip that was removed, so the removed
+      // one is not offered back, and undoing its removal does not bring
+      // it back beside the new one. Both showed the video twice.
+      ["no row", "Nothing new found"],
+      ["no put back"],
+      ["undo refused"],
       ["whole clip", 15],
       ["head"],
       ["wait for", "New"],
@@ -2083,6 +2094,26 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.keyboard.type(arg);
         await watch.step("type", s);
         break;
+      case "undo refused": {
+        const from = await page.evaluate(() => window.__calls.length);
+        await page.evaluate(() => window.__menu("undo"));
+        let said = null;
+        for (let tries = 0; tries < 40 && said === null; tries++) {
+          await page.waitForTimeout(100);
+          // The refusal is the answer here, so it is taken off the calls
+          // that failed before the rules read them.
+          said = await page.evaluate((from) => {
+            const c = window.__calls.slice(from).find((c) => c.name === "Undo" && c.failed);
+            if (!c) return null;
+            const failed = c.failed;
+            c.failed = null;
+            return String(failed);
+          }, from);
+        }
+        if (!said?.includes("changed since")) wrong = `Undo was not refused as changed since: ${said}`;
+        await watch.step("undo", s);
+        break;
+      }
       case "undo":
       case "redo":
         await page.evaluate((m) => window.__menu(m), what);
@@ -2934,6 +2965,18 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "row": {
         const list = await clipList(page);
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "no row": {
+        const list = await clipList(page);
+        if (list?.rows.some((r) => r.what === arg)) wrong = `a row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "no put back": {
+        const offered = await page.evaluate(
+          () => [...document.querySelectorAll("aside ol button.back")].filter((b) => b.textContent.includes("Put it back")).length,
+        );
+        if (offered) wrong = `${offered} removed clip(s) are offered back`;
         break;
       }
       case "row closes": {

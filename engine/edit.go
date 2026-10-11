@@ -377,6 +377,31 @@ func SetRejected(planPath, clipID string, rejected bool, reasons ...string) erro
 	return nil
 }
 
+// DropRemoved takes a removed clip out of its plan for good. Only the one
+// clip of an episode shorter than a clip is ever taken out, once a search
+// has made it again: there is one moment, and the clip made again is it.
+// A clip that is not removed, or no longer there, is left as it is.
+func DropRemoved(planPath, clipID string) error {
+	return editPlan(planPath, func(top *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return nil
+		}
+		if rejected, _ := c.get(keyRejected); rejected != true {
+			return nil
+		}
+		list, _ := top.values[keyClips].([]any)
+		kept := []any{}
+		for _, item := range list {
+			if item != c {
+				kept = append(kept, item)
+			}
+		}
+		top.set(keyClips, kept)
+		return nil
+	})
+}
+
 func number(v any) float64 {
 	f, _ := toFloat(v)
 	return f

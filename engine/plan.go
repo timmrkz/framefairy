@@ -97,7 +97,8 @@ type PlanOptions struct {
 	Taken []Window
 	// Listed are the parts of Taken whose clips are still in the list,
 	// not removed. An episode shorter than a clip has one moment only, so
-	// it is made again once its clip was removed, see wholeClip.
+	// any clip of it in the list is its clip, and it is made again once
+	// that was removed, see wholeClip.
 	Listed []Window
 }
 
@@ -667,11 +668,24 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 	}
 	opts.Count = 1
 	// The episode is the one moment there is. A clip of it still in the
-	// list is the clip, and a search finds nothing new. One removed is no
-	// answer to a search asked for since, which is asking for it again.
-	opts.Taken = opts.Listed
+	// list, however it was trimmed, is the clip, and a search finds
+	// nothing new. One removed is no answer to a search asked for since,
+	// which is asking for it again, and the removed one goes once it is
+	// made, see runner.plan.
+	listed := len(opts.Listed) > 0
+	opts.Taken = nil
 	build := e.newPlanBuilder(ctx, sourcePath, source, lines, nil, opts, "")
 	defer build.stop()
+	if listed {
+		// The same answer as a window of a long episode with nothing
+		// beyond its clips, see BuildPlan.
+		if err := build.none(); err != nil {
+			return nil, err
+		}
+		e.Log.OK("the episode is shorter than a clip and its clip is in the list, so there is nothing new")
+		return &PlanFile{Source: filepath.Base(sourcePath), PlanID: build.planID,
+			PlannedWith: build.stamp, Clips: []PlanClip{}}, nil
+	}
 	all := [2]int{1, len(lines)}
 	build.propose(PlanEntry{Keep: [][2]int{all}, Heart: all})
 	clips, _, _, err := build.finish()
@@ -680,17 +694,6 @@ func (e *Engine) wholeClip(ctx context.Context, sourcePath string, source Source
 	}
 	if len(clips) == 0 && ctx.Err() != nil {
 		return nil, ctx.Err()
-	}
-	if len(clips) == 0 && len(build.taken) > 0 {
-		// Searched again with its clip in the list, the same answer as a
-		// window of a long episode with nothing beyond its clips, see
-		// BuildPlan.
-		if err := build.none(); err != nil {
-			return nil, err
-		}
-		e.Log.OK("the episode is shorter than a clip and its clip is in the list, so there is nothing new")
-		return &PlanFile{Source: filepath.Base(sourcePath), PlanID: build.planID,
-			PlannedWith: build.stamp, Clips: []PlanClip{}}, nil
 	}
 	if len(clips) == 0 {
 		return nil, renderErr("there is nothing to make a clip of in this video")

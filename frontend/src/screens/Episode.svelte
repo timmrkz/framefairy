@@ -67,14 +67,13 @@
   import {
     secondThoughts,
     setAside,
+    setAsideTold,
     spent,
     takeUp,
-    toldClosed,
-    toldHeld,
-    toldOver,
-    toldSweep,
-    toldUntil,
+    takeUpTold,
+    toldSpent,
     type Removed,
+    type Told,
   } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import { readAhead } from "../lib/frames/queue";
@@ -735,32 +734,34 @@
   // long as a removed clip's row does, in a neutral colour, and closes.
   // Each search that finds nothing says so once, so New pressed again and
   // again is a row that says Finding and then this, every time.
-  // Rows whose time ran out while the episode was not open are closed
-  // before it is drawn, so they do not flash up and close again.
-  toldSweep();
-  let toldClosing = $state(0);
+  //
+  // Its time is kept by the search's job, the way a removed clip's is, see
+  // told. It starts once the row is on screen, so the row is read here
+  // without starting anything. Taken up before anything is drawn, so a
+  // row coming back runs on from where it was rather than from full.
+  let told = $state<Told>(untrack(() => takeUpTold(path)));
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
     if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
-    // Read again when a row's time runs out.
-    void toldClosing;
-    if (toldClosed(last.id)) return null;
     const job = last.id;
-    const now = Date.now();
+    if (told[job] === 0) return null;
     const fades = {
-      spent: Math.min(secondThoughts, Math.max(0, secondThoughts - (toldUntil(job, now) - now) / 1000)),
+      spent: toldSpent(told[job]),
       onend: () => {
-        toldOver(job);
-        toldClosing++;
+        told = { ...told, [job]: 0 };
       },
-      onresume: (left: number) => toldHeld(job, left),
+      onresume: (left: number) => {
+        told = { ...told, [job]: Date.now() + left * 1000 };
+      },
     };
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
-    if (duration > 0 && duration < min) {
+    // Shortest as the search was asked for it, not as it is now.
+    if (duration > 0 && duration < (last.min || min)) {
       return {
+        job,
         what: "Nothing new found",
         left: "All clips already found",
         fades,
@@ -768,13 +769,21 @@
       };
     }
     return {
+      job,
       what: "Nothing new found",
       left: window,
       full: `${window}. The search found no moments beyond the clips there are`,
       fades,
     };
   });
-  const note = $derived(emptied ?? foundNothing);
+  // The row's time starts the first time it is shown.
+  $effect(() => {
+    const job = foundNothing?.job;
+    if (job && !(job in told)) told = { ...told, [job]: Date.now() + secondThoughts * 1000 };
+  });
+  // The news first: with every clip removed, a search that found nothing
+  // says so, and the row that stands for an empty list comes after it.
+  const note = $derived(foundNothing ?? emptied);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -1118,7 +1127,10 @@
 
   onMount(() => {
     removed = takeUp(path);
-    return () => setAside(path, $state.snapshot(removed));
+    return () => {
+      setAside(path, $state.snapshot(removed));
+      setAsideTold(path, $state.snapshot(told));
+    };
   });
 
   // What the clip list is told about the clips removed: how much of its

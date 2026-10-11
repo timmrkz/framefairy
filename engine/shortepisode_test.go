@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -92,9 +93,12 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("first plan: %d clips, %v", len(clips), err)
 	}
-	if err := SetRejected(first, clips[0].ID, true); err != nil {
+	removed := clips[0].ID
+	before := TakeSnapshot(p.LogsDir())
+	if err := SetRejected(first, removed, true); err != nil {
 		t.Fatal(err)
 	}
+	removal := ChangeBetween(before, TakeSnapshot(p.LogsDir()))
 
 	plan, err := p.Search(ctx, req, nil)
 	if err != nil {
@@ -113,5 +117,30 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	}
 	if asked != 0 {
 		t.Errorf("the model was asked %d times about a clip there is only one of", asked)
+	}
+
+	// The clip made again is the clip that was removed, so the removed one
+	// is gone: putting it back or undoing its removal showed the episode
+	// twice.
+	if _, clips, _ := LoadClips(first); len(clips) != 0 {
+		t.Errorf("the removed clip is still in its plan beside the one made again")
+	}
+	if err := SetRejected(first, removed, false); err == nil {
+		t.Errorf("the removed clip could be put back beside the one made again")
+	}
+	if _, err := removal.Undo(); !errors.Is(err, ErrChangedSince) {
+		t.Errorf("undoing the removal: %v, want it refused as changed since", err)
+	}
+	listed := 0
+	for _, path := range p.Plans() {
+		_, clips, _ := LoadClips(path)
+		for _, c := range clips {
+			if !c.Rejected {
+				listed++
+			}
+		}
+	}
+	if listed != 1 {
+		t.Errorf("%d clips in the list, want the one", listed)
 	}
 }
