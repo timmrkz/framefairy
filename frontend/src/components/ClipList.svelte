@@ -89,8 +89,15 @@
     // come, the way a search that stopped says so there, so an empty list
     // reads as something that happened rather than something broken.
     // A search that found nothing new says so the same way, with why in
-    // full where the pointer reads it.
-    emptied?: { what: string; left: string; full?: string } | null;
+    // full where the pointer reads it. Given fades, the row is news: it
+    // runs down the way a removed clip's row does, in a neutral colour,
+    // and onend closes it.
+    emptied?: {
+      what: string;
+      left: string;
+      full?: string;
+      fades?: { spent: number; onend: () => void; onresume: (left: number) => void };
+    } | null;
     onselect: (key: string) => void;
     // Takes a clip out of the list. It stays in the plan, so it can come
     // back.
@@ -298,6 +305,7 @@
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
+      class:told={lead && !next && !stopped && !!emptied?.fades}
       class:lit={!!clip && clip.key === hovered}
       title={lead && !next ? (stopped?.full ?? emptied?.full) : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
@@ -322,6 +330,14 @@
           <span class="title">{stopped.what}</span>
           <span class="meta muted num">{stopped.left}</span>
         {:else if g === 0 && emptied}
+          {#if emptied.fades}
+            <Busy
+              drain={secondThoughts}
+              spent={emptied.fades.spent}
+              onend={emptied.fades.onend}
+              onresume={emptied.fades.onresume}
+            />
+          {/if}
           <span class="title">{emptied.what}</span>
           <span class="meta muted num">{emptied.left}</span>
         {/if}
@@ -586,6 +602,15 @@
     scroll-margin-bottom: var(--veil, 16px);
   }
 
+
+  /* A search that found nothing new: news that runs down and closes, the
+     way a removed clip's row does, but in grey, because nothing was taken
+     away and nothing went wrong. */
+  .told {
+    --lit: var(--muted);
+    --wash-from: color-mix(in srgb, var(--text) 6%, transparent);
+    --wash-to: color-mix(in srgb, var(--text) 12%, transparent);
+  }
 
   /* A search that stopped before it was done: the same row, still, in the
      colour of a warning. Not the red of what was taken away, because

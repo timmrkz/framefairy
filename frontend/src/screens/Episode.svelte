@@ -64,7 +64,18 @@
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
-  import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
+  import {
+    secondThoughts,
+    setAside,
+    spent,
+    takeUp,
+    toldClosed,
+    toldHeld,
+    toldOver,
+    toldSweep,
+    toldUntil,
+    type Removed,
+  } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import { readAhead } from "../lib/frames/queue";
   import RangeWindow from "../components/RangeWindow.svelte";
@@ -718,13 +729,33 @@
   });
   // The newest search ended and found nothing beyond the clips there are,
   // which is an answer, not a failure. The row its next clip would have
-  // appeared in says so until the next search: Tim pressed New on a video
-  // with its one clip, and the row that said Finding closed again with
-  // nothing to say what had come of it.
+  // appeared in says so: Tim pressed New on a video with its one clip, and
+  // the row that said Finding closed again with nothing to say what had
+  // come of it. It is news rather than a state, so it runs down for as
+  // long as a removed clip's row does, in a neutral colour, and closes.
+  // Each search that finds nothing says so once, so New pressed again and
+  // again is a row that says Finding and then this, every time.
+  // Rows whose time ran out while the episode was not open are closed
+  // before it is drawn, so they do not flash up and close again.
+  toldSweep();
+  let toldClosing = $state(0);
   const foundNothing = $derived.by(() => {
     if (busy || stopped) return null;
     const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
     if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
+    // Read again when a row's time runs out.
+    void toldClosing;
+    if (toldClosed(last.id)) return null;
+    const job = last.id;
+    const now = Date.now();
+    const fades = {
+      spent: Math.min(secondThoughts, Math.max(0, secondThoughts - (toldUntil(job, now) - now) / 1000)),
+      onend: () => {
+        toldOver(job);
+        toldClosing++;
+      },
+      onresume: (left: number) => toldHeld(job, left),
+    };
     const start = last.from ?? 0;
     const end = last.to && last.to > 0 ? last.to : duration;
     const window = `Window ${clock(start)} to ${clock(end)}`;
@@ -732,6 +763,7 @@
       return {
         what: "Nothing new found",
         left: "The video is its one clip",
+        fades,
         full: "The video is shorter than Shortest, so its one clip is all of it, and that clip is in the list. Remove it, and New makes it again",
       };
     }
@@ -739,6 +771,7 @@
       what: "Nothing new found",
       left: window,
       full: `${window}. The search found no moments beyond the clips there are`,
+      fades,
     };
   });
   const note = $derived(emptied ?? foundNothing);

@@ -229,6 +229,10 @@
 //   ["wait for", word] the clip list's head button comes to say this, in a
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
+//   ["row closes", [words, s]]
+//                      a row of the clip list says this, runs down, and
+//                      closes by itself about s seconds later, not much
+//                      sooner and not much later
 //   ["cards", n]       the clip list holds n clips
 //   ["whole clip", s]  the episode on screen, s seconds long, has one clip
 //                      in the list, and it runs from its first second to
@@ -724,7 +728,13 @@ export const sequences = [
       ["wait for", "New"],
       ["whole clip", 15],
       // Tim saw the row of that search close again with nothing to say.
-      ["row", "Nothing new found"],
+      // It says so now, as news: it runs down like a removed clip's row
+      // and closes.
+      ["row closes", ["Nothing new found", 10]],
+      // New again is a new search, and it says so again.
+      ["head"],
+      ["wait for", "New"],
+      ["row closes", ["Nothing new found", 10]],
     ],
   },
   {
@@ -2924,6 +2934,25 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "row": {
         const list = await clipList(page);
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "row closes": {
+        const [words, after] = arg;
+        const says = async () => !!(await clipList(page))?.rows.some((r) => r.what === words);
+        if (!(await says())) {
+          wrong = `no row says "${words}": ${JSON.stringify((await clipList(page))?.rows)}`;
+          break;
+        }
+        const drains = await page.evaluate(() => !!document.querySelector("aside ol li.told .fill .run"));
+        if (!drains) {
+          wrong = `the row that says "${words}" does not run down`;
+          break;
+        }
+        const from = Date.now();
+        while ((await says()) && Date.now() - from < (after + 5) * 1000) await page.waitForTimeout(250);
+        const took = (Date.now() - from) / 1000;
+        if (await says()) wrong = `the row that says "${words}" is still there after ${took.toFixed(1)} s`;
+        else if (took < after - 3) wrong = `the row that says "${words}" closed after ${took.toFixed(1)} s`;
         break;
       }
       case "cards": {

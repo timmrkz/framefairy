@@ -1196,10 +1196,14 @@ bubble scrolled by those eight pixels.
       with no clip beyond the ones in the list, a window searched again
       or a video shorter than Shortest with its clip in the list, leaves
       one row after the clips, **Nothing new found**, with its window or
-      **The video is its one clip** under it and why in its title. It
-      stays until the next search. Its row used to close again with
-      nothing said. It is not kept across a restart, since there is
-      nothing to carry on.
+      **The video is its one clip** under it and why in its title. It is
+      news, not a state, so it runs down in grey for as long as a removed
+      clip's row can be put back, stands still under the pointer, and
+      closes. Its time runs on while another video is open. Each search
+      that finds nothing says so once, so New pressed again and again
+      says Finding and then this, every time. Its row used to close
+      again with nothing said. It is not kept across a restart, since
+      there is nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
       **New** becomes **Continue**. *Interrupted. Click Continue* is a

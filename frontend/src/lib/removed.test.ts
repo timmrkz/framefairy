@@ -1,7 +1,17 @@
 import { describe, expect, test } from "vitest";
 
 import type { ClipEntry } from "./api";
-import { secondThoughts, setAside, spent, takeUp } from "./removed";
+import {
+  secondThoughts,
+  setAside,
+  spent,
+  takeUp,
+  toldClosed,
+  toldHeld,
+  toldOver,
+  toldSweep,
+  toldUntil,
+} from "./removed";
 
 const clip = (key: string) => ({ key }) as ClipEntry;
 
@@ -30,5 +40,35 @@ describe("a clip taken out", () => {
     expect(spent(r, 20000 - secondThoughts * 1000)).toBe(0);
     expect(spent(r, 0)).toBe(0);
     expect(spent(r, 25000)).toBe(secondThoughts);
+  });
+});
+
+describe("a search that found nothing", () => {
+  test("says so for as long as a clip taken out can be put back", () => {
+    expect(toldUntil("s1", 1000)).toBe(1000 + secondThoughts * 1000);
+    expect(toldUntil("s1", 4000)).toBe(1000 + secondThoughts * 1000);
+    expect(toldClosed("s1")).toBe(false);
+  });
+
+  test("runs on from where it was held", () => {
+    toldUntil("s2", 1000);
+    toldHeld("s2", 4, 20000);
+    expect(toldUntil("s2")).toBe(24000);
+  });
+
+  test("closes when its time runs out, and stays closed", () => {
+    toldUntil("s3", 1000);
+    toldOver("s3");
+    expect(toldClosed("s3")).toBe(true);
+    toldHeld("s3", 4, 20000);
+    expect(toldClosed("s3")).toBe(true);
+  });
+
+  test("is closed on coming back when its time ran out while away", () => {
+    toldUntil("s4", 1000);
+    toldUntil("s5", 5000);
+    toldSweep(12000);
+    expect(toldClosed("s4")).toBe(true);
+    expect(toldClosed("s5")).toBe(false);
   });
 });
