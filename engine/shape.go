@@ -93,7 +93,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 	if err != nil {
 		return Shaped{}, err
 	}
-	out, err := checkedPieces(change, segmentObjects(c), foundPieces(c), g.Frames)
+	out, err := checkedPieces(change, segmentObjects(c), foundPieces(c), rotationsOf(c), g.Frames)
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -177,7 +177,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			playhead = g.edgePlayhead(words, start, end)
 		}
 		return func(pieces []*object, found []foundPiece) ([]*object, error) {
-			return trimPieces(pieces, found, start, end)
+			return trimPieces(pieces, found, clip.Rotations, start, end)
 		}, playhead, nil
 
 	case "cut", "restore":
@@ -273,7 +273,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 				end := number(pieces[i].values[keyEnd])
 				next := number(pieces[i+1].values[keyStart])
 				if at >= end && at <= next && next > end {
-					back := meet(meet(pieces[i:i+1], framedBack(end, next, pieces, found)), pieces[i+1:i+2])
+					back := meet(meet(pieces[i:i+1], framedBack(end, next, pieces, found, clip.Rotations)), pieces[i+1:i+2])
 					out := append([]*object{}, pieces[:i]...)
 					out = append(out, back...)
 					return append(out, pieces[i+2:]...), nil
@@ -456,7 +456,7 @@ func (g Gesture) cutOnFrames(clip Clip, from, to float64) (float64, float64, boo
 // found brings back a shot it had trimmed away, with its own crop, from
 // the camera switch. Edges that hold none of the old pieces are framed the
 // same way, by the shots between them.
-func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*object, error) {
+func trimPieces(pieces []*object, found []foundPiece, spans []Rotation, start, end float64) ([]*object, error) {
 	var kept []*object
 	for _, seg := range pieces {
 		if number(seg.values[keyEnd]) <= start || number(seg.values[keyStart]) >= end {
@@ -465,11 +465,11 @@ func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*ob
 		kept = append(kept, seg)
 	}
 	if len(kept) == 0 {
-		kept = framedBack(start, end, pieces, found)
+		kept = framedBack(start, end, pieces, found, spans)
 	} else {
 		first := number(kept[0].values[keyStart])
 		last := number(kept[len(kept)-1].values[keyEnd])
-		kept = meet(meet(framedBack(start, first, pieces, found), kept), framedBack(last, end, pieces, found))
+		kept = meet(meet(framedBack(start, first, pieces, found, spans), kept), framedBack(last, end, pieces, found, spans))
 	}
 	if len(kept) == 0 {
 		var nearest *object
@@ -501,8 +501,10 @@ func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*ob
 // two shots goes with the one before it, and a part before the first or
 // after the last goes with that one. A shot a piece of the clip still
 // shows takes that piece's framing, so a crop placed by hand comes back
-// with it.
-func framedBack(from, to float64, pieces []*object, found []foundPiece) []*object {
+// with it, the piece's turned alike, see angleOf: what comes back is
+// turned by the stretch of the clip's rotations it lies in, and a piece
+// turned otherwise is framed for another picture.
+func framedBack(from, to float64, pieces []*object, found []foundPiece, spans []Rotation) []*object {
 	var out []*object
 	for k, f := range found {
 		low, high := math.Inf(-1), math.Inf(1)
@@ -516,9 +518,11 @@ func framedBack(from, to float64, pieces []*object, found []foundPiece) []*objec
 		if b <= a {
 			continue
 		}
-		like := f.seg
+		like := copyObject(f.seg)
+		like.set(keyStart, a)
+		like.remove(keyCropXTurned)
 		for _, seg := range pieces {
-			if fmt.Sprint(autoCrop(seg)) == fmt.Sprint(autoCrop(f.seg)) {
+			if angleOf(seg, spans) == angleOf(like, spans) {
 				like = seg
 				break
 			}
@@ -553,7 +557,7 @@ func meet(a, b []*object) []*object {
 // sameFraming says whether two pieces are framed alike: the same crop, and
 // the same automatic crop behind it.
 func sameFraming(a, b *object) bool {
-	for _, key := range []string{keyCropX, keyCropXAuto} {
+	for _, key := range []string{keyCropX, keyCropXAuto, keyCropXTurned} {
 		x, okA := a.get(key)
 		y, okB := b.get(key)
 		if okA != okB || fmt.Sprint(x) != fmt.Sprint(y) {

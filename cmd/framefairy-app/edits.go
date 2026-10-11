@@ -39,13 +39,54 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	o := s.store.Settings().options()
-	cw, _ := engine.CropWindow(info, o.Width, o.Height)
-	left = max(0, min(left, info.Width-cw))
+	// The crop of a rotated piece is on the picture rotated, so it is kept
+	// inside that.
+	upright := info
+	if entry, err := s.clipEntry(ctx, path, plan, clipID); err == nil {
+		if i := pieceAt(entry.Segments, at); i >= 0 {
+			upright = info.Rotated(entry.Segments[i].Rotate)
+		}
+	}
+	cw := s.cropWidth(upright)
+	left = max(0, min(left, upright.Width-cw))
 	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// RotatePart rotates the part of a clip between two cuts that a moment is
+// in a quarter turn to the left, and returns the clip as it is now.
+func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := s.edit(path, func() error { return engine.RotatePart(plan, clipID, at, info) }); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// pieceAt is the piece of a clip that holds a moment, or the nearest, the
+// way engine.SetCrop finds it. Minus one for a clip with none.
+func pieceAt(pieces []engine.SegmentView, at float64) int {
+	best, gap := -1, math.Inf(1)
+	for i, p := range pieces {
+		d := 0.0
+		if at < p.Start {
+			d = p.Start - at
+		} else if at >= p.End {
+			d = at - p.End
+		}
+		if d < gap {
+			best, gap = i, d
+		}
+	}
+	return best
 }
 
 // SetCaptionStyle changes the face and the size of the captions of a whole
