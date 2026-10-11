@@ -58,6 +58,7 @@
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
     pictured = $bindable(false),
+    frameStart = $bindable(NaN),
     sleeping = false,
   }: {
     path: string;
@@ -107,6 +108,10 @@
     // why it cannot. The workspace is not put in front of the person
     // before, see ready in Episode.svelte.
     pictured?: boolean;
+    // Where the frame on the canvas begins, in the episode, as the queue
+    // says it drew it. NaN before the first. The frame a mark is put on,
+    // see shownMoment in Episode.svelte.
+    frameStart?: number;
     // The workspace is kept for coming back to while another episode is
     // in front, see App.svelte. Asleep, the video preview holds nothing
     // but the frame on its canvas and the file's index: no decoder on the
@@ -458,9 +463,6 @@
     return best;
   });
 
-  // Where the frame on the canvas begins, in the episode, as the queue
-  // says it drew it. NaN before the first.
-  let frameStart = $state(NaN);
   // The moment the frame on the canvas starts, which the picture is turned
   // for and its crop stands for, see lib/rotate.ts.
   const frameAt = $derived(shownAt(frameStart, time));
@@ -1053,12 +1055,15 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // The moment the crop change applies to: the playhead when it is inside
-  // the clip, otherwise the start of the piece shown.
+  // The moment the crop change applies to: the start of the frame on the
+  // canvas, whose crop is the one dragged, when it is in the clip,
+  // otherwise the start of the piece shown. Not the playhead, which a play
+  // of the clip leaves at its end, past its last frame, where the canvas
+  // still shows that frame.
   function cropMoment(): number {
     if (!clip) return time;
-    const seg = clip.segments[piece];
-    return time >= seg.start && time < seg.end ? time : seg.start;
+    if (pieceHolding(clip.segments, frameAt) >= 0) return frameAt;
+    return clip.segments[piece].start;
   }
 
   function dragCrop(event: PointerEvent) {

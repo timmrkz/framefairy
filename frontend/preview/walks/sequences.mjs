@@ -422,6 +422,17 @@
 //                      double-clicks the first "thumbnail" or "crop" mark
 //                      on the clip timeline, and the engine has one fewer,
 //                      and no cut more
+//   ["crop mark on", "last"]
+//                      a click on the clip's end edge, which leaves the
+//                      playhead on the end with the last frame on the
+//                      video preview, then C: a crop mark comes on the
+//                      clip's last frame and its dot lights, and C again
+//                      removes it
+//   ["crop mark on", "first"]
+//                      a click on the clip's start edge and three steps
+//                      on and three back with the arrow keys, which leave
+//                      the playhead a hair off the first frame's start
+//                      with that frame on the video preview, then the same
 //   ["drag crop", px]  drags the crop frame in the video preview sideways
 //                      by px, in ten steps, and lets go
 //   ["crop marks", n]  the engine has n crop marks on the clip, at as many
@@ -1007,6 +1018,18 @@ export const sequences = [
     // react to the pointer, and was removed only by putting the playhead
     // on it and pressing T. It is the crop mark's kind of mark, lit under
     // the hand and removed with a double-click, the way a cut is.
+    name: "a crop mark goes on a clip's first and last frame with C, and comes off with C",
+    // Found by Tim on #192: C put no mark on a clip's first or last frame,
+    // only one frame in.
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["crop mark on", "last"],
+      ["crop mark on", "first"],
+    ],
+  },
+  {
     name: "a thumbnail mark lights under the hand and a double-click removes it",
     steps: [
       ["add", 30, "25"],
@@ -3661,6 +3684,52 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (took < 0) wrong = "C put no crop mark on the playhead's frame";
         else if (took > 300) wrong = `the crop mark showed ${took} ms after C, not at once`;
         await watch.step("press", s);
+        await settle(page);
+        break;
+      }
+      case "crop mark on": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const pieces = (await entry()).segments;
+        const want = arg === "last" ? pieces[pieces.length - 1].end - 1 / src.fps : pieces[0].start;
+        const g = await handles(page);
+        const edge = arg === "last" ? g.end : g.start;
+        await page.mouse.click(edge.x + edge.w / 2, edge.y + edge.h / 2);
+        await settle(page);
+        if (arg === "first") {
+          for (const key of ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowLeft", "ArrowLeft", "ArrowLeft"]) {
+            await page.keyboard.press(key);
+            await settle(page);
+          }
+        }
+        const marks = async () => (await entry()).cropMarks ?? [];
+        const before = (await marks()).length;
+        const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
+        await page.keyboard.press("c");
+        let got = [];
+        for (let i = 0; i < 30 && got.length <= before; i++) {
+          await page.waitForTimeout(100);
+          got = await marks();
+        }
+        const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
+        if (got.length <= before) {
+          const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
+          wrong = `C put no crop mark with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+          break;
+        }
+        if (!near) {
+          wrong = `C put a crop mark at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+          break;
+        }
+        await settle(page);
+        if (!(await lit())) {
+          wrong = `the crop mark on the clip's ${arg} frame does not light while that frame is on the video preview`;
+          break;
+        }
+        await page.keyboard.press("c");
+        for (let i = 0; i < 30 && (await marks()).length > before; i++) await page.waitForTimeout(100);
+        if ((await marks()).length > before) wrong = `C again did not remove the crop mark on the clip's ${arg} frame`;
         await settle(page);
         break;
       }

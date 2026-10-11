@@ -55,6 +55,7 @@
     measured = 0,
     measuredParts = [],
     time,
+    shown = NaN,
     locked = false,
     frame = 1 / 30,
     frameStart = 0,
@@ -105,6 +106,10 @@
     measured?: number;
     measuredParts?: [number, number][];
     time: number;
+    // Where the frame on the video preview begins, the frame a mark lights
+    // for, which at the end of a clip played through is its last frame
+    // while the playhead stands past it. NaN goes by the playhead.
+    shown?: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
@@ -1455,9 +1460,9 @@
       .filter((r) => r.starts && r.rotate !== 0),
   );
 
-  // The frame the playhead is in, which is how a mark knows it is the one
-  // on screen. A state, never a distance.
-  const playFrame = $derived(frameAt(time, frame, frameStart));
+  // The frame on the video preview, which is how a mark knows it is the
+  // one on screen. A state, never a distance.
+  const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
 
   // The middle of the frame a moment falls in, inside a piece the clip
   // keeps: a moment that was cut out is not in the short, so a mark held

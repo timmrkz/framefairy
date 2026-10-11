@@ -78,7 +78,7 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { said } from "../lib/said";
-  import { rotated } from "../lib/rotate";
+  import { pieceHolding, rotated } from "../lib/rotate";
   import { markOn } from "../lib/glide";
 
   let {
@@ -1141,19 +1141,30 @@
   const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
   // Where the picture's frames begin, see frameAt in lib/flow.ts.
   const frameStart = $derived(source?.videoStart ?? 0);
-  // The thumbnail under the playhead, told by the frame the playhead is in
-  // and never by how far it is from one, because the playhead is never
-  // quite where it was put.
+  // Where the frame on the video preview begins, as its queue drew it, NaN
+  // before the first. A mark, a thumbnail and the crop dragged belong to
+  // the frame on screen, which is the playhead's own frame but at the end
+  // of a clip played through, where the playhead stands past the last
+  // frame and the picture shows the last. So that moment, and the playhead
+  // only before there is a picture.
+  let shownStart = $state(NaN);
+  const shownMoment = $derived(Number.isFinite(shownStart) ? shownStart : time);
+  // The thumbnail on the frame shown, told by the frame and never by how
+  // far the playhead is from one, because the playhead is never quite
+  // where it was put.
   const thumbHere = $derived.by(() => {
     if (!current) return null;
-    const f = frameAt(time, frameLen, frameStart);
+    const f = frameAt(shownMoment, frameLen, frameStart);
     return current.thumbnails?.find((t) => frameAt(t, frameLen, frameStart) === f) ?? null;
   });
-  // Whether the short shows the frame under the playhead, which is where a
-  // thumbnail can be.
-  const inShort = $derived(
-    !!current && current.segments.some((p) => time >= p.start && time < p.end),
-  );
+  // Whether the short shows the frame on the video preview, which is where
+  // a thumbnail or a crop mark can be. Told by the frame, as the engine
+  // tells it, not by the playhead to the millisecond: a play of the clip
+  // leaves the playhead on its end, past its last frame, and steps of a
+  // frame leave it a hair short of a frame's start, where the clip's first
+  // frame was on screen and the buttons said it was not in the short.
+  // Found by Tim on #192.
+  const inShort = $derived(!!current && pieceHolding(current.segments, shownMoment) >= 0);
 
   // A thumbnail added, moved or removed, shown at once and saved straight
   // after. A from below nought adds, a to below nought removes.
@@ -1174,9 +1185,11 @@
     }
   }
 
-  // The crop mark on the frame under the playhead, told by the frame the
-  // playhead is in, the way thumbHere is. Plan row 3.26.
-  const cropHere = $derived(current && source ? markOn(current.cropMarks, time, source.fps, source.videoStart ?? 0) : null);
+  // The crop mark on the frame shown, told by the frame, the way thumbHere
+  // is. Plan row 3.26.
+  const cropHere = $derived(
+    current && source ? markOn(current.cropMarks, shownMoment, source.fps, source.videoStart ?? 0) : null,
+  );
 
   // A crop mark added, moved or removed: the dot shows at once, and the
   // glide it makes comes back with the clip. A from below nought adds one
@@ -1211,7 +1224,7 @@
     const left = player?.cropLeftNow();
     if (!inShort || left === null || left === undefined) return;
     // The start of the frame, the moment a mark is kept at.
-    const at = frameStart + frameAt(time, frameLen, frameStart) * frameLen;
+    const at = frameStart + frameAt(shownMoment, frameLen, frameStart) * frameLen;
     void setCropMark(current, -1, at, Math.round(left));
   }
 
@@ -1224,7 +1237,7 @@
     } else if (inShort) {
       // The middle of the frame, so the picture and the playhead agree on
       // which frame it is whichever way either rounds.
-      void setThumbnail(current, -1, frameMiddle(frameAt(time, frameLen, frameStart), frameLen, frameStart));
+      void setThumbnail(current, -1, frameMiddle(frameAt(shownMoment, frameLen, frameStart), frameLen, frameStart));
     }
   }
 
@@ -2827,6 +2840,7 @@
           clip={shownClip}
           opening={!opened}
           bind:pictured
+          bind:frameStart={shownStart}
           sleeping={away}
           bind:time
           captions={shownCaptions}
@@ -2918,6 +2932,7 @@
         {measured}
         {measuredParts}
         {time}
+        shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
         arriving={!current && !!making}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
