@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -129,6 +130,46 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 		got := 2 * int(out[n*152*270])
 		if want := glideX(marks, first+int64(n)); got != want {
 			t.Errorf("frame %d of the piece is cropped at %d, the glide says %d", n, got, want)
+		}
+	}
+}
+
+// A piece steered by as many marks as a clip may have renders, and glides
+// over all of them. One if per mark nested the expression past the
+// hundred ffmpeg takes, and a clip of ninety marks could not be rendered.
+func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
+	ffmpegtest.Need(t)
+	t.Parallel()
+	source := SourceInfo{Width: 480, Height: 270, FPSNum: 25, FPSDen: 1}
+	seg := Segment{Start: 0, End: 9}
+	for i := range MaxCropMarks {
+		seg.Marks = append(seg.Marks, CropMark{At: 0.2 + float64(i)*0.08, X: (i * 37) % 329})
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
+		source, RenderSettings{OutW: 1080, OutH: 1920}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crop := regexp.MustCompile(`crop=152:270:'[^']+':0`).FindString(graph)
+	if crop == "" {
+		t.Fatalf("the piece has no crop that glides: %s", graph)
+	}
+	frames := 215
+	out, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi",
+		"-i", "color=black:s=480x270:r=25:d=9,format=gray,geq=lum=X/2",
+		"-vf", crop+",format=gray", "-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-").CombinedOutput()
+	if err != nil {
+		t.Fatalf("ffmpeg would not crop by the glide of %d marks: %v %s", MaxCropMarks, err, out)
+	}
+	if len(out) != frames*152*270 {
+		t.Fatalf("ffmpeg gave %d bytes, not %d frames of 152 by 270", len(out), frames)
+	}
+	marks := source.onFrames(seg.Marks, 152, 480)
+	for n := range frames {
+		got := 2 * int(out[n*152*270])
+		if want := glideX(marks, int64(n)); got != want {
+			t.Errorf("frame %d is cropped at %d, the glide says %d", n, got, want)
 		}
 	}
 }

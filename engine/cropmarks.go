@@ -220,20 +220,33 @@ func glideX(marks []frameMark, k int64) int {
 // glideExpr is glideX as an ffmpeg expression for the crop filter of a
 // piece whose first frame is frame first of the video. The crop filter
 // counts the frames it is given as n, from nought, so frame k of the video
-// is n+first. Every step is written in the order glideX takes it.
+// is n+first. Every step is written in the order glideX takes it. The
+// stretches between marks are found by halving, so the expression nests
+// as deep as the number of marks has binary digits: ffmpeg refuses one
+// nested deeper than a hundred, and one if per mark made a clip of ninety
+// marks unrenderable.
 func glideExpr(marks []frameMark, first int64) string {
 	k := "(n+" + strconv.FormatInt(first, 10) + ")"
 	if first < 0 {
 		k = "(n-" + strconv.FormatInt(-first, 10) + ")"
 	}
-	expr := strconv.Itoa(marks[len(marks)-1].x)
-	for i := len(marks) - 1; i >= 1; i-- {
-		a, b := marks[i-1], marks[i]
-		u := fmt.Sprintf("((%s-%d)/%d)", k, a.k, b.k-a.k)
-		step := fmt.Sprintf("2*floor((%d+%d*(%s*%s*(3-2*%s)))/2+0.5)", a.x, b.x-a.x, u, u, u)
-		expr = fmt.Sprintf("if(lt(%s,%d),%s,%s)", k, b.k, step, expr)
+	last := marks[len(marks)-1]
+	if len(marks) == 1 {
+		return strconv.Itoa(last.x)
 	}
-	return fmt.Sprintf("if(lte(%s,%d),%d,%s)", k, marks[0].k, marks[0].x, expr)
+	// The glide over the stretches lo to hi, stretch i running from mark
+	// i-1 to mark i.
+	var between func(lo, hi int) string
+	between = func(lo, hi int) string {
+		if lo == hi {
+			a, b := marks[lo-1], marks[lo]
+			u := fmt.Sprintf("((%s-%d)/%d)", k, a.k, b.k-a.k)
+			return fmt.Sprintf("2*floor((%d+%d*(%s*%s*(3-2*%s)))/2+0.5)", a.x, b.x-a.x, u, u, u)
+		}
+		mid := (lo + hi + 1) / 2
+		return fmt.Sprintf("if(lt(%s,%d),%s,%s)", k, marks[mid-1].k, between(lo, mid-1), between(mid, hi))
+	}
+	return fmt.Sprintf("if(lte(%s,%d),%d,if(gte(%s,%d),%d,%s))", k, marks[0].k, marks[0].x, k, last.k, last.x, between(1, len(marks)-1))
 }
 
 // cropXOf is the left edge of a piece's crop for the render: a number for
