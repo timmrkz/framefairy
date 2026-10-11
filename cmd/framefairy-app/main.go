@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -226,9 +225,11 @@ func main() {
 	}
 }
 
-// mediaMiddleware serves episode files and their outputs under /media/ so
-// the interface can show thumbnails and play clips. Only files that belong
-// to an episode in the library are served.
+// mediaMiddleware serves the captions' faces and the frames and sound of
+// an episode, see previews. Nothing serves the bytes of a file to the
+// page: the video preview reads nothing of the file itself, see
+// docs/VIDEO-PREVIEW.md, step 5. Only files that belong to an episode in
+// the library are decoded.
 func mediaMiddleware(st *store) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -249,29 +250,9 @@ func mediaMiddleware(st *store) application.Middleware {
 				logged(w, r, func(w http.ResponseWriter, r *http.Request) { openPreviews.serve(st, w, r) })
 				return
 			}
-			if !strings.HasPrefix(r.URL.Path, "/media/") {
-				next.ServeHTTP(w, r)
-				return
-			}
-			logged(w, r, func(w http.ResponseWriter, r *http.Request) { serveMedia(st, w, r) })
+			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// serveMedia serves a file of an episode in the library, and nothing else.
-func serveMedia(st *store, w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	if path == "" || !filepath.IsAbs(path) || !st.Known(path) {
-		http.NotFound(w, r)
-		return
-	}
-	// Files, and nothing else. A folder would be answered with a listing
-	// of what is in it.
-	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-		http.NotFound(w, r)
-		return
-	}
-	http.ServeFile(w, r, path)
 }
 
 // notInLibrary is what a call is told when it names a file that does not

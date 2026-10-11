@@ -831,7 +831,7 @@ look at the queue alone:
 ```
 npx vite build --config frontend/preview/vite.config.ts
 node frontend/preview/frames/cuts.mjs                 # the clip, once
-node frontend/preview/frames/cuts.mjs loop slowread=200
+node frontend/preview/frames/cuts.mjs loop
 node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
 node frontend/preview/frames/cuts.mjs memory          # a minute straight on
 node frontend/preview/frames/added.mjs                # an episode just added, see docs/TESTING.md

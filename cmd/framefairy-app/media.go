@@ -41,10 +41,11 @@ type SourceView struct {
 
 // GridView is framewire.Grid as the interface reads it.
 type GridView struct {
-	Start float64 `json:"start"`
-	Num   int     `json:"num"`
-	Den   int     `json:"den"`
-	Count int     `json:"count"`
+	Origin float64 `json:"origin"`
+	Start  float64 `json:"start"`
+	Num    int     `json:"num"`
+	Den    int     `json:"den"`
+	Count  int     `json:"count"`
 }
 
 // sources are the episodes probed, by path, size and when they were
@@ -99,7 +100,7 @@ func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error
 	grid := info.Grid()
 	return SourceView{Duration: info.Duration, Width: info.Width, Height: info.Height,
 		CropWidth: cw, CropHeight: ch, TurnedCropWidth: tw, FPS: info.FPS(), VideoStart: info.VideoStart,
-		Grid:      GridView{Start: grid.Start, Num: grid.Num, Den: grid.Den, Count: grid.Count},
+		Grid:      GridView{Origin: grid.Origin, Start: grid.Start, Num: grid.Num, Den: grid.Den, Count: grid.Count},
 		SoundRate: info.SoundRate, SoundChannels: info.SoundChannels}, nil
 }
 

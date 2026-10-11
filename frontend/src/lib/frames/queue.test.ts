@@ -24,7 +24,7 @@ function playing(at: number) {
   const q = new FrameQueue(
     canvas(),
     "/episode.mp4",
-    movieOf({ duration: 120, width: 2, height: 2, grid: { start: 0, num: 25, den: 1, count: 3000 } }),
+    movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
   );
   q.seek(at);
   q.play();

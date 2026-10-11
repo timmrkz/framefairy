@@ -413,19 +413,21 @@ apart from streams of frames, so the seeks of a play never close the
 frames the video preview draws.
 
 A frame the page makes from what the Go side decoded is in full range,
-and says so, with the picture's colours read from the file's `colr` box.
+and says so, with the picture's light as the Go side reads it from the
+file's transfer tag, see `framewire.Picture`.
 WebKit draws a frame made from a buffer as full range whatever the frame
 says: Tim's `start.mp4`, HEVC with 10-bit colour in video range, which
 the Go side decodes for WebKit, came out pale, its black a grey of 17
 where QuickTime shows 1. Labelled video range it stayed so. Now
 VideoToolbox is asked for full range, and ffmpeg too, `out_range=pc`, so
-what WebKit assumes is what the frame holds. A file it cannot play, a codec the system cannot decode, a
-fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
-sentence where the picture would be, with the reason, and nothing else in
-the workspace changes. A sound it cannot decode plays the picture without
-it and says so at the foot of the picture. With one engine, see
-[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), such files will play as far as the
-render can read them.
+what WebKit assumes is what the frame holds. Every file ffmpeg reads
+plays, whatever its container, Matroska and MPEG-TS among them, because
+the page reads nothing of the file, see step 5 of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). A file the episode's decoder cannot
+read, a codec it has no decoder for, says so in one sentence where the
+picture would be, with the reason, and nothing else in the workspace
+changes. A sound it cannot decode plays the picture without it and says
+so at the foot of the picture.
 
 Every file's picture is decoded by ffmpeg on the Go side, the first step
 of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156, by the episode's
@@ -490,10 +492,12 @@ decoders, the Mac's VideoToolbox through cgo, `NativePictures` and
 `engine.Pictures` with `/frames/native` and `/frames/decode`, plain sound
 read and turned into samples by the page, and the choice between them
 were in the code as well, each with its own way of failing. They are
-removed, and the page reads nothing of the file but its index. The frames
-come in streams the page opens and pulls from:
+removed, and the page reads nothing of the file at all, see step 5 of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The frames come in streams the page
+opens and pulls from, each on the grid of frames the engine named, which
+the page hands back as it opens one:
 
-    /frames/open?path=&from=&w=&h=   {"id": ...}
+    /frames/open?path=&from=&w=&h=&grid=   {"id": ...}
     /frames/read?id=&n=&skip=        up to n frames
     /frames/close?id=
 
@@ -504,8 +508,8 @@ moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
 of what was pulled and waits: WebKit takes whatever a response writes
 without pushing back, so one long response would have let it decode the
 whole episode into memory while the page stood paused. A stream nobody
-pulls from for 20 seconds is closed, and at most six are open. Like
-`/media/`, it only reads a file of an episode in the library.
+pulls from for 20 seconds is closed, and at most six are open. It only
+reads a file of an episode in the library.
 
 What makes it quick, since a new stream costs moving a cursor of the
 episode's decoder and decoding from the key frame before:
@@ -2613,5 +2617,5 @@ interface's types.
 make test
 ```
 
-They cover the job queue, waiting for the transcript and the media route.
+They cover the job queue, waiting for the transcript and the frames route.
 The one that transcribes is skipped when ffmpeg is missing.

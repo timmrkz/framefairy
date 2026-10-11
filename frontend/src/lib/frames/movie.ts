@@ -12,8 +12,11 @@ import { FRAME_HAIR } from "../flow";
 
 // The frames of the short, as the engine names them, see
 // engine.SourceInfo.Grid: count of them, one every den/num seconds from
-// start, which is in seconds after the start of the file.
-export type Grid = { start: number; num: number; den: number; count: number };
+// start, which is in seconds after the start of the file. origin is where
+// that start is on the file's own clock. The page hands the grid back
+// with every stream it opens, so the Go side makes the frames the page
+// counts on, see Stream in app.ts.
+export type Grid = { origin: number; start: number; num: number; den: number; count: number };
 
 // What a video preview needs to know of an episode: how long it is, the
 // size of its picture standing up, its grid, and its sound, nothing where
@@ -34,6 +37,8 @@ export type VideoTrack = {
   samples: Samples;
   // How long a frame lasts, in seconds.
   frame: number;
+  // The grid the frames are, nothing for a track that is not.
+  grid?: Grid;
 };
 
 export type AudioTrack = {
@@ -91,6 +96,7 @@ export function movieOf(s: Source): Movie {
       width: s.width,
       height: s.height,
       frame: g.den / g.num,
+      grid: g,
       samples: even(pts, g.num, g.den),
     };
   }

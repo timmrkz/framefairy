@@ -9,7 +9,7 @@ describe("movieOf", () => {
       duration: 7,
       width: 640,
       height: 360,
-      grid: { start: 0.016433, num: 30000, den: 1001, count: 210 },
+      grid: { origin: 0, start: 0.016433, num: 30000, den: 1001, count: 210 },
       soundRate: 48000,
       soundChannels: 2,
     });
@@ -39,7 +39,7 @@ describe("movieOf", () => {
 });
 
 describe("rankAt", () => {
-  const s = movieOf({ duration: 4, width: 2, height: 2, grid: { start: 0, num: 25, den: 1, count: 100 } }).video!.samples;
+  const s = movieOf({ duration: 4, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 100 } }).video!.samples;
   test("is the frame that holds the moment", () => {
     expect(rankAt(s, 0)).toBe(0);
     expect(rankAt(s, 0.038)).toBe(0);
@@ -57,7 +57,7 @@ describe("rankAt", () => {
   // file, less than a frame from its start, and every frame of it is a
   // whole number of frames after that, as the engine counts them.
   test("counts from where the grid starts", () => {
-    const late = movieOf({ duration: 2, width: 2, height: 2, grid: { start: 0.016433, num: 30000, den: 1001, count: 60 } }).video!.samples;
+    const late = movieOf({ duration: 2, width: 2, height: 2, grid: { origin: 0, start: 0.016433, num: 30000, den: 1001, count: 60 } }).video!.samples;
     const frame = 1001 / 30000;
     expect(rankAt(late, 0)).toBe(0);
     expect(rankAt(late, 0.016433 + 7 * frame)).toBe(7);
@@ -67,8 +67,15 @@ describe("rankAt", () => {
 
   // A frame the Go side handed over is the one whose start its moment is
   // nearest, a rounding early or late.
+  // The grid goes with the track, so a stream hands back the grid the
+  // page counts on, clock and all.
+  test("keeps the grid it counts on", () => {
+    const g = { origin: -0.021, start: 0.033367, num: 30000, den: 1001, count: 90 };
+    expect(movieOf({ duration: 3, width: 2, height: 2, grid: g }).video!.grid).toEqual(g);
+  });
+
   test("finds the frame a moment the Go side gave stands for", () => {
-    const g = { start: 0.016433, num: 30000, den: 1001, count: 60 };
+    const g = { origin: 0, start: 0.016433, num: 30000, den: 1001, count: 60 };
     const late = movieOf({ duration: 2, width: 2, height: 2, grid: g }).video!.samples;
     for (let r = 0; r < 60; r++) {
       const at = g.start + (r * g.den) / g.num;

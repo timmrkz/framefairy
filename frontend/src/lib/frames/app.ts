@@ -73,6 +73,11 @@ class Stream {
     // that holds it, which is this one, see movie.ts.
     const from = owner.ptsOf(first);
     const q = new URLSearchParams({ path: owner.path, from: from.toFixed(6), w: String(width), h: String(height) });
+    // The grid the page counts on goes with every open, and the Go side
+    // makes the frames of that grid and no other, so the two never count
+    // differently, even for a file written over while the page slept.
+    const g = owner.track.grid;
+    if (g) q.set("grid", [g.origin, g.start, g.num, g.den, g.count].join(","));
     this.id = fetch(`/frames/open?${q}`)
       .then(async (r) => {
         if (r.ok) return r.json();

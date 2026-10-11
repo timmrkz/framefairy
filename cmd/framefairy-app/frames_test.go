@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/framewire"
 )
 
 // A stream the page opens, pulls from and closes: each frame comes once,
@@ -37,7 +39,7 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
 		return rec
 	}
-	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"2.1"}, "w": {"64"}, "h": {"36"}})
+	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"2.1"}, "w": {"64"}, "h": {"36"}, "grid": {gridOf(t, mine)}})
 	var opened struct{ ID string }
 	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
 		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
@@ -130,7 +132,7 @@ func TestTheFramesRouteSaysAnHDREpisodesLight(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", path+"?"+q.Encode(), nil))
 		return rec
 	}
-	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"0"}, "w": {"64"}, "h": {"36"}})
+	rec := get("/frames/open", url.Values{"path": {mine}, "from": {"0"}, "w": {"64"}, "h": {"36"}, "grid": {gridOf(t, mine)}})
 	var opened struct{ ID string }
 	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil || opened.ID == "" {
 		t.Fatalf("open answered %d %q: %v", rec.Code, rec.Body.String(), err)
@@ -161,7 +163,7 @@ func TestTheFramesRouteSaysWhenAnEpisodeEnds(t *testing.T) {
 	}
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}}.Encode(), nil))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
 	var opened struct{ ID string }
 	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
 		t.Fatal(err)
@@ -196,7 +198,7 @@ func TestTheFramesRouteSaysAStoppedStreamWasClosed(t *testing.T) {
 	}
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}}.Encode(), nil))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?"+url.Values{"path": {mine}, "w": {"32"}, "h": {"18"}, "grid": {gridOf(t, mine)}}.Encode(), nil))
 	var opened struct{ ID string }
 	if err := json.NewDecoder(rec.Body).Decode(&opened); err != nil {
 		t.Fatal(err)
@@ -402,4 +404,15 @@ func TestOnlyAFewDecodersNobodyHoldsStandRunning(t *testing.T) {
 			t.Errorf("%s, used last, was closed", path)
 		}
 	}
+}
+
+// gridOf is the grid the video preview counts on for an episode, as the
+// page hands it back with a stream it opens.
+func gridOf(t *testing.T, path string) string {
+	t.Helper()
+	info, err := sources.probe(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return framewire.GridText(info.Grid())
 }

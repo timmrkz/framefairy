@@ -29,7 +29,7 @@ const canvas = document.querySelector("canvas")!;
 const queue = new FrameQueue(
   canvas,
   "/frames.mp4",
-  movieOf({ duration: 600, width: 192, height: 108, grid: { start: 0, num: 25, den: 1, count: 15000 }, soundRate: 48000, soundChannels: 1 }),
+  movieOf({ duration: 600, width: 192, height: 108, grid: { origin: 0, start: 0, num: 25, den: 1, count: 15000 }, soundRate: 48000, soundChannels: 1 }),
 );
 // The canvas is as many device pixels as the stylesheet makes it, the way
 // the video preview tells it.

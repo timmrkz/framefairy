@@ -1193,7 +1193,7 @@ const Answers = {
           cropWidth: 608,
           cropHeight: 1080,
           fps: harnessFps,
-          grid: { start: 0, num: harnessFps, den: 1, count: 14423 * harnessFps },
+          grid: { origin: 0, start: 0, num: harnessFps, den: 1, count: 14423 * harnessFps },
           soundRate: 48000,
           soundChannels: 1,
         });

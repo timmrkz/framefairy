@@ -23,7 +23,7 @@
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
-  import { movieOf, type Movie } from "../lib/frames/movie";
+  import { movieOf } from "../lib/frames/movie";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -145,26 +145,29 @@
 
   // A queue while the workspace is awake. Going to sleep closes it with
   // everything it holds, its decoders and its sound card among them, and
-  // keeps only what it played, the frames the engine named, so the frame
-  // on the canvas stays until the new queue draws the same one.
+  // the frame on the canvas stays until the new queue draws the same one.
+  // The new queue counts on the frames the engine names now, from source,
+  // never on the ones the last queue played: the file may have been
+  // written over in between, and the Go side streams on what the page
+  // counts on, see Stream in lib/frames/app.ts.
   //
   // Waking, the queue is opened once the workspace is on screen, in the
   // task after the frame that shows it: what is on the canvas is already
   // the frame it would draw, and starting a sound card and a decoder in
   // that frame held it back. Going to sleep, it is closed the same way.
-  let known: Movie | null = null;
+  let slept = false;
   $effect(() => {
     const video = path;
     if (sleeping) return;
     let q: FrameQueue | null = null;
-    const stop = known ? afterPaint(() => (q = open(video))) : null;
+    const stop = slept ? afterPaint(() => (q = open(video))) : null;
     if (!stop) q = untrack(() => open(video));
     return () => {
       stop?.();
       if (!q) return;
       const going: FrameQueue = q;
       said(`video preview: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : "the workspace went"}`, { video: path });
-      known = going.movie ?? known;
+      slept = true;
       if (!untrack(() => paused)) going.pause();
       paused = true;
       nailed = false;
@@ -191,8 +194,8 @@
     trouble = "";
     // What the engine says of the video: its frames, the short's, and its
     // sound. The video preview reads nothing of the file itself.
-    const woken = known !== null;
-    const q = new FrameQueue(canvas, video, known ?? movieOf(source), woken);
+    const woken = slept;
+    const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);

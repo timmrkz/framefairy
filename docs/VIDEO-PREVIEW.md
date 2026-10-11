@@ -498,13 +498,27 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    stands for no frame of the grid is let go unscaled, and one that stands
    for two is scaled once. Times count from the start of the file, as the
    engine and the sound count them, where the picture had counted by the
-   file's own stamps, off by as much as a file starts late.
+   file's own stamps, off by as much as a file starts late. Where the file
+   starts on its own clock is the grid's origin, the engine's reading of
+   it, so the decoder never works it out a second time: two builds of
+   ffmpeg read the start of a Matroska file with AAC 21 ms apart. The page
+   hands the grid back with every stream it opens, and the Go side makes
+   the frames of that grid, so the two cannot count on different grids,
+   not even for a file written over while the workspace slept. A file
+   with no index of its key frames, MPEG-TS, lands a seek between two key
+   frames, and the decoder read on to the next one and showed it for
+   every frame before it. A seek now finds the key frame shown at or
+   before its moment, and the decoder seeks again if its first frame
+   begins after it. The route that served a file's bytes to the page,
+   `/media/`, is removed with the reader that used it.
    `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
    render's rule on a phone's uneven frames, a screen recorder's left-out
    frames, left-out frames the probe does not see, a picture that starts
-   late in MOV and in Matroska and even frames in MP4 and in Matroska, and
-   the walk `a video in Matroska shows in the video preview the frames its
-   short has` holds the video preview to the short.
+   late in MOV and in Matroska, even frames in MP4 and in Matroska, what
+   OBS records, H.264 with B-frames and AAC in Matroska with frames left
+   out, and MPEG-TS, and the walk `a video in Matroska shows in the video
+   preview the frames its short has` holds the video preview to the
+   short.
 
 ## What it costs
 

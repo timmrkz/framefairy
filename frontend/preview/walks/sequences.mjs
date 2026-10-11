@@ -3330,13 +3330,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             polling: 200,
           })
           .then(() => true, () => false);
-        const served = short
-          ? await page.evaluate(async (p) => (await fetch(`/media/short?path=${encodeURIComponent(p)}`)).status, short)
-          : 0;
         if (!short) wrong = "the clip says it has no short";
         else if (dirname(short) !== folder) wrong = `the short is at ${short}, not in the folder for shorts, ${folder}`;
         else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
-        else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
         break;
