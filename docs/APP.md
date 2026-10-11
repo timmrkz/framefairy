@@ -2423,7 +2423,8 @@ the last piece a moment later, written in as one step Cmd+Z takes back,
 and Escape removes everything said since Dictate was pressed. It also
 stops by itself, keeping what was said, after 2 minutes without a word
 or once a recording is 10 minutes long, and says why under the field
-where the problem would be. The field
+where the problem would be. Stop pressed while it does that gets every
+word all the same. The field
 is a `contenteditable` of plain text rather than a textarea, because a
 textarea cannot show some of its words grey.
 The app records, not the window, through malgo, see
@@ -2431,8 +2432,11 @@ The app records, not the window, through malgo, see
 microphone in a box of its own on every launch, naming the page as
 wails://wails. The app gets the one prompt from macOS, with the words of
 `NSMicrophoneUsageDescription`, and macOS remembers the answer. A Mac
-that said no hands the app nothing but zeros, and the page says where to
-allow it. One copy of the speech model loads while the person talks.
+that said no hands the app nothing but zeros, and after 2 s of them the
+page says where to allow it, while it goes on recording, since the
+prompt may still be open. One copy of the speech model loads while the
+person talks, with the threads of one of the copies a transcription
+uses, so a transcription beside it keeps the rest, see `asr.OpenOne`.
 About every 0.4 s it writes down again what followed the last pause,
 `engine.Settled` says where that is, and a stretch with no pause is
 settled before it is 12 s long, so words do not change far behind the
@@ -2441,8 +2445,8 @@ too, and everything after it, and the words are told apart by when they
 start, so a pause in the middle of a sentence gives it no full stop and
 the words after it no capital. Each `dictation` event carries every
 settled piece, so one the window misses costs nothing. The log says how
-long the recording was and how many words came of it, never what they
-were.
+long the recording was, how many words came of it and how long the
+speech model took, never what they were, see [LOGGING.md](LOGGING.md).
 
 ## Where things are kept
 

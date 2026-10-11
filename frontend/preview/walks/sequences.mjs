@@ -113,10 +113,16 @@
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
-//                      and "escape" Escape. Then waits for Dictate again.
+//                      and "escape" Escape, and "ends" presses nothing
+//                      until it stops by itself and says why. Then waits
+//                      for Dictate again.
 //                      "start" only starts it, "settled" waits for words
 //                      before a pause to be settled, and a recording
 //                      already running is only ended
+//   ["field", selector, text]
+//                      clicks the field selector names and types text
+//   ["field reads", selector, text]
+//                      the field selector names holds text
 //   ["report reads", text]
 //                      the report's field reads text, where * is
 //                      whatever the speech model heard, a word or more
@@ -626,6 +632,36 @@ export const sequences = [
       ["report reads", "It * froze."],
       ["dictate", "escape"],
       ["report as before"],
+    ],
+  },
+  {
+    // Plan row 2.189. Cmd+Z and Cmd+Y come from the app's menu, which
+    // the workspace answers with its own undo. On every other page they go
+    // to the field being typed in, which did nothing before Report a
+    // Problem needed it, in the settings too.
+    name: "Undo and redo in a settings field undo and redo the typing",
+    steps: [
+      ["settings"],
+      ["field", "input.licence-key", "FF-12"],
+      ["undo"],
+      ["field reads", "input.licence-key", ""],
+      ["redo"],
+      ["field reads", "input.licence-key", "FF-12"],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim talked past the longest a recording can be and
+    // lost what he said after it, with nothing to say why. A recording
+    // nobody talks into stops by itself, keeps every word as Stop would,
+    // and says why under the field. The bridge's waits 8 s.
+    name: "Dictation nobody talks into stops by itself and keeps what was said",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "ends"],
+      ["report reads", "It * froze."],
+      ["undo"],
+      ["report reads", "It froze."],
     ],
   },
   {
@@ -1815,6 +1851,18 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.keyboard.type(arg);
         await watch.step("type", s);
         break;
+      case "field": {
+        const [selector, text] = arg;
+        await page.locator(selector).click();
+        await page.keyboard.type(text);
+        break;
+      }
+      case "field reads": {
+        const [selector, text] = arg;
+        const have = await page.locator(selector).inputValue();
+        if (have !== text) wrong = `${selector} reads ${JSON.stringify(have)}, not ${JSON.stringify(text)}`;
+        break;
+      }
       case "undo":
       case "redo":
         await page.evaluate((m) => window.__menu(m), what);
@@ -2333,7 +2381,17 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           break;
         }
         if (arg === "button") await button.click();
-        else {
+        else if (arg === "ends") {
+          // Nobody presses anything: it stops by itself and says why.
+          const why = await page
+            .waitForFunction(() => /without a word/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 30000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!why) {
+            wrong = "the recording never said it stopped by itself";
+            break;
+          }
+        } else {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
         }

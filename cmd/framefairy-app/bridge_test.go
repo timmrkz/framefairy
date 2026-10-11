@@ -586,6 +586,9 @@ func openBridge(t *testing.T) *bridge {
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.bus = newBus()
+	// A recording nobody talks into stops by itself after 8 s rather than
+	// 2 minutes, long after every sequence that stops it by hand.
+	d.quiet = 8 * time.Second
 	d.start(d.svc.store)
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		holds: map[string]time.Duration{}}

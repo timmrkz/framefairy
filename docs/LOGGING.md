@@ -164,5 +164,9 @@ jq -c 'select(.video == "start.mp4")' app.log
    says what happened, and the speech model on the machine writes it
    into the field while they talk, to be corrected there, see Report a
    Problem in
-   [APP.md](APP.md). Questions from the model about what is missing come
-   after.
+   [APP.md](APP.md). Its lines are `listen`'s, with the number of the
+   `recording` and, like a job, the act that started it. They say how
+   long it was, how many words, how many passes of the speech model and
+   the slowest, never what was said. Every pass is a `trace` line, and a
+   pass slower than the words should appear is a `warn`, once. Questions
+   from the model about what is missing come after.

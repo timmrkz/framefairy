@@ -393,13 +393,17 @@ and `hearing`, a search still hears. For Report a Problem: `menu`
 `report` picks it in the menu bar, `write` types into its field and
 puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
-listens and the microphone move with the hum, then ends it with Stop, Enter or Escape, or with `start` only
-starts it and with `settled` waits for the words before the pause,
+listens and the microphone move with the hum, then ends it with Stop,
+Enter or Escape, or with `ends` lets it stop by itself and say why, or
+with `start` only starts it and with `settled` waits for the words
+before the pause,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
 bridge's microphone plays two seconds of a hum, a pause and a second and
 a half more, as fast as they would be said, so a piece is settled while
-it listens. For a clip of two shots: `add cameras`, a video filmed by two cameras,
+it listens, and then nothing, and a recording there stops by itself
+after 8 s without a word. `field` clicks a field by its selector and
+types, and `field reads` says what it holds. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
 which puts the playhead in its middle with a click on the clip timeline
