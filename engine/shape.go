@@ -273,7 +273,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 				end := number(pieces[i].values[keyEnd])
 				next := number(pieces[i+1].values[keyStart])
 				if at >= end && at <= next && next > end {
-					back := meet(meet(pieces[i:i+1], framedBack(end, next, pieces, found)), pieces[i+1:i+2])
+					back := meet(meet(pieces[i:i+1], framedBack(end, next, pieces, found, rotationOf(pieces[i]))), pieces[i+1:i+2])
 					out := append([]*object{}, pieces[:i]...)
 					out = append(out, back...)
 					return append(out, pieces[i+2:]...), nil
@@ -465,11 +465,19 @@ func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*ob
 		kept = append(kept, seg)
 	}
 	if len(kept) == 0 {
-		kept = framedBack(start, end, pieces, found)
+		turn := 0
+		if len(pieces) > 0 {
+			turn = rotationOf(pieces[0])
+			if number(pieces[0].values[keyStart]) < start {
+				turn = rotationOf(pieces[len(pieces)-1])
+			}
+		}
+		kept = framedBack(start, end, pieces, found, turn)
 	} else {
 		first := number(kept[0].values[keyStart])
 		last := number(kept[len(kept)-1].values[keyEnd])
-		kept = meet(meet(framedBack(start, first, pieces, found), kept), framedBack(last, end, pieces, found))
+		kept = meet(meet(framedBack(start, first, pieces, found, rotationOf(kept[0])), kept),
+			framedBack(last, end, pieces, found, rotationOf(kept[len(kept)-1])))
 	}
 	if len(kept) == 0 {
 		var nearest *object
@@ -502,7 +510,13 @@ func trimPieces(pieces []*object, found []foundPiece, start, end float64) ([]*ob
 // after the last goes with that one. A shot a piece of the clip still
 // shows takes that piece's framing, so a crop placed by hand comes back
 // with it.
-func framedBack(from, to float64, pieces []*object, found []foundPiece) []*object {
+//
+// What comes back joins a part of the clip, the one an edge is dragged out
+// of, and is rotated as that part is, turn degrees: a part rotated upright
+// stays upright however far its edges go. Rotated, it takes the crop the
+// clip's pieces rotated alike have, which a crop moved by hand on them
+// moves together, see angleOf, or stands in the middle.
+func framedBack(from, to float64, pieces []*object, found []foundPiece, turn int) []*object {
 	var out []*object
 	for k, f := range found {
 		low, high := math.Inf(-1), math.Inf(1)
@@ -517,8 +531,14 @@ func framedBack(from, to float64, pieces []*object, found []foundPiece) []*objec
 			continue
 		}
 		like := f.seg
+		if turn != 0 {
+			like = copyObject(f.seg)
+			like.remove(keyCropXAuto)
+			like.remove(keyCropX)
+			like.set(keyRotate, turn)
+		}
 		for _, seg := range pieces {
-			if angleOf(seg) == angleOf(f.seg) {
+			if angleOf(seg) == angleOf(like) {
 				like = seg
 				break
 			}

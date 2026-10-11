@@ -292,6 +292,20 @@ function editDelay(v: View, trak: Box, movieScale: number): number {
   return delay;
 }
 
+// Whether a track's display matrix stands its picture up a quarter turn
+// either way, the way a phone that recorded upright stores it lying down.
+// The app's decoder turns the frames as ffmpeg does, see framefairy-frames,
+// so the picture is the size it stands at, the size the engine's probe
+// gives too. Read lying down, its frames were asked for lying down, and a
+// standing picture was squeezed into them. #188.
+function sideways(v: View, tkhd: Box): boolean {
+  const matrix = tkhd.body + (v.u8(tkhd.body) === 1 ? 52 : 40);
+  if (matrix + 20 > tkhd.end) return false;
+  const a = v.i32(matrix);
+  const b = v.i32(matrix + 4);
+  return Math.abs(b) > Math.abs(a);
+}
+
 function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTrack | undefined {
   const tkhd = child(v, trak, "tkhd");
   // A track that is switched off, like a second camera angle kept beside
@@ -314,7 +328,10 @@ function parseTrak(v: View, trak: Box, movieScale: number): VideoTrack | AudioTr
   const entry = [...boxesIn(v, stsd.body + 8, stsd.end)][0];
   if (!entry) fail("a track has no sample description");
   const shift = editShift(v, trak, movieScale, timescale);
-  if (handler === "vide") return videoEntry(v, entry, parseSamples(v, stbl, shift, timescale, true));
+  if (handler === "vide") {
+    const video = videoEntry(v, entry, parseSamples(v, stbl, shift, timescale, true));
+    return tkhd && sideways(v, tkhd) ? { ...video, width: video.height, height: video.width } : video;
+  }
   // Plain sound counts every moment of every channel as a sample of its
   // own, so four hours of it are hundreds of millions of samples. It is
   // read by the chunk instead.

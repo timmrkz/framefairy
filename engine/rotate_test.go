@@ -257,3 +257,44 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 			"so it does not stand up the way the short does", d)
 	}
 }
+
+// A rotated part stays rotated when its edges move: what an edge brings back
+// joins the part it is dragged out of, rotated as the part is. Tim dragged
+// the end of a clip out past a rotated part, and the frames it brought back
+// stood as filmed. Put back, a cut's moments join the part before it.
+func TestARotatedPartKeepsItsRotationWhenItsEdgesMove(t *testing.T) {
+	tr := editableTranscript()
+	for _, c := range []struct {
+		name     string
+		at       float64
+		g        Gesture
+		from, to float64
+	}{
+		{"the end dragged out", 13.5, Gesture{Kind: "trim", Edge: "end", From: 15, Frames: at25}, 13, 15},
+		{"the start dragged out", 10.5, Gesture{Kind: "trim", Edge: "start", From: 9, Frames: at25}, 9, 12},
+		{"the cut put back", 10.5, Gesture{Kind: "join", From: 12.5}, 10, 13},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := rotatablePlanPath(t)
+			if err := RotatePart(path, "01", c.at); err != nil {
+				t.Fatal(err)
+			}
+			if err := Reshape(path, "01", c.g, tr, 0.1); err != nil {
+				t.Fatal(err)
+			}
+			_, clips, err := LoadClips(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, seg := range clips[0].Segments {
+				inside := seg.Start >= c.from-1e-9 && seg.End <= c.to+1e-9
+				if inside && seg.Rotate != 90 {
+					t.Errorf("%.3f to %.3f, in the rotated part, is rotated %d", seg.Start, seg.End, seg.Rotate)
+				}
+				if !inside && seg.Rotate != 0 {
+					t.Errorf("%.3f to %.3f, outside the rotated part, is rotated %d", seg.Start, seg.End, seg.Rotate)
+				}
+			}
+		})
+	}
+}

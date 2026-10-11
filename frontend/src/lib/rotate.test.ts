@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { ClipEntry, SourceView } from "./api";
-import { partOf, pictureOf, rotated } from "./rotate";
+import { partOf, pictureOf, pieceHolding, rotated, shownMoment } from "./rotate";
 
 // A portrait video, the way a phone records one standing up.
 const phone = { width: 1080, height: 1920, cropWidth: 1080, cropHeight: 1920, turnedCropWidth: 608 } as SourceView;
@@ -36,5 +36,25 @@ describe("rotating a part of a clip", () => {
     for (let i = 0; i < 4; i++) c = rotated(c, phone, 13.5);
     expect(c.segments[2].rotate).toBe(0);
     expect(pictureOf(phone, 180)).toEqual({ width: 1080, height: 1920, cropWidth: 1080 });
+  });
+});
+
+describe("the moment the picture shows", () => {
+  const pieces = [
+    { start: 0, end: 2 },
+    { start: 3, end: 5, rotate: 90 },
+  ];
+  test("is the playhead while its frame is on the canvas", () => {
+    expect(shownMoment(3.01, 3, 0.04)).toBe(3.01);
+    expect(shownMoment(3.01, NaN, 0.04)).toBe(3.01);
+  });
+  test("is the frame on the canvas while the playhead's frame is on its way", () => {
+    // Scrubbed back from the rotated part into the cut: the canvas still
+    // has the rotated part's first frame, so the picture stays rotated.
+    const at = shownMoment(2.5, 3, 0.04);
+    expect(pieceHolding(pieces, at)).toBe(1);
+    // Scrubbed on into the part: the frame of the cut is still there, so
+    // the picture is not yet rotated.
+    expect(pieceHolding(pieces, shownMoment(3.2, 2.96, 0.04))).toBe(-1);
   });
 });

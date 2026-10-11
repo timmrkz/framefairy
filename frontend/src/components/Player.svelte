@@ -35,7 +35,7 @@
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
-  import { pictureOf } from "../lib/rotate";
+  import { pictureOf, pieceHolding, shownMoment } from "../lib/rotate";
 
   let {
     path,
@@ -241,6 +241,11 @@
   // the clip, at its end, see lib/playhead.ts.
   function heard(s: Shown) {
     trouble = s.trouble;
+    frameStart = s.frame;
+    if (s.passing) {
+      if (s.drew) pictured = true;
+      return;
+    }
     // A picture: the video preview has what it is going to show. A file
     // that cannot be opened at all says so where the picture would be, see
     // open. Trouble on the way is no picture: the sound stopping said the
@@ -452,21 +457,30 @@
     return best;
   });
 
-  // How far the piece under the playhead was rotated, while the video
-  // preview shows the clip and not the video: the picture is drawn rotated,
-  // and the crop and the captions stand on it rotated. Plan row 3.25.
-  const turn = $derived(
-    clip && piece >= 0 && place !== "video" && insideClip(clip.segments, time, oneFrame)
-      ? (clip.segments[piece]?.rotate ?? 0)
-      : 0,
+  // Where the frame on the canvas begins, in the episode, as the queue
+  // says it drew it. NaN before the first.
+  let frameStart = $state(NaN);
+  // The piece the frame on the canvas belongs to, or -1 for a frame of a cut
+  // or from outside the clip. The picture turns with its frame, not with the
+  // playhead, which runs ahead of the frames: turned with the playhead, a
+  // frame from before a cut stood turned the way the part after it is,
+  // and back, as the playhead was dragged over the cut. Tim saw it on #188.
+  const framed = $derived(
+    clip && place !== "video" ? pieceHolding(clip.segments, shownMoment(time, frameStart, oneFrame)) : -1,
   );
+  // How far that piece was rotated: the picture is drawn rotated, and the
+  // crop and the captions stand on it rotated. Plan row 3.25.
+  const turn = $derived(clip && framed >= 0 ? (clip.segments[framed]?.rotate ?? 0) : 0);
   // The picture the piece shows, rotated or not, and its crop.
   const picture = $derived(pictureOf(source, turn));
+  // The piece whose crop stands on the picture: the one the frame shows,
+  // or with a frame of a cut on the canvas the one nearest the playhead.
+  const cropped = $derived(framed >= 0 ? framed : piece);
 
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
-    if (!clip || piece < 0 || !picture.width || !picture.cropWidth) return null;
-    const auto = clip.cropLefts[piece] ?? (picture.width - picture.cropWidth) / 2;
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
+    const auto = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
     const left = dragLeft ?? auto;
     return {
       left: (left / picture.width) * 100,
@@ -474,7 +488,7 @@
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
       inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
-      moved: clip.segments[piece]?.moved ?? false,
+      moved: clip.segments[cropped]?.moved ?? false,
     };
   });
 
@@ -998,7 +1012,7 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const start = clip.cropLefts[piece] ?? (picture.width - picture.cropWidth) / 2;
+    const start = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
     const scale = picture.width / screen.clientWidth;
     const most = picture.width - picture.cropWidth;
     let moved = false;

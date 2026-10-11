@@ -1,4 +1,5 @@
 import type { ClipEntry, Segment, SourceView } from "./api";
+import { FRAME_HAIR } from "./flow";
 
 // Rotate: the part of a clip between two cuts, rotated a quarter turn to
 // the left at a time, for a phone that was turned while it recorded. The
@@ -57,4 +58,23 @@ export function rotated(clip: ClipEntry, source: SourceView, at: number): ClipEn
   );
   const cropLefts = clip.cropLefts.map((x, k) => (k < first || k > last ? x : middle - (middle % 2)));
   return { ...clip, segments, cropLefts };
+}
+
+// The moment the picture on the canvas shows. The playhead moves at once and
+// its frame comes a moment later, longer going back, so the picture is
+// turned for the frame that is there and not for the playhead: turned for
+// the playhead, the frame before a cut was drawn turned the way the part
+// after it is, and back. It is the playhead while the frame on the canvas
+// holds it, otherwise the middle of that frame, which a cut, being on a
+// frame's start, never parts. NaN, no frame yet, is the playhead.
+export function shownMoment(playhead: number, frameStart: number, frame: number): number {
+  if (!Number.isFinite(frameStart)) return playhead;
+  if (playhead >= frameStart - FRAME_HAIR && playhead < frameStart + frame) return playhead;
+  return frameStart + frame / 2;
+}
+
+// The piece that holds a moment, or -1 for a moment in a cut or outside the
+// clip, which shows the video as it was filmed.
+export function pieceHolding(pieces: { start: number; end: number }[], at: number): number {
+  return pieces.findIndex((p) => at >= p.start - FRAME_HAIR && at < p.end);
 }

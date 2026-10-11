@@ -21,6 +21,11 @@ const zeros = (n: number) => new Array(n).fill(0);
 
 const mvhd = (scale: number) => full("mvhd", 0, u32(0), u32(0), u32(scale), u32(0), zeros(80));
 const tkhd = (enabled = true) => box("tkhd", [0, 0, 0, enabled ? 1 : 0], zeros(80));
+// A track head with a display matrix of a, b, c and d, in 16.16, the way a
+// phone that recorded upright writes one: 0, 1, -1, 0 stands the picture up
+// a quarter to the right.
+const turnedTkhd = (a: number, b: number, c: number, d: number) =>
+  box("tkhd", [0, 0, 0, 1], zeros(36), u32(a * 0x10000), u32(b * 0x10000), u32(0), u32(c * 0x10000), u32(d * 0x10000), zeros(20));
 const mdhd = (scale: number) => full("mdhd", 0, u32(0), u32(0), u32(scale), u32(0), u32(0));
 const hdlr = (kind: string) => full("hdlr", 0, u32(0), str(kind), zeros(12), [0]);
 const stts = (runs: [number, number][]) => full("stts", 0, u32(runs.length), ...runs.map(([n, d]) => [...u32(n), ...u32(d)]));
@@ -464,5 +469,19 @@ describe("aacRate", () => {
   test("HE-AAC said after the core's config, which a plain decoder passes over", () => {
     // AAC LC at 24000 in stereo, then 0x2b7, SBR, present, 48000.
     expect(aacRate(new Uint8Array([0x13, 0x10, 0x56, 0xe5, 0x98]))).toEqual({ core: 24000, out: 48000 });
+  });
+});
+
+describe("a picture a phone stored lying down", () => {
+  const picture = (head: number[]) =>
+    parseMoov(movie(trak(head, "vide", 1000, avc1(320, 180), [stts([[2, 40]]), stsz([1, 1]), stsc([[1, 2]]), stco([0])]))).video!;
+  // The app's decoder stands it up the way ffmpeg does, see
+  // framefairy-frames, so the frames are asked for at its size standing
+  // up. Asked lying down, a standing picture was squeezed into it. #188.
+  test("is the size it stands at", () => {
+    expect([picture(turnedTkhd(0, 1, -1, 0)).width, picture(turnedTkhd(0, 1, -1, 0)).height]).toEqual([180, 320]);
+    expect([picture(turnedTkhd(0, -1, 1, 0)).width, picture(turnedTkhd(0, -1, 1, 0)).height]).toEqual([180, 320]);
+    expect([picture(turnedTkhd(-1, 0, 0, -1)).width, picture(turnedTkhd(-1, 0, 0, -1)).height]).toEqual([320, 180]);
+    expect([picture(tkhd()).width, picture(tkhd()).height]).toEqual([320, 180]);
   });
 });

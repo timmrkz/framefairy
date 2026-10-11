@@ -1834,7 +1834,14 @@ lies on its side. Plan row 3.25, the design is in
 - **The video preview rotates the picture at once**, in the frame the key
   is pressed in. A part rotated a quarter shows the picture the other way
   up, as big as it fits in the video preview, and the crop frame and the
-  captions stand on it rotated.
+  captions stand on it rotated. The picture turns with the frame on the
+  video preview, not with the playhead, which runs ahead of its frames
+  when it is dragged: over a cut, the picture turns when the first frame
+  from the other side is there.
+- **A rotated part stays rotated as its edges move.** What the clip's
+  edge brings back when it is dragged out joins the part it is dragged
+  out of, rotated as that part is, and a cut put back joins the part
+  before it.
 - **The crop of a rotated part starts in the middle** of the picture
   rotated, and is dragged like any other. Rotated back all the way, the
   part has the crop its shot was found with again.
