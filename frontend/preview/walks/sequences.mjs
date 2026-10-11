@@ -275,6 +275,9 @@
 //                      nothing bright left there, the inside of the frame
 //                      is not shaded and the picture beside it is, and the
 //                      line stands where the crop the hand moves stands
+//   ["frame whole", "turned"]
+//                      the same on a part rotated a quarter, whose picture
+//                      stands inside the viewer rather than filling it
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -1151,7 +1154,7 @@ export const sequences = [
       ["frame whole"],
       ["rotate at", 0.5],
       ["crop to", "left"],
-      ["frame whole"],
+      ["frame whole", "turned"],
     ],
   },
   {
@@ -3138,7 +3141,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "frame whole":
-        wrong = await frameWhole(page);
+        wrong = await frameWhole(page, arg === "turned");
         break;
       case "edges as rendered":
         wrong = await edgesAsRendered(page);
@@ -3373,9 +3376,10 @@ process.exit(failures ? 1 : 0);
 // What is wrong with how the crop frame is drawn over the video preview,
 // or null, read off a screenshot. The picture under it is made white for
 // the look, so the shade over it is a grey of its own and a speck of the
-// picture it missed is white: the frame, the shade and the viewer are
-// drawn as they are. See ["frame whole"].
-async function frameWhole(page) {
+// picture it missed is white, and a note over the picture, like the one
+// the bridge's sound gives, is put away: the frame, the shade and the
+// viewer are drawn as they are. See ["frame whole"].
+async function frameWhole(page, turned) {
   const at = await page.evaluate(() => {
     const box = (e) => e?.getBoundingClientRect().toJSON();
     const frame = document.querySelector(".player .frame");
@@ -3400,12 +3404,14 @@ async function frameWhole(page) {
     return `the crop frame's line stands at ${frame.left.toFixed(1)} to ${frame.right.toFixed(1)}, the crop the hand moves at ${crop.left.toFixed(1)} to ${crop.right.toFixed(1)}`;
   }
   // A crop frame away from the viewer's corners has nothing there to cut
-  // it, and the case would pass without being the case.
+  // it, and the case would pass without being the case. A part rotated a
+  // quarter is narrower than the viewer, and is there for the lid, which
+  // has to turn with the picture.
   const corners = [screen.left - viewer.left, viewer.right - screen.right, screen.top - viewer.top, viewer.bottom - screen.bottom];
-  if (corners.some((d) => d > 1)) {
+  if (turned ? corners[0] < 8 : corners.some((d) => d > 1)) {
     return `the picture stands ${corners.map((d) => d.toFixed(1)).join(", ")} px in from the viewer's sides, so its corners are not the viewer's`;
   }
-  const look = await page.addStyleTag({ content: ".screen canvas { visibility: hidden !important } .screen { background: #fff !important }" });
+  const look = await page.addStyleTag({ content: ".screen canvas, .screen .trouble, .screen .failed { visibility: hidden !important } .screen { background: #fff !important }" });
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const clip = { x: viewer.left - 4, y: viewer.top - 4, width: viewer.width + 8, height: viewer.height + 8 };
   const shot = (await page.screenshot({ clip })).toString("base64");
@@ -3438,19 +3444,21 @@ async function frameWhole(page) {
       const round = at.radius * d;
       const problems = [];
 
-      // The line, down the middle of its width, from where one rounded
-      // corner ends to where the next begins.
+      // The line, its outermost row of pixels and its innermost, from
+      // where one rounded corner ends to where the next begins.
       const sides = [
-        ["left", (k) => [l + w / 2, k], t, b],
-        ["right", (k) => [r - w / 2, k], t, b],
-        ["top", (k) => [k, t + w / 2], l, r],
-        ["bottom", (k) => [k, b - w / 2], l, r],
+        ["left", (k, e) => [l + e, k], t, b],
+        ["right", (k, e) => [r - e, k], t, b],
+        ["top", (k, e) => [k, t + e], l, r],
+        ["bottom", (k, e) => [k, b - e], l, r],
       ];
       for (const [side, point, from, to] of sides) {
         const off = [];
         for (let k = Math.ceil(from + round + 1); k < to - round - 1; k++) {
-          const p = px(...point(k));
-          if (!accent(p)) off.push({ k: k - from, p });
+          for (const e of [0.5, w - 0.5]) {
+            const p = px(...point(k + 0.5, e));
+            if (!accent(p)) off.push({ k: k - from, p });
+          }
         }
         if (off.length) {
           problems.push(
@@ -3461,7 +3469,7 @@ async function frameWhole(page) {
 
       // Each rounded corner, outside its curve: the shade, never the white
       // picture. A pixel the curve passes through is the line's and the
-      // shade's both, so only those well outside it count.
+      // shade's both, so only those whose middle is outside it count.
       const corners = [
         ["top left", l, t, 1, 1],
         ["top right", r, t, -1, 1],
@@ -3476,7 +3484,7 @@ async function frameWhole(page) {
           for (let j = 0; j < round; j++) {
             const x = x0 + sx * (i + 0.5);
             const y = y0 + sy * (j + 0.5);
-            if (Math.hypot(x - cx, y - cy) < round + 0.75) continue;
+            if (Math.hypot(x - cx, y - cy) < round + 0.25) continue;
             const p = px(x, y);
             if (light(p) > 170 && (!worst || light(p) > light(worst))) worst = p;
           }
@@ -3487,9 +3495,14 @@ async function frameWhole(page) {
       // Inside the frame the picture as it is, beside it under the shade.
       const inside = px((l + r) / 2, t + w + 4 * d);
       if (light(inside) < 230) problems.push(`inside the crop frame the white picture is ${say(inside)}, shaded`);
-      const room = (at.screen.right - at.frame.right) > (at.frame.left - at.screen.left);
-      const beside = px(room ? r + 3 * d : l - 3 * d, (t + b) / 2);
-      if (!(light(beside) > 60 && light(beside) < 170)) problems.push(`beside the crop frame the white picture is ${say(beside)}, not shaded`);
+      // A crop as wide as the picture, on a rotated part, has nothing
+      // beside it.
+      const right = at.screen.right - at.frame.right;
+      const left = at.frame.left - at.screen.left;
+      const beside = px(right > left ? r + 3 * d : l - 3 * d, (t + b) / 2);
+      if (Math.max(left, right) > 4 && !(light(beside) > 60 && light(beside) < 170)) {
+        problems.push(`beside the crop frame the white picture is ${say(beside)}, not shaded`);
+      }
       return problems.length ? problems.join("\n") : null;
     },
     { shot, at, clip },
