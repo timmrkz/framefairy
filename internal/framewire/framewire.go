@@ -6,7 +6,9 @@
 // A request names a cursor, one place in the episode the decoder keeps
 // open with a decoder of its own, by a number the Go side chooses:
 //
-//	open <cursor> <from> <width> <height>   the cursor goes to from, in seconds
+//	open <cursor> <frame> <width> <height> <grid>
+//	                                        the cursor goes to a frame of the
+//	                                        grid, see Grid and OpenRequest
 //	sound <cursor> <seek> <from> <rate> <channels>
 //	                                        a cursor of sound seeks to seek, or
 //	                                        reads from the start where it is 0,
@@ -35,8 +37,8 @@ import (
 
 // What a record holds.
 const (
-	// A frame: at is where it starts in the episode, in seconds, and the
-	// body is the picture in colours, 4 bytes a pixel as Picture makes
+	// A frame: at is where it starts in the episode, in seconds, on the
+	// grid of the cursor's open, and the body is the picture in colours, 4 bytes a pixel as Picture makes
 	// them, at the cursor's size, or a chunk of sound, 32-bit floats with
 	// the channels of a moment side by side.
 	Frame byte = iota

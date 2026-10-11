@@ -19,7 +19,8 @@ import (
 )
 
 // A stream the page opens, pulls from and closes: each frame comes once,
-// in the order shown, from the moment it was opened at, a pull with skip
+// in the order shown, from the frame that holds the moment it was opened
+// at, a pull with skip
 // drops what comes before it, and a closed stream is gone.
 func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
@@ -72,8 +73,9 @@ func TestTheFramesRouteStreamsAnEpisode(t *testing.T) {
 	for len(all) < 4 {
 		all = append(all, read(url.Values{"n": {"4"}})...)
 	}
-	if math.Abs(all[0]-2.2) > 1e-6 {
-		t.Errorf("the first frame starts at %.3f, want 2.2, the first from 2.1 on", all[0])
+	// The frame that holds 2.1 s, on the grid of the short.
+	if math.Abs(all[0]-2.0) > 1e-6 {
+		t.Errorf("the first frame starts at %.3f, want 2.0, the one that holds 2.1", all[0])
 	}
 	for i := 1; i < len(all); i++ {
 		if math.Abs(all[i]-all[i-1]-0.2) > 1e-6 {

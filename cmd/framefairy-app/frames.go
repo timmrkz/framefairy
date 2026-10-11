@@ -34,6 +34,8 @@ import (
 // next frame is there when the arrow key steps to it.
 //
 //	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>  {"id": "..."}
+//	                                 the frames of the grid from the one that
+//	                                 holds from, see engine.SourceInfo.Grid
 //	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
@@ -197,7 +199,13 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				return err
 			}
-			return dec.Stream(engine.WithPreviewTimes(ctx, times), from, width&^1, height&^1, got)
+			// The frames of the short, on the grid the engine counts them
+			// on, see engine.SourceInfo.Grid.
+			info, err := sources.probe(ctx, path)
+			if err != nil {
+				return err
+			}
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), info.Grid(), from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""

@@ -241,6 +241,26 @@ func (s SourceInfo) frameBegins(k int64) float64 {
 	return s.VideoStart + float64(k)*float64(s.FPSDen)/float64(s.FPSNum)
 }
 
+// Grid is the frames of the episode as the video preview shows them,
+// the frames of its short: on the grid of the rate, from the first frame
+// of it inside the file, see pieceFrames, to the end of the file, each
+// the frame of the file that holds its moment, the way byTimes and cutOf
+// take it. The episode's decoder makes them by it, so the video preview
+// counts on the frames the engine names and reads nothing of the file
+// itself. See docs/VIDEO-PREVIEW.md, step 5. No grid without a rate.
+func (s SourceInfo) Grid() framewire.Grid {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return framewire.Grid{}
+	}
+	first, _ := s.pieceFrames(0, 0)
+	start := s.frameBegins(first)
+	frames := math.Ceil((s.Duration-start)*float64(s.FPSNum)/float64(s.FPSDen) - 1e-6)
+	if math.IsNaN(frames) || frames < 1 {
+		frames = 1
+	}
+	return framewire.Grid{Start: start, Num: s.FPSNum, Den: s.FPSDen, Count: int(min(frames, 1<<31-1))}
+}
+
 // PieceOnFrames is a piece of a clip with both its edges on the start of
 // the frame they mean, see nearestFrame, kept to the millisecond the way
 // a plan keeps every moment. A piece holds at least one frame. A grid

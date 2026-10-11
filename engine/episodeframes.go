@@ -112,15 +112,17 @@ func (f *EpisodeFrames) warm(gone chan struct{}) {
 	// rate it is asked at only for its chain, which is made at its first
 	// sound. A file with no sound says so, and the cursor is closed.
 	for i := range cursorsKept[pictureCursor] + 1 {
-		kind, request := pictureCursor, "open %d 0 2 2"
-		if i == cursorsKept[pictureCursor] {
-			kind, request = soundCursor, "sound %d 0 0 48000 2"
-		}
 		f.nextID++
 		id := f.nextID
+		// A grid of one frame: an open moves a cursor to the grid it is
+		// asked on, whatever it was on before.
+		kind, request := pictureCursor, framewire.OpenRequest(id, 0, 2, 2, framewire.Grid{Num: 1, Den: 1, Count: 1})
+		if i == cursorsKept[pictureCursor] {
+			kind, request = soundCursor, fmt.Sprintf("sound %d 0 0 48000 2", id)
+		}
 		ch := make(chan framewire.Record, 1)
 		f.answers[id] = ch
-		if f.send(gone, request, id) != nil {
+		if f.send(gone, "%s", request) != nil {
 			delete(f.answers, id)
 			return
 		}
@@ -295,16 +297,23 @@ func (f *EpisodeFrames) Light() framewire.Light {
 	return f.light
 }
 
-// Stream hands over the frames of the episode from the moment from on,
-// scaled to width by height in colours as framewire.Picture makes them for
-// the episode's Light, each with the moment it starts at and in a buffer
-// of its own, the way PreviewFrames does with the
-// ffmpeg program. It runs until got says no more, the context ends or the
-// episode does.
-func (f *EpisodeFrames) Stream(ctx context.Context, from float64, width, height int,
+// Stream hands over the frames of the episode on the grid, the frames of
+// its short, see SourceInfo.Grid, from the one that holds the moment from
+// on, scaled to width by height in colours as framewire.Picture makes them
+// for the episode's Light, each with the moment of the grid it is for and
+// in a buffer of its own. It runs until got says no more, the context
+// ends or the grid does.
+func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int,
 	got func(at float64, frame []byte) error) error {
+	if !grid.Valid() {
+		return errors.New("the video has no frame rate to count its frames by")
+	}
+	if math.IsNaN(from) || math.IsInf(from, 0) {
+		from = 0
+	}
+	first := grid.Holding(from)
 	return f.stream(ctx, pictureCursor, func(id uint32) string {
-		return fmt.Sprintf("open %d %.6f %d %d", id, from, width, height)
+		return framewire.OpenRequest(id, first, width, height, grid)
 	}, got)
 }
 
