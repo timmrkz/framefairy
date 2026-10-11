@@ -208,7 +208,8 @@ func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 	path := editablePlanPath(t)
 	logs := filepath.Dir(path)
 	change := edited(t, logs, func() error {
-		return SetCaptionTime(path, "01", 10.0, "start", 9.8, editableTranscript())
+		_, err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", 9.8, editableTranscript(), nil)
+		return err
 	})
 	moved := func() bool {
 		got := clipsOf(t, path)["01"].CaptionTimes[wordKey(10.0)].Start

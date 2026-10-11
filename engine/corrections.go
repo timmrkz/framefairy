@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -63,6 +64,40 @@ func CleanWordText(text string) (string, error) {
 // undo puts it back, and the words leave it out. Removing a word was
 // lost when the words became one list, because an empty word was refused.
 func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
+	return changeWords(logsDir, t, func(corrections map[string]string, work *Transcript) error {
+		return correctWord(corrections, at, text, work)
+	})
+}
+
+// changeWords makes a change to the corrections of an episode, worked out
+// against a copy of its words, writes them, and then corrects t. Nothing is
+// written when the change fails or changes nothing.
+func changeWords(logsDir string, t *Transcript,
+	change func(corrections map[string]string, work *Transcript) error) error {
+	trainingMu.Lock()
+	corrections := LoadCorrections(logsDir)
+	was := maps.Clone(corrections)
+	work := *t
+	err := change(corrections, &work)
+	if err == nil && !maps.Equal(was, corrections) {
+		var body []byte
+		body, err = marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
+		if err == nil {
+			err = writeAtomic(correctionsPath(logsDir), append(body, '\n'))
+		}
+	}
+	trainingMu.Unlock()
+	if err != nil {
+		return err
+	}
+	t.Correct(corrections)
+	return nil
+}
+
+// correctWord keeps in corrections what the word heard at a moment says,
+// the way SetWordText keeps it, and corrects t from them, so the next word
+// is changed against this one.
+func correctWord(corrections map[string]string, at float64, text string, t *Transcript) error {
 	if strings.TrimSpace(Scrub(text, 200)) == "" {
 		text = ""
 	} else {
@@ -76,10 +111,7 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 		return renderErr("there is no word at %s", HMS(at))
 	}
 	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= word.Start })
-	put := putBack(t.HeardWords, i, text)
-	trainingMu.Lock()
-	corrections := LoadCorrections(logsDir)
-	for j, says := range put {
+	for j, says := range putBack(t.HeardWords, i, text) {
 		// A word that reads as the recogniser heard it again keeps no
 		// correction, so a word put back is the word it was before.
 		key := wordKey(t.HeardWords[j].Start)
@@ -98,14 +130,6 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 		default:
 			corrections[key] = says
 		}
-	}
-	body, err := marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
-	if err == nil {
-		err = writeAtomic(correctionsPath(logsDir), append(body, '\n'))
-	}
-	trainingMu.Unlock()
-	if err != nil {
-		return err
 	}
 	t.Correct(corrections)
 	return nil
@@ -212,6 +236,17 @@ func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcrip
 	if len(order) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
+	return changeWords(logsDir, t, func(corrections map[string]string, work *Transcript) error {
+		return removeParts(corrections, work, order, whole, parts)
+	})
+}
+
+// removeParts removes heard words, each started at a moment of order, the
+// way SetWordText removes one, in corrections and in t. whole is what each
+// reads, and parts the words of it a correction made several of that go,
+// or nil when all of it goes.
+func removeParts(corrections map[string]string, t *Transcript, order []float64, whole map[float64]string,
+	parts map[float64]map[int]bool) error {
 	for _, at := range order {
 		var kept []string
 		if parts[at] != nil {
@@ -221,9 +256,108 @@ func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcrip
 				}
 			}
 		}
-		if err := SetWordText(logsDir, at, strings.Join(kept, " "), t); err != nil {
+		if err := correctWord(corrections, at, strings.Join(kept, " "), t); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// trimCaption is what dragging an edge of a caption across its words does
+// to them. Dragged in, the words the edge passes leave the caption, removed
+// the way SetWordText removes one, so pulling the left edge of "one two
+// three" past "one" reads "two three", and the right edge past "three"
+// reads "one two". Dragged back out, the words of the caption removed
+// before that it passes come back. A word is passed when the edge crosses
+// its middle, on the clip's clock, which is where the word is drawn: a
+// word the start of the clip cuts into is passed in the part of it the
+// clip shows. A caption keeps at least one word this way, because delete
+// removes a caption whole.
+//
+// to is where the edge is, on the clip's clock. The caption is the one
+// laid out now, with the edge where it stands. The words are changed in
+// corrections and in t, and nothing is written. It says how many words it
+// took out and put back.
+func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge string, to float64,
+	t *Transcript) (CaptionEdit, error) {
+	if len(clip.Segments) == 0 {
+		return CaptionEdit{}, nil
+	}
+	from := c.Start
+	if edge == "end" {
+		from = c.End
+	}
+	low, high := math.Min(from, to), math.Max(from, to)
+	in := (edge == "start") == (to > from)
+	if !in && len(c.Words) > 0 {
+		// An edge whose word was taken out may stand past the middle of
+		// that word already. Out from there, the words past the words
+		// shown are what it crosses.
+		if edge == "end" {
+			low = math.Min(low, c.Words[len(c.Words)-1].End)
+		} else {
+			high = math.Max(high, c.Words[0].Start)
+		}
+	}
+	// The words the caption was laid out from, the removed ones among them,
+	// on the clip's clock and on the episode's.
+	all, was := clipWords(clip, t.captionWordsIn(clip.Segments[0].Start-captionReach,
+		clip.Segments[len(clip.Segments)-1].End+captionReach))
+	length := clipLength(clip)
+	var gone, back []Cue
+	shown := 0
+	for k, w := range was {
+		if w.Start < c.Opens-0.0005 || w.Start > c.Closes+0.0005 {
+			continue
+		}
+		text, removed := removedText(w.Text)
+		if !removed {
+			shown++
+		}
+		mid := shownMiddle(all[k], length)
+		if mid <= low || mid >= high {
+			continue
+		}
+		switch {
+		case in && !removed:
+			gone = append(gone, w)
+		case !in && removed && text != "":
+			back = append(back, Cue{w.Start, w.End, text})
+		}
+	}
+	if len(gone) > 0 && len(gone) == shown {
+		// The word at the other edge stays.
+		if edge == "end" {
+			gone = gone[1:]
+		} else {
+			gone = gone[:len(gone)-1]
+		}
+	}
+	for _, w := range back {
+		if err := correctWord(corrections, w.Start, w.Text, t); err != nil {
+			return CaptionEdit{}, err
+		}
+	}
+	whole := map[float64]string{}
+	parts := map[float64]map[int]bool{}
+	var order []float64
+	for _, w := range gone {
+		heard, ok := t.HeardAt(w.Start)
+		if !ok {
+			continue
+		}
+		at := heard.Start
+		if _, seen := whole[at]; !seen {
+			whole[at] = heard.Text
+			parts[at] = map[int]bool{}
+			order = append(order, at)
+		}
+		if len(strings.Fields(heard.Text)) < 2 {
+			parts[at] = nil
+		} else if parts[at] != nil {
+			parts[at][t.PartOf(heard, w)] = true
+		}
+	}
+	done := CaptionEdit{Removed: len(gone), Back: len(back)}
+	return done, removeParts(corrections, t, order, whole, parts)
 }
