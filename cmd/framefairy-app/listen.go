@@ -123,6 +123,10 @@ type recording struct {
 	most    int
 	// hushed stops the microphone once, whoever ends the recording.
 	hushed sync.Once
+	// How many passes the speech model made and the slowest, kept by the
+	// goroutine that writes it down, for the log.
+	passes  int
+	slowest time.Duration
 	// The loudest the microphone was since it was last asked, in dB, and
 	// whether the recording is as long as it may be.
 	peak float64
@@ -183,20 +187,16 @@ func (r *recording) recorded() []float32 {
 	return r.samples
 }
 
-// openSpeech loads one copy of the speech model, which is enough for a
-// few sentences, or the stand-in the tests put in.
+// openSpeech loads the speech model for a recording, the way a job gets
+// it, but one copy of it rather than the pool a transcription hears with,
+// see asr.OpenOne.
 func openSpeech(dir string) (engine.Recognizer, error) {
-	if f := standIns.Load(); f != nil {
-		var e engine.Engine
-		var o engine.Options
-		(*f)(&e, &o)
-		return e.OpenRecognizer(dir)
+	var e engine.Engine
+	setUp(&e, &engine.Options{})
+	if standIns.Load() == nil {
+		e.OpenRecognizer = asr.OpenOne
 	}
-	pool, err := asr.OpenCopies(dir, 1, asr.Options{})
-	if err != nil {
-		return nil, err
-	}
-	return pool, nil
+	return e.OpenRecognizer(dir)
 }
 
 // errNoSpeechModel is what Listen says when there is nothing to write
@@ -341,7 +341,9 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		}
 		passed = len(samples)
 		cut := engine.Settled(samples[settled:])
+		began := time.Now()
 		before, now := heardAround(rec, samples, settled, settled+cut)
+		r.paced(time.Since(began), len(samples)-max(settled-listenAround, 0), every)
 		changed := false
 		if cut > 0 {
 			if before != "" {
@@ -358,6 +360,19 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now})
 		}
 	}
+}
+
+// paced keeps how long a pass took, every one in the recent lines and the
+// slowest for the line at the end. A pass slower than every means the
+// words fall behind the voice on this machine, which is said once.
+func (r *recording) paced(took time.Duration, heard int, every time.Duration) {
+	r.passes++
+	r.line(zerolog.TraceLevel).Int64("ms", took.Milliseconds()).Float64("heard", math.Round(float64(heard)/engine.SampleRate*10)/10).Msg("a pass of the speech model")
+	if took > every && r.slowest <= every {
+		r.line(zerolog.WarnLevel).Int64("ms", took.Milliseconds()).Int64("every", every.Milliseconds()).
+			Float64("heard", math.Round(float64(heard)/engine.SampleRate*10)/10).Msg("the speech model is slower than the words should appear")
+	}
+	r.slowest = max(r.slowest, took)
 }
 
 // measure tells the window how loud the microphone is until the
@@ -457,7 +472,8 @@ func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, s
 	}
 	r.line(zerolog.InfoLevel).Float64("seconds", math.Round(seconds*10)/10).
 		Int("words", words).Int("pieces", len(said)).Int64("ms", time.Since(hearing).Milliseconds()).
-		Dur("recorded", time.Since(r.started).Round(time.Millisecond)).Msg("the recording was written down")
+		Dur("recorded", time.Since(r.started).Round(time.Millisecond)).Int("passes", r.passes).
+		Int64("slowest", r.slowest.Milliseconds()).Msg("the recording was written down")
 	return writtenDown{said: said}
 }
 

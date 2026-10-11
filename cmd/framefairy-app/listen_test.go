@@ -400,6 +400,8 @@ type voices struct {
 	mu   sync.Mutex
 	held chan struct{}
 	in   chan struct{}
+	// slow is how long each pass takes, nothing when zero.
+	slow time.Duration
 }
 
 // hold makes the next passes wait for the channel it gives to be closed,
@@ -419,6 +421,7 @@ func (v *voices) Recognize(samples []float32, rate int) []engine.Token {
 		in <- struct{}{}
 		<-held
 	}
+	time.Sleep(v.slow)
 	step := rate * 6 / 10
 	var tokens []engine.Token
 	for at := 0; at+step/2 <= len(samples); at += step {
@@ -532,6 +535,46 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 	close(held)
 	if d := <-stopped; strings.Join(d.Said, " ") != "wort wort" {
 		t.Errorf("Stop gave %q", d.Said)
+	}
+}
+
+// A machine whose speech model is slower than the words should appear is
+// said in the log once, and the line at the end says how many passes
+// there were and how long the slowest took, so a report from a slower
+// machine shows why the words fell behind. The review of #190 asked for
+// it. Plan row 2.189.
+func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
+	f, read := listenWith(t, nil)
+	mic := &talkingMicrophone{}
+	openMicrophone = func() microphone { return mic }
+	v := &voices{slow: 30 * time.Millisecond}
+	fakes := func(e *engine.Engine, o *engine.Options) {
+		e.OpenRecognizer = func(string) (engine.Recognizer, error) { return v, nil }
+	}
+	standIns.Store(&fakes)
+	if _, err := f.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		mic.say(tone(0.3))
+		time.Sleep(40 * time.Millisecond)
+	}
+	if _, err := f.StopListening(); err != nil {
+		t.Fatal(err)
+	}
+	lines := read()
+	slow := 0
+	for _, l := range lines {
+		if l["msg"] == "the speech model is slower than the words should appear" {
+			slow++
+		}
+	}
+	if slow != 1 {
+		t.Errorf("a slow speech model was said %d times", slow)
+	}
+	written := find(lines, "the recording was written down")
+	if written == nil || written["passes"].(float64) < 2 || written["slowest"].(float64) < 30 {
+		t.Errorf("the recording was written down as %v", written)
 	}
 }
 
