@@ -202,7 +202,7 @@ export interface Segment {
   // 270, by the stretch of the clip's rotations it lies in. Its crop is on
   // the picture rotated, see lib/rotate.ts.
   rotate?: number;
-  // The crop marks that steer the piece's crop, which glides over them,
+  // The keyframes that steer the piece's crop, which glides over them,
   // see lib/glide.ts. With none the crop stands at cropX.
   marks?: CropMark[];
 }
@@ -746,7 +746,7 @@ export const api = {
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>
     call<ClipEntry>("SetThumbnail", path, plan, clip, from, to),
-  // A crop mark added, moved or removed. A from below nought adds one at to
+  // A keyframe added, moved or removed. A from below nought adds one at to
   // with its crop at x, a to below nought removes the one at from, and
   // both move it with its crop.
   setCropMark: (path: string, plan: string, clip: string, from: number, to: number, x: number) =>

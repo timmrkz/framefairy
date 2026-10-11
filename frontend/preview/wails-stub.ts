@@ -135,7 +135,7 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     thumbnails: (((window as any).__thumbs ??= {})[`0${n}`] ?? [])
       .filter((t: number) => segments.some((p) => t >= p.start && t < p.end))
       .sort((a: number, b: number) => a - b),
-    // The same for crop marks. The stub glides nothing: the walks against
+    // The same for keyframes. The stub glides nothing: the walks against
     // the real Go side are where the glide is proven.
     cropMarks: ((((window as any).__cropMarks ??= {})[`0${n}`] ?? []) as { at: number; x: number }[])
       .filter((m) => segments.some((p) => m.at >= p.start && m.at < p.end))
@@ -1427,7 +1427,7 @@ const Answers = {
         let left = x;
         if (from >= 0) {
           const at = list.findIndex((m) => ms(m.at) === ms(from));
-          if (at < 0) return Promise.reject(new Error("the clip has no crop mark there"));
+          if (at < 0) return Promise.reject(new Error("the clip has no keyframe there"));
           left = list[at].x;
           list.splice(at, 1);
         }

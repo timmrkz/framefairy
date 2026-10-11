@@ -61,10 +61,10 @@
     thumbnail: Camera,
     "thumbnail-add": Camera,
     "thumbnail-remove": CameraOff,
-    // A crop mark is a keyframe of the crop, and editors draw a keyframe
-    // as a diamond. Plan row 3.26.
-    "crop-mark-add": DiamondPlus,
-    "crop-mark-remove": DiamondMinus,
+    // A keyframe of the crop, drawn as the diamond editors draw one.
+    // Plan row 3.26.
+    "keyframe-add": DiamondPlus,
+    "keyframe-remove": DiamondMinus,
     // Rotate Left: an arrow turning anticlockwise, and nothing else, so
     // it still reads at the size of a button.
     rotate: RotateCcw,

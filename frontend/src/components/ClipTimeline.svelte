@@ -55,6 +55,7 @@
     measured = 0,
     measuredParts = [],
     time,
+    shown = NaN,
     locked = false,
     frame = 1 / 30,
     frameStart = 0,
@@ -105,6 +106,10 @@
     measured?: number;
     measuredParts?: [number, number][];
     time: number;
+    // Where the frame on the video preview begins, the frame a mark lights
+    // for, which at the end of a clip played through is its last frame
+    // while the playhead stands past it. NaN goes by the playhead.
+    shown?: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
@@ -180,11 +185,11 @@
     // A thumbnail dragged to another frame, from where it was to where it
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
-    // The clip's crop marks, each a crop placed by hand on one frame. Each
-    // is a dot on the foot line of the track, under the thumbnails. Plan
+    // The clip's keyframes, each a crop placed by hand on one frame. Each
+    // is a diamond on the foot line of the track, under the thumbnails. Plan
     // row 3.26.
     cropMarks?: CropMark[];
-    // A crop mark dragged to another frame, from where it was to where it
+    // A keyframe dragged to another frame, from where it was to where it
     // was let go, or removed, with to below nought.
     oncropmark?: (from: number, to: number) => Promise<void>;
     // Every clip of the episode, the way the range picker has them, so
@@ -1425,7 +1430,7 @@
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,
   // and the step is round and wide enough that the labels never crowd.
-  // A thumbnail or a crop mark being dragged. It is drawn where the hand
+  // A thumbnail or a keyframe being dragged. It is drawn where the hand
   // is, the playhead goes with it so the video preview shows the frame
   // under the hand, and it stays where it was let go until the clip comes
   // back with it saved. The two are one kind of mark, taken hold of,
@@ -1455,9 +1460,9 @@
       .filter((r) => r.starts && r.rotate !== 0),
   );
 
-  // The frame the playhead is in, which is how a mark knows it is the one
-  // on screen. A state, never a distance.
-  const playFrame = $derived(frameAt(time, frame, frameStart));
+  // The frame on the video preview, which is how a mark knows it is the
+  // one on screen. A state, never a distance.
+  const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
 
   // The middle of the frame a moment falls in, inside a piece the clip
   // keeps: a moment that was cut out is not in the short, so a mark held
@@ -1577,8 +1582,8 @@
         Double-click in the clip to cut a part out, drag its edges to
         size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole
         words. Along the foot are the captions: drag an edge to retime one and double-click a moved
-        edge to reset it. The pictures along the foot are thumbnails and the dots on its edge crop
-        marks: click one to go to it, drag it to another frame and double-click it to remove it.
+        edge to reset it. The pictures along the foot are thumbnails and the diamonds on its edge
+        keyframes: click one to go to it, drag it to another frame and double-click it to remove it.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1614,18 +1619,6 @@
          while the playhead is on the video, see .chosen.dim in app.css.
          It lays nothing out: each part is still placed on the track. -->
     <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
-      <!-- The clip, whole, from its first piece to its last. The rules above
-           and below run the length of it whatever is cut out in between,
-           because the holes are inside one clip and not between several: a
-           rule that broke at every cut would read as three clips standing in
-           a row. -->
-      {#if wholeClip}
-        <div
-          class="span frame"
-          class:lit={!!clip && clip.key === hovered}
-          style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
-        ></div>
-      {/if}
       {#each drawnPieces as p, i (i)}
         <div
           class="piece"
@@ -1820,13 +1813,34 @@
       {/if}
     </div>
   </div>
+    {#if wholeClip}
+      <!-- The clip, whole, from its first piece to its last. The rules above
+           and below run the length of it whatever is cut out in between,
+           because the holes are inside one clip and not between several: a
+           rule that broke at every cut would read as three clips standing in
+           a row. Drawn over the track rather than in it, so its rules lie on
+           the track's top and bottom border, the way the window lies on the
+           range picker's, where inside the track they stood just within the
+           border with a grey line showing past them. See .frames. -->
+      <div class="frames">
+        <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+          <div
+            class="span frame"
+            class:lit={!!clip && clip.key === hovered}
+            style="left: calc(1px + (100% - 2px) * {x(wholeClip.start) / 100}); width: calc((100% - 2px) * {(x(wholeClip.end) - x(wholeClip.start)) / 100})"
+          ></div>
+        </div>
+      </div>
+    {/if}
     {#if clip}
-      <!-- The crop marks, each a dot centred on the foot line of the track,
-           half in it and half under it, so on the frame of a thumbnail the
-           dot sits just under it and each takes its own hand. They are
+      <!-- The keyframes, each a diamond centred on the clip's bottom rule, half
+           in the track and half under it, so on the frame of a thumbnail the
+           diamond sits just under it and each takes its own hand. They are
            drawn over the track, like the playhead, because the track clips
-           what is inside it. Taken hold of the way a thumbnail is. Plan row
-           3.26. -->
+           what is inside it, and on the track's inside, see .inside, so a
+           diamond stands on its frame where the waveform has it. Taken hold of
+           the way a thumbnail is. Plan row 3.26. -->
+      <div class="inside">
       <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
         {#each cropDots as m, i (m.at)}
           <div
@@ -1836,15 +1850,16 @@
             style="left: {x(m.shown)}%"
             role="slider"
             tabindex="-1"
-            aria-label="Crop mark {i + 1}"
+            aria-label="Keyframe {i + 1}"
             aria-valuenow={m.shown}
             title={locked
-              ? "A crop mark. Click to see it"
-              : "A crop mark, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
+              ? "A keyframe. Click to see it"
+              : "A keyframe, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
             onpointerdown={(e) => grabMark("crop", m.at, e)}
             ondblclick={(e) => removeMark("crop", m.at, e)}
           ></div>
         {/each}
+      </div>
       </div>
     {/if}
     {#if time >= view.from && time <= view.to}
@@ -1929,6 +1944,30 @@
     font-size: 11px;
     color: var(--faint);
     white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Over the track, its whole box, rounded the same, so the clip's frame
+     lies on the track's border and a clip that runs out of view is cut at
+     the track's edge. A share across it is a share of the track's inside,
+     a pixel in from either side, where the waveform and the pieces are
+     drawn, so the frame is placed with that pixel added. */
+  .frames {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-m);
+    overflow: clip;
+    pointer-events: none;
+  }
+
+  /* Over the track, as wide as its inside, so a share across it is where
+     the same moment is in the track. */
+  .inside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 1px;
+    right: 1px;
     pointer-events: none;
   }
 
@@ -2215,13 +2254,20 @@
     color: #fff;
   }
 
-  /* A crop mark: a dot of the app's colour centred on the foot line of
-     the track, in a box wide enough to take hold of. It is filled white
-     while the playhead is on its frame, under the hand or being dragged,
-     the way a thumbnail sits on a chip then. Whole pixels throughout. */
+  /* A keyframe: a diamond of the app's colour centred on the clip's
+     bottom rule, the shape editors draw a keyframe in, in a box wide
+     enough to take hold of. It is filled white with a ring of the app's
+     colour while the playhead is on its frame, under the hand or being
+     dragged, the way a thumbnail sits on a chip then. The ring is a
+     larger diamond under it, since an outline would be cut away with the
+     corners. Even sizes in an even box, so every edge is on a whole
+     pixel. */
   .cropdot {
     position: absolute;
-    bottom: -6px;
+    /* Its middle on the middle of the clip's bottom rule, which lies on
+       the track's border and a pixel in from it. */
+    bottom: calc(var(--frame-line) / 2 - 6px);
+    pointer-events: auto;
     width: 12px;
     height: 12px;
     margin-left: -6px;
@@ -2232,20 +2278,37 @@
     z-index: 7;
   }
 
+  .cropdot::before,
   .cropdot::after {
     content: "";
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+    grid-area: 1 / 1;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  }
+
+  .cropdot::before {
+    width: 12px;
+    height: 12px;
+    background: var(--well);
+  }
+
+  .cropdot::after {
+    width: 10px;
+    height: 10px;
     background: var(--accent-hi);
-    box-shadow: 0 0 0 1px var(--well);
+  }
+
+  .cropdot:hover::before,
+  .cropdot.here::before,
+  .cropdot.active::before {
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
   }
 
   .cropdot:hover::after,
   .cropdot.here::after,
   .cropdot.active::after {
     background: #fff;
-    box-shadow: 0 0 0 2px var(--accent);
   }
 
   /* The mark at the start of a rotated part: the Rotate button's icon,

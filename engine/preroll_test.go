@@ -27,7 +27,7 @@ import (
 // container that carries Opus, and in MP3 where this ffmpeg can make it,
 // and checks that every piece is as loud from its first moment as
 // anywhere, after the fade a cut puts there. Every frame of the episode
-// is a keyframe, as after a camera switch, where an encoder puts one, so
+// is a key frame, as after a camera switch, where an encoder puts one, so
 // ffmpeg's seek lands right on each piece.
 func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
