@@ -133,10 +133,10 @@ func TestATimingOnAWordInsideACaptionIsNotUsed(t *testing.T) {
 func TestSetCaptionTimeKeepsItAgainstTheWord(t *testing.T) {
 	path := editablePlanPath(t)
 	tr := editableTranscript()
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", 9.8, tr, nil); err != nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", 9.8, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 13.0, "end", 13.6, tr, nil); err != nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 13.0, "end", 13.6, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	c := clipsOf(t, path)["01"]
@@ -147,10 +147,10 @@ func TestSetCaptionTimeKeepsItAgainstTheWord(t *testing.T) {
 		t.Errorf("end %v", got)
 	}
 	// Put back where the words put it, and nothing is left behind.
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", math.NaN(), tr, nil); err != nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", math.NaN(), tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 13.0, "end", math.NaN(), tr, nil); err != nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 13.0, "end", math.NaN(), tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(path)
@@ -158,13 +158,13 @@ func TestSetCaptionTimeKeepsItAgainstTheWord(t *testing.T) {
 		t.Errorf("an empty record of moved captions was left:\n%s", body)
 	}
 	// Only a word of the clip, and only a moment of an episode.
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 20.1, "start", 20, tr, nil); err == nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 20.1, "start", 20, tr, nil); err == nil {
 		t.Error("a word of another clip was taken")
 	}
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "middle", 10, tr, nil); err == nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "middle", 10, tr, nil); err == nil {
 		t.Error("an edge that is not an edge was taken")
 	}
-	if err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", math.Inf(1), tr, nil); err == nil {
+	if _, err := SetCaptionTime(filepath.Dir(path), path, "01", 10.0, "start", math.Inf(1), tr, nil); err == nil {
 		t.Error("a moment that is not one was taken")
 	}
 }
@@ -219,14 +219,14 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	}
 	// The end of "eins zwei" over the middle of "zwei", 10.8 in the
 	// episode, to 10.7.
-	if err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.7, tr, nil); err != nil {
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.7, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins" || got[1] != was[1] {
 		t.Errorf("the right edge dragged over zwei: %q, was %q", got, was)
 	}
 	// Back out over it, and zwei is back, the edge where it was let go.
-	if err := SetCaptionTime(logs, path, "01", 10.6, "end", 11.05, tr, nil); err != nil {
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 11.05, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, path, tr); got[0] != "0.00-1.10 eins zwei" || got[1] != was[1] {
@@ -234,7 +234,7 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	}
 	// The start of "drei vier" over the middle of "drei", 12.2 in the
 	// episode, to 12.5.
-	if err := SetCaptionTime(logs, path, "01", 12.0, "start", 12.5, tr, nil); err != nil {
+	if _, err := SetCaptionTime(logs, path, "01", 12.0, "start", 12.5, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, path, tr); !strings.HasPrefix(got[1], "2.20-") || !strings.HasSuffix(got[1], " vier") {
@@ -242,7 +242,7 @@ func TestDraggingACaptionEdgeOverAWordRemovesIt(t *testing.T) {
 	}
 	// And over every word: the last one stays, since delete removes a
 	// caption whole.
-	if err := SetCaptionTime(logs, path, "01", 10.0, "start", 10.95, tr, nil); err != nil {
+	if _, err := SetCaptionTime(logs, path, "01", 10.0, "start", 10.95, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, path, tr); got[0] != "0.60-1.10 zwei" {
@@ -262,7 +262,7 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 	tr := editableTranscript()
 	// The end of "eins zwei" moved from 1.1 to 0.9, short of the middle
 	// of "zwei", which stays.
-	if err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.9, tr, nil); err != nil {
+	if _, err := SetCaptionTime(logs, path, "01", 10.6, "end", 10.9, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, path, tr); got[0] != "0.00-0.90 eins zwei" {

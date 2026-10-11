@@ -866,6 +866,12 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 	})
 }
 
+// CaptionEdit is what moving an edge of a caption did to its words: how
+// many it took out and how many it put back.
+type CaptionEdit struct {
+	Removed, Back int
+}
+
 // SetCaptionTime moves the caption that begins or ends on a word of a clip,
 // where the timing of the words is a little off from what is heard. word
 // is when that word starts in the episode, edge is "start" or "end", and at
@@ -878,25 +884,28 @@ func SetCaptionY(planPath, clipID string, y float64) error {
 // the word is removed in the caption box, and keeps no time of its own. logsDir is where the corrections are kept, and
 // overrides the caption look the captions are laid out in.
 //
+// It says what it did to the words, for the app's log.
+//
 // It is kept against the word rather than the caption, because captions
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
 func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
-	t *Transcript, overrides map[string]any) error {
+	t *Transcript, overrides map[string]any) (CaptionEdit, error) {
+	var done CaptionEdit
 	if edge != "start" && edge != "end" {
-		return renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
+		return done, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
 	}
 	reset := math.IsNaN(at)
 	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
-		return renderErr("a caption cannot be moved to %s", fixed(at, 3))
+		return done, renderErr("a caption cannot be moved to %s", fixed(at, 3))
 	}
 	key := wordKey(word)
 	// Only a caption of the clip that begins or ends on the word. A caption
 	// is made of its words and of nothing else.
 	plan, clip, err := planClip(planPath, clipID)
 	if err != nil {
-		return err
+		return done, err
 	}
 	var cue *LaidCaption
 	laid := ClipCaptions(clip, t, ResolveStyle(captionStyle(plan, clip, overrides)))
@@ -911,16 +920,16 @@ func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string,
 		}
 	}
 	if cue == nil {
-		return renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
+		return done, renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
 	// The words first: an edge that took words out or put them back is
 	// where its words put it, and keeps no time of its own.
 	if !reset {
-		changed, err := trimCaption(logsDir, clip, *cue, edge, ClipTime(clip, at), t)
+		done, err = trimCaption(logsDir, clip, *cue, edge, ClipTime(clip, at), t)
 		if err != nil {
-			return err
+			return done, err
 		}
-		reset = changed
+		reset = done.Removed+done.Back > 0
 	}
 	err = editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
@@ -952,7 +961,7 @@ func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string,
 		}
 		return nil
 	})
-	return err
+	return done, err
 }
 
 // SetThumbnail adds, moves or removes a thumbnail of a clip: a moment of

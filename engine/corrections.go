@@ -247,12 +247,12 @@ func removeParts(logsDir string, t *Transcript, order []float64, whole map[float
 // removes a caption whole.
 //
 // to is where the edge is let go, on the clip's clock. The caption is the
-// one laid out now, with the edge where it stands. It says whether any word
-// changed: the edge is then where the words put it, see Captions, the same
-// as when the word is removed in the caption box.
-func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float64, t *Transcript) (bool, error) {
+// one laid out now, with the edge where it stands. It says how many words
+// it took out and put back: when any, the edge is where the words put it,
+// see Captions, the same as when the word is removed in the caption box.
+func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float64, t *Transcript) (CaptionEdit, error) {
 	if len(clip.Segments) == 0 {
-		return false, nil
+		return CaptionEdit{}, nil
 	}
 	from := c.Start
 	if edge == "end" {
@@ -304,7 +304,7 @@ func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float
 	}
 	for _, w := range back {
 		if err := SetWordText(logsDir, w.Start, w.Text, t); err != nil {
-			return true, err
+			return CaptionEdit{}, err
 		}
 	}
 	whole := map[float64]string{}
@@ -327,5 +327,6 @@ func trimCaption(logsDir string, clip Clip, c LaidCaption, edge string, to float
 			parts[at][t.PartOf(heard, w)] = true
 		}
 	}
-	return len(back)+len(order) > 0, removeParts(logsDir, t, order, whole, parts)
+	done := CaptionEdit{Removed: len(gone), Back: len(back)}
+	return done, removeParts(logsDir, t, order, whole, parts)
 }

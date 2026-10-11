@@ -200,7 +200,7 @@ that a click which throws work away has to be a click you meant.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**. No screen
+screen: the name of the episode, or **Settings**, **Updates**, **Acknowledgements** or **Report a Problem**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -914,8 +914,10 @@ bubble scrolled by those eight pixels.
     out, see `Captions` in `engine/lines.go`. What it read is kept with the
     removal in `corrections.json`, behind a mark no typed word can have. The
     time it held is no pause, the room it took on its line stays taken, so
-    no word of the next caption is pulled up into it, and a caption whose
-    first word it was appears when that word is said. A caption whose
+    no word of the next caption is pulled up into it, and no other caption
+    moves. A caption whose first or last word it was draws in to the words
+    it still shows, the same as when its edge is dragged in over the word,
+    see **Caption timing**. A caption whose
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
@@ -1829,26 +1831,32 @@ moved by hand, on the clip timeline.
   block from where it appears to where it goes, on the same clock as
   everything else on it. A click on a block puts the playhead on that
   caption's first word.
-- **Either edge is dragged.** Where two captions meet, the line between
-  them has two sides: the left side is where the one before goes, the
-  right side where the one after appears. Dragging the left side leaves a
-  gap and moves nothing else. Dragging the right side moves when the next
-  caption appears, and the one before goes with it, so nothing is left bare
-  that was not bare before. Nothing overlaps, because the picture shows one
-  caption at a time. An edge lands on a whole frame.
+- **Either edge is dragged, and moves its own caption only.** Where two
+  captions meet, the line between them has two sides: the left side is
+  where the one before goes, the right side where the one after appears.
+  An edge dragged in leaves a gap, and dragged out it stops at the caption
+  beside it. No other caption ever moves. Dragging the right side used to
+  take the caption before along, so pulling a left edge in over a word
+  drew the caption before into the room Tim had just cleared. Nothing
+  overlaps, because the picture shows one caption at a time. An edge
+  lands on a whole frame.
 - **An edge dragged over a word removes it.** Dragged in, an edge takes
   out of its caption every word whose middle it passes, the way delete
   removes a word, so pulling the left edge of "one two three" past "one"
   reads "two three", and the right edge past "three" reads "one two".
   Dragged back out over a word it took, the word comes back. The last word
   stays, because delete removes a caption whole. The caption box in the
-  video preview leaves the words out while the edge moves, and Cmd+Z takes
-  back the words and the edge in one step, `SetCaptionTime` and
-  `trimCaption` in the engine. An edge moved by hand is kept against the
-  word its caption was laid out from, a removed word among them, so it
-  stays where it was put when that word is removed. It was kept against the
-  last word shown, so Tim shortened a caption, found its word still there,
-  removed it in the caption box, and the caption grew back to its old size.
+  video preview leaves the words out while the edge moves. When the edge
+  is let go it lands where the words it shows put it, and Cmd+Z takes back
+  the words and the edge in one step, `SetCaptionTime` and `trimCaption`
+  in the engine.
+- **Removing a word at an edge ends the same as dragging over it.** A
+  caption whose first or last word is removed in the caption box draws in
+  to the words it shows: it appears with its first word shown and goes a
+  moment after its last. The captions beside it keep their time, so the
+  room the word took stays empty. Before, the caption kept the time the
+  word had, and the two ways of taking a word off its edge ended
+  differently, which Tim found.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
@@ -2369,6 +2377,15 @@ the licence asks to be said and to the licence's own text. The list is built int
 `notices/`, and how it is made and kept complete is in
 [THIRD_PARTY.md](THIRD_PARTY.md).
 
+### Report a Problem
+
+In the Help menu too, where Mac apps keep it. One field for what happened
+and **Make Report**, which saves one zip file on the Desktop and shows it
+in Finder: what was written, the app's log, the build and the Mac, and
+the settings, with the home folder written as ~ and nothing of a video
+but its file name. The info mark beside **Make Report** says what goes in.
+See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
+
 ## Where things are kept
 
 - **Models:** in `~/.framefairy/models`. A speech model is a folder, a
@@ -2409,9 +2426,14 @@ the licence asks to be said and to the licence's own text. The list is built int
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,
   where the Console app shows it, and `Frame Fairy/logs/app.log` in the
   user's cache folder elsewhere. It says enough that a fault is found by
-  reading it, not by trying again. Each line starts with its moment, to
-  the millisecond, and where it came from:
+  reading it, not by trying again. Each line is one JSON object with its
+  moment, to the millisecond, its level, the run of the app, the video
+  it is about where there is one, and where it came from, see
+  [LOGGING.md](LOGGING.md):
   - `app`: each start, with its build.
+  - `wails`: what Wails, which runs the app's window, says from info up.
+  - `jobs`: each search, render and install starting and ending, with
+    how it ended and how long it took.
   - `window`: the window's warnings and errors and anything thrown and
     not caught, every time the window stood still for more than
     400 ms, the space bar with where the keyboard was and which
@@ -2425,17 +2447,23 @@ the licence asks to be said and to the licence's own text. The list is built int
   - `files`: every read of the video's file, every stream of frames or
     sound opened and closed, the first pull of each, a slow one and one
     that ended it, and the episode's decoder held, let go and closed.
+    Every other pull is a trace line.
   - `decoder`: the episode's decoder starting and stopping, what it
     found in the file, whether it decodes on the graphics chip, every
     place it was moved to and how long its first frame took, the chain
     a frame goes through and ffmpeg's errors.
 
+  Every click and every key that is not typing is an act, a line of its
+  own with an id that every line it sets off carries, see
+  [LOGGING.md](LOGGING.md#acts).
   The window sends its lines a quarter of a second after it says them,
   so they can stand a little after the Go side's lines of the same
-  moment. Past 4 MB the log starts over, with the one before kept as
-  `app.1.log`. It is the log plan row R.8 asks for, and a report of a
-  problem will carry it. See `cmd/framefairy-app/applog.go` and
-  `frontend/src/lib/said.ts`.
+  moment. Every line from debug up is always written. Trace lines, one
+  for every pull of frames, are kept in memory, the last 8000, and a
+  report of a problem carries them. The log is at most 10 MB, with
+  three older files compressed beside it. It is the log plan row R.8 asks
+  for, and a report of a problem will carry it. See
+  `cmd/framefairy-app/applog.go` and `frontend/src/lib/said.ts`.
 
 The app only shows files that belong to an episode in its list. It finds
 Homebrew's ffmpeg and llama-server even when it is started from Finder.

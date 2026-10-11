@@ -4,9 +4,30 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"path/filepath"
+	"time"
+
+	"github.com/rs/zerolog"
 
 	"framefairy/engine"
 )
+
+// editLevel is the level of a line about an edit: a warning for one that
+// was refused, and the person's own act otherwise.
+func editLevel(err error) zerolog.Level {
+	if err != nil {
+		return zerolog.WarnLevel
+	}
+	return zerolog.InfoLevel
+}
+
+// editLine starts a line of the log about an edit to a clip, see
+// LOGGING.md. It names the video and the clip, and never the words: a
+// report holds no word of a video.
+func editLine(level zerolog.Level, path, clipID string, took time.Duration) *zerolog.Event {
+	return theLog.line(level, "edits").Str("video", filepath.Base(path)).Str("clip", clipID).
+		Int64("ms", took.Milliseconds())
+}
 
 // SetCrop places the crop of the shot at a moment of a clip by hand, as the
 // left edge in source pixels, and returns the clip as it is now.
@@ -209,9 +230,25 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error {
-		return engine.SetCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
-	}); err != nil {
+	began := time.Now()
+	var done engine.CaptionEdit
+	err = s.edit(path, func() error {
+		var err error
+		done, err = engine.SetCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		return err
+	})
+	// Which edge, of the caption on which word, where to, and what it did
+	// to the words: a caption that ended up other than the person meant is
+	// read back from these.
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line = line.Str("edge", edge).Float64("word", word)
+	if math.IsNaN(at) {
+		line = line.Bool("reset", true)
+	} else {
+		line = line.Float64("at", at)
+	}
+	line.Int("removed", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

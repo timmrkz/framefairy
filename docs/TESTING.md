@@ -185,7 +185,7 @@ quarter of a second:
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
+| Taking a word out changes no other caption: every caption still there appears and goes when it did, the one the word was in only draws in to the words it shows, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 | A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, within a moment of the step, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
@@ -354,10 +354,11 @@ engine's captions and pieces under a label, and on the clip timeline
 pixels, `reset` an edge and click the caption `block` holding a word,
 drag an edge of the caption holding a word `edge in` over the middle of
 its word at that edge, `edge out` back to where it was at the mark
-`start`, or `edge nudge` a little short of any word, and `remove last`,
-the last word of that caption removed in the caption box, with `gone last`
-and `gone first`, that caption reading as it did at a mark less its last
-or first word. What has to come of them: `box`, what
+`start`, or `edge nudge` a little short of any word, and `remove edge
+word`, the first or last word of that caption removed in the caption box,
+with `gone last` and `gone first`, that caption reading as it did at a mark
+less its last or first word, and `others`, every other caption appearing
+and going when it did at a mark. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer
