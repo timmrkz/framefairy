@@ -3001,9 +3001,11 @@
             aria-pressed={looping}
             aria-label="Loop the clip"
             onclick={() => (looping = !looping)}
-            title="Play the clip again at its end. L does the same"
+            title={looping
+              ? "Stop looping, so the clip stops at its end. L does the same"
+              : "Play the clip again at its end. L does the same"}
           >
-            <Icon name="loop" />
+            <Icon name={looping ? "loop-off" : "loop"} />
           </button>
         {/if}
         {#if current}
@@ -3039,7 +3041,7 @@
                 ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
                 : "Put the playhead in the clip to put a keyframe on the frame there"}
           >
-            <Icon name={cropHere !== null ? "crop-mark-remove" : "crop-mark-add"} />
+            <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />
           </button>
           <!-- Rotate Left, the way Preview and Photos rotate: the part of
                the clip between two cuts the playhead stands in, a quarter
@@ -3056,32 +3058,33 @@
             <Icon name="rotate" />
           </button>
         {/if}
-        <!-- In and Out, the way every editor marks a clip, with the keys of
-             the same letters. Each makes a clip at the playhead, and only
-             where no clip is: inside one, its edges are dragged instead. -->
+        <!-- Mark In and Mark Out, the way every editor marks a clip: the
+             two square brackets on the buttons, and I and O on the keys.
+             Each makes a clip at the playhead, and only where no clip is:
+             inside one, its edges are dragged instead. -->
         <button
-          class="glyph letter"
+          class="glyph"
           disabled={duration <= 0 || inClip}
           onclick={() => makeClip(false)}
-          aria-label="Start a clip at the playhead"
+          aria-label="Mark In"
           title={makingIn
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
-          >{#if makingIn}<Busy />{/if}I</button
+              : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+          >{#if makingIn}<Busy />{/if}<Icon name="mark-in" /></button
         >
         <button
-          class="glyph letter"
+          class="glyph"
           disabled={duration <= 0 || inClip}
           onclick={() => makeClip(true)}
-          aria-label="End a clip at the playhead"
+          aria-label="Mark Out"
           title={makingOut
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
-          >{#if makingOut}<Busy />{/if}O</button
+              : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+          >{#if makingOut}<Busy />{/if}<Icon name="mark-out" /></button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
              the clip is what clicking it in the list does. -->
@@ -3292,12 +3295,6 @@
     flex: none;
     width: var(--control-h);
     padding: 0;
-  }
-
-  /* I and O are their letters, the keys they stand for, the way an editor
-     labels In and Out. */
-  .detail .row .glyph.letter {
-    font-weight: 600;
   }
 
   h2 {

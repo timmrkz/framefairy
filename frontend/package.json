@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lucide/svelte": "1.48.0",
     "@wailsio/runtime": "3.0.0-beta.23",
     "bits-ui": "^2.19.5"
   },

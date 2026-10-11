@@ -426,6 +426,16 @@
     ]
   },
   {
+    "name": "@lucide/svelte",
+    "version": "1.48.0",
+    "licence": "ISC",
+    "url": "https://www.npmjs.com/package/@lucide/svelte",
+    "part": "The app's interface",
+    "texts": [
+      "npm-lucide-svelte.txt"
+    ]
+  },
+  {
     "name": "@wailsio/runtime",
     "version": "3.0.0-beta.23",
     "licence": "MIT",

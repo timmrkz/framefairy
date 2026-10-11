@@ -1,153 +1,127 @@
-<script lang="ts">
-  // The few glyphs the workspace uses, drawn in one place so they share a
-  // weight and a size. They take the colour of the text around them.
-  let { name, size = 16 }: { name: string; size?: number } = $props();
+<script lang="ts" module>
+  // Every glyph in the app is a Lucide icon, the open set much of the web
+  // and many desktop apps draw with, so none of them is one we made up
+  // and they all share one hand. The app knows them by what they are for,
+  // here, and nowhere else names a Lucide icon. Plan row 2.199.
+  import PanelLeft from "@lucide/svelte/icons/panel-left";
+  import SquarePlus from "@lucide/svelte/icons/square-plus";
+  import Folder from "@lucide/svelte/icons/folder";
+  import Trash2 from "@lucide/svelte/icons/trash-2";
+  import Info from "@lucide/svelte/icons/info";
+  import X from "@lucide/svelte/icons/x";
+  import Pause from "@lucide/svelte/icons/pause";
+  import Play from "@lucide/svelte/icons/play";
+  import Repeat from "@lucide/svelte/icons/repeat";
+  import RepeatOff from "@lucide/svelte/icons/repeat-off";
+  import Camera from "@lucide/svelte/icons/camera";
+  import CameraOff from "@lucide/svelte/icons/camera-off";
+  import DiamondPlus from "@lucide/svelte/icons/diamond-plus";
+  import DiamondMinus from "@lucide/svelte/icons/diamond-minus";
+  import Locate from "@lucide/svelte/icons/locate";
+  import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
+  import Undo2 from "@lucide/svelte/icons/undo-2";
+  import Redo2 from "@lucide/svelte/icons/redo-2";
+  import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
+  import ChevronRight from "@lucide/svelte/icons/chevron-right";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import Check from "@lucide/svelte/icons/check";
+  import Copy from "@lucide/svelte/icons/copy";
+  import CircleArrowDown from "@lucide/svelte/icons/circle-arrow-down";
+  import ArrowUpDown from "@lucide/svelte/icons/arrow-up-down";
+  import Clock from "@lucide/svelte/icons/clock";
+  import ArrowDownAZ from "@lucide/svelte/icons/arrow-down-a-z";
+  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+  import Pipette from "@lucide/svelte/icons/pipette";
+  import type { Component } from "svelte";
+
+  // Mark In and Mark Out are the square brackets every editor draws on
+  // the two buttons. Lucide has them only as a pair, its brackets icon, so
+  // each is one half of that, moved to the middle of the square and drawn
+  // the way Lucide draws its own.
+  const brackets: Record<string, string> = {
+    "mark-in": "M14 21h-3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h3",
+    "mark-out": "M10 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3",
+  };
+
+  const glyphs: Record<string, Component<any>> = {
+    sidebar: PanelLeft,
+    plus: SquarePlus,
+    folder: Folder,
+    trash: Trash2,
+    info: Info,
+    close: X,
+    pause: Pause,
+    play: Play,
+    // The loop, and with it on, the loop crossed out: what a click does,
+    // the way pause shows while playing.
+    loop: Repeat,
+    "loop-off": RepeatOff,
+    // A thumbnail is a picture taken of a frame, so a camera, and crossed
+    // out where a click removes the one at the playhead.
+    thumbnail: Camera,
+    "thumbnail-add": Camera,
+    "thumbnail-remove": CameraOff,
+    // A keyframe of the crop, drawn as the diamond editors draw one.
+    // Plan row 3.26.
+    "keyframe-add": DiamondPlus,
+    "keyframe-remove": DiamondMinus,
+    // Rotate Left: an arrow turning anticlockwise, and nothing else, so
+    // it still reads at the size of a button.
+    rotate: RotateCcw,
+    locate: Locate,
+    // Put back as it started, and put back as you had it: undo and redo,
+    // so neither looks like Rotate.
+    back: Undo2,
+    forward: Redo2,
+    pick: ChevronsUpDown,
+    chevron: ChevronRight,
+    warn: TriangleAlert,
+    check: Check,
+    copy: Copy,
+    // macOS brings updates in with an arrow pointing down.
+    update: CircleArrowDown,
+    sort: ArrowUpDown,
+    "sort-added": Clock,
+    "sort-name": ArrowDownAZ,
+    sliders: SlidersHorizontal,
+    pipette: Pipette,
+  };
+
+  // The marks that are solid wherever people see them, play and pause on
+  // every transport.
+  const solid = new Set(["play", "pause"]);
 </script>
 
-<svg
-  width={size}
-  height={size}
-  viewBox="0 0 16 16"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="1.5"
-  stroke-linecap="round"
-  stroke-linejoin="round"
-  aria-hidden="true"
->
-  {#if name === "sidebar"}
-    <rect x="2" y="3" width="12" height="10" rx="2" />
-    <path d="M6.5 3v10" />
-  {:else if name === "plus"}
-    <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
-    <path d="M8 5.5v5M5.5 8h5" />
-  {:else if name === "folder"}
-    <path d="M1.8 12.6V3.4h4l1.4 1.8h7v7.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z" />
-  {:else if name === "trash"}
-    <path d="M2.8 4.3h10.4M6.4 4.3V2.9h3.2v1.4M4.6 4.3l.5 8.8h5.8l.5-8.8" />
-  {:else if name === "info"}
-    <circle cx="8" cy="8" r="6.2" />
-    <path d="M8 7.3v4M8 4.9v.8" />
-  {:else if name === "close"}
-    <path d="M4 4l8 8M12 4l-8 8" />
-  {:else if name === "pause"}
-    <path d="M6 3.4v9.2M10 3.4v9.2" />
-  {:else if name === "play"}
-    <path d="M5.2 3.3 12.4 8l-7.2 4.7Z" fill="currentColor" />
-  <!-- The loop as every editor draws it: along the top to an arrow on the
-       right, back along the bottom to an arrow on the left. -->
-  {:else if name === "loop"}
-    <path d="M11.33 0.67 14 3.33l-2.67 2.67" />
-    <path d="M2 7.33V6a2.67 2.67 0 0 1 2.67-2.67H14" />
-    <path d="M4.67 15.33 2 12.67l2.67-2.67" />
-    <path d="M14 8.67V10a2.67 2.67 0 0 1-2.67 2.67H2" />
-  <!-- A thumbnail: a picture in the shape of a short, a sun and a hill in
-       it, the way a photo is drawn anywhere. -->
-  {:else if name === "thumbnail"}
-    <rect x="3.5" y="1.5" width="9" height="13" rx="1.8" />
-    <circle cx="6.6" cy="5.4" r="1.1" />
-    <path d="M3.8 11.6l2.6-2.7 2 2 1.5-1.5 2.3 2.3" />
-  <!-- The same picture made smaller, with what a click does beside it:
-       a plus to add a thumbnail, a minus to take the one here away. -->
-  {:else if name === "thumbnail-add" || name === "thumbnail-remove"}
-    <rect x="1" y="0.8" width="9.2" height="14.2" rx="1.8" />
-    <circle cx="4.2" cy="4.6" r="1.1" />
-    <path d="M1.3 11.4l2.5-2.6 1.9 1.9 1.4-1.4 2.8 2.8" />
-    {#if name === "thumbnail-add"}
-      <path d="M13 8.6v5M10.5 11.1h5" />
-    {:else}
-      <path d="M10.5 11.1h5" />
-    {/if}
-  <!-- A crop mark: the crop glyph every photo app draws, two corners of a
-       frame crossing, made smaller like the thumbnail's, with a plus to
-       put one and a minus to remove the one here. Plan row 3.26. -->
-  {:else if name === "crop-mark-add" || name === "crop-mark-remove"}
-    <path d="M3.4 0.8v7.8h7.8" />
-    <path d="M0.8 3.4h7.8v7.8" />
-    {#if name === "crop-mark-add"}
-      <path d="M13 9.6v5M10.5 12.1h5" />
-    {:else}
-      <path d="M10.5 12.1h5" />
-    {/if}
-  {:else if name === "rotate"}
-    <!-- Preview's Rotate Left: the picture, and an arrow turning to the
-         left over its corner. -->
-    <rect x="5.5" y="6.5" width="8" height="7" rx="1.5" />
-    <path d="M10 3H6.2a3.4 3.4 0 0 0-3.4 3.4v2.1" />
-    <path d="M1.2 7.1l1.6 1.6 1.6-1.6" />
-  {:else if name === "locate"}
-    <circle cx="8" cy="8" r="3.6" />
-    <path d="M8 1.2v2.2M8 12.6v2.2M1.2 8h2.2M12.6 8h2.2" />
-  <!-- The way back turns anticlockwise, the way there again turns
-       clockwise. One undoes, the other redoes, and which is which has to be
-       readable without the tooltip. -->
-  {:else if name === "back"}
-    <path d="M2.6 8a5.4 5.4 0 1 0 1.7-3.9" />
-    <path d="M3.7 1.6v3.2h3.2" />
-  {:else if name === "forward"}
-    <path d="M13.4 8a5.4 5.4 0 1 1-1.7-3.9" />
-    <path d="M12.3 1.6v3.2H9.1" />
-  <!-- The mark on a list you pick from, the pair of arrows macOS draws on
-       one, so the field says it opens a list without the system drawing it
-       in its own place. -->
-  {:else if name === "pick"}
-    <path d="M5 6.3 8 3.4l3 2.9" />
-    <path d="M5 9.7 8 12.6l3-2.9" />
-  <!-- Done. Beside a speech model that is on the machine, and anywhere
-       else something has arrived. -->
-  {:else if name === "chevron"}
-    <!-- A disclosure, pointing at what it opens: right while closed,
-         turned down once open. -->
-    <path d="M6 3.5 10.5 8 6 12.5" />
-  {:else if name === "warn"}
-    <!-- Something that stops a thing from working, the triangle with the
-         exclamation mark the Mac uses for the same. -->
-    <path d="M8 2.3 14.2 13.2H1.8Z" />
-    <path d="M8 6.4v3.1M8 11.3v.2" />
-  {:else if name === "check"}
-    <path d="M3.2 8.4 6.5 11.7 12.8 4.9" />
-  <!-- Copy: one sheet over another, the mark the Mac and GitHub put on
-       a button that copies. -->
-  {:else if name === "copy"}
-    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-    <path d="M10.5 3.2V3a.5.5 0 0 0-.5-.5H3a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h.2" />
-  <!-- Updates: an arrow down in a circle, the mark macOS gives updates in
-       the App Store and downloads in Finder and Safari. An update is
-       something that arrives, so the arrow comes down. -->
-  {:else if name === "update"}
-    <circle cx="8" cy="8" r="6" />
-    <path d="M8 5v5.8M5.5 8.4 8 10.9l2.5-2.5" />
-  <!-- Sort: an arrow up beside an arrow down, the mark Reminders, Notes
-       and Files put on a sort menu, whatever it sorts by. -->
-  {:else if name === "sort"}
-    <path d="M5 13V3M2.5 5.5 5 3l2.5 2.5" />
-    <path d="M11 3v10M8.5 10.5 11 13l2.5-2.5" />
-  <!-- Sorted by when things were added: a clock, the mark Finder's
-       Date Added column and Recents are known by. -->
-  {:else if name === "sort-added"}
-    <circle cx="8" cy="8" r="6.2" />
-    <path d="M8 4.6V8l2.3 1.5" />
-  <!-- Sorted by name: A over Z and an arrow down beside them, the way an
-       alphabetical sort is drawn in the apps people use. -->
-  {:else if name === "sort-name"}
-    <path d="M1.8 7.2 3.9 1.8 6 7.2M2.6 5.3h2.6" />
-    <path d="M2 9.2h3.8L2 14.2h3.8" />
-    <path d="M11.5 2v11.6M9 11.2l2.5 2.5 2.5-2.5" />
-  {:else if name === "sliders"}
-    <path d="M2 4.5h12M2 11.5h12" />
-    <circle cx="5.5" cy="4.5" r="1.9" fill="var(--ink-1)" />
-    <circle cx="10.5" cy="11.5" r="1.9" fill="var(--ink-1)" />
-  <!-- Taking a colour from the picture: the pipette the Mac's colour
-       panel and every drawing app give the same thing, its bulb up and to
-       the right and its tip down at the left, where the colour is taken. -->
-  {:else if name === "pipette"}
-    <path d="M9.2 4.2 11.8 6.8M8.4 5 2.8 10.6 2.3 13.7 5.4 13.2 11 7.6" />
-    <path d="M10.2 3.2 11.6 1.8a1.8 1.8 0 0 1 2.6 2.6L12.8 5.8" />
-  {/if}
-</svg>
+<script lang="ts">
+  // They take the colour of the text around them, and a line one and a
+  // half pixels wide at every size, the weight the workspace's text has.
+  let { name, size = 16 }: { name: string; size?: number } = $props();
+
+  const Glyph = $derived(glyphs[name]);
+  const fill = $derived(solid.has(name) ? "currentColor" : "none");
+</script>
+
+{#if brackets[name]}
+  <svg
+    class="lucide-icon"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width={(1.5 * 24) / size}
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d={brackets[name]} />
+  </svg>
+{:else if Glyph}
+  <Glyph {size} {fill} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
+{/if}
 
 <style>
-  svg {
+  :global(svg.lucide-icon) {
     flex: none;
     display: block;
   }
