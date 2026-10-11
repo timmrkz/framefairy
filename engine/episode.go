@@ -376,9 +376,12 @@ type ClipView struct {
 	Start    float64       `json:"start"`
 	End      float64       `json:"end"`
 	Segments []SegmentView `json:"segments"`
-	Rejected bool          `json:"rejected"`
-	Rendered string        `json:"rendered,omitempty"`
-	Preview  string        `json:"preview,omitempty"`
+	// Rotations is the stretches of the video a person rotated, see
+	// Rotation, which the video preview turns its frames by.
+	Rotations []RotationView `json:"rotations"`
+	Rejected  bool           `json:"rejected"`
+	Rendered  string         `json:"rendered,omitempty"`
+	Preview   string         `json:"preview,omitempty"`
 	// CaptionY is where the caption line of this clip sits, as the distance
 	// from the bottom of a 1080x1920 frame, when it was placed by hand.
 	CaptionY float64 `json:"captionY"`
@@ -400,6 +403,9 @@ type SegmentView struct {
 	CropX *int    `json:"cropX"`
 	// Moved means the crop was placed by hand.
 	Moved bool `json:"moved"`
+	// Rotate is how far a person rotated the piece, in degrees to the left,
+	// and the crop is on the picture rotated, see Segment.Rotate.
+	Rotate int `json:"rotate"`
 }
 
 // WordView is one word. In a caption it also says which word of the
@@ -481,8 +487,12 @@ func (s PlanSummary) View() *PlanView {
 				v.Reason = Scrub(reason, 300)
 			}
 		}
+		v.Rotations = []RotationView{}
+		for _, r := range c.Rotations {
+			v.Rotations = append(v.Rotations, rotationView(r))
+		}
 		for _, s := range c.Segments {
-			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved})
+			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate})
 		}
 		v.Rendered = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {

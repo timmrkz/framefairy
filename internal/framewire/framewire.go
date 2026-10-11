@@ -151,6 +151,38 @@ func Picture(width, height int) string {
 	return fmt.Sprintf("scale=%d:%d:flags=bilinear,format=x2bgr10le", width, height)
 }
 
+// Rotate is the ffmpeg filter that rotates a picture so many degrees to
+// the left, 90, 180 or 270, or nothing. It stands up the picture of a file
+// that asks to be turned, the way ffmpeg does by itself, and it rotates a
+// piece of a clip a person rotated.
+func Rotate(degrees int) string {
+	switch degrees {
+	case 90:
+		return "transpose=cclock"
+	case 180:
+		return "hflip,vflip"
+	case 270:
+		return "transpose=clock"
+	}
+	return ""
+}
+
+// Quarter is the quarter turn to the left, 0, 90, 180 or 270, that a
+// display matrix's rotation asks for, given in degrees to the left the way
+// ffprobe reports it, or nought for a turn that is not within a degree of
+// a quarter. The engine reads it from ffprobe and the episode's decoder
+// from the stream, and both stand a picture up by it with Rotate.
+func Quarter(left float64) int {
+	if math.IsNaN(left) || math.IsInf(left, 0) {
+		return 0
+	}
+	q := math.Round(left / 90)
+	if math.Abs(left-q*90) > 1 {
+		return 0
+	}
+	return ((int(q)%4 + 4) % 4) * 90
+}
+
 // MaxBody is the largest body a record may have: a frame of 7680 by 4320.
 const MaxBody = 7680 * 4320 * 4
 
