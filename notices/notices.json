@@ -80,6 +80,16 @@
     ]
   },
   {
+    "name": "github.com/rs/zerolog",
+    "version": "1.35.1",
+    "licence": "MIT",
+    "url": "https://github.com/rs/zerolog",
+    "part": "The app",
+    "texts": [
+      "github.com-rs-zerolog.txt"
+    ]
+  },
+  {
     "name": "github.com/speedata/hyphenation",
     "version": "1.0.3",
     "licence": "CC0-1.0",
@@ -120,6 +130,16 @@
     "part": "The app",
     "texts": [
       "golang.org-x-sys.txt"
+    ]
+  },
+  {
+    "name": "gopkg.in/natefinch/lumberjack.v2",
+    "version": "2.2.1",
+    "licence": "MIT",
+    "url": "https://gopkg.in/natefinch/lumberjack.v2",
+    "part": "The app",
+    "texts": [
+      "gopkg.in-natefinch-lumberjack.v2.txt"
     ]
   },
   {

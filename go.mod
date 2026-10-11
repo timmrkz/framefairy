@@ -6,8 +6,10 @@ require (
 	github.com/abadojack/whatlanggo v1.0.1
 	github.com/asticode/go-astiav v0.43.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
+	github.com/rs/zerolog v1.35.1
 	github.com/speedata/hyphenation v1.0.3
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

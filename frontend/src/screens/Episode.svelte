@@ -107,7 +107,7 @@
   // it still waits for when it is slow to be ready.
   const built = performance.now();
   const tell = (line: string) =>
-    said(`workspace, ${path.split("/").pop()}: ${line}, ${Math.round(performance.now() - built)} ms after it was made`);
+    said(`workspace: ${line}, ${Math.round(performance.now() - built)} ms after it was made`, { video: path });
 
   let status = $state<EpisodeStatus | null>(null);
   let source = $state<SourceView | null>(null);
