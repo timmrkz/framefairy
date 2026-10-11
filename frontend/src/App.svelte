@@ -5,6 +5,7 @@
     clock,
     onChrome,
     onEpisodeChanged,
+    onDropped,
     onAcknowledgements,
     onReport,
     onShowUpdates,
@@ -260,14 +261,7 @@
   async function add() {
     try {
       const added = await api.addEpisodes();
-      await refresh();
-      if (added && added.length) {
-        nav.go({ name: "episode", path: added[0] });
-        // Added last, it is at the foot of a list that may be longer than
-        // the sidebar, so it is brought into view to be seen arriving.
-        await tick();
-        list?.querySelector(".episode.current")?.scrollIntoView({ block: "nearest" });
-      }
+      await show(added?.[0]);
     } catch (err) {
       // One file that could not be added does not mean none of them were,
       // so the list is read again either way.
@@ -275,6 +269,28 @@
       await refresh();
     }
   }
+
+  // Reads the list again after videos came in and opens the one given,
+  // from whatever page the app was on.
+  async function show(path?: string) {
+    await refresh();
+    if (!path) return;
+    said("app: a video added opens", { level: "info", video: path });
+    nav.go({ name: "episode", path });
+    // Added last, it is at the foot of a list that may be longer than
+    // the sidebar, so it is brought into view to be seen arriving.
+    await tick();
+    list?.querySelector(".episode.current")?.scrollIntoView({ block: "nearest" });
+  }
+
+  // A video dropped anywhere on the app is added the way Add adds one.
+  // The whole app is where it may land, marked for the runtime with
+  // data-file-drop-target, once the setup is done: before that there is
+  // no list to add to. The Go side adds it and says what came of it,
+  // see drop.go.
+  $effect(() => {
+    document.documentElement.toggleAttribute("data-file-drop-target", settingUp === false);
+  });
 
   // Cmd+Q heard: the app dims at once and says what happens next. See
   // quit.go for why the first press only asks while work runs.
@@ -447,6 +463,10 @@
       .then(showLicenceLink);
     refresh();
     const off = onEpisodeChanged(() => refresh());
+    const noDropped = onDropped((d) => {
+      if (d.error) problem = d.error;
+      show(d.open);
+    });
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
     // The video in front goes with the report by its name, whatever page
     // the menu was picked on, so a second pick keeps the first one's.
@@ -498,6 +518,7 @@
       noUpdates();
       noShowUpdates();
       noLicenceLink();
+      noDropped();
       off();
     };
   });
@@ -717,6 +738,12 @@
   {/if}
   </div>
 
+  <!-- Where a video dragged over the app would land: all of it. The
+       runtime puts file-drop-target-active on the page while a file is
+       held over it, so this is lit for exactly as long as a drop would
+       add something, and nothing here has to follow the drag. -->
+  <div class="landing frame" aria-hidden="true"></div>
+
   {#if leaving}
     <!-- Over everything, the moment the key is heard. A click or Escape
          takes the question away, the same as waiting does. -->
@@ -778,6 +805,25 @@
   /* Cmd+Q heard. The dim is the one a box over the workspace brings,
      Confirm.svelte, so the app looks the same whenever it is waiting on
      an answer. The words are the size of a box's title. */
+  /* The frame of what is chosen, round the whole app with a gap to its
+     edge, the way the crop sits in the video preview, and the wash of a
+     chosen clip inside it. The gap keeps the frame's corners clear of the
+     app's own rounded corners. Over the workspace and under the question
+     about quitting, and never in the way of the pointer. */
+  .landing {
+    position: fixed;
+    inset: var(--gap);
+    z-index: 999;
+    pointer-events: none;
+    background: var(--accent-wash);
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+
+  :global(:root.file-drop-target-active) .landing {
+    opacity: 1;
+  }
+
   .leaving {
     position: fixed;
     inset: 0;

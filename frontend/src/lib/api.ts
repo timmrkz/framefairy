@@ -826,6 +826,14 @@ export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }
 
+// What became of files dropped on the app, see Dropped in drop.go: the
+// videos added, the one to open and why anything was left out.
+export type Dropped = { added: string[]; open?: string; error?: string };
+
+export function onDropped(fn: (d: Dropped) => void): () => void {
+  return Events.On("dropped", (ev) => fn(ev.data as Dropped));
+}
+
 // The loudness of an episode was measured further, about twice a second
 // while it is measured, so the waveform can grow.
 export function onLevels(fn: (path: string) => void): () => void {

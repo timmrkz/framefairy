@@ -194,6 +194,16 @@ func main() {
 			// because the app measures it rather than choosing it.
 			TitleBar: application.MacTitleBarHidden,
 		},
+		// A video dropped anywhere on the app is added, the way Add adds
+		// one. The window marks where a drop lands, the whole app once
+		// the setup is done, see App.svelte, and says what came of it.
+		EnableFileDrop: true,
+	})
+	svc.window.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
+		files := e.Context().DroppedFiles()
+		// Deciding whether a picture can be decoded takes a moment for
+		// each video, which is not the window's to wait on.
+		go func() { app.Event.Emit("dropped", svc.dropFiles(files)) }()
 	})
 	svc.chrome = watchChrome(app, svc.window)
 	// Only in the build the checks from outside the app use, see
