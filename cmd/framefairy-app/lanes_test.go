@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"framefairy/engine"
 )
 
 // given takes a turn and fails the test if it does not come in time.
@@ -119,6 +121,32 @@ func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 	found()
 	if _, kind := laneOfStep("search", "finding", true); kind != findingTurn {
 		t.Error("finding with the model on this machine no longer holds hearing up")
+	}
+}
+
+// A search takes the turn of finding the clips by where its settings put
+// the language model, so a search asking the cloud lets hearing go on and
+// one asking the model on this machine holds it up.
+func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
+	for _, c := range []struct {
+		planner string
+		holds   bool
+	}{{"api", false}, {"local", true}, {"", true}} {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, found, err := q.turn(&Job{Kind: "search"}, engine.Options{Planner: c.planner})(ctx, "finding")
+		if err != nil {
+			t.Fatal(err)
+		}
+		hearing, stop := waiting(q.lanes, LaneHearing, hearingTurn)
+		if c.holds {
+			waits(t, hearing, "hearing while a search with the model "+c.planner+" finds")
+		} else {
+			comes(t, hearing, "hearing while a search with the model "+c.planner+" finds")()
+		}
+		found()
+		stop()
+		cancel()
 	}
 }
 

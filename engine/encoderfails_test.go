@@ -248,3 +248,50 @@ func TestTheProcessorIsAskedForABitRate(t *testing.T) {
 		t.Errorf("the processor is asked %q", got)
 	}
 }
+
+// Apple's encoders on the processor take what a short asks of them, the
+// HEVC one for HDR in 10 bits as well as the H.264 one. The render above
+// only goes through H.264, and without this nothing would have rendered
+// HDR on the processor before a customer's media engine failed. Mac only,
+// where these encoders are.
+//
+// On the real disk: ffmpeg writes the short it encodes.
+func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
+	rs := RenderSettings{OutW: 180, OutH: 320, CRF: 18, Rate: 30}
+	cases := []struct {
+		name    string
+		encoder Encoder
+		input   string
+		want    string
+	}{
+		{"H.264", onProcessor(videoToolbox), "yuv420p", "h264"},
+		{"HEVC in 10 bits for HDR", onProcessor(hevcVideoToolbox), "p010le", "hevc (Main 10)"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !hasEncoder(string(listing), c.encoder.Name) {
+				t.Skipf("this ffmpeg has no %s, which only a Mac has", c.encoder.Name)
+			}
+			out := filepath.Join(t.TempDir(), "short.mp4")
+			args := []string{"-hide_banner", "-loglevel", "error", "-y",
+				"-f", "lavfi", "-i", "testsrc2=s=180x320:r=30:d=1", "-vf", "format=" + c.input}
+			args = append(append(args, c.encoder.args(rs)...), out)
+			if said, err := exec.Command(e.FFmpeg, args...).CombinedOutput(); err != nil {
+				t.Fatalf("%s on the processor refused %v: %v\n%s", c.encoder.Name, args, err, said)
+			}
+			// ffmpeg asked about a file with no output says what it holds
+			// and exits with an error, which is not a failure here.
+			about, _ := exec.Command(e.FFmpeg, "-hide_banner", "-i", out).CombinedOutput()
+			if !strings.Contains(string(about), "Video: "+c.want) {
+				t.Errorf("the short is not %s:\n%s", c.want, about)
+			}
+		})
+	}
+}
