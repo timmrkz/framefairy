@@ -19,7 +19,11 @@ import (
 // search that hears, which saves what it heard and waits for its turn
 // again, and hearing waits for as long as a search finds. Work that is
 // not a step of a search, a model being installed or a transcription asked
-// for by itself, is neither taken back nor held up.
+// for by itself, is neither taken back nor held up. A search whose
+// language model is in the cloud shares nothing with the speech model, so
+// it finds like any other work and hearing goes on beside it: a video
+// added while it waited for its answer sat at Waiting to transcribe for
+// as long as the cloud took. Plan row 2.222.
 //
 // And one more: a clip made by hand hears first. Somebody pressed I or O
 // and is looking at the card, and what it hears is the minute around the
@@ -181,8 +185,10 @@ func (l *lanes) dropLocked(a *ask) {
 	}
 }
 
-// laneOfStep is the lane a step of a kind of job runs in.
-func laneOfStep(kind, step string) (string, turnKind) {
+// laneOfStep is the lane a step of a kind of job runs in, and how it
+// takes its turn. local says whether the job's language model runs on
+// this machine, where finding holds hearing up.
+func laneOfStep(kind, step string, local bool) (string, turnKind) {
 	switch step {
 	case "hearing":
 		if kind == engine.JobClip {
@@ -190,6 +196,9 @@ func laneOfStep(kind, step string) (string, turnKind) {
 		}
 		return LaneHearing, hearingTurn
 	case "finding":
+		if !local {
+			return LaneFinding, plainTurn
+		}
 		return LaneFinding, findingTurn
 	case "framing":
 		return LaneFraming, plainTurn

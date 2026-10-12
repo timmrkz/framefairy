@@ -98,6 +98,30 @@ func TestFindingTakesHearingBack(t *testing.T) {
 	comes(t, again, "hearing after the search found")()
 }
 
+// A search whose language model is in the cloud shares nothing with the
+// speech model, so a search that hears goes on while it finds and is not
+// taken back. A video added while it waited for its answer sat at Waiting
+// to transcribe for as long as the cloud took. On this machine the rule
+// holds. Plan row 2.222.
+func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
+	l := newLanes()
+	lane, kind := laneOfStep("search", "finding", false)
+	hearing, heard := given(t, l, LaneHearing, hearingTurn)
+	_, found := given(t, l, lane, kind)
+	select {
+	case <-hearing.Done():
+		t.Fatal("the hearing search was stopped by a search finding in the cloud")
+	case <-time.After(100 * time.Millisecond):
+	}
+	heard()
+	again, _ := waiting(l, LaneHearing, hearingTurn)
+	comes(t, again, "hearing while a search finds in the cloud")()
+	found()
+	if _, kind := laneOfStep("search", "finding", true); kind != findingTurn {
+		t.Error("finding with the model on this machine no longer holds hearing up")
+	}
+}
+
 // A clip made by hand hears first: it takes the lane back from a search
 // that hears, goes ahead of a search waiting to hear, and does not wait for
 // a search that finds. Clips made by hand hear in the order asked.
