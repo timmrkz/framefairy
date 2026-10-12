@@ -296,6 +296,8 @@ type video struct {
 	fc     *astiav.FormatContext
 	stream *astiav.Stream
 	dec    *astiav.CodecContext
+	// chip tells whether dec decodes on the graphics chip.
+	chip bool
 	// turned is how far the file asks for its picture to be turned to
 	// stand up, in degrees to the left, which ffmpeg does by itself and
 	// so the engine's sizes already are. See engine.SourceInfo.Turned.
@@ -369,7 +371,8 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 	// offered the chip with threads of its own failed on every frame on a
 	// Mac, "Invalid argument", since the chip is chosen for each frame from
 	// ffmpeg's threads.
-	if hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID()) {
+	chip := hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID())
+	if chip {
 		dec.SetHardwareDeviceContext(hardware)
 		said := ""
 		dec.SetPixelFormatCallback(func(pfs []astiav.PixelFormat) astiav.PixelFormat {
@@ -401,7 +404,7 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 		dec.Free()
 		return fmt.Errorf("the decoder could not be opened: %w", err)
 	}
-	v.dec = dec
+	v.dec, v.chip = dec, chip
 	return nil
 }
 
@@ -441,7 +444,10 @@ type cursor struct {
 	shown []byte
 	until int
 	// How often this open sought again for a seek that landed too late.
-	retries   int
+	retries int
+	// How many frames the graphics chip decoded for the cursor, for
+	// chipFailsAfter.
+	onChip    int
 	sentEOF   bool
 	graphEOF  bool
 	failedWhy string
@@ -780,7 +786,16 @@ func (c *cursor) decode() (float64, error) {
 	for {
 		err := c.v.dec.ReceiveFrame(c.decoded)
 		switch {
+		case err == nil && c.v.chip && chipFailsAfter > 0 && c.onChip == chipFailsAfter:
+			c.decoded.Unref()
+			if err := c.toProcessor(errors.New("made to fail by FRAMEFAIRY_FRAMES_CHIP_FAILS")); err != nil {
+				return 0, err
+			}
+			continue
 		case err == nil:
+			if c.v.chip {
+				c.onChip++
+			}
 			// Its moment is ffmpeg's best guess, as the ffmpeg program
 			// takes it, so a frame that carries none of its own still has
 			// one.
@@ -794,13 +809,59 @@ func (c *cursor) decode() (float64, error) {
 		case errors.Is(err, astiav.ErrEof):
 			return 0, astiav.ErrEof
 		case errors.Is(err, astiav.ErrEagain):
-			if err := c.feed(); err != nil {
+			err := c.feed()
+			var failed chipFailed
+			if errors.As(err, &failed) {
+				err = c.toProcessor(failed.err)
+			}
+			if err != nil {
 				return 0, err
 			}
 		default:
+			if c.v.chip {
+				if err := c.toProcessor(err); err != nil {
+					return 0, err
+				}
+				continue
+			}
 			return 0, c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 	}
+}
+
+// chipFailsAfter makes the graphics chip fail once for each cursor after
+// it decoded that many frames, so a test on a Mac can see the cursor go
+// on with the processor, see toProcessor. Nought, never, unless
+// FRAMEFAIRY_FRAMES_CHIP_FAILS says otherwise.
+var chipFailsAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_CHIP_FAILS"))
+
+// chipFailed is the graphics chip refusing a packet, which feed hands to
+// decode to go on with the processor.
+type chipFailed struct{ err error }
+
+func (f chipFailed) Error() string { return f.err.Error() }
+
+// toProcessor goes on decoding on the processor after the graphics chip
+// failed to decode a frame. VideoToolbox does that now and then on a
+// virtual Mac, "hardware accelerator failed to decode picture", one run
+// in four of CI's, and the cursor then failed and the video preview
+// stood still. The decoder is opened again without the chip and the
+// cursor seeks to the frame of the grid it is at, the way open does, so
+// the frames it sends go on from where they were. Once on the processor
+// a cursor stays there.
+func (c *cursor) toProcessor(why error) error {
+	c.say(fmt.Sprintf("the graphics chip failed, %v, decodes on the processor from frame %d", why, c.rank))
+	c.disown(&c.keys)
+	c.v.dec.Free()
+	c.v.dec = nil
+	if err := c.v.openDecoder(nil, c.say); err != nil {
+		return err
+	}
+	c.own(&c.keys, c.v.fc, c.v.dec)
+	// The chain was built for the chip's frames.
+	c.freeGraph()
+	c.retries = 0
+	return c.seek(c.grid.At(c.rank) + framewire.Hair)
 }
 
 // show scales the frame in decoded through the chain and shows it from
@@ -853,6 +914,9 @@ func (c *cursor) feed() error {
 		err = c.v.dec.SendPacket(c.pkt)
 		c.pkt.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
+			if c.v.chip {
+				return chipFailed{err}
+			}
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 		return nil

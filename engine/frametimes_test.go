@@ -165,9 +165,8 @@ func timesEpisode(t *testing.T, c timesCase) string {
 		return source
 	}
 	// Copied into a pipe, ffmpeg cannot go back to the start of the file
-	// to say how long it is. Copied rather than made there, so the
-	// picture's settings are written first, as OBS writes them, which the
-	// Mac's encoder only has once it has made the first frame.
+	// to say how long it is. Made whole first and copied, so the file is
+	// the same whichever encoder made the picture.
 	whole := source + ".whole.mkv"
 	if err := os.Rename(source, whole); err != nil {
 		t.Fatal(err)

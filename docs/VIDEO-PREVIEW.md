@@ -139,7 +139,12 @@ closed for standing unused.
   file with 10-bit colour. Why the chip refused it is still to be found
   out. A file the chip does not decode at all, AV1 on an M2 or MPEG-4, is
   decoded by ffmpeg on the processor, with as many threads as it takes:
-  that is the file's codec, not a second path of ours. A stream the
+  that is the file's codec, not a second path of ours. When the chip
+  fails to decode a frame, which VideoToolbox does now and then on a
+  virtual Mac, the cursor opens its decoder again on the processor and
+  goes on from the frame it is at, the way mpv falls back, and stays
+  there. Before, the cursor failed and the video preview stood still,
+  one CI run in four on what OBS records, plan row 2.215. A stream the
   Go side opens takes a cursor that a stream before it has finished with
   and only seeks it, so a jump starts no program and reads no index. Up
   to three are kept, and they are opened on the file as the decoder
