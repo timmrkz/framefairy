@@ -28,7 +28,7 @@
 //   key frame on. A piece that starts after the last one ends, inside what
 //   has already been decoded, carries the run on. Any other piece starts a
 //   new run, from the key frame before it.
-import { rankAt, type Samples } from "./mp4";
+import { rankAt, type Samples } from "./movie";
 
 export type Piece = { start: number; end: number };
 

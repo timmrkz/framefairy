@@ -82,6 +82,9 @@
 //                      the same with its frames at a phone's uneven times,
 //                      "uneven", or its picture starting after its sound,
 //                      "late"
+//   ["add", seconds, rate, timing, "mkv"]
+//                      the same in Matroska, the way OBS records, with ""
+//                      for frames at the rate
 //   ["render"]         presses Render and waits until the short is written
 //   ["add sound alone"] adds a file of sound with no picture, named like a
 //                      video, with Add
@@ -830,6 +833,27 @@ export const sequences = [
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
       ["add", 40, "30000/1001", "late"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["trim", "start", 20],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["edges as rendered"],
+    ],
+  },
+  {
+    // Plan row 2.198, found by Tim: a video OBS recorded in Matroska was
+    // added, searched and found clips, and the video preview said "The
+    // file has no moov box, so it is not an MP4 or MOV it can read". It
+    // read the file's frames with a reader of its own, mp4.ts, where
+    // everything else reads through ffmpeg. The picture starts after the
+    // sound, by Matroska's first timestamp, so the frames are on a grid
+    // of their own, as in the walk on a clip's edges above.
+    name: "a video in Matroska shows in the video preview the frames its short has",
+    steps: [
+      ["add", 40, "30000/1001", "late", "mkv"],
       ["wait for", "New"],
       ["cards", 1],
       ["trim", "start", 20],
@@ -2442,8 +2466,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "add": {
-        const [seconds, rate, timing] = [arg].flat();
-        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
+        const [seconds, rate, timing, inside] = [arg].flat();
+        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
         break;
@@ -3306,13 +3330,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             polling: 200,
           })
           .then(() => true, () => false);
-        const served = short
-          ? await page.evaluate(async (p) => (await fetch(`/media/short?path=${encodeURIComponent(p)}`)).status, short)
-          : 0;
         if (!short) wrong = "the clip says it has no short";
         else if (dirname(short) !== folder) wrong = `the short is at ${short}, not in the folder for shorts, ${folder}`;
         else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
-        else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
         break;

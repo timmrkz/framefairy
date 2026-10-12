@@ -3,8 +3,9 @@
 // Every frame and every sample comes from ffmpeg on the Go side, the
 // episode's decoder, see docs/VIDEO-PREVIEW.md. The browser decodes
 // nothing. Everything this file decides is decided in plan.ts, with tests.
-// This is only the glue: the file's index, asking the Go side for frames
-// and sound, drawing, and scheduling the sound.
+// This is only the glue: asking the Go side for frames and sound on the
+// frames the engine names, see movie.ts, drawing, and scheduling the
+// sound.
 //
 // How it runs, in short:
 //
@@ -32,7 +33,7 @@
 import { AppFrames, AppPictures } from "./app";
 import type { Picture } from "./picture";
 import { screenOf, type Screen } from "./screen";
-import { findMoov, MP4Error, parseMoov, rankAt, type AudioTrack, type Movie, type VideoTrack } from "./mp4";
+import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
   fade,
@@ -96,8 +97,6 @@ export type Stats = {
   // Packets of sound decoded, and stretches handed to the sound card.
   soundDecoded: number;
   soundScheduled: number;
-  reads: number;
-  bytesRead: number;
   // What the canvas draws with, webgpu or 2d, see screen.ts, and nothing
   // until it is set up.
   screen: string;
@@ -136,106 +135,13 @@ function stamp(run: number, seconds: number): number {
   return run * 1e11 + 1e10 + Math.round(seconds * 1e6);
 }
 
-// The episode file, of which only the index is read here: which frames
-// and which packets of sound there are, and when. The Go side decodes
-// both, see docs/VIDEO-PREVIEW.md. Step 5 there takes this away too.
-class Reader {
-  size = 0;
-  reads = 0;
-  bytes = 0;
-  // The file as the server last described it, its length and when it was
-  // written, see fileStamps.
-  stamp = "";
-
-  constructor(
-    readonly url: string,
-    private known: Movie | null = null,
-  ) {}
-
-  async read(from: number, to: number): Promise<Uint8Array> {
-    this.reads++;
-    // Never from the webview's cache: a file written long ago is taken as
-    // unchanged for a while, and one written over since would be read as
-    // it was.
-    const res = await fetch(this.url, { headers: { Range: `bytes=${from}-${to - 1}` }, cache: "no-store" });
-    if (res.status !== 206 && res.status !== 200) throw new MP4Error(`the video file could not be read, it answered ${res.status}`);
-    const total = /\/(\d+)$/.exec(res.headers.get("content-range") ?? "");
-    if (total) this.size = Number(total[1]);
-    this.stamp = `${total?.[1] ?? res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}`;
-    let body = new Uint8Array(await res.arrayBuffer());
-    // A server that sends the whole file has sent what was asked too.
-    if (res.status === 200) {
-      this.size = body.length;
-      body = body.subarray(from, to);
-    }
-    this.bytes += body.length;
-    return body;
-  }
-
-  async open(): Promise<Movie> {
-    if (this.known && (await this.same(this.known))) return this.known;
-    const early = ahead.get(this.url);
-    if (early) {
-      ahead.delete(this.url);
-      const movie = await early.catch(() => null);
-      if (movie) return movie;
-    }
-    return this.read0();
-  }
-
-  private async read0(): Promise<Movie> {
-    const first = await this.read(0, 1 << 16);
-    if (!this.size) this.size = first.length;
-    const moov = await findMoov(
-      async (from, to) => (to <= first.length ? first.subarray(from, to) : this.read(from, to)),
-      this.size,
-    );
-    const movie = parseMoov(moov);
-    fileStamps.set(movie, this.stamp);
-    return movie;
-  }
-
-  // Whether the file is still the one the index was read from. A workspace
-  // keeps the index while it sleeps, and an episode written over in the
-  // meantime, exported again under its name, would be read by the old one.
-  private async same(movie: Movie): Promise<boolean> {
-    try {
-      const res = await fetch(this.url, { method: "HEAD", cache: "no-store" });
-      return res.ok && `${res.headers.get("content-length") ?? ""}|${res.headers.get("last-modified") ?? ""}` === fileStamps.get(movie);
-    } catch {
-      return false;
-    }
-  }
-
-}
-
-// The file each index was read from, its length and when it was written.
-const fileStamps = new WeakMap<Movie, string>();
-
-// The indexes read ahead, by the episode's address, until a queue takes
-// its own. See readAhead.
-const ahead = new Map<string, Promise<Movie>>();
-
-// Starts what a video preview needs before anything else, the moment a
-// workspace starts to open, rather than once the workspace has asked the
-// Go side what the episode is: the file's index, read in up to three reads
-// one after another, and the episode's decoder on the Go side, ffmpeg
-// started with the file open. Both were the last links of a chain, and the
-// first frame waited for each in turn. The decoder is held only until it
-// is up: the queue holds it for itself, and one nobody holds stands for
-// twenty seconds before it is closed.
-export function readAhead(url: string, path: string) {
-  if (!ahead.has(url)) {
-    const movie = new Reader(url).open();
-    movie.catch(() => ahead.delete(url));
-    ahead.set(url, movie);
-    // Never more than a few waiting: an index is megabytes for a long
-    // episode.
-    for (const old of ahead.keys()) {
-      if (ahead.size <= 4) break;
-      ahead.delete(old);
-    }
-  }
+// Starts the episode's decoder on the Go side, ffmpeg with the file open,
+// the moment a workspace starts to open, rather than once the workspace
+// has asked the Go side what the episode is: it was the last link of a
+// chain, and the first frame waited for it. The decoder is held only
+// until it is up: the queue holds it for itself, and one nobody holds
+// stands for twenty seconds before it is closed.
+export function holdAhead(path: string) {
   const q = new URLSearchParams({ path });
   // Released only once held, so a hold that failed takes nobody else's.
   void fetch(`/frames/hold?${q}`)
@@ -545,14 +451,14 @@ type Slot = {
 // of the program.
 type State = "paused" | "cued" | "starting" | "playing" | "ended";
 
-// A file's index in a few words, for the log.
+// What the queue plays, in a few words, for the log.
 function describe(m: Movie): string {
   const v = m.video;
   const a = m.audio;
   const picture = v
-    ? `${v.codec} ${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, ${v.samples.timescale} a second, ${v.samples.key.reduce((n, k) => n + k, 0)} key frames, the first shown at ${(v.samples.pts[v.samples.order[0]] / v.samples.timescale).toFixed(3)} s, ${JSON.stringify(v.colour)}`
+    ? `${v.width}x${v.height}, ${v.samples.count} frames of ${(v.frame * 1000).toFixed(2)} ms, the first at ${(v.samples.pts[0] / v.samples.timescale).toFixed(3)} s`
     : "no picture";
-  const sound = a ? `${a.codec} ${a.sampleRate} Hz, ${a.channels} channels, ${a.samples.count} packets${a.pcm ? ", plain" : ""}` : "no sound";
+  const sound = a ? `${a.sampleRate} Hz, ${a.channels} channels` : "no sound";
   return `${m.duration.toFixed(3)} s, ${picture}, ${sound}`;
 }
 
@@ -568,6 +474,7 @@ export class FrameQueue {
   // with the reason in a sentence when the file cannot be played here.
   readonly ready: Promise<void>;
   movie: Movie | null = null;
+  private given: Movie;
   // The sound card. Everything played goes through out, which a probe can
   // listen to.
   audio!: AudioContext;
@@ -583,13 +490,10 @@ export class FrameQueue {
     starts: 0,
     soundDecoded: 0,
     soundScheduled: 0,
-    reads: 0,
-    bytesRead: 0,
     screen: "",
     errors: [],
   };
 
-  private reader: Reader;
   private canvas: HTMLCanvasElement;
   // Whether the canvas has been told its size, see resize, and the frame
   // and size last asked for again, see sharpen.
@@ -613,7 +517,7 @@ export class FrameQueue {
   private slots: Slot[] = [];
   private soundDecoder: SoundDecoder | null = null;
   // The Go side's frames, from the episode's decoder: every frame drawn,
-  // whatever the file. Null only until the file's index is read.
+  // whatever the file. Null only until the queue is open.
   private app: AppFrames | null = null;
   private closed = false;
   private trouble = "";
@@ -683,14 +587,19 @@ export class FrameQueue {
   private ticket = 0;
   private scratch: Float32Array[] = [];
 
-  // known is the file's index as a queue before this one read it, for a
-  // workspace woken again, see sleeping in Player.svelte. The canvas then
-  // holds this episode's own frame, which stays until the first frame of
-  // this queue replaces it.
-  constructor(canvas: HTMLCanvasElement, url: string, known: Movie | null = null) {
+  // path is the episode's, and movie what the engine says of it, see
+  // movie.ts. woken is a workspace woken again, see sleeping in
+  // Player.svelte: the canvas then holds this episode's own frame, which
+  // stays until the first frame of this queue replaces it.
+  constructor(
+    canvas: HTMLCanvasElement,
+    readonly path: string,
+    movie: Movie,
+    woken = false,
+  ) {
     this.canvas = canvas;
-    this.known = known !== null;
-    this.reader = new Reader(url, known);
+    this.known = woken;
+    this.given = movie;
     // For the walks, which listen to what it plays, see the sequences.
     (globalThis as unknown as { __frameQueue?: FrameQueue }).__frameQueue = this;
     this.laidOut = new Promise((done) => (this.sizeKnown = done));
@@ -703,17 +612,9 @@ export class FrameQueue {
   }
 
   private async open() {
-    const [screen, movie] = await Promise.all([
-      screenOf(this.canvas).then((s) => {
-        this.trace(`the canvas draws with ${s.kind}, ${this.ms()}`);
-        return s;
-      }),
-      this.reader.open().then((m) => {
-        const how = this.known ? "kept from before" : this.reader.reads ? `read in ${this.reader.reads} reads of ${this.reader.bytes} bytes` : "read ahead as the workspace opened";
-        this.trace(`index ${how}, ${this.ms()}: ${describe(m)}`);
-        return m;
-      }),
-    ]);
+    const movie = this.given;
+    const screen = await screenOf(this.canvas);
+    this.trace(`the canvas draws with ${screen.kind}, ${this.ms()}, and plays ${describe(movie)}`);
     if (this.closed) throw new Error("closed");
     this.screen = screen;
     this.stats.screen = screen.kind;
@@ -721,13 +622,11 @@ export class FrameQueue {
     // Black until the first frame, never the last frame of an episode
     // drawn on this canvas before. A workspace woken again keeps its own.
     if (!this.known) this.paint();
-    this.stats.reads = this.reader.reads;
-    this.stats.bytesRead = this.reader.bytes;
     if (this.closed) throw new Error("closed");
     this.movie = movie;
     this.video = movie.video ?? null;
     this.sound = movie.audio ?? null;
-    if (!this.video) throw new MP4Error("the video has no picture the video preview can decode");
+    if (!this.video) throw new Error("the video has no picture the video preview can show");
     // Every file's picture comes from ffmpeg on the Go side, the episode's
     // decoder. The webview decodes nothing, see docs/VIDEO-PREVIEW.md.
     this.app = this.fromApp();
@@ -764,8 +663,7 @@ export class FrameQueue {
   private async openSound(a: AudioTrack) {
     const output = (d: Sound) => this.soundOut(d);
     const dequeue = () => this.pumpSound();
-    const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
-    this.soundDecoder = new GoSound(path, a.sampleRate, Math.min(a.channels, 8), output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
+    this.soundDecoder = new GoSound(this.path, a.sampleRate, Math.min(a.channels, 8), output, (e) => this.fault(`The sound stopped decoding: ${e}.`), dequeue);
   }
 
   private makeSlot(): Slot {
@@ -791,9 +689,8 @@ export class FrameQueue {
   // The Go side's frames for this episode, decoded at the size of the
   // canvas and no larger than the file's own.
   private fromApp(): AppFrames {
-    const path = new URL(this.reader.url, location.href).searchParams.get("path") ?? "";
     const v = this.video!;
-    const app = new AppFrames(path, v, () => this.previewSize(), (why) =>
+    const app = new AppFrames(this.path, v, () => this.previewSize(), (why) =>
       this.fault(`The app could not decode the picture: ${why.replace(/\.$/, "")}.`),
     );
     app.trace = (line) => this.trace(line);

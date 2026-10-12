@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,11 @@ func TestLanesRunSideBySide(t *testing.T) {
 	close(release)
 }
 
-func TestMediaRouteServesRangesOfKnownFilesOnly(t *testing.T) {
+// Nothing serves the bytes of a file to the page, not even of an episode
+// in the library: the video preview reads nothing of the file itself, see
+// docs/VIDEO-PREVIEW.md, step 5. The frames route takes an episode's file
+// and nothing else.
+func TestNothingServesTheBytesOfAFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
@@ -60,19 +65,21 @@ func TestMediaRouteServesRangesOfKnownFilesOnly(t *testing.T) {
 	}
 	handler := mediaMiddleware(st)(http.NotFoundHandler())
 
-	req := httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(source), nil)
-	req.Header.Set("Range", "bytes=2-5")
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusPartialContent || rec.Body.String() != "2345" {
-		t.Errorf("range got %d %q", rec.Code, rec.Body.String())
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(source), nil))
+	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "0123") {
+		t.Errorf("the episode's file was served with %d: %q", rec.Code, rec.Body.String())
 	}
-
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(source), nil))
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("the episode's file was not taken by the frames route: %d", rec.Code)
+	}
 	for _, path := range []string{other, filepath.Join(engine.WorkDir(source), "..", "secret.txt"), "relative.mp4"} {
 		rec = httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(path), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(path), nil))
 		if rec.Code != http.StatusNotFound {
-			t.Errorf("%s served with %d", path, rec.Code)
+			t.Errorf("%s was taken with %d", path, rec.Code)
 		}
 	}
 }

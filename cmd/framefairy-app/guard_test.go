@@ -111,7 +111,7 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 
 // A link inside a work folder points wherever it likes. What is served has
 // to be what it says it is, so the link is followed before it is judged.
-func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
+func TestTheFramesRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	svc, mine, home := library(t)
 	secret := filepath.Join(home, "secret.txt")
 	if err := os.WriteFile(secret, []byte("not for the interface"), 0o644); err != nil {
@@ -127,9 +127,9 @@ func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	}
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(link), nil))
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(link), nil))
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("a link out of the work folder was served with %d: %q", rec.Code, rec.Body.String())
+		t.Errorf("a link out of the work folder was taken with %d: %q", rec.Code, rec.Body.String())
 	}
 	if !svc.store.Known(link) {
 		return
@@ -141,7 +141,7 @@ func TestTheMediaRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 // library, and neither does a video that is a link. A zip from an editor
 // can carry episode.mp4 with an episode.framefairy that leads to the
 // home folder, and every file there was the episode's: Known said yes to
-// a key in ~/.ssh and the media route served it.
+// a key in ~/.ssh and the route that served files then served it.
 func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	svc, mine, home := library(t)
 	secret := filepath.Join(home, "secret.txt")
@@ -161,10 +161,10 @@ func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	}
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+
 		url.QueryEscape(filepath.Join(engine.WorkDir(mine), "secret.txt")), nil))
 	if rec.Code != http.StatusNotFound {
-		t.Errorf("a file through the linked work folder was served with %d", rec.Code)
+		t.Errorf("a file through the linked work folder was taken with %d", rec.Code)
 	}
 
 	// Refused when added, with the reason, the same as a video that is a
@@ -193,9 +193,8 @@ func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	}
 }
 
-// The media route is for files. A folder would be answered with a listing
-// of what is in it, which is nobody's business but the machine's.
-func TestTheMediaRouteServesFilesOnly(t *testing.T) {
+// The frames route is for files. A folder of an episode is no video.
+func TestTheFramesRouteTakesFilesOnly(t *testing.T) {
 	svc, mine, _ := library(t)
 	work := engine.WorkDir(mine)
 	if err := os.MkdirAll(filepath.Join(work, "logs"), 0o755); err != nil {
@@ -204,9 +203,9 @@ func TestTheMediaRouteServesFilesOnly(t *testing.T) {
 	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
 	for _, path := range []string{work, filepath.Join(work, "logs")} {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/media/?path="+url.QueryEscape(path), nil))
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/release?path="+url.QueryEscape(path), nil))
 		if rec.Code != http.StatusNotFound {
-			t.Errorf("%s was served with %d: %q", path, rec.Code, rec.Body.String())
+			t.Errorf("%s was taken with %d: %q", path, rec.Code, rec.Body.String())
 		}
 	}
 }
@@ -233,6 +232,8 @@ func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
 		{"relative.mp4", "&w=64&h=36", http.StatusNotFound},
 		{mine, "", http.StatusBadRequest},
 		{mine, "&w=64&h=99999", http.StatusBadRequest},
+		{mine, "&w=64&h=36", http.StatusBadRequest},
+		{mine, "&w=64&h=36&grid=0,0,0,1,50", http.StatusBadRequest},
 	} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/open?path="+url.QueryEscape(c.path)+c.size, nil))

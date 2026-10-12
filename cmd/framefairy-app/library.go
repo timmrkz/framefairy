@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"framefairy/engine"
+	"framefairy/internal/framewire"
 )
 
 // Library lists the episodes with their state.
@@ -116,8 +117,16 @@ func undecodable(video string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// On the grid of its short, or on one of a single frame where the
+	// probe finds none, so a file with no picture is refused in the
+	// decoder's own words.
+	info, _ := sources.probe(ctx, abs)
+	grid := info.Grid()
+	if !grid.Valid() {
+		grid = framewire.Grid{Num: 1, Den: 1, Count: 1}
+	}
 	frames := 0
-	err = dec.Stream(ctx, 0, 64, 36, func(float64, []byte) error {
+	err = dec.Stream(ctx, grid, 0, 64, 36, func(float64, []byte) error {
 		frames++
 		return errFirstFrame
 	})

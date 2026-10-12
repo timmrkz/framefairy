@@ -3,7 +3,7 @@
 // and every sample heard written down and checked.
 //
 //   npx vite build --config frontend/preview/vite.config.ts
-//   node frontend/preview/frames/cuts.mjs [loop] [slowread=200] [seconds=8]
+//   node frontend/preview/frames/cuts.mjs [loop] [seconds=8]
 //   node frontend/preview/frames/cuts.mjs memory
 //   node frontend/preview/frames/cuts.mjs seeks
 //
@@ -31,7 +31,6 @@ const args = process.argv.slice(2);
 const loop = args.includes("loop");
 const memory = args.includes("memory");
 const seeking = args.includes("seeks");
-const slow = Number(args.find((a) => a.startsWith("slowread="))?.split("=")[1] ?? 0);
 const seconds = Number(args.find((a) => /^\d+$/.test(a)) ?? (loop ? 14 : 8));
 const R = 48000;
 const d = 0.04;
@@ -42,7 +41,7 @@ const pieces = [
   { start: 63.05, end: 65.0 },
 ];
 
-const query = `?read&hear${slow ? `&slowread=${slow}` : ""}`;
+const query = "?read&hear";
 const { page, stop } = await frames({ query });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
@@ -191,7 +190,7 @@ const mean = intervals.reduce((s, x) => s + x, 0) / Math.max(intervals.length, 1
 const shownInCut = playing.filter((x) => inCut(x.frame)).map((x) => x.frame.toFixed(2));
 const last = rec.drawn[rec.drawn.length - 1];
 
-console.log(`frame queue, ${loop ? "looping" : "once"}${slow ? `, file answered ${slow} ms late` : ""}`);
+console.log(`frame queue, ${loop ? "looping" : "once"}`);
 console.log("");
 console.log("| cut           | last before | first after | gap ms | at ms |");
 console.log("| ------------- | ----------- | ----------- | -----: | ----: |");
@@ -204,7 +203,7 @@ console.log(`frames from inside a cut     ${shownInCut.join(" ") || "none"}`);
 console.log(`not the next frame, off a cut ${notNext}`);
 console.log(`canvas not the frame said    ${wrongPicture}`);
 console.log(`at the end                   ${last.ended ? "ended" : last.playing ? "playing" : "paused"}, playhead ${last.at.toFixed(3)}, frame ${last.frame.toFixed(2)}`);
-console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, decoded ${rec.stats.decoded}, closed unseen ${rec.stats.unseen}, most frames open ${rec.stats.mostOpen}, reads ${rec.stats.reads}`);
+console.log(`late frames ${rec.stats.late}, late sound ${rec.stats.lateSound}, decoded ${rec.stats.decoded}, closed unseen ${rec.stats.unseen}, most frames open ${rec.stats.mostOpen}`);
 
 // ---- The sound
 

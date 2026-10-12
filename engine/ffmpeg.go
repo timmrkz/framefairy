@@ -471,6 +471,10 @@ type SourceInfo struct {
 	Variable bool
 	// Colour tags to copy to the output, as ffmpeg flag name and value.
 	Colour [][2]string
+	// The first sound of the file: its samples a second as ffmpeg decodes
+	// it and its channels, both nought for a file with no sound.
+	SoundRate     int
+	SoundChannels int
 	// Where the file starts on its own clock, which ffprobe's
 	// -read_intervals counts in, and whether that is known.
 	origin   float64
@@ -651,6 +655,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
 		origin: first - videoStart, hasClock: hasFirst}
+	info.SoundRate, info.SoundChannels = e.soundOf(ctx, path)
 	info.Variable = hasFirst && e.uneven(ctx, path, info)
 	if info.Variable {
 		// The rate ffmpeg reports for uneven frames is the finest step
@@ -668,6 +673,30 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 		info.FPSNum, info.FPSDen = shortRate(average), 1
 	}
 	return info, nil
+}
+
+// soundOf is the rate and the channels of a file's first sound, or
+// nought for a file with no sound or one ffprobe cannot read.
+func (e *Engine) soundOf(ctx context.Context, path string) (rate, channels int) {
+	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "a:0",
+		"-show_entries", "stream=sample_rate,channels", "-of", "json", path)
+	if res.Code != 0 {
+		return 0, 0
+	}
+	var data struct {
+		Streams []map[string]any `json:"streams"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(res.Stdout))
+	decoder.UseNumber()
+	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
+		return 0, 0
+	}
+	rate, ok1 := toInt(data.Streams[0]["sample_rate"])
+	channels, ok2 := toInt(data.Streams[0]["channels"])
+	if !ok1 || !ok2 || rate <= 0 || channels <= 0 {
+		return 0, 0
+	}
+	return rate, channels
 }
 
 // fileRotation is the turn a file's display matrix asks for, from
@@ -700,10 +729,9 @@ func shortRate(average float64) int {
 }
 
 // frameHair is how far a frame may begin from its place on the grid of
-// the rate and still be on it: more than ffmpeg's rounding of a time to
-// the ticks of a stream, half of Matroska's millisecond or of a phone's
-// 1/600 s, and much less than a frame.
-const frameHair = 0.001
+// the rate and still be on it, see framewire.Hair, which the episode's
+// decoder shows the video preview's frames by.
+const frameHair = framewire.Hair
 
 // uneven tells whether the frames of a file come off the grid of its rate,
 // by their timestamps in four stretches of two seconds across it. Only the
