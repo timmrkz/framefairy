@@ -179,6 +179,36 @@ func TestPathCancelWhileFinding(t *testing.T) {
 	}
 }
 
+// The steps of the walk that broke in plan row 2.222: the model holds its
+// answers, a video is added, Cancel, Continue, the model answers, and a
+// second video is added. While a search finds no search hears, see
+// lanes.go, so the second video waits to be transcribed until the search
+// Continue started has its answer. The model answers it once it answers
+// again, and the second video then gets its first clips by itself.
+//
+// On the real disk: ffmpeg and the episode's decoder read the videos.
+func TestPathAVideoAddedOnceTheModelAnswersGetsItsClips(t *testing.T) {
+	d := open(t)
+	d.model.hangs(true)
+	asked := d.model.asking()
+	first := d.add("first", "72")
+	within(t, asked, "the first search asking the model")
+	d.stop(first, "")
+	d.idle(first)
+	asked = d.model.asking()
+	d.carryOn(first)
+	within(t, asked, "the search Continue started asking the model")
+	d.model.hangs(false)
+	second := d.add("second", "71")
+	d.idle(second)
+	d.idle(first)
+	for _, ep := range []string{first, second} {
+		if n := len(d.clips(ep)); n == 0 {
+			t.Errorf("%s has no clips", filepath.Base(ep))
+		}
+	}
+}
+
 // Cancel pressed the moment after New, and reaching the Go side before
 // the search New asked for: the search is called off as it arrives, never
 // takes a turn, and says Stopped with Continue, after a restart too. Plan

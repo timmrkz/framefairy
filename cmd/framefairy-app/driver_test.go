@@ -429,7 +429,7 @@ func (*speech) Close() {}
 
 // model is the stand-in language model, a server that answers like
 // llama-server with one clip made of the first line. It can be told to
-// hang until it is let go of, or to fail.
+// hold its answers until it is let go of, or to fail.
 type model struct {
 	server *httptest.Server
 	mu     sync.Mutex
@@ -437,21 +437,32 @@ type model struct {
 	fail   bool
 	asked  chan struct{}
 	calls  atomic.Int32
+	// let is closed when the model stops holding its answers, and gives
+	// every answer it held, see hangs.
+	let chan struct{}
 	// done lets go of every answer held, when the test ends.
 	done chan struct{}
 }
 
 func newModel(t *testing.T) *model {
-	m := &model{done: make(chan struct{})}
+	m := &model{let: make(chan struct{}), done: make(chan struct{})}
 	m.server = httptest.NewServer(http.HandlerFunc(m.answer))
 	t.Cleanup(m.server.Close)
 	t.Cleanup(func() { close(m.done) })
 	return m
 }
 
-// hangs makes the model hold every answer until the search is stopped.
+// hangs makes the model hold every answer until the search is stopped or
+// the model is told to answer again. Told to answer, it answers what it
+// held too, the way a model that was slow answers in the end: a search
+// asked while it held went on finding for good, and a video added after
+// it never got its turn to be heard, plan row 2.222.
 func (m *model) hangs(on bool) {
 	m.mu.Lock()
+	if m.hang && !on {
+		close(m.let)
+		m.let = make(chan struct{})
+	}
 	m.hang = on
 	m.mu.Unlock()
 }
@@ -478,21 +489,27 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	m.calls.Add(1)
 	m.mu.Lock()
-	hang, fail := m.hang, m.fail
+	hang, fail, let := m.hang, m.fail, m.let
 	if m.asked != nil {
 		close(m.asked)
 		m.asked = nil
 	}
 	m.mu.Unlock()
-	if fail {
-		http.Error(w, "the model fell over", http.StatusInternalServerError)
-		return
-	}
-	if hang {
+	if hang && !fail {
 		select {
 		case <-r.Context().Done():
+			return
 		case <-m.done:
+			return
+		case <-let:
 		}
+		// Let go of, it answers the way it is set now.
+		m.mu.Lock()
+		fail = m.fail
+		m.mu.Unlock()
+	}
+	if fail {
+		http.Error(w, "the model fell over", http.StatusInternalServerError)
 		return
 	}
 	// One story, the first line, as middle answers: where it starts, a

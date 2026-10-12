@@ -88,9 +88,9 @@ func TestPathClipsMadeByHandWhileASearchFinds(t *testing.T) {
 			t.Errorf("%s is not in the list: %v", key, listed)
 		}
 	}
-	d.model.hangs(false)
 	d.cancel(ep)
 	d.idle(ep)
+	d.model.hangs(false)
 }
 
 // The app closed on a clip made by hand while its part of the episode is

@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"framefairy/engine"
 )
 
 // given takes a turn and fails the test if it does not come in time.
@@ -96,6 +98,56 @@ func TestFindingTakesHearingBack(t *testing.T) {
 	waits(t, again, "hearing while a search finds")
 	found()
 	comes(t, again, "hearing after the search found")()
+}
+
+// A search whose language model is in the cloud shares nothing with the
+// speech model, so a search that hears goes on while it finds and is not
+// taken back. A video added while it waited for its answer sat at Waiting
+// to transcribe for as long as the cloud took. On this machine the rule
+// holds. Plan row 2.222.
+func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
+	l := newLanes()
+	lane, kind := laneOfStep("search", "finding", false)
+	hearing, heard := given(t, l, LaneHearing, hearingTurn)
+	_, found := given(t, l, lane, kind)
+	select {
+	case <-hearing.Done():
+		t.Fatal("the hearing search was stopped by a search finding in the cloud")
+	case <-time.After(100 * time.Millisecond):
+	}
+	heard()
+	again, _ := waiting(l, LaneHearing, hearingTurn)
+	comes(t, again, "hearing while a search finds in the cloud")()
+	found()
+	if _, kind := laneOfStep("search", "finding", true); kind != findingTurn {
+		t.Error("finding with the model on this machine no longer holds hearing up")
+	}
+}
+
+// A search takes the turn of finding the clips by where its settings put
+// the language model, so a search asking the cloud lets hearing go on and
+// one asking the model on this machine holds it up.
+func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
+	for _, c := range []struct {
+		planner string
+		holds   bool
+	}{{"api", false}, {"local", true}, {"", true}} {
+		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, found, err := q.turn(&Job{Kind: "search"}, engine.Options{Planner: c.planner})(ctx, "finding")
+		if err != nil {
+			t.Fatal(err)
+		}
+		hearing, stop := waiting(q.lanes, LaneHearing, hearingTurn)
+		if c.holds {
+			waits(t, hearing, "hearing while a search with the model "+c.planner+" finds")
+		} else {
+			comes(t, hearing, "hearing while a search with the model "+c.planner+" finds")()
+		}
+		found()
+		stop()
+		cancel()
+	}
 }
 
 // A clip made by hand hears first: it takes the lane back from a search

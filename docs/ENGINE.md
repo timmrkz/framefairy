@@ -597,7 +597,10 @@ was found later:
   near the later, worked out in whole numbers with no allowance, the only
   place the engine decides it. Every edge is put on the start of that
   frame as it enters the plan, `PieceOnFrames`: the pieces a search or a
-  clip made by hand is made of, and the pieces a gesture leaves. So the
+  clip made by hand is made of, and the pieces a gesture leaves. No piece
+  reaches past the video: it ends where the video does at the latest,
+  `End`, the frame after the video's last, the same frame the video
+  preview's grid ends on. So the
   frame that holds an edge, which is what the video preview shows, is the
   frame the render cuts on, both held to
   `frontend/src/lib/frame.cases.json`. The read starts half a frame before the first

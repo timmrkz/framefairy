@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +38,30 @@ type Encoder struct {
 	// and the tag Apple's players look for. Standard video is H.264 in
 	// 8 bits, asked the same of every encoder, see BuildCommand.
 	Picture []string
+	// Options is anything else the encoder is asked for every short, like
+	// asking VideoToolbox to encode on the processor, see onProcessor.
+	Options []string
+}
+
+// String is the encoder as the log names it.
+func (c Encoder) String() string {
+	return strings.Join(append([]string{c.Name}, c.Options...), " ")
+}
+
+// is says whether two entries of the tables below are the same one. The
+// same ffmpeg encoder on the processor is another entry.
+func (c Encoder) is(other Encoder) bool {
+	return c.Name == other.Name && slices.Equal(c.Options, other.Options)
+}
+
+// failed says whether the encoder itself said it failed, in what ffmpeg
+// wrote while it ran. ffmpeg starts every line an encoder writes with its
+// name, "[h264_videotoolbox @ 0x6000...] Error encoding frame: -12912",
+// whether it could not start or failed on a frame, so a failure of the
+// filters or of reading the video, which another encoder would not mend,
+// is not taken for one.
+func (c Encoder) failed(said string) bool {
+	return strings.Contains(said, "["+c.Name+" @ ")
 }
 
 // x264 takes the quality as it is written, because CRF is its own idea and
@@ -74,6 +100,42 @@ func toolboxQuality(rs RenderSettings) []string {
 	return []string{"-q:v", strconv.Itoa(q)}
 }
 
+// onProcessor is VideoToolbox asked for Apple's own encoder on the
+// processor rather than the media engine, -require_sw. It is part of
+// macOS like the other, so it is free of x264 as well, and slower. It is
+// what a render goes on with when the media engine fails, see
+// nextEncoder: on CI's virtual Mac it failed a render with -12912,
+// kVTVideoEncoderMalfunctionErr, now and then, and a real Mac after sleep
+// could do the same. The next short tries the media engine again. Plan
+// row 2.223.
+//
+// Apple's encoder on the processor knows no quality, only a bit rate:
+// asked for -q:v it refuses to start, "Error setting bitrate property:
+// -12900", kVTPropertyNotSupportedErr, as CI's Mac showed. So it is asked
+// for a bit rate, see processorBitRate.
+func onProcessor(c Encoder) Encoder {
+	c.Quality = processorBitRate
+	c.Options = append(slices.Clip(c.Options), "-require_sw", "1")
+	return c
+}
+
+// processorBitRate is the bit rate asked of an encoder that takes no
+// quality, from the size and the rate of the short and the wanted
+// quality. It is as generous as the quality of the media engine, see
+// videoToolbox: at the default CRF 18 a fifth of a bit for every pixel of
+// every frame, about 12 Mb/s for a short of 1080 by 1920 at 30 frames a
+// second, half again what YouTube asks for its uploads of that size. Six
+// steps of CRF halve it, the way they halve what x264 writes.
+func processorBitRate(rs RenderSettings) []string {
+	crf := min(max(rs.CRF, 0), 51)
+	rate := rs.Rate
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		rate = 30
+	}
+	bits := 0.2 * math.Exp2(float64(18-crf)/6) * float64(max(rs.OutW, 2)*max(rs.OutH, 2)) * rate
+	return []string{"-b:v", strconv.Itoa(int(min(bits, 400e6)))}
+}
+
 // An HDR episode makes an HDR short, see HDR in docs/VIDEO-PREVIEW.md:
 // HEVC with 10-bit colour, the form an iPhone films in and Instagram and
 // YouTube take, tagged hvc1 so QuickTime and Photos play it. On the Mac it
@@ -103,9 +165,9 @@ var known = map[string]Encoder{
 // hdrEncoderOrder is what to try for an HDR short, best first. Windows
 // and Linux have no encoder of HEVC in 10 bits in the ffmpeg we ship, which
 // is a question for docs/PACKAGING.md.
-func hdrEncoderOrder() []Encoder {
-	if runtime.GOOS == "darwin" {
-		return []Encoder{hevcVideoToolbox, x265}
+func hdrEncoderOrder(goos string) []Encoder {
+	if goos == "darwin" {
+		return []Encoder{hevcVideoToolbox, onProcessor(hevcVideoToolbox), x265}
 	}
 	return []Encoder{x265}
 }
@@ -119,13 +181,26 @@ func hdrEncoderOrder() []Encoder {
 // would render every short on that system.
 func encoderOrder() []Encoder { return encoderOrderFor(runtime.GOOS) }
 
+// order is what this engine reaches for, for a short of standard video
+// or of HDR, on its system, see Engine.system.
+func (e *Engine) order(hdr bool) []Encoder {
+	goos := e.system
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	if hdr {
+		return hdrEncoderOrder(goos)
+	}
+	return encoderOrderFor(goos)
+}
+
 // Split from the above so the table can be read on any machine. The order
 // for macOS is the one that matters most and the machine that runs the
 // tests in a cloud session is not a Mac.
 func encoderOrderFor(goos string) []Encoder {
 	switch goos {
 	case "darwin":
-		return []Encoder{videoToolbox, x264}
+		return []Encoder{videoToolbox, onProcessor(videoToolbox), x264}
 	default:
 		return []Encoder{x264}
 	}
@@ -166,7 +241,7 @@ func (e *Engine) VideoEncoder(ctx context.Context) (Encoder, error) {
 	}
 
 	var tried []string
-	for _, candidate := range encoderOrder() {
+	for _, candidate := range e.order(false) {
 		if hasEncoder(have.Stdout, candidate.Name) {
 			e.keepEncoder(candidate)
 			e.Log.Detail("video encoder: %s", candidate.Name)
@@ -193,7 +268,7 @@ func (e *Engine) HDREncoder(ctx context.Context) (Encoder, error) {
 		return Encoder{}, renderErr("%s cannot list its encoders.", e.FFmpeg)
 	}
 	var tried []string
-	for _, candidate := range hdrEncoderOrder() {
+	for _, candidate := range e.order(true) {
 		if hasEncoder(have.Stdout, candidate.Name) {
 			e.mu.Lock()
 			e.hdrEncoder = candidate
@@ -229,25 +304,58 @@ func hasEncoder(listing, name string) bool {
 
 // VideoArgs is the -c:v and the quality for one render.
 func (e *Engine) VideoArgs(ctx context.Context, rs RenderSettings) ([]string, error) {
-	return e.videoArgs(ctx, rs, framewire.SDR)
-}
-
-// videoArgs is VideoArgs for a short of standard video or of HDR, with
-// what an encoder of HDR is asked for its 10 bits.
-func (e *Engine) videoArgs(ctx context.Context, rs RenderSettings, light framewire.Light) ([]string, error) {
-	pick := e.VideoEncoder
-	if light != framewire.SDR {
-		pick = e.HDREncoder
-	}
-	chosen, err := pick(ctx)
+	chosen, err := e.VideoEncoder(ctx)
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"-c:v", chosen.Name}
-	if chosen.Quality != nil {
-		args = append(args, chosen.Quality(rs)...)
+	return chosen.args(rs), nil
+}
+
+// encoderFor is the encoder a short of standard video or of HDR starts
+// with.
+func (e *Engine) encoderFor(ctx context.Context, light framewire.Light) (Encoder, error) {
+	if light != framewire.SDR {
+		return e.HDREncoder(ctx)
 	}
-	return append(args, chosen.Picture...), nil
+	return e.VideoEncoder(ctx)
+}
+
+// args is the -c:v and the quality for one render, with what an encoder
+// of HDR is asked for its 10 bits.
+func (c Encoder) args(rs RenderSettings) []string {
+	args := []string{"-c:v", c.Name}
+	if c.Quality != nil {
+		args = append(args, c.Quality(rs)...)
+	}
+	args = append(args, c.Picture...)
+	return append(args, c.Options...)
+}
+
+// nextEncoder is the encoder a render goes on with after the one it
+// used failed in its own words, see Encoder.failed: the next one after it
+// in this system's order that this ffmpeg has, which on a Mac is the same
+// encoder on the processor, see onProcessor. None after an encoder that
+// is not in the order, one named with --encoder that is not, and none
+// after the last.
+func (e *Engine) nextEncoder(ctx context.Context, failed Encoder, light framewire.Light, said string) (Encoder, bool) {
+	if !failed.failed(said) {
+		return Encoder{}, false
+	}
+	order := e.order(light != framewire.SDR)
+	at := slices.IndexFunc(order, failed.is)
+	if at < 0 {
+		return Encoder{}, false
+	}
+	have := run(ctx, "", e.FFmpeg, "-hide_banner", "-encoders")
+	if have.Code != 0 {
+		return Encoder{}, false
+	}
+	for _, candidate := range order[at+1:] {
+		if hasEncoder(have.Stdout, candidate.Name) {
+			return candidate, true
+		}
+	}
+	return Encoder{}, false
 }
 
 // EncoderNames is every encoder this build knows how to drive, for the
@@ -257,7 +365,9 @@ func EncoderNames() string {
 	var names []string
 	seen := map[string]bool{}
 	for _, candidate := range encoderOrder() {
-		names = append(names, candidate.Name)
+		if !seen[candidate.Name] {
+			names = append(names, candidate.Name)
+		}
 		seen[candidate.Name] = true
 	}
 	rest := make([]string, 0, len(known))

@@ -57,7 +57,8 @@ a `words` list, and one that does is not read.
   the captions. Every edge it leaves, one put on words too, is then on the
   start of the frame nearest it, the frame the render cuts on, and so is
   every edge a search or a clip made by hand puts in a plan,
-  `PieceOnFrames` in `engine/render.go`. The episode's frames come from
+  `PieceOnFrames` in `engine/render.go`. An edge dragged past the end
+  of the video stops where the video ends, `End`. The episode's frames come from
   the app's own probe of it, never from the interface. `Reshape` saves the same gesture through the same
   functions, so what is drawn is what is saved.
 - What a gesture puts back, a cut or an edge, comes back framed by the
