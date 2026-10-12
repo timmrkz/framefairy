@@ -516,9 +516,10 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    frames, left-out frames the probe does not see, a picture that starts
    late in MOV and in Matroska, even frames in MP4 and in Matroska, what
    OBS records, H.264 with B-frames and AAC in Matroska with frames left
-   out, and MPEG-TS, and the walk `a video in Matroska shows in the video
-   preview the frames its short has` holds the video preview to the
-   short.
+   out, MPEG-TS, and a Matroska recording cut off by a crash, which
+   says nothing of how long it is, and the walk `a video in Matroska
+   shows in the video preview the frames its short has` holds the video
+   preview to the short.
 
 ## What it costs
 
