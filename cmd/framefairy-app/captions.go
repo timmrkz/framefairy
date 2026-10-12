@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -37,7 +38,8 @@ import (
 // captionTracks are the drawings of the caption views the interface was
 // given lately, by their tracks, each with the episode it belongs to. A
 // view is asked for again whenever the captions change, so the latest few
-// hundred are plenty.
+// hundred are plenty. The one used last goes last, so the captions on
+// screen are never the ones forgotten, however many a drag makes.
 var captionTracks = &tracks{drawings: map[string]trackOf{}}
 
 type tracks struct {
@@ -61,25 +63,41 @@ func (t *tracks) keep(episode string, v *engine.CaptionsView) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if _, ok := t.drawings[v.Track]; !ok {
-		t.order = append(t.order, v.Track)
-		for len(t.order) > tracksKept {
-			delete(t.drawings, t.order[0])
-			t.order = t.order[1:]
-		}
-	}
+	t.used(v.Track)
 	t.drawings[v.Track] = trackOf{episode: episode, drawing: v.Drawing()}
+	for len(t.order) > tracksKept {
+		delete(t.drawings, t.order[0])
+		t.order = t.order[1:]
+	}
 }
 
 func (t *tracks) get(track string) (trackOf, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	d, ok := t.drawings[track]
+	if ok {
+		t.used(track)
+	}
 	return d, ok
 }
 
-// serveCaptions answers /frames/captions.
+// used puts a track last in the order, as the one used most lately.
+func (t *tracks) used(track string) {
+	if i := slices.Index(t.order, track); i >= 0 {
+		t.order = slices.Delete(t.order, i, i+1)
+	}
+	t.order = append(t.order, track)
+}
+
+// serveCaptions answers /frames/captions. The engine's caption code runs
+// here outside a job, so a panic in it fails the request, not the app.
 func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Msg("drawing the captions failed")
+			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
+		}
+	}()
 	q := r.URL.Query()
 	path := q.Get("path")
 	kept, ok := captionTracks.get(q.Get("track"))
@@ -110,9 +128,14 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			// caption file is laid out at.
 			e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
 			o := jobOptions(st, e)
-			dir := filepath.Join(engine.WorkDir(path), "captions", "preview")
+			// The folder by where it really leads, which must be inside
+			// the episode's work folder.
+			var dir string
+			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
 			var l framewire.Layer
-			l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
+			if err == nil {
+				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
+			}
 			if err == nil {
 				w.Header().Set("Content-Type", "application/octet-stream")
 				_, _ = w.Write(l.Body())

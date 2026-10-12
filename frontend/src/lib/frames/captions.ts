@@ -167,6 +167,14 @@ export type CaptionAsk = { path: string; track: string; drafts: Record<string, s
 const KEPT = 48;
 const GOING = 3;
 
+// How long a layer that did not come waits before it is asked for again,
+// once, in milliseconds. A layer that fails is not kept, so the next frame
+// that needs it asks again as well.
+const AGAIN = 250;
+
+// A layer asked for: the ask it belongs to, the frame and the size.
+type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
+
 // The layers of the captions of the video preview, asked for each frame
 // of the episode by the moment it starts, at a size. A frame on its way to
 // the screen asks ahead, coming, so its layer is there when it is drawn.
@@ -174,13 +182,17 @@ const GOING = 3;
 export class CaptionLayers {
   private ask: CaptionAsk | null = null;
   private askKey = "";
-  private kept = new Map<string, Layer | null>();
+  private kept = new Map<string, Layer>();
   private going = new Set<string>();
+  // The layers that did not come and were asked for again.
+  private again = new Set<string>();
   // The frame drawn whose layer is not there yet, asked for once one on
-  // its way has come.
-  private waiting: { key: string; frame: number; size: [number, number] } | null = null;
+  // its way has come. It carries its own ask, so a layer asked for after
+  // the ask changed is never asked for with the new one.
+  private waiting: Wanted | null = null;
   // The layer given last, which stays while the one for a newer frame or a
   // newer draft is on its way, so the captions never blink off in between.
+  // Another clip's captions never stay.
   private last: Layer | null = null;
   // For the walks: how many layers were asked for and how many a frame
   // was drawn with that was not its own yet.
@@ -194,41 +206,47 @@ export class CaptionLayers {
   }
 
   set(ask: CaptionAsk | null) {
+    const key = ask ? `${ask.path}\n${ask.track}\n${new URLSearchParams(ask.drafts)}` : "";
+    if (!ask || ask.path !== this.ask?.path || ask.track !== this.ask?.track) this.last = null;
+    if (key !== this.askKey) {
+      this.waiting = null;
+      this.again.clear();
+    }
     this.ask = ask;
-    this.askKey = ask ? `${ask.path}\n${ask.track}\n${new URLSearchParams(ask.drafts)}` : "";
-    if (!ask) this.last = null;
+    this.askKey = key;
   }
 
-  private key(frame: number, size: [number, number]): string {
-    return `${this.askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`;
+  private wanted(frame: number, size: [number, number]): Wanted | null {
+    const ask = this.ask;
+    if (!ask) return null;
+    return { key: `${this.askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`, ask, frame, size };
   }
 
   // The layer of the frame that starts at frame, or while it is on its way
   // the one given last. Null with no captions to draw.
   at(frame: number, size: [number, number]): Layer | null {
-    if (!this.ask) return null;
-    const key = this.key(frame, size);
-    const have = this.kept.get(key);
-    if (have !== undefined) {
+    const want = this.wanted(frame, size);
+    if (!want) return null;
+    const have = this.kept.get(want.key);
+    if (have) {
       this.last = have;
       return have;
     }
     this.stats.late++;
-    this.waiting = { key, frame, size };
-    this.fetch(key, frame, size);
+    this.waiting = want;
+    this.fetch(want);
     return this.last;
   }
 
   // A frame that starts at frame is on its way to the screen.
   coming(frame: number, size: [number, number]) {
-    if (!this.ask) return;
-    const key = this.key(frame, size);
-    if (!this.kept.has(key)) this.fetch(key, frame, size);
+    const want = this.wanted(frame, size);
+    if (want && !this.kept.has(want.key)) this.fetch(want);
   }
 
-  private fetch(key: string, frame: number, size: [number, number]) {
-    const ask = this.ask;
-    if (!ask || this.going.has(key) || this.going.size >= GOING) return;
+  private fetch(want: Wanted) {
+    const { key, ask, frame, size } = want;
+    if (this.going.has(key) || this.going.size >= GOING) return;
     this.going.add(key);
     this.stats.asked++;
     const q = new URLSearchParams({
@@ -244,16 +262,30 @@ export class CaptionLayers {
       .catch(() => null)
       .then((layer) => {
         this.going.delete(key);
-        this.kept.set(key, layer);
-        while (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value!);
+        const w = this.waiting;
+        if (layer) {
+          this.again.delete(key);
+          this.kept.set(key, layer);
+          while (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value!);
+        } else if (w?.key === key) {
+          // Nothing is kept for a layer that did not come: the frame drawn
+          // keeps the layer given last, and its own is asked for once more
+          // in a moment.
+          if (!this.again.has(key)) {
+            this.again.add(key);
+            setTimeout(() => {
+              if (this.waiting?.key === key) this.fetch(this.waiting);
+            }, AGAIN);
+          } else this.waiting = null;
+          return;
+        }
         // The frame drawn without its own layer is drawn again once it
         // has come, and asked for once there is room.
-        const w = this.waiting;
         if (!w) return;
         if (this.kept.has(w.key)) {
           this.waiting = null;
           this.came();
-        } else this.fetch(w.key, w.frame, w.size);
+        } else this.fetch(w);
       });
   }
 }

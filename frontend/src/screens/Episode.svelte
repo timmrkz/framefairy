@@ -1586,6 +1586,10 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+  // The clip the captions above are of. Until a clip just chosen has its
+  // own, the video preview draws none rather than the last clip's at the
+  // new clip's moments.
+  let captionsOf = $state<string | null>(null);
 
   // Whether the workspace has the episode on it: the window on the range
   // picker, a picture on the canvas, the clip timeline drawn and the
@@ -2368,7 +2372,9 @@
     api
       .captions(path, clip.plan, clip.id)
       .then((view) => {
-        if (!dropped) captions = view;
+        if (dropped) return;
+        captions = view;
+        captionsOf = clip.key;
       })
       .catch(() => {
         if (!dropped) captions = null;
@@ -2976,7 +2982,7 @@
           bind:frameStart={shownStart}
           sleeping={away}
           bind:time
-          captions={shownCaptions}
+          captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}

@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -212,4 +214,74 @@ func over(picture []byte, width int, l framewire.Layer) []byte {
 		}
 	}
 	return out
+}
+
+// The video preview asks for captions by the name of what they are drawn
+// from, and keeps what it was given under it. The same captions keep their
+// name however often they are made, the crop and the height of the
+// captions in the clip included, and other captions get another. The name
+// was made from the drawing formatted as Go formats it, which gives a
+// pointer's address, so every view of the same captions had a new one.
+func TestACaptionTrackIsNamedByWhatItIs(t *testing.T) {
+	words := []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}
+	view := func(said string) string {
+		x, y := 120, 0.4
+		clip := Clip{ID: "01", Slug: "name", CaptionY: &y,
+			Segments: []Segment{{Start: 0, End: 2, CropX: &x}}}
+		ws := slices.Clone(words)
+		ws[1].Text = said
+		return captionsView(Plan{}, clip, &Transcript{Words: ws, Language: "de"}, nil).Track
+	}
+	first, again, other := view("respektvoll"), view("respektvoll"), view("respektlos")
+	if first == "" || first != again {
+		t.Errorf("the same captions are named %q and %q", first, again)
+	}
+	if other == first {
+		t.Errorf("another word kept the name %q", first)
+	}
+}
+
+// Several requests of the video preview ask for one caption file at once.
+// It is made once, and every one of them gets it whole. Each wrote it
+// itself before, through one name for its half written file, and a few in
+// a hundred found that file gone under them or read it empty.
+//
+// On the real disk: ffmpeg measures the captions and libass reads the file.
+func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
+	ffmpegtest.Need(t)
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	clip := Clip{ID: "01", Slug: "once", Segments: []Segment{{Start: 0, End: 2}}}
+	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	view := captionsView(Plan{}, clip, tr, nil)
+	d := view.Drawing()
+	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, framewire.SDR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for round := range 20 {
+		dir := filepath.Join(root, fmt.Sprint(round))
+		var wg sync.WaitGroup
+		files := make([]string, 6)
+		errs := make([]error, 6)
+		for i := range files {
+			wg.Go(func() {
+				files[i], errs[i] = e.previewTrack(ctx, dir, d, d.Style, ResolveStyle(d.Style).Font, framewire.SDR, 540, 960)
+			})
+		}
+		wg.Wait()
+		for i, file := range files {
+			if errs[i] != nil {
+				t.Fatalf("round %d, request %d: %v", round, i, errs[i])
+			}
+			got, err := os.ReadFile(file)
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatalf("round %d, request %d: the file %s holds %d bytes of %d: %v", round, i, file, len(got), len(want), err)
+			}
+		}
+		if left, _ := filepath.Glob(filepath.Join(dir, "*"+partial)); len(left) > 0 {
+			t.Fatalf("round %d left %v half written", round, left)
+		}
+	}
 }

@@ -160,4 +160,108 @@ describe("the layers of the captions", () => {
     expect(layers.at(1.08, [10, 20])).toBeNull();
     answer = [];
   });
+
+  // A fetch that answers each ask in turn: a layer whose first red is the
+  // number of the ask, or a failure where fail says so.
+  function answering(fail: (n: number) => boolean = () => false) {
+    const asked: string[] = [];
+    const answer: (() => void)[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
+      const n = asked.length;
+      return new Promise((done, failed) => {
+        answer.push(() =>
+          fail(n)
+            ? failed(new Error("gone"))
+            : done({ ok: true, arrayBuffer: async () => body(layer(0, 0, 1, 1, [n, 0, 0, 255])) }),
+        );
+      });
+    });
+    return { asked, answer };
+  }
+
+  it("keeps no layer that did not come, and asks for it once more", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const { asked, answer } = answering((n) => n === 1);
+      let came = 0;
+      const layers = new CaptionLayers(() => came++);
+      layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+      expect(layers.at(1.0, [10, 20])).toBeNull();
+      answer.shift()!();
+      // The failure leaves the frame waiting, and a second ask set for later.
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      expect(layers.busy).toBe(true);
+      expect(asked.length).toBe(1);
+      vi.advanceTimersByTime(300);
+      expect(asked.length).toBe(2);
+      answer.shift()!();
+      await vi.waitFor(() => expect(came).toBe(1));
+      expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on a layer that fails twice, and asks again when the frame is drawn again", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const { asked, answer } = answering((n) => n <= 2);
+      const layers = new CaptionLayers(() => {});
+      layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+      layers.at(1.0, [10, 20]);
+      answer.shift()!();
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      vi.advanceTimersByTime(300);
+      expect(asked.length).toBe(2);
+      answer.shift()!();
+      await vi.waitFor(() => expect(layers.busy).toBe(false));
+      expect(vi.getTimerCount()).toBe(0);
+      expect(asked.length).toBe(2);
+      // Nothing was kept, so the next draw of the frame asks once more.
+      expect(layers.at(1.0, [10, 20])).toBeNull();
+      expect(asked.length).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never asks for a layer with an ask newer than the frame's, and drops another clip's captions", async () => {
+    const { asked, answer } = answering();
+    const layers = new CaptionLayers(() => {});
+    layers.set({ path: "/v.mp4", track: "one", drafts: {} });
+    // Three on their way fill the room, so the frame drawn waits for it.
+    layers.coming(1.0, [10, 20]);
+    layers.coming(1.04, [10, 20]);
+    layers.coming(1.08, [10, 20]);
+    layers.at(1.12, [10, 20]);
+    expect(asked.length).toBe(3);
+    // Another clip is chosen before any came: what waited is not asked for
+    // with the new clip's track, nor kept up over it.
+    layers.set({ path: "/v.mp4", track: "two", drafts: {} });
+    answer.shift()!();
+    await vi.waitFor(() => expect(layers.busy).toBe(true));
+    answer.shift()!();
+    answer.shift()!();
+    await vi.waitFor(() => expect(layers.busy).toBe(false));
+    expect(asked.length).toBe(3);
+    expect(asked.every((a) => new URLSearchParams(a.split("?")[1]).get("track") === "one")).toBe(true);
+    expect(layers.at(1.0, [10, 20])).toBeNull();
+    expect(new URLSearchParams(asked[3].split("?")[1]).get("track")).toBe("two");
+  });
+
+  it("keeps the layer given last up while a draft changes, but not when the clip does", async () => {
+    const { answer } = answering();
+    let came = 0;
+    const layers = new CaptionLayers(() => came++);
+    layers.set({ path: "/v.mp4", track: "one", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    answer.shift()!();
+    await vi.waitFor(() => expect(came).toBe(1));
+    expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
+    layers.set({ path: "/v.mp4", track: "one", drafts: { text: "#ff0000" } });
+    expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
+    layers.set({ path: "/v.mp4", track: "two", drafts: {} });
+    expect(layers.at(1.0, [10, 20])).toBeNull();
+  });
 });

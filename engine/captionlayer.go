@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 
 	"framefairy/internal/framewire"
@@ -19,9 +23,18 @@ import (
 // docs/CAPTIONS.md.
 
 // name is a name for what the captions are drawn from, the same for the
-// same captions, so the video preview asks for them by it.
+// same captions, so the video preview asks for them by it. It is made from
+// what the captions are, written out in full: a pointer in the clip, like
+// its crop or the height of its captions, is followed to its value, where
+// formatting it would give its address and a new name every time.
 func (d *CaptionDrawing) name() string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%+v", *d))
+	body, err := json.Marshal(d)
+	if err != nil {
+		// Only a number JSON cannot hold, which no caption has. The name is
+		// then of this drawing alone, which is still never another's.
+		body = fmt.Appendf(nil, "%p", d)
+	}
+	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:12])
 }
 
@@ -68,84 +81,176 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 }
 
 // previewTrack is the caption file of captions in a style, written into
-// dir under a name made from what is in it, once.
+// dir under a name made from what is in it, once. The video preview asks
+// for a few frames at once, so the same file is often asked for by several
+// requests together: one makes it and the others wait for it, see
+// trackCache.once, because two writing one file each found it gone under
+// them or half written.
 func (e *Engine) previewTrack(ctx context.Context, dir string, d *CaptionDrawing, style map[string]any,
 	font string, light framewire.Light, outW, outH int) (string, error) {
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%dx%d", dir, d.name(), style, light, outW, outH)
-	if file, ok := previewTracks.get(key); ok {
-		if _, err := os.Stat(file); err == nil {
-			return file, nil
-		}
-	}
-	track, err := e.CaptionTrack(ctx, d.Laid, outW, outH, style, light)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(track)
-	file, err := SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(file); err != nil {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	return previewTracks.once(key, func() (string, error) {
+		track, err := e.CaptionTrack(ctx, d.Laid, outW, outH, style, light)
+		if err != nil {
 			return "", err
 		}
-		tmp := file + partial
-		if err := os.WriteFile(tmp, track, 0o644); err != nil {
+		// A measurement cut short leaves a track without its pill, which
+		// would be kept as the real one.
+		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		if err := os.Rename(tmp, file); err != nil {
-			os.Remove(tmp)
+		sum := sha256.Sum256(track)
+		file, err := SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
+		if err != nil {
 			return "", err
+		}
+		// The name is made from what is in it, so a file of that name
+		// already holds it.
+		if _, err := os.Stat(file); err != nil {
+			if err := writeWhole(dir, file, track); err != nil {
+				return "", err
+			}
 		}
 		previewTracks.written(dir, file)
+		if err := InstallFont(dir, font); err != nil {
+			return "", err
+		}
+		return file, nil
+	})
+}
+
+// writeWhole writes data to file in dir through a name of its own, so a
+// reader, libass above all, never finds it half written.
+func writeWhole(dir, file string, data []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
 	}
-	if err := InstallFont(dir, font); err != nil {
-		return "", err
+	tmp, err := os.CreateTemp(dir, filepath.Base(file)+".*"+partial)
+	if err != nil {
+		return err
 	}
-	previewTracks.put(key, file)
-	return file, nil
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp.Name(), file)
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+	}
+	return err
 }
 
 // trackCache keeps which caption file the captions of a view in a style
 // were written to, and the files written into each folder, of which it
 // keeps the latest few hundred: a colour dragged across the wheel writes
-// one for every colour it passes.
+// one for every colour it passes. What a folder held before the app
+// started counts too, so the files do not pile up from one run to the
+// next.
 type trackCache struct {
-	mu    sync.Mutex
-	files map[string]string
-	dirs  map[string][]string
+	mu     sync.Mutex
+	files  map[string]string
+	making map[string]*making
+	dirs   map[string][]string
 }
 
-var previewTracks = &trackCache{files: map[string]string{}, dirs: map[string][]string{}}
+// making is a caption file on its way, which the requests that ask for it
+// meanwhile wait for.
+type making struct {
+	done chan struct{}
+	file string
+	err  error
+}
+
+var previewTracks = &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
 
 const previewTracksKept = 256
 
-func (c *trackCache) get(key string) (string, bool) {
+// once gives the file kept for key, or makes it with build, once however
+// many ask for it together. A file that went away is made again, and a
+// failure is not kept, so the next request tries again.
+func (c *trackCache) once(key string, build func() (string, error)) (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	file, ok := c.files[key]
-	return file, ok
-}
-
-func (c *trackCache) put(key, file string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.files) >= 4*previewTracksKept {
-		clear(c.files)
+	if file, ok := c.files[key]; ok {
+		c.mu.Unlock()
+		if _, err := os.Stat(file); err == nil {
+			return file, nil
+		}
+		c.mu.Lock()
 	}
-	c.files[key] = file
+	if m, ok := c.making[key]; ok {
+		c.mu.Unlock()
+		<-m.done
+		return m.file, m.err
+	}
+	m := &making{done: make(chan struct{})}
+	c.making[key] = m
+	c.mu.Unlock()
+
+	m.file, m.err = build()
+
+	c.mu.Lock()
+	delete(c.making, key)
+	if m.err == nil {
+		if len(c.files) >= 4*previewTracksKept {
+			clear(c.files)
+		}
+		c.files[key] = m.file
+	}
+	c.mu.Unlock()
+	close(m.done)
+	return m.file, m.err
 }
 
 // written notes a file written into dir, and removes the oldest beyond
-// what is kept.
+// what is kept, those of earlier runs first, and anything left half
+// written by a run that ended.
 func (c *trackCache) written(dir, file string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	files := append(c.dirs[dir], file)
+	files, seen := c.dirs[dir]
+	if !seen {
+		files = earlierTracks(dir, file)
+	}
+	if !slices.Contains(files, file) {
+		files = append(files, file)
+	}
 	for len(files) > previewTracksKept {
 		os.Remove(files[0])
 		files = files[1:]
 	}
 	c.dirs[dir] = files
+}
+
+// earlierTracks are the caption files in dir other than file, oldest
+// first. What is left half written is removed.
+func earlierTracks(dir, file string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	type dated struct {
+		path string
+		at   int64
+	}
+	var found []dated
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		switch {
+		case !entry.Type().IsRegular() || path == file:
+		case strings.HasSuffix(entry.Name(), partial):
+			os.Remove(path)
+		case strings.HasSuffix(entry.Name(), ".ass"):
+			if info, err := entry.Info(); err == nil {
+				found = append(found, dated{path, info.ModTime().UnixNano()})
+			}
+		}
+	}
+	slices.SortFunc(found, func(a, b dated) int { return cmp.Compare(a.at, b.at) })
+	out := make([]string, len(found))
+	for i, f := range found {
+		out[i] = f.path
+	}
+	return out
 }

@@ -679,9 +679,9 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	// appears.
 	var boxes []*inkBox
 	if s.Radius > 0 && s.BorderStyle == 4 {
-		measured, ok := e.measureASS(ctx, blocks, s, width, size)
+		inks, ok := e.measureMany(ctx, blocks, s, width, size)
 		if ok {
-			for _, box := range measured {
+			for _, box := range inks {
 				if box == nil {
 					e.Log.Detail("a caption could not be measured, using square boxes")
 					ok = false
@@ -690,7 +690,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 			}
 		}
 		if ok {
-			boxes = measured
+			boxes = inks
 		} else {
 			e.Log.Detail("could not measure the caption text, falling back to a square box")
 		}

@@ -755,7 +755,7 @@ type CaptionsView struct {
 	Style    CaptionStyleView `json:"style"`
 	// Track names what the captions were made from, see Drawing: the
 	// video preview asks for the captions libass draws by it, see
-	// DrawCaptions, so they are the short's and not a copy of them.
+	// Engine.PreviewCaptions, so they are the short's and not a copy of them.
 	Track   string `json:"track"`
 	drawing *CaptionDrawing
 }

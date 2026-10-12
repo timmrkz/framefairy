@@ -102,7 +102,9 @@ func InstallFont(dir, name string) error {
 		if old, err := os.ReadFile(path); err == nil && len(old) == len(data) {
 			continue
 		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
+		// Through a name of its own, so libass opening the face while a
+		// second render or preview installs it never reads half a face.
+		if err := writeWhole(target, path, data); err != nil {
 			return err
 		}
 	}
