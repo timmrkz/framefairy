@@ -65,7 +65,8 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
 		filepath.Join(dir, "captions"), false)
 	if err != nil {
-		t.Fatalf("the short failed with the media engine: %v", err)
+		said, _ := os.ReadFile(calls + ".said")
+		t.Fatalf("the short failed with the media engine: %v\nffmpeg on the processor said:\n%s", err, said)
 	}
 	if _, err := os.Stat(short); err != nil {
 		t.Fatal(err)
@@ -156,21 +157,13 @@ func failingMediaEngine(t *testing.T, real, calls string, onMac bool) string {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in is a shell script")
 	}
-	swap := `
-for a in "$@"; do
-  case "$a" in
-    h264_videotoolbox) set -- "$@" libx264 ;;
-    -require_sw) skip=1 ;;
-    -q:v) skip=1 ;;
-    *) if [ -n "$skip" ]; then skip=; else set -- "$@" "$a"; fi ;;
-  esac
-  shift
-done`
+	toX264 := "1"
 	if onMac {
-		swap = ""
+		toX264 = ""
 	}
 	script := `#!/bin/sh
 real='` + real + `'
+calls='` + calls + `'
 case " $* " in
 *" -encoders "*)
   "$real" "$@"
@@ -178,15 +171,31 @@ case " $* " in
   printf ' V....D hevc_videotoolbox    VideoToolbox H.265 Encoder (codec hevc)\n'
   exit 0 ;;
 *" -require_sw 1 "*)
-  echo processor >> '` + calls + `' ;;
+  echo processor >> "$calls" ;;
 *" h264_videotoolbox "*)
-  echo 'media engine' >> '` + calls + `'
+  echo 'media engine' >> "$calls"
   echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
   echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
   exit 187 ;;
+*) exec "$real" "$@" ;;
 esac
-` + swap + `
-exec "$real" "$@"
+# On the processor: all ffmpeg says is kept for the test, and elsewhere
+# than on a Mac libx264 encodes in Apple's place.
+x264='` + toX264 + `'
+for a in "$@"; do
+  if [ -n "$skip" ]; then skip=; shift; continue; fi
+  case "$a" in
+    error) set -- "$@" verbose ;;
+    h264_videotoolbox) if [ -n "$x264" ]; then set -- "$@" libx264; else set -- "$@" "$a"; fi ;;
+    -require_sw|-q:v) if [ -n "$x264" ]; then skip=1; else set -- "$@" "$a"; fi ;;
+    *) set -- "$@" "$a" ;;
+  esac
+  shift
+done
+"$real" "$@" 2>"$calls.said"
+code=$?
+cat "$calls.said" >&2
+exit $code
 `
 	path := filepath.Join(t.TempDir(), "ffmpeg")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
