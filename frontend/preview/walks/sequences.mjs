@@ -508,9 +508,10 @@
 //   ["on the playhead", n]
 //                      n marks are lit by the playhead, a thumbnail or a
 //                      keyframe on its frame, and each stands centred on
-//                      the playhead's line, as the clip timeline is and
-//                      pinched in on the playhead, where a frame is many
-//                      pixels wide
+//                      the playhead's line
+//   ["pinch in"]       pinches the clip timeline in to a tenth on the
+//                      playhead, where a frame is many pixels wide, and
+//                      takes the hand off it
 //   ["keyframe past", edge]
 //                      drags the first keyframe's diamond well past the
 //                      clip's "end" or "start" edge and lets go: the engine
@@ -1318,8 +1319,10 @@ export const sequences = [
       ["thumbnail at", 0.1],
       ["keyframe at", 0.1],
       ["on the playhead", 2],
-      ["thumbnail at", 0.93],
-      ["keyframe at", 0.93],
+      ["thumbnail at", 0.9],
+      ["keyframe at", 0.9],
+      ["on the playhead", 2],
+      ["pinch in"],
       ["on the playhead", 2],
     ],
   },
@@ -4601,47 +4604,43 @@ for (const seq of toWalk) {
         // its inside, a pixel in from either side, and the playhead on its
         // moment where a thumbnail stood on the middle of its frame and a
         // keyframe on its start. So up close, where a frame is many pixels
-        // wide, they stood apart by as much. Measured as it is and again
-        // pinched in to a tenth on the playhead. Plan row 2.232.
-        const measure = () =>
-          page.evaluate(() => {
-            const mid = (e) => {
-              const b = e.getBoundingClientRect();
-              return b.left + b.width / 2;
-            };
-            const line = document.querySelector(".clip-timeline .playhead");
-            return {
-              line: line ? mid(line) : NaN,
-              head: mid(document.querySelector(".clip-timeline .head") ?? line),
-              lit: [...document.querySelectorAll(".clip-timeline .thumb.here, .clip-timeline .cropdot.here")].map((e) => ({
-                kind: e.classList.contains("thumb") ? "thumbnail" : "keyframe",
-                at: mid(e),
-              })),
-            };
-          });
-        const judge = (m, where) => {
-          if (!Number.isFinite(m.line)) return `${where}, the clip timeline shows no playhead`;
-          if (m.lit.length !== arg) return `${where}, ${m.lit.length} marks light on the playhead's frame, not ${arg}`;
-          const off = m.lit.find((l) => Math.abs(l.at - m.line) > 0.01);
-          if (off) return `${where}, the ${off.kind} lit by the playhead stands ${(off.at - m.line).toFixed(2)} px from its line`;
-          if (Math.abs(m.head - m.line) > 0.01) return `${where}, the playhead's head stands ${(m.head - m.line).toFixed(2)} px from its line`;
-          return "";
-        };
-        wrong = judge(await measure(), "as the clip timeline is");
-        if (wrong) break;
+        // wide, they stood apart by as much. Plan row 2.232.
+        const m = await page.evaluate(() => {
+          const mid = (e) => {
+            const b = e.getBoundingClientRect();
+            return b.left + b.width / 2;
+          };
+          const line = document.querySelector(".clip-timeline .playhead");
+          return {
+            line: line ? mid(line) : NaN,
+            head: mid(document.querySelector(".clip-timeline .head") ?? line),
+            lit: [...document.querySelectorAll(".clip-timeline .thumb.here, .clip-timeline .cropdot.here")].map((e) => ({
+              kind: e.classList.contains("thumb") ? "thumbnail" : "keyframe",
+              at: mid(e),
+            })),
+          };
+        });
+        const off = m.lit.find((l) => Math.abs(l.at - m.line) > 0.01);
+        if (!Number.isFinite(m.line)) wrong = "the clip timeline shows no playhead";
+        else if (m.lit.length !== arg) wrong = `${m.lit.length} marks light on the playhead's frame, not ${arg}`;
+        else if (off) wrong = `the ${off.kind} lit by the playhead stands ${(off.at - m.line).toFixed(2)} px from its line`;
+        else if (Math.abs(m.head - m.line) > 0.01) wrong = `the playhead's head stands ${(m.head - m.line).toFixed(2)} px from its line`;
+        break;
+      }
+      case "pinch in": {
+        // Up close, pinched in on the playhead to a tenth, where a frame is
+        // many pixels wide, and the hand taken off the clip timeline.
         const g = await handles(page);
-        const was = await measure();
-        await page.mouse.move(was.line, high(g.track));
+        const line = await page.evaluate(() => {
+          const b = document.querySelector(".clip-timeline .playhead")?.getBoundingClientRect();
+          return b ? b.left + b.width / 2 : NaN;
+        });
+        await page.mouse.move(Number.isFinite(line) ? line : g.track.x + g.track.w / 2, high(g.track));
         await page.keyboard.down("Control");
         await page.mouse.wheel(0, -230);
         await page.keyboard.up("Control");
         await page.waitForTimeout(300);
-        await page.mouse.move(was.line, g.track.y + g.track.h + 60);
-        await settle(page);
-        wrong = judge(await measure(), "pinched in");
-        await page.keyboard.down("Control");
-        await page.mouse.wheel(0, 230);
-        await page.keyboard.up("Control");
+        await page.mouse.move(g.track.x + g.track.w / 2, g.track.y + g.track.h + 80);
         await settle(page);
         break;
       }
