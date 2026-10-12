@@ -959,11 +959,24 @@ func bridgeDist(t *testing.T) string {
 // breaks a rule breaks it again on the next run, and a change that only
 // moves what a seed walks into is not a red run of its own.
 //
-// They run side by side, as many at once as the machine has cores, or
+// They run side by side, half as many again as the machine has cores, or
 // WALKERS. Each runs against a bridge of its own, started as a process of
 // its own: a desk sets HOME for the whole process it is in, so two bridges
 // in one would share the app's settings. One after another they took nine
-// minutes.
+// minutes. A run spends most of its time waiting, on a clip that plays in
+// real time and on the quiet after every step, so four bridges kept four
+// cores busy only part of the time: six on the four cores of CI and the
+// cloud took the whole set from six and a half minutes to five and a half,
+// with the cores busy four fifths of it.
+//
+// Every sequence is a run of its own, handed to whichever bridge is free
+// next, the same as a walk. Run as one, the sixty-six sequences took
+// twelve minutes on one bridge while the other three had finished their
+// walks in four and waited. Each sequence opens the app afresh with
+// /reset, so it walks the same alone as after the one before it. The
+// walks go first, since each takes most of a minute, and the sequences,
+// most of them a few seconds long, fill in behind them, so no bridge is
+// left with a long run once the others are done.
 func TestWalks(t *testing.T) {
 	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
 		t.Skip("make walks runs these")
@@ -991,7 +1004,7 @@ func TestWalks(t *testing.T) {
 		script string
 		env    []string
 	}
-	runs := []walkRun{{script: "sequences.mjs"}}
+	var runs []walkRun
 	walksWanted := envNumber("WALKS", 3)
 	// Each walk takes its own number of steps unless STEPS says.
 	var steps []string
@@ -1007,8 +1020,11 @@ func TestWalks(t *testing.T) {
 		// HEVC in 10-bit colour, which Chromium cannot.
 		runs = append(runs, walkRun{"playback.mjs", append([]string{fmt.Sprintf("SEED=%d", seed), "HEVC=1"}, steps...)})
 	}
+	for _, name := range sequenceNames(t, node, walks) {
+		runs = append(runs, walkRun{"sequences.mjs", []string{"SEQUENCE=" + name}})
+	}
 
-	walkers := min(envNumber("WALKERS", runtime.NumCPU()), len(runs))
+	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
 		todo <- r
@@ -1110,6 +1126,23 @@ func walkScripts(t *testing.T, dir string) []string {
 		t.Fatal("no walks found in " + dir)
 	}
 	return out
+}
+
+// sequenceNames is every sequence in sequences.mjs, in the order of the
+// file, as the script itself lists them.
+func sequenceNames(t *testing.T, node, dir string) []string {
+	t.Helper()
+	cmd := exec.Command(node, filepath.Join(dir, "sequences.mjs"), "--names")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("listing the sequences: %v\n%s", err, out)
+	}
+	names := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(names) == 0 || names[0] == "" {
+		t.Fatal("sequences.mjs lists no sequences")
+	}
+	return names
 }
 
 func envNumber(name string, otherwise int) int {

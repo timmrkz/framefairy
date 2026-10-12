@@ -414,8 +414,8 @@ fuzz: toolchain modules
 	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
-# the sequences, and every walk for seeds 1 to WALKS, as many at once as the
-# machine has cores unless WALKERS says. It needs Node, ffmpeg and
+# every sequence and every walk for seeds 1 to WALKS, half as many again at
+# once as the machine has cores unless WALKERS says. It needs Node, ffmpeg and
 # the Chromium Playwright drives, which CI installs and a cloud session
 # already has. Built for the bridge first, which takes seconds.
 WALKS ?= 3
