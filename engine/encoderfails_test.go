@@ -1,0 +1,196 @@
+package engine
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/framewire"
+)
+
+// A render goes on when the Mac's media engine fails to encode. VideoToolbox
+// failed a render with -12912 on CI's virtual Mac, and the short failed with
+// nothing to fall back on. Now the same encoder goes on on the processor,
+// Apple's own encoder in macOS, and the short is made. Plan row 2.223.
+//
+// The media engine is made to fail by a stand-in for ffmpeg that fails
+// every render not asked for the processor, the way VideoToolbox does. A
+// render on the processor goes to the real ffmpeg: on a Mac with Apple's
+// encoder as it is asked, which proves the processor takes what the
+// render asks of it, and elsewhere with libx264 in its place, which proves
+// the way round on any machine.
+//
+// On the real disk: ffmpeg makes the episode and renders the short.
+func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
+	onMac := hasEncoder(string(listing), "h264_videotoolbox")
+	if !onMac && !hasEncoder(string(listing), "libx264") {
+		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "episode.mp4")
+	if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
+		"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
+		"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", source).CombinedOutput(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, out)
+	}
+	info, err := e.Probe(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var log bytes.Buffer
+	e.Log = NewLog(&log, false, false)
+	calls := filepath.Join(dir, "calls")
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac)
+	// The encoder Preflight found for this system is let go, so the
+	// render reaches for the Mac's.
+	e.system, e.encoder = "darwin", Encoder{}
+
+	clip := info.OnFrames(Clip{ID: "01", Slug: "chip", Segments: []Segment{{Start: 0.5, End: 2.5}}})
+	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
+	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
+		filepath.Join(dir, "captions"), false)
+	if err != nil {
+		t.Fatalf("the short failed with the media engine: %v", err)
+	}
+	if _, err := os.Stat(short); err != nil {
+		t.Fatal(err)
+	}
+	made, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renders := strings.Split(strings.TrimSpace(string(made)), "\n")
+	if len(renders) != 2 || renders[0] != "media engine" || renders[1] != "processor" {
+		t.Errorf("the renders were %q, not one on the media engine and one on the processor", renders)
+	}
+	said := log.String()
+	if !strings.Contains(said, "h264_videotoolbox failed") || !strings.Contains(said, "-12912") {
+		t.Errorf("the log does not say the media engine failed and why:\n%s", said)
+	}
+
+	// The next short tries the media engine again.
+	os.Remove(calls)
+	if _, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "again"), nil, rs, nil,
+		filepath.Join(dir, "captions"), false); err != nil {
+		t.Fatal(err)
+	}
+	made, _ = os.ReadFile(calls)
+	if !strings.HasPrefix(string(made), "media engine\n") {
+		t.Errorf("the next short started with %q, not on the media engine", made)
+	}
+}
+
+// A failure that is not the encoder's own, of the filters or of reading the
+// video, is not rendered again: another encoder would not mend it.
+func TestOnlyAnEncoderThatFailedItselfIsLeft(t *testing.T) {
+	e := encodingEngine(t, "h264_videotoolbox", "libx264")
+	e.system = "darwin"
+	ctx := context.Background()
+	failed := videoToolbox
+	cases := []struct {
+		said string
+		next string
+	}{
+		{"[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912\n", "h264_videotoolbox -require_sw 1"},
+		{"[h264_videotoolbox @ 0x6000013c] Cannot create compression session: -12908\n", "h264_videotoolbox -require_sw 1"},
+		{"[Parsed_crop_3 @ 0x6000013c] Invalid too big or non positive size\n", ""},
+		{"episode.mp4: No such file or directory\n", ""},
+	}
+	for _, c := range cases {
+		next, ok := e.nextEncoder(ctx, failed, framewire.SDR, c.said)
+		got := ""
+		if ok {
+			got = next.String()
+		}
+		if got != c.next {
+			t.Errorf("after %q the render goes on with %q, not %q", c.said, got, c.next)
+		}
+	}
+	// On the processor it goes on with libx264 where this ffmpeg has it,
+	// and an encoder with nothing after it is the end.
+	if next, ok := e.nextEncoder(ctx, onProcessor(videoToolbox), framewire.SDR,
+		"[h264_videotoolbox @ 0x1] Error encoding frame: -12902"); !ok || next.String() != "libx264" {
+		t.Errorf("after the processor the render goes on with %q", next.String())
+	}
+	if _, ok := e.nextEncoder(ctx, x264, framewire.SDR, "[libx264 @ 0x1] broken"); ok {
+		t.Error("the last encoder of the order had one after it")
+	}
+	// HDR goes on with HEVC on the processor.
+	if next, ok := encodingEngineOn(t, "darwin", "hevc_videotoolbox").nextEncoder(ctx, hevcVideoToolbox,
+		framewire.PQ, "[hevc_videotoolbox @ 0x1] Error encoding frame: -12912"); !ok ||
+		next.String() != "hevc_videotoolbox -require_sw 1" {
+		t.Errorf("after HEVC on the media engine the render goes on with %q", next.String())
+	}
+}
+
+func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
+	e := encodingEngine(t, encoders...)
+	e.system = goos
+	return e
+}
+
+// failingMediaEngine is a stand-in for ffmpeg at real that lists
+// VideoToolbox's encoders and fails every render that does not ask for the
+// processor, the way the media engine fails, and writes which it was to
+// calls. A render on the processor goes to real, as it is on a Mac and
+// with libx264 for Apple's encoder elsewhere.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
+func failingMediaEngine(t *testing.T, real, calls string, onMac bool) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	swap := `
+for a in "$@"; do
+  case "$a" in
+    h264_videotoolbox) set -- "$@" libx264 ;;
+    -require_sw) skip=1 ;;
+    -q:v) skip=1 ;;
+    *) if [ -n "$skip" ]; then skip=; else set -- "$@" "$a"; fi ;;
+  esac
+  shift
+done`
+	if onMac {
+		swap = ""
+	}
+	script := `#!/bin/sh
+real='` + real + `'
+case " $* " in
+*" -encoders "*)
+  "$real" "$@"
+  printf ' V....D h264_videotoolbox    VideoToolbox H.264 Encoder (codec h264)\n'
+  printf ' V....D hevc_videotoolbox    VideoToolbox H.265 Encoder (codec hevc)\n'
+  exit 0 ;;
+*" -require_sw 1 "*)
+  echo processor >> '` + calls + `' ;;
+*" h264_videotoolbox "*)
+  echo 'media engine' >> '` + calls + `'
+  echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
+  echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
+  exit 187 ;;
+esac
+` + swap + `
+exec "$real" "$@"
+`
+	path := filepath.Join(t.TempDir(), "ffmpeg")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

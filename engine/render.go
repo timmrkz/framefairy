@@ -143,9 +143,20 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 	return graph, videoLabel, audioLabel, nil
 }
 
-// BuildCommand is the whole ffmpeg invocation for one clip.
+// BuildCommand is the whole ffmpeg invocation for one clip, with the
+// encoder a render starts with.
 func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	source SourceInfo, outPath string, rs RenderSettings, assName string) ([]string, error) {
+	encoder, err := e.encoderFor(ctx, source.Light())
+	if err != nil {
+		return nil, err
+	}
+	return e.buildCommand(ctx, clip, sourcePath, source, outPath, rs, assName, encoder)
+}
+
+// buildCommand is BuildCommand with the encoder said.
+func (e *Engine) buildCommand(ctx context.Context, clip Clip, sourcePath string,
+	source SourceInfo, outPath string, rs RenderSettings, assName string, encoder Encoder) ([]string, error) {
 	graph, videoLabel, audioLabel, err := e.BuildFilterGraph(ctx, clip, source, rs, assName)
 	if err != nil {
 		return nil, err
@@ -171,15 +182,11 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-t", cut.soundRead, "-vn", "-i", abs)
 	}
 	light := source.Light()
-	video, err := e.videoArgs(ctx, rs, light)
-	if err != nil {
-		return nil, err
-	}
 	cmd = append(cmd,
 		"-filter_complex", graph,
 		"-map", videoLabel, "-map", audioLabel,
 	)
-	cmd = append(cmd, video...)
+	cmd = append(cmd, encoder.args(rs)...)
 	if light == framewire.SDR {
 		cmd = append(cmd, "-profile:v", "high", "-pix_fmt", "yuv420p")
 	}
@@ -627,33 +634,50 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	}
 	source = e.unevenPieces(ctx, sourcePath, source, clip.Segments)
 	source = e.keyedPieces(ctx, sourcePath, source, clip.Segments)
-	cmd, err := e.BuildCommand(ctx, clip, sourcePath, source, tmp, rs, assName)
+	encoder, err := e.encoderFor(ctx, source.Light())
 	if err != nil {
 		return "", err
 	}
-	if dryRun {
-		cmd[len(cmd)-1] = outPath
-		quoted := make([]string, len(cmd))
-		for i, c := range cmd {
-			quoted[i] = shellQuote(c)
+	for {
+		cmd, err := e.buildCommand(ctx, clip, sourcePath, source, tmp, rs, assName, encoder)
+		if err != nil {
+			return "", err
 		}
-		fmt.Println(strings.Join(quoted, " "))
-		return outPath, nil
-	}
+		if dryRun {
+			cmd[len(cmd)-1] = outPath
+			quoted := make([]string, len(cmd))
+			for i, c := range cmd {
+				quoted[i] = shellQuote(c)
+			}
+			fmt.Println(strings.Join(quoted, " "))
+			return outPath, nil
+		}
 
-	code, stderr := e.RunFFmpeg(ctx, cmd[1:], "rendering "+clip.Basename(),
-		clip.Duration(), resolvePath(captionDir))
-	if ctx.Err() != nil {
-		os.Remove(tmp)
-		return "", ctx.Err()
-	}
-	if code != 0 {
+		code, stderr := e.RunFFmpeg(ctx, cmd[1:], "rendering "+clip.Basename(),
+			clip.Duration(), resolvePath(captionDir))
+		if ctx.Err() != nil {
+			os.Remove(tmp)
+			return "", ctx.Err()
+		}
+		if code == 0 {
+			break
+		}
 		os.Remove(tmp)
 		tail := strip(stderr)
 		if len(tail) > 600 {
 			tail = tail[len(tail)-600:]
 		}
-		return "", renderErr("ffmpeg failed rendering %s:\n%s", clip.Basename(), tail)
+		// An encoder that failed by itself, the Mac's media engine above
+		// all, hands the short to the next one this system has, see
+		// nextEncoder, and the short is rendered again from the start.
+		// The log keeps all ffmpeg said, so a report says why.
+		next, ok := e.nextEncoder(ctx, encoder, source.Light(), stderr)
+		if !ok {
+			return "", renderErr("ffmpeg failed rendering %s:\n%s", clip.Basename(), tail)
+		}
+		e.Log.Warn("rendering %s: the encoder %s failed, rendering it again with %s: %s",
+			clip.Basename(), encoder, next, tail)
+		encoder = next
 	}
 
 	// An exit code of zero is not proof that the clip is right. A filter

@@ -255,6 +255,17 @@ ffmpeg actually has, macOS reaching for `h264_videotoolbox` and falling
 back to `libx264`, with `--encoder` to name one instead. Preflight checks
 that the chosen encoder exists rather than insisting on libx264.
 
+The media engine can fail to encode: on CI's virtual Mac VideoToolbox
+failed a render with -12912 now and then, and a real Mac after sleep
+could do the same. A render whose encoder fails in its own words, a line
+ffmpeg starts with the encoder's name, is rendered again from the start
+with the next encoder in the order that this ffmpeg has. On the Mac that
+is the same encoder on the processor, `-require_sw 1`, Apple's own
+encoder in macOS, which is slower and just as free of x264, and then
+`libx264` where the ffmpeg has it. The next short tries the media engine
+again, and the log keeps a warning with all ffmpeg said. HEVC for HDR
+goes the same way. `nextEncoder` in `engine/encode.go`.
+
 An HDR episode makes an HDR short, HEVC in 10 bits, see HDR in
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). On the Mac that is
 `hevc_videotoolbox`, which the ffmpeg we ship has. Elsewhere it is
