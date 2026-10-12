@@ -94,7 +94,13 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 			t.Fatal(err)
 		}
 		args := append([]string{"-hide_banner", "-loglevel", "error"}, pieceInputs(clip, source, info)...)
-		args = append(args, "-filter_complex", graph, "-map", video, "-fps_mode", "cfr", "-r", info.FPSString(),
+		// Read back with the colours worked out at every pixel and rounded
+		// exactly, the same on every machine. The converter ffmpeg picks by
+		// itself takes each colour from its quarter of the pixels as it
+		// stands, and works otherwise on an Apple chip than on Linux, which
+		// put the captions a tenth of a step further apart there.
+		graph += ";" + video + "scale=flags=accurate_rnd+full_chroma_int+bitexact,format=rgb24[rgb]"
+		args = append(args, "-filter_complex", graph, "-map", "[rgb]", "-fps_mode", "cfr", "-r", info.FPSString(),
 			"-f", "rawvideo", "-pix_fmt", "rgb24", "-", "-map", sound, "-f", "null", os.DevNull)
 		cmd := exec.Command(ffmpeg, args...)
 		cmd.Dir = captions
