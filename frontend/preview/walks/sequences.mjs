@@ -2667,6 +2667,18 @@ for (const seq of toWalk) {
       }
       case "drag while playing": {
         const [edge, px] = arg;
+        // The play starts a moment into the clip, so however slowly a busy
+        // machine moves the hand, the edge it drags stays far ahead of the
+        // playhead. Played on from wherever the step before left it, the
+        // play came within a frame of the clip's end while the hand was
+        // still on its way, the end was dragged back over the playhead, and
+        // the playhead went back with it, which is right and not what this
+        // step is about.
+        const g0 = await handles(page);
+        const into = g0.start.x + g0.start.w;
+        await page.mouse.click(into + 0.05 * (g0.end.x - into), high(g0.track));
+        await settle(page);
+        await page.evaluate(() => document.body.focus());
         await preview(page, 0.2);
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
@@ -2856,7 +2868,25 @@ for (const seq of toWalk) {
             await page.waitForTimeout(400);
             await page.keyboard.press(key);
           }
-        } else await page.waitForTimeout(seconds * 1000);
+        } else {
+          // So many seconds of the play, read off the playhead, not off the
+          // wall: a busy machine takes a moment longer to start the play,
+          // and a play timed by the wall then stood inside the clip for
+          // 1.83 s where the rules ask 2. The play may end sooner, at the
+          // clip's end.
+          await page
+            .waitForFunction(
+              (to) => {
+                const playing = !!document.querySelector('button[aria-label="Pause"]');
+                window.__wasPlaying ||= playing;
+                return (window.__wasPlaying && !playing) || Number(document.querySelector(".screen").dataset.playhead) >= to;
+              },
+              began + seconds,
+              { timeout: seconds * 1000 + 30000, polling: "raf" },
+            )
+            .catch(() => {});
+          await page.evaluate(() => delete window.__wasPlaying);
+        }
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -3990,20 +4020,34 @@ for (const seq of toWalk) {
       }
       case "nailed": {
         const { played, hand } = await page.evaluate(() => ({ played: window.__played ?? [], hand: window.__hand ?? {} }));
-        // A seek lands within a few frames of the hand, so each still
-        // stretch is read from 200 ms after it starts.
+        const fps = await rate(page);
         const during = (from, to) => played.filter(([t]) => t >= from && t < to);
+        // Each still stretch is read from where its seek landed. The seek
+        // takes as long as the machine needs to decode the frame under the
+        // hand, and the frames passing on the way are drawn, so a stretch
+        // read from a fixed 200 ms after the hand stopped caught a frame
+        // still on its way on a busy machine. From where the playhead and
+        // the picture landed nothing may change, the frame drawn is the
+        // one that holds the playhead, and the playhead stands for some
+        // animation frames, where a play that ran on from the press moves
+        // it on every one.
         const stood = (from, to, what) => {
-          const got = during(from + 200, to);
-          if (got.length < 10) return `only ${got.length} animation frames were read ${what}`;
-          const ats = new Set(got.map(([, at]) => at));
-          if (ats.size > 1) {
-            const all = got.map(([, at]) => at);
+          const got = during(from, to);
+          if (!got.length) return `no animation frame was read ${what}`;
+          const [, at, n] = got[got.length - 1];
+          const on = got.findIndex(([, a]) => a === at);
+          if (got.length - on < 3) {
+            const all = got.map(([, a]) => a);
             return `the playhead moved from ${Math.min(...all).toFixed(3)} to ${Math.max(...all).toFixed(3)} ${what}`;
           }
-          const frames = new Set(got.map(([, , n]) => n));
-          if (frames.size > 1) return `${frames.size} different frames were drawn ${what}`;
-          return got[0][1];
+          const moved = got.slice(on).find(([, a]) => a !== at);
+          if (moved) return `the playhead moved from ${at.toFixed(3)} to ${moved[1].toFixed(3)} and back ${what}`;
+          const drawn = got.findIndex(([, , m]) => m === n);
+          const other = got.slice(drawn).find(([, , m]) => m !== n);
+          if (other) return `frame ${other[2]} was drawn after frame ${n} had landed ${what}`;
+          const holds = Math.floor(at * fps + 1e-6) % 2 ** 10;
+          if (n !== holds) return `frame ${n} was drawn ${what}, not frame ${holds}, which holds the playhead at ${at.toFixed(3)}`;
+          return at;
         };
         const first = stood(hand.down, hand.moves, "while the hand held still on the press");
         if (typeof first === "string") {
