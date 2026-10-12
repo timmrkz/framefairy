@@ -37,6 +37,7 @@
     frameBegins,
     insideClip,
     litWord,
+    wordInEpisode,
     type CaptionDraft,
     type Parts,
   } from "../lib/flow";
@@ -70,6 +71,7 @@
     looping = false,
     playing = false,
     captions = [],
+    captionPieces,
     arriving = false,
     captionLook = null,
     oncaptiontime,
@@ -156,6 +158,9 @@
     // They are drawn along the foot of the track, and either edge of one
     // can be dragged where the words are a little off from what is heard.
     captions?: CaptionCue[];
+    // The clip's pieces the captions were made for, whose clock they are
+    // on, see CaptionsView in lib/api.ts. Without them, the clip's own.
+    captionPieces?: { start: number; end: number }[];
     // The clip is on its way, being made: its caption blocks come in one
     // after another as they arrive, so the clip is built in front of the
     // person rather than appearing whole.
@@ -1205,7 +1210,14 @@
     onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
-  const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);
+  // The captions are put in the episode by the pieces they were made for.
+  // An undo, a cut made or put back with a double-click, hands over the
+  // clip's new pieces a moment before its new captions, and the old
+  // captions read by the new pieces were drawn somewhere else for that
+  // moment and back, and the block under the playhead popped.
+  const cuePieces = $derived(
+    shapedShown && shaped ? shaped.pieces : captionPieces?.length ? captionPieces : segments,
+  );
 
   const clipLength = $derived(cuePieces.reduce((sum, p) => sum + p.end - p.start, 0));
 
@@ -1242,12 +1254,13 @@
   // word. The block popped each time a dragged left edge passed the
   // playhead, which a click on the block puts at its first word, and a
   // dragged right edge never came near it, so the two edges looked
-  // different, found by Tim.
+  // different, found by Tim. It starts in the episode, not on the clip's
+  // clock, which a cut before it moves, see wordInEpisode.
   function wordHere(b: { c: CaptionCue; rest: { from: number; to: number } }): number {
     if (time < b.rest.from || time >= b.rest.to) return -2;
     const k = wordNow(b.c);
     const word = (b.c.lines ?? []).flatMap((l) => l.words)[k];
-    return word ? word.start : -1;
+    return word ? wordInEpisode(cuePieces, word.start) : -1;
   }
 
   // A caption block clicked is picked, the way a file is in the Finder,
@@ -1727,7 +1740,11 @@
           style="--cap-text: {captionLook?.text ?? 'var(--text)'}; --cap-box: {captionLook?.box ??
             'transparent'}; --cap-pill: {captionLook?.highlight ?? 'var(--accent)'}"
         >
-          {#each shownBlocks as b (b.i)}
+          <!-- A block is known by when its first word starts in the episode,
+               which no cut moves, and not by its place in the list: a cut
+               that takes a caption out before it gives it another place, and
+               the block under the playhead was drawn afresh and popped. -->
+          {#each shownBlocks as b (b.c.first ?? `at ${b.i}`)}
             <!-- A click puts the playhead on the caption's first word, where
                  the video preview shows it spoken. That is where it appears,
                  except for the first caption of a clip, which is on screen

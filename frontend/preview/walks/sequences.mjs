@@ -30,6 +30,15 @@
 //   ["join", n]        double-clicks on the clip timeline's nth cut, from 1,
 //                      which puts the part back
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
+//   ["drag edge", which, px]
+//                      drags the clip's "start" or "end" edge, or the
+//                      "cut from" or "cut to" edge of its first cut, by px
+//                      in twenty steps while it is paused, reading the
+//                      playhead on every animation frame from the press to
+//                      after it lets go
+//   ["block after", n] clicks the caption block of the first caption that
+//                      appears after the clip's nth cut, from 1, which puts
+//                      the playhead on its first word
 //   ["drag while playing", edge, px]
 //                      plays the clip from a moment into it, and drags its
 //                      "end" edge, or the first edge of its first "cut", by
@@ -264,6 +273,15 @@
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      where the app says what went wrong, and the library
 //                      does not hold it
+//   ["followed", which]
+//                      since "drag edge", the playhead went with the edge:
+//                      it stood in four places or more while the hand
+//                      moved, and once it let go stands on the frame the
+//                      edge leaves on screen, the clip's or the piece's
+//                      first frame for "start" and "cut to", its last for
+//                      "end" and "cut from"
+//   ["pill pops", n]   the pill round the lit word in the video preview
+//                      popped n times since "count pops"
 //   ["played through"] since "drag while playing", the play went on as if
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
@@ -773,6 +791,42 @@ export const sequences = [
       ["press", "Escape"],
       ["press", "Enter"],
       ["open", "Jahre"],
+    ],
+  },
+  {
+    // Plan row 2.231, found by Tim: the clip's edges took the playhead
+    // along and a cut's edges left it where it was, so the frame beside
+    // the cut could not be seen while it was placed.
+    name: "a cut's edges dragged take the playhead along, the way the clip's edges do",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -40],
+      ["followed", "cut from"],
+      ["drag edge", "cut to", 40],
+      ["followed", "cut to"],
+      ["drag edge", "end", -40],
+      ["followed", "end"],
+      ["drag edge", "start", 40],
+      ["followed", "start"],
+    ],
+  },
+  {
+    // Plan row 2.232, found by Tim: with the playhead on a caption after a
+    // cut, the cut's edges moved made the caption block and the pill in
+    // the video preview pop again and again. A word was known by when it
+    // starts on the clip's clock, which the cut moves. Undo takes the cut
+    // back with the playhead standing on the caption, which is the same
+    // change with no hand on an edge.
+    name: "a cut changed before the caption under the playhead pops nothing",
+    steps: [
+      ["cut at", 0.4],
+      ["block after", 1],
+      ["drag edge", "cut from", -40],
+      ["block after", 1],
+      ["count pops"],
+      ["undo"],
+      ["pops", 0],
+      ["pill pops", 0],
     ],
   },
   {
@@ -2448,10 +2502,13 @@ for (const seq of toWalk) {
           await page.waitForTimeout(400);
           await page.evaluate(() => {
             window.__pops = 0;
+            window.__pillPops = 0;
             if (!window.__popsHeard) {
               window.__popsHeard = true;
               document.addEventListener("animationstart", (e) => {
-                if (e.animationName === "pop" && e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+                if (e.animationName !== "pop") return;
+                if (e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+                if (e.target.closest?.(".screen .captions")) window.__pillPops++;
               });
             }
           });
@@ -2460,6 +2517,12 @@ for (const seq of toWalk) {
           const n = await page.evaluate(() => window.__pops);
           if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
         }
+        break;
+      }
+      case "pill pops": {
+        await page.waitForTimeout(400);
+        const n = await page.evaluate(() => window.__pillPops);
+        if (n !== arg) wrong = `the pill in the video preview popped ${n} times, ${arg} wanted`;
         break;
       }
       case "edge put back": {
@@ -2696,6 +2759,67 @@ for (const seq of toWalk) {
         const [edge, px] = arg;
         await drag(page, middle(g[edge]), high(g.track), px, false);
         await watch.step("trim", s);
+        break;
+      }
+      case "drag edge": {
+        const [which, px] = arg;
+        const g = await handles(page);
+        const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
+        if (!box) {
+          wrong = `there is no ${which} edge to drag`;
+          break;
+        }
+        await page.evaluate(() => {
+          window.__followed = [];
+          window.__followWatch = true;
+          const tick = () => {
+            if (!window.__followWatch) return;
+            window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        const y = box.y + box.h / 2;
+        await page.mouse.move(middle(box), y);
+        await page.mouse.down();
+        for (let i = 1; i <= 20; i++) {
+          await page.mouse.move(middle(box) + (px * i) / 20, y);
+          await page.waitForTimeout(40);
+        }
+        await page.mouse.up();
+        await watch.step("drag edge", s);
+        await page.evaluate(() => (window.__followWatch = false));
+        break;
+      }
+      case "block after": {
+        const now = await engineState(page, watch.at);
+        // Where the cut ends, on the clip's clock, which the captions are on.
+        const back = now.segments.slice(0, arg).reduce((sum, p) => sum + p.end - p.start, 0);
+        const cue = now.captions.find((c) => c.start >= back + 0.01);
+        if (!cue) {
+          wrong = `no caption appears after cut ${arg}`;
+          break;
+        }
+        await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
+        await watch.step("block after", s);
+        break;
+      }
+      case "followed": {
+        const segs = (await engineState(page, watch.at)).segments;
+        const frame = 1 / (await rate(page));
+        const want = {
+          start: segs[0].start,
+          end: segs.at(-1).end - frame,
+          "cut from": segs[0].end - frame,
+          "cut to": segs[1]?.start,
+        }[arg];
+        const seen = await page.evaluate(() => window.__followed ?? []);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        const places = new Set(seen.map((t) => t.toFixed(3))).size;
+        if (places < 4) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
+        else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
+          wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
+        }
         break;
       }
       case "drag while playing": {

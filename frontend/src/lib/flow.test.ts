@@ -18,10 +18,12 @@ import {
   inEpisode,
   endInEpisode,
   inClip,
+  wordInEpisode,
   litWord,
   frameAt,
   frameMiddle,
   frameBegins,
+  type Piece,
 } from "./flow";
 
 describe("the window moves on when it chooses for itself", () => {
@@ -560,5 +562,31 @@ describe("frames are counted from where the picture starts", () => {
   test("the start of a frame is in that frame, not the one before", () => {
     expect(frameBegins(18, frame, 0.25)).toBeCloseTo(0.97, 9);
     for (const k of [0, 1, 18, 749, 4500]) expect(frameAt(frameBegins(k, 1001 / 30000, 0.25), 1001 / 30000, 0.25)).toBe(k);
+  });
+});
+
+describe("wordInEpisode", () => {
+  // A clip of 20 to 21 and 24 to 26, with a word said at 24.5, which is 1.5
+  // into the clip. The cut's edges moved put that word elsewhere on the
+  // clip's clock and never elsewhere in the episode, so it is one word to
+  // the caption block and to the pill, and neither pops for it.
+  test("a cut's edges moved leave a word after it the same word", () => {
+    const shapes: Piece[][] = [
+      [{ start: 20, end: 21 }, { start: 24, end: 26 }],
+      [{ start: 20, end: 20.64 }, { start: 24, end: 26 }],
+      [{ start: 20, end: 21 }, { start: 24.28, end: 26 }],
+      [{ start: 20, end: 20.333 }, { start: 23.917, end: 26 }],
+    ];
+    const onClip = shapes.map((p) => inClip(p, 24.5));
+    expect(new Set(onClip).size).toBe(shapes.length);
+    for (const [i, p] of shapes.entries()) expect(wordInEpisode(p, onClip[i])).toBe(24.5);
+  });
+
+  // A word a cut takes the start of stands where the cut ends, which on
+  // the clip's clock is also where the piece before it ends. It is the
+  // piece after's.
+  test("a word where a cut ends is the piece after's", () => {
+    const pieces: Piece[] = [{ start: 20.1, end: 20.7 }, { start: 24.3, end: 26 }];
+    expect(wordInEpisode(pieces, 0.6)).toBe(24.3);
   });
 });
