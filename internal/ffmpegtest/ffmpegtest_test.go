@@ -1,3 +1,6 @@
+// On the real disk: these are about finding ffmpeg on the search path and
+// read the module's own source.
+
 package ffmpegtest
 
 import (

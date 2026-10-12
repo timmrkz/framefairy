@@ -1,3 +1,6 @@
+// On the real disk: models and llama-server are files other programs load
+// and run.
+
 package main
 
 import (

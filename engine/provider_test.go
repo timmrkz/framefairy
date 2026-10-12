@@ -326,6 +326,8 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 // arrives as it is written, and the plan it makes is written like any other.
 // This is the journey somebody with an OpenAI key takes, end to end, with
 // the only thing that is not real being the far end of the call.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestProjectPlansWithOpenAI(t *testing.T) {
 	source := testEpisode(t, "40")
 	ownTrainingDir(t)
@@ -367,6 +369,8 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 
 // A search on Claude with --prefill still gets middle's answer whole. A
 // prefilled brace starts a JSON answer, and middle answers without one.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
 	source := testEpisode(t, "40")
 	ownTrainingDir(t)

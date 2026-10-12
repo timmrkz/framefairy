@@ -1,3 +1,5 @@
+// On the real disk: a model is a file llama-server loads.
+
 package engine
 
 import (

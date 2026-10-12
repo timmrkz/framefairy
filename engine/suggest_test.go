@@ -31,6 +31,7 @@ type suggestCases struct {
 	} `json:"thinks"`
 }
 
+// On the real disk: what is read is the repository's testdata.
 func readSuggestCases(t *testing.T) suggestCases {
 	t.Helper()
 	data, err := os.ReadFile("../frontend/src/lib/suggest.cases.json")
@@ -90,6 +91,8 @@ func TestSuggestedThink(t *testing.T) {
 // A search given no count and no thinking budget looks for the clips its
 // window suggests and thinks what its window suggests, and says so in its
 // plan.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")

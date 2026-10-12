@@ -30,6 +30,8 @@ func TestCaptionTimesRoundTrip(t *testing.T) {
 	}
 }
 
+// On the real disk: an srt file is for a person to open in another
+// program.
 func TestWriteSRTWritesTheCues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "words.srt")
 	cues := []Cue{{0, 1.234, "Erste Zeile"}, {1.5, 3, "Zweite, mit Komma"}}

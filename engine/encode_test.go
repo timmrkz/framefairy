@@ -1,3 +1,5 @@
+// On the real disk: a stand-in ffmpeg is a program that is run.
+
 package engine
 
 import (

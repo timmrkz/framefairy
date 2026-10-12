@@ -1,3 +1,6 @@
+// On the real disk: a short is a file ffmpeg writes and a person keeps,
+// found by its name in the output folder.
+
 package engine
 
 import (

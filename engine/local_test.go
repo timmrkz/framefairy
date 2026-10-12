@@ -1,3 +1,6 @@
+// On the real disk: llama-server is a program that is run, with its model
+// and its log as files.
+
 package engine
 
 import (

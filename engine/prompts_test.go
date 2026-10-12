@@ -176,6 +176,8 @@ func TestAClipGivenAsThreePoints(t *testing.T) {
 
 // A recipe asked from a prompt file sends one message and no system part,
 // to the local model and to the API alike. middle, the default, is one.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAPromptFileIsOneMessage(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -247,6 +249,9 @@ var updatePrompts = flag.Bool("update-prompts", false, "write testdata/prompts f
 // kept as the Go code made them before they moved into files. A change to
 // lines is a new way of asking, with a new PromptVersion, and saved answers
 // that no longer match their prompt.
+//
+// On the real disk: with -update-prompts it writes the repository's
+// testdata.
 func TestEveryPromptAsksWhatTestdataSays(t *testing.T) {
 	lines := said(
 		0.0, 1.1, "Was ist deine erste Erinnerung?",
@@ -372,6 +377,8 @@ func TestAMiddleAnswer(t *testing.T) {
 // A search asking for a plain answer holds the local model to no schema
 // and no grammar, so it can think first, and takes the clips from the
 // lines it writes, passing over the rest.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestASearchWithAPlainAnswer(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")

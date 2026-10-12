@@ -1,3 +1,6 @@
+// On the real disk: a model is a folder the speech library or
+// llama-server loads.
+
 package engine
 
 import (

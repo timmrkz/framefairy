@@ -1,3 +1,6 @@
+// On the real disk: an update is a program put in place of the app, with
+// its links and modes.
+
 package main
 
 import (

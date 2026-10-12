@@ -1,3 +1,6 @@
+// On the real disk: the driver works the app the way a person does, on
+// episodes ffmpeg made and reads.
+
 package main
 
 // The driver for the path tests in paths_test.go.

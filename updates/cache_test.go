@@ -1,3 +1,6 @@
+// On the real disk: an update is a program that is downloaded, kept and
+// run.
+
 package updates
 
 import (

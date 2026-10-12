@@ -1,3 +1,6 @@
+// On the real disk: the plan is written beside a search that runs ffmpeg,
+// and replacing it is tested where a file can be held open.
+
 package engine
 
 import (

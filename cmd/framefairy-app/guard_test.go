@@ -1,3 +1,6 @@
+// On the real disk: what is tested is that a link on the disk is no way
+// out of the library, and memory has no links.
+
 package main
 
 import (

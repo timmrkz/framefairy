@@ -46,6 +46,9 @@ func TestLanesRunSideBySide(t *testing.T) {
 // in the library: the video preview reads nothing of the file itself, see
 // docs/VIDEO-PREVIEW.md, step 5. The frames route takes an episode's file
 // and nothing else.
+//
+// On the real disk: the frames route hands an episode to its decoder,
+// which reads it.
 func TestNothingServesTheBytesOfAFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

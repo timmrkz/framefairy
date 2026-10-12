@@ -1,3 +1,5 @@
+// On the real disk: what is read is the repository's own build scripts.
+
 package notices
 
 import (

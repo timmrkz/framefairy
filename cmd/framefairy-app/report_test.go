@@ -1,3 +1,6 @@
+// On the real disk: a report is a file for a person to send, beside the
+// log lumberjack keeps on the disk.
+
 package main
 
 import (

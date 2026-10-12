@@ -1,3 +1,5 @@
+// On the real disk: ffmpeg reads the short and writes its thumbnails.
+
 package engine
 
 import (

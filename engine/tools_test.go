@@ -1,3 +1,5 @@
+// On the real disk: a tool is a program that is found and run.
+
 package engine
 
 import (

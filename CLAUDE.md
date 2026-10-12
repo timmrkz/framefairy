@@ -501,8 +501,10 @@ messages, pull request text, code comments and chat replies.
   another program is what it is about: a file ffmpeg, the frames decoder
   or llama-server has to read, a link that must not lead out of the
   library, the lock between two programs, the signer's record, an update
-  being installed. Such a test says why in the comment above it. A fuzz
-  target that writes a file a run spends its runs waiting on the drive.
+  being installed. Such a test says why in a comment that starts with
+  "On the real disk", above it or at the top of its file, and
+  `internal/offdisk` fails on one that goes to the disk without it. A
+  fuzz target that writes a file spends its runs waiting on the drive.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has

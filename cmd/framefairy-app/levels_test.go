@@ -1,3 +1,6 @@
+// On the real disk: the loudness is measured by ffmpeg, from an episode
+// it made.
+
 package main
 
 import (

@@ -1,3 +1,6 @@
+// On the real disk: a speech model is a folder the speech library loads,
+// unpacked from an archive.
+
 package engine
 
 import (

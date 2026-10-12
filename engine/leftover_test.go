@@ -1,3 +1,6 @@
+// On the real disk: a note is left for the next start of the program
+// about a llama-server, a program that is run.
+
 package engine
 
 import (

@@ -1,5 +1,8 @@
 //go:build outside && darwin
 
+// On the real disk: these run the built app from outside, the way macOS
+// opens it.
+
 package outside
 
 // How each step in sequences.go is done on a Mac, against the app's probe,

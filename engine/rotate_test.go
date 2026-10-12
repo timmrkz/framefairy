@@ -364,6 +364,8 @@ func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
 // to stand it up. ffmpeg stands it up before anything else sees it, so the
 // engine has to know the picture's size standing up, or the crop is worked
 // out for a landscape picture and cut from a portrait one.
+//
+// On the real disk: ffmpeg reads the episode.
 func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 	ffmpegtest.Need(t)
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
@@ -389,6 +391,8 @@ func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 // the episode's decoder turns the picture the file asks for, as the ffmpeg
 // program does, so its frames agree with ffmpeg's at the size standing up,
 // at every turn and for a phone's HEVC too.
+//
+// On the real disk: the episode's decoder reads the episode.
 func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")

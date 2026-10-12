@@ -1,3 +1,5 @@
+// On the real disk: the episode's decoder and ffmpeg read the episode.
+
 package engine
 
 import (

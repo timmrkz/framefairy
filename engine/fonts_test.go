@@ -1,3 +1,5 @@
+// On the real disk: a font is a file ffmpeg's captions read.
+
 package engine
 
 import (

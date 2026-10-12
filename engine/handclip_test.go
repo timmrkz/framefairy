@@ -1,3 +1,6 @@
+// On the real disk: a clip made by hand is framed with ffmpeg reading the
+// episode.
+
 package engine
 
 import (

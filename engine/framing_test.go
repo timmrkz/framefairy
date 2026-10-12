@@ -1,3 +1,6 @@
+// On the real disk: ffmpeg reads the episode, and a stand-in ffmpeg is a
+// program that is run.
+
 package engine
 
 import (

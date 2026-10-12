@@ -59,6 +59,7 @@ func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	}))
 }
 
+// On the real disk: ffmpeg makes the episode and reads it.
 func testEpisode(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -92,6 +93,7 @@ type testEpisodes struct {
 	files map[string]string
 }
 
+// On the real disk: ffmpeg makes the episode and reads it.
 func (m *testEpisodes) make(seconds string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -120,6 +122,7 @@ func (m *testEpisodes) make(seconds string) (string, error) {
 	return path, nil
 }
 
+// On the real disk: the project runs ffmpeg on the episode.
 func TestProjectSteps(t *testing.T) {
 	source := testEpisode(t, "40")
 	// The records of every episode go in one folder. This test counts
@@ -349,6 +352,8 @@ func TestProjectReportsErrors(t *testing.T) {
 // What went wrong reaches whoever asked as the error it is, kept under
 // ErrStepFailed, where it was once only the last line of the log. The
 // command line still says it in the log, and exits with 1.
+//
+// On the real disk: the project runs ffmpeg on the episode.
 func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")

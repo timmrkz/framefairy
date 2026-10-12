@@ -1,3 +1,6 @@
+// On the real disk: the bridge runs the real app, with ffmpeg and the
+// episode's decoder reading the episodes.
+
 package main
 
 // The bridge: the interface in a browser, against the real Go side.

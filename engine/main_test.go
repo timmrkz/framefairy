@@ -15,6 +15,9 @@ import (
 // The tests never write into the home folder of whoever runs them, so the
 // one training folder is in memory for the whole package, and so is the
 // record of how long searches take.
+//
+// On the real disk: the episodes the tests share are made by ffmpeg, and
+// removed when they end.
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
@@ -77,6 +80,9 @@ func stubbornServer() {
 
 // holdLock is this test binary run as another program that edits a file:
 // it takes the file's lock, says so, and holds it until its input closes.
+//
+// On the real disk: it stands for another program, and the lock between
+// two programs is the system's.
 func holdLock(path string) {
 	release := lockFile(disk, path)
 	fmt.Println("held")

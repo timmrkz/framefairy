@@ -1,3 +1,5 @@
+// On the real disk: ffmpeg reads the episode the speech model hears.
+
 package engine
 
 import (

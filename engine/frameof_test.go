@@ -34,6 +34,7 @@ type frameCases struct {
 	} `json:"stretches"`
 }
 
+// On the real disk: what is read is the repository's testdata.
 func readFrameCases(t *testing.T) frameCases {
 	t.Helper()
 	data, err := os.ReadFile("../frontend/src/lib/frame.cases.json")

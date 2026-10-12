@@ -1,3 +1,6 @@
+// On the real disk: the paths work the app on episodes ffmpeg made and
+// reads.
+
 package main
 
 // The path tests: what a person does with the app, from adding a video to

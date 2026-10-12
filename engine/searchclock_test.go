@@ -307,6 +307,8 @@ func TestTimingsKeptFromSeveralSearchesAtOnce(t *testing.T) {
 // against the stand-in and leaves its own timings, which the second is
 // measured against. Both say how far they are, and every clip that lands
 // is in the progress the app hears.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestASearchSaysHowFarItIs(t *testing.T) {
 	useSpeedFile(t)
 	source := testEpisode(t, "40")

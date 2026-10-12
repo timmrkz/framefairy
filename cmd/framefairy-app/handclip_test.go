@@ -1,3 +1,6 @@
+// On the real disk: the driver works the app on episodes ffmpeg made and
+// reads.
+
 package main
 
 import (

@@ -1,3 +1,5 @@
+// On the real disk: ffmpeg reads the episode and writes the short.
+
 package engine
 
 import (

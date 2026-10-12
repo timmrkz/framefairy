@@ -1,3 +1,6 @@
+// On the real disk: the release tool signs files that are uploaded as
+// they are, and keys that stay in files.
+
 package main
 
 import (

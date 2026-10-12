@@ -97,6 +97,8 @@ func TestASlowGlideMovesOnEveryFrameOfTheShort(t *testing.T) {
 // ffmpeg. Both are held to the marks and the left edge on each frame in
 // frontend/src/lib/glide.cases.json, so the video preview shows on every
 // frame the crop the short has. glide.test.ts holds the window to it.
+//
+// On the real disk: what is read is the interface's own source.
 func TestTheGlideIsTheOneTheVideoPreviewWorksOut(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile("../frontend/src/lib/glide.cases.json")

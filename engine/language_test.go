@@ -1,3 +1,6 @@
+// On the real disk: a language model is a file llama-server loads,
+// downloaded to where it will be.
+
 package engine
 
 import (

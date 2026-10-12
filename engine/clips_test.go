@@ -35,6 +35,8 @@ func TestSanitiseNameKeepsFilesAndFilterGraphsSafe(t *testing.T) {
 	}
 }
 
+// On the real disk: what is tested is that a link on the disk is no way
+// out of a folder, and memory has no links.
 func TestSafeChildStaysInsideItsFolder(t *testing.T) {
 	base := t.TempDir()
 	for _, name := range []string{"01_a.mp4", "sub/01.mp4", "sub/../01.mp4", "./a"} {
@@ -65,6 +67,9 @@ func TestSafeChildStaysInsideItsFolder(t *testing.T) {
 
 // FuzzSafeChild makes sure the check itself cannot be talked around. Every
 // name it accepts has to land inside the folder.
+//
+// On the real disk: what is tested is that a link on the disk is no way
+// out of a folder, and memory has no links.
 func FuzzSafeChild(f *testing.F) {
 	for _, name := range []string{"01_a.mp4", "..", "../x", "a/../../x", "/etc/passwd",
 		"a//b", ".", "", "a\x00b", "C:\\x"} {
@@ -351,6 +356,9 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 // Settings that cannot be met are refused before anything is asked of the
 // model, because the prompt would ask for clips between thirty and twenty
 // seconds and the answer would be nonsense either way.
+//
+// On the real disk: the command line's run takes the episode from the
+// disk, for ffmpeg.
 func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "ep.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {

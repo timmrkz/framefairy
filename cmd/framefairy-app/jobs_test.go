@@ -385,6 +385,9 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 // What a job says is kept in a file in its episode's work folder, detail
 // lines too, since the app has no page for it: that file is where a
 // failure is looked into.
+//
+// On the real disk: a job log is opened inside the work folder through
+// os.Root, which no link leads out of.
 func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

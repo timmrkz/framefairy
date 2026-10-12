@@ -1,3 +1,6 @@
+// On the real disk: the app's log is a file a person sends with a report,
+// written by lumberjack, which knows only the disk.
+
 package main
 
 import (

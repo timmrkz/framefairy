@@ -1,3 +1,6 @@
+// On the real disk: the dispenser keeps the signer's record, which the
+// system locks against a second signer.
+
 package main
 
 import (

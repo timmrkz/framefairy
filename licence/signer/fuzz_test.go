@@ -1,3 +1,6 @@
+// On the real disk: the record is locked against a second signer by the
+// system and flushed to the drive.
+
 package signer
 
 import (

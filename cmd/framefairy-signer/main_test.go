@@ -1,3 +1,6 @@
+// On the real disk: the signer's key is a file whose mode is checked, and
+// its record is locked by the system.
+
 package main
 
 import (

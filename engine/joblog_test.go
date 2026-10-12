@@ -1,3 +1,6 @@
+// On the real disk: a job log is opened inside the work folder through
+// os.Root, so no link leads it out, and that is what is tested.
+
 package engine
 
 import (

@@ -1,3 +1,5 @@
+// On the real disk: a caption file is what ffmpeg burns into a short.
+
 package engine
 
 import (

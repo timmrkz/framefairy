@@ -1,3 +1,5 @@
+// On the real disk: the episode's decoder reads what is dropped.
+
 package main
 
 import (
