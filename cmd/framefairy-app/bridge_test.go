@@ -1041,6 +1041,15 @@ func TestWalks(t *testing.T) {
 		runs = append(runs, walkRun{"sequences.mjs", []string{"SEQUENCE=" + name}})
 	}
 
+	// One share of the runs when CI spreads them over machines,
+	// WALKSHARD=1/2: every nth run from the ith on. The walks come first,
+	// so each share gets as many walks as the others, and the sequences
+	// behind them.
+	runs = shareOf(t, runs, os.Getenv("WALKSHARD"))
+	if len(runs) == 0 {
+		t.Skip("this share has no runs")
+	}
+
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1162,9 +1171,50 @@ func sequenceNames(t *testing.T, node, dir string) []string {
 	return names
 }
 
+// shareOf gives share i of n of all, "i/n", every nth from the ith on, or
+// all of them when share is empty.
+func shareOf[T any](t *testing.T, all []T, share string) []T {
+	t.Helper()
+	if share == "" {
+		return all
+	}
+	var i, n int
+	if _, err := fmt.Sscanf(share, "%d/%d", &i, &n); err != nil || n < 1 || i < 1 || i > n {
+		t.Fatalf("WALKSHARD is i/n, like 1/2, not %q", share)
+	}
+	var mine []T
+	for k, x := range all {
+		if k%n == i-1 {
+			mine = append(mine, x)
+		}
+	}
+	return mine
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// Split two ways or three, the shares of the walks hold every run once.
+func TestTheSharesOfTheWalksHoldEveryRunOnce(t *testing.T) {
+	all := []int{0, 1, 2, 3, 4, 5, 6}
+	for _, n := range []int{1, 2, 3} {
+		seen := map[int]int{}
+		for i := 1; i <= n; i++ {
+			for _, x := range shareOf(t, all, fmt.Sprintf("%d/%d", i, n)) {
+				seen[x]++
+			}
+		}
+		for _, x := range all {
+			if seen[x] != 1 {
+				t.Errorf("split %d ways, run %d is in %d shares", n, x, seen[x])
+			}
+		}
+	}
+	if got := shareOf(t, all, ""); len(got) != len(all) {
+		t.Errorf("with no share, %d runs of %d", len(got), len(all))
+	}
 }

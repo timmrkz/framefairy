@@ -495,7 +495,8 @@ messages, pull request text, code comments and chat replies.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has
-  cores, see [docs/BUILD.md](docs/BUILD.md).
+  cores, see [docs/BUILD.md](docs/BUILD.md) and Keeping the tests quick
+  below.
 - **A table a program prints lines up in the terminal.** Every cell is
   padded to its column's width and numbers stand to the right, so a column
   is read straight down and two rows compare at a glance. It can stay a
@@ -510,6 +511,53 @@ messages, pull request text, code comments and chat replies.
   build output, and that includes `frontend/preview/dist/`.
 - Pin Wails exactly (currently v3.0.0-beta.23) and keep
   `@wailsio/runtime` in `frontend/package.json` on the same version.
+
+## Keeping the tests quick
+
+CI is where every pull request waits, and Tim waits with it. These hold
+for every change, and a change that breaks one fixes it in the same pull
+request.
+
+- **No CI job runs over five minutes**, setup included, as GitHub shows it
+  on the run. A job that grows past it is split over machines or loses
+  the work that does not belong in it. It never gets a longer limit.
+  Before changing a test or a workflow, look at the times of the last
+  runs on main.
+- **A Mac only for what is different on a Mac.** The account runs five Mac
+  jobs at once, for every branch together, so each Mac job a push takes
+  is a push of someone else's that waits. A push takes two: the build
+  without warnings with the app opened from outside, and the Go tests of
+  what ships in the app, for what behaves differently there: decoding and
+  encoding through VideoToolbox, the disk's names, the keychain. Code
+  that never runs on a Mac, like the licence server, is tested on Linux
+  only, and so is anything new of that kind. The race detector runs on
+  Linux only, which covers the same Go code. Long fuzzing on a Mac runs
+  at night. A new Mac job needs a reason that can be said out loud.
+- **Slow tests run side by side.** A test that takes over a second calls
+  `t.Parallel()`, unless it changes what the whole process shares, an
+  environment variable or a package variable, and then a comment says
+  which. A test video is as small and as short as the test allows.
+- **Fuzzing is for what reads bytes from outside**: a model answer, a plan
+  file, a caption file, a licence key, a webhook, the update feed, a path.
+  An invariant over made-up data is a table test or a test over fixed
+  seeds. A target whose only input is the seed of a random generator
+  gains nothing from fuzzing, because one bit more is a different history
+  and coverage cannot steer it.
+- **Fuzzing goes on from where it stopped.** The inputs Go found are kept
+  in the Actions cache, so a run explores further instead of finding the
+  same inputs again. A push fuzzes every target for 10000 executions, the
+  long fuzzing runs at night, see `fuzz-nightly.yml`. A pull request
+  never fuzzes by the clock. A crash found at night goes into the
+  target's `testdata/fuzz/` with its fix, and from then on every
+  `go test` plays it.
+- **A run for an old commit is stopped.** Every workflow that runs on a
+  pull request cancels its older run of the same pull request, with
+  `concurrency` and `cancel-in-progress`. Only what writes shared state
+  is never stopped halfway: publishing builds, the Main moved notices,
+  and CI on main, where every commit keeps its own result.
+- **What is long or costs a Mac and blocks nothing runs by hand or at
+  night**, like the speech benchmark and the long fuzzing, never on every
+  push.
 
 ## Training data rules
 
@@ -562,8 +610,8 @@ the skills listed last show their name without what they are for.
   claiming one. Read it before changing anything in `frontend/`.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
-  fuzzes on both, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is eight jobs at once rather than one after another, so
+  fuzzes on Linux, and drives the interface against the real Go side, see
+  [docs/TESTING.md](docs/TESTING.md). It is nine jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch

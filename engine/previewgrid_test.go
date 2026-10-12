@@ -54,6 +54,8 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
+	// Not parallel: the decoder reads this from the environment, which
+	// the whole test process shares.
 	t.Setenv("FRAMEFAIRY_FRAMES_CHIP_FAILS", "10")
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"

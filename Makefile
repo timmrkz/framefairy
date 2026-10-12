@@ -62,6 +62,11 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 # Only these fuzz targets, by name and separated by spaces, or all of them.
 FUZZTARGETS ?=
+# One share of the targets, like 2/3, so a deep run can be spread over
+# machines. And SIMTIME, the histories the licence simulation plays, 0 to
+# leave it out, see scripts/fuzz.sh.
+FUZZSHARD ?=
+SIMTIME ?=
 BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and on a Mac make
@@ -401,8 +406,21 @@ test: unit fuzz interface walks
 # This also runs the seed corpus of every fuzz target, so a machine that
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
+#
+# GOSHARD=1/2 runs the first half of the tests, see scripts/go-shard.sh,
+# which is how CI spreads them over two machines. RACE= runs them without
+# the race detector, which the Mac does: the Go code is the same as on
+# Linux, where it runs with it, and it makes the tests 1.7 times slower.
+#
+# UNITSKIP names packages to leave out. The Mac leaves out the licence
+# server's, which runs on a Linux server and never on a customer's Mac.
+GOSHARD ?=
+RACE ?= -race
+UNITSKIP ?=
+UNITPACKAGES = $(if $(UNITSKIP),$$($(GO) list ./... | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))),./...)
 unit: toolchain modules $(FRESH_FRAMES)
-	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
+	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
+		$(if $(GOSHARD),GO='$(GO)' GOSHARD='$(GOSHARD)' sh scripts/go-shard.sh,$(GO) test) $(RACE) -ldflags '$(LDFLAGS)' $(UNITPACKAGES)
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -411,7 +429,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 # targets at a time as the machine has cores. A new crasher is written to
 # testdata/fuzz/ next to the code, where it stays as a seed.
 fuzz: toolchain modules
-	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' sh scripts/fuzz.sh
+	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' FUZZSHARD='$(FUZZSHARD)' SIMTIME='$(SIMTIME)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
 # every sequence and every walk for seeds 1 to WALKS, half as many again at
@@ -421,9 +439,12 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
+# One share of the runs, like 1/2, which is how CI spreads them over two
+# machines.
+WALKSHARD ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running
