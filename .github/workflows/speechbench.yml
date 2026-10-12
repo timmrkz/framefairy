@@ -1,7 +1,11 @@
 # Measures the speech model on Apple silicon: which way of running it is
 # fastest on a Mac, and whether that changes the words. It runs when the
-# speech code or the measurement changes, and by hand, never on every pull
-# request: it downloads the model and a recorded talk, about 700 MB.
+# measurement changes, and by hand, never on every pull request: it
+# downloads the model and a recorded talk, about 700 MB, and holds one of
+# the five Macs the account may use at once for a quarter of an hour. It
+# ran on every push that touched asr/ until a pull request on dictation
+# pushed often enough to keep a Mac busy with nothing but this. Start it
+# by hand from the Actions tab when a change to asr/ is about speed.
 #
 # The runner is a virtual Mac, an M1 with 3 cores, and it does not reach
 # the Neural Engine the way a real one does, so its CoreML numbers are read
@@ -17,10 +21,15 @@ on:
     paths:
       - .github/workflows/speechbench.yml
       - scripts/speechbench/**
-      - asr/**
 
 permissions:
   contents: read
+
+# A new push to the pull request stops the measurement of the one before,
+# which nobody reads any more.
+concurrency:
+  group: speechbench-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   macos:
