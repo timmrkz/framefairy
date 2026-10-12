@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -93,37 +95,40 @@ var (
 	// do not each write over the other.
 	speedMu    sync.Mutex
 	speedPath  string
+	speedFiles = disk
 	speedWrite sync.Mutex
 )
 
 // SetSpeedFile says where the timings of past searches are kept. Empty is
 // the default, beside the models in ~/.framefairy. It is a file of its own
 // rather than a setting, because it describes the machine, not a choice.
-func SetSpeedFile(path string) {
+// It is on fsys, the disk in the programs and memory in a test.
+func SetSpeedFile(fsys afero.Fs, path string) {
 	speedMu.Lock()
 	defer speedMu.Unlock()
-	speedPath = path
+	speedPath, speedFiles = path, fsys
 }
 
-func speedFile() string {
+// speedFile is where the timings are kept, and what that is on.
+func speedFile() (afero.Fs, string) {
 	speedMu.Lock()
 	defer speedMu.Unlock()
 	if speedPath != "" {
-		return speedPath
+		return speedFiles, speedPath
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return speedFiles, ""
 	}
-	return filepath.Join(home, ".framefairy", "speed.json")
+	return speedFiles, filepath.Join(home, ".framefairy", "speed.json")
 }
 
-func readSpeeds(path string) map[string]searchSpeed {
+func readSpeeds(fsys afero.Fs, path string) map[string]searchSpeed {
 	speeds := map[string]searchSpeed{}
 	if path == "" {
 		return speeds
 	}
-	data, err := os.ReadFile(path)
+	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		return speeds
 	}
@@ -173,14 +178,14 @@ func blend(was, now float64, known bool) float64 {
 
 // keepSpeed records how long the parts of a finished search took.
 func keepSpeed(model string, took searchSpeed, loaded bool) {
-	path := speedFile()
+	fsys, path := speedFile()
 	took.Version = speedVersion
 	if path == "" || !took.usable() {
 		return
 	}
 	speedWrite.Lock()
 	defer speedWrite.Unlock()
-	speeds := readSpeeds(path)
+	speeds := readSpeeds(fsys, path)
 	was, known := speeds[model]
 	known = known && was.usable()
 	if !known {
@@ -222,20 +227,10 @@ func keepSpeed(model string, took searchSpeed, loaded bool) {
 	if err != nil {
 		return
 	}
-	if os.MkdirAll(filepath.Dir(path), 0o755) != nil {
+	if fsys.MkdirAll(filepath.Dir(path), 0o755) != nil {
 		return
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".speed-*.json")
-	if err != nil {
-		return
-	}
-	_, err = tmp.Write(body)
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil || os.Rename(tmp.Name(), path) != nil {
-		os.Remove(tmp.Name())
-	}
+	_ = WriteAtomic(fsys, path, body)
 }
 
 // The parts of a search, in the order they come.

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // pausedModel answers like llama-server with two stories, as middle
@@ -157,7 +159,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 	// The decision made while the model was still writing counts, against
 	// the plan it was made about.
-	decisions, _ := os.ReadFile(filepath.Join(TrainingDir(), "decisions.jsonl"))
+	decisions, _ := afero.ReadFile(TrainingFiles(), filepath.Join(TrainingDir(), "decisions.jsonl"))
 	if !strings.Contains(string(decisions), `"plan_id":"`+id+`"`) {
 		t.Errorf("the decision made during the search was not recorded: %s", decisions)
 	}

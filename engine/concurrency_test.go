@@ -3,10 +3,11 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // Records are written by jobs on their own goroutines while the app
@@ -17,10 +18,12 @@ import (
 func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 	dir := ownTrainingDir(t)
 
-	source := filepath.Join(t.TempDir(), "ep.mp4")
-	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {
+	fsys := afero.NewMemMapFs()
+	source := "/home/tim/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	files := TrainingFiles()
 
 	const hands, each = 8, 25
 	var wg sync.WaitGroup
@@ -34,10 +37,10 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 				if err := appendRecord(filepath.Join(TrainingDir(), "decisions.jsonl"), record); err != nil {
 					t.Error(err)
 				}
-				if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
+				if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
 					t.Error(err)
 				}
-				if !EverSearched(disk, source) || ReadSearch(disk, source) == nil {
+				if !EverSearched(fsys, source) || ReadSearch(fsys, source) == nil {
 					t.Error("a search being written was not read whole")
 				}
 			}
@@ -48,7 +51,7 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for k := 0; k < hands*each; k++ {
-			SetTrainingDir(dir)
+			SetTrainingDir(files, dir)
 			_ = TrainingDir()
 		}
 	}()

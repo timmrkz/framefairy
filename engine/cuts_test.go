@@ -545,10 +545,7 @@ func TestClipCutsAreTheGapsInOrder(t *testing.T) {
 // reach it.
 func trainingFixture(t *testing.T) (afero.Fs, string, string) {
 	t.Helper()
-	dir := t.TempDir()
-	was := TrainingDir()
-	SetTrainingDir(dir)
-	t.Cleanup(func() { SetTrainingDir(was) })
+	dir := ownTrainingDir(t)
 
 	// One clip the model proposed in two pieces, so it has a cut of its own
 	// to throw away or move, and room either side to make a new one.

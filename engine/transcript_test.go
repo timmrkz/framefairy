@@ -249,7 +249,7 @@ func TestCoverageAndSlicing(t *testing.T) {
 	words := []Cue{{0.1, 0.5, "eins"}, {1, 1.4, "zwei"}, {2, 2.4, "drei"}, {2.5, 2.9, "vier"}}
 	sound := frames(3, Span{0, 3})
 	fsys, source, path := storedTranscript(t, words, sound, 3, false)
-	model := filepath.Join(t.TempDir(), "modell")
+	model := "/home/tim/.framefairy/models/modell"
 	if got, done := Coverage(fsys, source, model); got != 3 || !done {
 		t.Errorf("coverage %v %v", got, done)
 	}

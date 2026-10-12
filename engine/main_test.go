@@ -7,13 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // The tests never write into the home folder of whoever runs them, so the
-// one training folder is a temporary one for the whole package, and so is
-// the record of how long searches take.
+// one training folder is in memory for the whole package, and so is the
+// record of how long searches take.
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
@@ -34,16 +35,12 @@ func TestMain(m *testing.M) {
 	// The tests start fake servers, whatever the machine they run on has
 	// free, so what is free is not asked. TestTheMemoryFreeNow asks it.
 	freeMemory = func() int64 { return 0 }
-	dir, err := os.MkdirTemp("", "framefairy-training")
-	if err != nil {
-		panic(err)
-	}
-	SetTrainingDir(filepath.Join(dir, "training"))
+	machine := afero.NewMemMapFs()
+	SetTrainingDir(machine, "/home/tim/.framefairy/training")
 	// Nor into the timings of past searches, which would then measure
 	// every search on the machine against a fake model.
-	SetSpeedFile(filepath.Join(dir, "speed.json"))
+	SetSpeedFile(machine, "/home/tim/.framefairy/speed.json")
 	code := m.Run()
-	_ = os.RemoveAll(dir)
 	if episodes.dir != "" {
 		_ = os.RemoveAll(episodes.dir)
 	}
@@ -56,10 +53,10 @@ func TestMain(m *testing.M) {
 // folder, and a test that points it elsewhere cannot run beside them.
 func ownTrainingDir(t *testing.T) string {
 	t.Helper()
-	was := TrainingDir()
-	dir := t.TempDir()
-	SetTrainingDir(dir)
-	t.Cleanup(func() { SetTrainingDir(was) })
+	was, wasOn := TrainingDir(), TrainingFiles()
+	dir := "/home/tim/.framefairy/training"
+	SetTrainingDir(afero.NewMemMapFs(), dir)
+	t.Cleanup(func() { SetTrainingDir(wasOn, was) })
 	return dir
 }
 

@@ -149,7 +149,7 @@ func openStoreIn(files afero.Fs, dir string) *store {
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
-	s.settings.apply()
+	s.settings.apply(s.files)
 	return s
 }
 
@@ -185,8 +185,8 @@ func (s *store) Settings() Settings {
 // apply puts the settings that live outside this struct where they belong.
 // The one training folder is read by the engine wherever it records, so it
 // is set whenever the settings are read or written.
-func (s Settings) apply() {
-	engine.SetTrainingDir(s.TrainingDir)
+func (s Settings) apply(files afero.Fs) {
+	engine.SetTrainingDir(files, s.TrainingDir)
 }
 
 // UpdateSettings changes the settings in one step: read, change, write,
@@ -201,7 +201,7 @@ func (s *store) UpdateSettings(change func(*Settings)) error {
 	change(&v)
 	v.tidy()
 	s.settings = v
-	v.apply()
+	v.apply(s.files)
 	return s.save("settings.json", v)
 }
 

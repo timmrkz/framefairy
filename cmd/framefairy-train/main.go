@@ -153,14 +153,15 @@ func export(args []string) error {
 	if from == "" {
 		from = engine.TrainingDir()
 	}
-	episodes, err := train.FindEpisodes(from)
+	disk := afero.NewOsFs()
+	episodes, err := train.FindEpisodes(disk, from)
 	if err != nil {
 		return err
 	}
 	if len(episodes) == 0 {
 		return fmt.Errorf("no training records in %s", from)
 	}
-	m, err := train.Export(episodes, *out, *share)
+	m, err := train.Export(disk, episodes, *out, *share)
 	if err != nil {
 		return err
 	}

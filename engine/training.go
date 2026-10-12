@@ -105,21 +105,23 @@ func DefaultTrainingDir() string {
 // settings are saved: everything that records reads it, so there is one
 // place and no path travels through the engine. Jobs record from their own
 // goroutines while the app saves settings on another, so it is read and
-// written behind a lock.
+// written behind a lock. The folder is on the files it was set with, the
+// disk in the programs and memory in a test.
 var (
-	dirMu       sync.RWMutex
-	trainingDir = DefaultTrainingDir()
+	dirMu         sync.RWMutex
+	trainingDir   = DefaultTrainingDir()
+	trainingFiles = disk
 )
 
-// SetTrainingDir points the records at another folder. An empty path means
-// the default one.
-func SetTrainingDir(dir string) {
+// SetTrainingDir points the records at another folder, on fsys. An empty
+// path means the default one.
+func SetTrainingDir(fsys afero.Fs, dir string) {
 	if dir == "" {
 		dir = DefaultTrainingDir()
 	}
 	dirMu.Lock()
 	defer dirMu.Unlock()
-	trainingDir = dir
+	trainingDir, trainingFiles = dir, fsys
 }
 
 // TrainingDir is the folder the records are written to and read from.
@@ -127,6 +129,13 @@ func TrainingDir() string {
 	dirMu.RLock()
 	defer dirMu.RUnlock()
 	return trainingDir
+}
+
+// TrainingFiles is what the training folder is on.
+func TrainingFiles() afero.Fs {
+	dirMu.RLock()
+	defer dirMu.RUnlock()
+	return trainingFiles
 }
 
 // PlanRecord is one line of plans.jsonl.
@@ -239,10 +248,11 @@ func appendRecord(path string, record any) error {
 	}
 	trainingMu.Lock()
 	defer trainingMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	fsys := TrainingFiles()
+	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -253,10 +263,11 @@ func appendRecord(path string, record any) error {
 	return err
 }
 
-// readRecords calls fn with every line of a JSON Lines file. Broken lines,
-// for example from a crash mid-write, are skipped.
+// readRecords calls fn with every line of a JSON Lines file in the
+// training folder. Broken lines, for example from a crash mid-write, are
+// skipped.
 func readRecords(path string, fn func(line []byte)) error {
-	f, err := os.Open(path)
+	f, err := TrainingFiles().Open(path)
 	if err != nil {
 		return err
 	}

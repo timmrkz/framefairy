@@ -39,7 +39,7 @@ func (s *FrameFairy) Training() TrainingStatus {
 
 // countRecords counts the lines of a record file. A missing file is none.
 func countRecords(path string) int {
-	f, err := os.Open(path)
+	f, err := engine.TrainingFiles().Open(path)
 	if err != nil {
 		return 0
 	}
@@ -59,9 +59,9 @@ func countRecords(path string) int {
 // training a model that is not trained yet, so this is a person tidying up
 // while the app is being built, and it cannot be taken back.
 func (s *FrameFairy) ClearTraining() error {
-	dir := engine.TrainingDir()
+	dir, files := engine.TrainingDir(), engine.TrainingFiles()
 	for _, name := range []string{"plans.jsonl", "decisions.jsonl"} {
-		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+		if err := files.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}

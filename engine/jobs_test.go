@@ -263,14 +263,14 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 }
 
 func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "ep.mp4")
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
 	logs := filepath.Join(WorkDir(source), "logs")
 	good := []JobRecord{
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
 	}
 	for _, r := range good {
-		if err := WriteJob(disk, source, r); err != nil {
+		if err := WriteJob(fsys, source, r); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -290,19 +290,19 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		"render-10.json": `{"id": "render-10", "kind": "render", "step": "rendering", "plan": "` + filepath.Join(logs, "clips.json") + `", "clips": ["` + strings.Repeat(`a", "`, 1001) + `"]}`,
 	}
 	for name, body := range bad {
-		if err := os.WriteFile(filepath.Join(JobsDir(source), name), []byte(body), 0o644); err != nil {
+		if err := afero.WriteFile(fsys, filepath.Join(JobsDir(source), name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := ReadJobs(disk, source)
+	got := ReadJobs(fsys, source)
 	if len(got) != 2 || got[0].ID != SearchID || got[1].ID != "render-1" {
 		t.Errorf("read %+v", got)
 	}
-	if err := WriteJob(disk, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
+	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(disk, source, "render-1"); err != nil || len(ReadJobs(disk, source)) != 1 {
-		t.Errorf("removed: %v, %d left", err, len(ReadJobs(disk, source)))
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 1 {
+		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
 	}
 }
 
@@ -385,22 +385,22 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 // Called off by hand, a job's record says so, and keeps the window and the
 // numbers it was asked for, so it can be carried on.
 func TestAJobCalledOffByHandSaysSo(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "ep.mp4")
-	if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
 		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := StopJob(disk, source, SearchID); err != nil {
+	if err := StopJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
-	rec := ReadSearch(disk, source)
+	rec := ReadSearch(fsys, source)
 	if rec == nil || rec.Step != StepStopped || !rec.Interrupted() || rec.To != 1800 || rec.Count != 12 {
 		t.Fatalf("the record: %+v", rec)
 	}
 	if rec.Steps[0].To == nil {
 		t.Error("the step it was in did not end")
 	}
-	if err := StopJob(disk, source, "render-9"); err != nil {
+	if err := StopJob(fsys, source, "render-9"); err != nil {
 		t.Errorf("a job with no record: %v", err)
 	}
 }

@@ -10,13 +10,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // useSpeedFile gives a test a record of timings of its own, empty.
 func useSpeedFile(t *testing.T) {
-	was := speedFile()
-	SetSpeedFile(filepath.Join(t.TempDir(), "speed.json"))
-	t.Cleanup(func() { SetSpeedFile(was) })
+	wasOn, was := speedFile()
+	SetSpeedFile(afero.NewMemMapFs(), "/home/tim/.framefairy/speed.json")
+	t.Cleanup(func() { SetSpeedFile(wasOn, was) })
 }
 
 // A search measured against the one before it: 20 seconds loading, 30
@@ -229,8 +231,8 @@ func TestALocalModelSaysHowFarItIsTheFirstTime(t *testing.T) {
 		t.Error("a model nobody knows was given a guess")
 	}
 	old := `{"local:old": {"load": 24, "read": 127, "clip": 1, "tail": 28, "runs": 1}}`
-	if err := os.WriteFile(speedFile(), []byte(old), 0o644); err != nil {
-		t.Fatal(err)
+	if fsys, path := speedFile(); afero.WriteFile(fsys, path, []byte(old), 0o644) != nil {
+		t.Fatal("the old record was not written")
 	}
 	if got, _ := pastSpeed("local:old", true); got != measuredLocal {
 		t.Errorf("an old record was read as a new one: %+v", got)
@@ -270,9 +272,8 @@ func TestTimingsAreKeptPerModelAndBlended(t *testing.T) {
 	if _, known := pastSpeed("broken", false); known {
 		t.Error("a search with no reading was kept")
 	}
-	path := speedFile()
-	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
-		t.Fatal(err)
+	if fsys, path := speedFile(); afero.WriteFile(fsys, path, []byte("{not json"), 0o644) != nil {
+		t.Fatal("the broken record was not written")
 	}
 	if _, known := pastSpeed("gemma", false); known {
 		t.Error("a broken file was read as a record")

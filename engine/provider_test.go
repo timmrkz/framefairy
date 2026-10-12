@@ -308,7 +308,7 @@ func TestRepairJSONAsksOpenAIPlainly(t *testing.T) {
 // A search on a model in the cloud reports that model's company's key as
 // missing, in that company's words, before anything is sent.
 func TestReadAPIKeyNamesTheProvider(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+	t.Setenv("PATH", "/no/tools/here")
 	t.Setenv("OPENAI_API_KEY", "")
 	p, _ := ProviderNamed("openai")
 	_, err := ReadAPIKey(context.Background(), p)

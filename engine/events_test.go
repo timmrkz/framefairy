@@ -753,19 +753,17 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 // is still the one moment, and the words split that moment between
 // however many words now stand in it.
 func TestAnAddedWordReachesTheCaptions(t *testing.T) {
-	dir := t.TempDir()
-	logs := filepath.Join(dir, "ep.framefairy", "logs")
-	_ = os.MkdirAll(logs, 0o755)
+	fsys, logs := afero.NewMemMapFs(), "/home/tim/ep.framefairy/logs"
 
 	words := []Cue{{10, 10.4, "mach"}, {10.5, 11.1, "was"}, {11.2, 11.6, "nicht"}}
 	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
 	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.8}]}]}`
 	path := filepath.Join(logs, "clips.json")
-	_ = os.WriteFile(path, []byte(plan), 0o644)
+	_ = afero.WriteFile(fsys, path, []byte(plan), 0o644)
 
 	// The captions of the clip, built the way a render builds them.
 	captions := func() []Caption {
-		_, clips, err := LoadClips(disk, path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -785,7 +783,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// A word is added: what was heard as one word was two.
-	if err := SetWordText(disk, logs, 10.5, "was wo", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.5, "was wo", tr); err != nil {
 		t.Fatalf("adding a word: %v", err)
 	}
 	added := said()
@@ -812,7 +810,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// Taking it away again is the same correction the other way.
-	if err := SetWordText(disk, logs, 10.5, "was", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.5, "was", tr); err != nil {
 		t.Fatalf("taking the word away: %v", err)
 	}
 	gone := said()

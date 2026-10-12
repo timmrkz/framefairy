@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // The app searches by itself only for an episode nobody has ever searched.
@@ -16,56 +18,56 @@ import (
 // undone by removing the clips again, and deleting the work folder makes
 // the episode new.
 func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("not really a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if EverSearched(disk, source) {
+	if EverSearched(fsys, source) {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(disk, source, ""); st.EverSearched || st.Work {
+	if st := Status(fsys, source, ""); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
 	// Clips made by hand search nothing: neither their set nor their
 	// jobs' timings say the episode was searched.
 	p := NewProject(NewEngine(NewLog(io.Discard, false, false)), source, DefaultOptions())
+	p.Files = fsys
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
-	if _, err := addClip(disk, p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
+	if _, err := addClip(fsys, p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: "clip-1", Kind: JobClip})
-	if EverSearched(disk, source) {
+	if EverSearched(fsys, source) {
 		t.Fatal("clips made by hand made the episode searched")
 	}
 
 	// A search that was asked for keeps its record, and its timings once
 	// it is done, and either is enough.
-	if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
+	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
 		t.Fatal(err)
 	}
-	if !EverSearched(disk, source) {
+	if !EverSearched(fsys, source) {
 		t.Fatal("an episode being searched says it was not searched")
 	}
-	if err := RemoveJob(disk, source, SearchID); err != nil {
+	if err := RemoveJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})
-	if !EverSearched(disk, source) {
+	if !EverSearched(fsys, source) {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(disk, source, ""); !st.EverSearched || !st.Work {
+	if st := Status(fsys, source, ""); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
-	if err := DeleteWork(disk, source); err != nil {
+	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if EverSearched(disk, source) {
+	if EverSearched(fsys, source) {
 		t.Error("an episode whose work folder is gone is new again")
 	}
 }

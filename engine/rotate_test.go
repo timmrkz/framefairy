@@ -244,22 +244,14 @@ func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
 		`[{"to": 3}]`, `[{"from": 3, "to": 2, "deg": 90}]`,
 		`[{"to": 3, "deg": 90}, {"from": 2, "deg": 180}]`, `{"deg": 90}`,
 	} {
-		path := filepath.Join(t.TempDir(), "clips.json")
 		plan := `{"clips": [{"id": "01", "segments": [{"start": 1, "end": 3}], "rotations": ` + rotations + `}]}`
-		if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := LoadClips(disk, path); err == nil {
+		if _, _, err := LoadClips(writePlanAt(t, plan)); err == nil {
 			t.Errorf("the rotations %s were taken", rotations)
 		}
 	}
-	path := filepath.Join(t.TempDir(), "clips.json")
 	plan := `{"clips": [{"id": "01", "segments": [{"start": 1, "end": 2}, {"start": 2, "end": 3, "crop_x": 40, "crop_x_turned": 8}],
 	  "rotations": [{"from": 2, "deg": 270}]}]}`
-	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, clips, err := LoadClips(disk, path)
+	_, clips, err := LoadClips(writePlanAt(t, plan))
 	if err != nil {
 		t.Fatal(err)
 	}

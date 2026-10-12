@@ -9,13 +9,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -95,19 +97,19 @@ type Episode struct {
 	Dir  string
 }
 
-// FindEpisodes looks for training records: the folder itself, and any
-// training folder of an episode below it.
-func FindEpisodes(root string) ([]Episode, error) {
+// FindEpisodes looks for training records on fsys: the folder itself, and
+// any training folder of an episode below it.
+func FindEpisodes(fsys afero.Fs, root string) ([]Episode, error) {
 	var out []Episode
-	if _, err := os.Stat(filepath.Join(root, "plans.jsonl")); err == nil {
+	if _, err := fsys.Stat(filepath.Join(root, "plans.jsonl")); err == nil {
 		out = append(out, Episode{Name: filepath.Base(root), Dir: root})
 	}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := afero.Walk(fsys, root, func(path string, d fs.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() && d.Name() == "training" && strings.HasSuffix(filepath.Dir(path), ".framefairy") {
-			if _, err := os.Stat(filepath.Join(path, "plans.jsonl")); err == nil {
+			if _, err := fsys.Stat(filepath.Join(path, "plans.jsonl")); err == nil {
 				name := strings.TrimSuffix(filepath.Base(filepath.Dir(path)), ".framefairy")
 				out = append(out, Episode{Name: name, Dir: path})
 			}
@@ -119,8 +121,8 @@ func FindEpisodes(root string) ([]Episode, error) {
 	return out, err
 }
 
-func readLines(path string, fn func([]byte)) {
-	f, err := os.Open(path)
+func readLines(fsys afero.Fs, path string, fn func([]byte)) {
+	f, err := fsys.Open(path)
 	if err != nil {
 		return
 	}
@@ -192,22 +194,25 @@ func candidateKey(c engine.RecordCandidate) string {
 // published, rendered, kept or edited, rejected. A rendered clip that nobody
 // changed is a full hit. A changed clip gives the changed version as the
 // target and, for preference training, the pair of changed over proposed.
-func Export(episodes []Episode, out string, evalShare float64) (Manifest, error) {
+func Export(fsys afero.Fs, episodes []Episode, out string, evalShare float64) (Manifest, error) {
 	m := Manifest{Created: time.Now().UTC().Format(time.RFC3339), Engine: engine.Version,
 		Schema: engine.TrainingSchema, EvalShare: evalShare, Counts: map[string]int{},
 		Episodes: map[string][]string{"train": {}, "eval": {}}}
-	files := map[string]*os.File{}
-	open := func(split, name string) (*os.File, error) {
+	files := map[string]afero.File{}
+	open := func(split, name string) (afero.File, error) {
 		key := split + "/" + name
 		if f, ok := files[key]; ok {
 			return f, nil
 		}
-		if err := os.MkdirAll(filepath.Join(out, split), 0o755); err != nil {
+		if err := fsys.MkdirAll(filepath.Join(out, split), 0o755); err != nil {
 			return nil, err
 		}
-		f, err := os.Create(filepath.Join(out, split, name))
+		f, err := fsys.Create(filepath.Join(out, split, name))
+		if err != nil {
+			return nil, err
+		}
 		files[key] = f
-		return f, err
+		return f, nil
 	}
 	defer func() {
 		for _, f := range files {
@@ -231,7 +236,7 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 	for _, ep := range episodes {
 		planToExample := map[string]*example{}
 		planCandidates := map[string]map[string]engine.RecordCandidate{}
-		readLines(filepath.Join(ep.Dir, "plans.jsonl"), func(line []byte) {
+		readLines(fsys, filepath.Join(ep.Dir, "plans.jsonl"), func(line []byte) {
 			var p engine.PlanRecord
 			if json.Unmarshal(line, &p) != nil {
 				return
@@ -275,7 +280,7 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 				}
 			}
 		})
-		readLines(filepath.Join(ep.Dir, "decisions.jsonl"), func(line []byte) {
+		readLines(fsys, filepath.Join(ep.Dir, "decisions.jsonl"), func(line []byte) {
 			var d engine.DecisionRecord
 			if json.Unmarshal(line, &d) != nil {
 				return
@@ -467,7 +472,7 @@ func Export(episodes []Episode, out string, evalShare float64) (Manifest, error)
 	if err != nil {
 		return m, err
 	}
-	return m, os.WriteFile(filepath.Join(out, "manifest.json"), append(body, '\n'), 0o644)
+	return m, afero.WriteFile(fsys, filepath.Join(out, "manifest.json"), append(body, '\n'), 0o644)
 }
 
 func answer(clips []answerClip) Message {
@@ -495,7 +500,7 @@ func middleAnswer(clips []answerClip) Message {
 	return Message{Role: "assistant", Content: strings.TrimSuffix(b.String(), "\n")}
 }
 
-func writeJSON(f *os.File, v any) error {
+func writeJSON(f io.Writer, v any) error {
 	body, err := json.Marshal(v)
 	if err != nil {
 		return err
