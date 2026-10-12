@@ -570,7 +570,10 @@ request.
   and CI on main, where every commit keeps its own result.
 - **What is long or costs a Mac and blocks nothing runs by hand or at
   night**, like the speech benchmark and the long fuzzing, never on every
-  push.
+  push. The speech benchmark runs only by hand: a session whose change
+  is about how fast the app hears starts it through the GitHub API,
+  workflow `speechbench.yml` on its branch, and reads the numbers from
+  the run.
 
 ## Training data rules
 
@@ -624,7 +627,7 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is nine jobs at once rather than one after another, so
+  [docs/TESTING.md](docs/TESTING.md). It is eleven jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch

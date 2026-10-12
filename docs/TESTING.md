@@ -600,10 +600,11 @@ fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
 so however many bridges run, the set takes at least that.
 
-CI splits the set over two machines, `make walks WALKSHARD=1/2` and
-`2/2`, each with every other run, walks and sequences alike. Five and a
+CI splits the set over three machines, `make walks WALKSHARD=1/3` to
+`3/3`, each with every third run, walks and sequences alike. Five and a
 half minutes on one machine, after two of setting up, made a job of seven
-and a half, and no job may take over five.
+and a half, and on two machines each job still took six with a cold build
+cache. No job may take over five.
 
 Where a walk's time goes, measured: a walk of 60 steps takes about 30
 seconds, and more than half of that is waiting after each step until no call
