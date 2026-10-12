@@ -890,6 +890,28 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.189. Tim typed at the end of what he said, moved the
+    // cursor with the arrow keys and typed there, and talked on. On his
+    // Mac the letters came out backwards, and Enter lost everything said
+    // before he moved. What was said stays one piece wherever the person
+    // types, and Enter keeps all of it, in order.
+    name: "Typing elsewhere while dictating keeps every word, in order",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["press", "Home"],
+      ["press", "ArrowRight"],
+      ["press", "ArrowRight"],
+      ["type", "Z"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "ItZ * Y * froze."],
+    ],
+  },
+  {
     // Plan row 2.189. Tim talked past the longest a recording can be and
     // lost what he said after it, with nothing to say why. A recording
     // nobody talks into stops by itself, keeps every word as Stop would,

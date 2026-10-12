@@ -44,11 +44,6 @@
   // where it had been, grey under white, in lines that did not line up.
   let said: HTMLSpanElement | null = null;
   let mark: HTMLSpanElement | null = null;
-  // What was said before the person typed at its end, still grey, and
-  // whether what they type now moves what is said next after it, see
-  // follow.
-  let earlier: HTMLSpanElement[] = [];
-  let moving = false;
   // Where the cursor was in the field, kept while the button has the
   // focus, since the field forgets it then on some systems.
   let cursor: Range | null = null;
@@ -159,9 +154,6 @@
   // after it, at once rather than when something more is heard, which
   // may be never once the person stops talking.
   function typed() {
-    const sel = getSelection();
-    if (moving && listening && sel?.rangeCount) begin(sel.getRangeAt(0).cloneRange());
-    moving = false;
     if (listening && said && mark && field.contains(said)) space(mark.textContent!.trim());
     read();
   }
@@ -169,28 +161,47 @@
   // follow keeps what is said next after what is typed at the end of
   // what was said. Tim typed a few words there and talked on, and what he
   // said next went in front of them and pushed them along. Typed there,
-  // the words being heard are settled, what was said so far stays where
-  // it is, grey, and once the typing is in, typed starts what is said
-  // next after it. Typing anywhere else, to correct a word, moves nothing.
+  // the words being heard are settled and the typing goes in after them,
+  // inside what was said, so what is said next comes after it. What was
+  // said stays one piece of the field, wherever else the person types or
+  // moves the cursor, and is written in as one when it is kept. It was
+  // split into a piece for each time somebody typed at its end, and
+  // WebKit, on Tim's Mac, typed the letters after that backwards, and
+  // Enter lost what was said once the pieces were no longer in order.
+  // Nothing in the field is moved while the browser types, only before,
+  // with the browser's own typing called off and done again here, which
+  // keeps it one more step for Cmd+Z.
   function follow(e: InputEvent) {
     if (!listening || e.isComposing || !said || !mark || !field.contains(said)) return;
-    if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste") return;
     const sel = getSelection();
     if (!sel?.rangeCount || !sel.isCollapsed) return;
     const at = sel.getRangeAt(0);
+    // Right after what was said and what is being heard, with nothing
+    // between.
     const gap = document.createRange();
-    gap.setStartAfter(said);
+    gap.setStartAfter(mark);
     if (gap.comparePoint(at.startContainer, at.startOffset) < 0) return;
     gap.setEnd(at.startContainer, at.startOffset);
     if (gap.toString()) return;
+    let data: string;
+    if (e.inputType === "insertText") data = e.data ?? "";
+    else if (e.inputType === "insertFromPaste") data = e.dataTransfer?.getData("text/plain") ?? "";
+    else if (e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
+    else return;
+    e.preventDefault();
     settleHeard();
-    mark.remove();
-    if (said.textContent!.trim()) {
-      if (/\S$/.test(said.textContent!) && /^\S/.test(e.data ?? "")) said.append(" ");
-      earlier.push(said);
-    } else said.remove();
-    said = mark = null;
-    moving = true;
+    const before = settled();
+    // A space between a word that was said and a word typed after it,
+    // not before a full stop or a comma.
+    if (data && /\S$/.test(before) && /^[^\s.,;:!?)\]}]/.test(data)) data = " " + data;
+    const end = document.createRange();
+    end.setStartBefore(mark);
+    const last = mark.previousSibling;
+    if (last?.nodeType === Node.TEXT_NODE) end.setStart(last, (last as Text).length);
+    sel.removeAllRanges();
+    sel.addRange(end);
+    if (data) document.execCommand("insertText", false, data);
+    else if (before) document.execCommand("delete");
   }
 
   // freeze settles the words still being heard where they are, when the
@@ -235,22 +246,19 @@
   // finish ends the dictation. Kept, what was said, with whatever was
   // corrected in it, goes into the text as if it had been typed, as one
   // step Cmd+Z takes back, and the cursor after it.
-  // What was typed between two parts of what was said is part of the
-  // one step too, and Cmd+Z leaves it as it was typed.
+  // What was typed at the end of what was said is part of it, see
+  // follow.
   function finish(kept: boolean) {
-    const all = [...earlier, ...(said ? [said] : [])].filter((s) => field.contains(s));
+    const was = said && field.contains(said) ? said : null;
     mark?.remove();
     said = mark = null;
-    earlier = [];
-    moving = false;
-    if (!all.length) return read();
+    if (!was) return read();
     const at = document.createRange();
-    at.setStartBefore(all[0]);
-    at.setEndAfter(all[all.length - 1]);
-    const text = at.toString().trim();
-    const [before] = around(all[0]);
-    const [, after] = around(all[all.length - 1]);
-    for (const s of all) s.remove();
+    at.setStartBefore(was);
+    at.setEndAfter(was);
+    const text = was.textContent!.trim();
+    const [before, after] = around(was);
+    was.remove();
     if (kept && text) {
       const words = (/\S$/.test(before) ? " " : "") + text + (/^\S/.test(after) ? " " : "");
       field.focus();
@@ -299,7 +307,6 @@
     recording = 0;
     placed = 0;
     asked = 0;
-    earlier = [];
     begin();
     try {
       recording = await api.listen();
