@@ -45,7 +45,7 @@ import (
 // nearest of 24, 25, 30, 50 and 60, which is Tim's choice: the rate ffmpeg
 // reports for the phone's frames is 50, and a short came out at 50.
 func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

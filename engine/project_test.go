@@ -135,7 +135,7 @@ func TestProjectSteps(t *testing.T) {
 	rec := &recorder{}
 	log := NewLog(&bytes.Buffer{}, false, false)
 	log.SetSink(rec.sink)
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	// The one test that frames with the face detector, the way the app
 	// does, see TestMain.
@@ -325,10 +325,11 @@ func TestProjectSteps(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode.
 func TestProjectReportsErrors(t *testing.T) {
 	source := testEpisode(t, "2")
 	log := NewLog(&bytes.Buffer{}, false, false)
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return nil, errors.New("no model here")
 	}
@@ -359,7 +360,7 @@ func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	source := testEpisode(t, "20")
 	broken := errors.New("the speech model is broken")
 	var logged bytes.Buffer
-	e := NewEngine(NewLog(&logged, false, false))
+	e := NewEngine(NewLog(&logged, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

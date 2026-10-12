@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -72,7 +74,9 @@ func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, err
 	if ok {
 		return cached, nil
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	// ffprobe reads the episode, and the stamp above is taken from the
+	// same disk.
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), afero.NewOsFs())
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		p.mu.Lock()

@@ -94,7 +94,7 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 // that has none of these faces installed, a narrow one and a wide one can
 // only come out differently when the bundle was found.
 func TestABundledFaceReachesLibass(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

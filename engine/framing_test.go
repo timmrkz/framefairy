@@ -39,7 +39,7 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 // tests are about which shots a clip is made of, and looking for faces in
 // every sampled frame under the race detector is most of a minute.
 func framingEngine() *Engine {
-	e := NewEngine(NewLog(io.Discard, false, false))
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	e.NoFaces = true
 	return e
 }
@@ -191,7 +191,7 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
 	t.Cleanup(func() { shotLimit = was })
 
-	e := NewEngine(NewLog(io.Discard, false, false))
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began := time.Now()
 	cuts, err := e.DetectShots(context.Background(), "episode.mp4", 10, 20)
@@ -209,7 +209,7 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 	}
 
 	// One that hangs either way gives no switches rather than no clip.
-	e = NewEngine(NewLog(io.Discard, false, false))
+	e = NewEngine(NewLog(io.Discard, false, false), disk)
 	e.FFmpeg = stuckFFmpeg(t, true)
 	began = time.Now()
 	cuts, err = e.DetectShots(context.Background(), "episode.mp4", 10, 20)

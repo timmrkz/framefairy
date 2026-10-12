@@ -99,8 +99,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
-	e.Files = m.files
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), m.files)
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time

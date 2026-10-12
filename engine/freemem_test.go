@@ -92,7 +92,7 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 	if said := tooLittleMemory(2e9, 1e9, nil).Error(); !strings.Contains(said, "Quit other programs") {
 		t.Errorf("without a server: %q", said)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if got := e.planFailed(context.Background(), err); got.Error() != said {
 		t.Errorf("a search ended on it says %q", got)
 	}
@@ -113,7 +113,7 @@ func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 
 	source := testEpisode(t, "40")
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.Planner, base.LLMURL, base.LLMServer, base.LLMModel = "local", "", "true", os.Args[0]

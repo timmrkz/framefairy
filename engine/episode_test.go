@@ -35,7 +35,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 
 	// Clips made by hand search nothing: neither their set nor their
 	// jobs' timings say the episode was searched.
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false)), source, DefaultOptions())
+	p := NewProject(NewEngine(NewLog(io.Discard, false, false), disk), source, DefaultOptions())
 	p.Files = fsys
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},

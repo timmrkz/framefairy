@@ -149,6 +149,8 @@ func renderedLefts(t *testing.T, source SourceInfo, seg Segment, frames int) []i
 // The render crops every frame where the glide is, to the pixel: the
 // crop filters of a piece with keyframes leave on each frame the column
 // glideCrop puts the left edge on, within half a pixel of glideX.
+//
+// On the real disk: ffmpeg renders the short.
 func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 	ffmpegtest.Need(t)
 	t.Parallel()
@@ -168,7 +170,7 @@ func TestTheRenderGlidesTheCropOverTheMarks(t *testing.T) {
 
 	// Scaled to the short, the glide is cut glideMargin wider, scaled,
 	// and cropped again, and the frames come out the short's size.
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), Clip{Segments: []Segment{seg}},
 		source, RenderSettings{OutW: 1080, OutH: 1920, ScaleUp: true}, "")
 	if err != nil {

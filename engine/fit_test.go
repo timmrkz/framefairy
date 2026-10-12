@@ -60,7 +60,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 			steps = append(steps, fmt.Sprintf("%d:%s", u.N, u.Step))
 		}
 	})
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -150,7 +150,7 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -219,7 +219,7 @@ func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL

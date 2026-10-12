@@ -67,7 +67,7 @@ func passProject(t *testing.T, url string) *Project {
 	t.Helper()
 	source := testEpisode(t, "40")
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = url

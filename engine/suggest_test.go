@@ -111,7 +111,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	if base.Count != 0 || base.Think != ThinkForWindow {

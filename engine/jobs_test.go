@@ -24,7 +24,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	var heard int32
 	if rec == nil {
 		rec = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }

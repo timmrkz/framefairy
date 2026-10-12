@@ -39,7 +39,7 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	e := NewEngine(nil)
+	e := NewEngine(nil, disk)
 	if err := e.WriteThumbnails(context.Background(), clip, short); err != nil {
 		t.Fatal(err)
 	}

@@ -41,7 +41,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		"-i", "testsrc2=s=320x180:r=25:d=10", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", path).CombinedOutput(); err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	dec := NewEpisodeFrames(program, path)
 	defer dec.Close()
@@ -150,7 +150,7 @@ var errStop = errors.New("enough")
 // counts on, from the engine's probe.
 func gridOf(t *testing.T, path string) framewire.Grid {
 	t.Helper()
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
@@ -279,7 +279,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	case has("libx265"):
 		kinds = append(kinds, kind{"HEVC 10-bit", []string{"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-x265-params", "keyint=50:log-level=error", "-tag:v", "hvc1"}})
 	}
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, k := range kinds {
 		path := filepath.Join(t.TempDir(), "episode.mp4")
@@ -361,7 +361,7 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 	pictureLate, allLate := filepath.Join(dir, "picture-late.mp4"), filepath.Join(dir, "all-late.mp4")
 	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", pictureLate)
 	mux("-itsoffset", "0.3", "-i", picture, "-itsoffset", "0.3", "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", allLate)
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	type frame struct {
 		at   float64
@@ -541,7 +541,7 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 	plain, late := filepath.Join(dir, "plain.mp4"), filepath.Join(dir, "late.mp4")
 	mux("-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", plain)
 	mux("-itsoffset", "0.3", "-i", picture, "-i", sound, "-map", "0:v", "-map", "1:a", "-c", "copy", late)
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	collect := func(run func(got func(float64, []byte) error) error) ([]float64, []byte) {
 		var ats []float64

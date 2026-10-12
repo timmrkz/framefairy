@@ -32,7 +32,7 @@ import (
 // is a key frame, as after a camera switch, where an encoder puts one, so
 // ffmpeg's seek lands right on each piece.
 func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

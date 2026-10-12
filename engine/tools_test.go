@@ -152,7 +152,7 @@ func TestTheShippedAppTakesNothingFromTheEnvironment(t *testing.T) {
 func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "/named/ffmpeg")
 	t.Setenv("FRAMEFAIRY_FFPROBE", "/named/ffprobe")
-	e := NewEngine(NewLog(os.Stderr, false, false))
+	e := NewEngine(NewLog(os.Stderr, false, false), disk)
 	if e.FFmpeg != "/named/ffmpeg" || e.FFprobe != "/named/ffprobe" {
 		t.Errorf("ffmpeg %q, ffprobe %q", e.FFmpeg, e.FFprobe)
 	}
@@ -207,14 +207,14 @@ func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		e := NewEngine(NewLog(io.Discard, false, false))
+		e := NewEngine(NewLog(io.Discard, false, false), disk)
 		e.UseTools(filepath.Join(dir, c.ffmpeg), "")
 		if want := filepath.Join(dir, c.ffprobe); e.FFprobe != want {
 			t.Errorf("beside %s: ffprobe is %s, want %s", c.ffmpeg, e.FFprobe, want)
 		}
 	}
 
-	e := NewEngine(NewLog(io.Discard, false, false))
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	was := e.FFprobe
 	e.UseTools("", "")
 	if e.FFprobe != was {

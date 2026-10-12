@@ -152,7 +152,7 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	base := DefaultOptions()
@@ -204,7 +204,7 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	opts := DefaultOptions()
@@ -258,7 +258,7 @@ func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
 	opts := DefaultOptions()
@@ -322,7 +322,7 @@ func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	opts := DefaultOptions()
 	opts.Source = source

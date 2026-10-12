@@ -437,7 +437,7 @@ func main() {
 	defer stop()
 
 	log := engine.NewLog(os.Stdout, !p.plain, p.verbose)
-	e := engine.NewEngine(log)
+	e := engine.NewEngine(log, afero.NewOsFs())
 	e.OpenRecognizer = asr.Open
 	var events *os.File
 	if p.events != "" {

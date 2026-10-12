@@ -29,7 +29,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	}
 	var raw bytes.Buffer
 	binary.Write(&raw, binary.LittleEndian, samples)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	var frames []float32
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
@@ -71,7 +71,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if got := ReadLevels(disk, source); len(got.Frames) != 0 || got.Done {
 		t.Fatal("levels out of nowhere")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 
 	var stop atomic.Bool
@@ -138,7 +138,7 @@ func TestMeasureLevelsStops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -163,7 +163,7 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if parts, done := LevelsReach(disk, source); len(parts) != 0 || done {
 		t.Fatalf("an episode never measured has %v, done %v", parts, done)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func sweep(t *testing.T, seconds string) string {
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "300")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.levelsEvery = 50 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 
@@ -271,7 +271,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "120")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.levelsEvery = 20 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline

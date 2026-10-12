@@ -25,7 +25,7 @@ import (
 // at the clip's two ends and at every gap between pieces, never where one
 // piece runs straight into the next.
 func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{Segments: []Segment{{Start: 1, End: 2.6}, {Start: 2.6, End: 4}, {Start: 5, End: 6}}}
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), clip,
 		SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1},
@@ -54,7 +54,7 @@ func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
 // gets a step brighter on every frame, so a dip or a jump in the sound,
 // or a frame lost or shown twice at the switch, would show.
 func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

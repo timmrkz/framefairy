@@ -327,7 +327,7 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 			mu.Unlock()
 		}
 	})
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL

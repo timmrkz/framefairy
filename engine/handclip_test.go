@@ -37,7 +37,7 @@ func underwayLog() (*Log, func() [][]Underway) {
 func handProject(t *testing.T, source string, log *Log) *Project {
 	t.Helper()
 	var heard int32
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -181,7 +181,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// A project each, the way the app runs every job with its own.
-			q := NewProject(NewEngine(log), source, p.Base)
+			q := NewProject(NewEngine(log, disk), source, p.Base)
 			keys[i], errs[i] = q.MakeClip(context.Background(), fmt.Sprintf("clip-%d", i),
 				ClipRequest{At: float64(5 + i*12)}, nil)
 		}()

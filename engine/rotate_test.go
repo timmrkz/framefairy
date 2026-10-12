@@ -264,8 +264,10 @@ func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
 // The render rotates a piece before it crops it, and the crop is the shape
 // of the short in the picture rotated: a portrait video rotated a quarter
 // is landscape, so its crop is a window that can move sideways in it.
+//
+// On the real disk: ffmpeg renders the short.
 func TestARotatedPieceIsRotatedBeforeItsCrop(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	clip := Clip{Segments: []Segment{{Start: 1, End: 2}, {Start: 3, End: 4, Rotate: 90}}}
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), clip,
 		SourceInfo{Width: 1080, Height: 1920, FPSNum: 25, FPSDen: 1},
@@ -368,7 +370,7 @@ func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
 // On the real disk: ffmpeg reads the episode.
 func TestProbeStandsAPhoneVideoUp(t *testing.T) {
 	ffmpegtest.Need(t)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	for name, path := range phoneVideos(t, t.TempDir(), "1") {
 		info, err := e.Probe(context.Background(), path)
 		if err != nil {
@@ -399,7 +401,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	first := func(run func(got func(float64, []byte) error) error) []byte {
 		var frame []byte

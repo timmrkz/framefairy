@@ -42,7 +42,7 @@ func TestTranscriptionResumes(t *testing.T) {
 
 	var calls int32
 	heard := 0.0
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return countingRecognizer{fakeRecognizer{&calls}, &heard}, nil
@@ -363,7 +363,7 @@ func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
 	rec := fakeRecognizer{&calls}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 
 	whole, err := e.Transcribe(context.Background(), source, Window{0, 12}, rec, nil)
 	if err != nil {
@@ -430,7 +430,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	model := t.TempDir()
 	var calls int32
 	var seen []float64
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
@@ -479,7 +479,7 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 		mu.Unlock()
 	})
 	var calls int32
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -530,7 +530,7 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 		}
 	})
 	var calls int32
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -557,7 +557,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -614,7 +614,7 @@ func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -654,7 +654,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	base := DefaultOptions()
@@ -765,7 +765,7 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	t.Parallel()
 	source := beatEpisode(t, "12")
 	heard := 0.0
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -838,7 +838,7 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			heard := 0.0
-			e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+			e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 			e.OpenRecognizer = func(string) (Recognizer, error) { return beatRecognizer{&heard}, nil }
 			errs[i] = NewProject(e, source, base).Hear(context.Background(), span)
 		}()

@@ -79,7 +79,7 @@ func TestTheCaptionsOfAnHDRShortAreAtTheReferenceWhite(t *testing.T) {
 // white and not tinted.
 func TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite(t *testing.T) {
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

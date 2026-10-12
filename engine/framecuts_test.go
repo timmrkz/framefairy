@@ -30,7 +30,7 @@ import (
 // sound is a steady tone, so padded silence at a cut, or sound that runs
 // on after its picture, shows.
 func TestARenderCutsOnWholeFrames(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

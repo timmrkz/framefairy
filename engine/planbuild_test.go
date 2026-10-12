@@ -54,7 +54,7 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	server := pausedModel(t, letGo)
 	t.Cleanup(server.Close)
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -278,7 +278,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL

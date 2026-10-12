@@ -334,7 +334,7 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 // here runs over the box there. Ink is narrower than the pen travels, by
 // the bearings at either end, so the two are compared with room to spare.
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -370,7 +370,7 @@ func writeCaptionFile(t *testing.T, captions []Caption) string {
 				Cue{c.Start + float64(k)*share, c.Start + float64(k+1)*share, part})
 		}
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	path := filepath.Join(t.TempDir(), "clip.ass")
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
 	laid := LayOutCaptions(captions, ResolveStyle(overrides), "de")
@@ -491,7 +491,7 @@ func FuzzResolveStyle(f *testing.F) {
 // colour it had for when it is switched on again. With it on, the box is
 // there in its colour.
 func TestTheBoxCanBeSwitchedOff(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	write := func(style map[string]any) string {
 		path := filepath.Join(t.TempDir(), "clip.ass")
 		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, ResolveStyle(style), "de")
