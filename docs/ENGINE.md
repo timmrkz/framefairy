@@ -1008,7 +1008,15 @@ length, one after another. A run that asks for more is refused before it
 transcribes. An episode shorter than a clip at its shortest is the one
 exception: it has one clip, the whole of it, shaped and framed like any
 other, and the model is not asked. Nothing chose it, so nothing about it
-is recorded for training.
+is recorded for training. Searched again, it looks only at the clips
+still in the list, `PlanOptions.Listed`: with any clip of it there,
+however trimmed, the search finds nothing new, and with its clip removed
+the search makes it again, since the episode has no other moment to
+offer. The clip made again is the removed one made afresh, so the removed
+one is taken out of its plan, `DropRemoved`, once the new one is written.
+Left in, putting it back or undoing its removal showed the episode twice.
+An undo of the removal is then refused as changed since, the way an undo
+of anything a search has changed is.
 
 ## Planning on your machine
 

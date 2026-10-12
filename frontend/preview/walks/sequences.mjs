@@ -20,6 +20,8 @@
 //   ["press", key]     presses a key, as Playwright names it
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
+//   ["undo refused"]   the menu bar's Undo, which the Go side refuses
+//                      because what it would put back has changed since
 //   ["mark", label]    remembers the engine's captions and pieces
 //   ["cut at", share]  double-clicks in the clip, this share of the way
 //                      along it, which cuts a part out there
@@ -163,6 +165,8 @@
 //                      and drags the playhead quickly back and forth three
 //                      times over the middle of the clip, where its cut is,
 //                      and then on to that share
+//   ["remove clip"]    presses the bin of the clip on screen in the clip
+//                      list, and waits until the Go side has it removed
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -248,9 +252,16 @@
 //   ["wait for", word] the clip list's head button comes to say this, in a
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
+//   ["no row", words] no row of the clip list says this
+//   ["no put back"]    no row of the clip list offers a removed clip back
+//   ["row closes", [words, s]]
+//                      a row of the clip list says this, runs down, and
+//                      closes by itself about s seconds later, not much
+//                      sooner and not much later
 //   ["cards", n]       the clip list holds n clips
-//   ["whole clip", s]  the episode on screen, s seconds long, has one clip,
-//                      and it runs from its first second to its last
+//   ["whole clip", s]  the episode on screen, s seconds long, has one clip
+//                      in the list, and it runs from its first second to
+//                      its last
 //   ["waveform"]       the clip timeline draws the waveform across the whole
 //                      of its view within ten seconds, read from its canvas
 //   ["rulers fit", s]  the range picker has lines and times on it, every
@@ -721,6 +732,42 @@ export const sequences = [
       ["cards", 1],
       ["whole clip", 15],
       ["rulers fit", 15],
+    ],
+  },
+  {
+    // Tim removed the one clip of a video of 15 s and pressed New, and
+    // every search failed with "there is nothing to make a clip of in
+    // this video": the clip removed still counted as the one moment the
+    // video has. New brings it back, and New with it in the list finds
+    // nothing more, fails nothing either, and says so where its clip
+    // would have appeared.
+    name: "a video shorter than a clip gets its clip again once it was removed",
+    steps: [
+      ["add", 15],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      ["remove clip"],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      // The clip made again is the clip that was removed, so the removed
+      // one is not offered back, and undoing its removal does not bring
+      // it back beside the new one. Both showed the video twice.
+      ["no row", "Nothing new found"],
+      ["no put back"],
+      ["undo refused"],
+      ["whole clip", 15],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      // Tim saw the row of that search close again with nothing to say.
+      // It says so now, as news: it runs down like a removed clip's row
+      // and closes.
+      ["row closes", ["Nothing new found", 10]],
+      // New again is a new search, and it says so again.
+      ["head"],
+      ["wait for", "New"],
+      ["row closes", ["Nothing new found", 10]],
     ],
   },
   {
@@ -2111,6 +2158,26 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.keyboard.type(arg);
         await watch.step("type", s);
         break;
+      case "undo refused": {
+        const from = await page.evaluate(() => window.__calls.length);
+        await page.evaluate(() => window.__menu("undo"));
+        let said = null;
+        for (let tries = 0; tries < 40 && said === null; tries++) {
+          await page.waitForTimeout(100);
+          // The refusal is the answer here, so it is taken off the calls
+          // that failed before the rules read them.
+          said = await page.evaluate((from) => {
+            const c = window.__calls.slice(from).find((c) => c.name === "Undo" && c.failed);
+            if (!c) return null;
+            const failed = c.failed;
+            c.failed = null;
+            return String(failed);
+          }, from);
+        }
+        if (!said?.includes("changed since")) wrong = `Undo was not refused as changed since: ${said}`;
+        await watch.step("undo", s);
+        break;
+      }
       case "undo":
       case "redo":
         await page.evaluate((m) => window.__menu(m), what);
@@ -3018,13 +3085,44 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
         break;
       }
+      case "no row": {
+        const list = await clipList(page);
+        if (list?.rows.some((r) => r.what === arg)) wrong = `a row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "no put back": {
+        const offered = await page.evaluate(
+          () => [...document.querySelectorAll("aside ol button.back")].filter((b) => b.textContent.includes("Put it back")).length,
+        );
+        if (offered) wrong = `${offered} removed clip(s) are offered back`;
+        break;
+      }
+      case "row closes": {
+        const [words, after] = arg;
+        const says = async () => !!(await clipList(page))?.rows.some((r) => r.what === words);
+        if (!(await says())) {
+          wrong = `no row says "${words}": ${JSON.stringify((await clipList(page))?.rows)}`;
+          break;
+        }
+        const drains = await page.evaluate(() => !!document.querySelector("aside ol li.told .fill .run"));
+        if (!drains) {
+          wrong = `the row that says "${words}" does not run down`;
+          break;
+        }
+        const from = Date.now();
+        while ((await says()) && Date.now() - from < (after + 5) * 1000) await page.waitForTimeout(250);
+        const took = (Date.now() - from) / 1000;
+        if (await says()) wrong = `the row that says "${words}" is still there after ${took.toFixed(1)} s`;
+        else if (took < after - 3) wrong = `the row that says "${words}" closed after ${took.toFixed(1)} s`;
+        break;
+      }
       case "cards": {
         const list = await clipList(page);
         if (list?.cards.length !== arg) wrong = `the clip list holds ${list?.cards.length} clips, not ${arg}`;
         break;
       }
       case "whole clip": {
-        const clips = await ask(page, "Clips", await episodeOn(page));
+        const clips = (await ask(page, "Clips", await episodeOn(page)))?.filter((c) => !c.rejected);
         if (clips?.length !== 1) wrong = `the episode has ${clips?.length} clips, not its one`;
         else if (clips[0].start > 1 || clips[0].end < arg - 1.5) {
           wrong = `the clip runs ${clips[0].start} to ${clips[0].end}, not the episode of ${arg} s`;
@@ -3335,6 +3433,23 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
+        break;
+      }
+      case "remove clip": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        // The bin shows while the pointer is on the card, as it does for
+        // a hand.
+        const bin = page.locator(`button[aria-label="Remove ${entry.title || entry.slug}"]`);
+        await page.hover(`li:has(> button[aria-label="Remove ${entry.title || entry.slug}"])`);
+        await bin.click();
+        let gone = false;
+        for (let i = 0; i < 50 && !gone; i++) {
+          await page.waitForTimeout(100);
+          gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
+        }
+        if (!gone) wrong = "the bin left the clip in the list";
+        await watch.step("remove clip", s);
         break;
       }
       case "thumbnail": {

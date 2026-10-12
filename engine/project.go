@@ -164,7 +164,7 @@ func (p *Project) Plan(ctx context.Context, req PlanRequest) (string, error) {
 	// Every search is told what the searches before it proposed, so a
 	// window searched again brings other moments rather than the same
 	// ones, see Taken.
-	opts.Taken = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name))
+	opts.Taken, opts.Listed, opts.Removed = p.proposed(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, name))
 	err = p.step(ctx, func() error {
 		r, err := p.engine.prepare(ctx, opts, window)
 		if err != nil {
@@ -293,8 +293,9 @@ func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
 // proposed is every part of the episode a clip has been proposed for, by
 // a search or by hand, in every plan but the one about to be written. A
 // clip that was removed counts too: it was proposed, and turned down.
-func (p *Project) proposed(except string) []Window {
-	var out []Window
+// listed is the same for the clips still in the list, the ones not removed,
+// and removed names the clips that were.
+func (p *Project) proposed(except string) (taken, listed []Window, removed []ClipRef) {
 	for _, plan := range p.Plans() {
 		if plan == except || !IsPlanFile(plan) {
 			continue
@@ -304,14 +305,20 @@ func (p *Project) proposed(except string) []Window {
 			continue
 		}
 		for _, c := range clips {
+			if c.Rejected {
+				removed = append(removed, ClipRef{Plan: plan, ID: c.ID})
+			}
 			for _, seg := range c.Segments {
 				if seg.End > seg.Start {
-					out = append(out, Window{seg.Start, seg.End})
+					taken = append(taken, Window{seg.Start, seg.End})
+					if !c.Rejected {
+						listed = append(listed, Window{seg.Start, seg.End})
+					}
 				}
 			}
 		}
 	}
-	return MergeWindows(out)
+	return MergeWindows(taken), MergeWindows(listed), removed
 }
 
 func (p *Project) planFiles() map[string]int64 {
