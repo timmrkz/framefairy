@@ -92,6 +92,12 @@ func info(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "info: "+format+"\n", args...)
 }
 
+// warn writes a line for the app's log at the level of a warning, see
+// engine.DecoderWarning: something went wrong that the decoder got round.
+func warn(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "warning: "+format+"\n", args...)
+}
+
 // about is the episode's picture in a few words, for the log.
 func (v *video) about() string {
 	p := v.stream.CodecParameters()
@@ -118,7 +124,13 @@ var (
 	owners = map[string]*cursor{}
 )
 
-// logged is what ffmpeg says, at the level of an error.
+// saidKept is how much of what ffmpeg said a cursor keeps, the latest.
+const saidKept = 1000
+
+// logged is what ffmpeg says, at the level of an error. A failure is
+// often told in two lines, the second only that it failed and the first
+// why, so a cursor keeps every line since it was last asked, up to
+// saidKept bytes of the latest.
 func logged(c astiav.Classer, _ astiav.LogLevel, _, msg string) {
 	said := strings.TrimSpace(msg)
 	var cl *astiav.Class
@@ -134,7 +146,10 @@ func logged(c astiav.Classer, _ astiav.LogLevel, _, msg string) {
 	// The object itself, or what it is part of.
 	for i := 0; cl != nil && i < 4; i, cl = i+1, cl.Parent() {
 		if owner := owners[classKey(cl)]; owner != nil {
-			owner.said = said
+			if owner.said != "" {
+				said = owner.said + "; " + said
+			}
+			owner.said = said[max(0, len(said)-saidKept):]
 			return
 		}
 	}
@@ -445,12 +460,16 @@ type cursor struct {
 	until int
 	// How often this open sought again for a seek that landed too late.
 	retries int
-	// How many frames the graphics chip decoded for the cursor, for
-	// chipFailsAfter.
-	onChip    int
-	sentEOF   bool
-	graphEOF  bool
-	failedWhy string
+	// Whether this open went on with the processor after the graphics
+	// chip failed, see toProcessor.
+	fellBack bool
+	// Packets sent to the decoder in this open, and whether the decoder
+	// was made to fail in it, see failAfter.
+	sentInOpen int
+	madeToFail bool
+	sentEOF    bool
+	graphEOF   bool
+	failedWhy  string
 	// What ffmpeg said about this cursor's objects, under saidMu, and the
 	// keys they are known by: the file and its decoder, and the chain.
 	said      string
@@ -527,6 +546,18 @@ func (c *cursor) fail(why string) {
 func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 	c.failedWhy = ""
 	c.asked, c.firstSaid = time.Now(), false
+	c.sentInOpen, c.madeToFail = 0, false
+	// A cursor that fell back to the processor tries the graphics chip
+	// again at the next open, see toProcessor.
+	if c.v != nil && c.fellBack {
+		c.fellBack = false
+		if c.d.hardware != nil {
+			if err := c.reopenDecoder(c.d.hardware); err != nil {
+				c.fail(err.Error())
+				return
+			}
+		}
+	}
 	opened := c.v == nil
 	if c.v == nil {
 		v, err := openVideo(c.d.path)
@@ -543,11 +574,13 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		c.v = v
 		c.light = lightOf(v.stream.CodecParameters().ColorTransferCharacteristic())
 		c.own(&c.keys, v.fc, v.dec)
-		c.pkt = astiav.AllocPacket()
-		c.decoded = astiav.AllocFrame()
-		c.held = astiav.AllocFrame()
-		c.brought = astiav.AllocFrame()
-		c.filtered = astiav.AllocFrame()
+		if c.pkt == nil {
+			c.pkt = astiav.AllocPacket()
+			c.decoded = astiav.AllocFrame()
+			c.held = astiav.AllocFrame()
+			c.brought = astiav.AllocFrame()
+			c.filtered = astiav.AllocFrame()
+		}
 	}
 	// The chain holds no frames between two, so it is kept unless the size
 	// changed.
@@ -686,7 +719,13 @@ func (c *cursor) next(n int, skip float64) {
 			return
 		}
 		if c.shown == nil || c.rank >= c.until {
-			if err := c.advance(); err != nil {
+			err := c.advance()
+			if err != nil && !errors.Is(err, astiav.ErrEof) && (c.v.chip || errors.Is(err, errMadeToFail)) {
+				if err = c.toProcessor(err); err == nil {
+					continue
+				}
+			}
+			if err != nil {
 				if errors.Is(err, astiav.ErrEof) {
 					c.say(fmt.Sprintf("the video ended after %d frames of %d asked", sent, n))
 					c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
@@ -786,16 +825,7 @@ func (c *cursor) decode() (float64, error) {
 	for {
 		err := c.v.dec.ReceiveFrame(c.decoded)
 		switch {
-		case err == nil && c.v.chip && chipFailsAfter > 0 && c.onChip == chipFailsAfter:
-			c.decoded.Unref()
-			if err := c.toProcessor(errors.New("made to fail by FRAMEFAIRY_FRAMES_CHIP_FAILS")); err != nil {
-				return 0, err
-			}
-			continue
 		case err == nil:
-			if c.v.chip {
-				c.onChip++
-			}
 			// Its moment is ffmpeg's best guess, as the ffmpeg program
 			// takes it, so a frame that carries none of its own still has
 			// one.
@@ -809,59 +839,70 @@ func (c *cursor) decode() (float64, error) {
 		case errors.Is(err, astiav.ErrEof):
 			return 0, astiav.ErrEof
 		case errors.Is(err, astiav.ErrEagain):
-			err := c.feed()
-			var failed chipFailed
-			if errors.As(err, &failed) {
-				err = c.toProcessor(failed.err)
-			}
-			if err != nil {
+			if err := c.feed(); err != nil {
 				return 0, err
 			}
 		default:
-			if c.v.chip {
-				if err := c.toProcessor(err); err != nil {
-					return 0, err
-				}
-				continue
-			}
 			return 0, c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 	}
 }
 
-// chipFailsAfter makes the graphics chip fail once for each cursor after
-// it decoded that many frames, so a test on a Mac can see the cursor go
-// on with the processor, see toProcessor. Nought, never, unless
-// FRAMEFAIRY_FRAMES_CHIP_FAILS says otherwise.
-var chipFailsAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_CHIP_FAILS"))
+// failAfter makes the decoder in use fail once in every open, on the
+// packet of that number it is sent, as the graphics chip does now and
+// then, so a test sees the cursor go on with the processor, see
+// toProcessor. On the processor it is the same reopen, so the race
+// detector on Linux proves it, and on a Mac the chip's way there too.
+// Nought, never, unless FRAMEFAIRY_FRAMES_FAIL_AFTER says otherwise.
+var failAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_FAIL_AFTER"))
 
-// chipFailed is the graphics chip refusing a packet, which feed hands to
-// decode to go on with the processor.
-type chipFailed struct{ err error }
-
-func (f chipFailed) Error() string { return f.err.Error() }
+var errMadeToFail = errors.New("made to fail by FRAMEFAIRY_FRAMES_FAIL_AFTER")
 
 // toProcessor goes on decoding on the processor after the graphics chip
-// failed to decode a frame. VideoToolbox does that now and then on a
-// virtual Mac, "hardware accelerator failed to decode picture", one run
-// in four of CI's, and the cursor then failed and the video preview
-// stood still. The decoder is opened again without the chip and the
-// cursor seeks to the frame of the grid it is at, the way open does, so
-// the frames it sends go on from where they were. Once on the processor
-// a cursor stays there.
+// failed, in sending a packet, receiving a frame or bringing one off the
+// chip. VideoToolbox fails a frame now and then on a virtual Mac,
+// "hardware accelerator failed to decode picture", and the cursor then
+// failed and the video preview stood still, one CI run in four. The
+// render decodes on the processor, so the frame the processor makes is
+// the frame the short has. The decoder is opened again without the chip
+// and the cursor seeks to the frame of the grid it is at, the way open
+// does, so the frames it sends go on from where they were. It stays on
+// the processor for the rest of this open and tries the chip again at the
+// next, because ffmpeg starts a lost VideoToolbox session again by
+// itself. The line goes to the log as a warning with all ffmpeg said, so
+// a report says why the chip failed, and the frames after it say whether
+// the file was fine.
 func (c *cursor) toProcessor(why error) error {
-	c.say(fmt.Sprintf("the graphics chip failed, %v, decodes on the processor from frame %d", why, c.rank))
+	what := "the graphics chip failed"
+	if !c.v.chip {
+		what = "the decoder failed"
+	}
+	warn("cursor %d, picture: %s at frame %d, decodes on the processor for the rest of this open: %v",
+		c.id, what, c.rank, c.withSaid(why))
+	if err := c.reopenDecoder(nil); err != nil {
+		return err
+	}
+	c.fellBack = true
+	c.retries = 0
+	return c.seek(c.grid.At(c.rank) + framewire.Hair)
+}
+
+// reopenDecoder opens the picture's decoder again, on the graphics chip
+// where hardware is one. The chain is built again for the frames it
+// makes. Where it cannot be opened the file is closed too, so the next
+// open starts from nothing rather than from a cursor with no decoder.
+func (c *cursor) reopenDecoder(hardware *astiav.HardwareDeviceContext) error {
 	c.disown(&c.keys)
+	c.freeGraph()
 	c.v.dec.Free()
 	c.v.dec = nil
-	if err := c.v.openDecoder(nil, c.say); err != nil {
+	if err := c.v.openDecoder(hardware, c.say); err != nil {
+		c.v.close()
+		c.v = nil
 		return err
 	}
 	c.own(&c.keys, c.v.fc, c.v.dec)
-	// The chain was built for the chip's frames.
-	c.freeGraph()
-	c.retries = 0
-	return c.seek(c.grid.At(c.rank) + framewire.Hair)
+	return nil
 }
 
 // show scales the frame in decoded through the chain and shows it from
@@ -911,12 +952,15 @@ func (c *cursor) feed() error {
 			c.pkt.Unref()
 			continue
 		}
+		c.sentInOpen++
+		if failAfter > 0 && c.sentInOpen == failAfter && !c.madeToFail {
+			c.pkt.Unref()
+			c.madeToFail = true
+			return errMadeToFail
+		}
 		err = c.v.dec.SendPacket(c.pkt)
 		c.pkt.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
-			if c.v.chip {
-				return chipFailed{err}
-			}
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 		return nil
