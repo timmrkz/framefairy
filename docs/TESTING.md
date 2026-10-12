@@ -416,10 +416,11 @@ clicks into the first word still being heard and sees it settled with
 the cursor in it,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
-bridge's microphone plays two seconds of a hum, a pause and a second and
-a half more, as fast as they would be said, so a piece is settled while
-it listens, and then nothing, and a recording there stops by itself
-after 8 s without a word. `field` clicks a field by its selector and
+bridge's microphone plays two seconds of a hum, then a pause and a
+second and a half more, four times over, as fast as they would be said,
+so pieces are settled while it listens and there is more to hear for
+12 s, and then nothing, and a recording there stops by itself after 8 s
+without a word. `field` clicks a field by its selector and
 types, and `field reads` says what it holds. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,

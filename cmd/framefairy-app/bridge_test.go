@@ -589,12 +589,19 @@ func openBridge(t *testing.T) *bridge {
 		o.Preset = "ultrafast"
 	}
 	standIns.Store(&fakes)
-	// Dictate on Report a Problem records two seconds of a hum, a pause and
-	// a second and a half more, as fast as it would be said, which the
-	// stand-in hears as words: the first part is settled while the
-	// recording runs, the second is still being heard.
+	// Dictate on Report a Problem records two seconds of a hum, then a
+	// pause and a second and a half more, four times over, as fast as it
+	// would be said, which the stand-in hears as words: what came before a
+	// pause is settled while the recording runs, and there is more to be
+	// heard for 12 s. A busy runner reached a click into the words being
+	// heard only once the last of a shorter one was heard, and then
+	// nothing more came.
 	openMicrophone = func() microphone {
-		return &playingMicrophone{samples: slices.Concat(tone(2), hush(1), tone(1.5)), live: true}
+		talk := tone(2)
+		for range 4 {
+			talk = slices.Concat(talk, hush(1), tone(1.5))
+		}
+		return &playingMicrophone{samples: talk, live: true}
 	}
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()

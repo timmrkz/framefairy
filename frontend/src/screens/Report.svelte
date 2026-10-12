@@ -131,14 +131,29 @@
   // keeps the end of it in view, however long the report has grown.
   function show(now: string) {
     if (!said || !mark) return;
-    const rest = around(said)[1];
-    const before = settled().trim();
-    const text = (now && before ? " " : "") + now + (/^\S/.test(rest) && (now || before) ? " " : "");
-    if (mark.textContent !== text) mark.textContent = text;
+    const rest = space(now);
     // At the end of the report, down to its padding. Tim talked past the
     // field's last line and could not see what was written down.
     if (rest.trim()) mark.scrollIntoView({ block: "nearest", inline: "nearest" });
     else field.scrollTop = field.scrollHeight;
+    read();
+  }
+
+  // space puts now in the mark with the spaces it needs between what was
+  // settled before it and what follows it, and gives what follows.
+  function space(now: string): string {
+    const rest = around(said!)[1];
+    const before = settled().trim();
+    const text = (now && before ? " " : "") + now + (/^\S/.test(rest) && (now || before) ? " " : "");
+    if (mark!.textContent !== text) mark!.textContent = text;
+    return rest;
+  }
+
+  // typed keeps a space between what was said and a letter typed right
+  // after it, at once rather than when something more is heard, which
+  // may be never once the person stops talking.
+  function typed() {
+    if (listening && said && mark && field.contains(said)) space(mark.textContent!.trim());
     read();
   }
 
@@ -331,7 +346,7 @@
           aria-multiline="true"
           aria-label="What happened"
           spellcheck="true"
-          oninput={read}
+          oninput={typed}
           onpointerdown={freeze}
           onkeyup={remember}
           onmouseup={remember}
