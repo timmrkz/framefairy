@@ -320,6 +320,14 @@ export interface SourceView {
   // Where the picture's first frame begins, in seconds into the file, and
   // with it the grid its frames are on. Nought for most files.
   videoStart?: number;
+  // The frames the video preview shows, the frames of the short, as the
+  // engine names them, see lib/frames/movie.ts. The video preview reads
+  // nothing of the file itself.
+  grid?: { origin: number; start: number; num: number; den: number; count: number };
+  // The sound's samples a second and its channels, nought for a video
+  // with no sound.
+  soundRate?: number;
+  soundChannels?: number;
 }
 
 export interface ClipEntry extends ClipView {
@@ -644,7 +652,10 @@ export const api = {
   choosePlanner: (planner: "local" | "api") => call<void>("ChoosePlanner", planner),
   library: () => call<EpisodeStatus[]>("Library"),
   episode: (path: string) => call<EpisodeStatus>("Episode", path),
-  addEpisodes: () => call<string[] | null>("AddEpisodes"),
+  addEpisodes: () => call<Added>("AddEpisodes"),
+  // Which files the app takes as videos, in words, from the one list there
+  // is, VideoExtensions in engine/episode.go.
+  videoNames: () => call<string>("VideoNames"),
   // Asks for a folder and says which one, or nothing when it was cancelled.
   chooseFolder: (title: string) => call<string>("ChooseFolder", title),
   // Loads the local model for the first search of an episode while the
@@ -859,14 +870,19 @@ export function onEpisodeChanged(fn: (path: string) => void): () => void {
   return Events.On("episode", (ev) => fn(ev.data as string));
 }
 
+// What became of files given to the app, picked with Add or dropped on
+// it, see Added in drop.go: the videos added, the one to open and why
+// anything was left out.
+export type Added = { added: string[]; open?: string; error?: string };
+
+export function onDropped(fn: (d: Added) => void): () => void {
+  return Events.On("dropped", (ev) => fn(ev.data as Added));
+}
+
 // The loudness of an episode was measured further, about twice a second
 // while it is measured, so the waveform can grow.
 export function onLevels(fn: (path: string) => void): () => void {
   return Events.On("levels", (ev) => fn(ev.data as string));
-}
-
-export function mediaURL(path: string): string {
-  return `/media/?path=${encodeURIComponent(path)}`;
 }
 
 export function clock(seconds: number): string {

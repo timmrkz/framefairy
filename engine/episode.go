@@ -12,8 +12,39 @@ import (
 	"time"
 )
 
-// VideoExtensions are the files a library scan treats as episodes.
+// VideoExtensions are the files the app takes as videos: what Add's box
+// offers, what a drop on the app takes, what ScanFolder finds and what
+// the app tells a person it takes. This list is the one place that says
+// so in code, and Which files are videos in docs/APP.md the one place in
+// words. TestVideosAreNamedOnce holds both to it.
 var VideoExtensions = []string{".mp4", ".mov", ".m4v", ".mkv"}
+
+// VideoPattern is VideoExtensions as the filter of a file box.
+func VideoPattern() string { return videoPattern(VideoExtensions) }
+
+func videoPattern(exts []string) string {
+	parts := make([]string, len(exts))
+	for i, ext := range exts {
+		parts[i] = "*" + ext
+	}
+	return strings.Join(parts, ";")
+}
+
+// VideoNames is VideoExtensions the way a person reads them, the endings
+// without their dots and the last joined with or.
+func VideoNames() string { return videoNames(VideoExtensions) }
+
+func videoNames(exts []string) string {
+	names := make([]string, len(exts))
+	for i, ext := range exts {
+		names[i] = strings.TrimPrefix(ext, ".")
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	last := len(names) - 1
+	return strings.Join(names[:last], ", ") + " or " + names[last]
+}
 
 // PlanSummary describes one plan file without its words.
 type PlanSummary struct {

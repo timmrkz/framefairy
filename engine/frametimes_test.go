@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -44,64 +45,136 @@ func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
-	for _, c := range []struct {
-		name  string
-		input []string
-		video []string
-		out   []string
-		file  string
-		// The frame rate the short has.
-		rate string
-		// How long the episode is, seven seconds when nought.
-		seconds int
-	}{
-		// A phone: a frame every 1/29.97 s, each 0, 8 or 16 ms late, in
-		// ticks of 1/600 s.
-		{name: "uneven", file: "uneven.mov", rate: "30/1",
-			video: []string{"settb=1/600", "setpts='(N*1001/30000+0.008*mod(N\\,3))/TB'"},
-			out:   []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}},
-		// A screen recorder: frames 40 to 49 and 100 to 104 left out, so
-		// the frames before them are held.
-		{name: "held", file: "held.mov", rate: "30/1",
-			video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
-			out:   []string{"-fps_mode", "passthrough"}},
-		// Frames 95 to 104 left out, 3.17 to 3.47 s into an episode of 20,
-		// so they lie between the four stretches Probe looks at and the
-		// file reads as even. Only the piece over them is cut by times.
-		{name: "held_between", file: "between.mov", rate: "30000/1001", seconds: 20,
-			video: []string{"select='not(between(n\\,95\\,104))'"},
-			out:   []string{"-fps_mode", "passthrough"}},
-		// The picture a quarter of a second after the sound, which is
-		// 7.4925 frames, so its frames are half a frame off the grid of
-		// the file's start.
-		{name: "late_mov", file: "late.mov", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
-			out: []string{"-fps_mode", "passthrough"}},
-		{name: "late_mkv", file: "late.mkv", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
-			out: []string{"-fps_mode", "passthrough"}},
-	} {
+	for _, c := range timesCases {
+		if c.previewOnly {
+			continue
+		}
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			source := filepath.Join(dir, c.file)
-			seconds := strconv.Itoa(max(c.seconds, 7))
-			picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
-				"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
-			if len(c.video) > 0 {
-				picture += "," + strings.Join(c.video, ",")
-			}
-			args := []string{"-loglevel", "error", "-y"}
-			args = append(args, c.input...)
-			args = append(args, "-f", "lavfi", "-i", picture,
-				"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
-			args = append(args, c.out...)
-			args = append(args, "-c:v", "mpeg4", "-q:v", "2", "-g", "30", "-c:a", "pcm_s16le", "-t", seconds, source)
-			if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
-				t.Fatalf("making the test episode: %s %s", err, out)
-			}
-			showsWhatItSays(t, e, source, c.rate)
+			showsWhatItSays(t, e, timesEpisode(t, c), c.rate)
 		})
 	}
 }
+
+// An episode of the test above: how it is made and the rate of its short.
+type timesCase struct {
+	name  string
+	input []string
+	video []string
+	out   []string
+	file  string
+	// The frame rate the short has, not checked where it is empty.
+	rate string
+	// How long the episode is, seven seconds when nought.
+	seconds int
+	// H.264 with B-frames and a key frame every gop frames where it is
+	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
+	// PCM where it is.
+	gop int
+	// A file only the video preview's test takes, see
+	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
+	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
+	// short is not right yet, plan rows 2.200 and 2.201.
+	previewOnly bool
+}
+
+var timesCases = []timesCase{
+	// A phone: a frame every 1/29.97 s, each 0, 8 or 16 ms late, in
+	// ticks of 1/600 s.
+	{name: "uneven", file: "uneven.mov", rate: "30/1",
+		video: []string{"settb=1/600", "setpts='(N*1001/30000+0.008*mod(N\\,3))/TB'"},
+		out:   []string{"-fps_mode", "passthrough", "-enc_time_base", "1/600", "-video_track_timescale", "600"}},
+	// A screen recorder: frames 40 to 49 and 100 to 104 left out, so
+	// the frames before them are held.
+	{name: "held", file: "held.mov", rate: "30/1",
+		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
+		out:   []string{"-fps_mode", "passthrough"}},
+	// Frames 95 to 104 left out, 3.17 to 3.47 s into an episode of 20,
+	// so they lie between the four stretches Probe looks at and the
+	// file reads as even. Only the piece over them is cut by times.
+	{name: "held_between", file: "between.mov", rate: "30000/1001", seconds: 20,
+		video: []string{"select='not(between(n\\,95\\,104))'"},
+		out:   []string{"-fps_mode", "passthrough"}},
+	// The picture a quarter of a second after the sound, which is
+	// 7.4925 frames, so its frames are half a frame off the grid of
+	// the file's start.
+	{name: "late_mov", file: "late.mov", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
+		out: []string{"-fps_mode", "passthrough"}},
+	{name: "late_mkv", file: "late.mkv", rate: "30000/1001", input: []string{"-itsoffset", "0.25"},
+		out: []string{"-fps_mode", "passthrough"}},
+	// Frames that keep to their rate, in MP4 and in Matroska, whose
+	// times are whole milliseconds.
+	{name: "even_mp4", file: "even.mp4", rate: "30000/1001", previewOnly: true},
+	{name: "even_mkv", file: "even.mkv", rate: "30000/1001", previewOnly: true},
+	// What OBS records, the file Tim found the video preview could not
+	// read: H.264 with B-frames, so frames are decoded out of the order
+	// they are shown in, and AAC, whose priming starts the sound before
+	// the picture, in Matroska, with frames left out under load.
+	{name: "obs_mkv", file: "obs.mkv", rate: "30/1",
+		video: []string{"select='not(between(n\\,40\\,49)+between(n\\,100\\,104))'"},
+		out:   []string{"-fps_mode", "passthrough"},
+		gop:   30, previewOnly: true},
+	// MPEG-TS, which OBS also records and camcorders write, has no index
+	// of its key frames, so a seek lands between two. A key frame every
+	// two seconds puts every jump of the test inside a GOP.
+	// Its rate is not checked: the Mac's encoder stamps its frames
+	// unevenly in MPEG-TS, and the probe then makes it 30.
+	{name: "mpegts", file: "ts.ts",
+		gop: 60, previewOnly: true},
+}
+
+// timesEpisode makes the episode of a case: its frames carry their
+// numbers in bars, and its sound says which moment of a second it is.
+func timesEpisode(t *testing.T, c timesCase) string {
+	t.Helper()
+	dir := t.TempDir()
+	source := filepath.Join(dir, c.file)
+	seconds := strconv.Itoa(max(c.seconds, 7))
+	picture := "color=c=black:s=2x8:r=30000/1001:d=" + seconds + "," +
+		"geq=lum='if(bitand(N\\,pow(2\\,7-Y))\\,220\\,30)':cb=128:cr=128,scale=640:360:flags=neighbor"
+	if len(c.video) > 0 {
+		picture += "," + strings.Join(c.video, ",")
+	}
+	args := []string{"-loglevel", "error", "-y"}
+	args = append(args, c.input...)
+	args = append(args, "-f", "lavfi", "-i", picture,
+		"-f", "lavfi", "-i", "aevalsrc='(0.1+0.8*mod(t\\,1))*sin(2*PI*440*t)':s=48000:d="+seconds)
+	args = append(args, c.out...)
+	codec, sound := []string{"-c:v", "mpeg4", "-q:v", "2", "-g", "30"}, []string{"-c:a", "pcm_s16le"}
+	if c.gop > 0 {
+		codec, sound = h264(t, c.gop), []string{"-c:a", "aac"}
+	}
+	args = append(args, codec...)
+	args = append(args, sound...)
+	args = append(args, "-t", seconds, source)
+	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, out)
+	}
+	return source
+}
+
+// h264 is how the ffmpeg on the path codes H.264 with two B-frames and a
+// key frame every gop frames. The one CI's Mac runs is the one we ship,
+// which has no libx264 and encodes H.264 on the graphics chip.
+func h264(t *testing.T, gop int) []string {
+	t.Helper()
+	encoders := encodersHere()
+	g := strconv.Itoa(gop)
+	switch {
+	case hasEncoder(encoders, "libx264"):
+		return []string{"-c:v", "libx264", "-bf", "2", "-g", g, "-sc_threshold", "0", "-pix_fmt", "yuv420p"}
+	case hasEncoder(encoders, "h264_videotoolbox"):
+		return []string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"}
+	}
+	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of H.264")
+	return nil
+}
+
+// encodersHere is the encoders of the ffmpeg on the path.
+var encodersHere = sync.OnceValue(func() string {
+	out, _ := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
+	return string(out)
+})
 
 func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	ctx := context.Background()
@@ -109,33 +182,7 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// When each frame of the episode begins, by its own timestamp, and
-	// which frame it is by its bars.
-	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "packet=pts_time", "-of", "csv=p=0", source).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var begins []float64
-	for _, field := range strings.Fields(string(out)) {
-		if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
-			begins = append(begins, v)
-		}
-	}
-	sort.Float64s(begins)
-	numbers := barNumbers(t, source, 640, 360, "-fps_mode", "passthrough")
-	if len(numbers) != len(begins) {
-		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
-	}
-	// The frame that holds a moment: the last one that begins at or
-	// before it, and the first one before the picture starts. A frame of
-	// Matroska begins on a whole millisecond, so up to half of one away
-	// from where it belongs, and one that begins less than frameHair after
-	// a moment holds it.
-	holds := func(at float64) int {
-		k := sort.Search(len(begins), func(i int) bool { return begins[i] > at+frameHair })
-		return numbers[max(k-1, 0)]
-	}
+	holds := frameHolding(t, source)
 
 	clip := info.OnFrames(Clip{ID: "01", Slug: "times", Segments: []Segment{
 		{Start: 0.2, End: 0.9}, {Start: 1.25, End: 1.95}, {Start: 3.05, End: 3.7}, {Start: 5.3, End: 6.1}}})
@@ -147,7 +194,7 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", short).Output()
 	if err != nil {
 		t.Fatal(err)
@@ -207,6 +254,47 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 		t.Errorf("and %d more frames are the wrong frame", wrong-6)
 	}
 }
+
+// frameHolding is the number, by its bars, of the frame of an episode
+// that holds a moment: the last one that begins at or before it, and the
+// first one before the picture starts. A frame of Matroska begins on a
+// whole millisecond, so up to half of one away from where it belongs, and
+// one that begins less than frameHair after a moment holds it.
+func frameHolding(t *testing.T, source string) func(at float64) int {
+	t.Helper()
+	// When each frame of the episode begins, by its own timestamp counted
+	// from the start of the file the way every time in a clip is, and which
+	// frame it is by its bars.
+	out, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=start_time", "-of", "csv=p=0", source).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	out, err = exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "packet=pts_time", "-of", "csv=p=0", source).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var begins []float64
+	for _, field := range strings.Fields(string(out)) {
+		if v, err := strconv.ParseFloat(strings.Trim(field, ","), 64); err == nil {
+			begins = append(begins, v-start)
+		}
+	}
+	sort.Float64s(begins)
+	numbers := barNumbers(t, source, 640, 360, "-fps_mode", "passthrough")
+	if len(numbers) != len(begins) {
+		t.Fatalf("the episode has %d frames and %d timestamps", len(numbers), len(begins))
+	}
+	return func(at float64) int {
+		// In whole microseconds, the way the render's fps filter counts,
+		// so a frame that begins exactly a Hair after a moment holds it.
+		k := sort.Search(len(begins), func(i int) bool { return wholeMicros(begins[i]) > wholeMicros(at)+wholeMicros(frameHair) })
+		return numbers[max(k-1, 0)]
+	}
+}
+
+func wholeMicros(t float64) int64 { return int64(math.Round(t * 1e6)) }
 
 // barNumbers is the number the eight bars of each frame of a video say.
 func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {

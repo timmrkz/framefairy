@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Samples } from "./mp4";
+import type { Samples } from "./movie";
 import { AudioPlan, fade, FADE, heardAt, Keeper, Program, stillFeed, VideoPlan } from "./plan";
 
 // A track the way a file holds one, without the file: n samples of `step`
@@ -27,8 +27,6 @@ function track(n: number, timescale: number, step: number, gop: number, opts: { 
   return {
     count: n,
     timescale,
-    offset: Float64Array.from({ length: n }, (_, i) => i * 1000),
-    size: new Uint32Array(n).fill(1000),
     pts,
     duration,
     key,
@@ -238,8 +236,6 @@ function framesAt(timescale: number, begins: number[]): Samples {
   return {
     count: n,
     timescale,
-    offset: Float64Array.from({ length: n }, (_, i) => i * 1000),
-    size: new Uint32Array(n).fill(1000),
     pts: ticks,
     duration: Float64Array.from(ticks, (t, i) => (i + 1 < n ? ticks[i + 1] - t : 20)),
     key: new Uint8Array(n).fill(1),

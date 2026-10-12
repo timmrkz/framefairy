@@ -24,11 +24,11 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 // episode, the video preview says it cannot read the file, and a probe
 // that needs one has to say so rather than pass.
 //
-// VP9 and Opus in an MP4. An MP4, because the video preview reads the
-// file itself, see frontend/src/lib/frames/, and it reads MP4 and MOV.
-// VP9 and Opus, because the Chromium that comes with Playwright is built
-// without the proprietary codecs and decodes no H.264 or AAC. The app
-// itself runs in a WebKit view and decodes what the Mac decodes.
+// VP9 and Opus in an MP4, from when the webview decoded the episode and
+// the Chromium that comes with Playwright decoded no H.264 or AAC. The
+// video preview reads nothing of the file now: the frames the engine
+// names come with the source, see the stub's Source, and the sound from
+// the Go side, which ffmpeg stands in for here, see sound() below.
 //
 // The picture says which frame it is. Its top half is the frame number in
 // bars, the highest bit on the left, light for one and dark for nought, so
@@ -95,61 +95,6 @@ export function episode() {
 export const framesAt = join(tmpdir(), "framefairy-preview-frames-v2.mp4");
 export function framesEpisode() {
   return made(framesAt, { seconds: 600, bits: 16, bar: 12, height: 108, climb: 1, picture: "200k", sound: "96k" });
-}
-
-// ?fragmented serves the workspace a fragmented MP4 instead, ten seconds
-// of the frame queue's episode written the way a live recording is, which
-// the video preview cannot read, so a probe sees what it says about a file
-// it cannot play.
-export const fragmentedAt = join(tmpdir(), "framefairy-preview-fragmented-v1.mp4");
-async function fragmented() {
-  try {
-    await stat(fragmentedAt);
-    return fragmentedAt;
-  } catch {}
-  const from = await framesEpisode();
-  if (!from) return null;
-  try {
-    await run("ffmpeg", ["-v", "error", "-i", from, "-t", "10", "-c", "copy", "-movflags", "frag_keyframe+empty_moov", fragmentedAt, "-y"]);
-    return fragmentedAt;
-  } catch {
-    return null;
-  }
-}
-
-// The files, read once each. A file was read from disk on every range
-// request, and the video preview asks for a great many of them.
-const bodies = new Map();
-async function body(file) {
-  if (!file) return null;
-  if (!bodies.has(file)) bodies.set(file, await readFile(file));
-  return bodies.get(file);
-}
-
-// The video preview reads the file a range at a time, so the range is
-// answered rather than the whole file.
-async function media(res, range, frames = false, broken = false) {
-  const data = await body(frames ? await framesEpisode() : broken ? await fragmented() : await episode());
-  if (!data) {
-    res.writeHead(404).end("no ffmpeg, so no episode to play");
-    return;
-  }
-  const hit = /bytes=(\d*)-(\d*)/.exec(range ?? "");
-  if (!hit) {
-    res.writeHead(200, { "content-type": "video/mp4", "content-length": data.length, "accept-ranges": "bytes" });
-    res.end(data);
-    return;
-  }
-  const from = hit[1] ? Number(hit[1]) : 0;
-  const to = hit[2] ? Math.min(Number(hit[2]), data.length - 1) : data.length - 1;
-  const part = data.subarray(from, to + 1);
-  res.writeHead(206, {
-    "content-type": "video/mp4",
-    "content-length": part.length,
-    "accept-ranges": "bytes",
-    "content-range": `bytes ${from}-${to}/${data.length}`,
-  });
-  res.end(part);
 }
 
 // The sound streams of the Go side, see /frames/sound in
@@ -250,20 +195,10 @@ export async function screen({
   // More for the browser's command line.
   args = [],
 } = {}) {
-  // ?slowread=200 answers every range of an episode 200 ms late, the way a
-  // busy disk or a long episode can, the video preview's and the frame
-  // queue page's alike. The frame queue reads ahead so a cut never waits on
-  // the file, and this is how to show it.
-  const slowread = Number(/[?&]slowread=(\d+)/.exec(query)?.[1] ?? 0);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     if (["/frames/sound", "/frames/read", "/frames/close"].includes(url.pathname)) {
       await sound(res, url, url.searchParams.get("path") === "/frames.mp4");
-      return;
-    }
-    if (url.pathname.startsWith("/media/")) {
-      if (slowread) await new Promise((r) => setTimeout(r, slowread));
-      await media(res, req.headers.range, url.searchParams.get("path") === "/frames.mp4", /[?&]fragmented/.test(query));
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;
@@ -398,8 +333,8 @@ export async function rows(page, clip) {
 // The frame queue on its own, see frontend/src/lib/frames/ and "The frame
 // queue" in the interface skill: one canvas playing the episode
 // framesEpisode() makes, and window.__queue to drive it. ?read and ?hear
-// write down what was drawn and what was heard, see preview/frames/main.ts,
-// and ?slowread slows the file. The sound card is let go without a gesture,
+// write down what was drawn and what was heard, see preview/frames/main.ts.
+// The sound card is let go without a gesture,
 // which the app gets from the space bar.
 export async function frames({ query = "", width = 900, height = 520 } = {}) {
   if (!(await framesEpisode())) throw new Error("no ffmpeg, so no episode for the frame queue");

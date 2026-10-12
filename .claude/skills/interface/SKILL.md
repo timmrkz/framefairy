@@ -64,7 +64,6 @@ not the workspace: the first run, the settings, the empty window.
 | `?setup` | a machine with nothing on it, so the first run is the window. Both model installs really run and really finish, on their own clocks, and one language model fits the machine it pretends to be while the other does not |
 | `?refuse` | an engine that says no to an edit. Correcting a word and picking a caption face both fail, which is how to see what a control shows once the answer is no rather than yes |
 | `?closing` | the Go side refuses every search, the way it does while the app closes or the episode is being removed: New comes back with a job that has already failed, and its event goes out like any other |
-| `?fragmented` | the episode is a fragmented MP4, ten seconds written the way a live recording is, which the video preview cannot read, so it says why where the picture would be. It is `open.mjs`'s server that serves it, not the stub |
 | `?slowread=200` | every range of the episode is answered 200 ms late, the way a busy disk or a long episode can, in the workspace and on the frame queue's page alike. The frame queue reads ahead so a cut never waits on the file, and this is how to show it, see The frame queue below. It is `open.mjs`'s server that is slow, not the stub |
 
 Add a mode when the state you need is not there. A bug that only happens
@@ -777,7 +776,7 @@ episode's frame rate and asks which frame the gesture landed in, the
 same frame `insideClip` draws the crop in. The frame that holds the
 clip's start is on the clip, and the frame that holds the moment a frame
 before its end is its end. There is one rule for which frame is meant,
-`frameAt` in `lib/flow.ts` and `rankAt` in `mp4.ts`: the frame that
+`frameAt` in `lib/flow.ts` and `rankAt` in `movie.ts`: the frame that
 holds the moment, where a moment a millisecond or less before a frame's
 start is that frame's, `FRAME_HAIR`, because every moment the app keeps
 is kept to the millisecond. The engine keeps every edge on the start of
@@ -815,10 +814,11 @@ from something, and that is the question that never settles.
 ## The frame queue
 
 The video preview plays from a queue of frames the app decodes itself,
-plan row 2.123. It is in `frontend/src/lib/frames/`: `mp4.ts` reads the
-index of the episode file, `plan.ts` decides everything, with tests, and
-`queue.ts` is only the glue to the browser's decoders, the canvas and the
-sound card. `Player.svelte` makes one `FrameQueue` per episode on its
+plan row 2.123. It is in `frontend/src/lib/frames/`: `movie.ts` builds
+what it plays from the frames the engine names, the grid the source
+carries, and reads nothing of the episode file, `plan.ts` decides
+everything, with tests, and `queue.ts` is only the glue to the Go side's
+frames and sound, the canvas and the sound card. `Player.svelte` makes one `FrameQueue` per episode on its
 canvas and drives it with four calls: `setProgram`, the clip's pieces or
 null for the episode straight on, `seek`, `play` and `pause`. What the
 queue reports, `Shown`, is the playhead and nothing else sets it while
@@ -831,7 +831,7 @@ look at the queue alone:
 ```
 npx vite build --config frontend/preview/vite.config.ts
 node frontend/preview/frames/cuts.mjs                 # the clip, once
-node frontend/preview/frames/cuts.mjs loop slowread=200
+node frontend/preview/frames/cuts.mjs loop
 node frontend/preview/frames/cuts.mjs seeks           # paused frames, a seek while playing
 node frontend/preview/frames/cuts.mjs memory          # a minute straight on
 node frontend/preview/frames/added.mjs                # an episode just added, see docs/TESTING.md

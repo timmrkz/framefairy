@@ -33,7 +33,11 @@ import (
 // A stream left open is how a paused play goes on at once, and how the
 // next frame is there when the arrow key steps to it.
 //
-//	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>  {"id": "..."}
+//	/frames/open?path=<episode>&from=<seconds>&w=<width>&h=<height>&grid=<grid>  {"id": "..."}
+//	                                 the frames of the grid from the one that
+//	                                 holds from: the grid the engine named,
+//	                                 see engine.SourceInfo.Grid, as the page
+//	                                 hands it back, see framewire.GridText
 //	/frames/sound?path=<episode>&from=<seconds>&rate=<hz>&ch=<channels>  {"id": "..."}
 //	/frames/read?id=<id>&n=<frames>&skip=<seconds>  frames, see writeFrames
 //	/frames/close?id=<id>
@@ -188,6 +192,14 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "a preview needs a width and a height", http.StatusBadRequest)
 			return
 		}
+		// The frames of the short, on the grid the page counts on, which
+		// is the one the engine named, see engine.SourceInfo.Grid. The page
+		// hands it back so the two cannot count on different grids.
+		grid, ok := framewire.ReadGrid(q.Get("grid"))
+		if !ok {
+			http.Error(w, "a preview needs the grid of frames it counts on", http.StatusBadRequest)
+			return
+		}
 		times = engine.NewPreviewTimes()
 		dec, err := p.decoder(path)
 		if err == nil {
@@ -197,7 +209,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				return err
 			}
-			return dec.Stream(engine.WithPreviewTimes(ctx, times), from, width&^1, height&^1, got)
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, got)
 		}
 	}
 	kind := ""

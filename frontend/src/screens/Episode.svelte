@@ -17,7 +17,6 @@
     clock,
     errorText,
     intoWord,
-    mediaURL,
     snapCaptionY,
     type CaptionFont,
     type CaptionsView,
@@ -76,7 +75,7 @@
     type Told,
   } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
-  import { readAhead } from "../lib/frames/queue";
+  import { holdAhead } from "../lib/frames/queue";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -2458,7 +2457,7 @@
       .then((list) => (fonts = list))
       .catch(() => {});
     tell(`made${away ? ", asleep" : ""}`);
-    readAhead(mediaURL(path), path);
+    holdAhead(path);
     readSettings();
     openEpisode();
   });

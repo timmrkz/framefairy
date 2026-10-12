@@ -296,9 +296,9 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			b.picks = nil
 			b.mu.Unlock()
 			if len(picked) == 0 {
-				return nil, nil
+				return Added{Added: []string{}}, nil
 			}
-			return b.d.svc.addEpisodes(picked)
+			return b.d.svc.takeFiles("add", picked), nil
 		},
 	}
 	mux.Handle("/call", callHandler(svc, own, b.held))
@@ -317,8 +317,21 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("namesake") == "1")
+			q.Get("namesake") == "1", q.Get("box") != "0", q.Get("in") == "mkv")
 		answer(w, path, err)
+	})
+	// Files dropped on the app, which the window hands over the way the
+	// runtime does once the drop landed on a drop target, see
+	// wails-bridge.ts: what WindowFilesDropped does in main.go.
+	mux.HandleFunc("/drop", func(w http.ResponseWriter, r *http.Request) {
+		var files []string
+		if err := json.NewDecoder(r.Body).Decode(&files); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		dropped := b.d.svc.dropFiles(files)
+		b.d.bus.send("dropped", dropped)
+		answer(w, dropped, nil)
 	})
 	// A file of sound alone, named like a video, which Add has to leave
 	// out: the episode's decoder finds no picture in it.
@@ -770,6 +783,18 @@ func makeTurnedEpisode(path string, seconds int, rate string) error {
 	return nil
 }
 
+// intoMatroska copies a video's streams into Matroska beside it, under
+// the same name ending in .mkv, and removes the MP4. A picture that starts
+// late by an edit list starts late by its first timestamp there.
+func intoMatroska(path string) (string, error) {
+	mkv := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
+	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", mkv).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("copying %s into Matroska: %s %s", filepath.Base(path), err, out)
+	}
+	return mkv, os.Remove(path)
+}
+
 // frameRate is a frame rate as ffmpeg takes it, a whole number or one
 // whole number over another, and nothing else, since it goes into a
 // filter.
@@ -780,8 +805,9 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // episode, at five frames a second, and with one it is filmed at that
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
 // own kind is filmed by two cameras that switch then, see twoCameras, and
-// with hevc it is HEVC with 10-bit colour.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake bool) (string, error) {
+// with hevc it is HEVC with 10-bit colour. With mkv it is the same video
+// in Matroska, the way OBS records, its streams copied as they are.
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -817,9 +843,16 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake boo
 	if err != nil {
 		return "", err
 	}
-	b.mu.Lock()
-	b.picks = append(b.picks, path)
-	b.mu.Unlock()
+	if mkv {
+		if path, err = intoMatroska(path); err != nil {
+			return "", err
+		}
+	}
+	if box {
+		b.mu.Lock()
+		b.picks = append(b.picks, path)
+		b.mu.Unlock()
+	}
 	return path, nil
 }
 

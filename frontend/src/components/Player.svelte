@@ -23,11 +23,10 @@
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
-  import type { Movie } from "../lib/frames/mp4";
+  import { movieOf } from "../lib/frames/movie";
   import Info from "./Info.svelte";
   import {
     captionYStep,
-    mediaURL,
     snapCaptionY,
     type CaptionsView,
     type ClipEntry,
@@ -108,7 +107,7 @@
     pictured?: boolean;
     // The workspace is kept for coming back to while another episode is
     // in front, see App.svelte. Asleep, the video preview holds nothing
-    // but the frame on its canvas and the file's index: no decoder on the
+    // but the frame on its canvas and what it plays: no decoder on the
     // Go side, no frames kept, no sound card.
     sleeping?: boolean;
   } = $props();
@@ -146,26 +145,29 @@
 
   // A queue while the workspace is awake. Going to sleep closes it with
   // everything it holds, its decoders and its sound card among them, and
-  // keeps only the file's index, so waking reads nothing from the file and
   // the frame on the canvas stays until the new queue draws the same one.
+  // The new queue counts on the frames the engine names now, from source,
+  // never on the ones the last queue played: the file may have been
+  // written over in between, and the Go side streams on what the page
+  // counts on, see Stream in lib/frames/app.ts.
   //
   // Waking, the queue is opened once the workspace is on screen, in the
   // task after the frame that shows it: what is on the canvas is already
   // the frame it would draw, and starting a sound card and a decoder in
   // that frame held it back. Going to sleep, it is closed the same way.
-  let known: Movie | null = null;
+  let slept = false;
   $effect(() => {
-    const url = mediaURL(path);
+    const video = path;
     if (sleeping) return;
     let q: FrameQueue | null = null;
-    const stop = known ? afterPaint(() => (q = open(url))) : null;
-    if (!stop) q = untrack(() => open(url));
+    const stop = slept ? afterPaint(() => (q = open(video))) : null;
+    if (!stop) q = untrack(() => open(video));
     return () => {
       stop?.();
       if (!q) return;
       const going: FrameQueue = q;
       said(`video preview: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : "the workspace went"}`, { video: path });
-      known = going.movie ?? known;
+      slept = true;
       if (!untrack(() => paused)) going.pause();
       paused = true;
       nailed = false;
@@ -187,10 +189,13 @@
     };
   }
 
-  function open(url: string): FrameQueue {
+  function open(video: string): FrameQueue {
     failed = "";
     trouble = "";
-    const q = new FrameQueue(canvas, url, known);
+    // What the engine says of the video: its frames, the short's, and its
+    // sound. The video preview reads nothing of the file itself.
+    const woken = slept;
+    const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
@@ -199,13 +204,13 @@
     });
     // What the video preview had when it still showed no picture, for the
     // app's log, see lib/said.ts. Plan row 2.185.
-    said(`video preview: opening${known ? ", woken with its index" : ""}, canvas ${canvas.width}x${canvas.height}, playhead ${time.toFixed(3)} s${untrack(() => opening) ? ", the workspace still opening" : ""}`, { video: path });
+    said(`video preview: opening${woken ? ", woken" : ""}, canvas ${canvas.width}x${canvas.height}, playhead ${time.toFixed(3)} s${untrack(() => opening) ? ", the workspace still opening" : ""}`, { video: path });
     for (const after of [5, 15])
       setTimeout(() => {
         if (queue !== q || pictured || sleeping) return;
         const frames = (window as unknown as { __appFrames?: { stats: unknown } }).__appFrames?.stats;
         said(
-          `video preview: no picture ${after} s after it opened, playhead ${time.toFixed(3)}, ${paused ? "paused" : "playing"}, opening ${opening}, trouble "${trouble}", queue ${JSON.stringify(q.stats)}, movie ${JSON.stringify(q.movie && { duration: q.movie.duration, video: q.movie.video && { width: q.movie.video.width, height: q.movie.video.height, codec: q.movie.video.codec, frame: q.movie.video.frame, samples: q.movie.video.samples.count } })}, frames ${JSON.stringify(frames)}`,
+          `video preview: no picture ${after} s after it opened, playhead ${time.toFixed(3)}, ${paused ? "paused" : "playing"}, opening ${opening}, trouble "${trouble}", queue ${JSON.stringify(q.stats)}, movie ${JSON.stringify(q.movie && { duration: q.movie.duration, video: q.movie.video && { width: q.movie.video.width, height: q.movie.video.height, frame: q.movie.video.frame, samples: q.movie.video.samples.count } })}, frames ${JSON.stringify(frames)}`,
           { level: "warn", video: path },
         );
       }, after * 1000);
