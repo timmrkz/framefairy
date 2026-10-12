@@ -429,14 +429,17 @@ func (*speech) Close() {}
 
 // model is the stand-in language model, a server that answers like
 // llama-server with one clip made of the first line. It can be told to
-// hang until it is let go of, or to fail.
+// hold its answers until it is let go of, or to fail.
 type model struct {
 	server *httptest.Server
 	mu     sync.Mutex
 	hang   bool
 	fail   bool
-	asked  chan struct{}
-	calls  atomic.Int32
+	// held is closed when the model answers again, and lets go of every
+	// answer it held, the way a slow model answers what it was asked.
+	held  chan struct{}
+	asked chan struct{}
+	calls atomic.Int32
 	// done lets go of every answer held, when the test ends.
 	done chan struct{}
 }
@@ -449,11 +452,21 @@ func newModel(t *testing.T) *model {
 	return m
 }
 
-// hangs makes the model hold every answer until the search is stopped.
+// hangs makes the model hold every answer until the search is stopped or
+// the model answers again. Let go of, it answers what it held: a model
+// that was slow answers the questions it was asked, so a search that was
+// finding while it held finds its clips and lets the lane go.
 func (m *model) hangs(on bool) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.hang = on
-	m.mu.Unlock()
+	switch {
+	case on && m.held == nil:
+		m.held = make(chan struct{})
+	case !on && m.held != nil:
+		close(m.held)
+		m.held = nil
+	}
 }
 
 // fails makes the model answer with an error.
@@ -478,21 +491,27 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	m.calls.Add(1)
 	m.mu.Lock()
-	hang, fail := m.hang, m.fail
+	hang, fail, held := m.hang, m.fail, m.held
 	if m.asked != nil {
 		close(m.asked)
 		m.asked = nil
 	}
 	m.mu.Unlock()
-	if fail {
-		http.Error(w, "the model fell over", http.StatusInternalServerError)
-		return
-	}
-	if hang {
+	if hang && !fail {
 		select {
 		case <-r.Context().Done():
+			return
 		case <-m.done:
+			return
+		case <-held:
 		}
+		// Let go of, it answers as it does now.
+		m.mu.Lock()
+		fail = m.fail
+		m.mu.Unlock()
+	}
+	if fail {
+		http.Error(w, "the model fell over", http.StatusInternalServerError)
 		return
 	}
 	// One story, the first line, as middle answers: where it starts, a
