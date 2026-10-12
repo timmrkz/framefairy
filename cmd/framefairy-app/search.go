@@ -206,7 +206,7 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	}
 	set := s.store.Settings()
 	opts := set.options()
-	room := engine.SearchRoom(opts, filepath.Join(engine.WorkDir(path), "logs"))
+	room := engine.SearchRoom(s.store.files, opts, filepath.Join(engine.WorkDir(path), "logs"))
 	req := engine.PlanRequest{Min: opts.Min, Max: opts.Max}
 	req.To = firstWindowEnd(info.Duration, room, req)
 	end := req.To

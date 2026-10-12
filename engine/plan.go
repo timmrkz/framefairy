@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -268,7 +267,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// before anything is loaded or paid for. The app never draws one, and
 	// the command line hears why, see room.go.
 	if !haveReply {
-		if err := windowFits(lines, opts); err != nil {
+		if err := windowFits(e.Files, lines, opts); err != nil {
 			return nil, err
 		}
 	}
@@ -341,14 +340,14 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		}
 		build.answered()
 		how.Content = ""
-		saveReply(cachePath, reply, how)
+		saveReply(e.Files, cachePath, reply, how)
 		haveReply, fresh = true, true
 	}
 
 	if !haveReply {
 		// These checks only matter when a request is actually going to be
 		// sent. A cached run costs nothing.
-		estimate, outEstimate, measured := estimateUsage(opts.LogDir, runeLen(prompt), "plan")
+		estimate, outEstimate, measured := estimateUsage(e.Files, opts.LogDir, runeLen(prompt), "plan")
 		facts := FactsFor(opts.Model)
 		sourceNote := "estimated"
 		if measured {
@@ -400,7 +399,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			return nil, build.failed(err)
 		}
 		build.answered()
-		saveReply(cachePath, reply, nil)
+		saveReply(e.Files, cachePath, reply, nil)
 		fresh = true
 	}
 
@@ -513,7 +512,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 					key = "refit"
 				}
 				asks++
-				saveFit(cachePath, key, answer.Content, answer)
+				saveFit(e.Files, cachePath, key, answer.Content, answer)
 				return answer.Content, nil
 			}
 		}
@@ -575,7 +574,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 // saveReply keeps an answer so the same transcript is never planned twice.
 // It is stored parsed when it parses, so the file is readable rather than one
 // long escaped line.
-func saveReply(cachePath, reply string, how *localAnswer) {
+func saveReply(fsys afero.Fs, cachePath, reply string, how *localAnswer) {
 	if cachePath == "" {
 		return
 	}
@@ -603,16 +602,16 @@ func saveReply(cachePath, reply string, how *localAnswer) {
 		}
 		body, _ = MarshalPlan(saved)
 	}
-	_ = os.WriteFile(cachePath, body, 0o644)
+	_ = afero.WriteFile(fsys, cachePath, body, 0o644)
 }
 
 // saveFit adds the answer about the clips that did not fit to the saved
 // reply, under key, where a search that reuses the reply finds it.
-func saveFit(cachePath, key, fit string, how *localAnswer) {
+func saveFit(fsys afero.Fs, cachePath, key, fit string, how *localAnswer) {
 	if cachePath == "" {
 		return
 	}
-	data, err := os.ReadFile(cachePath)
+	data, err := afero.ReadFile(fsys, cachePath)
 	if err != nil {
 		return
 	}
@@ -632,14 +631,14 @@ func saveFit(cachePath, key, fit string, how *localAnswer) {
 		}
 	}
 	if body, err := json.MarshalIndent(saved, "", "  "); err == nil {
-		_ = os.WriteFile(cachePath, body, 0o644)
+		_ = afero.WriteFile(fsys, cachePath, body, 0o644)
 	}
 }
 
 // windowFits says whether the transcript of a window fits in one request to
 // the model that is going to read it.
-func windowFits(lines []Line, opts PlanOptions) error {
-	room := planRoom(opts)
+func windowFits(fsys afero.Fs, lines []Line, opts PlanOptions) error {
+	room := planRoom(fsys, opts)
 	recipe := opts.recipe()
 	have := runeLen(recipe.Request(lines, recipe.units(lines), opts)) - runeLen(recipe.Request(nil, nil, opts))
 	if have <= room.Chars {

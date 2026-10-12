@@ -4,6 +4,8 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -141,7 +143,7 @@ func localContextFor(model string, promptChars, maxTokens int) int {
 // SearchRoom is the room a search made with these options has. It is what
 // the app asks before a window is drawn, and the same sum BuildPlan checks
 // a window against before anything is sent.
-func SearchRoom(opts Options, logDir string) Room {
+func SearchRoom(fsys afero.Fs, opts Options, logDir string) Room {
 	plan := PlanOptions{Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max,
 		Context: opts.Context, Model: opts.Model, MaxTokens: opts.MaxTokens,
 		Budget: opts.Budget, LogDir: logDir}
@@ -152,12 +154,12 @@ func SearchRoom(opts Options, logDir string) Room {
 		}
 		plan.Local = &LocalModel{Model: model, URL: opts.LLMURL}
 	}
-	return planRoom(plan)
+	return planRoom(fsys, plan)
 }
 
 // planRoom works the room out. Whatever the request sends besides the
 // transcript, the instructions and the ask, comes off the top.
-func planRoom(opts PlanOptions) Room {
+func planRoom(fsys afero.Fs, opts PlanOptions) Room {
 	recipe := opts.recipe()
 	around := runeLen(recipe.System) + runeLen(recipe.Request(nil, nil, opts))
 	if opts.Local != nil {
@@ -177,7 +179,7 @@ func planRoom(opts PlanOptions) Room {
 	facts := FactsFor(opts.Model)
 	answer := max(min(opts.MaxTokens*2, facts.MaxOutput), opts.MaxTokens)
 	room := Room{Tokens: max(facts.Context-answer, 0), By: "context"}
-	perToken, output := apiRate(opts.LogDir)
+	perToken, output := apiRate(fsys, opts.LogDir)
 	if facts.Priced {
 		// The same sum BuildPlan uses for what a search is likely to cost:
 		// the answer it usually writes, and whatever is left of the budget
@@ -195,9 +197,9 @@ func planRoom(opts PlanOptions) Room {
 // apiRate is how many characters make a token through the API and how long
 // an answer usually is, measured on this episode when it has been searched
 // through the API before and the engine's own starting points when not.
-func apiRate(logDir string) (float64, float64) {
+func apiRate(fsys afero.Fs, logDir string) (float64, float64) {
 	const sample = 1_000_000
-	tokens, output, _ := estimateUsage(logDir, sample, "plan")
+	tokens, output, _ := estimateUsage(fsys, logDir, sample, "plan")
 	return sample / float64(max(tokens, 1)), float64(output)
 }
 

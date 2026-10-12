@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestLocalContextIsWhatTheMakerPublishes(t *testing.T) {
@@ -41,7 +43,7 @@ func roomOf(opts PlanOptions) Room {
 	if opts.MaxTokens == 0 {
 		opts.MaxTokens = 48000
 	}
-	return planRoom(opts)
+	return planRoom(afero.NewMemMapFs(), opts)
 }
 
 func TestTheRoomOfALocalModelIsItsContextLessTheAnswer(t *testing.T) {
@@ -118,15 +120,15 @@ func TestAWindowTheModelCannotReadIsRefusedBeforeAnythingIsSent(t *testing.T) {
 	lines := BuildLines(talk(4000).Words, nil, nil)
 	opts := PlanOptions{Count: 12, MinLen: 20, MaxLen: 30, MaxTokens: 48000,
 		Local: &LocalModel{Model: "Qwen3-14B-Q4_K_M.gguf"}}
-	err := windowFits(lines, opts)
+	err := windowFits(afero.NewMemMapFs(), lines, opts)
 	if err == nil || !strings.Contains(err.Error(), "Qwen3-14B-Q4_K_M.gguf reads at most") {
 		t.Fatalf("a window four times too long: %v", err)
 	}
-	if err := windowFits(lines[:100], opts); err != nil {
+	if err := windowFits(afero.NewMemMapFs(), lines[:100], opts); err != nil {
 		t.Errorf("a short window: %v", err)
 	}
 	opts.Local, opts.Model, opts.Budget = nil, "claude-opus-5", 0.01
-	if err := windowFits(lines[:100], opts); err == nil || !strings.Contains(err.Error(), "--budget") {
+	if err := windowFits(afero.NewMemMapFs(), lines[:100], opts); err == nil || !strings.Contains(err.Error(), "--budget") {
 		t.Errorf("a budget that buys nothing: %v", err)
 	}
 }

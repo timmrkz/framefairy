@@ -19,7 +19,13 @@ import (
 //
 // What an outside program reads or writes, ffmpeg, the frames decoder,
 // llama-server, is on the real disk whatever the engine is given, because
-// a separate process cannot see the memory of this one.
+// a separate process cannot see the memory of this one: the shorts, their
+// pictures and caption files, llama-server's log, the models. The episode
+// itself is read by ffmpeg from the disk, and by our own code, its size,
+// its time and the fingerprint of the training records, through the file
+// system given, which in the programs is the same disk. Every other file
+// of the work folder, the plans, the saved answers, usage.json, the
+// prompts and proof.txt, goes through the file system given.
 
 // disk is the real disk, for the files that are on it whatever the engine
 // is given: the models, which llama-server reads, and the notes about the

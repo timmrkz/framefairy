@@ -564,8 +564,8 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if !isFile(plan) {
-		made, _ := filepath.Glob(filepath.Join(p.LogsDir(), "clips-*.json"))
+	if !isFile(p.Files, plan) {
+		made, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "clips-*.json"))
 		t.Fatalf("the search answered %s, and wrote %v", filepath.Base(plan), made)
 	}
 }

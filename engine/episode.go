@@ -535,7 +535,7 @@ func (s PlanSummary) View() *PlanView {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks)})
 		}
 		v.Rendered = shortOf(plan, c)
-		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {
+		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(disk, prev) {
 			v.Preview = prev
 		}
 		view.Clips = append(view.Clips, v)

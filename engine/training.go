@@ -299,8 +299,8 @@ func ExampleKeyOf(prompt string) string {
 
 // EpisodeKey fingerprints a video by its size and its first and last
 // megabyte. It is fast on a file of many gigabytes and survives renaming.
-func EpisodeKey(source string) string {
-	f, err := os.Open(source)
+func EpisodeKey(fsys afero.Fs, source string) string {
+	f, err := fsys.Open(source)
 	if err != nil {
 		return ""
 	}
@@ -686,7 +686,7 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	record := PlanRecord{
 		Schema: TrainingSchema, PlanID: planned, Created: now.UTC().Format(time.RFC3339),
 		Engine: Version, PromptVersion: recipe.Version,
-		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(sourcePath),
+		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(e.Files, sourcePath),
 			Transcript: wordsHash(lines),
 			Window:     [2]float64{roundTo(window.Start, 3), roundTo(window.End, 3)}},
 		Planner:  RecordPlanner{Kind: kind, Model: model},

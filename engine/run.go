@@ -157,8 +157,8 @@ func exists(fsys afero.Fs, path string) bool {
 	return err == nil
 }
 
-func isFile(path string) bool {
-	info, err := os.Stat(path)
+func isFile(fsys afero.Fs, path string) bool {
+	info, err := fsys.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
 
@@ -418,7 +418,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		stale, _ := afero.Glob(e.Files, filepath.Join(work, "clips*.json"))
 		sort.Strings(stale)
 		for _, old := range stale {
-			if !isFile(old) {
+			if !isFile(e.Files, old) {
 				continue
 			}
 			moved := filepath.Join(logsDir, filepath.Base(old))
@@ -444,7 +444,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		matches, _ := afero.Glob(e.Files, filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
-			if isFile(m) {
+			if isFile(e.Files, m) {
 				existing = append(existing, m)
 			}
 		}
@@ -817,9 +817,10 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	if !opts.DryRun {
 		proof := filepath.Join(logsDir, "proof.txt")
-		_ = os.MkdirAll(logsDir, 0o755)
+		_ = e.Files.MkdirAll(logsDir, 0o755)
+		// The shorts are what ffmpeg writes, so their folder is on the disk.
 		_ = os.MkdirAll(outDir, 0o755)
-		if err := writeProof(proof, clips, cueMap); err != nil {
+		if err := writeProof(e.Files, proof, clips, cueMap); err != nil {
 			log.Warn("could not write %s: %s", proof, err)
 		}
 		log.Info("proof: %s", proof)
@@ -909,7 +910,7 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 	return out
 }
 
-func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) error {
+func writeProof(fsys afero.Fs, path string, clips []Clip, cueMap map[string][]LaidCaption) error {
 	lines := []string{"Render proof", strings.Repeat("=", 60), ""}
 	for _, clip := range clips {
 		lines = append(lines, fmt.Sprintf("[%s]  %ss  %d segment(s)", clip.Basename(),
@@ -937,7 +938,7 @@ func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) erro
 		}
 		lines = append(lines, "")
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+	return afero.WriteFile(fsys, path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 // Interrupted is the message shown when a run is stopped with ctrl-c.
