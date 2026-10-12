@@ -119,13 +119,4 @@ fi
 
 [ -z "$targets" ] && exit 0
 
-# Fuzzing builds a package's tests with coverage counters of their own,
-# and every target started at once would build the same package again
-# beside the others, four times over on four cores. So the first target
-# of each package is fuzzed for one execution first, the packages side by
-# side, and the rest of the targets then find the build done.
-if [ "${FUZZWARM:-1}" = 1 ]; then
-	printf '%s\n' "$targets" | awk '!seen[$1]++' |
-		xargs -P "$JOBS" -n 2 sh -c '$0 test -run "^\$" -fuzz "^$2\$" -fuzztime 1x -parallel 1 "$1" >/dev/null 2>&1 || true' "$GO"
-fi
 printf '%s\n' "$targets" | xargs -P "$JOBS" -n 2 sh "$0" --one

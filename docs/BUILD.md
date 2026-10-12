@@ -181,10 +181,9 @@ number of seconds. A count means the same thing on a fast machine and a slow
 one, so a run here and a run in CI do the same work. Go fuzzes one target per
 process, so `scripts/fuzz.sh` runs as many targets side by side as the
 machine has cores, with one worker each. Fuzzing builds each package again
-with coverage counters, so the first target of every package runs once on
-its own first, and the targets after it find the build done instead of
-building it side by side. With the builds there it is under a minute on a
-small four core machine.
+with coverage counters, and that build is most of a run that starts with an
+empty cache: 3 min 37 s on a small four core machine, against 1 min 42 s
+with the builds there, most of it `FuzzPlanEdits`.
 
 One target is the exception. `FuzzSimulation`, the licence dispenser's
 simulation, plays a whole history of 400 steps in one execution, a fifth
