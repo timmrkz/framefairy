@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -41,7 +40,7 @@ func (s *FrameFairy) projectWith(path string, opts engine.Options) *engine.Proje
 func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	stamp := ""
 	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
-		info, err := os.Stat(file)
+		info, err := p.Files.Stat(file)
 		if err != nil {
 			stamp += "|-"
 			continue

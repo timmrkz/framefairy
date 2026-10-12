@@ -3,12 +3,13 @@ package engine
 import (
 	"bytes"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // Two captions in two pieces of a clip: "Als Kind stand ich dort." from 10

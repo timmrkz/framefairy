@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/spf13/afero"
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -595,5 +596,5 @@ func applyCorrections(fsys afero.Fs, path string, from, to fileState, dryRun boo
 	if err != nil {
 		return err
 	}
-	return writeAtomic(fsys, path, append(body, '\n'))
+	return WriteAtomic(fsys, path, append(body, '\n'))
 }

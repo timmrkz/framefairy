@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"github.com/spf13/afero"
 	"io"
 	"math"
 	"os/exec"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -526,7 +527,7 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if err := binary.Write(&raw, binary.LittleEndian, st.frames[:reach]); err != nil {
 		return err
 	}
-	if err := writeAtomic(fsys, framesAt, raw.Bytes()); err != nil {
+	if err := WriteAtomic(fsys, framesAt, raw.Bytes()); err != nil {
 		return err
 	}
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
@@ -537,5 +538,5 @@ func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) 
 	if err != nil {
 		return err
 	}
-	return writeAtomic(fsys, meta, body)
+	return WriteAtomic(fsys, meta, body)
 }

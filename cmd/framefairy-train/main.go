@@ -9,10 +9,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/spf13/afero"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 	"framefairy/train"

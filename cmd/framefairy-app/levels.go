@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/spf13/afero"
 	"io"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )

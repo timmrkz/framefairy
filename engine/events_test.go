@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"maps"
 	"math"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 type recorder struct {
@@ -254,7 +255,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := DeleteWork(source); err != nil {
+	if err := DeleteWork(disk, source); err != nil {
 		t.Fatal(err)
 	}
 	if exists(disk, work) {
@@ -266,7 +267,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 	if !exists(disk, records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
-	if err := DeleteWork(filepath.Join(dir, "missing.mp4")); err != nil {
+	if err := DeleteWork(disk, filepath.Join(dir, "missing.mp4")); err != nil {
 		t.Errorf("missing work folder: %v", err)
 	}
 }

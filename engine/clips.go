@@ -1,17 +1,16 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"encoding/json"
 	"fmt"
 	"math"
-
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // Segment is one continuous part of the source that ends up in a clip.

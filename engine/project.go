@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 // Project is one episode, driven step by step as the app does it. Every step

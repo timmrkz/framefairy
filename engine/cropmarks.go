@@ -2,11 +2,12 @@ package engine
 
 import (
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // A crop that follows, plan row 3.26. A person puts keyframes on frames

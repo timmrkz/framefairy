@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // VideoExtensions are the files the app takes as videos: what Add's box

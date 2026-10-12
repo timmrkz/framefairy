@@ -1,11 +1,12 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
 	"math"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 const captionPlan = `{

@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -12,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // transcriptVersion changes whenever the stored transcript changes meaning,
@@ -133,15 +133,15 @@ func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []f
 	if err := binary.Write(&raw, binary.LittleEndian, frames); err != nil {
 		return err
 	}
-	if err := writeAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
+	if err := WriteAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
 		return err
 	}
-	return writeAtomic(fsys, path, body)
+	return WriteAtomic(fsys, path, body)
 }
 
-// writeAtomic replaces the file at path with body in one step as far as
+// WriteAtomic replaces the file at path with body in one step as far as
 // any reader is concerned, see replaceFile.
-func writeAtomic(fsys afero.Fs, path string, body []byte) error {
+func WriteAtomic(fsys afero.Fs, path string, body []byte) error {
 	return replaceFile(fsys, path, "."+filepath.Base(path)+"-*", body, nil)
 }
 

@@ -2,11 +2,12 @@ package engine
 
 import (
 	"encoding/json"
-	"github.com/spf13/afero"
 	"math"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // A clip is a set of kept parts, so every cut is a gap between two of

@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/afero"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // answering answers like llama-server with the answers given, one a

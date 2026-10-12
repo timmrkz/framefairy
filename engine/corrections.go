@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/afero"
 	"maps"
 	"math"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/spf13/afero"
 )
 
 // Word corrections are kept per episode in logs/corrections.json, keyed by
@@ -83,7 +84,7 @@ func changeWords(fsys afero.Fs, logsDir string, t *Transcript,
 		var body []byte
 		body, err = marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
 		if err == nil {
-			err = writeAtomic(fsys, correctionsPath(logsDir), append(body, '\n'))
+			err = WriteAtomic(fsys, correctionsPath(logsDir), append(body, '\n'))
 		}
 	}
 	trainingMu.Unlock()

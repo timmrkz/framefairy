@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"os"
 	"os/exec"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // Every edit the app makes goes through editPlan, and the app has no save

@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -16,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 // object is a JSON object that remembers its key order, so an edit made by

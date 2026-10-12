@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // Options are everything a run can be told. The command line fills these in,

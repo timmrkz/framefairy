@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -55,13 +56,13 @@ func (w KeptWindow) ok() bool {
 // while the window is let go, each reading the file and writing it back.
 var chosenMu sync.Mutex
 
-func readChosen(path string) chosen {
+func readChosen(files afero.Fs, path string) chosen {
 	var held chosen
 	file, err := engine.SafeChild(engine.WorkDir(path), chosenFile)
 	if err != nil {
 		return held
 	}
-	data, err := os.ReadFile(file)
+	data, err := afero.ReadFile(files, file)
 	if err != nil || json.Unmarshal(data, &held) != nil {
 		return chosen{}
 	}
@@ -76,13 +77,13 @@ func readChosen(path string) chosen {
 
 // changeChosen reads the file, changes it and writes it back whole, through
 // a file of its own, so it is never found half written.
-func changeChosen(path string, change func(*chosen)) error {
+func changeChosen(files afero.Fs, path string, change func(*chosen)) error {
 	chosenMu.Lock()
 	defer chosenMu.Unlock()
-	held := readChosen(path)
+	held := readChosen(files, path)
 	change(&held)
 	dir := engine.WorkDir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := files.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	file, err := engine.SafeChild(dir, chosenFile)
@@ -93,25 +94,7 @@ func changeChosen(path string, change func(*chosen)) error {
 	if err != nil {
 		return err
 	}
-	hold, err := os.CreateTemp(dir, "chosen-*.json")
-	if err != nil {
-		return err
-	}
-	tmp := hold.Name()
-	if _, err := hold.Write(body); err != nil {
-		hold.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := hold.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, file); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
+	return engine.WriteAtomic(files, file, body)
 }
 
 // ChooseClip remembers which clip of an episode is being worked on, so
@@ -129,7 +112,7 @@ func (s *FrameFairy) ChooseClip(path, key string) error {
 	if !looksLikeClipKey(key) {
 		return errors.New("that is not the key of a clip")
 	}
-	return changeChosen(path, func(c *chosen) { c.Clip = key })
+	return changeChosen(s.store.files, path, func(c *chosen) { c.Clip = key })
 }
 
 // ChosenClip gives back the clip an episode was last worked on, or an empty
@@ -140,7 +123,7 @@ func (s *FrameFairy) ChosenClip(path string) string {
 	if !s.store.Known(path) {
 		return ""
 	}
-	return readChosen(path).Clip
+	return readChosen(s.store.files, path).Clip
 }
 
 // ChooseWindow remembers the window on an episode's range picker as it was
@@ -159,8 +142,8 @@ func (s *FrameFairy) ChooseWindow(path string, from, to, length float64, byHand 
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	was := readChosen(path).Window
-	if err := changeChosen(path, func(c *chosen) { c.Window = &w }); err != nil {
+	was := readChosen(s.store.files, path).Window
+	if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
 		return err
 	}
 	if byHand && (was == nil || *was != w) {
@@ -180,7 +163,7 @@ func (s *FrameFairy) ChosenWindow(path string) *KeptWindow {
 	if !s.store.Known(path) {
 		return nil
 	}
-	return readChosen(path).Window
+	return readChosen(s.store.files, path).Window
 }
 
 // looksLikeClipKey reports whether a string could be the key of a clip: a
@@ -210,7 +193,7 @@ func (s *FrameFairy) OpenEpisode(path string) error {
 		return errNotInLibrary
 	}
 	now := time.Now().UnixMilli()
-	return changeChosen(path, func(c *chosen) { c.Opened = max(now, c.Opened) })
+	return changeChosen(s.store.files, path, func(c *chosen) { c.Opened = max(now, c.Opened) })
 }
 
 // Opened lists the episodes of the library opened last, newest first, at
@@ -233,11 +216,11 @@ func (s *FrameFairy) Opened(n int) []string {
 		if err != nil {
 			continue
 		}
-		info, err := os.Stat(file)
+		info, err := s.store.files.Stat(file)
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if at := readChosen(ep).Opened; at > 0 {
+		if at := readChosen(s.store.files, ep).Opened; at > 0 {
 			all = append(all, seen{ep, true, at})
 		} else {
 			all = append(all, seen{ep, false, info.ModTime().UnixMilli()})

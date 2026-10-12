@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"io/fs"
 	"math"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -184,7 +185,7 @@ func WriteJob(fsys afero.Fs, source string, rec JobRecord) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(fsys, filepath.Join(JobsDir(source), rec.ID+".json"), body)
+	return WriteAtomic(fsys, filepath.Join(JobsDir(source), rec.ID+".json"), body)
 }
 
 // RemoveJob takes a job's record away. A job that has none is fine.

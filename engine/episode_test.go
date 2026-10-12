@@ -62,7 +62,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Errorf("status after a search %+v", st)
 	}
 
-	if err := DeleteWork(source); err != nil {
+	if err := DeleteWork(disk, source); err != nil {
 		t.Fatal(err)
 	}
 	if EverSearched(disk, source) {

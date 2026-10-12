@@ -5,13 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"

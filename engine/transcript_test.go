@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"os"
 	"os/exec"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
 )
@@ -863,7 +864,7 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	dir := "/logs"
 	path := filepath.Join(dir, "plan.json")
-	if err := writeAtomic(fsys, path, []byte("before")); err != nil {
+	if err := WriteAtomic(fsys, path, []byte("before")); err != nil {
 		t.Fatal(err)
 	}
 	refuse := func(string) error { return errors.New("not a plan") }
@@ -876,7 +877,7 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 	if left, _ := afero.Glob(fsys, filepath.Join(dir, ".*")); len(left) != 0 {
 		t.Errorf("left beside it: %v", left)
 	}
-	if err := writeAtomic(fsys, path, []byte("after")); err != nil {
+	if err := WriteAtomic(fsys, path, []byte("after")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := afero.ReadFile(fsys, path); string(got) != "after" {

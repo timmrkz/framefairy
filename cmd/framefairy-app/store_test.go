@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/spf13/afero"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -28,17 +28,27 @@ func memoryStore() *store {
 	return openStoreIn(afero.NewMemMapFs(), "/home/tim/config/FrameFairy")
 }
 
-func configHome(t *testing.T) string {
+// memoryLibrary is the app with a library in memory that holds the named
+// videos, each a few bytes that are not really a video.
+func memoryLibrary(t testing.TB, names ...string) (*FrameFairy, []string) {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	return home
+	st := memoryStore()
+	var eps []string
+	for _, name := range names {
+		ep := filepath.Join("/home/tim/videos", name)
+		if err := afero.WriteFile(st.files, ep, []byte("not really a video"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		eps = append(eps, ep)
+	}
+	st.episodes = eps
+	return &FrameFairy{store: st}, eps
 }
 
 func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
-	home := configHome(t)
-	st := openStore()
+	home, files := "/home/tim", afero.NewMemMapFs()
+	config := filepath.Join(home, "config", "FrameFairy")
+	st := openStoreIn(files, config)
 	if st.Settings().Target != 0 {
 		t.Errorf("a fresh store starts at %+v", st.Settings())
 	}
@@ -56,7 +66,7 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 	}
 
 	// A second store reads the same files back.
-	again := openStore()
+	again := openStoreIn(files, config)
 	if again.Settings().Target != 7 || again.Settings().HighlightColour != "#123456" {
 		t.Errorf("settings came back as %+v", again.Settings())
 	}
@@ -75,15 +85,15 @@ func TestStoreRemembersSettingsAndEpisodes(t *testing.T) {
 	if err := again.RemoveEpisode(second); err != nil {
 		t.Fatal(err)
 	}
-	if got := openStore().Episodes(); len(got) != 1 || got[0] != first {
+	if got := openStoreIn(files, config).Episodes(); len(got) != 1 || got[0] != first {
 		t.Errorf("after removing %v", got)
 	}
 }
 
 func TestKnownOnlyAcceptsFilesOfListedEpisodes(t *testing.T) {
-	home := configHome(t)
+	home := "/home/tim"
 	episode := filepath.Join(home, "ep.mp4")
-	st := openStore()
+	st := memoryStore()
 	if _, err := st.AddEpisodes([]string{episode}); err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +165,7 @@ func FuzzKnownStaysInTheLibrary(f *testing.F) {
 }
 
 func TestCancellingAQueuedJobNeverRunsIt(t *testing.T) {
-	configHome(t)
-	st := openStore()
+	st := memoryStore()
 	updates := make(chan JobUpdate, 100)
 	q := newQueue(st, func(u JobUpdate) { updates <- u }, nil)
 
@@ -210,8 +219,7 @@ func TestCancellingAQueuedJobNeverRunsIt(t *testing.T) {
 }
 
 func TestAFailedJobKeepsItsReason(t *testing.T) {
-	configHome(t)
-	st := openStore()
+	st := memoryStore()
 	done := make(chan Job, 20)
 	q := newQueue(st, func(u JobUpdate) {
 		if u.Job.State == JobFailed || u.Job.State == JobCancelled {
@@ -248,7 +256,8 @@ func TestAFailedJobKeepsItsReason(t *testing.T) {
 // in the workspace while the captions were being dragged was lost.
 func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
 	for round := range 20 {
-		s, path, _ := library(t)
+		s, eps := memoryLibrary(t, "ep.mp4")
+		path := eps[0]
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
@@ -277,15 +286,11 @@ func TestTwoSettingsChangedAtOnceBothStay(t *testing.T) {
 // which every search took whatever its window. It is read as following the
 // window, and a target typed since is kept.
 func TestAnOldCountFollowsTheWindow(t *testing.T) {
-	home := configHome(t)
-	dir := filepath.Join(home, "config", "FrameFairy")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	files, dir := afero.NewMemMapFs(), "/home/tim/config/FrameFairy"
+	if err := afero.WriteFile(files, filepath.Join(dir, "settings.json"), []byte(`{"count": 8, "min": 20, "max": 30}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"count": 8, "min": 20, "max": 30}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	st := openStore()
+	st := openStoreIn(files, dir)
 	if set := st.Settings(); set.Target != 0 || set.options().Count != 0 {
 		t.Errorf("an old count became a target: %+v", set)
 	}
@@ -296,8 +301,7 @@ func TestAnOldCountFollowsTheWindow(t *testing.T) {
 // window it was typed for keeps it. Three typed for the six minutes of one
 // episode went on asking for three in the half hour of the next.
 func TestATargetIsForItsWindow(t *testing.T) {
-	configHome(t)
-	s := &FrameFairy{store: openStore()}
+	s := &FrameFairy{store: memoryStore()}
 	if err := s.SetSearch(3, 360, 20, 30); err != nil {
 		t.Fatal(err)
 	}

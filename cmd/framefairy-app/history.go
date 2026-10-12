@@ -210,7 +210,7 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 		if window != nil {
 			w := *window
-			if err := changeChosen(path, func(c *chosen) { c.Window = &w }); err != nil {
+			if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
 				return Undone{}, err
 			}
 		}

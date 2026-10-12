@@ -179,7 +179,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return errors.New("something is still running on this video and would not stop, " +
 				"so nothing was deleted. Remove the video again in a moment")
 		}
-		if err := engine.DeleteWork(path); err != nil {
+		if err := engine.DeleteWork(s.store.files, path); err != nil {
 			return err
 		}
 	}

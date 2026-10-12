@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )

@@ -2,11 +2,12 @@ package engine
 
 import (
 	"errors"
-	"github.com/spf13/afero"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // edited runs an edit between two snapshots of the episode and gives what

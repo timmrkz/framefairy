@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine"
-
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
+
+	"framefairy/engine"
 )
 
 // testLog opens the app's log in a folder of the test's own and gives
@@ -322,7 +323,7 @@ func TestEditsAreLogged(t *testing.T) {
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
 	t.Helper()
 	p := svc.project(path)
-	info, err := os.Stat(path)
+	info, err := p.Files.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,14 +342,14 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
+	if err := p.Files.MkdirAll(p.LogsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
+	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	frames := make([]byte, 4*int(seconds/engine.FrameSeconds))
-	if err := os.WriteFile(filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
+	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.Transcript(); err != nil {

@@ -1,10 +1,10 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"fmt"
 	"math"
+
+	"github.com/spf13/afero"
 )
 
 // What a hand does to a clip on the clip timeline, and what it makes of the

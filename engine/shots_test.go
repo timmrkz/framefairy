@@ -3,9 +3,10 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/afero"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // A clip a search finds is in pieces that meet at every camera switch, and

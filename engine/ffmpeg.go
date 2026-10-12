@@ -1,8 +1,6 @@
 package engine
 
 import (
-	"github.com/spf13/afero"
-
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/internal/framewire"
 )
