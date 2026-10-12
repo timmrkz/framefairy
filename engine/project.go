@@ -291,7 +291,7 @@ func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if !exists(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
+		if !exists(p.Files, PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
 			return pass, nil
 		}
 	}

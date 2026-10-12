@@ -151,8 +151,8 @@ func EpisodeName(source string) string {
 	return base
 }
 
-func exists(path string) bool {
-	_, err := os.Stat(path)
+func exists(fsys afero.Fs, path string) bool {
+	_, err := fsys.Stat(path)
 	return err == nil
 }
 
@@ -217,7 +217,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(e.Files, r.planPath)) {
 		if err := roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
@@ -233,7 +233,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 // for the window, made first when there is none or a new one is asked for.
 func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 	plannedNow := false
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.e.Files, r.planPath)) {
 		if err := r.plan(ctx); err != nil {
 			return Plan{}, nil, err
 		}
@@ -289,7 +289,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
-	if !exists(opts.Source) {
+	if !exists(e.Files, opts.Source) {
 		return nil, fmt.Errorf("source not found: %s", opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
@@ -421,7 +421,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 				continue
 			}
 			moved := filepath.Join(logsDir, filepath.Base(old))
-			if exists(moved) {
+			if exists(e.Files, moved) {
 				continue
 			}
 			if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
@@ -438,7 +438,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	// another one. Planning costs money, so an existing plan is looked for
 	// before that happens rather than after.
 	experiment := opts.Experiment || IsExperiment(opts.Recipe)
-	if opts.ClipsPath == "" && !exists(planPath) && !opts.Replan && !opts.TranscribeOnly &&
+	if opts.ClipsPath == "" && !exists(e.Files, planPath) && !opts.Replan && !opts.TranscribeOnly &&
 		!opts.ExactPlan && !experiment {
 		matches, _ := afero.Glob(e.Files, filepath.Join(logsDir, "clips*.json"))
 		var existing []string
@@ -588,7 +588,7 @@ func (r *runner) plan(ctx context.Context) error {
 // that held nothing new.
 func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 	opts, log, planPath := r.opts, r.e.Log, r.planPath
-	if !exists(planPath) {
+	if !exists(r.e.Files, planPath) {
 		return Plan{}, nil, fmt.Errorf("clip plan not found: %s", planPath)
 	}
 

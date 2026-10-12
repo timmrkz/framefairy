@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/afero"
 	"io"
 	"math"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -135,14 +134,14 @@ func LevelsFiles(source string) []string {
 
 // readLevelsFile reads what logs/levels.json says, when it is about the
 // file as it is now and its parts are in order.
-func readLevelsFile(source string) (levelsFile, sourceStamp, bool) {
-	stamp, err := stampOf(source)
+func readLevelsFile(fsys afero.Fs, source string) (levelsFile, sourceStamp, bool) {
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		return levelsFile{}, stamp, false
 	}
 	meta, _ := levelsPaths(filepath.Join(WorkDir(source), "logs"))
 	var file levelsFile
-	data, err := os.ReadFile(meta)
+	data, err := afero.ReadFile(fsys, meta)
 	if err != nil || decodeJSON(data, &file) != nil ||
 		file.Version != levelsVersion || file.Source != stamp {
 		return levelsFile{}, stamp, false
@@ -160,8 +159,8 @@ func readLevelsFile(source string) (levelsFile, sourceStamp, bool) {
 // LevelsReach says what of an episode's loudness has been measured, in
 // seconds, and whether all of it, from the small json alone. The library
 // asks it for every episode, so it never reads the frames.
-func LevelsReach(source string) ([][2]float64, bool) {
-	file, _, ok := readLevelsFile(source)
+func LevelsReach(fsys afero.Fs, source string) ([][2]float64, bool) {
+	file, _, ok := readLevelsFile(fsys, source)
 	if !ok {
 		return nil, false
 	}
@@ -170,13 +169,13 @@ func LevelsReach(source string) ([][2]float64, bool) {
 
 // ReadLevels reads what has been measured of an episode's loudness. An
 // episode never measured, or measured before its file changed, has none.
-func ReadLevels(source string) Levels {
-	file, _, ok := readLevelsFile(source)
+func ReadLevels(fsys afero.Fs, source string) Levels {
+	file, _, ok := readLevelsFile(fsys, source)
 	if !ok || len(file.Parts) == 0 {
 		return Levels{}
 	}
 	_, framesAt := levelsPaths(filepath.Join(WorkDir(source), "logs"))
-	raw, err := os.ReadFile(framesAt)
+	raw, err := afero.ReadFile(fsys, framesAt)
 	if err != nil || len(raw)%4 != 0 {
 		return Levels{}
 	}
@@ -300,11 +299,11 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 	if focus == nil {
 		focus = func() (float64, float64) { return 0, 0 }
 	}
-	had := ReadLevels(source)
+	had := ReadLevels(e.Files, source)
 	if had.Done {
 		return nil
 	}
-	stamp, err := stampOf(source)
+	stamp, err := stampOf(e.Files, source)
 	if err != nil {
 		return err
 	}
@@ -313,7 +312,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		return err
 	}
 	st := &levelState{end: -1}
-	if file, _, ok := readLevelsFile(source); ok && file.End > 0 {
+	if file, _, ok := readLevelsFile(e.Files, source); ok && file.End > 0 {
 		st.end = file.End
 	}
 	for _, p := range had.Parts {

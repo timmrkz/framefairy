@@ -130,7 +130,7 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	if heard := d.speech.seconds(); heard > 300+30 {
 		t.Errorf("%.0f s heard for a 300 s episode, %.0f s of them before the app closed", heard, given)
 	}
-	if left := engine.ReadJobs(ep); len(left) != 0 {
+	if left := engine.ReadJobs(disk, ep); len(left) != 0 {
 		t.Errorf("records left: %+v", left)
 	}
 }

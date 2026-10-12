@@ -27,7 +27,7 @@ func TestJobLogsAreKeptToTheNewest(t *testing.T) {
 		t.Fatalf("%d logs kept, want %d", len(entries), jobLogsKept)
 	}
 	// The logs lie beside the records and are none of them.
-	if recs := ReadJobs(source); len(recs) != 0 {
+	if recs := ReadJobs(disk, source); len(recs) != 0 {
 		t.Errorf("logs read as records: %+v", recs)
 	}
 	// The five oldest went.

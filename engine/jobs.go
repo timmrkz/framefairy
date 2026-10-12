@@ -188,11 +188,11 @@ func WriteJob(fsys afero.Fs, source string, rec JobRecord) error {
 }
 
 // RemoveJob takes a job's record away. A job that has none is fine.
-func RemoveJob(source, id string) error {
+func RemoveJob(fsys afero.Fs, source, id string) error {
 	if !jobID.MatchString(id) {
 		return nil
 	}
-	err := os.Remove(filepath.Join(JobsDir(source), id+".json"))
+	err := fsys.Remove(filepath.Join(JobsDir(source), id+".json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -202,8 +202,8 @@ func RemoveJob(source, id string) error {
 // ReadJobs gives the records of an episode's jobs, the search first and
 // the renders in the order they were asked for. Every file is read as
 // untrusted: one that is not a record of this episode is no record.
-func ReadJobs(source string) []JobRecord {
-	entries, err := os.ReadDir(JobsDir(source))
+func ReadJobs(fsys afero.Fs, source string) []JobRecord {
+	entries, err := afero.ReadDir(fsys, JobsDir(source))
 	if err != nil {
 		return nil
 	}
@@ -211,10 +211,10 @@ func ReadJobs(source string) []JobRecord {
 	for _, e := range entries {
 		name := e.Name()
 		id := strings.TrimSuffix(name, ".json")
-		if !e.Type().IsRegular() || id == name || !jobID.MatchString(id) {
+		if !e.Mode().IsRegular() || id == name || !jobID.MatchString(id) {
 			continue
 		}
-		if rec, ok := readJob(source, filepath.Join(JobsDir(source), name)); ok && rec.ID == id {
+		if rec, ok := readJob(fsys, source, filepath.Join(JobsDir(source), name)); ok && rec.ID == id {
 			out = append(out, rec)
 		}
 	}
@@ -235,7 +235,7 @@ func ReadJobs(source string) []JobRecord {
 // its work was, the same way a job cut off by the app closing does, see
 // docs/JOBS.md. A job with no record is left alone.
 func StopJob(fsys afero.Fs, source, id string) error {
-	for _, rec := range ReadJobs(source) {
+	for _, rec := range ReadJobs(fsys, source) {
 		if rec.ID != id {
 			continue
 		}
@@ -252,20 +252,20 @@ func StopJob(fsys afero.Fs, source, id string) error {
 
 // ReadSearch gives the record of the episode's search, or nil when it has
 // none.
-func ReadSearch(source string) *JobRecord {
-	rec, ok := readJob(source, filepath.Join(JobsDir(source), SearchID+".json"))
+func ReadSearch(fsys afero.Fs, source string) *JobRecord {
+	rec, ok := readJob(fsys, source, filepath.Join(JobsDir(source), SearchID+".json"))
 	if !ok || rec.ID != SearchID {
 		return nil
 	}
 	return &rec
 }
 
-func readJob(source, path string) (JobRecord, bool) {
-	info, err := os.Lstat(path)
+func readJob(fsys afero.Fs, source, path string) (JobRecord, bool) {
+	info, err := LstatIn(fsys, path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > recordLimit {
 		return JobRecord{}, false
 	}
-	body, err := os.ReadFile(path)
+	body, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		return JobRecord{}, false
 	}
@@ -401,7 +401,7 @@ func (j *job) end(err *error) {
 			j.rec.Steps[n-1].To = &now
 		}
 		j.p.addTimings(j.rec)
-		if rerr := RemoveJob(j.p.Source, j.rec.ID); rerr != nil {
+		if rerr := RemoveJob(j.p.Files, j.p.Source, j.rec.ID); rerr != nil {
 			j.p.engine.Log.Warn("could not clear the %s: %s", j.rec.Kind, rerr)
 		}
 	case errors.Is(*err, ErrCancelled):
@@ -483,7 +483,7 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
 	span Window) error {
 	for {
-		if len(Unheard(p.Source, p.Base.ASRModel, span)) == 0 {
+		if len(Unheard(p.Files, p.Source, p.Base.ASRModel, span)) == 0 {
 			return nil
 		}
 		stepCtx, release, err := turn(ctx, StepHearing)
@@ -506,7 +506,7 @@ func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (
 		if err != nil {
 			return err
 		}
-		if gaps := Unheard(p.Source, p.Base.ASRModel, span); len(gaps) > 0 {
+		if gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span); len(gaps) > 0 {
 			return fmt.Errorf("the transcription left %s to %s unheard", HMS(gaps[0].Start), HMS(gaps[0].End))
 		}
 	}
@@ -647,8 +647,8 @@ func (p *Project) modelName() string {
 
 // ReadTimings gives the timings of an episode's finished jobs, oldest
 // first. A line that is not one is left out.
-func ReadTimings(source string) []Timing {
-	body, err := os.ReadFile(filepath.Join(JobsDir(source), timingsName))
+func ReadTimings(fsys afero.Fs, source string) []Timing {
+	body, err := afero.ReadFile(fsys, filepath.Join(JobsDir(source), timingsName))
 	if err != nil {
 		return nil
 	}

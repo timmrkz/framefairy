@@ -50,10 +50,10 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		case ctx.Err() != nil:
 			// Called off before it started, it loads nothing.
 		case req.To <= 0:
-			_, done := engine.Coverage(p.Source, model)
+			_, done := engine.Coverage(s.store.files, p.Source, model)
 			unheard = !done
 		default:
-			unheard = len(engine.Unheard(p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
+			unheard = len(engine.Unheard(s.store.files, p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
 		}
 		if unheard {
 			go func() {
@@ -87,7 +87,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
 		// A search that was refused wrote no record, and the one on disk
 		// is an older search's, about another window.
-		if rec := engine.ReadSearch(path); rec != nil && stopped.Record != "" {
+		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.Record != "" {
 			req = rec.Request()
 		}
 		if req.Count == 0 {
@@ -104,7 +104,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		return s.Search(path, req, click)
 	}
 	var carry *engine.JobRecord
-	for _, rec := range engine.ReadJobs(path) {
+	for _, rec := range engine.ReadJobs(s.store.files, path) {
 		if rec.ID == stopped.Record {
 			carry = &rec
 		}
@@ -273,7 +273,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 }
 
 func (s *FrameFairy) forgetRecord(path, record string) {
-	if err := engine.RemoveJob(path, record); err != nil {
+	if err := engine.RemoveJob(s.store.files, path, record); err != nil {
 		log.Printf("could not clear the record of %s: %v", path, err)
 	}
 }

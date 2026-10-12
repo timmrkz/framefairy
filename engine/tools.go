@@ -208,7 +208,7 @@ func (e *Engine) UseTools(ffmpeg, ffprobe string) {
 	if strings.EqualFold(filepath.Ext(ffmpeg), ".exe") {
 		name = "ffprobe.exe"
 	}
-	if guess := filepath.Join(filepath.Dir(ffmpeg), name); exists(guess) {
+	if guess := filepath.Join(filepath.Dir(ffmpeg), name); exists(disk, guess) {
 		e.FFprobe = guess
 	}
 }

@@ -376,7 +376,7 @@ func jobLabel(kind string, preview bool) string {
 // where its work was. See engine/jobs.go.
 func (q *queue) restore(episodes []string) {
 	for _, episode := range episodes {
-		for _, rec := range engine.ReadJobs(episode) {
+		for _, rec := range engine.ReadJobs(q.store.files, episode) {
 			state := JobInterrupted
 			if !rec.Interrupted() {
 				state = JobFailed

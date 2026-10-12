@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/afero"
@@ -32,9 +33,9 @@ func OnDisk(fsys afero.Fs) bool {
 	return ok
 }
 
-// resolveIn is resolvePath for a path in fsys. Memory holds no links, so a
+// ResolveIn is ResolvePath for a path in fsys. Memory holds no links, so a
 // path there leads where it says, and cleaning it is all there is to do.
-func resolveIn(fsys afero.Fs, path string) string {
+func ResolveIn(fsys afero.Fs, path string) string {
 	if OnDisk(fsys) {
 		return resolvePath(path)
 	}
@@ -42,4 +43,14 @@ func resolveIn(fsys afero.Fs, path string) string {
 		return abs
 	}
 	return filepath.Clean(path)
+}
+
+// LstatIn is os.Lstat in fsys: a link is told as the link, not as what it
+// leads to. Memory holds no links, so there it is Stat.
+func LstatIn(fsys afero.Fs, path string) (os.FileInfo, error) {
+	if l, ok := fsys.(afero.Lstater); ok {
+		info, _, err := l.LstatIfPossible(path)
+		return info, err
+	}
+	return fsys.Stat(path)
 }

@@ -149,7 +149,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 			// The search's own record says which pass of its window it
 			// is, and so which plan it writes.
 			rec := engine.JobRecord{From: j.From, To: j.To}
-			if r := engine.ReadSearch(j.Episode); r != nil {
+			if r := engine.ReadSearch(s.store.files, j.Episode); r != nil {
 				rec = *r
 			}
 			duration := rec.To

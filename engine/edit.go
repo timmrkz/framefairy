@@ -164,7 +164,7 @@ var fileLocks sync.Map
 // A file in memory has no other program to share it with, so its lock is
 // the one inside the program alone.
 func lockFile(fsys afero.Fs, path string) func() {
-	key := resolveIn(fsys, path)
+	key := ResolveIn(fsys, path)
 	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()

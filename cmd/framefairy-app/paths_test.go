@@ -194,7 +194,7 @@ func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
 	if o := d.outcome(ep); !o.stopped || o.window != (window{60, 240}) {
 		t.Fatalf("a search Cancel reached the Go side ahead of says %+v", o)
 	}
-	rec := engine.ReadSearch(ep)
+	rec := engine.ReadSearch(disk, ep)
 	if rec == nil || rec.Step != engine.StepStopped {
 		t.Fatalf("its record is %+v", rec)
 	}
@@ -413,7 +413,7 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	}
 	asked := func(ep string) int {
 		d.idle(ep)
-		timings := engine.ReadTimings(ep)
+		timings := engine.ReadTimings(disk, ep)
 		if len(timings) != 1 {
 			t.Fatalf("%d searches of %s", len(timings), ep)
 		}

@@ -65,7 +65,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if got := ReadLevels(source); len(got.Frames) != 0 || got.Done {
+	if got := ReadLevels(disk, source); len(got.Frames) != 0 || got.Done {
 		t.Fatal("levels out of nowhere")
 	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
@@ -78,7 +78,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for !stop.Load() {
-				l := ReadLevels(source)
+				l := ReadLevels(disk, source)
 				if l.To() > 3.1 {
 					t.Errorf("levels reach %.2f s of 3", l.To())
 				}
@@ -93,7 +93,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	l := ReadLevels(source)
+	l := ReadLevels(disk, source)
 	if !l.Done || math.Abs(l.To()-3) > 0.05 {
 		t.Fatalf("done %v, %.2f s", l.Done, l.To())
 	}
@@ -119,7 +119,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if err := os.Chtimes(source, later, later); err != nil {
 		t.Fatal(err)
 	}
-	if got := ReadLevels(source); len(got.Frames) != 0 {
+	if got := ReadLevels(disk, source); len(got.Frames) != 0 {
 		t.Error("the levels of the file before were read for the file now")
 	}
 }
@@ -142,7 +142,7 @@ func TestMeasureLevelsStops(t *testing.T) {
 	if err := e.MeasureLevels(ctx, source, nil, nil); err == nil {
 		t.Error("a measuring called off said it finished")
 	}
-	if ReadLevels(source).Done {
+	if ReadLevels(disk, source).Done {
 		t.Error("levels called off claim to be done")
 	}
 }
@@ -157,7 +157,7 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if parts, done := LevelsReach(source); len(parts) != 0 || done {
+	if parts, done := LevelsReach(disk, source); len(parts) != 0 || done {
 		t.Fatalf("an episode never measured has %v, done %v", parts, done)
 	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
@@ -165,9 +165,9 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	parts, done := LevelsReach(source)
-	if !done || len(parts) != 1 || parts[0][0] != 0 || math.Abs(parts[0][1]-ReadLevels(source).To()) > 1e-9 {
-		t.Errorf("parts %v done %v, frames %.2f", parts, done, ReadLevels(source).To())
+	parts, done := LevelsReach(disk, source)
+	if !done || len(parts) != 1 || parts[0][0] != 0 || math.Abs(parts[0][1]-ReadLevels(disk, source).To()) > 1e-9 {
+		t.Errorf("parts %v done %v, frames %.2f", parts, done, ReadLevels(disk, source).To())
 	}
 	if st := Status(disk, source, ""); !st.MeasuredAll || st.Measured != parts[0][1] {
 		t.Errorf("the library says %.2f, all %v", st.Measured, st.MeasuredAll)
@@ -210,7 +210,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	}
 	var first, moved [][2]int
 	err := e.MeasureLevels(context.Background(), source, focus, func(float64) {
-		l := ReadLevels(source)
+		l := ReadLevels(disk, source)
 		if first == nil && len(l.Parts) > 0 {
 			first = l.Parts
 			mu.Lock()
@@ -232,7 +232,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 			partSeconds(moved))
 	}
 
-	jumped := ReadLevels(source)
+	jumped := ReadLevels(disk, source)
 	if !jumped.Done || len(jumped.Parts) != 1 {
 		t.Fatalf("done %v, parts %v", jumped.Done, partSeconds(jumped.Parts))
 	}
@@ -245,7 +245,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	if err := e.MeasureLevels(context.Background(), again, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	whole := ReadLevels(again)
+	whole := ReadLevels(disk, again)
 	if len(whole.Frames) != len(jumped.Frames) {
 		t.Fatalf("%d frames from the start, %d where the view went", len(whole.Frames), len(jumped.Frames))
 	}
@@ -284,7 +284,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 		t.Fatal("a measuring cut off said it finished")
 	}
 	e.levelsEvery = 0
-	had := ReadLevels(source)
+	had := ReadLevels(disk, source)
 	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(60/FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)
 	}
@@ -295,7 +295,7 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 	if err := e.MeasureLevels(context.Background(), source, nil, func(float64) { calls++ }); err != nil {
 		t.Fatal(err)
 	}
-	l := ReadLevels(source)
+	l := ReadLevels(disk, source)
 	if !l.Done || len(l.Parts) != 1 {
 		t.Fatalf("done %v, parts %v", l.Done, partSeconds(l.Parts))
 	}

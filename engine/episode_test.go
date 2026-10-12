@@ -51,7 +51,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if !EverSearched(disk, source) {
 		t.Fatal("an episode being searched says it was not searched")
 	}
-	if err := RemoveJob(source, SearchID); err != nil {
+	if err := RemoveJob(disk, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})

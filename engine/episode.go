@@ -126,18 +126,18 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	}
 	model := filepath.Base(filepath.Clean(asrModelDir))
 	whole := filepath.Join(logs, TranscriptName(nil))
-	if stamp, err := stampOf(source); err == nil {
-		if file, _, _, ok := readTranscriptFile(whole, stamp, model); ok {
+	if stamp, err := stampOf(fsys, source); err == nil {
+		if file, _, _, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
 			st.Transcribed = file.done()
 			st.Heard = file.heard()
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}
-		} else if exists(whole) {
+		} else if exists(fsys, whole) {
 			st.TranscriptStale = true
 		}
 	}
-	st.MeasuredParts, st.MeasuredAll = LevelsReach(source)
+	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
@@ -150,7 +150,7 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 		}
 	}
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
-	st.Work = exists(work)
+	st.Work = exists(fsys, work)
 	st.EverSearched = EverSearched(fsys, source)
 	return st
 }
@@ -167,10 +167,10 @@ func EverSearched(fsys afero.Fs, source string) bool {
 			return true
 		}
 	}
-	if ReadSearch(source) != nil {
+	if ReadSearch(fsys, source) != nil {
 		return true
 	}
-	for _, t := range ReadTimings(source) {
+	for _, t := range ReadTimings(fsys, source) {
 		if t.Kind == JobSearch {
 			return true
 		}
@@ -289,14 +289,14 @@ func (p *Project) Transcript() (*Transcript, error) {
 // hearing it has got, with its corrections. It never transcribes, and
 // returns ErrNoTranscript when there is nothing heard yet.
 func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
-	stamp, err := stampOf(source)
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		return nil, err
 	}
 	if modelDir == "" {
 		modelDir = DefaultModelDir()
 	}
-	file, words, frames, ok := readTranscriptFile(filepath.Join(logsDir, TranscriptName(nil)),
+	file, words, frames, ok := readTranscriptFile(fsys, filepath.Join(logsDir, TranscriptName(nil)),
 		stamp, filepath.Base(filepath.Clean(modelDir)))
 	if !ok {
 		return nil, ErrNoTranscript
@@ -669,8 +669,9 @@ func shortStem(dir string, plan Plan, c Clip) string {
 // shortOf: the folder and the name its path really leads to, and the
 // size and the modification time it was written with.
 func recordShort(fsys afero.Fs, planPath, clipID, short string) error {
-	real := resolveIn(fsys, short)
-	info, err := fsys.Stat(real)
+	// The short is what ffmpeg wrote, so it is on the disk, see files.go.
+	real := ResolvePath(short)
+	info, err := os.Stat(real)
 	if err != nil {
 		return err
 	}

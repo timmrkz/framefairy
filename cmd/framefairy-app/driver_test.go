@@ -84,7 +84,7 @@ func (d *desk) start(st *store) {
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(func(episode string) { d.bus.send("levels", episode) })
+		d.svc.levels = newMeasuring(d.svc.store.files, func(episode string) { d.bus.send("levels", episode) })
 	}
 	svc := d.svc
 	// Whatever is still running when the test ends is stopped before its
@@ -327,7 +327,7 @@ func (d *desk) clips(path string) []ClipEntry {
 // heard is how far the episode's transcript reaches, and whether it is all
 // of it.
 func (d *desk) heard(path string) (float64, bool) {
-	return engine.Coverage(path, d.svc.store.Settings().ASRModel)
+	return engine.Coverage(disk, path, d.svc.store.Settings().ASRModel)
 }
 
 // shorts are the finished shorts of the library, each where its path

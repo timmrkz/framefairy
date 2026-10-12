@@ -337,7 +337,7 @@ func calledOff(t *testing.T, svc *FrameFairy, path, id string) {
 				running = true
 			}
 		}
-		if !running && len(engine.ReadJobs(path)) == 0 {
+		if !running && len(engine.ReadJobs(disk, path)) == 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

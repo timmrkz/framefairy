@@ -44,7 +44,7 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	told := &atomic.Int64{}
 	s := &FrameFairy{store: st}
 	s.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
-	s.levels = newMeasuring(func(string) { told.Add(1) })
+	s.levels = newMeasuring(s.store.files, func(string) { told.Add(1) })
 	t.Cleanup(s.levels.shutDown)
 	return s, paths, told
 }
@@ -53,7 +53,7 @@ func measured(t *testing.T, path string) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		if _, done := engine.LevelsReach(path); done {
+		if _, done := engine.LevelsReach(disk, path); done {
 			return
 		}
 		if time.Now().After(deadline) {

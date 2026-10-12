@@ -64,10 +64,10 @@ func TestAClipMadeByHand(t *testing.T) {
 	}
 	// Heard where the clip can reach, and not from the start.
 	reach := ClipRequest{At: 20}.reach(30, 70)
-	if gaps := Unheard(source, p.Base.ASRModel, reach); len(gaps) != 0 {
+	if gaps := Unheard(disk, source, p.Base.ASRModel, reach); len(gaps) != 0 {
 		t.Errorf("%v not heard, of the %v the clip can reach", gaps, reach)
 	}
-	if covered, _ := Coverage(source, p.Base.ASRModel); covered != 0 {
+	if covered, _ := Coverage(disk, source, p.Base.ASRModel); covered != 0 {
 		t.Errorf("heard from the start to %.1f s", covered)
 	}
 	view, err := ReadPlan(disk, p.HandPlanPath())
@@ -90,7 +90,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if passes := fmt.Sprint(SearchPasses(summaries, 70)); passes != "[{{0 70} 0}]" {
 		t.Errorf("clips made by hand searched %s", passes)
 	}
-	if left := ReadJobs(source); len(left) != 0 {
+	if left := ReadJobs(disk, source); len(left) != 0 {
 		t.Errorf("records left behind: %+v", left)
 	}
 
@@ -223,7 +223,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 	if last := lists[len(lists)-1]; len(last) != 1 || last[0].Step != StepStopped || last[0].Start != 30 {
 		t.Errorf("last on the way %+v, want it stopped at the playhead", last)
 	}
-	recs := ReadJobs(source)
+	recs := ReadJobs(disk, source)
 	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || !recs[0].Interrupted() {
 		t.Errorf("records %+v", recs)
 	}

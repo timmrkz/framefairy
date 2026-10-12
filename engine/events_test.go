@@ -255,13 +255,13 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 	if err := DeleteWork(source); err != nil {
 		t.Fatal(err)
 	}
-	if exists(work) {
+	if exists(disk, work) {
 		t.Errorf("the work folder is still there")
 	}
-	if !exists(source) {
+	if !exists(disk, source) {
 		t.Errorf("the episode itself was deleted")
 	}
-	if !exists(records) {
+	if !exists(disk, records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
 	if err := DeleteWork(filepath.Join(dir, "missing.mp4")); err != nil {

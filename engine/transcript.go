@@ -92,8 +92,8 @@ func (f transcriptFile) done() bool {
 	return end > 0 && len(parts) == 1 && parts[0][0] <= 0.005 && parts[0][1] >= end-0.05
 }
 
-func stampOf(path string) (sourceStamp, error) {
-	info, err := os.Stat(path)
+func stampOf(fsys afero.Fs, path string) (sourceStamp, error) {
+	info, err := fsys.Stat(path)
 	if err != nil {
 		return sourceStamp{}, err
 	}
@@ -212,8 +212,8 @@ func storedWords(words []Cue) [][3]any {
 // episode without a gap, in seconds, and whether it has heard all of it.
 // What is heard further on, where a search or a clip made by hand needed
 // it first, is in HeardParts.
-func Coverage(source, asrModelDir string) (float64, bool) {
-	file, _, _, ok := readEpisodeTranscript(source, asrModelDir)
+func Coverage(fsys afero.Fs, source, asrModelDir string) (float64, bool) {
+	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
 	if !ok {
 		return 0, false
 	}
@@ -226,8 +226,8 @@ func Coverage(source, asrModelDir string) (float64, bool) {
 
 // HeardParts is every part of the episode its transcript has heard, in
 // seconds, in order and apart.
-func HeardParts(source, asrModelDir string) [][2]float64 {
-	file, _, _, ok := readEpisodeTranscript(source, asrModelDir)
+func HeardParts(fsys afero.Fs, source, asrModelDir string) [][2]float64 {
+	file, _, _, ok := readEpisodeTranscript(fsys, source, asrModelDir)
 	if !ok {
 		return nil
 	}
@@ -236,8 +236,8 @@ func HeardParts(source, asrModelDir string) [][2]float64 {
 
 // Unheard is what of a span of the episode its transcript has not heard
 // yet, in order. A gap too short to hold a word is left.
-func Unheard(source, asrModelDir string, span Window) []Window {
-	return gapsIn(HeardParts(source, asrModelDir), span)
+func Unheard(fsys afero.Fs, source, asrModelDir string, span Window) []Window {
+	return gapsIn(HeardParts(fsys, source, asrModelDir), span)
 }
 
 func gapsIn(parts [][2]float64, span Window) []Window {
@@ -266,8 +266,8 @@ func gapsIn(parts [][2]float64, span Window) []Window {
 
 // readEpisodeTranscript reads an episode's transcript, heard or not, for
 // the speech model in asrModelDir, the default one when that is empty.
-func readEpisodeTranscript(source, asrModelDir string) (transcriptFile, []Cue, []float32, bool) {
-	stamp, err := stampOf(source)
+func readEpisodeTranscript(fsys afero.Fs, source, asrModelDir string) (transcriptFile, []Cue, []float32, bool) {
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		return transcriptFile{}, nil, nil, false
 	}
@@ -275,15 +275,15 @@ func readEpisodeTranscript(source, asrModelDir string) (transcriptFile, []Cue, [
 		asrModelDir = DefaultModelDir()
 	}
 	path := filepath.Join(WorkDir(source), "logs", TranscriptName(nil))
-	return readTranscriptFile(path, stamp, filepath.Base(filepath.Clean(asrModelDir)))
+	return readTranscriptFile(fsys, path, stamp, filepath.Base(filepath.Clean(asrModelDir)))
 }
 
 // sliceTranscript cuts a window out of the episode's transcript, so no part
 // of the audio is ever heard twice. It has to have heard all of the window.
 // The noise floor stays the one measured over all that was heard.
-func sliceTranscript(path string, stamp sourceStamp, model string, window Window,
+func sliceTranscript(fsys afero.Fs, path string, stamp sourceStamp, model string, window Window,
 	silenceDB *float64) (*Transcript, bool) {
-	file, words, frames, ok := readTranscriptFile(path, stamp, model)
+	file, words, frames, ok := readTranscriptFile(fsys, path, stamp, model)
 	if !ok || len(gapsIn(file.heard(), window)) > 0 {
 		return nil, false
 	}
@@ -302,10 +302,10 @@ func sliceTranscript(path string, stamp sourceStamp, model string, window Window
 	return fromStored(inside, frames[first:last], start, float64(file.Mean), silenceDB), true
 }
 
-func readTranscriptFile(path string, stamp sourceStamp, model string) (transcriptFile, []Cue,
+func readTranscriptFile(fsys afero.Fs, path string, stamp sourceStamp, model string) (transcriptFile, []Cue,
 	[]float32, bool) {
 	var file transcriptFile
-	data, err := os.ReadFile(path)
+	data, err := afero.ReadFile(fsys, path)
 	if err != nil || decodeJSON(data, &file) != nil {
 		return file, nil, nil, false
 	}
@@ -313,7 +313,7 @@ func readTranscriptFile(path string, stamp sourceStamp, model string) (transcrip
 		file.Source != stamp || file.Model != model {
 		return file, nil, nil, false
 	}
-	raw, err := os.ReadFile(framesPath(path))
+	raw, err := afero.ReadFile(fsys, framesPath(path))
 	if err != nil || len(raw)%4 != 0 {
 		return file, nil, nil, false
 	}
@@ -433,13 +433,13 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 
 func (e *Engine) loadTranscript(ctx context.Context, source string, window Window, duration float64,
 	logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
-	stamp, err := stampOf(source)
+	stamp, err := stampOf(e.Files, source)
 	if err != nil {
 		return nil, err
 	}
 	path := filepath.Join(logsDir, TranscriptName(nil))
 	model := filepath.Base(filepath.Clean(modelDir))
-	if t, ok := sliceTranscript(path, stamp, model, window, silenceDB); ok {
+	if t, ok := sliceTranscript(e.Files, path, stamp, model, window, silenceDB); ok {
 		e.Log.OK("reusing the transcript in %s", filepath.Base(path))
 		return t, nil
 	}
@@ -452,7 +452,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 	// On frames, outward, so what is heard lines up with the loudness.
 	span := Window{math.Floor(window.Start/FrameSeconds+1e-6) * FrameSeconds,
 		math.Min(math.Ceil(window.End/FrameSeconds-1e-6)*FrameSeconds, duration)}
-	file, _, _, ok := readTranscriptFile(path, stamp, model)
+	file, _, _, ok := readTranscriptFile(e.Files, path, stamp, model)
 	var had [][2]float64
 	if ok {
 		had = file.heard()
@@ -506,7 +506,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 	if err != nil {
 		return nil, err
 	}
-	if t, ok := sliceTranscript(path, stamp, model, window, silenceDB); ok {
+	if t, ok := sliceTranscript(e.Files, path, stamp, model, window, silenceDB); ok {
 		return t, nil
 	}
 	return nil, renderErr("the finished transcript could not be read back from %s", path)
@@ -526,7 +526,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part Window,
 	raw []Cue, frames []float32, read float64) error {
 	defer lockFile(fsys, path)()
-	file, had, hadFrames, ok := readTranscriptFile(path, stamp, model)
+	file, had, hadFrames, ok := readTranscriptFile(fsys, path, stamp, model)
 	var parts [][2]float64
 	if ok {
 		parts = file.heard()

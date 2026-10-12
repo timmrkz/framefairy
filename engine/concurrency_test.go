@@ -37,7 +37,7 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 				if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
 					t.Error(err)
 				}
-				if !EverSearched(disk, source) || ReadSearch(source) == nil {
+				if !EverSearched(disk, source) || ReadSearch(disk, source) == nil {
 					t.Error("a search being written was not read whole")
 				}
 			}

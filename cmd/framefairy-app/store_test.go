@@ -22,6 +22,12 @@ import (
 // the system itself has to see.
 var disk = afero.NewOsFs()
 
+// memoryStore is a store with its settings, its library and every
+// episode's files in memory, for a test of what the app does with them.
+func memoryStore() *store {
+	return openStoreIn(afero.NewMemMapFs(), "/home/tim/config/FrameFairy")
+}
+
 func configHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
@@ -123,12 +129,12 @@ func FuzzKnownStaysInTheLibrary(f *testing.F) {
 		if name == "" || strings.ContainsRune(name, 0) || strings.ContainsRune(asked, 0) {
 			t.Skip()
 		}
-		home := configHome(t)
+		home := "/home/tim"
 		episode := filepath.Join(home, name)
 		if !filepath.IsLocal(name) {
 			t.Skip()
 		}
-		st := openStore()
+		st := memoryStore()
 		if _, err := st.AddEpisodes([]string{episode}); err != nil {
 			t.Skip()
 		}

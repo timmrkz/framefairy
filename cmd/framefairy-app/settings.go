@@ -138,7 +138,13 @@ func openStore() *store {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	s := &store{dir: filepath.Join(dir, "FrameFairy"), files: afero.NewOsFs(), settings: defaultSettings()}
+	return openStoreIn(afero.NewOsFs(), filepath.Join(dir, "FrameFairy"))
+}
+
+// openStoreIn is the store whose settings and library are in dir, with
+// everything read and written through files.
+func openStoreIn(files afero.Fs, dir string) *store {
+	s := &store{dir: dir, files: files, settings: defaultSettings()}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
@@ -147,14 +153,14 @@ func openStore() *store {
 }
 
 func (s *store) load(name string, into any) {
-	data, err := os.ReadFile(filepath.Join(s.dir, name))
+	data, err := afero.ReadFile(s.files, filepath.Join(s.dir, name))
 	if err == nil {
 		_ = json.Unmarshal(data, into)
 	}
 }
 
 func (s *store) save(name string, value any) error {
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := s.files.MkdirAll(s.dir, 0o755); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(value, "", "  ")
@@ -163,10 +169,10 @@ func (s *store) save(name string, value any) error {
 	}
 	path := filepath.Join(s.dir, name)
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o644); err != nil {
+	if err := afero.WriteFile(s.files, tmp, body, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return s.files.Rename(tmp, path)
 }
 
 func (s *store) Settings() Settings {
@@ -232,7 +238,7 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		if err != nil || seen[abs] {
 			continue
 		}
-		if why := linkedEpisode(abs); why != "" {
+		if why := linkedEpisode(s.files, abs); why != "" {
 			clash = append(clash, why)
 			continue
 		}
@@ -261,12 +267,12 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 // itself was taken as it was found: a zip with episode.mp4 and an
 // episode.framefairy that led to the home folder made every file there
 // the episode's, to read, to serve and to write into.
-func linkedEpisode(video string) string {
-	if info, err := os.Lstat(video); err == nil && info.Mode()&os.ModeSymlink != 0 {
+func linkedEpisode(files afero.Fs, video string) string {
+	if info, err := engine.LstatIn(files, video); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return filepath.Base(video) + " is a link, which the app does not follow"
 	}
 	work := engine.WorkDir(video)
-	if info, err := os.Lstat(work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
+	if info, err := engine.LstatIn(files, work); err == nil && (info.Mode()&os.ModeSymlink != 0 || !info.IsDir()) {
 		return filepath.Base(work) + " beside " + filepath.Base(video) +
 			" is a link or not a folder, which the app does not follow"
 	}
@@ -296,19 +302,19 @@ func (s *store) RemoveEpisode(path string) error {
 // folder it has to be inside are resolved before they are compared.
 func (s *store) Known(path string) bool {
 	clean := filepath.Clean(path)
-	real := engine.ResolvePath(clean)
+	real := engine.ResolveIn(s.files, clean)
 	episodes := s.Episodes()
 	for _, ep := range episodes {
 		// An episode whose video or work folder has become a link since
 		// it was added is no longer one: everything under the folder it
 		// leads to would count as the episode's.
-		if linkedEpisode(ep) != "" {
+		if linkedEpisode(s.files, ep) != "" {
 			continue
 		}
-		if clean == ep || real == engine.ResolvePath(ep) {
+		if clean == ep || real == engine.ResolveIn(s.files, ep) {
 			return true
 		}
-		work := engine.ResolvePath(engine.WorkDir(ep)) + string(filepath.Separator)
+		work := engine.ResolveIn(s.files, engine.WorkDir(ep)) + string(filepath.Separator)
 		if len(real) > len(work) && real[:len(work)] == work {
 			return true
 		}
@@ -320,7 +326,7 @@ func (s *store) Known(path string) bool {
 		return false
 	}
 	for _, ep := range episodes {
-		if linkedEpisode(ep) == "" && engine.IsShort(s.files, ep, real) {
+		if linkedEpisode(s.files, ep) == "" && engine.IsShort(s.files, ep, real) {
 			return true
 		}
 	}
@@ -336,7 +342,7 @@ func (s *store) PlanOf(path, plan string) bool {
 	if !s.Known(path) || !s.Known(plan) {
 		return false
 	}
-	return filepath.Dir(engine.ResolvePath(plan)) == engine.ResolvePath(engine.LogsDir(path))
+	return filepath.Dir(engine.ResolveIn(s.files, plan)) == engine.ResolveIn(s.files, engine.LogsDir(path))
 }
 
 // targetFor is the target typed for a window as long as this one, or 0,

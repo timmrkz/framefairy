@@ -86,7 +86,7 @@ func main() {
 	// this has to be one of them. Code after app.Run only runs on the other
 	// systems, and left a llama-server behind on every Mac that quit during
 	// a search.
-	svc.levels = newMeasuring(func(episode string) {
+	svc.levels = newMeasuring(svc.store.files, func(episode string) {
 		if app != nil {
 			app.Event.Emit("levels", episode)
 		}

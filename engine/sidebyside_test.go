@@ -112,13 +112,13 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	before := calls
 
 	path := filepath.Join(WorkDir(source), "logs", "words.json")
-	stamp, _ := stampOf(source)
+	stamp, _ := stampOf(disk, source)
 	var mu sync.Mutex
 	var problems []string
 	last := 0.0
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4, pair: true}
 	copies.seen = func() {
-		file, words, _, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+		file, words, _, ok := readTranscriptFile(disk, path, stamp, filepath.Base(base.ASRModel))
 		if !ok {
 			return
 		}
@@ -183,14 +183,14 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	if err := p.Hear(context.Background(), part); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{part.Start, part.End} {
+	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{part.Start, part.End} {
 		t.Fatalf("heard %v, asked for %v", parts, part)
 	}
 	if over := heard - (part.End - part.Start + 2*hearingPad); over > 0.02 {
 		t.Errorf("heard %.2f s more than the part and the audio around it", over)
 	}
-	stamp, _ := stampOf(source)
-	_, words, _, ok := readTranscriptFile(filepath.Join(p.LogsDir(), "words.json"), stamp,
+	stamp, _ := stampOf(disk, source)
+	_, words, _, ok := readTranscriptFile(disk, filepath.Join(p.LogsDir(), "words.json"), stamp,
 		filepath.Base(base.ASRModel))
 	if !ok {
 		t.Fatal("cannot read the transcript")
@@ -246,7 +246,7 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	mu.Lock()
 	want := heard
 	mu.Unlock()
-	covered, done := Coverage(source, base.ASRModel)
+	covered, done := Coverage(disk, source, base.ASRModel)
 	if done || want <= 20 || covered < want-0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
 	}

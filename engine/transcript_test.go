@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"os/exec"
@@ -49,7 +50,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if err := p.Transcribe(context.Background()); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	covered, done := Coverage(source, base.ASRModel)
+	covered, done := Coverage(disk, source, base.ASRModel)
 	if !done || covered < 69.9 {
 		t.Fatalf("coverage %v %v", covered, done)
 	}
@@ -60,8 +61,8 @@ func TestTranscriptionResumes(t *testing.T) {
 
 	// Pretend the run stopped at the first chunk boundary after 20 s.
 	path := filepath.Join(p.LogsDir(), "words.json")
-	stamp, _ := stampOf(source)
-	file, words, frames, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+	stamp, _ := stampOf(disk, source)
+	file, words, frames, ok := readTranscriptFile(disk, path, stamp, filepath.Base(base.ASRModel))
 	if !ok {
 		t.Fatal("cannot read the transcript")
 	}
@@ -76,7 +77,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if err := writeTranscript(disk, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
-	if got, done := Coverage(source, base.ASRModel); done || got != cut {
+	if got, done := Coverage(disk, source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
 	if st := Status(disk, source, base.ASRModel); st.Transcribed || st.Covered != cut {
@@ -84,7 +85,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	}
 
 	// A plan inside the covered part needs no more transcription.
-	sliced, ok := sliceTranscript(path, stamp, filepath.Base(base.ASRModel), Window{5, 15}, nil)
+	sliced, ok := sliceTranscript(disk, path, stamp, filepath.Base(base.ASRModel), Window{5, 15}, nil)
 	if !ok || len(sliced.Words) == 0 {
 		t.Fatalf("slice of a partial transcript failed")
 	}
@@ -108,7 +109,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if n, m := len(resumed.Words), len(full.Words); n < m-3 || n > m+3 {
 		t.Errorf("words %d after resuming, %d in one go", n, m)
 	}
-	if _, done := Coverage(source, base.ASRModel); !done {
+	if _, done := Coverage(disk, source, base.ASRModel); !done {
 		t.Errorf("not finished after resuming")
 	}
 }
@@ -116,18 +117,15 @@ func TestTranscriptionResumes(t *testing.T) {
 // storedTranscript writes a whole-episode transcript next to a stand-in
 // episode file and gives back both paths.
 func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
-	partial bool) (string, string) {
+	partial bool) (afero.Fs, string, string) {
 	t.Helper()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("nicht wirklich ein video"), 0o644); err != nil {
+	fsys := afero.NewMemMapFs()
+	source := "/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("nicht wirklich ein video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	logs := filepath.Join(WorkDir(source), "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stamp, err := stampOf(source)
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,18 +139,18 @@ func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
 	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
 		Mean: PyFloat(-30), Parts: [][2]PyFloat{{0, PyFloat(to)}}, End: PyFloat(end),
 		Words: storedWords(words)}
-	if err := writeTranscript(disk, path, file, frames); err != nil {
+	if err := writeTranscript(fsys, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
-	return source, path
+	return fsys, source, path
 }
 
 // A transcript from before numbers stood apart is still the episode's
 // transcript. Reading it as stale took the waveform off the clip timeline.
 func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 	words := []Cue{{0.5, 1.2, "Hallo"}, {1.3, 2, "am15."}}
-	source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
-	stamp, err := stampOf(source)
+	fsys, source, path := storedTranscript(t, words, make([]float32, 300), 3, false)
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,13 +158,13 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		transcriptVersion + 1: false} {
 		file := transcriptFile{Version: version, Source: stamp, Model: "modell",
 			To: 3, Mean: -30, Words: storedWords(words)}
-		if err := writeTranscript(disk, path, file, make([]float32, 300)); err != nil {
+		if err := writeTranscript(fsys, path, file, make([]float32, 300)); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, _, ok := readTranscriptFile(path, stamp, "modell"); ok != read {
+		if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(disk, source, "modell"); st.TranscriptStale == read {
+		if st := Status(fsys, source, "modell"); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -176,10 +174,10 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 	// the word it left to be heard again.
 	file := transcriptFile{Version: 2, Source: stamp, Model: "modell", To: 3, Resume: 2.5,
 		Partial: true, Mean: -30, Words: storedWords(append(words, Cue{2.6, 2.9, "noch"}))}
-	if err := writeTranscript(disk, path, file, make([]float32, 300)); err != nil {
+	if err := writeTranscript(fsys, path, file, make([]float32, 300)); err != nil {
 		t.Fatal(err)
 	}
-	read, got, _, ok := readTranscriptFile(path, stamp, "modell")
+	read, got, _, ok := readTranscriptFile(fsys, path, stamp, "modell")
 	if parts := read.heard(); !ok || len(parts) != 1 || parts[0] != [2]float64{0, 2.5} || len(got) != 2 {
 		t.Errorf("version 2 read as %v with %v", read.heard(), got)
 	}
@@ -211,12 +209,12 @@ func TestTranscriptNames(t *testing.T) {
 
 func TestTheCacheOnlyServesItsOwnEpisode(t *testing.T) {
 	words := []Cue{{0.1, 0.5, "eins"}, {1, 1.4, "zwei"}, {2, 2.4, "drei"}}
-	source, path := storedTranscript(t, words, frames(3, Span{0, 3}), 3, false)
-	stamp, err := stampOf(source)
+	fsys, source, path := storedTranscript(t, words, frames(3, Span{0, 3}), 3, false)
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, ok := readTranscriptFile(path, stamp, "modell"); !ok {
+	if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); !ok {
 		t.Fatal("its own transcript was not accepted")
 	}
 	// Another episode, another model, another version of the format, and an
@@ -229,19 +227,19 @@ func TestTheCacheOnlyServesItsOwnEpisode(t *testing.T) {
 	touched.Modified = "2020-01-01T00:00:00Z"
 	for name, s := range map[string]sourceStamp{"another episode": other,
 		"an edited episode": edited, "a touched episode": touched} {
-		if _, _, _, ok := readTranscriptFile(path, s, "modell"); ok {
+		if _, _, _, ok := readTranscriptFile(fsys, path, s, "modell"); ok {
 			t.Errorf("%s was served the cache", name)
 		}
 	}
-	if _, _, _, ok := readTranscriptFile(path, stamp, "anderes-modell"); ok {
+	if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "anderes-modell"); ok {
 		t.Errorf("another model was served the cache")
 	}
 	// A frames file that went missing means transcribing again, not half a
 	// transcript.
-	if err := os.Remove(framesPath(path)); err != nil {
+	if err := fsys.Remove(framesPath(path)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, ok := readTranscriptFile(path, stamp, "modell"); ok {
+	if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok {
 		t.Errorf("a transcript without its loudness frames was served")
 	}
 }
@@ -249,16 +247,16 @@ func TestTheCacheOnlyServesItsOwnEpisode(t *testing.T) {
 func TestCoverageAndSlicing(t *testing.T) {
 	words := []Cue{{0.1, 0.5, "eins"}, {1, 1.4, "zwei"}, {2, 2.4, "drei"}, {2.5, 2.9, "vier"}}
 	sound := frames(3, Span{0, 3})
-	source, path := storedTranscript(t, words, sound, 3, false)
+	fsys, source, path := storedTranscript(t, words, sound, 3, false)
 	model := filepath.Join(t.TempDir(), "modell")
-	if got, done := Coverage(source, model); got != 3 || !done {
+	if got, done := Coverage(fsys, source, model); got != 3 || !done {
 		t.Errorf("coverage %v %v", got, done)
 	}
-	stamp, _ := stampOf(source)
+	stamp, _ := stampOf(fsys, source)
 
 	// A window inside the transcript is cut out of it, with the noise floor
 	// of the whole episode and the words that fit entirely inside.
-	sliced, ok := sliceTranscript(path, stamp, "modell", Window{1, 2.5}, nil)
+	sliced, ok := sliceTranscript(fsys, path, stamp, "modell", Window{1, 2.5}, nil)
 	if !ok {
 		t.Fatal("slicing failed")
 	}
@@ -269,21 +267,21 @@ func TestCoverageAndSlicing(t *testing.T) {
 		t.Errorf("slice starts at %v with %d frames", sliced.Start, len(sliced.Frames))
 	}
 	// A window past the end is not served, and neither is an empty one.
-	if _, ok := sliceTranscript(path, stamp, "modell", Window{1, 9}, nil); ok {
+	if _, ok := sliceTranscript(fsys, path, stamp, "modell", Window{1, 9}, nil); ok {
 		t.Errorf("a window past the end was served")
 	}
-	if _, ok := sliceTranscript(path, stamp, "modell", Window{2, 2}, nil); ok {
+	if _, ok := sliceTranscript(fsys, path, stamp, "modell", Window{2, 2}, nil); ok {
 		t.Errorf("an empty window was served")
 	}
 
 	// A transcription that stopped part way says how far it got, and is
 	// never handed out as the whole episode.
-	partialSource, partialPath := storedTranscript(t, words[:2], sound[:200], 2, true)
-	if got, done := Coverage(partialSource, model); got != 2 || done {
+	partialFS, partialSource, partialPath := storedTranscript(t, words[:2], sound[:200], 2, true)
+	if got, done := Coverage(partialFS, partialSource, model); got != 2 || done {
 		t.Errorf("partial coverage %v %v", got, done)
 	}
-	partialStamp, _ := stampOf(partialSource)
-	if _, ok := sliceTranscript(partialPath, partialStamp, "modell", Window{0, 3}, nil); ok {
+	partialStamp, _ := stampOf(partialFS, partialSource)
+	if _, ok := sliceTranscript(partialFS, partialPath, partialStamp, "modell", Window{0, 3}, nil); ok {
 		t.Errorf("a window past what was heard was served")
 	}
 }
@@ -303,14 +301,14 @@ func FuzzReadTranscriptFile(f *testing.F) {
 	f.Add(`{"version":2,"source":{"name":"ep.mp4","size":24,"modified":"x"},"model":"m",`+
 		`"from":0.0,"to":3.0,"mean":-30.0,"words":[[0,5,"eins zwei"]]}`, []byte{0, 0, 0, 0})
 	f.Fuzz(func(t *testing.T, body string, raw []byte) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "words.json")
-		if os.WriteFile(path, []byte(body), 0o644) != nil ||
-			os.WriteFile(framesPath(path), raw, 0o644) != nil {
+		fsys := afero.NewMemMapFs()
+		path := "/ep.framefairy/logs/words.json"
+		if afero.WriteFile(fsys, path, []byte(body), 0o644) != nil ||
+			afero.WriteFile(fsys, framesPath(path), raw, 0o644) != nil {
 			t.Skip()
 		}
 		stamp := sourceStamp{Name: "ep.mp4", Size: 24, Modified: "x"}
-		file, words, framesRead, ok := readTranscriptFile(path, stamp, "m")
+		file, words, framesRead, ok := readTranscriptFile(fsys, path, stamp, "m")
 		if !ok {
 			return
 		}
@@ -541,7 +539,7 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	mu.Lock()
 	want := heard
 	mu.Unlock()
-	covered, done := Coverage(source, base.ASRModel)
+	covered, done := Coverage(disk, source, base.ASRModel)
 	if done || want <= 20 || covered < want-0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
 	}
@@ -570,8 +568,8 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(p.LogsDir(), "words.json")
-	stamp, _ := stampOf(source)
-	file, words, frames, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+	stamp, _ := stampOf(disk, source)
+	file, words, frames, ok := readTranscriptFile(disk, path, stamp, filepath.Base(base.ASRModel))
 	if !ok {
 		t.Fatal("cannot read the transcript")
 	}
@@ -586,7 +584,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 	if err := writeTranscript(disk, path, file, frames[:2000]); err != nil {
 		t.Fatal(err)
 	}
-	if covered, _ := Coverage(source, base.ASRModel); covered != 20 {
+	if covered, _ := Coverage(disk, source, base.ASRModel); covered != 20 {
 		t.Errorf("reads as heard to %v, the loudness reaches 20 s", covered)
 	}
 	if err := p.Transcribe(context.Background()); err != nil {
@@ -632,13 +630,13 @@ func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 		if err := damage(); err != nil {
 			t.Fatal(err)
 		}
-		if covered, _ := Coverage(source, base.ASRModel); covered != 0 {
+		if covered, _ := Coverage(disk, source, base.ASRModel); covered != 0 {
 			t.Errorf("%s: a damaged transcript reads as covering %v", name, covered)
 		}
 		if err := p.Transcribe(context.Background()); err != nil {
 			t.Errorf("%s: %v %s", name, err, p.LastError())
 		}
-		if covered, done := Coverage(source, base.ASRModel); !done || covered < 39.9 {
+		if covered, done := Coverage(disk, source, base.ASRModel); !done || covered < 39.9 {
 			t.Errorf("%s: after starting again, %v %v", name, covered, done)
 		}
 		whole, _ = os.ReadFile(path)
@@ -675,7 +673,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 					return
 				default:
 				}
-				covered, done := Coverage(source, base.ASRModel)
+				covered, done := Coverage(disk, source, base.ASRModel)
 				st := Status(disk, source, base.ASRModel)
 				mu.Lock()
 				if covered < last-0.001 {
@@ -774,23 +772,23 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	if err := p.Hear(ctx, Window{4.1, 6.1}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{4.1, 6.1} {
+	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{4.1, 6.1} {
 		t.Fatalf("heard %v", parts)
 	}
 	// Only the part and the audio either side of it, not from the start.
 	if want := 2 + 2*hearingPad; math.Abs(heard-want) > 0.05 {
 		t.Errorf("heard %.2f s of audio for a part of 2 s, want %.2f", heard, want)
 	}
-	if covered, done := Coverage(source, base.ASRModel); covered != 0 || done {
+	if covered, done := Coverage(disk, source, base.ASRModel); covered != 0 || done {
 		t.Errorf("a part in the middle reads as heard from the start to %v", covered)
 	}
 	if err := p.Hear(ctx, Window{0, 3}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if parts := HeardParts(source, base.ASRModel); len(parts) != 2 {
+	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 2 {
 		t.Fatalf("heard %v", parts)
 	}
-	if gaps := Unheard(source, base.ASRModel, Window{0, 12}); len(gaps) != 2 ||
+	if gaps := Unheard(disk, source, base.ASRModel, Window{0, 12}); len(gaps) != 2 ||
 		gaps[0] != (Window{3, 4.1}) || gaps[1] != (Window{6.1, 12}) {
 		t.Errorf("unheard %v", gaps)
 	}
@@ -805,8 +803,8 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	if err := p.Transcribe(ctx); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if _, done := Coverage(source, base.ASRModel); !done {
-		t.Fatalf("not done, heard %v", HeardParts(source, base.ASRModel))
+	if _, done := Coverage(disk, source, base.ASRModel); !done {
+		t.Fatalf("not done, heard %v", HeardParts(disk, source, base.ASRModel))
 	}
 	whole, err := p.Transcript()
 	if err != nil {
@@ -848,11 +846,11 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 			t.Fatalf("hearing %d: %v", i, err)
 		}
 	}
-	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{2, 12} {
+	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{2, 12} {
 		t.Fatalf("heard %v", parts)
 	}
-	stamp, _ := stampOf(source)
-	_, words, _, _ := readTranscriptFile(filepath.Join(WorkDir(source), "logs", "words.json"), stamp,
+	stamp, _ := stampOf(disk, source)
+	_, words, _, _ := readTranscriptFile(disk, filepath.Join(WorkDir(source), "logs", "words.json"), stamp,
 		filepath.Base(base.ASRModel))
 	if len(words) != 25 {
 		t.Errorf("%d words for the 25 beats from 2 s on: %v", len(words), words)
@@ -862,25 +860,26 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 // A file is replaced whole or not at all: a write its check refuses
 // leaves the file that was there, and nothing beside it.
 func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
-	dir := t.TempDir()
+	fsys := afero.NewMemMapFs()
+	dir := "/logs"
 	path := filepath.Join(dir, "plan.json")
-	if err := writeAtomic(disk, path, []byte("before")); err != nil {
+	if err := writeAtomic(fsys, path, []byte("before")); err != nil {
 		t.Fatal(err)
 	}
 	refuse := func(string) error { return errors.New("not a plan") }
-	if err := replaceFile(disk, path, ".plan-*", []byte("after"), refuse); err == nil {
+	if err := replaceFile(fsys, path, ".plan-*", []byte("after"), refuse); err == nil {
 		t.Fatal("a refused write went through")
 	}
-	if got, _ := os.ReadFile(path); string(got) != "before" {
+	if got, _ := afero.ReadFile(fsys, path); string(got) != "before" {
 		t.Errorf("the file is now %q", got)
 	}
-	if left, _ := filepath.Glob(filepath.Join(dir, ".*")); len(left) != 0 {
+	if left, _ := afero.Glob(fsys, filepath.Join(dir, ".*")); len(left) != 0 {
 		t.Errorf("left beside it: %v", left)
 	}
-	if err := writeAtomic(disk, path, []byte("after")); err != nil {
+	if err := writeAtomic(fsys, path, []byte("after")); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := os.ReadFile(path); string(got) != "after" {
+	if got, _ := afero.ReadFile(fsys, path); string(got) != "after" {
 		t.Errorf("the file is now %q", got)
 	}
 }
