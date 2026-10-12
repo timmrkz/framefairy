@@ -160,9 +160,14 @@ func resolvePath(path string) string {
 //
 // Belt and braces next to SanitiseName. A path that escapes its directory is
 // a bug worth failing loudly on, not one worth silently correcting.
-func SafeChild(base, name string) (string, error) {
-	root := resolvePath(base)
-	joined := resolvePath(filepath.Join(base, name))
+func SafeChild(base, name string) (string, error) { return SafeChildIn(disk, base, name) }
+
+// SafeChildIn is SafeChild for a folder in fsys. The links it follows are
+// the ones in fsys, so a folder in memory is never read through a link of
+// the same name on the disk, like /home on a Mac.
+func SafeChildIn(fsys afero.Fs, base, name string) (string, error) {
+	root := ResolveIn(fsys, base)
+	joined := ResolveIn(fsys, filepath.Join(base, name))
 	rel, err := filepath.Rel(root, joined)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
 		filepath.IsAbs(rel) {

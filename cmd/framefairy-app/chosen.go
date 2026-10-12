@@ -58,7 +58,7 @@ var chosenMu sync.Mutex
 
 func readChosen(files afero.Fs, path string) chosen {
 	var held chosen
-	file, err := engine.SafeChild(engine.WorkDir(path), chosenFile)
+	file, err := engine.SafeChildIn(files, engine.WorkDir(path), chosenFile)
 	if err != nil {
 		return held
 	}
@@ -86,7 +86,7 @@ func changeChosen(files afero.Fs, path string, change func(*chosen)) error {
 	if err := files.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	file, err := engine.SafeChild(dir, chosenFile)
+	file, err := engine.SafeChildIn(files, dir, chosenFile)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func (s *FrameFairy) Opened(n int) []string {
 	}
 	var all []seen
 	for _, ep := range s.store.Episodes() {
-		file, err := engine.SafeChild(engine.WorkDir(ep), chosenFile)
+		file, err := engine.SafeChildIn(s.store.files, engine.WorkDir(ep), chosenFile)
 		if err != nil {
 			continue
 		}

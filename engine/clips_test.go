@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // A clip plan is written by a model, read back by both front ends and edited
@@ -62,6 +64,30 @@ func TestSafeChildStaysInsideItsFolder(t *testing.T) {
 	}
 	if path, err := SafeChild(base, filepath.Join("link", "out.mp4")); err == nil {
 		t.Errorf("a symlink led out of the folder: %s", path)
+	}
+}
+
+// A folder in memory is joined as it is named, even where the disk has a
+// link of the same name. On a Mac /home is one, so the chosen clip of an
+// episode under /home was written to one path and looked for at another.
+//
+// On the real disk: the link that must not be followed is one on the disk.
+func TestSafeChildInMemoryFollowsNoLinkOnTheDisk(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+	base := filepath.Join(link, "tim", "ep.framefairy")
+	want := filepath.Join(base, "chosen.json")
+	if got, err := SafeChildIn(afero.NewMemMapFs(), base, "chosen.json"); err != nil || got != want {
+		t.Errorf("in memory gave %q, %v, wanted %q", got, err, want)
+	}
+	if got, err := SafeChild(base, "chosen.json"); err != nil || got == want {
+		t.Errorf("on the disk gave %q, %v, wanted the path the link leads to", got, err)
+	}
+	if path, err := SafeChildIn(afero.NewMemMapFs(), base, "../out.json"); err == nil {
+		t.Errorf("in memory a way out of the folder was allowed: %s", path)
 	}
 }
 
