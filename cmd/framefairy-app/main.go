@@ -76,6 +76,16 @@ func main() {
 	theLog.started()
 	svc := &FrameFairy{store: st}
 	svc.jobs = newQueue(st, emit, notify)
+	svc.listening.say = quietly(func(d Dictation) {
+		if app != nil {
+			app.Event.Emit("dictation", d)
+		}
+	})
+	svc.listening.loud = quietly(func(n Loudness) {
+		if app != nil {
+			app.Event.Emit("loudness", n)
+		}
+	})
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.jobs.restore(st.Episodes())
@@ -288,7 +298,9 @@ type FrameFairy struct {
 	updates *updating
 	// What Cmd+Q does, see quit.go.
 	leave *leaving
-	mu    sync.Mutex
+	// The recording for a report, see listen.go.
+	listening listening
+	mu        sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]

@@ -116,11 +116,16 @@ func frameDB(samples []float32) float32 {
 // quietestCut picks where to end a chunk: the middle of the quietest 300 ms
 // between chunkMin and chunkMax.
 func quietestCut(frames []float32) int {
+	return quietestBetween(frames, chunkMin, chunkMax)
+}
+
+// quietestBetween is quietestCut between any two lengths, in seconds.
+func quietestBetween(frames []float32, shortest, longest float64) int {
 	const window = 30
-	low := int(chunkMin / FrameSeconds)
-	high := min(int(chunkMax/FrameSeconds), len(frames)) - window
+	low := int(shortest / FrameSeconds)
+	high := min(int(longest/FrameSeconds), len(frames)) - window
 	if high <= low {
-		return min(int(chunkMax/FrameSeconds), len(frames))
+		return min(int(longest/FrameSeconds), len(frames))
 	}
 	best, bestAt := math.Inf(1), low
 	running := 0.0
@@ -136,6 +141,69 @@ func quietestCut(frames []float32) int {
 		}
 	}
 	return bestAt + window/2
+}
+
+// settlePause is the shortest quiet, in frames, that ends a thought while
+// somebody dictates: 0.6 s, longer than a breath between two words, so a
+// sentence is not cut in two and given a full stop it never had.
+const settlePause = 60
+
+// dictateLongest is how long, in seconds, a piece being dictated may grow
+// without a pause before it is settled anyway, at its quietest moment
+// in its second half. Until then it is written down again on every pass,
+// and every pass may write it a little differently, so it is kept short:
+// at 20 s Tim watched words change well behind what he was saying.
+const dictateLongest = 12.0
+
+// Settled is where the words of a recording still being made can be
+// written down for good, in samples: the middle of the last pause of at
+// least settlePause after something was said, or a little way into one
+// still going on at the end. Without a pause it is 0, until the recording
+// is longer than dictateLongest and is cut at its quietest moment. What
+// counts as quiet is measured from the recording itself, a third of the
+// way up from its room noise to its voice, since every microphone and
+// every room is another level. Plan row 2.189.
+func Settled(samples []float32) int {
+	frames := make([]float32, len(samples)/frameSamples)
+	if len(frames) == 0 {
+		return 0
+	}
+	loud, noise := float32(math.Inf(-1)), float32(math.Inf(1))
+	for i := range frames {
+		frames[i] = frameDB(samples[i*frameSamples : (i+1)*frameSamples])
+		loud = max(loud, frames[i])
+		// A microphone starts with a few frames of nothing at all, which
+		// is no room's noise.
+		if frames[i] > -100 {
+			noise = min(noise, frames[i])
+		}
+	}
+	at := 0
+	// Twelve decibels between the loudest and the quietest is less than
+	// any voice over any room, so nothing was said.
+	if loud-noise >= 12 {
+		quiet := noise + (loud-noise)/3
+		voiced := noise + 2*(loud-noise)/3
+		run, spoke := 0, false
+		for i, db := range frames {
+			if db < quiet {
+				run++
+				continue
+			}
+			if spoke && run >= settlePause {
+				at = (i - run + run/2) * frameSamples
+			}
+			run = 0
+			spoke = spoke || db >= voiced
+		}
+		if spoke && run >= settlePause {
+			at = (len(frames) - run + settlePause/2) * frameSamples
+		}
+	}
+	if at == 0 && float64(len(samples))/SampleRate > dictateLongest {
+		at = quietestBetween(frames, dictateLongest/2, dictateLongest) * frameSamples
+	}
+	return at
 }
 
 // TokensToWords joins tokens into words. Punctuation that arrives as its own
