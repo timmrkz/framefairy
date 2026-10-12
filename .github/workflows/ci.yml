@@ -141,8 +141,10 @@ jobs:
   # Mac. The jobs that compile most, linux, walks and macos, take theirs
   # from the cache main saved last, one for each job, because each
   # compiles with other flags. Main saves it after every push. A pull
-  # request saves nothing, because a cache it writes is its own and only
-  # costs it the upload.
+  # request saves one only when it found none, before main has saved one
+  # or after GitHub dropped it, so its next push starts warm. Otherwise it
+  # saves nothing: a cache a pull request writes is its own, and the
+  # upload would cost every run.
   linux:
     name: linux (${{ matrix.shard }}/3)
     strategy:
@@ -162,18 +164,16 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux. The cache setup-go kept is the fallback
-      # until main has saved one.
-      - if: steps.needs.outputs.run == 'true'
+      # linux.
+      - id: gocache
+        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-v1-linux-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            go-v1-linux-${{ runner.os }}-
-            setup-go-${{ runner.os }}-
+          restore-keys: go-v1-linux-${{ runner.os }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -227,7 +227,7 @@ jobs:
       - name: Nothing left running
         if: always() && steps.needs.outputs.run == 'true'
         run: sh scripts/leftovers.sh
-      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main' && matrix.shard == 1
+      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -261,18 +261,16 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux. The cache setup-go kept is the fallback
-      # until main has saved one.
-      - if: steps.needs.outputs.run == 'true'
+      # linux.
+      - id: gocache
+        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            go-v1-walks-${{ runner.os }}-
-            setup-go-${{ runner.os }}-
+          restore-keys: go-v1-walks-${{ runner.os }}-
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -328,7 +326,7 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
-      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main' && matrix.shard == 1
+      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -421,18 +419,16 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux. The cache setup-go kept is the fallback
-      # until main has saved one.
-      - if: steps.needs.outputs.run == 'true'
+      # linux.
+      - id: gocache
+        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            go-v1-macos-${{ runner.os }}-
-            setup-go-${{ runner.os }}-
+          restore-keys: go-v1-macos-${{ runner.os }}-
       - id: ffmpeg
         if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -468,7 +464,7 @@ jobs:
       - name: Nothing left running
         if: always() && steps.needs.outputs.run == 'true'
         run: sh scripts/leftovers.sh
-      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main'
+      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

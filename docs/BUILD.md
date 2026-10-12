@@ -271,8 +271,8 @@ needs any of the rest:
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 `linux`, `walks` and `macos` start from Go's build cache as main left it
-after its last push, one cache for each job, saved by main and only read
-by a pull request. setup-go keeps the cache by `go.sum` alone and saves
+after its last push, one cache for each job, saved by main. A pull
+request saves its own only when it found none, for its next push. setup-go keeps the cache by `go.sum` alone and saves
 it only when `go.sum` changes, so with it a job started from a cache
 weeks old and compiled nearly everything again: a minute on Linux and
 close to two on a Mac, the episode's decoder included.
