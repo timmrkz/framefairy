@@ -44,6 +44,11 @@
   // where it had been, grey under white, in lines that did not line up.
   let said: HTMLSpanElement | null = null;
   let mark: HTMLSpanElement | null = null;
+  // What was said before the person typed at its end, still grey, and
+  // whether what they type now moves what is said next after it, see
+  // follow.
+  let earlier: HTMLSpanElement[] = [];
+  let moving = false;
   // Where the cursor was in the field, kept while the button has the
   // focus, since the field forgets it then on some systems.
   let cursor: Range | null = null;
@@ -85,8 +90,8 @@
 
   // begin puts what will be said where the cursor is, or at the end of
   // the text, and the cursor after it.
-  function begin() {
-    let at = cursor && field.contains(cursor.startContainer) ? cursor.cloneRange() : null;
+  function begin(from?: Range) {
+    let at = from ?? (cursor && field.contains(cursor.startContainer) ? cursor.cloneRange() : null);
     if (!at) {
       at = document.createRange();
       at.selectNodeContents(field);
@@ -118,8 +123,8 @@
 
   // add puts a settled piece in at the end of what has been said.
   function add(piece: string) {
+    if (!said || !mark || !field.contains(said)) begin();
     if (!said || !mark) return;
-    if (!field.contains(said)) begin();
     const before = settled();
     const text = (before.trim() && !/\s$/.test(before) ? " " : "") + piece;
     const last = mark.previousSibling;
@@ -130,6 +135,7 @@
   // show draws what is still being heard after what was settled, and
   // keeps the end of it in view, however long the report has grown.
   function show(now: string) {
+    if ((!said || !mark || !field.contains(said)) && now) begin();
     if (!said || !mark) return;
     const rest = space(now);
     // At the end of the report, down to its padding. Tim talked past the
@@ -153,8 +159,38 @@
   // after it, at once rather than when something more is heard, which
   // may be never once the person stops talking.
   function typed() {
+    const sel = getSelection();
+    if (moving && listening && sel?.rangeCount) begin(sel.getRangeAt(0).cloneRange());
+    moving = false;
     if (listening && said && mark && field.contains(said)) space(mark.textContent!.trim());
     read();
+  }
+
+  // follow keeps what is said next after what is typed at the end of
+  // what was said. Tim typed a few words there and talked on, and what he
+  // said next went in front of them and pushed them along. Typed there,
+  // the words being heard are settled, what was said so far stays where
+  // it is, grey, and once the typing is in, typed starts what is said
+  // next after it. Typing anywhere else, to correct a word, moves nothing.
+  function follow(e: InputEvent) {
+    if (!listening || e.isComposing || !said || !mark || !field.contains(said)) return;
+    if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste") return;
+    const sel = getSelection();
+    if (!sel?.rangeCount || !sel.isCollapsed) return;
+    const at = sel.getRangeAt(0);
+    const gap = document.createRange();
+    gap.setStartAfter(said);
+    if (gap.comparePoint(at.startContainer, at.startOffset) < 0) return;
+    gap.setEnd(at.startContainer, at.startOffset);
+    if (gap.toString()) return;
+    settleHeard();
+    mark.remove();
+    if (said.textContent!.trim()) {
+      if (/\S$/.test(said.textContent!) && /^\S/.test(e.data ?? "")) said.append(" ");
+      earlier.push(said);
+    } else said.remove();
+    said = mark = null;
+    moving = true;
   }
 
   // freeze settles the words still being heard where they are, when the
@@ -166,8 +202,7 @@
   // passed over, since it would show those words a second time.
   function freeze(e: PointerEvent) {
     if (!listening || !recording || !said || !mark || !field.contains(said)) return;
-    const now = mark.textContent!.trim();
-    if (!now) return;
+    if (!mark.textContent!.trim()) return;
     if (!mark.contains(e.target as Node)) {
       const at = document.caretRangeFromPoint?.(e.clientX, e.clientY);
       if (!at) return;
@@ -176,6 +211,14 @@
       from.setEndAfter(said);
       if (from.comparePoint(at.startContainer, at.startOffset) !== 0) return;
     }
+    settleHeard();
+  }
+
+  // settleHeard makes the words being heard a settled piece where they
+  // are.
+  function settleHeard() {
+    const now = mark?.textContent!.trim();
+    if (!now || !recording) return;
     add(now);
     api.settleListening(recording, placed, now).catch(() => {});
     placed++;
@@ -192,29 +235,31 @@
   // finish ends the dictation. Kept, what was said, with whatever was
   // corrected in it, goes into the text as if it had been typed, as one
   // step Cmd+Z takes back, and the cursor after it.
+  // What was typed between two parts of what was said is part of the
+  // one step too, and Cmd+Z leaves it as it was typed.
   function finish(kept: boolean) {
-    const was = said;
-    said = mark = null;
-    if (!was || !field.contains(was)) return read();
-    mark = was.querySelector(".hearing");
+    const all = [...earlier, ...(said ? [said] : [])].filter((s) => field.contains(s));
     mark?.remove();
-    mark = null;
-    const text = was.textContent!.trim();
-    const [before, after] = around(was);
+    said = mark = null;
+    earlier = [];
+    moving = false;
+    if (!all.length) return read();
     const at = document.createRange();
-    at.setStartBefore(was);
-    at.collapse(true);
-    const parent = was.parentNode!;
-    const index = Array.prototype.indexOf.call(parent.childNodes, was);
-    was.remove();
+    at.setStartBefore(all[0]);
+    at.setEndAfter(all[all.length - 1]);
+    const text = at.toString().trim();
+    const [before] = around(all[0]);
+    const [, after] = around(all[all.length - 1]);
+    for (const s of all) s.remove();
     if (kept && text) {
       const words = (/\S$/.test(before) ? " " : "") + text + (/^\S/.test(after) ? " " : "");
       field.focus();
-      at.setStart(parent, index);
-      at.collapse(true);
       getSelection()?.removeAllRanges();
       getSelection()?.addRange(at);
-      if (!document.execCommand("insertText", false, words)) at.insertNode(document.createTextNode(words));
+      if (!document.execCommand("insertText", false, words)) {
+        at.deleteContents();
+        at.insertNode(document.createTextNode(words));
+      }
     }
     read();
   }
@@ -254,6 +299,7 @@
     recording = 0;
     placed = 0;
     asked = 0;
+    earlier = [];
     begin();
     try {
       recording = await api.listen();
@@ -347,6 +393,7 @@
           aria-label="What happened"
           spellcheck="true"
           oninput={typed}
+          onbeforeinput={follow}
           onpointerdown={freeze}
           onkeyup={remember}
           onmouseup={remember}

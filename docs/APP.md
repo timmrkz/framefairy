@@ -2572,7 +2572,11 @@ being heard and changes as more of it is, so it is plain text in a mark
 that cannot be typed in. A click in it, or just after it, settles it
 there and then, as it is shown, so the cursor goes where it was put and
 a word can be corrected while the person talks on, and what is heard
-next follows it. The Go side is told with `SettleListening`. What
+next follows it. The Go side is told with `SettleListening`. What is
+typed right at the end of what was said settles it the same way, and
+what is said next goes after the typing, not in front of it. What was
+said stays grey where it is, and Stop, Enter and Escape take every part
+of it together, with what was typed between them left as typed. What
 came before a pause of 0.6 s is settled: it is text in the field, still
 grey, and can be corrected while the person talks on. Settled words are
 put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking

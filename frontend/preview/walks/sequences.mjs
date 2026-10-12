@@ -818,11 +818,12 @@ export const sequences = [
       ["undo"],
       ["dictate", "settled"],
       ["redo"],
-      // The space before X is the one the words being heard keep, so
-      // what is said never runs into what was typed after it.
-      ["report reads", "It * X froze."],
+      // X was typed at the end of what was said, so what is said next
+      // comes after it, with a space on either side.
+      ["dictate", "hearing"],
+      ["report reads", "It * X * froze."],
       ["dictate", "enter"],
-      ["report reads", "It * X froze."],
+      ["report reads", "It * X * froze."],
     ],
   },
   {
@@ -869,6 +870,23 @@ export const sequences = [
       ["dictate", "hearing"],
       ["dictate", "enter"],
       ["report reads", "It *X* * froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim typed a few words after what he had said and
+    // talked on, and what he said next went in front of what he typed,
+    // pushing it along. What is typed at the end of the words being said
+    // goes after them, and what is said next goes after what was typed.
+    name: "What is said after typing at the end of a dictation comes after the typing",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "It * Y * froze."],
     ],
   },
   {
