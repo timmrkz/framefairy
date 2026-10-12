@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/afero"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -115,6 +115,7 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 // A search carried on writes to the plan it began, not to a pass of its
 // own: the pass is in its record.
 func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	t.Parallel()
 	server, _ := answering(t, clipAnswer(1), clipAnswer(2))
 	p := passProject(t, server.URL)
@@ -131,7 +132,7 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	if filepath.Base(plan) != "clips-10-30.json" {
 		t.Errorf("a search carried on wrote %s", filepath.Base(plan))
 	}
-	if _, err := os.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
+	if _, err := fsys.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
 		t.Error("a search carried on made a second pass")
 	}
 }

@@ -22,10 +22,10 @@ import (
 
 // cropMarks writes keyframes into the clip of rotatablePlan as a person's
 // edits would leave them.
-func cropMarks(t *testing.T, path string, marks ...CropMark) {
+func cropMarks(t *testing.T, fsys afero.Fs, path string, marks ...CropMark) {
 	t.Helper()
 	for _, m := range marks {
-		if err := SetCropMark(disk, path, "01", -1, m.At, m.X, at25); err != nil {
+		if err := SetCropMark(fsys, path, "01", -1, m.At, m.X, at25); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,9 +206,9 @@ func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
 // glide never crosses a cut, nor carries one shot's framing to another.
 // A mark in a cut steers nothing, and comes back with its piece.
 func TestACropMarkSteersItsAngleInItsPart(t *testing.T) {
-	path := rotatablePlanPath(t)
-	cropMarks(t, path, CropMark{10.2, 100}, CropMark{10.8, 200}, CropMark{11.6, 500}, CropMark{13.6, 50})
-	c := loadedClip(t, disk, path)
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{10.2, 100}, CropMark{10.8, 200}, CropMark{11.6, 500}, CropMark{13.6, 50})
+	c := loadedClip(t, fsys, path)
 	want := [][]CropMark{
 		{{10.2, 100}, {10.8, 200}},
 		{{11.6, 500}},
@@ -230,8 +230,8 @@ func TestACropMarkSteersItsAngleInItsPart(t *testing.T) {
 
 	// The cut taken out of the clip's middle: the pieces of the first
 	// angle now meet across it, so its two parts are one and glide on.
-	reshape(t, path, Gesture{Kind: "join", From: 12.5})
-	c = loadedClip(t, disk, path)
+	reshape(t, fsys, path, Gesture{Kind: "join", From: 12.5})
+	c = loadedClip(t, fsys, path)
 	for _, seg := range c.Segments {
 		if seg.CropX != nil && *seg.CropX == 120 && len(seg.Marks) != 3 {
 			t.Errorf("with the cut put back, the piece at %.2f s is steered by %v", seg.Start, seg.Marks)
@@ -264,11 +264,11 @@ func TestACropMarkThatDoesNotHoldIsLeftOut(t *testing.T) {
 // another frame with its crop, and a double-click removes it. A mark has
 // to be in the clip, and one frame holds one.
 func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
-	path := rotatablePlanPath(t)
-	if err := SetCropMark(disk, path, "01", -1, 10.557, 300, at25); err != nil {
+	fsys, path := rotatablePlanPath(t)
+	if err := SetCropMark(fsys, path, "01", -1, 10.557, 300, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 1 || got[0] != (CropMark{10.52, 300}) {
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{10.52, 300}) {
 		t.Fatalf("C at 10.557 s made %v, not a mark on the frame from 10.52 s", got)
 	}
 	for _, c := range []struct {
@@ -280,23 +280,23 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 		{"on a frame that has one", -1, 10.53},
 		{"from where there is none", 11, 11.5},
 	} {
-		if err := SetCropMark(disk, path, "01", c.from, c.to, 100, at25); err == nil {
+		if err := SetCropMark(fsys, path, "01", c.from, c.to, 100, at25); err == nil {
 			t.Errorf("a keyframe %s was taken", c.name)
 		}
 	}
-	if err := SetCropMark(disk, path, "01", 10.52, 11.3, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 10.52, 11.3, -1, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.28, 300}) {
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.28, 300}) {
 		t.Fatalf("the mark dragged to 11.3 s is %v, not on the frame from 11.28 s", got)
 	}
-	if err := SetCropMark(disk, path, "01", 11.28, -1, -1, at25); err != nil {
+	if err := SetCropMark(fsys, path, "01", 11.28, -1, -1, at25); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 0 {
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
 		t.Errorf("the mark removed is still there: %v", got)
 	}
-	data, _ := os.ReadFile(path)
+	data, _ := afero.ReadFile(fsys, path)
 	if bytes.Contains(data, []byte(keyCropMarks)) {
 		t.Errorf("a clip with no keyframes keeps the key: %s", data)
 	}
@@ -307,13 +307,13 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 // the crop there moved, so the glide keeps its shape. Automatic crop
 // removes the angle's marks, and only those.
 func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T) {
-	path := rotatablePlanPath(t)
-	cropMarks(t, path, CropMark{10.2, 100}, CropMark{10.8, 200}, CropMark{11.6, 500}, CropMark{13.6, 60})
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{10.2, 100}, CropMark{10.8, 200}, CropMark{11.6, 500}, CropMark{13.6, 60})
 
-	if err := SetCrop(disk, path, "01", 10.8, 300, at25, 152); err != nil {
+	if err := SetCrop(fsys, path, "01", 10.8, 300, at25, 152); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, disk, path).CropMarks; got[1] != (CropMark{10.8, 300}) || got[0].X != 100 || got[3].X != 60 {
+	if got := loadedClip(t, fsys, path).CropMarks; got[1] != (CropMark{10.8, 300}) || got[0].X != 100 || got[3].X != 60 {
 		t.Fatalf("the crop placed on the mark at 10.8 s left the marks %v", got)
 	}
 
@@ -321,24 +321,24 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 	// has glided 45 % of the way from 100 to 300, to 190. Placed at 230
 	// there, it moves 40, and so does every mark of the angle, the one in
 	// the other part too.
-	if err := SetCrop(disk, path, "01", 10.5, 230, at25, 152); err != nil {
+	if err := SetCrop(fsys, path, "01", 10.5, 230, at25, 152); err != nil {
 		t.Fatal(err)
 	}
-	got := loadedClip(t, disk, path).CropMarks
+	got := loadedClip(t, fsys, path).CropMarks
 	want := []CropMark{{10.2, 140}, {10.8, 340}, {11.6, 500}, {13.6, 100}}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("the glide moved by 40 left the marks %v, not %v", got, want)
 		}
 	}
-	if seg := pieceAt(t, path, 13.2); seg.CropX == nil || *seg.CropX != 230 {
+	if seg := pieceAt(t, fsys, path, 13.2); seg.CropX == nil || *seg.CropX != 230 {
 		t.Errorf("the crop of the angle is %v, not 230", seg.CropX)
 	}
 
-	if err := ResetCrop(disk, path, "01", 10.5); err != nil {
+	if err := ResetCrop(fsys, path, "01", 10.5); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.6, 500}) {
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{11.6, 500}) {
 		t.Errorf("automatic crop left the marks %v, not the other angle's alone", got)
 	}
 }
@@ -350,24 +350,24 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 func TestACropMarkMovedWithItsAngleStaysInThePicture(t *testing.T) {
 	src := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
 	const cropW, most = 608, 1312
-	path := rotatablePlanPath(t)
-	cropMarks(t, path, CropMark{10.2, 1000}, CropMark{10.8, 1300}, CropMark{13.6, 100})
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{10.2, 1000}, CropMark{10.8, 1300}, CropMark{13.6, 100})
 	// The angle's other part has one mark, so its crop stands at 100.
 	// Dragged to the right edge there, every mark moves 1212.
-	if err := SetCrop(disk, path, "01", 13.2, most, src, cropW); err != nil {
+	if err := SetCrop(fsys, path, "01", 13.2, most, src, cropW); err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range loadedClip(t, disk, path).CropMarks {
+	for _, m := range loadedClip(t, fsys, path).CropMarks {
 		if m.X > most {
 			t.Errorf("the mark %v lies outside the picture, a crop %d wide starts at %d at most", m, cropW, most)
 		}
 	}
 	// The first part now stands at the right edge throughout. Dragged 100
 	// to the left there, it stands 100 to the left throughout.
-	if err := SetCrop(disk, path, "01", 10.5, most-100, src, cropW); err != nil {
+	if err := SetCrop(fsys, path, "01", 10.5, most-100, src, cropW); err != nil {
 		t.Fatal(err)
 	}
-	seg := loadedClip(t, disk, path).Segments[0]
+	seg := loadedClip(t, fsys, path).Segments[0]
 	for _, at := range []float64{10.0, 10.2, 10.5, 10.8, 11.0} {
 		if got := src.CropAt(seg, at, cropW, src.Width); got != most-100 {
 			t.Errorf("dragged to %d at 10.5 s, the crop at %.1f s stands at %v", most-100, at, got)
@@ -401,14 +401,14 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 // Automatic crop removes it with the rest, so taking the trim back brings
 // back no mark the person had already let go of.
 func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
-	path := rotatablePlanPath(t)
-	cropMarks(t, path, CropMark{10.2, 100}, CropMark{10.8, 200})
-	reshape(t, path, Gesture{Kind: "trim", Edge: "start", From: 10.5})
-	if err := ResetCrop(disk, path, "01", 10.6); err != nil {
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{10.2, 100}, CropMark{10.8, 200})
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10.5})
+	if err := ResetCrop(fsys, path, "01", 10.6); err != nil {
 		t.Fatal(err)
 	}
-	reshape(t, path, Gesture{Kind: "trim", Edge: "start", From: 10.0})
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 0 {
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "start", From: 10.0})
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
 		t.Errorf("after Automatic crop and the trim taken back the clip has the marks %v", got)
 	}
 }
@@ -416,10 +416,10 @@ func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
 // A rotated stretch has a picture of another shape, so the marks placed on
 // it as it stood are removed with the turn. Marks outside it stay.
 func TestRotatingAPartRemovesItsCropMarks(t *testing.T) {
-	path := rotatablePlanPath(t)
-	cropMarks(t, path, CropMark{10.2, 100}, CropMark{13.5, 50})
-	rotate(t, path, 13.5)
-	if got := loadedClip(t, disk, path).CropMarks; len(got) != 1 || got[0] != (CropMark{10.2, 100}) {
+	fsys, path := rotatablePlanPath(t)
+	cropMarks(t, fsys, path, CropMark{10.2, 100}, CropMark{13.5, 50})
+	rotate(t, fsys, path, 13.5)
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{10.2, 100}) {
 		t.Errorf("rotating the part after the cut left the marks %v", got)
 	}
 }
