@@ -58,6 +58,20 @@ func Open(dir string) (engine.Recognizer, error) {
 	return p, nil
 }
 
+// OpenOne loads one copy of the model in dir, with as many threads as
+// each of the copies Open loads on this machine. It is for a few
+// sentences at a time, Report a Problem's dictation, which then takes one
+// copy's share of the machine and leaves a transcription running beside
+// it the rest.
+func OpenOne(dir string) (engine.Recognizer, error) {
+	_, threads := Mix(ThisMachine())
+	p, err := OpenCopies(dir, 1, Options{Threads: threads})
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // Machine is what the pool is sized from.
 type Machine struct {
 	// Cores is every core, and Fast the performance cores where the system

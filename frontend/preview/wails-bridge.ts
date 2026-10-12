@@ -27,7 +27,12 @@ function listen() {
 // What the menu bar sends, which a browser has no menu bar for: a walk
 // presses Undo and Redo with window.__menu("undo") and window.__menu("redo"),
 // the way the preview does.
+// Help → Report a Problem… is window.__menu("report").
 (window as any).__menu = (what: string) => {
+  if (what === "report") {
+    for (const fn of listeners.get("report") ?? []) fn({ data: null });
+    return;
+  }
   for (const fn of listeners.get("undo") ?? []) fn({ data: what });
 };
 

@@ -163,6 +163,10 @@ $ICON
 	<string>Frame Fairy opens the episodes you keep in Documents and writes each one's clips in a folder beside the video.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Frame Fairy opens the episodes you keep in Downloads and writes each one's clips in a folder beside the video.</string>
+	<!-- Asked the first time Dictate is pressed on Report a Problem.
+	     Without it macOS ends an app that opens the microphone. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Frame Fairy writes down what you say about a problem, on this Mac, so you can send it in a report.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>Frame Fairy opens the episodes you keep on an external disk and writes each one's clips in a folder beside the video.</string>
 </dict>

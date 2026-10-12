@@ -46,6 +46,9 @@ type desk struct {
 	// bus carries what the Go side tells the interface, when a browser
 	// is listening, see bridge_test.go.
 	bus *bus
+	// quiet is how long a recording nobody talks into goes on, in every
+	// opening of the app, 0 for as long as in the app.
+	quiet time.Duration
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -83,6 +86,9 @@ func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
+	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
+	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
+	d.svc.listening.quiet = d.quiet
 	if d.bus != nil {
 		d.svc.levels = newMeasuring(func(episode string) { d.bus.send("levels", episode) })
 	}

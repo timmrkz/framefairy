@@ -902,6 +902,20 @@ const Answers = {
       case "ReportProblem":
         (window as any).__reported = { what: args[0], video: args[1] };
         return new Promise((done) => setTimeout(() => done("/Users/tim/Desktop/Frame Fairy report 2026-10-10 21.40.zip"), 400));
+      // Dictate: a recording that hears two sentences a word at a time,
+      // settling each at the pause after it, the way listen.go does.
+      // ?deaf is a Mac that has not let the app use the microphone.
+      case "Listen":
+        return Promise.resolve(dictateStart());
+      case "StopListening":
+        return dictateStop();
+      case "CancelListening":
+        dictateDrop();
+        return Promise.resolve(null);
+      // The script goes on as it was, but says it took the ask in.
+      case "SettleListening":
+        if (dict) dict.asked++;
+        return Promise.resolve(null);
       case "Licences":
         return Promise.resolve(noticeList);
       case "LicenceText":
@@ -1890,6 +1904,90 @@ const licenceListeners = new Set<(ev: unknown) => void>();
   for (const fn of licenceListeners) fn({ data: null });
 };
 
+// Dictation, see Listen above. Every 250 ms another word is heard, and
+// two steps after the last word of a sentence it is settled.
+const dictListeners = new Set<(ev: unknown) => void>();
+const loudListeners = new Set<(ev: unknown) => void>();
+// ?talk=N says the two sentences N times over, a word every 40 ms, for a
+// long dictation.
+const dictTalk = Number(new URLSearchParams(location.search).get("talk") ?? 1);
+const dictScript = Array.from({ length: dictTalk }, (_, i) => [
+  `The picture stopped when I pressed play${dictTalk > 1 ? ` ${i + 1}` : ""}.`,
+  "It came back when I clicked the clip again.",
+]).flat();
+let dictCount = 0;
+let dict: { id: number; step: number; asked: number; timer: ReturnType<typeof setInterval> } | null = null;
+// What has been said after so many steps: the sentences settled and the
+// words of the one still being heard.
+function dictHeard(step: number): { said: string[]; hearing: string } {
+  const said: string[] = [];
+  let left = step;
+  for (const s of dictScript) {
+    const words = s.split(" ");
+    if (left >= words.length + 2) {
+      said.push(s);
+      left -= words.length + 2;
+      continue;
+    }
+    return { said, hearing: words.slice(0, Math.min(left, words.length)).join(" ").replace(/\.$/, "") };
+  }
+  return { said, hearing: "" };
+}
+function dictateStart(): number {
+  if (dict) return dict.id;
+  const id = ++dictCount;
+  const now = {
+    id,
+    step: 0,
+    asked: 0,
+    timer: setInterval(() => {
+      now.step++;
+      if (location.search.includes("deaf")) return;
+      const heard = dictHeard(now.step);
+      // A voice that rises and falls while there are words, and a quiet
+      // room after them.
+      const level = heard.hearing ? 0.4 + 0.4 * Math.abs(Math.sin(now.step * 1.7)) : 0.05;
+      loudListeners.forEach((fn) => fn({ data: { recording: id, level } }));
+      // ?ends stops by itself once the sentences are said, the way the Go
+      // side does after two minutes without a word.
+      if (location.search.includes("ends") && !heard.hearing && now.step > 4) {
+        dictateDrop();
+        dictListeners.forEach((fn) =>
+          fn({ data: { recording: id, said: heard.said, hearing: "", ended: "stopped listening after 2 minutes without a word" } }),
+        );
+        return;
+      }
+      dictListeners.forEach((fn) => fn({ data: { recording: id, asked: now.asked, ...heard } }));
+    }, dictTalk > 1 ? 40 : 250),
+  };
+  dict = now;
+  return id;
+}
+function dictateStop(): Promise<unknown> {
+  const was = dict;
+  dictateDrop();
+  if (!was) return Promise.resolve({ recording: 0, said: [] });
+  if (location.search.includes("deaf"))
+    return new Promise((_, fail) =>
+      setTimeout(
+        () =>
+          fail(
+            new Error(
+              "the microphone heard nothing. If Frame Fairy may not use it, allow it in System Settings, Privacy & Security, Microphone.",
+            ),
+          ),
+        300,
+      ),
+    );
+  const heard = dictHeard(was.step);
+  const said = heard.hearing ? [...heard.said, heard.hearing + "."] : heard.said;
+  return new Promise((done) => setTimeout(() => done({ recording: was.id, said }), 300));
+}
+function dictateDrop() {
+  if (dict) clearInterval(dict.timer);
+  dict = null;
+}
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -1916,6 +2014,14 @@ export const Events = {
     if (name === "report") {
       (window as any).__report = () => fn({ data: null });
       return () => delete (window as any).__report;
+    }
+    if (name === "dictation") {
+      dictListeners.add(fn);
+      return () => dictListeners.delete(fn);
+    }
+    if (name === "loudness") {
+      loudListeners.add(fn);
+      return () => loudListeners.delete(fn);
     }
     if (name === "updates") {
       updListeners.add(fn);
