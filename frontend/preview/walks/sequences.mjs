@@ -79,6 +79,14 @@
 //                      the same with the video paused, and no play
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
+//   ["swipe after click", share, px]
+//                      clicks the clip timeline this share of the way
+//                      along the clip, which puts the playhead under the
+//                      hand, and then swipes with two fingers from there
+//                      three times by px without moving the hand, later in
+//                      the episode for more than nought. The clip has to
+//                      move along the clip timeline the other way on every
+//                      swipe
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
 //                      nth shot meets the next, from 1, which cuts a part
 //                      out across the camera switch
@@ -534,7 +542,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
+import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, BITS } from "./bridge.mjs";
@@ -776,6 +784,17 @@ export const sequences = [
       ["join", 1],
       ["cuts", 0],
       ["same", "start"],
+    ],
+  },
+  {
+    // Tim swiped along the clip timeline with two fingers, clicked to put
+    // the playhead where he was, and could not swipe on from there. The
+    // playhead was then under the hand, and it was the one thing the
+    // swipe did not go through.
+    name: "a swipe goes on after a click put the playhead under the hand",
+    steps: [
+      ["swipe after click", 0.3, 60],
+      ["swipe after click", 0.5, -60],
     ],
   },
   {
@@ -2960,6 +2979,32 @@ for (const seq of toWalk) {
         const g = await handles(page);
         await page.mouse.dblclick(middle(g[arg]), high(g.track));
         await watch.step("reset", s);
+        break;
+      }
+      case "swipe after click": {
+        const [share, px] = arg;
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        const x = from + share * (g.end.x - from);
+        if (!inside(g.track, x)) {
+          wrong = `${share} of the way along the clip is not on the clip timeline`;
+          break;
+        }
+        await page.mouse.click(x, high(g.track));
+        await settle(page);
+        // The hand stays where it clicked, on the playhead now, and swipes
+        // from there, the way a hand on a trackpad does after it clicks.
+        for (let i = 1; i <= 3 && !wrong; i++) {
+          const was = (await handles(page)).start.x;
+          await page.mouse.wheel(px, 0);
+          await page.waitForTimeout(100);
+          const moved = (await handles(page)).start.x - was;
+          if (!(-moved * Math.sign(px) > Math.abs(px) / 3)) {
+            wrong = `swipe ${i} by ${px} px after the click moved the clip ${moved.toFixed(1)} px`;
+          }
+        }
+        await settle(page);
+        await watch.step("swipe", s);
         break;
       }
       case "cut switch": {

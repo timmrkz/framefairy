@@ -356,7 +356,9 @@ written as data at the top of the file, so a case found by hand is kept
 as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
-`cut at` a share of the clip, `join` a cut, `trim` an edge by some
+`cut at` a share of the clip, `join` a cut, `swipe after click`, a
+click a share of the way along the clip and three swipes from there
+without moving the hand, each of which has to move the clip, `trim` an edge by some
 pixels, `reset` an edge and click the caption `block` holding a word,
 drag an edge of the caption holding a word `edge in` over the middle of
 its word at that edge, `edge out` back to where it was at the mark

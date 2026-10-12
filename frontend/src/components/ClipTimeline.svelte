@@ -44,6 +44,7 @@
   import { hoverClip } from "../lib/hover";
   import type { About } from "../lib/playhead";
   import { asleep, keysElsewhere } from "../lib/keys";
+  import { said } from "../lib/said";
   import Info from "./Info.svelte";
   import Icon from "./Icon.svelte";
   import { partOf } from "../lib/rotate";
@@ -252,6 +253,9 @@
   const roomy = $derived(Math.min(loose, widest));
 
   let track: HTMLDivElement;
+  // The track and the playhead drawn over it, the whole of what a hand
+  // can be over on the clip timeline.
+  let over: HTMLDivElement;
   let canvas: HTMLCanvasElement;
   let width = $state(0);
   let view = $state({ from: 0, to: 1 });
@@ -875,11 +879,19 @@
   }
 
   // Reading takes a call each, so it waits until the fingers come to rest.
+  // Where the view stood when they began is kept until then, for the log.
   let settle = 0;
+  let swipedFrom: { from: number; to: number } | null = null;
 
-  function readSoon() {
+  function readSoon(how: "swiped" | "pinched") {
+    swipedFrom ??= { ...view };
     clearTimeout(settle);
-    settle = setTimeout(() => load(view.from, view.to), 150);
+    settle = setTimeout(() => {
+      const was = swipedFrom;
+      swipedFrom = null;
+      if (was) said(`clip timeline: ${how} from ${was.from.toFixed(2)}–${was.to.toFixed(2)} s to ${view.from.toFixed(2)}–${view.to.toFixed(2)} s`, { video: path });
+      load(view.from, view.to);
+    }, 150);
   }
 
   // Puts the view somewhere, kept inside the episode and between the
@@ -893,6 +905,13 @@
   // Two fingers on the trackpad: a swipe moves along the episode, a pinch
   // zooms around the pointer. A pinch reaches a page as a wheel with the
   // control key held, which is how every trackpad says it.
+  //
+  // It is heard over the whole clip timeline, the playhead included, and
+  // not over the track alone. A click puts the playhead under the hand,
+  // and the playhead is drawn over the track rather than in it, so a swipe
+  // that began there never reached the track: the view stood still, the
+  // playhead stayed under the hand, and no swipe after it went anywhere
+  // until the hand was moved. Tim found it.
   function wheel(event: WheelEvent) {
     if (!duration) return;
     const zooming = event.ctrlKey || event.metaKey;
@@ -916,7 +935,7 @@
       const shift = (along / Math.max(width, 1)) * span;
       showing(view.from + shift, view.to + shift);
     }
-    readSoon();
+    readSoon(zooming ? "pinched" : "swiped");
   }
 
   // A new clip gets a new view. A trimmed clip keeps it unless an edge left
@@ -1101,12 +1120,12 @@
     observer.observe(track);
     // Not the listener Svelte would attach: a wheel we act on is ours, and
     // a passive one cannot say so.
-    track.addEventListener("wheel", wheel, { passive: false });
+    over.addEventListener("wheel", wheel, { passive: false });
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", unpick, true);
     return () => {
       observer.disconnect();
-      track.removeEventListener("wheel", wheel);
+      over.removeEventListener("wheel", wheel);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", unpick, true);
       clearTimeout(settle);
@@ -1562,7 +1581,7 @@
        what is inside it, which is what keeps the waveform inside its
        rounded corners, and the playhead is the one thing that has to reach
        past them. -->
-  <div class="over" class:scrubbing>
+  <div class="over" class:scrubbing bind:this={over}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="track asks"
