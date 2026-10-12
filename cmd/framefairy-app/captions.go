@@ -1,0 +1,160 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/rs/zerolog"
+
+	"framefairy/engine"
+	"framefairy/internal/framewire"
+)
+
+// The captions of the video preview, drawn by libass in the episode's
+// decoder from the caption file the render burns in, see
+// engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
+//
+//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&<drafts>]
+//	                                 the captions of a view, by its track,
+//	                                 on the frame of the episode that starts
+//	                                 at, at width by height, as a
+//	                                 framewire.Layer
+//
+// The drafts are what the hand changes while it moves and the video
+// preview shows on the way: text, box and highlight, each a colour #RRGGBB
+// with its opacity from 0 to 1 in textOpacity, boxOpacity and
+// highlightOpacity, the switches textOn, boxOn and highlightOn, 0 or 1,
+// and y, where the captions sit, as SetCaptionsHeight takes it. Each is
+// checked as the edit that saves it checks it.
+
+// captionTracks are the drawings of the caption views the interface was
+// given lately, by their tracks, each with the episode it belongs to. A
+// view is asked for again whenever the captions change, so the latest few
+// hundred are plenty.
+var captionTracks = &tracks{drawings: map[string]trackOf{}}
+
+type tracks struct {
+	mu       sync.Mutex
+	drawings map[string]trackOf
+	order    []string
+}
+
+type trackOf struct {
+	episode string
+	drawing *engine.CaptionDrawing
+}
+
+const tracksKept = 512
+
+// keep notes what a caption view of an episode was made from, so the
+// video preview can ask for its captions by its track.
+func (t *tracks) keep(episode string, v *engine.CaptionsView) {
+	if v == nil || v.Drawing() == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.drawings[v.Track]; !ok {
+		t.order = append(t.order, v.Track)
+		for len(t.order) > tracksKept {
+			delete(t.drawings, t.order[0])
+			t.order = t.order[1:]
+		}
+	}
+	t.drawings[v.Track] = trackOf{episode: episode, drawing: v.Drawing()}
+}
+
+func (t *tracks) get(track string) (trackOf, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	d, ok := t.drawings[track]
+	return d, ok
+}
+
+// serveCaptions answers /frames/captions.
+func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	path := q.Get("path")
+	kept, ok := captionTracks.get(q.Get("track"))
+	if !ok || kept.episode != path || !episodeFile(st, path) {
+		http.NotFound(w, r)
+		return
+	}
+	at, err := strconv.ParseFloat(q.Get("at"), 64)
+	width, _ := strconv.Atoi(q.Get("w"))
+	height, _ := strconv.Atoi(q.Get("h"))
+	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || width < 1 || height < 1 || width > 7680 || height > 7680 {
+		http.Error(w, "captions need a moment, a width and a height", http.StatusBadRequest)
+		return
+	}
+	drafts, err := captionDrafts(q.Get)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	source, err := sources.probe(ctx, path)
+	if err == nil {
+		var dec *engine.EpisodeFrames
+		dec, err = p.decoder(path)
+		if err == nil {
+			o := st.Settings().options()
+			e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+			dir := filepath.Join(engine.WorkDir(path), "captions", "preview")
+			var l framewire.Layer
+			l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, at, o.Width, o.Height, width, height)
+			if err == nil {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write(l.Body())
+				return
+			}
+		}
+	}
+	if r.Context().Err() == nil {
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the captions could not be drawn")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// captionDrafts are the drafts of a request for captions as the engine
+// takes them, see engine.CaptionDrafts.
+func captionDrafts(get func(string) string) (map[string]any, error) {
+	drafts := map[string]any{}
+	for _, c := range []struct{ name, key string }{
+		{"text", "primary"}, {"box", "back_colour"}, {"highlight", "highlight_colour"},
+	} {
+		hex := get(c.name)
+		if hex == "" {
+			continue
+		}
+		opacity, err := strconv.ParseFloat(get(c.name+"Opacity"), 64)
+		if err != nil || math.IsNaN(opacity) {
+			opacity = 1
+		}
+		colour, ok := engine.AssColour(hex, opacity)
+		if !ok {
+			return nil, fmt.Errorf("%s is not a colour", engine.Scrub(hex, 20))
+		}
+		drafts[c.key] = colour
+	}
+	for _, c := range []struct{ name, key string }{{"textOn", "text"}, {"boxOn", "box"}, {"highlightOn", "highlight"}} {
+		switch get(c.name) {
+		case "0":
+			drafts[c.key] = 0.0
+		case "1":
+			drafts[c.key] = 1.0
+		}
+	}
+	if y, err := strconv.ParseFloat(get("y"), 64); err == nil && !math.IsNaN(y) && !math.IsInf(y, 0) {
+		drafts["margin_v"] = engine.SnapCaptionY(y)
+	}
+	return drafts, nil
+}

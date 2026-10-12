@@ -334,7 +334,9 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 		return nil, err
 	}
 	p := engine.NewProject(nil, path, s.store.Settings().options())
-	return engine.ShapeCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	view, err := engine.ShapeCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	captionTracks.keep(path, view)
+	return view, err
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a
@@ -374,8 +376,12 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 		return nil, err
 	}
 	g.Frames = s.frames(context.Background(), path)
-	return engine.ShapeClipView(plan, clipID, g, t, s.store.Settings().options().KeepPause,
+	view, err := engine.ShapeClipView(plan, clipID, g, t, s.store.Settings().options().KeepPause,
 		s.captionOverrides(plan))
+	if err == nil {
+		captionTracks.keep(path, view.Captions)
+	}
+	return view, err
 }
 
 // Reshape makes the change a gesture on the clip timeline showed while the

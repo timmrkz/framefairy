@@ -748,7 +748,25 @@ type CaptionStyleView struct {
 type CaptionsView struct {
 	Captions []CaptionView    `json:"captions"`
 	Style    CaptionStyleView `json:"style"`
+	// Track names what the captions were made from, see Drawing: the
+	// video preview asks for the captions libass draws by it, see
+	// DrawCaptions, so they are the short's and not a copy of them.
+	Track   string `json:"track"`
+	drawing *CaptionDrawing
 }
+
+// CaptionDrawing is what a clip's captions are drawn from, by libass, in
+// the short and in the video preview alike: the captions laid out in
+// lines, their style, and the clip, whose frames say when each is drawn,
+// see SourceInfo.CaptionMoment.
+type CaptionDrawing struct {
+	Laid  []LaidCaption
+	Style map[string]any
+	Clip  Clip
+}
+
+// Drawing is what the captions of a view were made from.
+func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
 
 // ClipCaptionsView gives the captions of one clip of a plan, on the clip's
 // own clock, in the lines and the look the render uses. It is what the app
@@ -847,7 +865,8 @@ func ArrivingCaptionsView(planPath string, u Underway, t *Transcript,
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {
-	s := ResolveStyle(captionStyle(plan, clip, overrides))
+	style := captionStyle(plan, clip, overrides)
+	s := ResolveStyle(style)
 	laid := ClipCaptions(clip, t, s)
 
 	// The render authors every measure against a 1920 pixel tall frame and
@@ -863,6 +882,8 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 		Box: WebColour(s.BackColour), Highlight: s.Highlight,
 		HighlightColour: s.HighlightWeb(), Text: s.Text, BoxOn: s.Box,
 	}}
+	view.drawing = &CaptionDrawing{Laid: laid, Style: style, Clip: clip}
+	view.Track = view.drawing.name()
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"
 	}

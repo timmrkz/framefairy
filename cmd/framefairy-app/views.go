@@ -111,7 +111,9 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	return engine.ClipCaptionsView(planPath, clipID, t, s.captionOverrides(planPath))
+	view, err := engine.ClipCaptionsView(planPath, clipID, t, s.captionOverrides(planPath))
+	captionTracks.keep(path, view)
+	return view, err
 }
 
 // captionOverrides are the settings the render puts on top of a plan's
@@ -163,7 +165,9 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				return engine.ArrivingCaptionsView(plan, u, t, s.captionOverrides(plan)), nil
+				view := engine.ArrivingCaptionsView(plan, u, t, s.captionOverrides(plan))
+				captionTracks.keep(j.Episode, view)
+				return view, nil
 			}
 		}
 		return nil, nil
