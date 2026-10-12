@@ -125,6 +125,31 @@
 //                      slowly enough to do something while it is
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["menu", "report"] picks Help → Report a Problem… in the menu bar
+//   ["write", text, n] types text into the report's field and puts the
+//                      cursor n characters in
+//   ["dictate", how]   presses Dictate, waits for the words to appear grey
+//                      while they are heard, and ends the recording how
+//                      says: "button" presses Stop, "enter" presses Enter
+//                      and "escape" Escape, and "ends" presses nothing
+//                      until it stops by itself and says why. Then waits
+//                      for Dictate again.
+//                      "start" only starts it, "hearing" waits for more
+//                      to be heard, "settled" waits for words
+//                      before a pause to be settled, and a recording
+//                      already running is only ended
+//   ["click heard"]    clicks into the first word still being heard and
+//                      sees it settled there, with the cursor in it
+//   ["field", selector, text]
+//                      clicks the field selector names and types text
+//   ["field reads", selector, text]
+//                      the field selector names holds text
+//   ["report reads", text]
+//                      the report's field reads text, where * is
+//                      whatever the speech model heard, a word or more
+//   ["report as before"]
+//                      the report's field reads what it did at the last
+//                      "report reads"
 //   ["episode"]        opens the episode on screen before again
 //   ["episode watched"]
 //                      the same, reading back from the video preview every
@@ -775,6 +800,147 @@ export const sequences = [
       ["same", "cut"],
       ["redo"],
       ["same", "trimmed"],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim asked to talk into Report a Problem rather than
+    // type: what he says appears while he says it, where the cursor was,
+    // and Cmd+Z takes it back like anything typed, all of it at once. The
+    // microphone is the bridge's, which plays a hum with a pause in it as
+    // fast as it is said, and the speech model its stand-in. What came
+    // before the pause is settled while it listens, the rest when it
+    // stops.
+    name: "Dictate writes what is said while it is said, where the cursor was, and undo takes it back",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "button"],
+      ["report reads", "It * froze."],
+      ["undo"],
+      ["report reads", "It froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim undid what he typed while he talked, and Cmd+Y
+    // did not bring it back: the words that arrived meanwhile were steps
+    // of their own, which emptied what there was to redo. They are not
+    // steps any more, so undo and redo while talking are about what was
+    // typed alone.
+    name: "While dictating, undo and redo are about what was typed",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["type", "X"],
+      ["undo"],
+      ["dictate", "settled"],
+      ["redo"],
+      // X was typed at the end of what was said, so what is said next
+      // comes after it, with a space on either side.
+      ["dictate", "hearing"],
+      ["report reads", "It * X * froze."],
+      ["dictate", "enter"],
+      ["report reads", "It * X * froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim asked for dictation the way claude.ai does it:
+    // Enter keeps what was said, as the microphone does, and Escape
+    // removes it.
+    name: "Enter keeps what was dictated and Escape removes it",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "enter"],
+      ["report reads", "It * froze."],
+      ["dictate", "escape"],
+      ["report as before"],
+    ],
+  },
+  {
+    // Plan row 2.189. Cmd+Z and Cmd+Y come from the app's menu, which
+    // the workspace answers with its own undo. On every other page they go
+    // to the field being typed in, which did nothing before Report a
+    // Problem needed it, in the settings too.
+    name: "Undo and redo in a settings field undo and redo the typing",
+    steps: [
+      ["settings"],
+      ["field", "input.licence-key", "FF-12"],
+      ["undo"],
+      ["field reads", "input.licence-key", ""],
+      ["redo"],
+      ["field reads", "input.licence-key", "FF-12"],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim could not click into the words still being
+    // heard, nor at the end of their line, to put the cursor there or to
+    // correct a word while he talked. A click in them settles them where
+    // they are, and what is heard after comes after them.
+    name: "A click in the words being heard puts the cursor there while dictating",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["click heard"],
+      ["type", "X"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "It *X* * froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim typed a few words after what he had said and
+    // talked on, and what he said next went in front of what he typed,
+    // pushing it along. What is typed at the end of the words being said
+    // goes after them, and what is said next goes after what was typed.
+    name: "What is said after typing at the end of a dictation comes after the typing",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "It * Y * froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim typed at the end of what he said, moved the
+    // cursor with the arrow keys and typed there, and talked on. On his
+    // Mac the letters came out backwards, and Enter lost everything said
+    // before he moved. What was said stays one piece wherever the person
+    // types, and Enter keeps all of it, in order.
+    name: "Typing elsewhere while dictating keeps every word, in order",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["press", "Home"],
+      ["press", "ArrowRight"],
+      ["press", "ArrowRight"],
+      ["type", "Z"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "ItZ * Y * froze."],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim talked past the longest a recording can be and
+    // lost what he said after it, with nothing to say why. A recording
+    // nobody talks into stops by itself, keeps every word as Stop would,
+    // and says why under the field. The bridge's waits 8 s.
+    name: "Dictation nobody talks into stops by itself and keeps what was said",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "ends"],
+      ["report reads", "It * froze."],
+      ["undo"],
+      ["report reads", "It froze."],
     ],
   },
   {
@@ -2407,6 +2573,53 @@ for (const seq of toWalk) {
         await page.keyboard.type(arg);
         await watch.step("type", s);
         break;
+      case "click heard": {
+        // Inside the first word still being heard that has three letters
+        // or more, just after its second letter, so the X typed there has
+        // letters of the word on either side. A click a fixed 12 px in
+        // landed after a short word like "er" on CI, not in it.
+        const at = await page.evaluate(() => {
+          const mark = document.querySelector(".telling .hearing");
+          const text = mark?.firstChild;
+          if (!text) return null;
+          const word = /\p{L}{3,}/u.exec(text.textContent);
+          if (!word) return null;
+          const third = document.createRange();
+          third.setStart(text, word.index + 2);
+          third.setEnd(text, word.index + 3);
+          const r = third.getClientRects()[0];
+          return r && { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
+        });
+        if (!at) {
+          wrong = "nothing was being heard to click into";
+          break;
+        }
+        await page.mouse.click(at.x, at.y);
+        const where = await page.evaluate(() => {
+          const sel = getSelection();
+          const mark = document.querySelector(".telling .hearing");
+          return {
+            heard: mark?.textContent.trim() ?? "",
+            inMark: !!mark?.contains(sel.anchorNode),
+            inSaid: !!document.querySelector(".telling .dictated")?.contains(sel.anchorNode),
+          };
+        });
+        if (where.heard) wrong = `the words clicked into are still being heard: "${where.heard}"`;
+        else if (where.inMark || !where.inSaid) wrong = "the cursor is not in the words clicked into";
+        break;
+      }
+      case "field": {
+        const [selector, text] = arg;
+        await page.locator(selector).click();
+        await page.keyboard.type(text);
+        break;
+      }
+      case "field reads": {
+        const [selector, text] = arg;
+        const have = await page.locator(selector).inputValue();
+        if (have !== text) wrong = `${selector} reads ${JSON.stringify(have)}, not ${JSON.stringify(text)}`;
+        break;
+      }
       case "undo refused": {
         const from = await page.evaluate(() => window.__calls.length);
         await page.evaluate(() => window.__menu("undo"));
@@ -2973,6 +3186,116 @@ for (const seq of toWalk) {
             for (const c of changes) if (c.target.classList?.contains("shaking")) window.__shook.push(c.target.className);
           }).observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
         });
+        break;
+      }
+      case "menu":
+        await page.evaluate((m) => window.__menu(m), arg);
+        await page.locator("button.dictate").waitFor();
+        await settle(page);
+        break;
+      case "write": {
+        const [text, at] = arg;
+        await page.locator(".telling").click();
+        await page.keyboard.type(text);
+        await page.evaluate((n) => {
+          const field = document.querySelector(".telling");
+          const at = document.createRange();
+          at.setStart(field.firstChild, n);
+          getSelection().removeAllRanges();
+          getSelection().addRange(at);
+        }, at);
+        await watch.step("type", s);
+        break;
+      }
+      case "dictate": {
+        const button = page.locator("button.dictate");
+        if (arg === "hearing") {
+          // More is heard after what was there.
+          const more = await page
+            .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!more) wrong = "nothing more was heard";
+          break;
+        }
+        if (arg === "settled") {
+          // The field's text grows by what was said before the pause.
+          const settled = await page
+            .waitForFunction((was) => document.querySelector(".telling").innerText !== was, kept.dictating, { timeout: 10000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!settled) wrong = "nothing said was settled";
+          break;
+        }
+        const running = (await button.textContent()).trim() === "Stop";
+        if (!running) await button.click();
+        // Stop the moment it is pressed, see the rules on a click.
+        const said = (await button.textContent()).trim();
+        if (!running && said !== "Stop") {
+          wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
+          break;
+        }
+        // The words appear while they are heard, before anything stops.
+        const heard = await page
+          .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!heard) {
+          wrong = "nothing appeared in the report while it was listening";
+          break;
+        }
+        // The microphone moves with the voice it hears, so a person knows
+        // they are heard. The bridge's microphone plays a tone.
+        const moved = await page
+          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.style.getPropertyValue("--loud")) > 0.3, null, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!moved) {
+          wrong = "the microphone did not move while it heard a voice";
+          break;
+        }
+        await watch.step("hearing", s);
+        if (arg === "start") {
+          kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
+          break;
+        }
+        if (arg === "button") await button.click();
+        else if (arg === "ends") {
+          // Nobody presses anything: it stops by itself and says why.
+          const why = await page
+            .waitForFunction(() => /without a word/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 30000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!why) {
+            wrong = "the recording never said it stopped by itself";
+            break;
+          }
+        } else {
+          await page.locator(".telling").focus();
+          await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
+        }
+        await page.waitForFunction(() => document.querySelector("button.dictate")?.textContent.trim() === "Dictate", null, {
+          timeout: 20000,
+        });
+        if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
+        await watch.step("dictate", s);
+        break;
+      }
+      case "report reads": {
+        const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+        const want = new RegExp(
+          `^${arg
+            .split("*")
+            .map((p) => p.replace(/[.?+^$()[\]{}|\\]/g, "\\$&"))
+            .join("\\S.*\\S")}$`,
+        );
+        if (!want.test(have)) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(arg)}`;
+        kept.report = have;
+        break;
+      }
+      case "report as before": {
+        const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+        if (have !== kept.report) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(kept.report)} as before`;
         break;
       }
       case "episode":

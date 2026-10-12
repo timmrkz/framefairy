@@ -2564,6 +2564,65 @@ the settings, with the home folder written as ~ and nothing of a video
 but its file name. The info mark beside **Make Report** says what goes in.
 See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
 
+**Dictate**, at the left of the same row, is for saying what happened
+rather than typing it, plan row 2.189, the way dictation on claude.ai
+works. Pressed, it says **Stop** and wears the beam while the app
+listens, and the words appear where the cursor was while they are said,
+grey and slanted until they are kept, and the field keeps its last line
+in view. The microphone in the button grows and shrinks with the voice it
+hears, about ten times a second, and wears the accent while it listens,
+so the person sees they are heard. The
+beam stays the sign that it listens, because running work shows the beam
+on the control it was started from. What follows the last pause is still
+being heard and changes as more of it is, so it is plain text in a mark
+that cannot be typed in. A click in it, or just after it, settles it
+there and then, as it is shown, so the cursor goes where it was put and
+a word can be corrected while the person talks on, and what is heard
+next follows it. The Go side is told with `SettleListening`. What is
+typed right at the end of what was said settles it the same way and
+becomes part of it, so what is said next goes after the typing, not in
+front of it. Typing anywhere else, wherever the arrow keys or a click
+put the cursor, is plain typing, and what is said next still goes at
+the end of what was said. What was said is one piece of the field that
+is never split, so Stop, Enter and Escape always take all of it. It was
+split once for each time somebody typed at its end, and on Tim's Mac
+WebKit then typed the letters backwards, and Enter lost the pieces once
+they were out of order. Nothing in the field is moved while the browser
+types: typing at the end is called off and typed again into what was
+said. What
+came before a pause of 0.6 s is settled: it is text in the field, still
+grey, and can be corrected while the person talks on. Settled words are
+put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking
+undo and redo only what was typed. **Stop** or Enter keeps all of it,
+the last piece a moment later, written in as one step Cmd+Z takes back,
+and Escape removes everything said since Dictate was pressed. It also
+stops by itself, keeping what was said, after 2 minutes without a word
+or once a recording is 10 minutes long, and says why under the field
+where the problem would be. Stop pressed while it does that gets every
+word all the same. The field
+is a `contenteditable` of plain text rather than a textarea, because a
+textarea cannot show some of its words grey.
+The app records, not the window, through malgo, see
+`cmd/framefairy-app/listen.go`: WKWebView on macOS would ask for the
+microphone in a box of its own on every launch, naming the page as
+wails://wails. The app gets the one prompt from macOS, with the words of
+`NSMicrophoneUsageDescription`, and macOS remembers the answer. A Mac
+that said no hands the app nothing but zeros, and after 2 s of them the
+page says where to allow it, while it goes on recording, since the
+prompt may still be open. One copy of the speech model loads while the
+person talks, with the threads of one of the copies a transcription
+uses, so a transcription beside it keeps the rest, see `asr.OpenOne`.
+About every 0.4 s it writes down again what followed the last pause,
+`engine.Settled` says where that is, and a stretch with no pause is
+settled before it is 12 s long, so words do not change far behind the
+person. It is given the 5 s before that pause
+too, and everything after it, and the words are told apart by when they
+start, so a pause in the middle of a sentence gives it no full stop and
+the words after it no capital. Each `dictation` event carries every
+settled piece, so one the window misses costs nothing. The log says how
+long the recording was, how many words came of it and how long the
+speech model took, never what they were, see [LOGGING.md](LOGGING.md).
+
 ## Where things are kept
 
 - **Models:** in `~/.framefairy/models`. A speech model is a folder, a
