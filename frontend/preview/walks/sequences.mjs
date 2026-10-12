@@ -116,9 +116,12 @@
 //                      and "escape" Escape, and "ends" presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
-//                      "start" only starts it, "settled" waits for words
+//                      "start" only starts it, "hearing" waits for more
+//                      to be heard, "settled" waits for words
 //                      before a pause to be settled, and a recording
 //                      already running is only ended
+//   ["click heard"]    clicks into the first word still being heard and
+//                      sees it settled there, with the cursor in it
 //   ["field", selector, text]
 //                      clicks the field selector names and types text
 //   ["field reads", selector, text]
@@ -647,6 +650,23 @@ export const sequences = [
       ["field reads", "input.licence-key", ""],
       ["redo"],
       ["field reads", "input.licence-key", "FF-12"],
+    ],
+  },
+  {
+    // Plan row 2.189. Tim could not click into the words still being
+    // heard, nor at the end of their line, to put the cursor there or to
+    // correct a word while he talked. A click in them settles them where
+    // they are, and what is heard after comes after them.
+    name: "A click in the words being heard puts the cursor there while dictating",
+    steps: [
+      ["menu", "report"],
+      ["write", "It froze.", 2],
+      ["dictate", "start"],
+      ["click heard"],
+      ["type", "X"],
+      ["dictate", "hearing"],
+      ["dictate", "enter"],
+      ["report reads", "It *X* * froze."],
     ],
   },
   {
@@ -1851,6 +1871,33 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.keyboard.type(arg);
         await watch.step("type", s);
         break;
+      case "click heard": {
+        // Inside the first word still being heard, a third of the way in.
+        const at = await page.evaluate(() => {
+          const mark = document.querySelector(".telling .hearing");
+          const words = document.createRange();
+          words.selectNodeContents(mark);
+          const first = words.getClientRects()[0];
+          return first && { x: first.left + 12, y: first.top + first.height / 2 };
+        });
+        if (!at) {
+          wrong = "nothing was being heard to click into";
+          break;
+        }
+        await page.mouse.click(at.x, at.y);
+        const where = await page.evaluate(() => {
+          const sel = getSelection();
+          const mark = document.querySelector(".telling .hearing");
+          return {
+            heard: mark?.textContent.trim() ?? "",
+            inMark: !!mark?.contains(sel.anchorNode),
+            inSaid: !!document.querySelector(".telling .dictated")?.contains(sel.anchorNode),
+          };
+        });
+        if (where.heard) wrong = `the words clicked into are still being heard: "${where.heard}"`;
+        else if (where.inMark || !where.inSaid) wrong = "the cursor is not in the words clicked into";
+        break;
+      }
       case "field": {
         const [selector, text] = arg;
         await page.locator(selector).click();
@@ -2339,6 +2386,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       }
       case "dictate": {
         const button = page.locator("button.dictate");
+        if (arg === "hearing") {
+          // More is heard after what was there.
+          const more = await page
+            .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
+            .then(() => true)
+            .catch(() => false);
+          if (!more) wrong = "nothing more was heard";
+          break;
+        }
         if (arg === "settled") {
           // The field's text grows by what was said before the pause.
           const settled = await page

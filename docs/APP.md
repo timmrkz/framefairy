@@ -2410,11 +2410,15 @@ works. Pressed, it says **Stop** and wears the beam while the app
 listens, and the words appear where the cursor was while they are said,
 grey and slanted until they are kept, and the field keeps its last line
 in view. The microphone in the button grows and shrinks with the voice it
-hears, about ten times a second, so the person sees they are heard. The
+hears, about ten times a second, and wears the accent while it listens,
+so the person sees they are heard. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from. What follows the last pause is still
 being heard and changes as more of it is, so it is plain text in a mark
-that cannot be typed in. What
+that cannot be typed in. A click in it, or just after it, settles it
+there and then, as it is shown, so the cursor goes where it was put and
+a word can be corrected while the person talks on, and what is heard
+next follows it. The Go side is told with `SettleListening`. What
 came before a pause of 0.6 s is settled: it is text in the field, still
 grey, and can be corrected while the person talks on. Settled words are
 put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking

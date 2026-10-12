@@ -554,6 +554,51 @@ func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
 	awaitTold(t, told, func(d Dictation) bool { return d.Unheard == "" })
 }
 
+// A click in the words still being heard settles them there and then,
+// as the window shows them, so the cursor can go in and they can be
+// corrected while the person talks on, and what follows is heard from
+// where they ended. Tim could not click into them. Plan row 2.189.
+func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
+	f, mic, told := dictatingTo(t, &voices{})
+	mic.say(tone(2))
+	d := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
+	f.SettleListening(d.Recording, 0, d.Hearing)
+	d = awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
+	if strings.Join(d.Said, "|") != "wort wort wort" || d.Hearing != "" {
+		t.Errorf("after the click the window was told %q settled and %q heard", d.Said, d.Hearing)
+	}
+	mic.say(tone(1.4))
+	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+	stopped, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
+		t.Errorf("stopping gave %q, want what followed the click alone after it", stopped.Said)
+	}
+}
+
+// The words the window settles may have been settled in part on the Go
+// side since it showed them, at a pause. The window's piece takes the
+// place of that one, which it holds, so nothing is written twice.
+// Plan row 2.189.
+func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
+	f, mic, told := dictatingTo(t, &voices{})
+	mic.say(tone(2))
+	shown := awaitTold(t, told, func(d Dictation) bool { return d.Hearing == "wort wort wort" })
+	mic.say(hush(1), tone(1.3))
+	awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == 1 })
+	f.SettleListening(shown.Recording, 0, shown.Hearing)
+	awaitTold(t, told, func(d Dictation) bool { return d.Asked == 1 })
+	stopped, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(stopped.Said, "|") != "wort wort wort|wort wort" {
+		t.Errorf("stopping gave %q", stopped.Said)
+	}
+}
+
 // A machine whose speech model is slower than the words should appear is
 // said in the log once, and the line at the end says how many passes
 // there were and how long the slowest took, so a report from a slower

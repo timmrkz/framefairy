@@ -907,6 +907,10 @@ const Answers = {
       case "CancelListening":
         dictateDrop();
         return Promise.resolve(null);
+      // The script goes on as it was, but says it took the ask in.
+      case "SettleListening":
+        if (dict) dict.asked++;
+        return Promise.resolve(null);
       case "Licences":
         return Promise.resolve(noticeList);
       case "LicenceText":
@@ -1857,7 +1861,7 @@ const dictScript = Array.from({ length: dictTalk }, (_, i) => [
   "It came back when I clicked the clip again.",
 ]).flat();
 let dictCount = 0;
-let dict: { id: number; step: number; timer: ReturnType<typeof setInterval> } | null = null;
+let dict: { id: number; step: number; asked: number; timer: ReturnType<typeof setInterval> } | null = null;
 // What has been said after so many steps: the sentences settled and the
 // words of the one still being heard.
 function dictHeard(step: number): { said: string[]; hearing: string } {
@@ -1880,6 +1884,7 @@ function dictateStart(): number {
   const now = {
     id,
     step: 0,
+    asked: 0,
     timer: setInterval(() => {
       now.step++;
       if (location.search.includes("deaf")) return;
@@ -1897,7 +1902,7 @@ function dictateStart(): number {
         );
         return;
       }
-      dictListeners.forEach((fn) => fn({ data: { recording: id, ...heard } }));
+      dictListeners.forEach((fn) => fn({ data: { recording: id, asked: now.asked, ...heard } }));
     }, dictTalk > 1 ? 40 : 250),
   };
   dict = now;

@@ -29,9 +29,11 @@
   let field: HTMLDivElement;
   let listening = $state(false);
   let hearing = $state(false);
-  // The recording in hand, and how many of its pieces are in the field.
+  // The recording in hand, how many of its pieces are in the field, and
+  // how many times words being heard were settled here by a click.
   let recording = 0;
   let placed = 0;
+  let asked = 0;
   // What has been said, in the text where the cursor was, and the mark at
   // its end that draws what is still being heard. The settled words go
   // in by hand rather than as typing, so they are no steps of their own
@@ -140,6 +142,32 @@
     read();
   }
 
+  // freeze settles the words still being heard where they are, when the
+  // pointer goes down in them or just after them, before the browser puts
+  // the cursor there. They become text like any settled piece, so the
+  // cursor goes where it was put, and a word can be selected and
+  // corrected while the person talks on. Tim could not click into them.
+  // The Go side is told, and what it says until it has taken that in is
+  // passed over, since it would show those words a second time.
+  function freeze(e: PointerEvent) {
+    if (!listening || !recording || !said || !mark || !field.contains(said)) return;
+    const now = mark.textContent!.trim();
+    if (!now) return;
+    if (!mark.contains(e.target as Node)) {
+      const at = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+      if (!at) return;
+      const from = document.createRange();
+      from.setStartBefore(mark);
+      from.setEndAfter(said);
+      if (from.comparePoint(at.startContainer, at.startOffset) !== 0) return;
+    }
+    add(now);
+    api.settleListening(recording, placed, now).catch(() => {});
+    placed++;
+    asked++;
+    show("");
+  }
+
   // catchUp writes in the pieces not yet in the field. Every message has
   // all of them, so one that was missed costs nothing.
   function catchUp(pieces: string[]) {
@@ -195,6 +223,7 @@
         return;
       }
       unheard = d.unheard ? sentence(d.unheard) : "";
+      if ((d.asked ?? 0) < asked) return;
       catchUp(d.said ?? []);
       show(d.hearing);
     }),
@@ -209,6 +238,7 @@
     listening = true;
     recording = 0;
     placed = 0;
+    asked = 0;
     begin();
     try {
       recording = await api.listen();
@@ -302,6 +332,7 @@
           aria-label="What happened"
           spellcheck="true"
           oninput={read}
+          onpointerdown={freeze}
           onkeyup={remember}
           onmouseup={remember}
           onblur={remember}
@@ -314,6 +345,7 @@
     <div class="item">
       <button
         class="act dictate"
+        class:listening
         onclick={dictate}
         disabled={hearing || making}
         style:--loud={loud}
@@ -438,6 +470,12 @@
   .act.dictate :global(svg) {
     transform: scale(calc(1 + var(--loud, 0) / 3));
     transition: transform 100ms linear;
+  }
+
+  /* While it listens the microphone wears the accent, so it reads as on
+     at a glance. Tim missed a colour on it. */
+  .act.dictate.listening :global(svg) {
+    color: var(--accent);
   }
 
   .act.dictate {

@@ -586,6 +586,9 @@ export const api = {
   listen: () => call<number>("Listen"),
   stopListening: () => call<Dictation>("StopListening"),
   cancelListening: () => call<void>("CancelListening"),
+  // Settles the words shown as being heard, text, as the piece after the
+  // first pieces the window has, when the person clicks into them.
+  settleListening: (recording: number, pieces: number, text: string) => call<void>("SettleListening", recording, pieces, text),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -857,6 +860,8 @@ export interface Dictation {
   ended?: string;
   // Why the microphone hears nothing, while it goes on recording.
   unheard?: string;
+  // How many settleListening calls said holds.
+  asked: number;
 }
 
 // How loud the microphone is while it records, from 0 for a quiet room to

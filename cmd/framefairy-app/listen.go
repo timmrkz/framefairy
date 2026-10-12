@@ -108,6 +108,9 @@ type Dictation struct {
 	// says so before the person has talked for minutes. It goes on
 	// recording, since the prompt that allows it may still be open.
 	Unheard string `json:"unheard,omitempty"`
+	// Asked is how many of the window's SettleListening calls are in
+	// Said, so it can tell an answer from before its last one.
+	Asked int `json:"asked"`
 }
 
 // listenUnheard is how long a microphone may hand over nothing but zeros
@@ -133,6 +136,9 @@ type recording struct {
 	most    int
 	// hushed stops the microphone once, whoever ends the recording.
 	hushed sync.Once
+	// What the window asked to be settled, see SettleListening, behind
+	// mu, taken by the goroutine that writes it down.
+	settles []settle
 	// How many passes the speech model made and the slowest, kept by the
 	// goroutine that writes it down, for the log.
 	passes  int
@@ -149,6 +155,13 @@ type recording struct {
 	kept    bool
 	dropped atomic.Bool
 	written chan writtenDown
+}
+
+// settle is the window's ask to settle the words it shows as being heard,
+// text, as the piece after the first pieces it has.
+type settle struct {
+	pieces int
+	text   string
 }
 
 type writtenDown struct {
@@ -314,16 +327,52 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 	}
 	defer rec.Close()
 	var said []string
-	settled, passed, hearing, unheard := 0, 0, "", ""
+	settled, passed, hearing, unheard, asked := 0, 0, "", "", 0
 	worded := time.Now()
+	// The last few things told as being heard, and how far into the
+	// recording each was heard, so words the window settles are settled
+	// where they ended.
+	type heard struct {
+		text string
+		end  int
+	}
+	var told []heard
+	// settle takes what the window asked to be settled: its words become
+	// the next piece, where it has them, in place of any piece settled
+	// since, which they hold, and what follows them is heard from where
+	// they ended.
+	settle := func() bool {
+		r.mu.Lock()
+		asks := r.settles
+		r.settles = nil
+		r.mu.Unlock()
+		for _, ask := range asks {
+			end := passed
+			for _, t := range slices.Backward(told) {
+				if t.text == ask.text {
+					end = t.end
+					break
+				}
+			}
+			said = append(said[:min(ask.pieces, len(said))], ask.text)
+			settled, hearing, told = end, "", nil
+			asked++
+		}
+		return len(asks) > 0
+	}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
 		select {
 		case <-r.ended:
+			settle()
 			out = l.finish(r, rec, said, settled, r.kept)
 			return
 		case <-tick.C:
+		}
+		if settle() {
+			worded = time.Now()
+			l.tell(r, Dictation{Said: slices.Clone(said), Unheard: unheard, Asked: asked})
 		}
 		// Nobody has said anything for a long while, or the recording is
 		// as long as it may be: it stops by itself and keeps what was
@@ -338,6 +387,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		}
 		if why != "" {
 			r.hush()
+			settle()
 			out = l.finish(r, rec, said, settled, true)
 			if l.endItself(r, Dictation{Said: append([]string{}, out.said...), Ended: why, Error: errText(out.err)}) {
 				r.line(zerolog.InfoLevel).Str("why", why).Msg("the recording stopped by itself")
@@ -371,7 +421,8 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 				worded = time.Now()
 			}
 			hearing, unheard = now, deaf
-			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now, Unheard: deaf})
+			told = append(told[max(len(told)-15, 0):], heard{now, passed})
+			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now, Unheard: deaf, Asked: asked})
 		}
 	}
 }
@@ -530,6 +581,23 @@ func (f *FrameFairy) StopListening() (Dictation, error) {
 		return Dictation{Recording: r.id, Said: []string{}}, out.err
 	}
 	return Dictation{Recording: r.id, Said: append([]string{}, out.said...)}, nil
+}
+
+// SettleListening settles the words the window shows as being heard,
+// text, there and then, as the piece after the first pieces it has. A
+// click in them asks it, so the cursor can go in and the words can be
+// corrected while the person talks on, which Tim could not do. A
+// recording that is no longer in hand has nothing to settle.
+func (f *FrameFairy) SettleListening(recording, pieces int, text string) {
+	l := &f.listening
+	l.mu.Lock()
+	r := l.now
+	if r != nil && r.id == recording && text != "" {
+		r.mu.Lock()
+		r.settles = append(r.settles, settle{pieces, strings.TrimSpace(text)})
+		r.mu.Unlock()
+	}
+	l.mu.Unlock()
 }
 
 // CancelListening ends the recording and drops what was said, at once,

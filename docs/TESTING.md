@@ -395,8 +395,10 @@ puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
 listens and the microphone move with the hum, then ends it with Stop,
 Enter or Escape, or with `ends` lets it stop by itself and say why, or
-with `start` only starts it and with `settled` waits for the words
-before the pause,
+with `start` only starts it, with `hearing` waits for more to be heard
+and with `settled` waits for the words before the pause, `click heard`
+clicks into the first word still being heard and sees it settled with
+the cursor in it,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
 bridge's microphone plays two seconds of a hum, a pause and a second and
