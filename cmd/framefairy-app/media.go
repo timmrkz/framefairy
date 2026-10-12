@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"framefairy/engine"
 )
@@ -28,28 +29,58 @@ type SourceView struct {
 	// and with it the grid its frames are on, so the app counts frames from
 	// where the render does. Nought for most files.
 	VideoStart float64 `json:"videoStart"`
+	// Grid is the frames the video preview shows, the frames of the short,
+	// see engine.SourceInfo.Grid: the frame queue counts on them and reads
+	// nothing of the file itself.
+	Grid GridView `json:"grid"`
+	// The sound's samples a second and its channels, both nought for a
+	// video with no sound.
+	SoundRate     int `json:"soundRate"`
+	SoundChannels int `json:"soundChannels"`
+}
+
+// GridView is framewire.Grid as the interface reads it.
+type GridView struct {
+	Origin float64 `json:"origin"`
+	Start  float64 `json:"start"`
+	Num    int     `json:"num"`
+	Den    int     `json:"den"`
+	Count  int     `json:"count"`
+}
+
+// sources are the episodes probed, by path, size and when they were
+// written, for the app and for the video preview's streams alike.
+var sources = &probed{}
+
+type probed struct {
+	mu   sync.Mutex
+	info map[string]engine.SourceInfo
 }
 
 func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
+	return sources.probe(ctx, path)
+}
+
+func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
 	stamp := ""
 	if info, err := os.Stat(path); err == nil {
 		stamp = fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
 	}
-	s.mu.Lock()
-	cached, ok := s.probed[stamp]
-	s.mu.Unlock()
+	p.mu.Lock()
+	cached, ok := p.info[stamp]
+	p.mu.Unlock()
 	if ok {
 		return cached, nil
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
-		s.mu.Lock()
-		if s.probed == nil {
-			s.probed = map[string]engine.SourceInfo{}
+		p.mu.Lock()
+		if p.info == nil {
+			p.info = map[string]engine.SourceInfo{}
 		}
-		s.probed[stamp] = info
-		s.mu.Unlock()
+		p.info[stamp] = info
+		p.mu.Unlock()
 	}
 	return info, err
 }
@@ -66,8 +97,11 @@ func (s *FrameFairy) Source(ctx context.Context, path string) (SourceView, error
 	o := s.store.Settings().options()
 	cw, ch := engine.CropWindow(info, o.Width, o.Height)
 	tw, _ := engine.CropWindow(info.Rotated(90), o.Width, o.Height)
+	grid := info.Grid()
 	return SourceView{Duration: info.Duration, Width: info.Width, Height: info.Height,
-		CropWidth: cw, CropHeight: ch, TurnedCropWidth: tw, FPS: info.FPS(), VideoStart: info.VideoStart}, nil
+		CropWidth: cw, CropHeight: ch, TurnedCropWidth: tw, FPS: info.FPS(), VideoStart: info.VideoStart,
+		Grid:      GridView{Origin: grid.Origin, Start: grid.Start, Num: grid.Num, Den: grid.Den, Count: grid.Count},
+		SoundRate: info.SoundRate, SoundChannels: info.SoundChannels}, nil
 }
 
 // frames are an episode's frames, the grid a gesture puts its edges on,

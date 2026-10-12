@@ -122,7 +122,8 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
+| `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
@@ -185,8 +186,9 @@ quarter of a second:
 | Enter opens the word in the frame | Enter opening the word at the playhead instead, found by the first walks |
 | One word at most wears the frame, and one at most is open | |
 | An edit stays where it was made: every word more than three seconds of the episode from the word corrected keeps its text and its time | removing a word typed in beside another taking the other with it |
-| Taking a word out changes no caption: every caption still there appears and goes when it did, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
+| Taking a word out changes no other caption: every caption still there appears and goes when it did, the one the word was in only draws in at the edge the word was at, and only one whose words were all removed may go, leaving its time empty | the caption that broke where a removed word had been, the next caption's first word pulled up into the room a removed word left, and the caption before a removed caption staying up through its time, found by Tim |
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
+| Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
 | A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, within a moment of the step, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
@@ -351,7 +353,20 @@ as it was found. The steps are the walk's gestures by name, `frame` a
 word, `click` it, `press` a key, `type`, `undo`, `redo`, `mark` the
 engine's captions and pieces under a label, and on the clip timeline
 `cut at` a share of the clip, `join` a cut, `trim` an edge by some
-pixels, `reset` an edge and click the caption `block` holding a word. What has to come of them: `box`, what
+pixels, `reset` an edge and click the caption `block` holding a word,
+drag an edge of the caption holding a word `edge in` over the middle of
+its word at that edge, `edge out` back to where it was at the mark
+`start`, or `edge nudge` a little short of any word, each held a moment
+before it is let go and failing when the edge is not saved where it was
+drawn under the hand, and `remove edge word`, the first or last word of
+that caption removed in the caption box, with `gone last` and `gone
+first`, that caption reading as it did at a mark less its last or first
+word, `drawn in`, the captions reading as they did at a mark and that
+caption drawn in at its first or last edge from where it was at `start`,
+`others`, every other caption appearing and going when it did at a
+mark, `edge put back`, a double-click on an edge of the caption holding a
+word, and `count pops` and `pops`, how often a caption block popped
+since. What has to come of them: `box`, what
 the caption box reads, `open`, which word is open, `same`, the engine's
 captions and pieces as they were at a mark, `spans`, every caption
 appearing and going when it did at a mark, `fewer`, so many words fewer

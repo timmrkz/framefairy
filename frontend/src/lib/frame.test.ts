@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import cases from "./frame.cases.json";
 import { frameAt } from "./flow";
-import { rankAt, type Samples } from "./frames/mp4";
+import { rankAt, type Samples } from "./frames/movie";
 
 // The same table the render is held to, in engine/frameof_test.go. The
 // engine keeps every edge on the start of the frame the render cuts it
@@ -30,8 +30,6 @@ function samplesAt(num: number, den: number, start: number, count: number): Samp
   return {
     count,
     timescale: num * 1000,
-    offset: new Float64Array(count),
-    size: new Uint32Array(count),
     pts,
     duration: new Float64Array(count).fill(den * 1000),
     key: new Uint8Array(count).fill(1),

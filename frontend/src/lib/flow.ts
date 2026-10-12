@@ -343,36 +343,13 @@ export function frameMiddle(k: number, frame: number, start = 0): number {
   return start + (k + 0.5) * frame;
 }
 
-// A caption edge being dragged, on the clip's clock.
+// A caption edge being dragged, on the clip's clock. Where it lands and
+// what it does to the words is the engine's to say, see ShapeCaptionTime
+// in engine/episode.go.
 export interface CaptionDraft {
   index: number;
   edge: "start" | "end";
   at: number;
-}
-
-// The captions with one edge where it is being dragged, the way the engine
-// will put them once it is let go: a caption that appears earlier or later
-// takes the one before it along where the two met, and never lies over it.
-// Anything that shows the captions while an edge is dragged shows these, so
-// the timeline and the video preview move together.
-export function draftCaptions<T extends { start: number; end: number }>(
-  captions: T[],
-  draft: CaptionDraft | null,
-): T[] {
-  if (!draft || !captions[draft.index]) return captions;
-  const out = captions.map((c) => ({ ...c }));
-  const i = draft.index;
-  if (draft.edge === "end") {
-    out[i].end = draft.at;
-    return out;
-  }
-  const was = out[i].start;
-  out[i].start = draft.at;
-  const before = out[i - 1];
-  if (before && (Math.abs(before.end - was) < 0.001 || before.end > draft.at)) {
-    before.end = draft.at;
-  }
-  return out;
 }
 
 // Which word of a caption is lit at a moment on the clip's clock, counted

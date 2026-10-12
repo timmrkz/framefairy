@@ -108,6 +108,9 @@ class Shell {
   // newest last, or by name. The order added is the library's own, so it
   // is the one a new copy of the app starts with.
   order = $state<EpisodeOrder>(readOrder());
+  // How many boxes asking first are open, Confirm.svelte, so a video
+  // dropped on the app is not added under a question.
+  asking = $state(0);
 
   set(open: boolean) {
     this.pinned = open;

@@ -2,6 +2,7 @@
   // Asks before something that cannot be taken back. A real modal, because
   // a click that throws work away has to be a click you meant.
   import type { Snippet } from "svelte";
+  import { shell } from "../lib/state.svelte";
 
   let {
     title,
@@ -18,6 +19,13 @@
   } = $props();
 
   let panel: HTMLDialogElement;
+
+  // While the box is open, nothing dropped on the app is added, see
+  // App.svelte.
+  $effect(() => {
+    shell.asking++;
+    return () => shell.asking--;
+  });
 
   $effect(() => {
     if (!panel) return;

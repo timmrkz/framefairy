@@ -694,11 +694,11 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   filter, rounding up, gives every frame of the short the frame of the
   episode that holds its moment, the last one to begin at or before it.
   The times are moved in microseconds for that, since in a phone's ticks
-  of 1/600 s the hair is lost in the rounding. That is the rule of the
-  video preview, `rankAt` in `frontend/src/lib/frames/mp4.ts`, which reads
-  the times of the frames from the file's own index, edit list included,
-  and was right for both kinds already: on files ffmpeg made of both
-  kinds, every time it read agreed with ffprobe to a microsecond. The
+  of 1/600 s the hair is lost in the rounding. The video preview shows
+  the same frames: `SourceInfo.Grid` names the frames of the short, and
+  the episode's decoder makes each of them from the file's frames by the
+  same rule, `framewire.Grid`, counted in whole microseconds as the `fps`
+  filter counts, see [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), step 5. The
   sound is cut at the same moments as before.
 - **Every track starting late.** A recording cut out of a longer one, or
   one written with its start held back, has no track that starts at zero.
@@ -706,11 +706,9 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   so does every time in the engine. The video preview counted from the
   movie's own zero, so the two were apart by as long as the earliest
   track was late: 0.476 s in a file ffmpeg wrote with its start held back
-  half a second. `parseMoov` in `frontend/src/lib/frames/mp4.ts` now
-  counts from where ffmpeg does. A track starts where its edit list puts
-  it and never before, so the priming cut off the front of AAC does not
-  move a plain file, and on files ffmpeg made, plain and held back, in
-  MP4 and in MOV, every time it reads agrees with ffprobe's.
+  half a second. The video preview reads nothing of the file now, and
+  the episode's decoder counts its frames and its sound from where ffmpeg
+  does, `TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate`.
 - **The rate of a short of uneven frames.** The rate ffmpeg reports for
   uneven frames is the finest step they keep to, not how many come a
   second: 50 for the phone's frames above, which average 29.75, so its
@@ -1010,7 +1008,15 @@ length, one after another. A run that asks for more is refused before it
 transcribes. An episode shorter than a clip at its shortest is the one
 exception: it has one clip, the whole of it, shaped and framed like any
 other, and the model is not asked. Nothing chose it, so nothing about it
-is recorded for training.
+is recorded for training. Searched again, it looks only at the clips
+still in the list, `PlanOptions.Listed`: with any clip of it there,
+however trimmed, the search finds nothing new, and with its clip removed
+the search makes it again, since the episode has no other moment to
+offer. The clip made again is the removed one made afresh, so the removed
+one is taken out of its plan, `DropRemoved`, once the new one is written.
+Left in, putting it back or undoing its removal showed the episode twice.
+An undo of the removal is then refused as changed since, the way an undo
+of anything a search has changed is.
 
 ## Planning on your machine
 

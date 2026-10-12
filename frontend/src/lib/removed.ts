@@ -32,3 +32,35 @@ export function takeUp(path: string, now = Date.now()): Record<string, Removed> 
 export function spent(r: Removed, now = Date.now()): number {
   return Math.min(secondThoughts, Math.max(0, secondThoughts - (r.until - now) / 1000));
 }
+
+// A search that found nothing new says so in the row its next clip would
+// have appeared in, for as long as a clip taken out can be put back, and
+// then the row closes. It is a piece of news, not a state to report, so
+// it does not stand there until the next search. Its time runs on while
+// another episode is open, the way a removed clip's does, so coming back
+// does not say it again from the start. By the search's job: the moment
+// its row closes, in milliseconds since the epoch, and 0 once it has.
+export type Told = Record<string, number>;
+
+const toldAside = new Map<string, Told>();
+
+// The rows an episode leaves the screen with.
+export function setAsideTold(path: string, told: Told) {
+  if (Object.keys(told).length > 0) toldAside.set(path, told);
+  else toldAside.delete(path);
+}
+
+// The rows an episode comes back to. Those whose time ran out while it was
+// away are closed, so they do not flash up and close again.
+export function takeUpTold(path: string, now = Date.now()): Told {
+  const kept = toldAside.get(path) ?? {};
+  toldAside.delete(path);
+  return Object.fromEntries(Object.entries(kept).map(([job, until]) => [job, until > now ? until : 0]));
+}
+
+// How much of its time a row saying a search found nothing has used, in
+// seconds. A row whose time has not started has used none.
+export function toldSpent(until: number | undefined, now = Date.now()): number {
+  if (!until) return 0;
+  return Math.min(secondThoughts, Math.max(0, secondThoughts - (until - now) / 1000));
+}

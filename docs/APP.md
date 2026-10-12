@@ -101,8 +101,29 @@ never decides on somebody's behalf, so an app that has never been asked asks.
 ### Episodes
 
 The sidebar lists your episodes and how far each one is. **Add episode**, at
-the bottom of it, opens a file dialog. Any mp4, mov, m4v or mkv works.
+the bottom of it, opens a file dialog. Which files it takes is said once,
+in [Which files are videos](#which-files-are-videos).
 Transcription starts right away in the background.
+
+A video dragged from Finder and dropped anywhere on the app is added the
+same way, whatever page is open, and opens. While a file is held over
+the app, the app wears the frame of what is chosen, with the accent's
+wash inside it. A video already in the list opens rather than being added
+twice, and a file that is not a video is left out, by its name, where Add
+says why it left a file out. Add and a drop are one path, `takeFiles` in
+`drop.go`: the same files are taken, the same reasons given, and the
+video just added opens, or a video given again. The reason stays until
+the next files are taken. The window marks the whole page as where a
+drop lands, `data-file-drop-target`, once the first-run setup is done,
+and not while a box asks first or the app asks about quitting. Plan row
+2.192.
+
+A drop is the one way into the library that does not come from a box the
+system draws. Wails hands the dropped paths to the page and the page
+hands them back, so the paths pass through the page on their way. They
+meet the same checks as Add's: a video's extension, a picture the
+decoder can read, and no link, see `linkedEpisode`. That was decided
+knowingly, since the page is the app's own.
 
 The app opens on the episode that was open when it was left. With no
 episode in the library, the page says **Add a video** and has the
@@ -195,6 +216,29 @@ a warning, so it is read before it is clicked rather than after. Making it
 the default would mean that Enter, or a second Return still held down from
 somewhere else, throws work away, and the whole reason this box exists is
 that a click which throws work away has to be a click you meant.
+
+### Which files are videos
+
+This is the one place in the docs that says which files the app takes as
+videos, and `VideoExtensions` in `engine/episode.go` is the one place in
+the code. Add's box, a drop on the app, `ScanFolder` and the words the
+app shows on the Add button and the page for no video all read that list.
+`TestVideosAreNamedOnce` in `engine/videos_test.go` fails when this
+section and the list disagree, or when any other doc, code or interface
+text names the endings itself.
+
+A file is added as a video when all of this holds:
+
+| Check | Where |
+| --- | --- |
+| Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
+| The decoder reads a first frame from it | `undecodable` in `cmd/framefairy-app/library.go` |
+| Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
+| No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
+
+The ending decides first. A file with another ending is left out by its
+name, whatever it holds, and a file with one of these endings that holds
+no picture the decoder can read is left out with the decoder's reason.
 
 ### The bar
 
@@ -369,19 +413,21 @@ apart from streams of frames, so the seeks of a play never close the
 frames the video preview draws.
 
 A frame the page makes from what the Go side decoded is in full range,
-and says so, with the picture's colours read from the file's `colr` box.
+and says so, with the picture's light as the Go side reads it from the
+file's transfer tag, see `framewire.Picture`.
 WebKit draws a frame made from a buffer as full range whatever the frame
 says: Tim's `start.mp4`, HEVC with 10-bit colour in video range, which
 the Go side decodes for WebKit, came out pale, its black a grey of 17
 where QuickTime shows 1. Labelled video range it stayed so. Now
 VideoToolbox is asked for full range, and ffmpeg too, `out_range=pc`, so
-what WebKit assumes is what the frame holds. A file it cannot play, a codec the system cannot decode, a
-fragmented MP4, a file that is not an MP4 or a MOV at all, says so in one
-sentence where the picture would be, with the reason, and nothing else in
-the workspace changes. A sound it cannot decode plays the picture without
-it and says so at the foot of the picture. With one engine, see
-[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), such files will play as far as the
-render can read them.
+what WebKit assumes is what the frame holds. Every file ffmpeg reads
+plays, whatever its container, Matroska and MPEG-TS among them, because
+the page reads nothing of the file, see step 5 of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). A file the episode's decoder cannot
+read, a codec it has no decoder for, says so in one sentence where the
+picture would be, with the reason, and nothing else in the workspace
+changes. A sound it cannot decode plays the picture without it and says
+so at the foot of the picture.
 
 Every file's picture is decoded by ffmpeg on the Go side, the first step
 of [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md), plan row 2.156, by the episode's
@@ -446,10 +492,12 @@ decoders, the Mac's VideoToolbox through cgo, `NativePictures` and
 `engine.Pictures` with `/frames/native` and `/frames/decode`, plain sound
 read and turned into samples by the page, and the choice between them
 were in the code as well, each with its own way of failing. They are
-removed, and the page reads nothing of the file but its index. The frames
-come in streams the page opens and pulls from:
+removed, and the page reads nothing of the file at all, see step 5 of
+[VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). The frames come in streams the page
+opens and pulls from, each on the grid of frames the engine named, which
+the page hands back as it opens one:
 
-    /frames/open?path=&from=&w=&h=   {"id": ...}
+    /frames/open?path=&from=&w=&h=&grid=   {"id": ...}
     /frames/read?id=&n=&skip=        up to n frames
     /frames/close?id=
 
@@ -460,11 +508,11 @@ moment it starts at as a float64 in 8 bytes. ffmpeg decodes a frame ahead
 of what was pulled and waits: WebKit takes whatever a response writes
 without pushing back, so one long response would have let it decode the
 whole episode into memory while the page stood paused. A stream nobody
-pulls from for 20 seconds is closed, and at most six are open. Like
-`/media/`, it only reads a file of an episode in the library.
+pulls from for 20 seconds is closed, and at most six are open. It only
+reads a file of an episode in the library.
 
-What makes it quick, since a new stream costs ffmpeg starting, reading the
-file's index and decoding from the key frame before:
+What makes it quick, since a new stream costs moving a cursor of the
+episode's decoder and decoding from the key frame before:
 
 - A stream that will reach a frame within a second and a half is waited
   for rather than a new one started, and the frames it passes on the way
@@ -611,18 +659,18 @@ document finds a second one, and it keeps what is drawn on its canvases
 and how far its clip list was scrolled. Its video preview lets go of
 everything costly, `sleeping` in `Player.svelte`:
 the frame queue is closed, with its decoder on the Go side, the frames it
-kept and its sound card, and only the file's index and the frame on the
-canvas stay. Waking, a new queue starts from that index, in the task
+kept and its sound card, and only what it played and the frame on the
+canvas stay. Waking, a new queue starts from what it played, in the task
 after the frame that shows the workspace again, so starting a sound card
-and a decoder does not hold that frame back. Nothing is read from the
-file then but its length and when it was written, and the index is read
-again if either changed, an episode exported again under its name.
+and a decoder does not hold that frame back. What it plays is the frames
+the engine names for the episode and its sound, from the source, see
+`lib/frames/movie.ts`, and nothing of the file is read by the interface.
 Nothing of the file is taken from the webview's cache, which took a file
 written long ago as unchanged for minutes. The workspace reads the
 episode and the settings again behind what it already shows. Asleep, it
 reads nothing by itself. An
 eleventh episode opened lets go of the one opened longest ago. Asleep,
-a workspace is its page, its canvases and the file's index, about 10 MB,
+a workspace is its page, its canvases and the frames it plays, about 10 MB,
 so ten is about 100 MB. As the app starts, it opens on the episode that
 was open when it was left, the way a Mac app comes back with the document
 it had open, and the workspaces of the episodes opened before it are
@@ -644,10 +692,9 @@ went to sleep with nothing on its canvas.
 
 An episode that is not kept is built the moment it is picked, and the
 parts of that are started together rather than one after another. The
-file's index and the episode's decoder are asked for as the workspace
-starts to build, `readAhead` in `lib/frames/queue.ts`, rather than once
-the workspace knows what the episode is, and the frame queue takes the
-index read ahead. The clip timeline asks for its words and its waveform
+episode's decoder is asked for as the workspace starts to build,
+`holdAhead` in `lib/frames/queue.ts`, rather than once the workspace
+knows what the episode is. The clip timeline asks for its words and its waveform
 once the episode has answered, and never twice for the same view. The
 Go side keeps the transcripts of the last ten episodes read, `keptReads`
 in `words.go`, and reads one once however many calls ask for it at the
@@ -657,7 +704,7 @@ picker may draw is worked out without a search from every line, which
 took forty milliseconds of an hour's transcript in the frame the
 workspace opened in, `anywhere` in `lib/room.ts`. An hour's episode not
 kept is on screen in 200 ms in the walks' browser, from 240, and what is
-left is the workspace itself being laid out and the file's index read.
+left is the workspace itself being laid out.
 
 Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
@@ -914,8 +961,10 @@ bubble scrolled by those eight pixels.
     out, see `Captions` in `engine/lines.go`. What it read is kept with the
     removal in `corrections.json`, behind a mark no typed word can have. The
     time it held is no pause, the room it took on its line stays taken, so
-    no word of the next caption is pulled up into it, and a caption whose
-    first word it was appears when that word is said. A caption whose
+    no word of the next caption is pulled up into it, and no other caption
+    moves. A caption whose first or last word it was draws in to the words
+    it still shows, the same as when its edge is dragged in over the word,
+    see **Caption timing**. A caption whose
     words are all removed goes and leaves its time empty, and the one
     before it goes when it did. It used to stay up through that time, so
     the block before a removed caption grew across its place on the clip
@@ -1190,6 +1239,18 @@ bubble scrolled by those eight pixels.
       only once the last removed row has closed, so they never push it
       down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
+    - **A search that found nothing new says so.** A search that ends
+      with no clip beyond the ones in the list, a window searched again
+      or a video shorter than Shortest with its clip in the list, leaves
+      one row after the clips, **Nothing new found**, with its window or
+      **All clips already found** under it and why in its title. It is
+      news, not a state, so it runs down in grey for as long as a removed
+      clip's row can be put back, stands still under the pointer, and
+      closes. Its time runs on while another video is open. Each search
+      that finds nothing says so once, so New pressed again and again
+      says Finding and then this, every time. Its row used to close
+      again with nothing said. It is not kept across a restart, since
+      there is nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
       **New** becomes **Continue**. *Interrupted. Click Continue* is a
@@ -1868,13 +1929,47 @@ moved by hand, on the clip timeline.
   block from where it appears to where it goes, on the same clock as
   everything else on it. A click on a block puts the playhead on that
   caption's first word.
-- **Either edge is dragged.** Where two captions meet, the line between
-  them has two sides: the left side is where the one before goes, the
-  right side where the one after appears. Dragging the left side leaves a
-  gap and moves nothing else. Dragging the right side moves when the next
-  caption appears, and the one before goes with it, so nothing is left bare
-  that was not bare before. Nothing overlaps, because the picture shows one
-  caption at a time. An edge lands on a whole frame.
+- **Either edge is dragged, and moves its own caption only.** Where two
+  captions meet, the line between them has two sides: the left side is
+  where the one before goes, the right side where the one after appears.
+  An edge dragged in leaves a gap, and dragged out it stops at the caption
+  beside it. No other caption ever moves. Dragging the right side used to
+  take the caption before along, so pulling a left edge in over a word
+  drew the caption before into the room Tim had just cleared. Nothing
+  overlaps, because the picture shows one caption at a time. An edge
+  lands on a whole frame.
+- **An edge dragged over a word removes it.** Dragged in, an edge takes
+  out of its caption every word whose middle it passes, the way delete
+  removes a word, so pulling the left edge of "one two three" past "one"
+  reads "two three", and the right edge past "three" reads "one two".
+  Dragged back out over a word it took, the word comes back. The middle
+  is of the part of the word the clip shows, so a word the start of the
+  clip cuts into is passed in that part. The last word stays, because
+  delete removes a caption whole. Which words an edge passes and where it
+  stops is the engine's to say, `ShapeCaptionTime`: the clip timeline asks
+  it while the hand moves and draws its answer, and the caption box in the
+  video preview shows the words it leaves. When the edge is let go it is
+  saved where it was drawn, `SetCaptionTime`, with the words, and Cmd+Z
+  takes back the words and the edge in one step. The interface once kept a
+  copy of the rule, which drifted from the engine's: an edge was drawn in
+  one place and saved in another, and a word the start of the clip cut
+  into left the caption box during the drag and came back when let go.
+- **Removing a word at an edge draws the caption in, as dragging over it
+  does.** A caption whose first or last word is removed in the caption box
+  draws in to the words it shows: it appears with its first word shown and
+  goes a moment after its last. An edge moved in by hand stays where it
+  was put, and one moved out comes in with the word. The captions beside
+  it keep their time, so the room the word took stays empty. Before, the
+  caption kept the time the word had, and the two ways of taking a word
+  off its edge ended differently, which Tim found. The word typed back
+  takes the edge back out to where the hand put it.
+- **A double-click puts an edge back where all its words put it**, the
+  words taken out at that edge coming back with it, whether a drag or the
+  caption box took them. It can be done to any edge moved by hand or
+  drawn in with its word, so it undoes any number of drags. It used to
+  leave the words out, which put a dragged edge only where the words left
+  put it, about where it already stood: Tim dragged a right edge in and
+  double-clicked twice, and the second time nothing moved.
 - **The caption box in the video preview follows the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
@@ -1889,7 +1984,13 @@ moved by hand, on the clip timeline.
   colour over its box, with its own opacity, the pill the spoken word
   wears, and pops with the same animation that pill makes in the video
   preview, on every word as the pill does, so walking the words with shift
-  and the arrow keys pops the pill and the block together. A block takes no focus, so no focus ring is left
+  and the arrow keys pops the pill and the block together. It pops when
+  the playhead comes to a new word and never because an edge is dragged:
+  while one is, the block is lit as the caption is saved, and a word is
+  known by when it starts, so taking out a word before it is no new word.
+  The block popped as a dragged left edge passed the playhead, which a
+  click on the block puts at its first word, and a dragged right edge
+  never came near it, so the two edges looked different, found by Tim. A block takes no focus, so no focus ring is left
   round one when the keys walk the words on. A click puts the
   playhead a frame into the caption's first word, so the video preview
   shows that word lit, the first caption of a clip included, which is on
@@ -2507,7 +2608,7 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
     longer than half a second or came more than 60 in a second, which
     workspace is asked for and in front, each step of a workspace
     opening and what it still waits for when it is slow, and each step
-    of the video preview: the canvas, the file's index, the sound card,
+    of the video preview: the canvas, what it plays, the sound card,
     the first frame, every play and pause with how it went, and what a
     play that does not start waits for.
   - `files`: every read of the video's file, every stream of frames or
@@ -2576,5 +2677,5 @@ interface's types.
 make test
 ```
 
-They cover the job queue, waiting for the transcript and the media route.
+They cover the job queue, waiting for the transcript and the frames route.
 The one that transcribes is skipped when ffmpeg is missing.

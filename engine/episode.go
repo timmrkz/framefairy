@@ -12,8 +12,39 @@ import (
 	"time"
 )
 
-// VideoExtensions are the files a library scan treats as episodes.
+// VideoExtensions are the files the app takes as videos: what Add's box
+// offers, what a drop on the app takes, what ScanFolder finds and what
+// the app tells a person it takes. This list is the one place that says
+// so in code, and Which files are videos in docs/APP.md the one place in
+// words. TestVideosAreNamedOnce holds both to it.
 var VideoExtensions = []string{".mp4", ".mov", ".m4v", ".mkv"}
+
+// VideoPattern is VideoExtensions as the filter of a file box.
+func VideoPattern() string { return videoPattern(VideoExtensions) }
+
+func videoPattern(exts []string) string {
+	parts := make([]string, len(exts))
+	for i, ext := range exts {
+		parts[i] = "*" + ext
+	}
+	return strings.Join(parts, ";")
+}
+
+// VideoNames is VideoExtensions the way a person reads them, the endings
+// without their dots and the last joined with or.
+func VideoNames() string { return videoNames(VideoExtensions) }
+
+func videoNames(exts []string) string {
+	names := make([]string, len(exts))
+	for i, ext := range exts {
+		names[i] = strings.TrimPrefix(ext, ".")
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	last := len(names) - 1
+	return strings.Join(names[:last], ", ") + " or " + names[last]
+}
 
 // PlanSummary describes one plan file without its words.
 type PlanSummary struct {
@@ -662,12 +693,13 @@ type CaptionView struct {
 	End   float64           `json:"end"`
 	Lines []CaptionLineView `json:"lines"`
 	// First and Last are when the word the caption begins on and the word
-	// it ends on start in the episode, which is what a caption moved by
-	// hand is kept against. Nought where there is no such word.
+	// it ends on start in the episode, a word removed among them, which is
+	// what a caption moved by hand is kept against, see Caption.Opens.
 	First float64 `json:"first"`
 	Last  float64 `json:"last"`
-	// StartMoved and EndMoved say the caption appears or goes where it was
-	// put by hand rather than where its words put it.
+	// StartMoved and EndMoved say the caption appears or goes other than
+	// where all its words put it: moved by hand, or drawn in with a word
+	// taken out at that edge. Either is put back, see SetCaptionTime.
 	StartMoved bool `json:"startMoved,omitempty"`
 	EndMoved   bool `json:"endMoved,omitempty"`
 }
@@ -746,6 +778,20 @@ func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause 
 	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, overrides)}, nil
 }
 
+// ShapeCaptionTime works out the captions of a clip with the edge of one
+// where the hand has it, the words it crosses taken out or put back, and
+// writes nothing. It is what SetCaptionTime saves when the hand lets go,
+// see moveCaptionEdge.
+func ShapeCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
+	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+	work := *t
+	moved, err := moveCaptionEdge(LoadCorrections(logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	if err != nil {
+		return nil, err
+	}
+	return captionsView(moved.plan, moved.clip, &work, overrides), nil
+}
+
 // planClip finds one clip of a plan.
 func planClip(planPath, clipID string) (Plan, Clip, error) {
 	plan, clips, err := LoadClips(planPath)
@@ -817,15 +863,8 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 	for _, c := range laid {
 		item := CaptionView{Start: c.Start, End: c.End, Lines: []CaptionLineView{}}
 		if len(c.Words) > 0 {
-			first, last := c.Words[0], c.Words[len(c.Words)-1]
-			if w, ok := SaidWord(clip, said, (first.Start+first.End)/2); ok {
-				item.First = w.Start
-				item.StartMoved = clip.CaptionTimes[wordKey(w.Start)].Start != nil
-			}
-			if w, ok := SaidWord(clip, said, (last.Start+last.End)/2); ok {
-				item.Last = w.Start
-				item.EndMoved = clip.CaptionTimes[wordKey(w.Start)].End != nil
-			}
+			item.First, item.Last = c.Opens, c.Closes
+			item.StartMoved, item.EndMoved = c.startMoved || c.trimStart, c.endMoved || c.trimEnd
 		}
 		for _, line := range c.Lines {
 			row := CaptionLineView{Words: []WordView{}}

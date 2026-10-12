@@ -17,7 +17,6 @@
     clock,
     errorText,
     intoWord,
-    mediaURL,
     snapCaptionY,
     type CaptionFont,
     type CaptionsView,
@@ -35,7 +34,6 @@
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import {
-    draftCaptions,
     waitShare,
     Heard,
     covers,
@@ -50,7 +48,6 @@
     onGrid,
     frameAt,
     frameMiddle,
-    type CaptionDraft,
   } from "../lib/flow";
   import { installFonts } from "../lib/fonts";
   import type { About } from "../lib/playhead";
@@ -66,9 +63,19 @@
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
   import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
-  import { secondThoughts, setAside, spent, takeUp, type Removed } from "../lib/removed";
+  import {
+    secondThoughts,
+    setAside,
+    setAsideTold,
+    spent,
+    takeUp,
+    takeUpTold,
+    toldSpent,
+    type Removed,
+    type Told,
+  } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
-  import { readAhead } from "../lib/frames/queue";
+  import { holdAhead } from "../lib/frames/queue";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -718,6 +725,64 @@
     if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
     return { what: "All clips removed", left: "New finds others" };
   });
+  // The newest search ended and found nothing beyond the clips there are,
+  // which is an answer, not a failure. The row its next clip would have
+  // appeared in says so: Tim pressed New on a video with its one clip, and
+  // the row that said Finding closed again with nothing to say what had
+  // come of it. It is news rather than a state, so it runs down for as
+  // long as a removed clip's row does, in a neutral colour, and closes.
+  // Each search that finds nothing says so once, so New pressed again and
+  // again is a row that says Finding and then this, every time.
+  //
+  // Its time is kept by the search's job, the way a removed clip's is, see
+  // told. It starts once the row is on screen, so the row is read here
+  // without starting anything. Taken up before anything is drawn, so a
+  // row coming back runs on from where it was rather than from full.
+  let told = $state<Told>(untrack(() => takeUpTold(path)));
+  const foundNothing = $derived.by(() => {
+    if (busy || stopped) return null;
+    const last = jobs.forEpisode(path).findLast((j) => j.kind === "search");
+    if (last?.state !== "done" || (last.written ?? 0) > 0) return null;
+    const job = last.id;
+    if (told[job] === 0) return null;
+    const fades = {
+      spent: toldSpent(told[job]),
+      onend: () => {
+        told = { ...told, [job]: 0 };
+      },
+      onresume: (left: number) => {
+        told = { ...told, [job]: Date.now() + left * 1000 };
+      },
+    };
+    const start = last.from ?? 0;
+    const end = last.to && last.to > 0 ? last.to : duration;
+    const window = `Window ${clock(start)} to ${clock(end)}`;
+    // Shortest as the search was asked for it, not as it is now.
+    if (duration > 0 && duration < (last.min || min)) {
+      return {
+        job,
+        what: "Nothing new found",
+        left: "All clips already found",
+        fades,
+        full: "The video is shorter than Shortest, so it holds one clip, and that clip is already in the list",
+      };
+    }
+    return {
+      job,
+      what: "Nothing new found",
+      left: window,
+      full: `${window}. The search found no moments beyond the clips there are`,
+      fades,
+    };
+  });
+  // The row's time starts the first time it is shown.
+  $effect(() => {
+    const job = foundNothing?.job;
+    if (job && !(job in told)) told = { ...told, [job]: Date.now() + secondThoughts * 1000 };
+  });
+  // The news first: with every clip removed, a search that found nothing
+  // says so, and the row that stands for an empty list comes after it.
+  const note = $derived(foundNothing ?? emptied);
   const coming = $derived(
     shown.length +
       onTheWay.length +
@@ -730,7 +795,7 @@
           ? Math.max(count, unread)
           : // Clips a search wrote before it was cut off stay, and one row
             // after them says what became of the rest.
-            unread + (stopped ? 1 : 0)),
+            unread + (stopped || foundNothing ? 1 : 0)),
   );
   // Whether the window has been searched before, all of it or a part.
   // New then looks there again, for moments its searches did not bring,
@@ -1061,7 +1126,10 @@
 
   onMount(() => {
     removed = takeUp(path);
-    return () => setAside(path, $state.snapshot(removed));
+    return () => {
+      setAside(path, $state.snapshot(removed));
+      setAsideTold(path, $state.snapshot(told));
+    };
   });
 
   // What the clip list is told about the clips removed: how much of its
@@ -1482,10 +1550,10 @@
     });
   });
 
-  // A caption edge being dragged on the clip timeline. The caption box in
-  // the video preview follows it on the way, so what is seen while dragging
-  // is what will be saved.
-  let captionDraft = $state<CaptionDraft | null>(null);
+  // The captions as the engine has them while a caption edge is dragged on
+  // the clip timeline. The caption box in the video preview follows it on
+  // the way, so what is seen while dragging is what will be saved.
+  let captionShape = $state<NonNullable<CaptionsView["captions"]> | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
   let colourDraft = $state<{
@@ -1543,7 +1611,7 @@
     if (!captions) return captions;
     let view = captions;
     if (reshaped) view = { ...view, captions: reshaped.cues };
-    if (captionDraft) view = { ...view, captions: draftCaptions(view.captions ?? [], captionDraft) };
+    if (captionShape) view = { ...view, captions: captionShape };
     if (colourDraft) {
       view = {
         ...view,
@@ -2389,7 +2457,7 @@
       .then((list) => (fonts = list))
       .catch(() => {});
     tell(`made${away ? ", asleep" : ""}`);
-    readAhead(mediaURL(path), path);
+    holdAhead(path);
     readSettings();
     openEpisode();
   });
@@ -2840,7 +2908,7 @@
               {carry}
               {stopped}
               removed={removedRows}
-              {emptied}
+              emptied={note}
               onforget={forget}
               onheld={held}
               onclosed={closed}
@@ -2901,7 +2969,7 @@
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
-        oncaptiondraft={(draft) => (captionDraft = draft)}
+        oncaptionshape={(cues) => (captionShape = cues)}
         onshape={(next) => (reshaped = next)}
       />
       <!-- One row under the clip up close, so the range picker and the

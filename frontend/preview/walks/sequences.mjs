@@ -20,6 +20,8 @@
 //   ["press", key]     presses a key, as Playwright names it
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
+//   ["undo refused"]   the menu bar's Undo, which the Go side refuses
+//                      because what it would put back has changed since
 //   ["mark", label]    remembers the engine's captions and pieces
 //   ["cut at", share]  double-clicks in the clip, this share of the way
 //                      along it, which cuts a part out there
@@ -82,6 +84,9 @@
 //                      the same with its frames at a phone's uneven times,
 //                      "uneven", or its picture starting after its sound,
 //                      "late"
+//   ["add", seconds, rate, timing, "mkv"]
+//                      the same in Matroska, the way OBS records, with ""
+//                      for frames at the rate
 //   ["render"]         presses Render and waits until the short is written
 //   ["add sound alone"] adds a file of sound with no picture, named like a
 //                      video, with Add
@@ -185,6 +190,8 @@
 //                      and drags the playhead quickly back and forth three
 //                      times over the middle of the clip, where its cut is,
 //                      and then on to that share
+//   ["remove clip"]    presses the bin of the clip on screen in the clip
+//                      list, and waits until the Go side has it removed
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -210,6 +217,24 @@
 //                      first frame of the chosen clip and no other, and the
 //                      playhead was on the clip before the workspace asked
 //                      for the window
+//   ["drop", seconds, where]
+//                      makes a new video of so many seconds, opens the
+//                      "settings", "updates" or stays on the "workspace",
+//                      holds the file over the app the way the runtime
+//                      reports a drag from Finder, and drops it there. The
+//                      app has to wear its frame while the file is held
+//                      over it and not after the drop
+//   ["drop again", where]
+//                      the same with the video dropped last
+//   ["drop not a video", where]
+//                      the same with a PDF
+//   ["dropped in front"]
+//                      the video dropped last is the one on screen, and in
+//                      the library once
+//   ["not a video"]    the PDF dropped last is not in the library, and the
+//                      app says by its name that it is not a video
+//   ["no reason"]      the app says nothing was left out: a reason from
+//                      files given before is gone once the next are taken
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      where the app says what went wrong, and the library
 //                      does not hold it
@@ -252,9 +277,16 @@
 //   ["wait for", word] the clip list's head button comes to say this, in a
 //                      minute at most
 //   ["row", words]     a row of the clip list says this
+//   ["no row", words] no row of the clip list says this
+//   ["no put back"]    no row of the clip list offers a removed clip back
+//   ["row closes", [words, s]]
+//                      a row of the clip list says this, runs down, and
+//                      closes by itself about s seconds later, not much
+//                      sooner and not much later
 //   ["cards", n]       the clip list holds n clips
-//   ["whole clip", s]  the episode on screen, s seconds long, has one clip,
-//                      and it runs from its first second to its last
+//   ["whole clip", s]  the episode on screen, s seconds long, has one clip
+//                      in the list, and it runs from its first second to
+//                      its last
 //   ["waveform"]       the clip timeline draws the waveform across the whole
 //                      of its view within ten seconds, read from its canvas
 //   ["rulers fit", s]  the range picker has lines and times on it, every
@@ -291,6 +323,18 @@
 //                      two sides beside the picture, measured from the
 //                      app's edges, are the same width, or a pixel apart,
 //                      and stand still while only the height changes
+//   ["crop to", side]  drags the crop frame as far as it goes to the
+//                      "left" or the "right" of the picture
+//   ["frame whole"]    over a white picture, the crop frame's line is the
+//                      app's colour all the way along its four sides, the
+//                      viewer's rounded corners cutting none of it, the
+//                      shade reaches into the frame's rounded corners with
+//                      nothing bright left there, the inside of the frame
+//                      is not shaded and the picture beside it is, and the
+//                      line stands where the crop the hand moves stands
+//   ["frame whole", "turned"]
+//                      the same on a part rotated a quarter, whose picture
+//                      stands inside the viewer rather than filling it
 //   ["short", cuts]    the clip has at least so many cuts, none of them on
 //                      a frame that starts on a whole millisecond, and the
 //                      short Render wrote, read back from disk, holds
@@ -396,7 +440,8 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
@@ -429,6 +474,95 @@ export const sequences = [
       ["blocks"],
       ["redo"],
       ["same", "removed"],
+    ],
+  },
+  {
+    name: "a caption's right edge dragged in over its last word removes the word, and back out puts it back",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["gone last", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["undo"],
+      ["same", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge out", ["end", "Schulhof"]],
+      ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["gone first", ["start", "Schulhof"]],
+      ["edge out", ["start", "Schulhof"]],
+      ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "a caption's right edge dragged in and double-clicked, twice, is back where it was with its words",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["edge put back", ["end", "Schulhof"]],
+      ["same", "start"],
+    ],
+  },
+  {
+    name: "a caption block pops for neither edge dragged in, with the playhead on it",
+    steps: [
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["start", "Schulhof"]],
+      ["pops", 0],
+      ["undo"],
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["edge in", ["end", "Schulhof"]],
+      ["pops", 0],
+    ],
+  },
+  {
+    name: "a caption's edges moved by hand leave the captions beside them alone",
+    steps: [
+      ["mark", "start"],
+      ["edge nudge", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["edge nudge", ["end", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's last word draws it in like dragging its right edge over the word",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["end", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["last", "Schulhof"]],
+      ["drawn in", ["dragged", "Schulhof", "last"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    name: "removing a caption's first word draws it in like dragging its left edge over the word",
+    steps: [
+      ["mark", "start"],
+      ["edge in", ["start", "Schulhof"]],
+      ["mark", "dragged"],
+      ["undo"],
+      ["same", "start"],
+      ["remove edge word", ["first", "Schulhof"]],
+      ["drawn in", ["dragged", "Schulhof", "first"]],
+      ["others", ["start", "Schulhof"]],
     ],
   },
   {
@@ -727,6 +861,42 @@ export const sequences = [
     ],
   },
   {
+    // Tim removed the one clip of a video of 15 s and pressed New, and
+    // every search failed with "there is nothing to make a clip of in
+    // this video": the clip removed still counted as the one moment the
+    // video has. New brings it back, and New with it in the list finds
+    // nothing more, fails nothing either, and says so where its clip
+    // would have appeared.
+    name: "a video shorter than a clip gets its clip again once it was removed",
+    steps: [
+      ["add", 15],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      ["remove clip"],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      // The clip made again is the clip that was removed, so the removed
+      // one is not offered back, and undoing its removal does not bring
+      // it back beside the new one. Both showed the video twice.
+      ["no row", "Nothing new found"],
+      ["no put back"],
+      ["undo refused"],
+      ["whole clip", 15],
+      ["head"],
+      ["wait for", "New"],
+      ["whole clip", 15],
+      // Tim saw the row of that search close again with nothing to say.
+      // It says so now, as news: it runs down like a removed clip's row
+      // and closes.
+      ["row closes", ["Nothing new found", 10]],
+      // New again is a new search, and it says so again.
+      ["head"],
+      ["wait for", "New"],
+      ["row closes", ["Nothing new found", 10]],
+    ],
+  },
+  {
     name: "Cancel stops a search, and Continue carries it on to its clips",
     steps: [
       ["model", "holds"],
@@ -836,6 +1006,27 @@ export const sequences = [
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
       ["add", 40, "30000/1001", "late"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["trim", "start", 20],
+      ["cut at", 0.3],
+      ["cut at", 0.7],
+      ["cuts", 2],
+      ["render"],
+      ["edges as rendered"],
+    ],
+  },
+  {
+    // Plan row 2.198, found by Tim: a video OBS recorded in Matroska was
+    // added, searched and found clips, and the video preview said "The
+    // file has no moov box, so it is not an MP4 or MOV it can read". It
+    // read the file's frames with a reader of its own, mp4.ts, where
+    // everything else reads through ffmpeg. The picture starts after the
+    // sound, by Matroska's first timestamp, so the frames are on a grid
+    // of their own, as in the walk on a clip's edges above.
+    name: "a video in Matroska shows in the video preview the frames its short has",
+    steps: [
+      ["add", 40, "30000/1001", "late", "mkv"],
       ["wait for", "New"],
       ["cards", 1],
       ["trim", "start", 20],
@@ -1068,6 +1259,24 @@ export const sequences = [
     steps: [["add sound alone"], ["left out", "nur-ton-"]],
   },
   {
+    // Plan row 2.192. Tim asked for a video dropped anywhere on the app,
+    // whatever page it is on, to do what Add does: it is added, it opens,
+    // and its first search finds its clips with no click.
+    name: "a video dropped on any page is added and opens, the way Add adds one",
+    steps: [
+      ["drop", 30, "settings"],
+      ["dropped in front"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["dropped in front"],
+      ["drop again", "updates"],
+      ["dropped in front"],
+      ["no reason"],
+    ],
+  },
+  {
     // Tim saw the play stutter, the playhead with it, as he dragged the
     // edge of a cut while the clip played. Only the space bar and a click
     // on the clip timeline change a play: an edge dragged while it plays
@@ -1251,6 +1460,25 @@ export const sequences = [
     // it took what the picture left, on a half pixel every other step.
     name: "the app dragged a pixel at a time moves every part one way, the sides equal and set by the width",
     steps: [["resize"]],
+  },
+  {
+    // Tim moved the crop to the side of the picture and saw the viewer's
+    // rounded corner cut into the crop frame's line, and bright specks of
+    // the picture in the frame's own rounded corners, where the shade
+    // beside it stopped short of them. An app this size makes the picture
+    // fill the viewer, so its corners are the viewer's. Plan row 2.195.
+    name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
+    steps: [
+      ["app size", 1000, 1000],
+      ["frame whole"],
+      ["crop to", "left"],
+      ["frame whole"],
+      ["crop to", "right"],
+      ["frame whole"],
+      ["rotate at", 0.5],
+      ["crop to", "left"],
+      ["frame whole", "turned"],
+    ],
   },
   {
     // Tim made a build with make install, and its Updates page followed
@@ -1798,6 +2026,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   let played = null;
   let loopEnd = null;
   let wrong = null;
+  // The video and the other file dropped last.
+  let droppedVideo = "";
+  let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
 
@@ -1826,6 +2057,188 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         }
         await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
         await watch.step("block", s);
+        break;
+      }
+      case "edge in":
+      case "edge out":
+      case "edge nudge": {
+        // An edge of the caption holding a word dragged: in, just over
+        // the middle of the word at that edge, out, back past where that
+        // word was at "start", or a little in, short of any word's middle.
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const was = what === "edge out" ? marks.start : now;
+        const i = was.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        if (i < 0) {
+          wrong = `no caption has "${text}"`;
+          break;
+        }
+        const words = was.captions[i].lines.flatMap((l) => l.words);
+        const w = edge === "end" ? words.at(-1) : words[0];
+        const mid = (w.start + w.end) / 2;
+        const into = (t) => {
+          let sum = 0;
+          for (const p of now.segments) {
+            if (t <= sum + p.end - p.start) return p.start + t - sum;
+            sum += p.end - p.start;
+          }
+          return now.segments.at(-1).end;
+        };
+        const c = now.captions[i];
+        const from = edge === "end" ? c.end : c.start;
+        let to;
+        if (what === "edge in") to = edge === "end" ? (w.start + mid) / 2 : (mid + w.end) / 2;
+        else if (what === "edge out") to = edge === "end" ? was.captions[i].end : was.captions[i].start;
+        else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
+        if (!box) {
+          wrong = `there is no edge "${label}"`;
+          break;
+        }
+        // From the middle of the edge's handle to the moment itself, since
+        // the timeline reads where the pointer is, not how far it went.
+        // Held there a moment before it is let go, so what the timeline
+        // draws under the hand can be held against what it saves: the
+        // edge is where the drag showed it, and does not jump when let go.
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        const target = await xOf(page, into(to));
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let k = 1; k <= 6; k++) {
+          await page.mouse.move(x + ((target - x) * k) / 6, y);
+          await page.waitForTimeout(30);
+        }
+        await page.waitForTimeout(300);
+        const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
+        const held = await handle.boundingBox();
+        await page.mouse.up();
+        await watch.step(what, s);
+        let left = null;
+        for (let k = 0; k < 20; k++) {
+          left = await handle.boundingBox();
+          if (held && left && Math.abs(left.x - held.x) <= 1) break;
+          await page.waitForTimeout(100);
+        }
+        if (!held || !left || Math.abs(left.x - held.x) > 1) {
+          wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+        }
+        break;
+      }
+      case "count pops":
+      case "pops": {
+        // How often a caption block on the clip timeline pops, counted from
+        // "count pops" on. The playhead stands still, so any pop is one an
+        // edit made.
+        if (what === "count pops") {
+          await page.waitForTimeout(400);
+          await page.evaluate(() => {
+            window.__pops = 0;
+            if (!window.__popsHeard) {
+              window.__popsHeard = true;
+              document.addEventListener("animationstart", (e) => {
+                if (e.animationName === "pop" && e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+              });
+            }
+          });
+        } else {
+          await page.waitForTimeout(400);
+          const n = await page.evaluate(() => window.__pops);
+          if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
+        }
+        break;
+      }
+      case "edge put back": {
+        // A double-click on an edge of the caption holding a word.
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const i = now.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
+        if (i < 0 || !box) {
+          wrong = `there is no edge "${label}"`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step(what, s);
+        for (let k = 0; k < 20 && same(await engineState(page, watch.at), now); k++) await page.waitForTimeout(100);
+        break;
+      }
+      case "drawn in": {
+        // The captions read as they did at a mark, and the caption holding
+        // a word draws in at its first or last edge from where it was at
+        // "start", never out, its other edge where it was.
+        const [label, text, which] = arg;
+        const read = (caps) => JSON.stringify(caps.captions.map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text))));
+        const now = await engineState(page, watch.at);
+        const i = marks.start.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const was = marks.start.captions[i];
+        const c = now.captions[i];
+        const near = (a, b) => Math.abs(a - b) < 1e-3;
+        const inward = which === "last" ? near(c.start, was.start) && c.end < was.end - 1e-3 : near(c.end, was.end) && c.start > was.start + 1e-3;
+        if (read(now) !== read(marks[label]) || !inward) {
+          wrong = `the caption with "${text}" did not draw in at its ${which} edge as it did at "${label}"\n${describe(marks[label], now)}`;
+        }
+        break;
+      }
+      case "gone last":
+      case "gone first": {
+        // The caption holding a word at a mark reads as it did with its
+        // last or first word left out, and every other caption as it did.
+        const [label, text] = arg;
+        const read = (c) => c.lines.flatMap((l) => l.words.map((w) => w.text));
+        const was = marks[label];
+        let now = null;
+        for (let k = 0; k < 20; k++) {
+          now = await engineState(page, watch.at);
+          if (now.captions.length === was.captions.length) {
+            const i = was.captions.findIndex((c) => read(c).some((w) => w.includes(text)));
+            const want = what === "gone last" ? read(was.captions[i]).slice(0, -1) : read(was.captions[i]).slice(1);
+            if (read(now.captions[i]).join(" ") === want.join(" ")) break;
+          }
+          await page.waitForTimeout(100);
+          now = null;
+        }
+        if (!now) wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, await engineState(page, watch.at))}`;
+        break;
+      }
+      case "remove edge word": {
+        // The first or last word of the caption holding a word framed and
+        // removed in the caption box.
+        const [which, text] = arg;
+        const now = await engineState(page, watch.at);
+        const c = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const all = c.lines.flatMap((l) => l.words);
+        const edgeWord = (which === "last" ? all.at(-1) : all[0]).text;
+        for (let i = 0; i < 80 && !(await word(edgeWord).count()); i++) {
+          await page.keyboard.press("Shift+ArrowRight");
+          await page.waitForTimeout(100);
+        }
+        await word(edgeWord).click();
+        await page.keyboard.press("Escape");
+        await watch.step("frame", s);
+        await page.keyboard.press("Backspace");
+        await watch.step("press", await shown(page));
+        break;
+      }
+      case "others": {
+        // Every caption but the one holding a word at a mark appears and
+        // goes when it did then.
+        const [label, text] = arg;
+        const was = marks[label];
+        const now = await engineState(page, watch.at);
+        const mine = was.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        const span = (c) => `${c.start.toFixed(3)}-${c.end.toFixed(3)}`;
+        const moved = was.captions
+          .filter((c) => c !== mine)
+          .filter((c) => {
+            const n = now.captions.find((d) => Math.abs(d.first - c.first) < 1e-6);
+            return !n || span(n) !== span(c);
+          });
+        if (moved.length) {
+          wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
+        }
         break;
       }
       case "gone": {
@@ -1908,6 +2321,26 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const [selector, text] = arg;
         const have = await page.locator(selector).inputValue();
         if (have !== text) wrong = `${selector} reads ${JSON.stringify(have)}, not ${JSON.stringify(text)}`;
+        break;
+      }
+      case "undo refused": {
+        const from = await page.evaluate(() => window.__calls.length);
+        await page.evaluate(() => window.__menu("undo"));
+        let said = null;
+        for (let tries = 0; tries < 40 && said === null; tries++) {
+          await page.waitForTimeout(100);
+          // The refusal is the answer here, so it is taken off the calls
+          // that failed before the rules read them.
+          said = await page.evaluate((from) => {
+            const c = window.__calls.slice(from).find((c) => c.name === "Undo" && c.failed);
+            if (!c) return null;
+            const failed = c.failed;
+            c.failed = null;
+            return String(failed);
+          }, from);
+        }
+        if (!said?.includes("changed since")) wrong = `Undo was not refused as changed since: ${said}`;
+        await watch.step("undo", s);
         break;
       }
       case "undo":
@@ -2265,10 +2698,64 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         break;
       }
       case "add": {
-        const [seconds, rate, timing] = [arg].flat();
-        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}`);
+        const [seconds, rate, timing, inside] = [arg].flat();
+        await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
+        break;
+      }
+      case "drop":
+      case "drop again":
+      case "drop not a video": {
+        const where = what === "drop" ? arg[1] : arg;
+        let file;
+        if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}&box=0`);
+        else if (what === "drop again") file = droppedVideo;
+        else {
+          file = droppedOther = join(tmpdir(), `notizen-${process.pid}.pdf`);
+          writeFileSync(file, "%PDF-1.4\n");
+        }
+        if (where !== "workspace") {
+          const name = where === "settings" ? "Settings" : "Updates";
+          await fromSidebar(page, () => page.locator("aside").getByText(name, { exact: true }).first().click());
+          await settle(page);
+        }
+        wrong = await dropOn(page, [file]);
+        if (what === "drop not a video") rmSync(file, { force: true });
+        await watch.step("add", s);
+        break;
+      }
+      case "no reason": {
+        await page.waitForTimeout(500);
+        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        if (said.trim()) wrong = `the app still says "${said.trim()}" after the next files were taken`;
+        break;
+      }
+      case "dropped in front": {
+        const name = basename(droppedVideo);
+        let on = null;
+        for (let i = 0; i < 100 && on !== droppedVideo; i++) {
+          await page.waitForTimeout(100);
+          on = await episodeOn(page);
+        }
+        const library = await ask(page, "Library");
+        const times = library.filter((e) => e.source === droppedVideo).length;
+        if (on !== droppedVideo) wrong = `${on ? basename(on) : "no video"} is on screen, not ${name}, which was dropped`;
+        else if (times !== 1) wrong = `${name} is in the library ${times} times`;
+        else if (!(await page.locator(".workspace.front").count())) wrong = `${name} is in the sidebar, and its workspace is not open`;
+        await settle(page);
+        break;
+      }
+      case "not a video": {
+        const name = basename(droppedOther);
+        let said = "";
+        for (let i = 0; i < 50 && !said.includes(name); i++) {
+          await page.waitForTimeout(100);
+          said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        }
+        const library = await ask(page, "Library");
+        if (!said.includes(`${name} is not a video`)) wrong = `the app says "${said.trim()}", not that ${name} is not a video`;
+        else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
         break;
       }
       case "add sound alone": {
@@ -2873,13 +3360,44 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
         break;
       }
+      case "no row": {
+        const list = await clipList(page);
+        if (list?.rows.some((r) => r.what === arg)) wrong = `a row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "no put back": {
+        const offered = await page.evaluate(
+          () => [...document.querySelectorAll("aside ol button.back")].filter((b) => b.textContent.includes("Put it back")).length,
+        );
+        if (offered) wrong = `${offered} removed clip(s) are offered back`;
+        break;
+      }
+      case "row closes": {
+        const [words, after] = arg;
+        const says = async () => !!(await clipList(page))?.rows.some((r) => r.what === words);
+        if (!(await says())) {
+          wrong = `no row says "${words}": ${JSON.stringify((await clipList(page))?.rows)}`;
+          break;
+        }
+        const drains = await page.evaluate(() => !!document.querySelector("aside ol li.told .fill .run"));
+        if (!drains) {
+          wrong = `the row that says "${words}" does not run down`;
+          break;
+        }
+        const from = Date.now();
+        while ((await says()) && Date.now() - from < (after + 5) * 1000) await page.waitForTimeout(250);
+        const took = (Date.now() - from) / 1000;
+        if (await says()) wrong = `the row that says "${words}" is still there after ${took.toFixed(1)} s`;
+        else if (took < after - 3) wrong = `the row that says "${words}" closed after ${took.toFixed(1)} s`;
+        break;
+      }
       case "cards": {
         const list = await clipList(page);
         if (list?.cards.length !== arg) wrong = `the clip list holds ${list?.cards.length} clips, not ${arg}`;
         break;
       }
       case "whole clip": {
-        const clips = await ask(page, "Clips", await episodeOn(page));
+        const clips = (await ask(page, "Clips", await episodeOn(page)))?.filter((c) => !c.rejected);
         if (clips?.length !== 1) wrong = `the episode has ${clips?.length} clips, not its one`;
         else if (clips[0].start > 1 || clips[0].end < arg - 1.5) {
           wrong = `the clip runs ${clips[0].start} to ${clips[0].end}, not the episode of ${arg} s`;
@@ -3185,15 +3703,28 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
             polling: 200,
           })
           .then(() => true, () => false);
-        const served = short
-          ? await page.evaluate(async (p) => (await fetch(`/media/short?path=${encodeURIComponent(p)}`)).status, short)
-          : 0;
         if (!short) wrong = "the clip says it has no short";
         else if (dirname(short) !== folder) wrong = `the short is at ${short}, not in the folder for shorts, ${folder}`;
         else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
-        else if (served !== 200) wrong = `the app does not serve the short at ${short}: ${served}`;
         else if (!again) wrong = `the Render button says ${(await render.textContent())?.trim()}, not Render again`;
         else if (!(await page.getByRole("button", { name: "Show in folder" }).count())) wrong = "Show in folder is not there";
+        break;
+      }
+      case "remove clip": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        // The bin shows while the pointer is on the card, as it does for
+        // a hand.
+        const bin = page.locator(`button[aria-label="Remove ${entry.title || entry.slug}"]`);
+        await page.hover(`li:has(> button[aria-label="Remove ${entry.title || entry.slug}"])`);
+        await bin.click();
+        let gone = false;
+        for (let i = 0; i < 50 && !gone; i++) {
+          await page.waitForTimeout(100);
+          gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
+        }
+        if (!gone) wrong = "the bin left the clip in the list";
+        await watch.step("remove clip", s);
         break;
       }
       case "thumbnail": {
@@ -3376,6 +3907,17 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         wrong = await asPreviewed(page, rate, before);
         break;
       }
+      case "crop to": {
+        // Taken a little below its top, away from the captions.
+        const f = await page.locator(".player .frame").boundingBox();
+        const w = await page.evaluate(() => document.querySelector(".screen").getBoundingClientRect().width);
+        await drag(page, f.x + f.width / 2, f.y + 0.2 * f.height, arg === "left" ? -w : w);
+        await settle(page);
+        break;
+      }
+      case "frame whole":
+        wrong = await frameWhole(page, arg === "turned");
+        break;
       case "edges as rendered":
         wrong = await edgesAsRendered(page);
         break;
@@ -3605,3 +4147,166 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
   await browser.close();
 }
 process.exit(failures ? 1 : 0);
+
+// Holds files over the app and drops them, the way the runtime reports a
+// drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
+// middle and below it, over whatever the page has there. Says what was
+// wrong, or null: the app has to wear its frame while the files are held
+// over it, take the drop, and wear no frame after it.
+async function dropOn(page, files) {
+  const { width, height } = page.viewportSize();
+  const [x, y] = [Math.round(width * 0.4), Math.round(height * 0.6)];
+  const landing = () => page.evaluate(() => {
+      const frame = document.querySelector(".landing");
+      return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
+    });
+  await page.evaluate(([x, y]) => {
+    window._wails.handleDragEnter();
+    window._wails.handleDragOver(x, y);
+  }, [x, y]);
+  await page.waitForTimeout(300);
+  const held = await landing();
+  if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
+  const took = await page.evaluate(([f, x, y]) => window._wails.handlePlatformFileDrop(f, x, y), [files, x, y]);
+  if (!took) return `the drop at ${x}, ${y} landed on no drop target`;
+  await page.waitForTimeout(300);
+  const after = await landing();
+  if (after !== "0") return `the app still wore its frame after the drop, its opacity was ${after}`;
+  return null;
+}
+
+// What is wrong with how the crop frame is drawn over the video preview,
+// or null, read off a screenshot. The picture under it is made white for
+// the look, so the shade over it is a grey of its own and a speck of the
+// picture it missed is white, and a note over the picture, like the one
+// the bridge's sound gives, is put away: the frame, the shade and the
+// viewer are drawn as they are. See ["frame whole"].
+async function frameWhole(page, turned) {
+  const at = await page.evaluate(() => {
+    const box = (e) => e?.getBoundingClientRect().toJSON();
+    const frame = document.querySelector(".player .frame");
+    if (!frame) return null;
+    const line = getComputedStyle(frame);
+    const crop = document.querySelector(".screen .crop") ?? frame;
+    return {
+      viewer: box(document.querySelector(".viewer")),
+      screen: box(document.querySelector(".screen")),
+      frame: box(frame),
+      crop: box(crop),
+      accent: line.borderTopColor.match(/\d+/g).slice(0, 3).map(Number),
+      line: parseFloat(line.borderTopWidth),
+      radius: parseFloat(line.borderTopLeftRadius),
+      dpr: devicePixelRatio,
+    };
+  });
+  if (!at) return "the video preview has no crop frame";
+  const { viewer, screen, frame, crop } = at;
+  const near = (a, b) => Math.abs(a - b) < 0.5;
+  if (!near(frame.left, crop.left) || !near(frame.width, crop.width) || !near(frame.top, crop.top) || !near(frame.height, crop.height)) {
+    return `the crop frame's line stands at ${frame.left.toFixed(1)} to ${frame.right.toFixed(1)}, the crop the hand moves at ${crop.left.toFixed(1)} to ${crop.right.toFixed(1)}`;
+  }
+  // A crop frame away from the viewer's corners has nothing there to cut
+  // it, and the case would pass without being the case. A part rotated a
+  // quarter is narrower than the viewer, and is there for the lid, which
+  // has to turn with the picture.
+  const corners = [screen.left - viewer.left, viewer.right - screen.right, screen.top - viewer.top, viewer.bottom - screen.bottom];
+  if (turned ? corners[0] < 8 : corners.some((d) => d > 1)) {
+    return `the picture stands ${corners.map((d) => d.toFixed(1)).join(", ")} px in from the viewer's sides, so its corners are not the viewer's`;
+  }
+  const look = await page.addStyleTag({ content: ".screen canvas, .screen .trouble, .screen .failed { visibility: hidden !important } .screen { background: #fff !important }" });
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const clip = { x: viewer.left - 4, y: viewer.top - 4, width: viewer.width + 8, height: viewer.height + 8 };
+  const shot = (await page.screenshot({ clip })).toString("base64");
+  await look.evaluate((e) => e.remove());
+  return page.evaluate(
+    async ({ shot, at, clip }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${shot}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(img, 0, 0);
+      const data = g.getImageData(0, 0, c.width, c.height).data;
+      const d = at.dpr;
+      const px = (x, y) => {
+        const i = (Math.floor(y) * c.width + Math.floor(x)) * 4;
+        return [data[i], data[i + 1], data[i + 2]];
+      };
+      const say = (p) => `rgb(${p.join(", ")})`;
+      const light = (p) => Math.max(...p);
+      const accent = (p) => p.every((v, k) => Math.abs(v - at.accent[k]) <= 48);
+      // The frame in the screenshot's own pixels.
+      const l = (at.frame.left - clip.x) * d;
+      const t = (at.frame.top - clip.y) * d;
+      const r = (at.frame.right - clip.x) * d;
+      const b = (at.frame.bottom - clip.y) * d;
+      const w = at.line * d;
+      const round = at.radius * d;
+      const problems = [];
+
+      // The line, its outermost row of pixels and its innermost, from
+      // where one rounded corner ends to where the next begins.
+      const sides = [
+        ["left", (k, e) => [l + e, k], t, b],
+        ["right", (k, e) => [r - e, k], t, b],
+        ["top", (k, e) => [k, t + e], l, r],
+        ["bottom", (k, e) => [k, b - e], l, r],
+      ];
+      for (const [side, point, from, to] of sides) {
+        const off = [];
+        for (let k = Math.ceil(from + round + 1); k < to - round - 1; k++) {
+          for (const e of [0.5, w - 0.5]) {
+            const p = px(...point(k + 0.5, e));
+            if (!accent(p)) off.push({ k: k - from, p });
+          }
+        }
+        if (off.length) {
+          problems.push(
+            `the crop frame's line is not the app's colour on its ${side} side for ${off.length} pixels, the first ${(off[0].k / d).toFixed(0)} px along it, which is ${say(off[0].p)}`,
+          );
+        }
+      }
+
+      // Each rounded corner, outside its curve: the shade, never the white
+      // picture. A pixel the curve passes through is the line's and the
+      // shade's both, so only those whose middle is outside it count.
+      const corners = [
+        ["top left", l, t, 1, 1],
+        ["top right", r, t, -1, 1],
+        ["bottom left", l, b, 1, -1],
+        ["bottom right", r, b, -1, -1],
+      ];
+      for (const [name, x0, y0, sx, sy] of corners) {
+        const cx = x0 + sx * round;
+        const cy = y0 + sy * round;
+        let worst = null;
+        for (let i = 0; i < round; i++) {
+          for (let j = 0; j < round; j++) {
+            const x = x0 + sx * (i + 0.5);
+            const y = y0 + sy * (j + 0.5);
+            if (Math.hypot(x - cx, y - cy) < round + 0.25) continue;
+            const p = px(x, y);
+            if (light(p) > 170 && (!worst || light(p) > light(worst))) worst = p;
+          }
+        }
+        if (worst) problems.push(`the crop frame's ${name} corner has the picture bright outside its curve, ${say(worst)}, where the shade should be`);
+      }
+
+      // Inside the frame the picture as it is, beside it under the shade.
+      const inside = px((l + r) / 2, t + w + 4 * d);
+      if (light(inside) < 230) problems.push(`inside the crop frame the white picture is ${say(inside)}, shaded`);
+      // A crop as wide as the picture, on a rotated part, has nothing
+      // beside it.
+      const right = at.screen.right - at.frame.right;
+      const left = at.frame.left - at.screen.left;
+      const beside = px(right > left ? r + 3 * d : l - 3 * d, (t + b) / 2);
+      if (Math.max(left, right) > 4 && !(light(beside) > 60 && light(beside) < 170)) {
+        problems.push(`beside the crop frame the white picture is ${say(beside)}, not shaded`);
+      }
+      return problems.length ? problems.join("\n") : null;
+    },
+    { shot, at, clip },
+  );
+}
