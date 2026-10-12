@@ -75,6 +75,8 @@
 //                      clip timeline and the video preview show on every
 //                      animation frame until the clip made is written and
 //                      chosen, and two seconds after, then pauses
+//   ["make while paused", key]
+//                      the same with the video paused, and no play
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -1391,6 +1393,16 @@ export const sequences = [
     ],
   },
   {
+    // Paused, the playhead is put on the clip's start while it is on its
+    // way, and it was dimmed there too until it was written.
+    name: "a clip made with I while the video is paused is not dimmed",
+    steps: [
+      ["trim", "start", 300],
+      ["make while paused", "i"],
+      ["made on the clip"],
+    ],
+  },
+  {
     // Tim played the episode from before the clip and pressed shift and
     // the right arrow to skip ahead, and the clip lit up the moment a step
     // landed in it. A step while the episode plays on the video skips
@@ -2626,7 +2638,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await watch.step("play", s);
         break;
       }
+      case "make while paused":
       case "make while playing": {
+        const playing = what === "make while playing";
         const g = await handles(page);
         if (g.start.x - g.track.x < 40) {
           wrong = "there is no room on the clip timeline before the clip";
@@ -2638,8 +2652,10 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const was = (await overlay(page)).card;
         const stop = await recordFrames(page, 1 / (await rate(page)));
         await page.evaluate(() => document.body.focus());
-        await page.keyboard.press("Space");
-        await page.waitForTimeout(1500);
+        if (playing) {
+          await page.keyboard.press("Space");
+          await page.waitForTimeout(1500);
+        }
         await page.keyboard.press(arg);
         // Until the card chosen is a clip the engine has written, the one
         // made, which is not the one chosen before.
@@ -2657,7 +2673,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           document.body.dispatchEvent(new KeyboardEvent("keyup", key));
         });
         await page.waitForTimeout(300);
-        made = { was, written, overlays: (await stop()).overlays };
+        made = { playing, was, written, overlays: (await stop()).overlays };
         await watch.step("play", s);
         break;
       }
@@ -3454,7 +3470,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
           wrong = "made on the clip with no clip made";
           break;
         }
-        const { was, written, overlays } = made;
+        const { playing, was, written, overlays } = made;
         if (!written) {
           wrong = "the clip made was never written and chosen while it played";
           break;
@@ -3463,7 +3479,7 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const from = overlays.findIndex((o) => o.card && o.card !== was);
         const since = overlays.slice(from);
         const dim = since.find((o) => o.video);
-        if (!since.some((o) => o.playing && o.card === written)) {
+        if (playing && !since.some((o) => o.playing && o.card === written)) {
           wrong = "the play had stopped before the clip made was written";
         } else if (!since.some((o) => !o.playing)) {
           wrong = "the play was not paused at the end";

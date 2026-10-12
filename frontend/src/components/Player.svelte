@@ -42,6 +42,7 @@
     path,
     source,
     clip,
+    making,
     captions = null,
     time = $bindable(0),
     onplayclip,
@@ -65,6 +66,9 @@
     path: string;
     source: SourceView;
     clip: ClipEntry | null;
+    // The key of the clip on its way that is chosen, which the video
+    // preview has nothing of yet but the place of the playhead, see claim.
+    making?: string;
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
     time?: number;
@@ -354,7 +358,7 @@
   // that put it somewhere left it, see lib/playhead.ts. Only a gesture sets
   // it, through seek, and a play of the clip that reaches its end.
   let placed = $state<Playhead>(onVideo);
-  const place = $derived(placeFor(placed, clip?.key));
+  const place = $derived(placeFor(placed, clip?.key ?? making));
   $effect(() => {
     onClip = place !== "video";
   });
@@ -395,12 +399,16 @@
   // made while the episode played was chosen with no gesture on it, so
   // it stood dimmed over the very moment it was made from. Found by Tim.
   //
-  // With from, only where the playhead is on the clip of that key: a clip
-  // on its way that is written comes back under a key of its own, and
-  // the playhead stays on it.
+  // A clip on its way has no pieces here yet, so the playhead is simply
+  // on it. With from, only where the playhead is on the clip of that key:
+  // a clip on its way that is written comes back under a key of its own,
+  // and the playhead stays on it.
   export function claim(from?: string) {
-    if (!clip || (from !== undefined && placed.clip !== from)) return;
-    placed = placeOf(pieces, clip.key, time, 1 / oneFrame, "clip", source.videoStart ?? 0);
+    const key = clip?.key ?? making;
+    if (!key || (from !== undefined && placed.clip !== from)) return;
+    placed = clip
+      ? placeOf(pieces, key, time, 1 / oneFrame, "clip", source.videoStart ?? 0)
+      : { place: "clip", clip: key };
   }
 
   // A press on the clip timeline or the range picker while it plays holds

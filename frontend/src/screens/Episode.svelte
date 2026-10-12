@@ -1359,8 +1359,24 @@
       madeHere.delete(job.id);
       const key = job.result;
       if (job.state !== "done" || !key) continue;
-      void refreshClips().then(() => {
-        if (untrack(() => selected) !== before || !clips.some((c) => c.key === key)) return;
+      landing.set(before, key);
+      void refreshClips();
+    }
+  });
+  // A clip made here that is written, by its key on its way, and the key
+  // it is written under. The chosen card becomes the clip in the same
+  // step the list brings it in, whichever read of the list that is.
+  // Chosen once the read that was asked for it came back, it was a frame
+  // or more late whenever another read had brought it in first, and for
+  // that frame no card was chosen and the clip timeline drew it dimmed.
+  const landing = new Map<string, string>();
+  $effect(() => {
+    const list = clips;
+    for (const [before, key] of landing) {
+      if (!list.some((c) => c.key === key)) continue;
+      landing.delete(before);
+      untrack(() => {
+        if (selected !== before) return;
         void select(key, paused);
         // Playing, the playhead stays on the clip it was made on, which is
         // written now under its own key. See claim in Player.svelte.
@@ -1422,8 +1438,12 @@
     const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
-      if (paused && Math.abs(time - start) > 0.05) player?.seek(start);
-      else if (first) player?.claim();
+      // The seek is a gesture about a clip the video preview does not have
+      // yet, so the playhead is put on it after.
+      if (paused && Math.abs(time - start) > 0.05) {
+        player?.seek(start);
+        player?.claim();
+      } else if (first) player?.claim();
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
@@ -2916,6 +2936,7 @@
           {path}
           {source}
           clip={shownClip}
+          making={making?.key}
           opening={!opened}
           bind:pictured
           bind:frameStart={shownStart}
