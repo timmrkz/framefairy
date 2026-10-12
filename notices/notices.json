@@ -100,6 +100,16 @@
     ]
   },
   {
+    "name": "github.com/spf13/afero",
+    "version": "1.15.0",
+    "licence": "Apache-2.0",
+    "url": "https://github.com/spf13/afero",
+    "part": "The app",
+    "texts": [
+      "github.com-spf13-afero.txt"
+    ]
+  },
+  {
     "name": "github.com/wailsapp/wails/v3",
     "version": "3.0.0-beta.23",
     "licence": "MIT",
@@ -130,6 +140,16 @@
     "part": "The app",
     "texts": [
       "golang.org-x-sys.txt"
+    ]
+  },
+  {
+    "name": "golang.org/x/text",
+    "version": "0.39.0",
+    "licence": "BSD-3-Clause",
+    "url": "https://golang.org/x/text",
+    "part": "The app",
+    "texts": [
+      "golang.org-x-text.txt"
     ]
   },
   {
