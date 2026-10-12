@@ -439,7 +439,7 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
-# One share of the runs, like 1/2, which is how CI spreads them over two
+# One share of the runs, like 1/3, which is how CI spreads them over three
 # machines.
 WALKSHARD ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
