@@ -481,6 +481,15 @@
 //                      "crop" mark on the clip timeline: the mark is what
 //                      is under the pointer, it takes the hover, and it
 //                      lights the way it does under the hand
+//   ["open a word, then the mark", kind]
+//                      clicks the first "thumbnail" or "crop" mark on the
+//                      clip timeline and reads the caption there, clicks
+//                      the clip timeline at the other end of the clip and
+//                      opens the first word of the caption there, then
+//                      clicks the mark again: the playhead is on the mark,
+//                      no word is open, and the caption box holds the
+//                      caption on the mark again, not the one the word was
+//                      opened in
 //   ["remove mark", kind]
 //                      double-clicks the first "thumbnail" or "crop" mark
 //                      on the clip timeline, and the engine has one fewer,
@@ -1342,6 +1351,22 @@ export const sequences = [
       ["thumbnail at", 0.2],
       ["under the hand", "thumbnail"],
       ["remove mark", "thumbnail"],
+    ],
+  },
+  {
+    // Found by Tim on #201: with a word open in the caption box, a click
+    // on a thumbnail's camera or a keyframe's diamond moved the frame and
+    // left the caption box on the word's moment, since the marks take no
+    // focus and the word kept it.
+    name: "a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["thumbnail at", 0.1],
+      ["keyframe at", 0.9],
+      ["open a word, then the mark", "thumbnail"],
+      ["open a word, then the mark", "crop"],
     ],
   },
   {
@@ -4633,6 +4658,72 @@ for (const seq of toWalk) {
         if (!got.top) wrong = `something else lies over the ${arg} mark, so the pointer never reaches it`;
         else if (!got.hover) wrong = `the ${arg} mark does not take the hover`;
         else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
+        break;
+      }
+      case "open a word, then the mark": {
+        const kind = arg === "crop" ? ".cropdot" : ".thumb";
+        const mark = await page.locator(`.clip-timeline ${kind}`).first().boundingBox();
+        if (!mark) {
+          wrong = `the clip timeline shows no ${arg} mark`;
+          break;
+        }
+        const mx = mark.x + mark.width / 2;
+        const my = mark.y + mark.height / 2;
+        const playhead = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        const words = async () => (await shown(page)).map((w) => w.at).join(" ");
+        await page.mouse.click(mx, my);
+        await settle(page);
+        const onMark = await playhead();
+        const there = await words();
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        const other = mx < (from + g.end.x) / 2 ? 0.75 : 0.25;
+        await page.mouse.click(from + other * (g.end.x - from), high(g.track));
+        await settle(page);
+        const first = page.locator(".captions .word.correctable").first();
+        if (!(await first.count())) {
+          wrong = "no word in the caption box to open";
+          break;
+        }
+        const before = await shown(page);
+        await first.click();
+        await watch.step("click", before);
+        if (!(await shown(page)).some((w) => w.focused)) {
+          wrong = "the word clicked did not open";
+          break;
+        }
+        if ((await words()) === there) {
+          wrong = "the caption on the mark is the caption elsewhere too, so this proves nothing";
+          break;
+        }
+        await page.mouse.click(mx, my);
+        await settle(page);
+        // The caption box follows within a few frames, the way it does
+        // after a click on the clip timeline.
+        const followed = await page
+          .waitForFunction(
+            (there) => {
+              const words = [...document.querySelectorAll(".captions .word")];
+              return (
+                !document.querySelector(".captions.typing") &&
+                !words.includes(document.activeElement) &&
+                words.map((w) => Number(w.dataset.at)).join(" ") === there
+              );
+            },
+            there,
+            { polling: 50, timeout: 2000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          );
+        const now = await shown(page);
+        const still = now.find((w) => w.focused);
+        const at = await playhead();
+        if (Math.abs(at - onMark) > 0.05) wrong = `a click on the ${arg} mark put the playhead at ${at}, not on the mark at ${onMark}`;
+        else if (still) wrong = `after a click on the ${arg} mark, "${still.text}" is still open`;
+        else if (!followed)
+          wrong = `after a click on the ${arg} mark, the caption box holds "${now.map((w) => w.text).join(" ")}", not the caption on the mark`;
         break;
       }
       case "remove mark": {

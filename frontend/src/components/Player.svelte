@@ -685,6 +685,21 @@
     });
   });
 
+  // A word is corrected at the moment it was opened at, and a correction
+  // ends when the playhead leaves that moment, however it is moved: the
+  // word lets go of the caret the way a click elsewhere takes it, which
+  // saves what was typed, and the captions follow the playhead again. A
+  // click on a thumbnail's camera or a keyframe's diamond moves the
+  // playhead without taking the focus, so the word stayed open and the
+  // caption stayed on the old moment while the frame moved on, which Tim
+  // saw on #201.
+  $effect(() => {
+    const at = time;
+    untrack(() => {
+      if (fixing && Math.abs(at - frozen) > give) endCorrection();
+    });
+  });
+
   // The keyboard's word put where a walk into the clip beside landed. The
   // walk cannot catch that landing itself: the clip changes first, with no
   // words yet, and the playhead only reaches the word once its captions

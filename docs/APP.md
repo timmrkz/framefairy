@@ -890,7 +890,11 @@ bubble scrolled by those eight pixels.
   does, takes the caret and any highlighted letters out of it, and lets the
   captions follow the picture again. A click on the video preview lands on
   the crop frame, which refuses the pointer so it can be dragged, so the
-  word used to keep the caret while the video played. The frame and the caret belong to the interface and not to the
+  word used to keep the caret while the video played. Moving the playhead
+  any other way ends it the same way, since the word is corrected at the
+  moment it was opened at: a click on a thumbnail's camera or a keyframe's
+  diamond takes no focus, and the word used to stay open with the caption
+  held on the old moment while the frame moved on. The frame and the caret belong to the interface and not to the
   render: nothing of them is ever burned into a short, and **the frame is
   all the interface adds**. A word being corrected takes no background of
   its own. One would read as a second highlight pill, in the app's colour,
