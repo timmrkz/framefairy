@@ -347,6 +347,10 @@ down and the engine's jobs beside it.
 
     BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/sequences.mjs [part of a name]
 
+`SEQUENCE` walks the one sequence of that name and no other, and
+`--names` lists them all, one name a line, which is how `make walks`
+hands them out, see Where they run.
+
 A sequence is a named list of steps and of what has to come of them,
 written as data at the top of the file, so a case found by hand is kept
 as it was found. The steps are the walk's gestures by name, `frame` a
@@ -558,12 +562,26 @@ which fails with what a sequence or a walk printed. The seeds are the
 same every time, so a walk that breaks a rule breaks it again on the
 next run. `make walks WALKS=40` looks further.
 
-They run side by side, as many at once as the machine has cores, or
+They run side by side, half as many again as the machine has cores, or
 `WALKERS`. Each runs against a bridge of its own, which `TestWalks`
 starts as a process of its own on a free port, because a desk sets
-`HOME` for the whole process it is in. On four cores, the cloud's and
-CI's, the thirteen runs take a little over two minutes, where one after
-another they took nine, and each takes as long as it does alone.
+`HOME` for the whole process it is in. Every sequence is a run of its
+own, the same as a walk, handed to whichever bridge is free next: the
+walks first, since each takes most of a minute, and the sequences behind
+them, most of them a few seconds long, so no bridge is left with a long
+run once the others are done. Each sequence opens the app afresh with
+`/reset`, so it walks the same alone as after the one before it.
+
+Measured on four cores, the cloud's and CI's, with the 3 seeds: the
+sequences were once one run, and took twelve minutes on one bridge while
+the other three had finished the fifteen walks in four and waited. Handed
+out one by one they took six and a half minutes on four bridges. A run
+spends most of its time waiting, on a clip that plays in real time and
+on the quiet after every step, so four bridges kept the cores busy only
+part of the time. Six took five and a half minutes, the cores busy four
+fifths of it. The slowest run, a sequence that renders a short and looks
+at 122 of its frames in the video preview, takes a little over a minute,
+so however many bridges run, the set takes at least that.
 
 Where a walk's time goes, measured: a walk of 60 steps takes about 30
 seconds, and more than half of that is waiting after each step until no call
