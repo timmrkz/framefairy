@@ -150,7 +150,8 @@
 
   // Dragging the playhead, the same way as on the clip timeline, see
   // lib/scrub.ts. A press anywhere on the track takes hold of it, and so
-  // does its head, and the video preview follows the hand.
+  // does the line past the track's border, and the video preview follows
+  // the hand.
   let scrubbing = $state(false);
 
   function scrub(event: PointerEvent) {
@@ -321,10 +322,10 @@
 
 <!-- The playhead is drawn over the track rather than in it. The track
      clips what is inside it, which is what keeps the marks inside its
-     rounded corners, and the playhead is the one thing
-     that has to reach past them: its head stands above the track the way
-     an editor's does, and at the very start or the very end it would
-     otherwise be cut off by the corner. -->
+     rounded corners, and the playhead is the one thing that has to reach
+     past them: it runs on past the track's top and bottom border, and at
+     the very start or the very end it would otherwise be cut off by the
+     corner. -->
 <div class="over">
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -452,8 +453,8 @@
   </div>
 {/if}
 {#if playhead >= 0}
-  <!-- The line takes the drag as well as its head, the same as on the
-       clip timeline. -->
+  <!-- The playhead of the clip timeline too, drawn by .playhead in
+       app.css. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="playhead"
@@ -461,13 +462,7 @@
     style="left: {on(playhead, inner)}"
     onpointerdown={scrub}
     title="Drag to move the playhead"
-  >
-    <!-- The head is its own element, the way it is on the clip timeline,
-         because it stands above the track and a head the hand goes
-         straight through is not a handle. -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="head" onpointerdown={scrub} title="Drag to move the playhead"></div>
-  </div>
+  ></div>
 {/if}
 </div>
 
@@ -584,7 +579,7 @@
      and the whole of the mark lights up while any of it is under the
      pointer or held, because it is one thing. */
   /* No layer of its own, so its parts take their own places among the
-     track's: the bars under the playhead, whose head would otherwise be
+     track's: the bars under the playhead, whose line would otherwise be
      lost along them, and the triangles over it, because a playhead
      standing on the window's start, where a search leaves it, took every
      press meant for the handles there. */
@@ -709,51 +704,9 @@
     container-type: inline-size;
   }
 
-  /* The same line and the same head as on the clip timeline: one playhead
-     seen at two distances, not two different marks. The head stands above
-     the track, which is where an editor puts it and what says this is the
-     playhead rather than a line someone drew. */
+  /* Drawn by .playhead in app.css, the same as on the clip timeline. Over
+     the window and the clips. */
   .playhead {
-    position: absolute;
-    top: -5px;
-    bottom: 0;
-    width: 2px;
-    margin-left: -1px;
-    background: var(--accent-hi);
     z-index: 6;
-    /* Dragged left and right, head and line alike, as on the clip
-       timeline, and taken hold of a few pixels either side of the line. */
-    cursor: ew-resize;
-    touch-action: none;
   }
-
-  .playhead::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -4px;
-    right: -4px;
-  }
-
-  .head {
-    position: absolute;
-    top: 0;
-    left: -4px;
-    width: 10px;
-    height: 9px;
-    border-radius: 2px 2px 1px 1px;
-    background: var(--accent-hi);
-    cursor: ew-resize;
-    touch-action: none;
-  }
-
-  /* Held, the playhead goes white, as it does on the clip timeline. */
-  .playhead.scrubbing,
-  .playhead.scrubbing .head {
-    background: #fff;
-  }
-
-
-
 </style>

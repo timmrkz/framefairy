@@ -710,16 +710,18 @@ Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
 the view by hand, and the view stays where it was put. **The playhead is
 dragged the same way on both**: a press anywhere on the track or on the
-playhead's head takes hold of it, and the video preview follows the hand,
+playhead takes hold of it, and the video preview follows the hand,
 one seek a frame, until it lets go. The range picker only went there once
 the hand let go, and Tim asked for it to behave like the clip timeline. It
 is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both. The
-playhead is taken hold of by its line as well as its head, a few pixels
-either side, and on both tracks it shows the arrows left and right under
+playhead is taken hold of by its line, a few pixels either side, and on both tracks it shows the arrows left and right under
 the pointer, the way a clip's edges do. The empty track shows the hand.
 The two differed: the clip timeline seemed to show the arrows on the
 playhead only because the playhead so often stands on the chosen clip's
-edge.
+edge. **The playhead looks the same on both**, one rule, `.playhead` in
+`app.css`: a line and nothing else, running 12 px past the track's top and
+bottom border, 2.232. On the range picker it had a head above the track
+and on the clip timeline a line alone, and Tim asked for the two to match.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
 clip or no clip, and puts it in the middle of the view, because the reason to

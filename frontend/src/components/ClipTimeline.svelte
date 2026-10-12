@@ -1918,11 +1918,10 @@
            placed, and on the start of the frame it is in, where a mark
            lit by it stands. Plan row 2.232. -->
       <div class="at" style="left: calc(1px + (100% - 2px) * {x(onFrame(time)) / 100})">
-        <!-- The line takes the drag as well as its head, a few pixels
-             either side of it, so the playhead is taken hold of wherever
-             the hand finds it, the same as on the range picker. -->
+        <!-- The playhead of the range picker too, drawn by .playhead in
+             app.css. -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
+        <div class="playhead" class:scrubbing onpointerdown={scrub} title="Drag to move the playhead"></div>
       </div>
     {/if}
   </div>
@@ -2378,41 +2377,6 @@
     left: 4px;
     width: 4px;
     background: var(--accent-hi);
-  }
-
-  /* It is dragged left and right, and says so under the pointer, the way
-     a clip's edges do. A press on the empty track also moves it, and there
-     the pointer is the hand of anything pressed. */
-  .playhead {
-    position: absolute;
-    /* A line and nothing else, running past the track's top and bottom
-       border, further than a keyframe or a thumbnail stands out, so it is
-       seen going on past a mark on its frame and is never taken for one.
-       Asked for by Tim in place of a head. Plan row 2.232. */
-    top: -12px;
-    bottom: -12px;
-    left: -1px;
-    width: 2px;
-    background: var(--accent-hi);
-    cursor: ew-resize;
-    touch-action: none;
-  }
-
-  .playhead::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -4px;
-    right: -4px;
-  }
-
-  /* The same head, in the same place, as the line used to draw on itself.
-     It is an element of its own now so it can take the drag: it stands
-     above the track, the track is what scrubs, and a head that is drawn
-     outside it is a handle the hand goes straight through. */
-  .over.scrubbing .playhead {
-    background: #fff;
   }
 
   /* The caption blocks of a clip on its way come in one after another, in
