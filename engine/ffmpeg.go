@@ -482,6 +482,11 @@ type SourceInfo struct {
 	// The pieces of a clip whose own frames come at uneven times in a
 	// file Probe found even, see unevenPieces.
 	unevenAt [][2]float64
+	// Whether the file keeps no index of its key frames, so a seek lands
+	// between two, see unindexed, and the key frame each piece of a clip
+	// is read from in such a file, see keyedPieces.
+	unindexed bool
+	keyAt     []pieceKey
 }
 
 // FPS is the frame rate as a number.
@@ -578,7 +583,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 		"-show_entries",
 		"stream=width,height,r_frame_rate,avg_frame_rate,start_time,color_primaries,color_transfer,color_space",
 		"-show_entries", "stream_side_data=rotation",
-		"-show_entries", "format=duration,start_time",
+		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
 	if res.Code != 0 {
 		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
@@ -634,6 +639,14 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 			duration = d
 		}
 	}
+	formatStart, _ := toFloat(data.Format["start_time"])
+	if duration <= 0 {
+		// A Matroska file whose writing was cut off, the way OBS leaves a
+		// recording when it crashes, has no duration and no index. It is
+		// read through once for where its last packet ends.
+		duration = e.lastMoment(ctx, path, formatStart)
+	}
+	format, _ := data.Format["format_name"].(string)
 
 	width, okW := toInt(stream["width"])
 	height, okH := toInt(stream["height"])
@@ -654,7 +667,7 @@ func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
 	first, hasFirst := toFloat(stream["start_time"])
 	info := SourceInfo{Width: width, Height: height, Turned: turned, FPSNum: num, FPSDen: den,
 		Duration: duration, VideoStart: videoStart, Colour: colour,
-		origin: first - videoStart, hasClock: hasFirst}
+		origin: first - videoStart, hasClock: hasFirst, unindexed: unindexed(format)}
 	info.SoundRate, info.SoundChannels = e.soundOf(ctx, path)
 	info.Variable = hasFirst && e.uneven(ctx, path, info)
 	if info.Variable {
@@ -814,3 +827,151 @@ func (s SourceInfo) unevenOver(seg Segment) bool {
 	}
 	return false
 }
+
+// unindexed tells whether files of a container, by ffprobe's name for it,
+// keep no index of their key frames: MPEG-TS, which OBS records and
+// camcorders write as .MTS. ffmpeg seeks in it by the times of the
+// packets, so a seek lands on whatever packet is stamped before the
+// moment, mostly one between two key frames. The decoder drops everything
+// up to the next key frame, and a short showed that key frame for every
+// frame before it, plan row 2.200. MPEG-PS, .mpg and .vob, has no index
+// either, but its frames are not read right yet, plan row 2.204.
+func unindexed(format string) bool {
+	return slices.Contains(strings.Split(format, ","), "mpegts")
+}
+
+// pieceKey is where a piece of a clip is read from in a file with no
+// index of its key frames, see keyBefore.
+type pieceKey struct {
+	start, end float64
+	keyRead
+}
+
+// keyRead is a key frame of a file with no index of its key frames, in
+// microseconds after the start of the file: at, where a read lands just
+// before it is decoded, and key, when it is shown.
+type keyRead struct{ at, key int64 }
+
+// keyedPieces is the episode with the key frame found that each piece of
+// a clip is read from, in a file with no index of its key frames, see
+// unindexed. ffprobe reads the packets of the few seconds before the
+// piece, and further back while there is no key frame among them. A piece
+// whose key frame is not found is read the way it always was.
+func (e *Engine) keyedPieces(ctx context.Context, path string, s SourceInfo, segs []Segment) SourceInfo {
+	if !s.unindexed || !s.hasClock || s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return s
+	}
+	s.keyAt = nil
+	for _, seg := range segs {
+		cut := s.plainCut(seg)
+		if k, ok := e.keyBefore(ctx, path, s, cut.seekUS); ok {
+			s.keyAt = append(s.keyAt, pieceKey{seg.Start, seg.End, k})
+		}
+	}
+	return s
+}
+
+// keyAtOf is where keyedPieces found a piece is read from.
+func (s SourceInfo) keyAtOf(seg Segment) (keyRead, bool) {
+	for _, k := range s.keyAt {
+		if k.start == seg.Start && k.end == seg.End {
+			return k.keyRead, true
+		}
+	}
+	return keyRead{}, false
+}
+
+// keyBefore is the last key frame shown at or before a moment, in
+// microseconds after the start of the file, and where a read lands just
+// before it is decoded: a millisecond before its packet, so the seek,
+// which lands on the last packet stamped at or before where it is sent,
+// lands after the key frame before it. ffprobe reads the packets of the
+// few seconds before the moment, and further back while there is no key
+// frame among them. None is found where the picture has no key frame
+// before the moment at all.
+func (e *Engine) keyBefore(ctx context.Context, path string, s SourceInfo, at int64) (keyRead, bool) {
+	moment := float64(at) / 1e6
+	for span := 2.0; span <= 128; span *= 2 {
+		from := max(moment-span, 0)
+		// Close to the start the file is read from its first packet, whose
+		// key frame is decoded before the file's first moment.
+		interval := "%" + fixed(s.origin+moment+frameHair, 6)
+		if from > 0 {
+			interval = fixed(s.origin+from, 6) + interval
+		}
+		res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
+			"-read_intervals", interval,
+			"-show_entries", "packet=pts_time,dts_time,flags", "-of", "csv=p=0", path)
+		if res.Code != 0 {
+			return keyRead{}, false
+		}
+		best, found := math.Inf(-1), false
+		var decoded float64
+		for _, line := range strings.Fields(res.Stdout) {
+			f := strings.Split(line, ",")
+			if len(f) < 3 || !strings.HasPrefix(f[2], "K") {
+				continue
+			}
+			pts, err1 := strconv.ParseFloat(f[0], 64)
+			dts, err2 := strconv.ParseFloat(f[1], 64)
+			if err1 != nil || err2 != nil || pts-s.origin > moment+frameHair || pts <= best {
+				continue
+			}
+			best, decoded, found = pts, dts, true
+		}
+		if found {
+			return keyRead{
+				at:  max(int64(math.Round((decoded-s.origin-frameHair)*1e6)), 0),
+				key: int64(math.Round((best - s.origin) * 1e6)),
+			}, true
+		}
+		if from == 0 {
+			return keyRead{}, false
+		}
+	}
+	return keyRead{}, false
+}
+
+// lastMoment is where the last packet of a file ends, counted from start,
+// the start of the file, for a file that does not say how long it is.
+// Nought for one that cannot be read. Every packet is read, a few seconds
+// for an episode of hours, so the answer is kept for as long as the file
+// stays as it is.
+func (e *Engine) lastMoment(ctx context.Context, path string, start float64) float64 {
+	stamp := ""
+	if info, err := os.Stat(path); err == nil {
+		stamp = fmt.Sprintf("%s|%d|%d|%v", path, info.Size(), info.ModTime().UnixNano(), start)
+		if end, ok := lastMoments.Load(stamp); ok {
+			return end.(float64)
+		}
+	}
+	res := run(ctx, "", e.FFprobe, "-v", "error",
+		"-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", path)
+	if res.Code != 0 {
+		return 0
+	}
+	end := 0.0
+	for _, line := range strings.Fields(res.Stdout) {
+		f := strings.Split(line, ",")
+		if len(f) < 2 {
+			continue
+		}
+		pts, err1 := strconv.ParseFloat(f[0], 64)
+		length, err2 := strconv.ParseFloat(f[1], 64)
+		if err1 != nil {
+			continue
+		}
+		if err2 != nil {
+			length = 0
+		}
+		end = max(end, pts+length-start)
+	}
+	if stamp != "" {
+		lastMoments.Store(stamp, end)
+	}
+	return end
+}
+
+// lastMoments is what lastMoment found, by the file's path, size, time
+// and start.
+var lastMoments sync.Map
