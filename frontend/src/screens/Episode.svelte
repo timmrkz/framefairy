@@ -1359,8 +1359,35 @@
       madeHere.delete(job.id);
       const key = job.result;
       if (job.state !== "done" || !key) continue;
-      void refreshClips().then(() => {
-        if (untrack(() => selected) === before && clips.some((c) => c.key === key)) select(key, paused);
+      landing.set(before, key);
+      void refreshClips();
+    }
+  });
+  // A clip made here, by its key on its way, and the key it is written
+  // under, from the moment its card says it, which is before it is
+  // written, or else from its job's result. The chosen card becomes the
+  // clip in the same step the list brings it in, whichever read of the
+  // list that is. Chosen once its job was over and the read asked for it
+  // had come back, it was a frame or more late: the job says it has
+  // nothing on the way before it says it is done, a read in between
+  // brought the clip in and took the card away, and for those frames no
+  // card was chosen and the clip timeline drew it dimmed.
+  const landing = new Map<string, string>();
+  $effect(() => {
+    const made = new Set(madeHere.values());
+    for (const a of onTheWay) if (a.clip && made.has(a.key)) landing.set(a.key, a.clip);
+  });
+  $effect(() => {
+    const list = clips;
+    for (const [before, key] of landing) {
+      if (!list.some((c) => c.key === key)) continue;
+      landing.delete(before);
+      untrack(() => {
+        if (selected !== before) return;
+        void select(key, paused);
+        // Playing, the playhead stays on the clip it was made on, which is
+        // written now under its own key. See claim in Player.svelte.
+        if (!paused) player?.claim(before);
       });
     }
   });
@@ -1405,7 +1432,9 @@
   // is put where its frame starts, so the picture is of the clip being
   // made. Brought into view in the frame it was asked for only, the card
   // was still sliding open, at no height, and came to rest half under the
-  // foot of the list.
+  // foot of the list. Where the playhead is not put anywhere, while the
+  // video plays, it is on the clip from the moment the clip is there,
+  // see claim in Player.svelte.
   let followingMade = "";
   $effect(() => {
     const m = making;
@@ -1413,9 +1442,15 @@
     const start = m.segments[0].start;
     const mark = `${m.key}:${start}`;
     if (mark === followingMade) return;
+    const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
-      if (paused && Math.abs(time - start) > 0.05) player?.seek(start);
+      // The seek is a gesture about a clip the video preview does not have
+      // yet, so the playhead is put on it after.
+      if (paused && Math.abs(time - start) > 0.05) {
+        player?.seek(start);
+        player?.claim();
+      } else if (first) player?.claim();
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.
@@ -2908,6 +2943,7 @@
           {path}
           {source}
           clip={shownClip}
+          making={making?.key}
           opening={!opened}
           bind:pictured
           bind:frameStart={shownStart}

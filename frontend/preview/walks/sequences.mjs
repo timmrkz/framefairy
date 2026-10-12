@@ -66,6 +66,17 @@
 //                      play, "Shift+ArrowRight" to skip ahead by words,
 //                      and from "before" the playhead has to have gone a
 //                      second or more further than the play takes it
+//   ["make while playing", key]
+//                      clicks the clip timeline before the clip, which
+//                      puts the playhead on the video, presses the space
+//                      bar, and a second and a half into the play presses
+//                      "i" or "o", Mark In or Mark Out, which makes a clip
+//                      there while the episode plays on. It reads what the
+//                      clip timeline and the video preview show on every
+//                      animation frame until the clip made is written and
+//                      chosen, and two seconds after, then pauses
+//   ["make while paused", key]
+//                      the same with the video paused, and no play
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
@@ -246,6 +257,12 @@
 //                      it, the crop frame stood over the picture on every
 //                      one of them, and the captions on every one where the
 //                      engine has a caption, a few at least
+//   ["made on the clip"]
+//                      since "make while playing", the clip made was the
+//                      chosen card from the frame it came on, on its way
+//                      and then written, and on every animation frame from
+//                      then on, playing and paused, the playhead was on it:
+//                      the clip timeline did not dim it
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -489,7 +506,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -1354,6 +1371,38 @@ export const sequences = [
     ],
   },
   {
+    // Tim played the episode and pressed I to make a clip of what he was
+    // watching, and the clip came up dimmed: no gesture had put the
+    // playhead on it, so it counted as on the video. A clip made with I
+    // or O is made around the playhead, so the playhead is on it from the
+    // frame it is there, on its way and once it is written, and the play
+    // goes on as it was.
+    name: "a clip made with I while the episode plays is not dimmed",
+    steps: [
+      ["trim", "start", 300],
+      ["make while playing", "i"],
+      ["made on the clip"],
+    ],
+  },
+  {
+    name: "a clip made with O while the episode plays is not dimmed",
+    steps: [
+      ["trim", "start", 300],
+      ["make while playing", "o"],
+      ["made on the clip"],
+    ],
+  },
+  {
+    // Paused, the playhead is put on the clip's start while it is on its
+    // way, and it was dimmed there too until it was written.
+    name: "a clip made with I while the video is paused is not dimmed",
+    steps: [
+      ["trim", "start", 300],
+      ["make while paused", "i"],
+      ["made on the clip"],
+    ],
+  },
+  {
     // Tim played the episode from before the clip and pressed shift and
     // the right arrow to skip ahead, and the clip lit up the moment a step
     // landed in it. A step while the episode plays on the video skips
@@ -2088,6 +2137,7 @@ for (const seq of toWalk) {
   // What the video preview laid over the picture on every animation frame
   // of the last "play from", and the clip the engine had then.
   let played = null;
+  let made = null;
   let loopEnd = null;
   let wrong = null;
   // The video and the other file dropped last.
@@ -2607,6 +2657,45 @@ for (const seq of toWalk) {
         if (key === "Shift+ArrowRight" && where === "before" && ended - began < seconds + 1) {
           wrong = `${key} while playing moved the playhead ${(ended - began).toFixed(2)} s in ${seconds} s of play, no skip ahead`;
         }
+        await watch.step("play", s);
+        break;
+      }
+      case "make while paused":
+      case "make while playing": {
+        const playing = what === "make while playing";
+        const g = await handles(page);
+        if (g.start.x - g.track.x < 40) {
+          wrong = "there is no room on the clip timeline before the clip";
+          break;
+        }
+        await page.mouse.click((g.track.x + g.start.x) / 2, high(g.track));
+        await settle(page);
+        const path = await episodeOn(page);
+        const was = (await overlay(page)).card;
+        const stop = await recordFrames(page, 1 / (await rate(page)));
+        await page.evaluate(() => document.body.focus());
+        if (playing) {
+          await page.keyboard.press("Space");
+          await page.waitForTimeout(1500);
+        }
+        await page.keyboard.press(arg);
+        // Until the card chosen is a clip the engine has written, the one
+        // made, which is not the one chosen before.
+        let written = "";
+        for (let t = 0; t < 30000 && !written; t += 250) {
+          await page.waitForTimeout(250);
+          const card = (await overlay(page)).card;
+          if (card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card)) written = card;
+        }
+        await page.waitForTimeout(2000);
+        await page.evaluate(() => {
+          if (document.querySelector('button[aria-label="Play"]')) return;
+          const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+          document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+          document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+        });
+        await page.waitForTimeout(300);
+        made = { playing, was, written, overlays: (await stop()).overlays };
         await watch.step("play", s);
         break;
       }
@@ -3398,6 +3487,30 @@ for (const seq of toWalk) {
       case "mark":
         marks[arg] = await engineState(page, watch.at);
         break;
+      case "made on the clip": {
+        if (!made) {
+          wrong = "made on the clip with no clip made";
+          break;
+        }
+        const { playing, was, written, overlays } = made;
+        if (!written) {
+          wrong = "the clip made was never written and chosen while it played";
+          break;
+        }
+        // From the frame the clip made is the chosen card on.
+        const from = overlays.findIndex((o) => o.card && o.card !== was);
+        const since = overlays.slice(from);
+        const dim = since.find((o) => o.video);
+        if (playing && !since.some((o) => o.playing && o.card === written)) {
+          wrong = "the play had stopped before the clip made was written";
+        } else if (!since.some((o) => !o.playing)) {
+          wrong = "the play was not paused at the end";
+        } else if (dim) {
+          const when = dim.card === written ? "written" : dim.card ? "on its way" : "with no card chosen";
+          wrong = `the clip made was dimmed at ${dim.at.toFixed(3)}, ${dim.playing ? "playing" : "paused"}, ${when}`;
+        }
+        break;
+      }
       case "only the video":
       case "the clip shown": {
         if (!played) {
