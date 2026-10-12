@@ -751,6 +751,20 @@ pill grow for 80 ms and settle back over 100 ms, around the word's own
 centre, while every other word stays exactly where it is. The word stays lit
 until the next word starts.
 
+The bounce reaches out by the same few pixels for every word, never by a
+share of the word, so the space between two words stays on every frame.
+At rest the pill already takes nearly the whole space, 0.14 of the size at
+each side against a space of 0.165 in Inter Black. So the pill starts 0.08
+of the size inside its rest on every side, opens to its rest across and
+reaches 0.08 past it above and below at the peak, and never gets wider than
+it rests. The word grows by up to 0.07 of the size at each side, which is
+inside its pill, and no more than 15 %, so a short word grows by the
+whole 15 % and a long one by less. Growing by 15 % of the word took
+"respektvoll" 34 pixels a side and its pill over "ist", which Tim saw on a
+thumbnail, plan row 2.211. Where the bounce stands at any moment is
+`BounceAt` in `engine/highlight.go`, and the subtitle file is written from
+it, `TestTheBounceKeepsTheSpaceBetweenWords` reads it back from a short.
+
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished
 line. That costs one extra short ffmpeg pass per clip. The active word is
