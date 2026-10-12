@@ -185,6 +185,15 @@ simulation, plays a whole history of 400 steps in one execution, a fifth
 of a second, so it does `SIMTIME` executions, 300 by default, instead of
 10000, which would be half an hour.
 
+An input that reaches new code is shrunk before it is kept, and Go shrinks
+for up to a minute by the clock, in executions `FUZZTIME` does not count.
+Its search tries every pair of places in the input, so a target whose
+execution takes milliseconds would shrink for the whole minute every time.
+`scripts/fuzz.sh` gives the shrinking a count too, `SHRINKTIME`, 100
+executions by default. `FuzzPlanEdits` also reads at most 32 edits of an
+input, because every edit is a plan flushed to the disk. Without the two,
+it stood still for minutes at a time in a cloud session.
+
 `FUZZTIME` also takes a duration, for a deep run by hand:
 
 ```
