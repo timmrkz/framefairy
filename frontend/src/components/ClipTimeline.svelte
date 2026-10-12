@@ -7,6 +7,15 @@
     pieces: number;
     saving: boolean;
   };
+
+  // The shapes of a keyframe and a thumbnail on the clip timeline, and of
+  // the playhead's head: Lucide's diamond and camera, the icons of their
+  // buttons, drawn filled rather than as a line, the camera with its lens
+  // left open. Plan row 2.232.
+  const DIAMOND =
+    "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
+  const CAMERA =
+    "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
 </script>
 
 <script lang="ts">
@@ -1621,8 +1630,8 @@
         Double-click in the clip to cut a part out, drag its edges to
         size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole
         words. Across the middle are the captions: drag an edge to retime one and double-click a moved
-        edge to reset it. The cameras along the top are thumbnails and the diamonds along the foot
-        keyframes: click one to go to it, drag it to another frame and double-click it to remove it.
+        edge to reset it. The diamonds along the top are keyframes and the cameras along the foot
+        thumbnails: click one to go to it, drag it to another frame and double-click it to remove it.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1850,18 +1859,18 @@
       </div>
     {/if}
     {#if clip}
-      <!-- The thumbnails and the keyframes, each a mark of one kind: its
-           icon on a chip, the app's colour on the dark of the track, and
-           white on the app's colour while the playhead is on its frame,
-           under the hand or being dragged. A thumbnail hangs from the top
-           of the track, under the playhead's head, and a keyframe is
-           centred on the clip's bottom rule, so the two on one frame stand
-           one over the other on the playhead's line and each takes its own
-           hand. They are drawn over the track, like the playhead, because
-           the track clips what is inside it, and on its inside, see
-           .inside, so a mark stands where the waveform has its frame.
-           Taken hold of, dragged and removed the same way. Plan rows 3.26
-           and 2.232. -->
+      <!-- The thumbnails and the keyframes, each a mark of one kind: the
+           icon of its button drawn filled, with nothing behind it but its
+           shape, in the app's light colour, and white while the playhead
+           is on its frame, under the hand or being dragged. A keyframe is
+           centred on the clip's top rule, on the playhead's head, which is
+           the same diamond and larger, and a thumbnail on the clip's bottom
+           rule, so the two on one frame stand at either end of the
+           playhead's line. They are drawn over the track, like the
+           playhead, because the track clips what is inside it, and on its
+           inside, see .inside, so a mark stands where the waveform has its
+           frame. Taken hold of, dragged and removed the same way. Plan
+           rows 3.26 and 2.232. -->
       <div class="inside">
       <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
         {#each thumbMarks as m, i (m.at)}
@@ -1880,7 +1889,7 @@
             onpointerdown={(e) => grabMark("thumbnail", m.at, e)}
             ondblclick={(e) => removeMark("thumbnail", m.at, e)}
           >
-            <Icon name="thumbnail" size={14} />
+            {@render solid(CAMERA, 18, true)}
           </div>
         {/each}
         {#each cropDots as m, i (m.at)}
@@ -1899,7 +1908,7 @@
             onpointerdown={(e) => grabMark("crop", m.at, e)}
             ondblclick={(e) => removeMark("crop", m.at, e)}
           >
-            <Icon name="keyframe" size={14} />
+            {@render solid(DIAMOND, 18)}
           </div>
         {/each}
       </div>
@@ -1926,11 +1935,24 @@
           class="head"
           onpointerdown={scrub}
           title="Drag to move the playhead"
-        ></div>
+        >{@render solid(DIAMOND, 24)}</div>
       </div>
     {/if}
   </div>
 </div>
+
+<!-- A shape filled with the colour of the element it is in, with a ring of
+     the track's dark round it, so it reads over the waveform and over the
+     app's colour alike. The ring is the line drawn under the fill, so half
+     of it shows, outside the shape. -->
+{#snippet solid(d: string, size: number, lens = false)}
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <path {d} fill="currentColor" stroke="var(--well)" stroke-width={(3 * 24) / size} stroke-linejoin="round" paint-order="stroke" />
+    {#if lens}
+      <circle cx="12" cy="13" r="3" fill="var(--well)" />
+    {/if}
+  </svg>
+{/snippet}
 
 <style>
   .clip-timeline {
@@ -2270,14 +2292,13 @@
     opacity: 1;
   }
 
-  /* A thumbnail or a keyframe: the icon its button wears, alone, on a
-     chip. The app's colour on the dark of the track, and white on the
-     app's colour while the playhead is on its frame, under the hand or
-     being dragged, the same for both kinds, so one is never the other
-     drawn inside out. Even sizes on the playhead's own grid, the chip
-     centred on the line the way the line is centred on its moment, so
-     on a whole pixel or between two the chip's middle and the line's
-     are the same. Plan row 2.232. */
+  /* A thumbnail or a keyframe: the icon its button wears, alone, drawn
+     filled, with nothing behind it but its shape. The app's light colour,
+     and white while the playhead is on its frame, under the hand or being
+     dragged, the same for both kinds, so one is never the other drawn
+     inside out. Even sizes centred on the playhead's own grid, so on a
+     whole pixel or between two the mark's middle and the line's are the
+     same. Plan row 2.232. */
   .mark {
     position: absolute;
     width: 18px;
@@ -2285,8 +2306,6 @@
     margin-left: -9px;
     display: grid;
     place-items: center;
-    border-radius: 4px;
-    background: var(--well);
     color: var(--accent-hi);
     pointer-events: auto;
     cursor: ew-resize;
@@ -2295,26 +2314,27 @@
   }
 
   .mark :global(svg) {
+    display: block;
     pointer-events: none;
   }
 
   .mark:hover,
   .mark.here,
   .mark.active {
-    background: var(--accent);
     color: #fff;
   }
 
-  /* A thumbnail hangs from the top of the track, just under the
-     playhead's head, so it is a picture of the frame the line comes down
-     on. */
-  .thumb {
-    top: 5px;
+  /* A keyframe is centred on the clip's top rule, where the playhead's
+     head is the same diamond, larger, so on the keyframe's frame the two
+     lie one on the other and the keyframe is the one on top. The rule
+     lies on the track's border and a pixel in from it. */
+  .cropdot {
+    top: calc(var(--frame-line) / 2 - 9px);
   }
 
-  /* A keyframe is centred on the clip's bottom rule, which lies on the
-     track's border and a pixel in from it. */
-  .cropdot {
+  /* A thumbnail is centred on the clip's bottom rule, at the other end of
+     the playhead's line. */
+  .thumb {
     bottom: calc(var(--frame-line) / 2 - 9px);
   }
 
@@ -2386,7 +2406,7 @@
      moves it, and there the pointer is the hand of anything pressed. */
   .playhead {
     position: absolute;
-    top: -5px;
+    top: calc(var(--frame-line) / 2);
     bottom: 0;
     left: -1px;
     width: 2px;
@@ -2410,19 +2430,30 @@
      outside it is a handle the hand goes straight through. */
   .head {
     position: absolute;
-    top: -5px;
-    left: -5px;
-    width: 10px;
-    height: 9px;
-    border-radius: 2px 2px 1px 1px;
-    background: var(--accent-hi);
+    /* Its middle on the middle of the clip's top rule, where a keyframe
+       stands, a diamond the size of a keyframe's and a little more, so a
+       keyframe on the playhead's frame lies on it with the head's edge
+       showing round it. */
+    top: calc(var(--frame-line) / 2 - 12px);
+    left: -12px;
+    width: 24px;
+    height: 24px;
+    color: var(--accent-hi);
     cursor: ew-resize;
     touch-action: none;
   }
 
-  .over.scrubbing .playhead,
-  .over.scrubbing .head {
+  .head :global(svg) {
+    display: block;
+    pointer-events: none;
+  }
+
+  .over.scrubbing .playhead {
     background: #fff;
+  }
+
+  .over.scrubbing .head {
+    color: #fff;
   }
 
   /* The caption blocks of a clip on its way come in one after another, in

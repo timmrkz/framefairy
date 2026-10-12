@@ -508,7 +508,7 @@
 //   ["on the playhead", n]
 //                      n marks are lit by the playhead, a thumbnail or a
 //                      keyframe on its frame, and each stands centred on
-//                      the playhead's line
+//                      the playhead's line, a keyframe on its head
 //   ["pinch in"]       pinches the clip timeline in to a tenth on the
 //                      playhead, where a frame is many pixels wide, and
 //                      takes the hand off it
@@ -4610,13 +4610,20 @@ for (const seq of toWalk) {
             const b = e.getBoundingClientRect();
             return b.left + b.width / 2;
           };
+          const high = (e) => {
+            const b = e.getBoundingClientRect();
+            return b.top + b.height / 2;
+          };
           const line = document.querySelector(".clip-timeline .playhead");
+          const head = document.querySelector(".clip-timeline .head") ?? line;
           return {
             line: line ? mid(line) : NaN,
-            head: mid(document.querySelector(".clip-timeline .head") ?? line),
+            head: mid(head),
+            headHigh: high(head),
             lit: [...document.querySelectorAll(".clip-timeline .thumb.here, .clip-timeline .cropdot.here")].map((e) => ({
               kind: e.classList.contains("thumb") ? "thumbnail" : "keyframe",
               at: mid(e),
+              high: high(e),
             })),
           };
         });
@@ -4625,6 +4632,10 @@ for (const seq of toWalk) {
         else if (m.lit.length !== arg) wrong = `${m.lit.length} marks light on the playhead's frame, not ${arg}`;
         else if (off) wrong = `the ${off.kind} lit by the playhead stands ${(off.at - m.line).toFixed(2)} px from its line`;
         else if (Math.abs(m.head - m.line) > 0.01) wrong = `the playhead's head stands ${(m.head - m.line).toFixed(2)} px from its line`;
+        // The head is the keyframe's diamond, larger, so a keyframe the
+        // playhead is on lies on it, middle on middle. Asked for by Tim.
+        else if (m.lit.some((l) => l.kind === "keyframe" && Math.abs(l.high - m.headHigh) > 0.01))
+          wrong = `the keyframe lit by the playhead stands ${(m.lit.find((l) => l.kind === "keyframe").high - m.headHigh).toFixed(2)} px below the playhead's head`;
         break;
       }
       case "pinch in": {
@@ -4714,16 +4725,16 @@ for (const seq of toWalk) {
         }
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         // Drawn as a diamond, the shape editors draw a keyframe in, and
-        // the keyframe button's own: Lucide's diamond, on the chip a
-        // thumbnail has. Plan row 2.232.
+        // the keyframe button's own: Lucide's diamond, filled, as a
+        // thumbnail is Lucide's camera filled. Plan row 2.232.
         const shapes = await page.evaluate(() =>
-          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg")?.getAttribute("class") ?? "nothing"),
+          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg path")?.getAttribute("d") ?? "nothing"),
         );
         const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
         if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
         else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
         else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
-        else if (shapes.some((c) => !c.split(" ").includes("lucide-diamond")))
+        else if (shapes.some((c) => !c.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
           wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
         else if (sizes.some((w) => w !== 18)) wrong = `a keyframe is ${sizes.join(", ")} px wide, not 18 px like a thumbnail, found too small by Tim on #192`;
         break;
