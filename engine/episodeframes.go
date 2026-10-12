@@ -52,9 +52,11 @@ type EpisodeFrames struct {
 	program string
 	path    string
 	// What a test adds to the decoder's environment, and hears of all it
-	// says on its error stream, the way DecoderSaid does.
-	env   []string
-	heard func(level slog.Level, line string)
+	// says on its error stream, the way DecoderSaid does, and what it does
+	// between the decoder's end and the reason for it being known.
+	env    []string
+	heard  func(level slog.Level, line string)
+	waited func()
 
 	mu   sync.Mutex
 	cmd  *exec.Cmd
@@ -238,6 +240,9 @@ func (f *EpisodeFrames) start() error {
 		}
 		<-saidAll
 		werr := cmd.Wait()
+		if f.waited != nil {
+			f.waited()
+		}
 		f.mu.Lock()
 		f.err = fmt.Errorf("the video's decoder stopped: %v %s", werr, said.String())
 		if gone == f.closed {
@@ -267,7 +272,8 @@ func (f *EpisodeFrames) ended(gone chan struct{}) error {
 
 // send writes one request to the program whose gone this is, and to no
 // other: a stream of a program that was closed, or that stopped, must not
-// ask the one that started after it. Under the lock.
+// ask the one that started after it. Under the lock. A send that fails is
+// told by refused why.
 func (f *EpisodeFrames) send(gone chan struct{}, format string, args ...any) error {
 	if f.gone != gone || f.cmd == nil {
 		if why := f.ended(gone); why != nil {
@@ -277,6 +283,36 @@ func (f *EpisodeFrames) send(gone chan struct{}, format string, args ...any) err
 	}
 	_, err := fmt.Fprintf(f.in, format+"\n", args...)
 	return err
+}
+
+// refused is why a request the program whose gone this is could not take
+// failed. A write fails once the program's input is shut, and Wait shuts
+// it when the program stopped, before gone is closed and the reason is
+// known: a file with no picture stops its decoder at once, and a stream
+// that asked in between said "file already closed" where it should have
+// said that the file has no picture. So the reason is waited for. The
+// wait ends with gone, when the program ends, or with ctx: a program that
+// shut its input and runs on is ended by Close, and every stream has a
+// context that ends. Not under the lock, which the end of the program
+// takes.
+func (f *EpisodeFrames) refused(ctx context.Context, gone chan struct{}, err error) error {
+	f.mu.Lock()
+	why := f.ended(gone)
+	f.mu.Unlock()
+	if why != nil {
+		return why
+	}
+	select {
+	case <-gone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if why := f.ended(gone); why != nil {
+		return why
+	}
+	return fmt.Errorf("the video's decoder could not be asked: %w", err)
 }
 
 // take hands a stream a cursor of its kind: one kept from a stream before,
@@ -387,19 +423,12 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 	if err == nil {
 		err = f.send(gone, "next %d %d 0", id, ahead)
 	}
-	if err != nil {
-		if why := f.ended(gone); why != nil {
-			err = why
-		} else {
-			err = fmt.Errorf("the video's decoder could not be asked: %w", err)
-		}
-	}
 	f.mu.Unlock()
 	// The decoder runs and has the request: at once where it ran already,
 	// after starting it where it did not.
 	times.mark(timeStarted)
 	if err != nil {
-		return err
+		return f.refused(ctx, gone, err)
 	}
 	// A batch asked for and not yet ended: the cursor is not handed on
 	// before its last record has come, or the next stream would get it. A
@@ -449,16 +478,9 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 				f.mu.Lock()
 				f.used = time.Now()
 				err := f.send(gone, "next %d %d 0", id, ahead)
-				if err != nil {
-					if why := f.ended(gone); why != nil {
-						err = why
-					} else {
-						err = fmt.Errorf("the video's decoder could not be asked: %w", err)
-					}
-				}
 				f.mu.Unlock()
 				if err != nil {
-					return err
+					return f.refused(ctx, gone, err)
 				}
 			case framewire.End:
 				pending = false
