@@ -767,7 +767,7 @@ which does not move the playhead, leaves it on the video, because no
 gesture put it on that clip. A clip made there with I or O is the
 exception, because it is made around the playhead: making it is the
 gesture on it, `claim` in `Player.svelte`. Tim saw such a clip come up
-dimmed over the very moment he made it from, 2.207. The play goes on as
+dimmed over the very moment he made it from, 2.212. The play goes on as
 it began, rule 6, and the next one plays the clip.
 
 **Where a gesture lands is a frame, not a second.** What is on screen is

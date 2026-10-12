@@ -496,7 +496,7 @@ shown. Before the fix it fails at `only the video`, the playhead on the
 clip at 7.96 s.
 
 `a clip made with I while the episode plays is not dimmed` is Tim's test
-of 2.207. With the clip's start trimmed, it plays from before the clip,
+of 2.212. With the clip's start trimmed, it plays from before the clip,
 presses I a second and a half in, and reads the clip timeline on every
 animation frame until the clip made is written and chosen, two seconds
 more, and a pause. From the frame the new card is chosen on, on its way

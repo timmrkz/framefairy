@@ -207,6 +207,38 @@ type pieceCut struct {
 	// Whether the picture is read from the key frame at or before seek,
 	// every frame of it, rather than from seek.
 	fromKey bool
+	// seek and read in microseconds, read nought where there is none.
+	seekUS, readUS int64
+}
+
+// readFrom is the cut with its picture read from a key frame keyedPieces
+// found before the piece, in a file with no index of its key frames: read
+// from at, just before the key frame is decoded, without dropping a frame
+// at the seek, and with the key frame put at key, both in microseconds
+// after the start of the file.
+//
+// How ffmpeg counts the frames' times after a seek in such a file is not
+// to be relied on: a picture that starts after its sound is counted from
+// the sound by one build and from the picture by another, and a seek
+// close to the start counts from the first frame. The first frame the
+// decoder gives is the key frame, whose time is known, so every frame is
+// counted from it to the cut's own seek, and the cut keeps them by its own
+// rule: from the seek on where a seek would have dropped those before it,
+// and the frame that holds its first moment where the cut reads from a
+// key frame anyway.
+func (c pieceCut) readFrom(at, key int64) pieceCut {
+	if at > c.seekUS {
+		return c
+	}
+	shift := fmt.Sprintf("settb=1/1000000,setpts=PTS-STARTPTS%s/TB,", signedMicros(key-c.seekUS))
+	if !c.fromKey {
+		shift += "trim=start=0,"
+	}
+	c.picture = shift + c.picture
+	c.fromKey = true
+	c.seek, c.seekUS = micros(at), at
+	c.read, c.readUS = "", 0
+	return c
 }
 
 // nearestFrame is the frame of the episode an edge at a moment means,
@@ -337,12 +369,21 @@ func (s SourceInfo) pieceFrames(start, end float64) (int64, int64) {
 // before the picture does, the frames are counted by their own timestamps
 // instead, see byTimes.
 func (s SourceInfo) cutOf(seg Segment) pieceCut {
+	cut := s.plainCut(seg)
+	if k, ok := s.keyAtOf(seg); ok {
+		return cut.readFrom(k.at, k.key)
+	}
+	return cut
+}
+
+// plainCut is cutOf without the key frame keyedPieces found.
+func (s SourceInfo) plainCut(seg Segment) pieceCut {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		seek := int64(math.Round(seg.Start * 1_000_000))
 		read := int64(math.Round(seg.Duration() * 1_000_000))
 		lead := min(seek, soundLead)
 		return pieceCut{
-			seek: micros(seek), read: micros(read),
+			seek: micros(seek), read: micros(read), seekUS: seek, readUS: read,
 			soundSeek: micros(seek - lead), soundRead: micros(read + lead),
 			sound: fmt.Sprintf("atrim=start=%s,asetpts=PTS-STARTPTS", micros(lead)),
 		}
@@ -362,6 +403,8 @@ func (s SourceInfo) cutOf(seg Segment) pieceCut {
 	return pieceCut{
 		seek:      micros(seek),
 		read:      micros(read),
+		seekUS:    seek,
+		readUS:    read,
 		soundSeek: s.soundSeekOf(seek - lead),
 		soundRead: micros(read + lead),
 		picture:   fmt.Sprintf("trim=end_frame=%d,", end-first),
@@ -391,6 +434,7 @@ func (s SourceInfo) byTimes(from, to, n int64) pieceCut {
 	hair := int64(frameHair * 1_000_000)
 	return pieceCut{
 		seek:      micros(seek),
+		seekUS:    seek,
 		soundSeek: s.soundSeekOf(seek - lead),
 		soundRead: micros(to - seek + frame + lead),
 		fromKey:   true,
@@ -428,6 +472,15 @@ func (s SourceInfo) soundSeekOf(at int64) string {
 // micros is a number of microseconds as seconds, written out exactly.
 func micros(us int64) string {
 	return fmt.Sprintf("%d.%06d", us/1_000_000, us%1_000_000)
+}
+
+// signedMicros is micros with its sign written out, for a number that
+// may be below nought.
+func signedMicros(us int64) string {
+	if us < 0 {
+		return "-" + micros(-us)
+	}
+	return "+" + micros(us)
 }
 
 // OnFrames is a clip with every edge of its pieces on the start of the
@@ -516,6 +569,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		return "", err
 	}
 	source = e.unevenPieces(ctx, sourcePath, source, clip.Segments)
+	source = e.keyedPieces(ctx, sourcePath, source, clip.Segments)
 	cmd, err := e.BuildCommand(ctx, clip, sourcePath, source, tmp, rs, assName)
 	if err != nil {
 		return "", err
