@@ -21,6 +21,7 @@ import {
   litWord,
   frameAt,
   frameMiddle,
+  frameBegins,
 } from "./flow";
 
 describe("the window moves on when it chooses for itself", () => {
@@ -555,5 +556,9 @@ describe("frames are counted from where the picture starts", () => {
   test("the middle of a frame is in that frame", () => {
     expect(frameMiddle(18, frame, 0.25)).toBeCloseTo(0.99, 9);
     expect(frameAt(frameMiddle(18, frame, 0.25), frame, 0.25)).toBe(18);
+  });
+  test("the start of a frame is in that frame, not the one before", () => {
+    expect(frameBegins(18, frame, 0.25)).toBeCloseTo(0.97, 9);
+    for (const k of [0, 1, 18, 749, 4500]) expect(frameAt(frameBegins(k, 1001 / 30000, 0.25), 1001 / 30000, 0.25)).toBe(k);
   });
 });
