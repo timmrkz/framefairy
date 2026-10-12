@@ -401,6 +401,10 @@ again, and no other short in its folder, and `pictured`, the short's
 pictures beside it in its episode's folder, one for each thumbnail of
 the clip and no more, and `by its words`, the short named after the
 clip's words alone, `<slug>.mp4`, with nothing of its id.
+`captions like the short`, after `render`, makes the video preview as
+large as the short, steps to the start and the middle of a dozen words and
+holds what the canvas shows to that frame of the short, and to it rather
+than the frame before or after, see [CAPTIONS.md](CAPTIONS.md#the-tests).
 For the settings: `settings` opens them from the sidebar and `episode`
 the episode again, `pick model` opens the list of what finds clips and
 picks another model if it opens, `remove model` presses the bin of the

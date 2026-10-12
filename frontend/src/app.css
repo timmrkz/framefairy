@@ -561,9 +561,9 @@ input[type="password"] {
   }
 }
 
-/* The pop the pill makes behind the word being spoken in the video
-   preview, a little under its size, a little over and back, the way the
-   render bounces it. The caption block on the clip timeline that stands
+/* The pop the pill makes behind the word being spoken in the caption
+   box while a word is typed, a little under its size, a little over and
+   back, the way the render bounces it. The caption block on the clip timeline that stands
    for the caption shown makes the same one, so it is one animation. A
    block is long and low, so the same share of its size is two pixels of
    height and reads as nothing. It asks for more of the pop in height and

@@ -895,8 +895,11 @@ bubble scrolled by those eight pixels.
   all the interface adds**. A word being corrected takes no background of
   its own. One would read as a second highlight pill, in the app's colour,
   on a word nobody is speaking, and on the word that is being spoken it
-  would take away the colour the render really burns in. The picture goes
-  on showing what the render will show while a word in it is being typed.
+  would take away the colour the render really burns in. The captions in the picture are drawn by libass
+  from the short's own caption file, see [CAPTIONS.md](CAPTIONS.md), and
+  the caption box over them draws nothing until a word is opened. Then it
+  shows the words itself, the letters typed included, until the word is
+  saved.
   - **From the keyboard:** Shift and the arrows walk the playhead from
     word to word, and the word walked to wears the same frame the pointer
     puts on a word. Enter opens that word with the whole of it selected,
@@ -2023,7 +2026,7 @@ moved by hand, on the clip timeline.
   leave the words out, which put a dragged edge only where the words left
   put it, about where it already stood: Tim dragged a right edge in and
   double-clicked twice, and the second time nothing moved.
-- **The caption box in the video preview follows the drag**, so what is
+- **The captions in the video preview follow the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
   see-through as the box is set to be, over the waveform the way the box
@@ -2035,8 +2038,8 @@ moved by hand, on the clip timeline.
   colour. At rest the bar is a hairline and under the pointer it is
   thicker. The caption the video preview is showing wears the highlight
   colour over its box, with its own opacity, the pill the spoken word
-  wears, and pops with the same animation that pill makes in the video
-  preview, on every word as the pill does, so walking the words with shift
+  wears, and pops as that pill
+  bounces, on every word as the pill does, so walking the words with shift
   and the arrow keys pops the pill and the block together. It pops when
   the playhead comes to a new word and never because an edge is dragged:
   while one is, the block is lit as the caption is saved, and a word is

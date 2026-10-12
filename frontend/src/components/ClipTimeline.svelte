@@ -2111,8 +2111,8 @@
      The caption the video preview is showing wears the highlight colour
      over its box, the pill over the box the way the short draws it, each
      as see-through as it is set to be, so it shows two colours, the
-     highlight and the words. It bounces into place with the same pop the
-     pill makes in the video preview.
+     highlight and the words. It bounces into place with the pop in
+     app.css.
 
      A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap. */

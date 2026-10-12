@@ -1439,6 +1439,15 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.211: Tim saw the highlight in the video preview with
+    // padding round the word, settled, where the short had it mid-bounce
+    // and the thumbnail had it with no padding at all. A browser drew the
+    // preview's captions and libass the short's. Now libass draws both,
+    // from the one caption file, see lib/frames/captions.ts.
+    name: "the video preview shows the short's captions, frame for frame",
+    steps: [["render"], ["captions like the short"]],
+  },
+  {
     // The video preview draws on a WebGPU canvas in the extended mode,
     // so an HDR episode shines on an HDR screen. Step 4 of 2.156.
     name: "the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light",
@@ -1734,21 +1743,26 @@ const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
 
 // How far the captions in the crop of the video preview are from a frame
-// of the short at the same size, in brightness, in blocks of 4 by 4
-// pixels, on average and at most, in steps of 8 bits. The captions are
-// the rows of the lower half of the short that have white text in them,
-// and a few pixels round them. The short is given the video preview's
-// look first, see lift in lib/frames/light.ts. Blocks, since the short
-// burns its captions in at its own size and is made smaller to compare,
-// and the preview draws them at the size it shows them, so the edges of a
-// letter fall a little differently.
+// of the short at the same size, in brightness, on average over every
+// pixel and at most, in steps of 8 bits. The captions are the rows of the
+// lower half of the short that have white text in them, and a few pixels
+// round them. The short is given the video preview's look first, see lift
+// in lib/frames/light.ts. The two are laid on each other a pixel either
+// way too and the closest is taken: libass puts a drawing on whole pixels,
+// and the short, made smaller to compare, lands half a pixel from where
+// the preview draws it at the size it shows it.
 const look = (v) => {
   const c = Math.min(Math.max(v / 255, 0), 1);
   return 255 * Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
 };
 function captionDiff(rgba, rgb, w, h, channels = 4) {
-  const B = 4;
   const luma = (d, i, n, f) => 0.2126 * f(d[n * i]) + 0.7152 * f(d[n * i + 1]) + 0.0722 * f(d[n * i + 2]);
+  const a = new Float32Array(w * h);
+  const b = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    a[i] = luma(rgba, i, channels, channels === 3 ? look : (v) => v);
+    b[i] = luma(rgb, i, 3, look);
+  }
   let top = h;
   let bottom = -1;
   for (let y = Math.floor(h / 2); y < h; y++) {
@@ -1759,27 +1773,25 @@ function captionDiff(rgba, rgb, w, h, channels = 4) {
       }
     }
   }
-  if (bottom < 0) return { mean: Infinity, most: Infinity, rows: 0 };
-  let sum = 0;
-  let most = 0;
-  let n = 0;
-  for (let by = Math.max(0, top - 2 * B); by + B <= Math.min(h, bottom + 2 * B); by += B) {
-    for (let bx = 0; bx + B <= w; bx += B) {
-      let a = 0;
-      let b = 0;
-      for (let y = by; y < by + B; y++) {
-        for (let x = bx; x < bx + B; x++) {
-          a += luma(rgba, y * w + x, channels, channels === 3 ? look : (v) => v);
-          b += luma(rgb, y * w + x, 3, look);
+  if (bottom < 0) return { mean: Infinity, most: Infinity };
+  let best = { mean: Infinity, most: Infinity };
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      let sum = 0;
+      let most = 0;
+      let n = 0;
+      for (let y = Math.max(1, top - 8); y < Math.min(h - 1, bottom + 8); y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const d = Math.abs(a[y * w + x] - b[(y + dy) * w + x + dx]);
+          sum += d;
+          most = Math.max(most, Math.round(d));
+          n++;
         }
       }
-      const d = Math.abs(a - b) / (B * B);
-      sum += d;
-      most = Math.max(most, Math.round(d));
-      n++;
+      if (sum / n < best.mean) best = { mean: sum / n, most };
     }
   }
-  return { mean: sum / Math.max(n, 1), most, rows: bottom - top + 1 };
+  return best;
 }
 
 // What is wrong with the short Render wrote, against the video preview, or
@@ -2922,8 +2934,10 @@ for (const seq of toWalk) {
           }
           return null;
         };
+        // The frame that holds a moment, a frame that begins a millisecond
+        // or less after it included, as seekTo waits for it.
         const shortIndex = (at) => {
-          const k = Math.floor(at * fps + 1e-6);
+          const k = Math.floor((at + 0.001) * fps);
           let n = 0;
           for (const p of pieces) {
             const [first, end] = [Math.round(p.start * fps), Math.round(p.end * fps)];
@@ -2958,17 +2972,15 @@ for (const seq of toWalk) {
           const want = shortFrame(short, n, got.w, got.h);
           const d = captionDiff(got.pixels, want, got.w, got.h);
           compared++;
-          report.push(`${landed.toFixed(2)} s, frame ${n} of the short: ${d.mean.toFixed(2)} on average, ${d.most} at most`);
-          if (process.env.DUMP) {
-            const head = Buffer.from(`P6 ${got.w} ${got.h} 255\n`);
-            const rgb = Buffer.alloc(got.w * got.h * 3);
-            for (let i = 0; i < got.w * got.h; i++) for (let c = 0; c < 3; c++) rgb[3 * i + c] = got.pixels[4 * i + c];
-            writeFileSync(`${process.env.DUMP}/preview-${compared}.ppm`, Buffer.concat([head, rgb]));
-            writeFileSync(`${process.env.DUMP}/short-${compared}.ppm`, Buffer.concat([head, Buffer.from(want)]));
-          }
-          if (d.mean > 3 || d.most > 40) {
-            wrong = `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are, in blocks of 4 pixels`;
-            if (!process.env.DUMP) break;
+          report.push(`${landed.toFixed(2)} s, frame ${n} of the short: ${d.mean.toFixed(2)} on average`);
+          // The short is made with H.264 and keeps its colour at a quarter
+          // of its pixels, so it is never the same to the level: 3 on
+          // average where the preview draws what the short does, against
+          // 4.5 and more for the frame before or after with another word
+          // lit, and 30 and more for a preview with no captions.
+          if (d.mean > 3.6) {
+            wrong = `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are`;
+            break;
           }
           // The frames of the short either side, where their captions are
           // drawn otherwise, are told apart from it, so a frame off in the

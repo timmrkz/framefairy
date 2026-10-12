@@ -441,6 +441,13 @@ messages, pull request text, code comments and chat replies.
   keeps no words, captions are never read back from a file, and the
   interface keeps no rules about where an edge lands: `ShapeClip` and
   `Reshape` in `engine/shape.go` answer for every gesture.
+- **One drawing of the captions.** libass draws every caption the app
+  shows or makes, in the video preview, the thumbnails and the short, from
+  the file `CaptionTrack` makes, at the moment `CaptionMoment` names. The
+  size of the short comes from `Options.RenderSettings` and nowhere else.
+  The interface draws no caption of its own beyond a word being typed. A
+  second drawing made to look alike drifts, and Tim then sees it before
+  any test does. See [docs/CAPTIONS.md](docs/CAPTIONS.md).
 - **Untrusted input.** Model answers, plan files and caption text are
   untrusted. Keep the checks in `ReadPlan`, `LoadClips` and `SafeChild`.
 - **Every path is checked against the library.** The app reads, writes,
