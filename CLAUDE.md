@@ -108,6 +108,10 @@ Start with [README.md](README.md). In short:
   closed. Two at once from one session split its attention, and Tim
   cannot tell which of them a reply is about. Reading and assessing
   another pull request is not working on it.
+- **At most five pull requests open at a time**, on the whole
+  repository, from every session together. Before opening one, count
+  the open pull requests. When five are open, open none: say so to Tim
+  in the thread and wait until one is merged or closed.
 - **A report that is not about the open pull request is logged, not
   started.** A bug Tim finds on the way, a review that points elsewhere,
   something seen while testing: it goes into

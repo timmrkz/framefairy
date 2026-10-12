@@ -427,12 +427,13 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		if strings.HasSuffix(name, " 90") || strings.HasSuffix(name, " 270") {
 			w, h = 90, 160
 		}
+		grid := gridOf(t, phone)
 		want := first(func(got func(float64, []byte) error) error {
-			return e.PreviewFrames(context.Background(), phone, 0.5, w, h, got)
+			return e.PreviewFrames(context.Background(), phone, grid.At(grid.Holding(0.5)), w, h, got)
 		})
 		dec := NewEpisodeFrames(program, phone)
 		frame := first(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), 0.5, w, h, got)
+			return dec.Stream(context.Background(), grid, 0.5, w, h, got)
 		})
 		dec.Close()
 		if len(frame) != len(want) || len(want) == 0 {
