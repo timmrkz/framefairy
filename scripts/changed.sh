@@ -108,6 +108,7 @@ rules=0
 changed_rules=0
 build_rules=0
 moved_rules=0
+shard_rules=0
 workflows=""
 shells=""
 
@@ -144,6 +145,10 @@ for file in $changed; do
 		;;
 	scripts/main-moved.sh | scripts/main-moved-test.sh)
 		moved_rules=1
+		shells="$shells $file"
+		;;
+	scripts/go-shard.sh | scripts/go-shard-test.sh)
+		shard_rules=1
 		shells="$shells $file"
 		;;
 	*.sh)
@@ -223,9 +228,10 @@ fi
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
+[ "$shard_rules" = 1 ] && say "rules:     scripts/go-shard-test.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules" = 0000000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules" = 00000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -239,6 +245,7 @@ if [ "$plan_only" = 1 ]; then
 	[ "$changed_rules" = 1 ] && echo changed-rules
 	[ "$build_rules" = 1 ] && echo build-rules
 	[ "$moved_rules" = 1 ] && echo moved-rules
+	[ "$shard_rules" = 1 ] && echo shard-rules
 	for s in $shells; do echo "script $s"; done
 	for w in $workflows; do echo "workflow $w"; done
 	exit 0
@@ -268,14 +275,15 @@ fuzz_what_changed() {
 	done
 	targets=""
 	skipped=""
+	# Every target, found in the source by the script that fuzzes them.
+	all=$(sh scripts/fuzz.sh --list)
 	for pkg in $affected; do
 		dir=${pkg#"$module"}
 		dir=${dir#/}
 		[ -z "$dir" ] && dir=.
-		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
+		for target in $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }'); do
 			if fuzz_reaches "$pkg" "$dir" "$target"; then
-				targets="$targets$pkg $target
-"
+				targets="$targets $target"
 			else
 				skipped="$skipped $target"
 			fi
@@ -283,8 +291,7 @@ fuzz_what_changed() {
 	done
 	[ -n "$skipped" ] && printf 'skip	fuzzing%s, which no change reaches\n' "$skipped"
 	if [ -n "$targets" ]; then
-		printf '%s' "$targets" | GO=$GO FUZZTIME=$FUZZTIME \
-			xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" -n 2 sh scripts/fuzz.sh --one
+		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="${targets# }" sh scripts/fuzz.sh
 	fi
 }
 
@@ -365,6 +372,7 @@ done
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
+[ "$shard_rules" = 1 ] && sh scripts/go-shard-test.sh
 # Away from a Mac nothing builds the tools we ship, and make stops without
 # them, so there the build proves the programs build and says it goes
 # without, the way CI's Linux job does. On a Mac make builds them.

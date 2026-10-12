@@ -129,7 +129,7 @@ you reorder them. See CLAUDE.md.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as six jobs at the same time, so the
+request and every push to `main`, as nine jobs at the same time, so the
 answer comes back in the time the slowest takes:
 
 - **interface:** `make interface`, the type check and the interface's own
@@ -137,11 +137,15 @@ answer comes back in the time the slowest takes:
 - **build:** the rules that decide what runs, then `make` on Linux, which
   proves the programs still link with the interface built into them.
 - **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render.
-- **fuzz:** `make fuzz` on Linux.
-- **macos:** builds our own ffmpeg, runs `make` and fails if the build prints
-  any warning, then runs the Go tests.
-- **macos-fuzz:** `make fuzz` on macOS.
+  the tests that render, on two machines with every other test each.
+- **walks:** the interface in Chromium against the real Go side,
+  `make walks`, on two machines with every other run each.
+- **fuzz:** `make fuzz` on Linux, going on from the fuzz cache main left.
+- **macos:** the Go tests against our own ffmpeg, without the race
+  detector, which Linux runs.
+- **outside:** `make` on a Mac, which fails if the build prints any
+  warning, then the app opened by macOS from a link, see
+  [TESTING.md](TESTING.md#from-outside-the-app).
 
 On a pull request each job first asks `scripts/ci-needs.sh` whether the
 change gives it anything to do, and does nothing when it does not. A push to

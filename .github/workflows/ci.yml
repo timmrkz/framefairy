@@ -108,6 +108,12 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh patchelf
+      # And the split of the Go tests over two machines, which would go
+      # green having run half of them when it is wrong. It needs Go to
+      # list the tests, so it runs after Go is set up.
+      - name: Check the split of the Go tests
+        if: steps.needs.outputs.run == 'true'
+        run: sh scripts/go-shard-test.sh
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
@@ -124,7 +130,15 @@ jobs:
   # Every Go test under the race detector, which also runs the seed corpus
   # of every fuzz target. ffmpeg is here because the tests that render skip
   # without it, and they are worth having.
+  #
+  # On two machines, each with every other test, see scripts/go-shard.sh:
+  # on one they took six minutes, and no job takes over five.
   linux:
+    name: linux (${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,7 +187,7 @@ jobs:
       # scripts/test-failures.sh, so finding it needs no log.
       #
       # go test stops a package that runs over ten minutes by itself, with
-      # the stack of every goroutine, and the tests take five. The limit is
+      # the stack of every goroutine, and the tests take three. The limit is
       # for when even that does not end it: a job once waited half an hour
       # on what a failed test had left running, until it was cancelled by
       # hand.
@@ -181,7 +195,7 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 15
         run: |
-          make unit 2>&1 | tee unit.log
+          make unit GOSHARD=${{ matrix.shard }}/2 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -195,7 +209,15 @@ jobs:
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
   # what the Go tests need, the interface's Node, and the Chromium
   # Playwright drives, which only this job installs.
+  #
+  # On two machines, each with every other run, walks and sequences alike:
+  # on one the runs took five and a half minutes after two of setting up.
   walks:
+    name: walks (${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -259,13 +281,21 @@ jobs:
       - name: Sequences and walks
         if: steps.needs.outputs.run == 'true'
         run: |
-          make walks 2>&1 | tee walks.log
+          make walks WALKSHARD=${{ matrix.shard }}/2 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
+  #
+  # Go keeps what it learned in its build cache: the inputs that reached
+  # new code, and each package built with the coverage counters fuzzing
+  # needs. Both are kept between runs, saved by main and by the nightly
+  # fuzzing and taken up by every pull request. So a run goes on from where
+  # the last one stopped instead of finding the same easy inputs again, and
+  # does not build every package before it starts. What a pull request
+  # finds is not saved, because a cache a pull request writes is its own.
   fuzz:
     runs-on: ubuntu-24.04
     steps:
@@ -278,7 +308,15 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v1-${{ runner.os }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -294,20 +332,31 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh
+      # The licence dispenser's simulation is fuzzed at night only, see
+      # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       - name: Fuzz
         if: steps.needs.outputs.run == 'true'
-        run: make fuzz
+        run: make fuzz SIMTIME=0
+      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
 
-  # Tim's platform, so the build has to be clean and the tests have to pass
-  # here too. A warning from clang or the linker fails it.
-  #
-  # The tests run against the ffmpeg we ship, built by the same script a
-  # release uses, so what renders here is what renders on a customer's
-  # Mac: LGPL, without libx264, encoding through VideoToolbox. It used to
-  # run with no ffmpeg at all, and every test that renders, frames or
-  # listens skipped itself, which is why this job took one minute and
-  # Linux took five. The build takes a while once and is kept until
+  # The Go tests on Tim's platform, against the ffmpeg we ship, built by
+  # the same script a release uses, so what renders here is what renders
+  # on a customer's Mac: LGPL, without libx264, encoding through
+  # VideoToolbox. The build takes a while once and is kept until
   # scripts/build-ffmpeg.sh changes.
+  #
+  # Without the race detector: the Go code is the same as on Linux, where
+  # every test runs under it, and here it only made them 1.7 times slower.
+  # And without the licence server's packages, which run on a Linux server
+  # and never on a Mac. What differs here, decoding, encoding, the disk,
+  # the keychain, is all still tested. The build with no warnings allowed
+  # is in the job outside, which builds the app anyway.
   macos:
     runs-on: macos-latest
     steps:
@@ -315,47 +364,25 @@ jobs:
         with:
           fetch-depth: 2
       - id: needs
-        run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
-      - id: needsgo
         run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       - id: ffmpeg
-        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
+        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: The ffmpeg we ship
-        if: (steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true') && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
           brew install meson ninja pkg-config nasm cmake
           sh scripts/build-ffmpeg.sh .build/ffmpeg
-      # And the llama-server we ship, because make stops without it: the
-      # programs run no other, so a build without it is not the build a
-      # customer gets.
-      - id: llama
-        if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/llama
-          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
-      - name: The llama-server we ship
-        if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
-        run: |
-          brew install cmake
-          sh scripts/build-llama.sh .build/llama
       - name: ffmpeg on the path, for the tests
-        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
+        if: steps.needs.outputs.run == 'true'
         run: |
           .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
           echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
@@ -363,30 +390,20 @@ jobs:
       # which pkg-config finds. A runner whose ffmpeg came from the cache
       # installed nothing above.
       - name: pkg-config, for the episode's decoder
-        if: steps.needs.outputs.run == 'true' || steps.needsgo.outputs.run == 'true'
-        run: command -v pkg-config >/dev/null || brew install pkg-config
-      - name: Build without warnings
         if: steps.needs.outputs.run == 'true'
-        run: |
-          make 2>&1 | tee build.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then exit "$status"; fi
-          if grep -iE "warning|deprecated" build.log; then
-            echo "The build printed warnings, see above."
-            exit 1
-          fi
+        run: command -v pkg-config >/dev/null || brew install pkg-config
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
-        if: steps.needsgo.outputs.run == 'true'
+        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 15
         run: |
           make frames
-          make unit 2>&1 | tee unit.log
+          make unit RACE= UNITSKIP='framefairy/licence/dispenser framefairy/licence/paddle framefairy/cmd/framefairy-dispenser' 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
       - name: Nothing left running
-        if: always() && steps.needsgo.outputs.run == 'true'
+        if: always() && steps.needs.outputs.run == 'true'
         run: sh scripts/leftovers.sh
 
   # The app on a Mac, opened from outside it: a link in the letter a buyer
@@ -395,6 +412,9 @@ jobs:
   # docs/TESTING.md. Its own job, because it is the only one that needs a
   # keychain of its own, a dispenser and an app registered with Launch
   # Services, and none of that belongs on the machines the other jobs use.
+  # It builds the app first, with no warning allowed, which is also the
+  # build the Mac has to pass, so the app is built once on a Mac in CI
+  # rather than twice.
   outside:
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
@@ -456,31 +476,18 @@ jobs:
           security unlock-keychain -p outside "$kc"
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
           security default-keychain -d user -s "$kc"
+      # Tim's platform, so the build has to be clean: a warning from clang
+      # or the linker fails it. make outside builds on what this built.
+      - name: Build without warnings
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          make 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          if grep -iE "warning|deprecated" build.log; then
+            echo "The build printed warnings, see above."
+            exit 1
+          fi
       - name: Opened from outside
         if: steps.needs.outputs.run == 'true'
         run: make outside
-
-  # Fuzzing on macOS as well, for the two targets that are about paths: the
-  # Mac's disk takes names in either case and some Unicode written in two
-  # ways as one name, and /var is a link to /private/var, which no Linux
-  # disk has to explore. The other targets read text and numbers, which Go
-  # reads the same on both, so they are fuzzed on Linux only: macOS machines
-  # are the few GitHub has, and the build of the app waited behind this job
-  # for one. The known inputs of every target still run here, in make unit
-  # in the job above.
-  macos-fuzz:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Fuzz the targets about paths
-        if: steps.needs.outputs.run == 'true'
-        run: make fuzz FUZZTARGETS='FuzzSafeChild FuzzKnownStaysInTheLibrary'
