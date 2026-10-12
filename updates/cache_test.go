@@ -1,15 +1,20 @@
 package updates
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -250,6 +255,37 @@ func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
 		t.Fatal("the download was not cut off")
 	}
 }
+
+// A download called off stops at the next part, even when every part is
+// already there to be read. On CI's Mac the 4 MB of the test above came
+// over the loopback before the transport saw the cancel, so the download
+// read to the end and counted as arrived. Here the body is in memory, the
+// way a socket that holds the whole build hands it over.
+func TestADownloadCalledOffStopsWhenTheBuildIsAlreadyThere(t *testing.T) {
+	build := make([]byte, 4<<20)
+	src := &Source{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(iotest.HalfReader(bytes.NewReader(build))),
+			Request:    r,
+		}, nil
+	})}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var got bytes.Buffer
+	err := src.stream(ctx, "https://example.invalid/app.zip", int64(len(build)), writerSink{&got}, func(int64) { cancel() })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("the download was not cut off: %v, %d of %d bytes", err, got.Len(), len(build))
+	}
+	if got.Len() == len(build) {
+		t.Error("the whole build was read after the download was called off")
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // A build that arrived whole but could not be kept says so. Its cache
 // folder went while it downloaded, and the download used to count as
