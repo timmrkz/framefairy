@@ -1881,10 +1881,16 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   stands on a thumbnail, removes it. It can only be pressed
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
-- **Each thumbnail is a mark** along the foot of the clip timeline, the
-  same camera in the app's colour, so a click on the button is seen
-  leaving its picture on the timeline. It sits on a chip of the app's
-  colour while the playhead is on its frame.
+- **Each thumbnail is a mark** hanging from the top of the clip timeline,
+  just under the playhead's head, the same camera in the app's colour on
+  a dark chip, so a click on the button is seen leaving its picture on
+  the timeline. While the playhead is on its frame the chip takes the
+  app's colour and the camera turns white, and it stands centred on the
+  playhead's line. A keyframe looks the same way, see Keyframes.
+- **The playhead and every mark stand on the start of their frame**, the
+  way editors draw them, so a mark the playhead is on is centred on its
+  line however far the clip timeline is pinched in. The playhead moves a
+  frame at a time, as the video preview does. Plan row 2.232.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows
@@ -1923,11 +1929,14 @@ or walks across the picture. Plan row 3.26, the design is in
   plays, so what plays is what renders. The glide is not rounded to a
   pixel of the video, and the short places it to its own pixel, so a slow
   glide moves on every frame instead of standing and jumping.
-- **Each keyframe is a diamond** on the clip's bottom rule on the clip
-  timeline, under the thumbnails, in the app's colour, filled white while
-  the playhead is on its frame, the clip's first and last frame included.
-  It is 16 px wide, larger than it was at first, after Tim found it too
-  small. It is the thumbnail's kind of mark: a click puts the
+- **Each keyframe is a diamond** centred on the clip's bottom rule on the
+  clip timeline, on the same chip as a thumbnail and lit the same way:
+  the diamond in the app's colour on a dark chip, and white on a chip of
+  the app's colour while the playhead is on its frame, the clip's first
+  and last frame included. The chip is 18 px, as a thumbnail's is, larger
+  than the diamond was at first, after Tim found it too small. A
+  thumbnail and a keyframe on one frame stand at either end of the
+  playhead's line. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past
