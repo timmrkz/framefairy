@@ -26,6 +26,9 @@ import (
 // ffmpeg has none of on Linux. A caption file in a folder whose name
 // ffmpeg would read as part of its chain proves the names reach the
 // decoder whole.
+//
+// On the real disk: ffmpeg and the decoder read the episode and the
+// caption file.
 func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {

@@ -24,6 +24,7 @@ const bounceFPS = 50
 // from: the line sits 300 pixels over the bottom.
 const bounceTop, bounceRows = 1400, 400
 
+// On the real disk: ffmpeg renders the short and the test reads it back.
 func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)

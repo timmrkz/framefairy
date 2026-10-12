@@ -88,6 +88,8 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 // starts at or after a seek, so a seek to the moment itself took the frame
 // after it. In a bounce one frame is a large step, and Tim's thumbnail
 // caught a word a frame further into it than he had marked.
+//
+// On the real disk: ffmpeg renders the short and cuts the thumbnail from it.
 func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -132,6 +134,8 @@ func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
 // way JFIF says, BT.601, by every reader there is. Written with the short's
 // numbers unchanged, the caption purple came out (138, 13, 141) rather
 // than (147, 31, 145), the darker picture Tim saw.
+//
+// On the real disk: ffmpeg renders the short and cuts the thumbnail from it.
 func TestAThumbnailHasTheColoursOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -163,6 +167,8 @@ func TestAThumbnailHasTheColoursOfTheShort(t *testing.T) {
 
 // jpegColour is the colour in the middle of a JPEG as Go's own decoder
 // reads it, by JFIF, the way every other reader does.
+//
+// On the real disk: ffmpeg wrote the picture.
 func jpegColour(t *testing.T, path string) [3]int {
 	t.Helper()
 	f, err := os.Open(path)
