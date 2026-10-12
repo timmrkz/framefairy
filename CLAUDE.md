@@ -525,11 +525,14 @@ request.
   runs on main.
 - **A Mac only for what is different on a Mac.** The account runs five Mac
   jobs at once, for every branch together, so each Mac job a push takes
-  is a push of someone else's that waits. A Mac job is for the build
-  without warnings, the app opened from outside, and tests of what
-  behaves differently there: decoding and encoding through VideoToolbox,
-  the disk's names, the keychain. Everything else runs on Linux only.
-  The race detector runs on Linux, which covers the same Go code.
+  is a push of someone else's that waits. A push takes two: the build
+  without warnings with the app opened from outside, and the Go tests of
+  what ships in the app, for what behaves differently there: decoding and
+  encoding through VideoToolbox, the disk's names, the keychain. Code
+  that never runs on a Mac, like the licence server, is tested on Linux
+  only, and so is anything new of that kind. The race detector runs on
+  Linux only, which covers the same Go code. Long fuzzing on a Mac runs
+  at night. A new Mac job needs a reason that can be said out loud.
 - **Slow tests run side by side.** A test that takes over a second calls
   `t.Parallel()`, unless it changes what the whole process shares, an
   environment variable or a package variable, and then a comment says
@@ -608,7 +611,7 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is seven jobs at once rather than one after another, so
+  [docs/TESTING.md](docs/TESTING.md). It is eight jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch

@@ -406,8 +406,21 @@ test: unit fuzz interface walks
 # This also runs the seed corpus of every fuzz target, so a machine that
 # only runs make unit still covers every case anyone has found so far. What
 # it does not do is look for new ones.
+#
+# GOSHARD=1/2 runs the first half of the tests, see scripts/go-shard.sh,
+# which is how CI spreads them over two machines. RACE= runs them without
+# the race detector, which the Mac does: the Go code is the same as on
+# Linux, where it runs with it, and it makes the tests 1.7 times slower.
+#
+# UNITSKIP names packages to leave out. The Mac leaves out the licence
+# server's, which runs on a Linux server and never on a customer's Mac.
+GOSHARD ?=
+RACE ?= -race
+UNITSKIP ?=
+UNITPACKAGES = $(if $(UNITSKIP),$$($(GO) list ./... | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))),./...)
 unit: toolchain modules $(FRESH_FRAMES)
-	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" $(GO) test -race -ldflags '$(LDFLAGS)' ./...
+	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
+		$(if $(GOSHARD),GO='$(GO)' GOSHARD='$(GOSHARD)' sh scripts/go-shard.sh,$(GO) test) $(RACE) -ldflags '$(LDFLAGS)' $(UNITPACKAGES)
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.

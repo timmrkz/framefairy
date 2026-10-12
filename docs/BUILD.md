@@ -83,8 +83,8 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface` and `walks` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included |
-| `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `GOSHARD=1/2` runs every other test, see `scripts/go-shard.sh`, `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does |
+| `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
@@ -248,18 +248,18 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is seven jobs on seven machines, all at once, because none of them
+main. It is eight jobs on eight machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
-| `linux` | Linux | `make unit` |
+| `linux (1/2)`, `linux (2/2)` | Linux | `make unit GOSHARD=1/2` and `2/2`, every other test each, under the race detector. On one machine they took six minutes |
 | `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
 | `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
-| `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
-| `outside` | macOS | `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
+| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,
@@ -268,7 +268,7 @@ log.
 
 The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about
-five, so the limit only ever ends a run that even go test could not end.
+three, so the limit only ever ends a run that even go test could not end.
 After them, whichever way they ended, `scripts/leftovers.sh` looks for
 what they left running, ffmpeg, ffprobe, the episode's decoder,
 llama-server, a test binary or go itself. It prints each one with its
@@ -283,17 +283,18 @@ whatever changed, because a mistake in them is silent: CI would go green
 having run less than it should. Run it by hand with
 `sh scripts/ci-needs-test.sh`.
 
-Run one after another this is about six minutes. Run together the answer
-comes when the slowest one does, which is the macOS build and tests.
+Run together the answer comes when the slowest one does, and no job may
+take over five minutes, see Keeping the tests quick in CLAUDE.md. A job
+that grows past it is split over machines, the way `linux` is.
 
-Nothing is left out to make it quick. Every test that ran before still runs,
-on the same platforms, under the race detector, with the same `FUZZTIME`.
-The two fuzz targets about paths are fuzzed on both platforms, because a
-case-insensitive filesystem is a different thing to explore. The others
-are fuzzed on Linux only: they read text and numbers, which Go reads the
-same on both, and macOS machines are the few GitHub has, so the build of
-the app waited behind fuzzing that could find nothing new there. Their
-known inputs still run on macOS, in `make unit`.
+Nothing is left out to make it quick. Every test runs on Linux under the
+race detector, with the same `FUZZTIME`, and every test of what runs on a
+Mac runs on a Mac too. The account runs five Mac jobs at once for every
+branch together, so a push takes two, `macos` and `outside`, and the app is
+built once there. The two fuzz targets about paths are fuzzed on a Mac at
+night, because a case-insensitive filesystem is a different thing to
+explore. The others read text and numbers, which Go reads the same on
+both. The known inputs of every target run on a Mac in `make unit`.
 
 ### What runs for a change
 
