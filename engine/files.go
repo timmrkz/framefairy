@@ -13,9 +13,13 @@ import (
 // test is about what our code does with a plan or a transcript, not about
 // the drive under it. The file system is held by what owns the files, the
 // Engine, a Project and the app's store, and a function that has no owner
-// takes it as its first argument. It is never a variable of the package: a
-// test that swapped one would change it under the tests running beside it
-// that must stay on the disk.
+// takes it as its first argument. It is a variable of the package in two
+// places only, the training folder and the timings of past searches, see
+// SetTrainingDir and SetSpeedFile. Each is one place for the whole
+// machine, set as a program starts, and set together with the file system
+// it is on. A test that sets either changes it for every test of the
+// package, so it does not run beside the tests that record or search.
+// Moving them to their owners as well is plan row 2.221.
 //
 // What an outside program reads or writes, ffmpeg, the frames decoder,
 // llama-server, is on the real disk whatever the engine is given, because

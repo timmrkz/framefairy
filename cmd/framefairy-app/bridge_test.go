@@ -1,6 +1,3 @@
-// On the real disk: the bridge runs the real app, with ffmpeg and the
-// episode's decoder reading the episodes.
-
 package main
 
 // The bridge: the interface in a browser, against the real Go side.
@@ -523,6 +520,8 @@ type bridge struct {
 // use, so nothing reaches the network. Every channel has a build newer
 // than the one running, which downloads in a moment. The app opened again
 // has none, the way the bridge started.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 	for _, ch := range append(append([]string{from, stored}, list...), conflict...) {
 		if ch != "" && !updates.ValidChannel(ch) {
@@ -581,6 +580,8 @@ func (b *bridge) held(name string) time.Duration {
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
 // one episode in it, heard and searched, so the workspace has a clip.
+//
+// On the real disk: ffmpeg makes the episode, and ffmpeg and the episode's decoder read it.
 func openBridge(t *testing.T) *bridge {
 	t.Helper()
 	d := open(t)
@@ -789,6 +790,8 @@ func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 // the frame number's bands run down its right side, and rotated a quarter
 // to the left in the app they run across its top again, where a short of
 // it is read. Plan row 3.25.
+//
+// On the real disk: ffmpeg makes the episode and turns it.
 func makeTurnedEpisode(path string, seconds int, rate string) error {
 	lying := path + ".lying.mp4"
 	defer os.Remove(lying)
@@ -806,6 +809,8 @@ func makeTurnedEpisode(path string, seconds int, rate string) error {
 // intoMatroska copies a video's streams into Matroska beside it, under
 // the same name ending in .mkv, and removes the MP4. A picture that starts
 // late by an edit list starts late by its first timestamp there.
+//
+// On the real disk: ffmpeg copies the video into Matroska.
 func intoMatroska(path string) (string, error) {
 	mkv := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", mkv).CombinedOutput()
@@ -827,6 +832,8 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // own kind is filmed by two cameras that switch then, see twoCameras, and
 // with hevc it is HEVC with 10-bit colour. With mkv it is the same video
 // in Matroska, the way OBS records, its streams copied as they are.
+//
+// On the real disk: ffmpeg makes the video the app adds.
 func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
@@ -918,6 +925,8 @@ func (b *bridge) reopen() ([]Job, error) {
 // Every walk starts from the same place, and a seed walks the same way
 // every time: a video it adds is heard with the same words, however many
 // words the walks before it had heard.
+//
+// On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)
@@ -954,6 +963,8 @@ func (b *bridge) reset() error {
 }
 
 // bridgeDist is where the interface built for the bridge is.
+//
+// On the real disk: the interface for the bridge is a folder the build wrote.
 func bridgeDist(t *testing.T) string {
 	t.Helper()
 	dist, err := filepath.Abs("../../frontend/preview/dist-bridge")
@@ -997,6 +1008,8 @@ func bridgeDist(t *testing.T) string {
 // walks go first, since each takes most of a minute, and the sequences,
 // most of them a few seconds long, fill in behind them, so no bridge is
 // left with a long run once the others are done.
+//
+// On the real disk: Node runs the walks against the interface the build wrote.
 func TestWalks(t *testing.T) {
 	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
 		t.Skip("make walks runs these")
@@ -1132,6 +1145,8 @@ func startBridge(t *testing.T) (string, error) {
 
 // walkScripts are the walks in the folder: every script that walks with
 // walk.mjs, so a new walk runs without being named anywhere else.
+//
+// On the real disk: the walks are the scripts in frontend/preview/walks.
 func walkScripts(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

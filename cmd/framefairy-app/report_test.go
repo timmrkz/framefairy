@@ -1,6 +1,3 @@
-// On the real disk: a report is a file for a person to send, beside the
-// log lumberjack keeps on the disk.
-
 package main
 
 import (
@@ -23,6 +20,8 @@ import (
 // ~ in all of it, and nothing of the video goes in but its file name. A
 // second report on the same minute does not take the first one's place.
 // Plan row 2.188.
+//
+// On the real disk: the report holds the log lumberjack keeps on the disk.
 func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

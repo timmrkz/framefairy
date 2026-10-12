@@ -1,6 +1,3 @@
-// On the real disk: these are about finding ffmpeg on the search path and
-// read the module's own source.
-
 package ffmpegtest
 
 import (
@@ -54,6 +51,8 @@ func TestUnusableSkipsHereAndFailsInCI(t *testing.T) {
 
 // Need looks on the search path for both programs, and a search path
 // without them is a skip here and a failure in CI.
+//
+// On the real disk: the search path is a folder on the disk.
 func TestNeedLooksOnTheSearchPath(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("CI", "")
@@ -78,6 +77,8 @@ var aboutFFmpeg = regexp.MustCompile(`(?i)ffmpeg|ffprobe|Preflight|SubtitleFilte
 // reason is about ffmpeg goes through this package, so CI fails where a
 // test would have skipped. A future test that skips on its own is read
 // here and named.
+//
+// On the real disk: what this reads is the module's own source.
 func TestNoTestSkipsForFFmpegByItself(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {
@@ -103,7 +104,7 @@ func TestNoTestSkipsForFFmpegByItself(t *testing.T) {
 			return nil
 		}
 		read++
-		skips, err := ffmpegSkips(path)
+		skips, err := ffmpegSkips(path, nil)
 		if err != nil {
 			return err
 		}
@@ -126,7 +127,6 @@ func TestNoTestSkipsForFFmpegByItself(t *testing.T) {
 
 // The check finds the skips it is there for, and lets the others be.
 func TestTheCheckFindsASkipAboutFFmpeg(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "x_test.go")
 	src := `package x
 
 func TestA(t *testing.T) {
@@ -150,10 +150,7 @@ func TestA(t *testing.T) {
 	}
 }
 `
-	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	skips, err := ffmpegSkips(path)
+	skips, err := ffmpegSkips("x_test.go", []byte(src))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,9 +162,14 @@ func TestA(t *testing.T) {
 
 // ffmpegSkips gives the line of every t.Skip, Skipf or SkipNow in a file
 // whose reason, or the condition of the if it stands in, is about ffmpeg.
-func ffmpegSkips(path string) ([]string, error) {
+// The file is src when it is given, and read from path when it is nil.
+func ffmpegSkips(path string, src []byte) ([]string, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
+	var from any
+	if src != nil {
+		from = src
+	}
+	file, err := parser.ParseFile(fset, path, from, 0)
 	if err != nil {
 		return nil, err
 	}

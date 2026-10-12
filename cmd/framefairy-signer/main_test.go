@@ -1,6 +1,3 @@
-// On the real disk: the signer's key is a file whose mode is checked, and
-// its record is locked by the system.
-
 package main
 
 import (
@@ -17,6 +14,7 @@ import (
 	"framefairy/licence"
 )
 
+// On the real disk: the signer keeps its key and its locked record in this folder.
 func signerDir(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "signer")
@@ -61,6 +59,7 @@ func testTrust() licence.Trust {
 	return licence.Trust{Signers: map[uint8]ed25519.PublicKey{0: ed25519.NewKeyFromSeed(licence.TestSeed()).Public().(ed25519.PublicKey)}}
 }
 
+// On the real disk: what is tested is the mode of the key file.
 func TestKey(t *testing.T) {
 	dir := signerDir(t)
 	out := must(t, "key", "-signer", "1")
@@ -106,6 +105,7 @@ func TestKeyRefuses(t *testing.T) {
 	}
 }
 
+// On the real disk: what is tested is the mode of the key file.
 func TestKeyFileReadableByOthersIsRefused(t *testing.T) {
 	dir := signerDir(t)
 	must(t, "key", "-signer", "1")
@@ -117,6 +117,7 @@ func TestKeyFileReadableByOthersIsRefused(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer checks the mode of its key file before it reads it.
 func TestKeyFileThatIsNoKey(t *testing.T) {
 	dir := signerDir(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -156,6 +157,7 @@ func TestNamed(t *testing.T) {
 	}
 }
 
+// On the real disk: the system makes a file of keys only where none is.
 func TestPartner(t *testing.T) {
 	signerDir(t)
 	must(t, "key", "-signer", "1")
@@ -202,6 +204,8 @@ func TestPartner(t *testing.T) {
 
 // The test signer keeps its record apart from the real one, so a sandbox
 // key is never on a real signer's genuine list.
+//
+// On the real disk: the signer's record is flushed and locked by the system.
 func TestTestSignerIsKeptApart(t *testing.T) {
 	dir := signerDir(t)
 	out := must(t, "named", "-test", "-name", "Sandbox", "-purpose", "end to end")
@@ -235,6 +239,7 @@ func TestEditionFlag(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer writes its key file with its mode.
 func TestKeyFileFormat(t *testing.T) {
 	dir := signerDir(t)
 	must(t, "key", "-signer", "7")

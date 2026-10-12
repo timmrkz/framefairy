@@ -1,6 +1,3 @@
-// On the real disk: a job log is opened inside the work folder through
-// os.Root, so no link leads it out, and that is what is tested.
-
 package engine
 
 import (
@@ -11,6 +8,7 @@ import (
 	"time"
 )
 
+// On the real disk: OpenJobLog opens the log through os.Root, which only the disk has.
 func TestJobLogsAreKeptToTheNewest(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "ep.mp4")
 	at := time.Date(2026, 10, 9, 21, 0, 0, 0, time.UTC)
@@ -39,6 +37,7 @@ func TestJobLogsAreKeptToTheNewest(t *testing.T) {
 	}
 }
 
+// On the real disk: what is tested is a link on the disk.
 func TestAJobLogIsNoWayOutOfTheWorkFolder(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "ep.mp4")
 	outside := t.TempDir()

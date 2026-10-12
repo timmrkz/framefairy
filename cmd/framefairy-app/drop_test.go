@@ -1,5 +1,3 @@
-// On the real disk: the episode's decoder reads what is dropped.
-
 package main
 
 import (
@@ -15,6 +13,8 @@ import (
 // with its first search started, and every other file left out with its
 // name. The same video dropped again is added no second time, and is the
 // one to open, so the drop shows something rather than nothing.
+//
+// On the real disk: the frames decoder reads the video dropped.
 func TestDropAddsTheVideosAndOpensOne(t *testing.T) {
 	d := open(t)
 	video := d.episode("gezogen", "12")
@@ -69,6 +69,8 @@ func TestNotVideos(t *testing.T) {
 // A drop of nothing but other files adds nothing and opens nothing, and
 // says why. A video whose picture cannot be decoded, dropped with them,
 // is left out in the same sentence, the way Add leaves it out.
+//
+// On the real disk: the frames decoder reads kaputt.mp4 and finds no picture.
 func TestDropOfNoVideoSaysWhy(t *testing.T) {
 	d := open(t)
 	notes := filepath.Join(d.home, "notizen.pdf")

@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode the speech model hears.
-
 package engine
 
 import (
@@ -36,6 +34,7 @@ func (c countingRecognizer) Recognize(samples []float32, rate int) []Token {
 	return c.fakeRecognizer.Recognize(samples, rate)
 }
 
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestTranscriptionResumes(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -340,6 +339,8 @@ func FuzzReadTranscriptFile(f *testing.F) {
 // beatEpisode is a test episode whose tone is gated on and off five times a
 // second. A steady tone measures the same wherever you start, so a start
 // that is a few milliseconds out would hide in it.
+//
+// On the real disk: ffmpeg makes the episode.
 func beatEpisode(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -359,6 +360,8 @@ func beatEpisode(t *testing.T, seconds string) string {
 // difference. A part is read with a seek, see audioFrom, which lands on the
 // sample: what differs is the last digits of a float, a hundred thousandth
 // of a dB, where a shift of a single frame is a dB and more on this tone.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
 	source := beatEpisode(t, "12")
 	var calls int32
@@ -423,6 +426,8 @@ func (w watchingRecognizer) Recognize(samples []float32, rate int) []Token {
 // when it finishes. The app waits for exactly that before it looks for the
 // first clips, so an episode of four hours must not keep its progress to
 // itself until the end.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -463,6 +468,8 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 // transcript, so it happens seconds apart, and a range picker that followed
 // the file alone would step across the window instead of moving with the
 // work.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -509,6 +516,8 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 // goes, not only what the last save held. A search pauses it, and carrying
 // on afterwards has to start where the work really got to, or minutes of
 // audio are heard twice and the range picker's edge stands still for them.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -553,6 +562,8 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 // that point, so nothing is heard twice. The two files are written one
 // after the other, so a machine that stops in between, or a copy made by
 // hand, can leave them out of step.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -610,6 +621,8 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 
 // A transcript that cannot be read, cut short or damaged, is started again
 // rather than failing the episode.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -650,6 +663,8 @@ func TestADamagedTranscriptIsStartedAgain(t *testing.T) {
 // the transcription writes it, a search waiting for it and the workspace
 // drawing it. A reader never sees a file half written: what it reads only
 // ever grows, and a read is never taken for the end of the transcription.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -761,6 +776,8 @@ func (beatRecognizer) Close() {}
 // meet with every word once. The parts here start and end inside a beat,
 // so each join has a word across it, heard whole on one side and in part
 // on the other.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 	t.Parallel()
 	source := beatEpisode(t, "12")
@@ -827,6 +844,8 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 
 // What is added to a transcript lands whole even when two hearings of the
 // same part write at once: each adds only what the other has not.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 	source := beatEpisode(t, "12")
 	base := DefaultOptions()

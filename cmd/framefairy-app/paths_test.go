@@ -1,6 +1,3 @@
-// On the real disk: the paths work the app on episodes ffmpeg made and
-// reads.
-
 package main
 
 // The path tests: what a person does with the app, from adding a video to
@@ -186,6 +183,8 @@ func TestPathCancelWhileFinding(t *testing.T) {
 // the search New asked for: the search is called off as it arrives, never
 // takes a turn, and says Stopped with Continue, after a restart too. Plan
 // row 2.131.
+//
+// On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
 	d := open(t)
 	ep := d.add("ep", minutes5)
@@ -260,6 +259,7 @@ func TestPathFailureWhileFinding(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg renders the short.
 func TestPathRenderedToTheEnd(t *testing.T) {
 	d := open(t)
 	ep := d.add("ep", minutes5)
@@ -409,6 +409,8 @@ func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 
 // A video added gets as many clips as its first window suggests, not the
 // target typed for a window of another length. The same length keeps it.
+//
+// On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	d := open(t)
 	if err := d.svc.SetSearch(3, 1800, 20, 30); err != nil {

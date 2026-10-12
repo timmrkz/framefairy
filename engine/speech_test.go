@@ -1,6 +1,3 @@
-// On the real disk: a speech model is a folder the speech library loads,
-// unpacked from an archive.
-
 package engine
 
 import (
@@ -68,6 +65,7 @@ func serving(t *testing.T, body []byte) *httptest.Server {
 
 func quietLog() *Log { return NewLog(io.Discard, false, false) }
 
+// On the real disk: the speech model is unpacked into the folder the speech library loads.
 func TestInstallingASpeechModel(t *testing.T) {
 	const name = "test-model"
 	good := modelArchive(t, map[string]string{
@@ -195,6 +193,8 @@ func TestInstallingASpeechModel(t *testing.T) {
 
 // A tar can name anything it likes, including a way out of the folder it is
 // being written into. Nothing from a network gets to choose where it lands.
+//
+// On the real disk: what is tested is that nothing is written outside a folder on the disk.
 func TestAnArchiveCannotWriteOutsideWhereItIsPut(t *testing.T) {
 	if _, err := exec.LookPath("bzip2"); err != nil {
 		t.Skip("bzip2 is not installed")
@@ -237,6 +237,8 @@ func TestAnArchiveCannotWriteOutsideWhereItIsPut(t *testing.T) {
 
 // A link is a way to point at something outside the folder without naming
 // it in the header. The models have none, so none is written.
+//
+// On the real disk: what is tested is that no link is written on the disk.
 func TestLinksInAnArchiveAreNotWritten(t *testing.T) {
 	if _, err := exec.LookPath("bzip2"); err != nil {
 		t.Skip("bzip2 is not installed")
@@ -345,6 +347,8 @@ func TestTheRecommendedModelIsTheOneTheAppLooksFor(t *testing.T) {
 // A speech model folder is ready once its tokens.txt is there and not
 // empty. The app checked the same thing its own way and took an empty
 // file, which a download cut short leaves, for a model.
+//
+// On the real disk: the speech library loads the model folder, so it is looked at on the disk.
 func TestASpeechModelIsReadyByItsTokens(t *testing.T) {
 	dir := t.TempDir()
 	if SpeechModelReady(dir) {

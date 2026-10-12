@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode and writes the short.
-
 package engine
 
 import (
@@ -31,6 +29,8 @@ import (
 // anywhere, after the fade a cut puts there. Every frame of the episode
 // is a key frame, as after a camera switch, where an encoder puts one, so
 // ffmpeg's seek lands right on each piece.
+//
+// On the real disk: ffmpeg reads the episode and renders the short.
 func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
@@ -67,6 +67,7 @@ func TestEveryPieceIsHeardFromItsFirstMoment(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg makes the episode and renders the short.
 func withoutADip(t *testing.T, e *Engine, container string, encoder []string) {
 	ctx := context.Background()
 	dir := t.TempDir()

@@ -1,6 +1,3 @@
-// On the real disk: ffmpeg reads the episode, and a stand-in ffmpeg is a
-// program that is run.
-
 package engine
 
 import (
@@ -14,11 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/internal/ffmpegtest"
 )
 
 // twoCameras is an episode shot on two cameras: the first for ten seconds,
 // the second for ten, then the first again.
+//
+// On the real disk: ffmpeg makes the episode and reads it.
 func twoCameras(t *testing.T) (string, SourceInfo) {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -39,7 +40,7 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 // tests are about which shots a clip is made of, and looking for faces in
 // every sampled frame under the race detector is most of a minute.
 func framingEngine() *Engine {
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.NoFaces = true
 	return e
 }
@@ -106,6 +107,8 @@ func fmtCrop(x *int) string {
 
 // A system decoder that will not take the file is gone round, not failed
 // on: the same work is done on the processor, and so is everything after.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
 func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -163,6 +166,8 @@ func TestHwaccelsIn(t *testing.T) {
 // stuckFFmpeg is an ffmpeg that never finishes when it decodes through the
 // system's decoder, and, if always is set, never finishes at all. When it
 // does finish it reports one camera switch, at 5 s into what it read.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
 func stuckFFmpeg(t *testing.T, always bool) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -191,7 +196,7 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
 	t.Cleanup(func() { shotLimit = was })
 
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began := time.Now()
 	cuts, err := e.DetectShots(context.Background(), "episode.mp4", 10, 20)
@@ -209,7 +214,7 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 	}
 
 	// One that hangs either way gives no switches rather than no clip.
-	e = NewEngine(NewLog(io.Discard, false, false), disk)
+	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
 	began = time.Now()
 	cuts, err = e.DetectShots(context.Background(), "episode.mp4", 10, 20)

@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -145,6 +143,8 @@ func TestTheHeartIsReadFromTheAnswer(t *testing.T) {
 
 // A search with the heart recipe asks the model once, however far off the
 // length its clip is, and the engine fits the clip.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestTheHeartRecipeAsksOnce(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -187,6 +187,8 @@ func TestTheHeartRecipeAsksOnce(t *testing.T) {
 
 // A comparison counts every ask: lines asks again about a clip well off
 // the length, heart fits it without asking, and the report says so.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAComparisonCountsEveryAsk(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -343,6 +345,8 @@ func TestThoughtIsCountedInTokens(t *testing.T) {
 
 // Every side of a comparison asks a llama-server of its own, so none finds
 // the request of the side before in its cache and reads it for nothing.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestEverySideOfAComparisonHasItsOwnServer(t *testing.T) {
 	source := testEpisode(t, "20")
 	var asked int32

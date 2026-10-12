@@ -1,6 +1,3 @@
-// On the real disk: an update is a program that is downloaded, unpacked
-// and run.
-
 package main
 
 import (
@@ -215,6 +212,8 @@ func waitDone(t *testing.T, c *updating, what string, ok func(UpdateState) bool)
 }
 
 // cleanStaged removes what was unpacked once nothing can unpack more.
+//
+// On the real disk: an update is unpacked on the disk, where it is run from.
 func cleanStaged(t *testing.T, c *updating) {
 	t.Cleanup(func() {
 		c.shutDown()
@@ -247,6 +246,8 @@ func TestUpdatesSayWhyTheyAreOff(t *testing.T) {
 
 // Picking a pull request downloads its build and says when it is ready,
 // with the fill on the way.
+//
+// On the real disk: an update is a program that is downloaded, unpacked and run.
 func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
@@ -523,6 +524,8 @@ func (cs *channelServer) fetches(path string) int {
 // has it at once, with nothing downloaded again. Tim went from a channel
 // whose build was ready to another and back, nothing pushed in between,
 // and downloaded it a second time.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestABuildDownloadedIsKeptAcrossPicks(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
@@ -556,6 +559,8 @@ func TestABuildDownloadedIsKeptAcrossPicks(t *testing.T) {
 // coming back to its channel has it without downloading it again. Tim
 // looked at another channel while one downloaded, came back, and it
 // downloaded from the start.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
@@ -607,6 +612,8 @@ func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
 // so the pick waited in Checking until the next look, ten minutes later.
 // The test holds the first check where it has decided it is done, picks
 // another channel there, and only then lets it return.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
@@ -647,6 +654,8 @@ func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
 // Check reads the channel list at once, even while a download is waited
 // for, so a channel made a moment ago is on the list. It waited for the
 // check already running.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestCheckReadsTheListAtOnce(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
@@ -684,6 +693,8 @@ func TestCheckReadsTheListAtOnce(t *testing.T) {
 // build that fails, or is still on its way, never leaves the app with
 // nothing to install. The second download used to throw the ready build
 // away before it began.
+//
+// On the real disk: an update is a program that is unpacked on the disk and put in place.
 func TestANewerBuildReplacesTheOneReady(t *testing.T) {
 	was := runningApp
 	runningApp = func() string { return "/Applications/Frame Fairy.app" }
@@ -800,6 +811,8 @@ func TestARegularLookReplacesTheBuildReady(t *testing.T) {
 // A newer build that arrives while quitting is putting the build ready in
 // place does not remove it: the step that puts it in place reads it once
 // the app is gone.
+//
+// On the real disk: an update is a program that is unpacked on the disk and put in place.
 func TestABuildBeingPutInPlaceStays(t *testing.T) {
 	was := runningApp
 	runningApp = func() string { return "/Applications/Frame Fairy.app" }
@@ -946,6 +959,8 @@ func TestABuildFromAChannelFollowsWhatWasPicked(t *testing.T) {
 // looking every twenty milliseconds after its test read whichever later
 // test's server was given the same port, and the later test counted reads
 // it never made.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestShuttingDownEndsTheLooks(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})

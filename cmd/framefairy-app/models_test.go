@@ -1,6 +1,3 @@
-// On the real disk: a model is a folder the speech library or
-// llama-server loads.
-
 package main
 
 import (
@@ -18,6 +15,8 @@ import (
 // Two models on the machine, which is what installing a second one to try
 // it leaves behind. The one in use is chosen with a click, and removing
 // one gives its room back and lets go of it in the settings.
+//
+// On the real disk: a model is removed by where its path really leads.
 func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 	svc, _, home := library(t)
 	dir := filepath.Join(home, ".framefairy", "models")
@@ -112,6 +111,7 @@ func TestTwoModelsOneInUseAndOneRemoved(t *testing.T) {
 	}
 }
 
+// On the real disk: a model is removed by where its path really leads.
 func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 	svc, _, home := library(t)
 	model := engine.SpeechModels()[0]
@@ -144,6 +144,8 @@ func TestRemovingTheSpeechModelWaitsForTheTranscription(t *testing.T) {
 
 // A second model arriving keeps the first in use, so the download does not
 // leave two models and a search that cannot start.
+//
+// On the real disk: the engine finds the models in the home folder with os.
 func TestAnInstallKeepsTheModelInUse(t *testing.T) {
 	svc, _, home := library(t)
 	dir := filepath.Join(home, ".framefairy", "models")
@@ -198,6 +200,8 @@ func TestAnInstallKeepsTheModelInUse(t *testing.T) {
 // the settings stay what they were. Tim chose another model in the
 // settings while a search ran, and nothing stopped him. A clip made by
 // hand hears with the speech model, so it holds that one and nothing else.
+//
+// On the real disk: the engine finds the models in the home folder with os.
 func TestNothingASearchUsesChangesUnderIt(t *testing.T) {
 	svc, _, home := library(t)
 	dir := filepath.Join(home, ".framefairy", "models")

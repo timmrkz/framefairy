@@ -1,5 +1,3 @@
-// On the real disk: a caption file is what ffmpeg burns into a short.
-
 package engine
 
 import (
@@ -333,6 +331,8 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 // The measurement has to agree with what libass draws, or a line that fits
 // here runs over the box there. Ink is narrower than the pen travels, by
 // the bearings at either end, so the two are compared with room to spare.
+//
+// On the real disk: ffmpeg measures the captions.
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
@@ -357,6 +357,8 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 // writeCaptionFile writes an ASS file without measuring, which needs no
 // ffmpeg: no rounded box and no highlight. Captions are made from words, so
 // a caption given only its text gets one word for each word of it.
+//
+// On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func writeCaptionFile(t *testing.T, captions []Caption) string {
 	t.Helper()
 	for i, c := range captions {
@@ -490,6 +492,8 @@ func FuzzResolveStyle(f *testing.F) {
 // The box switched off in the captions column draws no box, and keeps the
 // colour it had for when it is switched on again. With it on, the box is
 // there in its colour.
+//
+// On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func TestTheBoxCanBeSwitchedOff(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	write := func(style map[string]any) string {

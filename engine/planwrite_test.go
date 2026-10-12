@@ -1,6 +1,3 @@
-// On the real disk: the plan is written beside a search that runs ffmpeg,
-// and replacing it is tested where a file can be held open.
-
 package engine
 
 import (
@@ -41,6 +38,7 @@ func aRealisticPlan(clips int) string {
 	return b.String()
 }
 
+// On the real disk: the tests that use it are about the system's rename and lock.
 func planOnDisk(t *testing.T, clips int) (string, []byte) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "clips.json")
@@ -63,6 +61,8 @@ func planOnDisk(t *testing.T, clips int) (string, []byte) {
 // reader that already had the file open goes on reading what it opened. A
 // write that empties the file and fills it again cannot do that, because
 // there is only ever one file.
+//
+// On the real disk: what is tested is a file held open while it is replaced.
 func TestAPlanIsReplacedRatherThanOverwritten(t *testing.T) {
 	path, before := planOnDisk(t, 12)
 	after := []byte(aRealisticPlan(6))
@@ -121,19 +121,22 @@ func TestAPlanBeingWrittenIsNotOneOfThePlans(t *testing.T) {
 // file first and filling it again takes the work with it, and nothing the
 // app does removes a person's work.
 func TestAFailedWriteLeavesThePlanThatWasThere(t *testing.T) {
-	path, _ := planOnDisk(t, 3)
-	if err := writePlanFile(disk, path, []byte("{ this is not a plan")); err == nil {
+	fsys, path := afero.NewMemMapFs(), "/home/tim/ep.framefairy/logs/clips.json"
+	if err := afero.WriteFile(fsys, path, []byte(aRealisticPlan(3)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePlanFile(fsys, path, []byte("{ this is not a plan")); err == nil {
 		t.Error("a plan that is not a plan was written")
 	}
-	_, clips, err := LoadClips(disk, path)
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil || len(clips) != 3 {
 		t.Errorf("the plan that was there is gone: %d clips, %v", len(clips), err)
 	}
 	// And one that is JSON but not a plan at all.
-	if err := writePlanFile(disk, path, []byte(`["not", "a", "plan"]`)); err == nil {
+	if err := writePlanFile(fsys, path, []byte(`["not", "a", "plan"]`)); err == nil {
 		t.Error("something that is not a plan was written")
 	}
-	if _, clips, _ := LoadClips(disk, path); len(clips) != 3 {
+	if _, clips, _ := LoadClips(fsys, path); len(clips) != 3 {
 		t.Errorf("the plan that was there is gone, %d clips left", len(clips))
 	}
 }
@@ -141,6 +144,8 @@ func TestAFailedWriteLeavesThePlanThatWasThere(t *testing.T) {
 // The same file has two writers: the search that makes a plan and the
 // app that edits one. They take the same lock, so an edit always reads
 // a whole plan and a search never lands in the middle of one.
+//
+// On the real disk: the lock between two writers is the system's.
 func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 	t.Parallel()
 	path, body := planOnDisk(t, 4)
@@ -198,6 +203,8 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 // search writes its plan. Timing decides whether a torn read is reached,
 // so this is a second pair of eyes on the test above rather than the
 // guard itself.
+//
+// On the real disk: the system's rename is what keeps a reader from half a plan.
 func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
 	t.Parallel()
 	path, body := planOnDisk(t, 12)

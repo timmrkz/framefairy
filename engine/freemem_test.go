@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -11,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // vm_stat as it writes on Apple silicon, pages of 16 KB, with numbers made
@@ -92,7 +92,7 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 	if said := tooLittleMemory(2e9, 1e9, nil).Error(); !strings.Contains(said, "Quit other programs") {
 		t.Errorf("without a server: %q", said)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	if got := e.planFailed(context.Background(), err); got.Error() != said {
 		t.Errorf("a search ended on it says %q", got)
 	}
@@ -105,6 +105,8 @@ func TestTooLittleMemorySaysWhatToDo(t *testing.T) {
 // it listens to its window, which can take minutes, and says why. Not in
 // parallel: it puts its own machine in place of the one the tests run on,
 // and the tests that run in parallel wait until it is done.
+//
+// On the real disk: ffmpeg reads the episode, and the model is a file on the disk.
 func TestASearchThatCannotLoadItsModelFailsBeforeListening(t *testing.T) {
 	wasFree, wasServers := freeMemory, otherServers
 	freeMemory = func() int64 { return 1 << 20 }

@@ -1,6 +1,3 @@
-// On the real disk: llama-server is a program that is run, with its model
-// and its log as files.
-
 package engine
 
 import (
@@ -16,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 func TestPlanSchemaIsValidJSON(t *testing.T) {
@@ -61,7 +60,7 @@ func TestCallLocalWithRunningServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	var heard strings.Builder
 	answer, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL, Think: 2048}, linesRecipe, "Transcript:", 40, 12, 1000, "",
 		&Listener{Text: func(p string) { heard.WriteString(p) }})
@@ -94,7 +93,7 @@ func TestCallLocalReportsServerErrors(t *testing.T) {
 		io.WriteString(w, `{"error":{"message":"the request exceeds the available context size"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "x", 1, 1, 10, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "context size") {
 		t.Errorf("err = %v", err)
@@ -120,6 +119,8 @@ func TestServerStamp(t *testing.T) {
 // nothing has made the episode's logs folder yet. The server's output is
 // the only record of what the model took from memory, so it is kept even
 // then.
+//
+// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
 func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in for llama-server is a shell script")
@@ -168,6 +169,8 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 // A llama-server that will not go when asked is killed a moment later.
 // The app waited five seconds for one, frozen, on Cmd+Q and on removing an
 // episode while a search ran.
+//
+// On the real disk: the stand-in llama-server is a program that is run, with its model as a file.
 func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 	noteIn(t)
 	t.Setenv("FRAMEFAIRY_STUBBORN_SERVER", "1")
@@ -190,6 +193,8 @@ func TestAServerThatWillNotStopIsKilledAtOnce(t *testing.T) {
 // The name of a model is enough on the command line. A bare file name that
 // is not in the working folder is found in the models folder, and anything
 // else is left as it was given, to be refused with its own name.
+//
+// On the real disk: the models are on the disk, where llama-server reads them.
 func TestAModelIsFoundByItsName(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(t.TempDir())
@@ -226,7 +231,7 @@ func TestAComputeErrorSaysTheMemoryRanOut(t *testing.T) {
 		fmt.Fprint(w, `{"error":{"code":500,"message":"Compute error.","type":"server_error"}}`)
 	}))
 	defer server.Close()
-	e := NewEngine(NewLog(io.Discard, false, false), disk)
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	_, err := e.CallLocal(context.Background(), LocalModel{URL: server.URL}, linesRecipe, "Transcript:",
 		40, 12, 1000, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "ran out of memory") ||
@@ -274,6 +279,8 @@ func TestAHealthCheckThatGetsNoAnswerGivesUp(t *testing.T) {
 // A llama-server the app starts answers only to the app: it is handed a
 // key of its own in its environment, a new one every launch, never on its
 // command line, and it lists nothing of what it is working on.
+//
+// On the real disk: the stand-in llama-server is a program that is run, and its log is a file.
 func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in for llama-server is a shell script")

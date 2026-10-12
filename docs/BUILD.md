@@ -360,7 +360,8 @@ are read and written through an `afero.Fs`, see `engine/files.go`, and a
 test hands it memory. A test that cannot, because ffmpeg or another
 program reads its files, or because a link or a lock on the disk is what
 it tests, says so in a comment that starts with "On the real disk", on
-the function or at the top of its file. `TestTestsStayOffTheDisk` in
+the function itself. A reason at the top of a file does not count, since
+it would also cover the tests added to the file later. `TestTestsStayOffTheDisk` in
 `internal/offdisk` reads every test file and fails on a function that
 calls `t.TempDir`, a file function of `os`, `afero.NewOsFs` or the
 engine's `disk` without one. It imports none of the files it reads, so

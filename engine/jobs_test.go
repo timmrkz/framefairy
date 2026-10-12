@@ -1,5 +1,3 @@
-// On the real disk: a search and a render run ffmpeg on the episode.
-
 package engine
 
 import (
@@ -18,6 +16,8 @@ import (
 
 // searchProject makes a project of a forty second episode with the stand-in
 // speech model and the stand-in language model.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project, *int32) {
 	t.Helper()
 	source := testEpisode(t, "40")
@@ -38,6 +38,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	return NewProject(e, source, base), &asked
 }
 
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
@@ -100,6 +101,8 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 }
 
 // The whole episode is heard to its end, and the transcript is finished.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -125,6 +128,8 @@ func (s stops) Recognize(samples []float32, rate int) []Token {
 
 // Stopped from outside while it hears, the record says it was hearing, so
 // an app that starts reads it as cut off. What was heard stays.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -151,6 +156,8 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 }
 
 // Stopped while it waits for the model's lane, the record says waiting.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
@@ -173,6 +180,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchThatFailsSaysWhy(t *testing.T) {
 	t.Parallel()
 	t.Run("while it hears", func(t *testing.T) {
@@ -214,6 +222,8 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 
 // A render renders its clips one at a time and keeps a record of the ones
 // it finished, so one that was cut off carries on with the rest.
+//
+// On the real disk: ffmpeg renders the shorts.
 func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -352,6 +362,8 @@ func (s takenBack) Recognize(samples []float32, rate int) []Token {
 
 // A search whose hearing lane is taken back waits for its turn again and
 // carries on from what it heard.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 	t.Parallel()
 	var take context.CancelFunc
@@ -423,6 +435,8 @@ func (c counting) Recognize(samples []float32, rate int) []Token {
 // the end of what it hears, not until the end of the episode. Tim saw a
 // search of the half hour after a half hour already heard say almost six
 // minutes left.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	t.Parallel()
 	var heard int32
@@ -458,6 +472,8 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 
 // Captions switched off in the captions column render a short without any:
 // no caption file is made for it, and the short is there.
+//
+// On the real disk: ffmpeg renders the short.
 func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -506,6 +522,8 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 // A render that fails leaves the short there was before it, and no half of
 // the new one. ffmpeg here writes a few bytes where it was told to and
 // fails, the way a render cut off halfway leaves a file behind.
+//
+// On the real disk: ffmpeg renders the short, and a script in its place is run.
 func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -576,6 +594,8 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 // the episode's end asks ffmpeg for its length, and a search the closing
 // cancelled there left no record, and nothing to say it had been asked
 // for. The walk searching.mjs found it, New pressed and the app closed.
+//
+// On the real disk: ffmpeg is asked how long the episode is.
 func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 	t.Parallel()
 	for _, req := range []PlanRequest{

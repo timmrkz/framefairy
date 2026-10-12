@@ -1,6 +1,3 @@
-// On the real disk: the driver works the app on episodes ffmpeg made and
-// reads.
-
 package main
 
 import (
@@ -35,6 +32,8 @@ func TestASearchSaysHowManyItWasAskedFor(t *testing.T) {
 // so its row and its Continue are about that window. It wrote no record,
 // so Continue does not take up the one on disk, which is an older
 // search's, about another window.
+//
+// On the real disk: the record lies beside an episode ffmpeg made and reads.
 func TestARefusedSearchKeepsItsWindow(t *testing.T) {
 	d := open(t)
 	ep := d.add("a", minutes5)

@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -48,6 +46,8 @@ func pausedModel(t *testing.T, letGo <-chan struct{}) *httptest.Server {
 
 // searching is an episode transcribed and ready to be searched against the
 // paused model.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	t.Helper()
 	source := testEpisode(t, "40")
@@ -68,6 +68,8 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 }
 
 // landed waits for the plan to hold n clips and gives them.
+//
+// On the real disk: the plan is written by a search that runs ffmpeg on the episode.
 func landed(t *testing.T, path string, n int) []Clip {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
@@ -81,6 +83,7 @@ func landed(t *testing.T, path string, n int) []Clip {
 	return nil
 }
 
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	ownTrainingDir(t)
 	letGo := make(chan struct{})
@@ -170,6 +173,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 }
 
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	t.Parallel()
 	letGo := make(chan struct{})
@@ -194,6 +198,8 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 // A clip that panics while it is framed is left out, and the search goes on
 // with the rest. A framer is a goroutine of its own, out of reach of the
 // recover that guards a job, so a panic in one ended the whole app.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 	letGo := make(chan struct{})
 	close(letGo)
@@ -249,6 +255,8 @@ func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 // Two clips that keep mostly the same lines are one moment given twice.
 // The second is left out, said once, and the clips after it keep their
 // places, both when the answer streams in and when it is read whole.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	t.Parallel()
 	entry := func(title string, keep ...[2]int) PlanEntry { return PlanEntry{Title: title, Keep: keep} }
@@ -308,6 +316,8 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 // two up to know how many rows are left, and when the count came first the
 // list read the clip while its card was still on the way, a row more than
 // the search was asked for.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	t.Parallel()
 	letGo := make(chan struct{})
@@ -367,6 +377,8 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 // move onto a frame is not a person trimming it. Trimmed edges become
 // correction pairs, see docs/TRAINING.md, and a snap counted as a trim
 // would teach the model a correction nobody made.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 	dir := ownTrainingDir(t)
 	letGo := make(chan struct{})

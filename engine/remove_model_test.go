@@ -1,6 +1,3 @@
-// On the real disk: a model is a folder the speech library or
-// llama-server loads.
-
 package engine
 
 import (
@@ -9,6 +6,7 @@ import (
 	"testing"
 )
 
+// On the real disk: a model is a file or a folder the speech library or llama-server loads.
 func TestRemovingAModelLeavesNothingOfIt(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name string) {

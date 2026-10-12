@@ -1,6 +1,3 @@
-// On the real disk: the loudness is measured by ffmpeg, from an episode
-// it made.
-
 package engine
 
 import (
@@ -16,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -29,7 +28,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	}
 	var raw bytes.Buffer
 	binary.Write(&raw, binary.LittleEndian, samples)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	var frames []float32
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
@@ -55,6 +54,8 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 // A whole episode is measured, written where the waveform reads it, and
 // forgotten when the file changes. Readers that come while it is written
 // never see frames the json does not vouch for.
+//
+// On the real disk: ffmpeg makes the episode and measures it.
 func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -129,6 +130,8 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 
 // Stopped part way, the measuring says so and leaves nothing that claims
 // to be done.
+//
+// On the real disk: ffmpeg makes the episode it would measure.
 func TestMeasureLevelsStops(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -152,6 +155,8 @@ func TestMeasureLevelsStops(t *testing.T) {
 
 // How far the loudness reaches is read from the json alone, and agrees with
 // the frames.
+//
+// On the real disk: ffmpeg makes the episode and measures it.
 func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	ffmpegtest.Need(t)
 	source := filepath.Join(t.TempDir(), "episode.m4a")
@@ -179,6 +184,8 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 
 // sweep makes an episode whose loudness rises and falls every few seconds,
 // so a frame measured in the wrong place shows.
+//
+// On the real disk: ffmpeg makes the episode.
 func sweep(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -195,6 +202,8 @@ func sweep(t *testing.T, seconds string) string {
 // Where the clip timeline looks is measured first, and when it moves to a
 // part not measured yet, the measuring follows it there. What comes out is
 // the same loudness a measuring from the start gives, joins and all.
+//
+// On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "300")
@@ -268,6 +277,8 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 
 // A measuring cut off keeps what it has, and the next carries on from
 // there rather than starting again.
+//
+// On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "120")

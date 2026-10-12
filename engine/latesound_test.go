@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode.
-
 package engine
 
 import (
@@ -19,6 +17,8 @@ import (
 // the picture starts hands back sound only from where the picture starts,
 // and what was wanted before it was missing and the rest out of step.
 // Plan row 2.138.
+//
+// On the real disk: ffmpeg makes the episode and reads it.
 func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
 	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "late.mov")

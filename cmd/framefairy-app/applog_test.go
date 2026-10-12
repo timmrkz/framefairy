@@ -1,6 +1,3 @@
-// On the real disk: the app's log is a file a person sends with a report,
-// written by lumberjack, which knows only the disk.
-
 package main
 
 import (
@@ -26,6 +23,8 @@ import (
 // testLog opens the app's log in a folder of the test's own and gives
 // what it holds, a line each, read as JSON. A line that is not whole JSON
 // fails the test.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
 func testLog(t *testing.T) (path string, read func() []map[string]any) {
 	t.Helper()
 	path = filepath.Join(t.TempDir(), "logs", "app.log")
@@ -199,6 +198,8 @@ func TestWailsWritesTheAppLog(t *testing.T) {
 // The log keeps to its size: past 10 MB it starts a new file and keeps
 // the one before beside it, so it never fills the disk. Lines written
 // from many places at once while it does stay whole. Plan row 2.188.
+//
+// On the real disk: lumberjack starts a new file of the log on the disk.
 func TestTheLogKeepsToItsSize(t *testing.T) {
 	path, read := testLog(t)
 	text := strings.Repeat("y", 1000)

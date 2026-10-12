@@ -1,6 +1,3 @@
-// On the real disk: a clip made by hand is framed with ffmpeg reading the
-// episode.
-
 package engine
 
 import (
@@ -34,6 +31,7 @@ func underwayLog() (*Log, func() [][]Underway) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode, and the project works beside it.
 func handProject(t *testing.T, source string, log *Log) *Project {
 	t.Helper()
 	var heard int32
@@ -52,6 +50,8 @@ func handProject(t *testing.T, source string, log *Log) *Project {
 // with each one and searched nothing. It is on the way from the moment it
 // is asked for, at the playhead, and then where its sentences are, until
 // it is written.
+//
+// On the real disk: ffmpeg reads the episode the clip is heard and framed from.
 func TestAClipMadeByHand(t *testing.T) {
 	source := testEpisode(t, "70")
 	log, told := underwayLog()
@@ -165,6 +165,8 @@ func TestAClipMadeByHand(t *testing.T) {
 
 // Clips made by hand at the same moment each go in, each with a number of
 // its own, taken where the set is written.
+//
+// On the real disk: ffmpeg reads the episode the clips are heard and framed from.
 func TestClipsMadeByHandAtOnce(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -206,6 +208,8 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 // A clip made by hand called off leaves no clip, keeps its card where the
 // clip would have appeared, saying it stopped, and keeps its record, to be
 // carried on like any job.
+//
+// On the real disk: the project works beside an episode ffmpeg made.
 func TestAClipMadeByHandCalledOff(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")

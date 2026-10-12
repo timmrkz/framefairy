@@ -1,5 +1,3 @@
-// On the real disk: a model is a file llama-server loads.
-
 package engine
 
 import (
@@ -15,6 +13,8 @@ import (
 // A model the app downloaded is loaded only while it is the file its
 // SHA-256 says: checked once, not read again while it stays as it was,
 // and read again, and refused, the moment it is not.
+//
+// On the real disk: llama-server reads the model file that is checked.
 func TestAModelIsCheckedBeforeItIsLoaded(t *testing.T) {
 	dir := t.TempDir()
 	body := ggufBytes(4096)
@@ -50,6 +50,8 @@ func TestAModelIsCheckedBeforeItIsLoaded(t *testing.T) {
 
 // A model chosen by hand, a file the catalogue does not know, is the
 // person's own and is loaded as it is. So is one outside the models folder.
+//
+// On the real disk: llama-server reads the model file that is checked.
 func TestAModelChosenByHandIsNotChecked(t *testing.T) {
 	dir := t.TempDir()
 	own := filepath.Join(dir, "my-own.gguf")

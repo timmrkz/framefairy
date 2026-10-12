@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode and writes the short.
-
 package engine
 
 import (
@@ -29,6 +27,8 @@ import (
 // so a frame lost, shown twice or taken from the wrong place shows. The
 // sound is a steady tone, so padded silence at a cut, or sound that runs
 // on after its picture, shows.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestARenderCutsOnWholeFrames(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
@@ -48,6 +48,7 @@ func TestARenderCutsOnWholeFrames(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg makes the episode and renders the short.
 func cutsOnWholeFrames(t *testing.T, e *Engine, rate, container string) {
 	ctx := context.Background()
 	dir := t.TempDir()

@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode.
-
 package engine
 
 import (
@@ -20,6 +18,8 @@ import (
 // between samples' worth of milliseconds, from the start, and from before
 // a late picture starts, where a seek alone finds the sound only from the
 // picture on.
+//
+// On the real disk: ffmpeg makes the episode and decodes its sound.
 func TestPreviewSoundIsTheEpisodesOwnFromAnyMoment(t *testing.T) {
 	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "late.mov")

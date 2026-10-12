@@ -1,5 +1,3 @@
-// On the real disk: the episode's decoder and ffmpeg read the episode.
-
 package engine
 
 import (
@@ -28,6 +26,8 @@ import (
 // the file again.
 // It needs framefairy-frames built against ffmpeg's libraries, which make
 // does, named by FRAMEFAIRY_FRAMES, and skips without it.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
 func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -98,6 +98,8 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 // The decoder of an episode open in the video preview is started before
 // any frame is asked for, with its cursors on the file, so the first frame
 // asked for only moves one. Plan row 2.156.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
 func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -148,6 +150,8 @@ var errStop = errors.New("enough")
 
 // gridOf is the grid of an episode, the frames the episode's decoder
 // counts on, from the engine's probe.
+//
+// On the real disk: ffprobe reads the episode.
 func gridOf(t *testing.T, path string) framewire.Grid {
 	t.Helper()
 	e := NewEngine(NewLog(nil, false, false), disk)
@@ -182,6 +186,8 @@ func meanDiff(a, b []byte) float64 {
 // after a few frames, some read to their end, while the decoder is closed
 // and started again under them. Every stream either hands over frames in
 // order or ends with a reason, none hangs, and none gets another's frames.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
 func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -252,6 +258,8 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 // an episode opened, "the picture could not be scaled, its chain: Invalid
 // argument", and the tests had only an MPEG-4 file, which no Mac decodes
 // on its chip. Plan row 2.156.
+//
+// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
 func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -340,6 +348,8 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 // count them, so on the second file a frame the file stamps 0.3 s is at
 // nought. The decoder once counted by the file's own stamps there, 0.3 s
 // off the sound and the clips.
+//
+// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
 func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -518,6 +528,8 @@ func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 // further on, at the episode's rate and at another, in one channel and in
 // two. Read by the same rule, soundSeek, cut at the same sample. Plan row
 // 2.156, step 3 of docs/VIDEO-PREVIEW.md.
+//
+// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
 func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -599,6 +611,8 @@ func TestTheEpisodesDecoderHearsWhatFFmpegDoes(t *testing.T) {
 // because open asked whether it was told only after the seek had
 // forgotten, so every stream after it on that cursor ended at once and
 // the video preview stayed black. Plan row 2.166.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
 func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -645,6 +659,8 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 // full range, in 8 and 10 bits, and for a file that says nothing, where
 // both take ffmpeg's defaults. And the tags count: the same picture tagged
 // otherwise comes out in other colours. Plan row 2.156, step 4.
+//
+// On the real disk: ffmpeg makes the episodes and the frames decoder reads them.
 func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")

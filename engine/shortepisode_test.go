@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -13,6 +11,8 @@ import (
 // and the model is not asked. Tim added a fifteen second video with
 // Shortest at 20 seconds, and its first search failed with "1 clips of at
 // least 20s need 0:00:20".
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	source := testEpisode(t, "15")
 	ownTrainingDir(t)
@@ -60,6 +60,8 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 // counted as the moment taken, and it was the only moment there is. A
 // search with the clip still in the list finds nothing new, and that is
 // not a failure either.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	source := testEpisode(t, "15")
 	ownTrainingDir(t)

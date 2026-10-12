@@ -1,6 +1,3 @@
-// On the real disk: a short is a file ffmpeg writes and a person keeps,
-// found by its name in the output folder.
-
 package engine
 
 import (
@@ -35,8 +32,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 
 	// Clips made by hand search nothing: neither their set nor their
 	// jobs' timings say the episode was searched.
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false), disk), source, DefaultOptions())
-	p.Files = fsys
+	p := NewProject(NewEngine(NewLog(io.Discard, false, false), fsys), source, DefaultOptions())
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
@@ -78,6 +74,8 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 // A short is a file a render wrote and noted in the plan. One still being
 // written is not a short, and neither is a file in the out folder no clip
 // is named for, nor one of a clip's name that the plan says nothing of.
+//
+// On the real disk: a short is a file ffmpeg wrote, looked for on the disk.
 func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -119,6 +117,8 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 // file is. A file of the same name that another episode put in that
 // folder is not this clip's short, and neither is anything beside it, and
 // the render gives the short a number rather than write over it.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -193,6 +193,7 @@ type shortsEpisode struct {
 	plan string
 }
 
+// On the real disk: ffmpeg reads the episode.
 func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 	t.Helper()
 	p, _ := searchProject(t, nil)
@@ -213,6 +214,7 @@ func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 	return ep
 }
 
+// On the real disk: the plan is beside the episode ffmpeg reads.
 func (ep shortsEpisode) clip(t *testing.T) ClipView {
 	t.Helper()
 	view, err := ReadPlan(disk, ep.plan)
@@ -236,6 +238,8 @@ func (ep shortsEpisode) render(t *testing.T) string {
 }
 
 // files are the short and its first picture as they are on disk now.
+//
+// On the real disk: the short is a file ffmpeg wrote.
 func files(t *testing.T, short string) [2]os.FileInfo {
 	t.Helper()
 	var out [2]os.FileInfo
@@ -259,6 +263,8 @@ func untouched(t *testing.T, short string, was [2]os.FileInfo) bool {
 }
 
 // neitherClaims says whether each episode leaves the other's short alone.
+//
+// On the real disk: the shorts are files ffmpeg wrote.
 func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
 	t.Helper()
 	if IsShort(disk, a.p.Source, bShort) {
@@ -275,6 +281,8 @@ func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
 // the clip's own name. The second render leaves the first episode's short
 // and its picture as they were, and neither clip takes the other's short
 // for its own.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 	t.Parallel()
 	shorts := ResolvePath(t.TempDir())
@@ -310,6 +318,8 @@ func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 // shorts, so the second short of the same name gets a number the way
 // Finder gives one, and its pictures go with it. A render again writes
 // over the clip's own short, under the name it has, and nothing else.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
 	t.Parallel()
 	shorts := ResolvePath(t.TempDir())
@@ -349,6 +359,8 @@ func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
 // episode's short of the same words gets a number there. A short written
 // over by hand is no longer the clip's, because it is not the file it
 // wrote.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
 	t.Parallel()
 	out := ResolvePath(t.TempDir())
@@ -373,6 +385,8 @@ func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
 // A plan is untrusted, so what it says of a short names a file of the
 // clip's own name, or that with a number, and nothing else, whatever the
 // folder.
+//
+// On the real disk: a short is a file ffmpeg wrote, looked for on the disk.
 func TestAPlanNamesNoFileButAShort(t *testing.T) {
 	t.Parallel()
 	dir := ResolvePath(t.TempDir())
@@ -403,6 +417,8 @@ func TestAPlanNamesNoFileButAShort(t *testing.T) {
 // What a render makes is no edit, so an edit made before a render is
 // undone after it as it would have been without it, and the clip is still
 // rendered afterwards.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -438,6 +454,8 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 // one episode with the same words, as two searches can find, get a number
 // in the episode's own out folder and in --out alike, and a render again
 // writes each over in place.
+//
+// On the real disk: ffmpeg reads the episode and writes the shorts.
 func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 	t.Parallel()
 	for _, into := range []string{"out", "--out"} {
@@ -487,6 +505,8 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 // A preview rendered into the folder --out names never writes over the
 // short there: the preview keeps the clip's id in its name and the short
 // does not. The clip still says the short is its own afterwards.
+//
+// On the real disk: ffmpeg writes the short and the preview.
 func TestAPreviewLeavesTheShortAlone(t *testing.T) {
 	t.Parallel()
 	ep := newShortsEpisode(t, "folge")

@@ -1,6 +1,3 @@
-// On the real disk: models and llama-server are files other programs load
-// and run.
-
 package main
 
 import (
@@ -23,6 +20,8 @@ import (
 // A new copy of the app on a machine with nothing on it. Everything here
 // turns on the state a customer opens the app in for the first time, which
 // is the one state nobody who has the repository ever sees.
+//
+// On the real disk: the app finds its models and its settings under HOME, a folder on the disk.
 func emptyMachine(t *testing.T) *FrameFairy {
 	t.Helper()
 	home := t.TempDir()
@@ -55,6 +54,8 @@ func emptyMachine(t *testing.T) *FrameFairy {
 
 // Pretends a speech model is installed, by putting there what Installed
 // looks at.
+//
+// On the real disk: Installed looks for the model on the disk, where the speech library loads it.
 func placeSpeechModel(t *testing.T, name string) {
 	t.Helper()
 	dir := filepath.Join(engine.ModelsDir(), name)
@@ -84,6 +85,7 @@ func TestTheQueueTheseTestsUseNeverRunsAnything(t *testing.T) {
 	}
 }
 
+// On the real disk: a model file is put where llama-server loads it.
 func TestANewCopyOfTheAppKnowsWhatItStillNeeds(t *testing.T) {
 	t.Run("nothing installed and nothing chosen", func(t *testing.T) {
 		s := emptyMachine(t)
@@ -270,6 +272,8 @@ func TestInstallingTheSpeechModelIsAJobLikeAnyOther(t *testing.T) {
 // The key never goes in the settings, which are plain JSON in the config
 // folder and get copied about. On a machine with no keychain saving fails,
 // and the point of the test is that nothing was written either way.
+//
+// On the real disk: the settings are read where the store of emptyMachine wrote them on the disk.
 func TestTheKeyNeverLandsInTheSettingsFile(t *testing.T) {
 	const secret = "sk-ant-secret-value-here"
 	s := emptyMachine(t)
@@ -432,6 +436,8 @@ func changed(text string) map[string]json.RawMessage {
 
 // Pretends a language model is installed, by putting there what Installed
 // looks at: the four bytes that tell a model from a page saying no.
+//
+// On the real disk: Installed looks for the model on the disk, where llama-server loads it.
 func placeLanguageModel(t *testing.T, name string) {
 	t.Helper()
 	if err := os.MkdirAll(engine.ModelsDir(), 0o755); err != nil {
@@ -546,6 +552,8 @@ func TestInstallingALanguageModelIsAJobLikeAnyOther(t *testing.T) {
 
 // Pretends llama.cpp is on the machine, by putting something runnable
 // under that name on the only folder the search path holds here.
+//
+// On the real disk: llama-server is a program that is found and run.
 func placeLlamaServer(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()

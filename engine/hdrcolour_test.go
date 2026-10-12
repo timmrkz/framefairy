@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode and writes the short.
-
 package engine
 
 import (
@@ -77,6 +75,8 @@ func TestTheCaptionsOfAnHDRShortAreAtTheReferenceWhite(t *testing.T) {
 // libass draws a white caption into an HDR short at 75 percent of HLG's
 // signal and 58 percent of PQ's, with the frame's own matrix, so it is
 // white and not tinted.
+//
+// On the real disk: ffmpeg reads the captions file and burns it in.
 func TestACaptionIsBurnedIntoAnHDRShortAtTheReferenceWhite(t *testing.T) {
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)

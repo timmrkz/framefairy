@@ -1,6 +1,3 @@
-// On the real disk: the loudness is measured by ffmpeg, from an episode
-// it made.
-
 package main
 
 import (
@@ -17,6 +14,8 @@ import (
 
 // levelsLibrary is a library with n short episodes in it and a service
 // that measures their loudness the way the app does.
+//
+// On the real disk: ffmpeg reads the episodes.
 func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -52,6 +51,7 @@ func levelsLibrary(t *testing.T, n int) (*FrameFairy, []string, *atomic.Int64) {
 	return s, paths, told
 }
 
+// On the real disk: ffmpeg measures the levels from the episode on the disk.
 func measured(t *testing.T, path string) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -107,6 +107,8 @@ func TestTheWaveformComesBeforeTheTranscript(t *testing.T) {
 // ask for waveforms, start, stop, remove an episode with its work, read,
 // and quit. Nothing races, nothing is left running, and a removed
 // episode's work folder is not written back.
+//
+// On the real disk: ffmpeg reads the episodes.
 func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 	s, paths, _ := levelsLibrary(t, 4)
 	var wg sync.WaitGroup

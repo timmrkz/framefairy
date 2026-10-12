@@ -1,5 +1,3 @@
-// On the real disk: ffmpeg reads the episode the speech model hears.
-
 package engine
 
 import (
@@ -90,6 +88,8 @@ func (s *sideBySide) Close() {}
 // Heard by four copies at once, an episode comes out word for word as one
 // copy hears it, and every save on the way reaches only as far as all of
 // it has been heard, never past a piece still being heard.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -171,6 +171,8 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 
 // Side by side, a part is heard exactly, with nothing missed on the way
 // and no audio heard past what it reads around the part.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -211,6 +213,8 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 
 // Stopped part way, side by side, what every copy heard before the stop is
 // written down, and nothing is left hearing after it has returned.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -256,6 +260,8 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 
 // A copy that panics does so where the transcription was called, the way
 // the one copy did, so the job around it fails and the app does not.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestACopyThatPanicsFailsTheTranscription(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")

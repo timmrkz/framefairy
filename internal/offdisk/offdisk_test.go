@@ -14,7 +14,7 @@ import (
 )
 
 // reason is what a comment says when a test goes to the real disk on
-// purpose, on the function or at the top of its file, followed by why.
+// purpose, on the function or inside it, followed by why.
 const reason = "On the real disk"
 
 // files are the functions of package os that read, write or look at a
@@ -30,7 +30,9 @@ var files = map[string]bool{
 // Every test that goes to the real disk says why. A test of our own code
 // works in memory, and one that cannot, because ffmpeg or another program
 // reads its files, or because the disk itself is what is tested, says so
-// in a comment that starts with "On the real disk". A new test that writes
+// in a comment that starts with "On the real disk", on itself. A reason at
+// the top of a file is not one: it would cover every test added to the
+// file later, the tests of our own code among them. A new test that writes
 // to the disk without one is named here.
 //
 // On the real disk: what this reads is the module's own source.
@@ -84,7 +86,8 @@ func TestTestsStayOffTheDisk(t *testing.T) {
 
 // The check finds the tests it is there for and lets the others be.
 func TestTheCheckFindsATestOnTheDisk(t *testing.T) {
-	src := `// On the real disk: nothing, this only says the top of a file is read.
+	src := `// On the real disk: at the top of the file, which is no reason.
+
 package x
 
 func TestInMemory(t *testing.T) {
@@ -130,33 +133,20 @@ func TestAFieldNamedDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"x_test.go:11 TestATempDir goes to the real disk with t.TempDir",
-		"x_test.go:15 TestAWrite goes to the real disk with os.WriteFile",
-		"x_test.go:19 TestTheDisk goes to the real disk with disk",
-		"x_test.go:23 TestTheOsFs goes to the real disk with afero.NewOsFs",
+		"x_test.go:12 TestATempDir goes to the real disk with t.TempDir",
+		"x_test.go:16 TestAWrite goes to the real disk with os.WriteFile",
+		"x_test.go:20 TestTheDisk goes to the real disk with disk",
+		"x_test.go:24 TestTheOsFs goes to the real disk with afero.NewOsFs",
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("found\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	// The doc comment of the package is about the package, not a reason,
-	// and the top of the file apart from it is a reason for all of it.
-	top := strings.Replace(src, "// On the real disk: nothing, this only says the top of a file is read.",
-		"// On the real disk: every test here renders with ffmpeg.", 1)
-	if got, _ := withoutAReason("x_test.go", []byte(top)); len(got) != len(want) {
-		t.Errorf("the package's doc comment counted as a reason for the file: %v", got)
-	}
-	whole := strings.Replace(src, "// On the real disk: nothing, this only says the top of a file is read.\npackage x",
-		"// On the real disk: every test here renders with ffmpeg.\n\npackage x", 1)
-	if got, _ := withoutAReason("x_test.go", []byte(whole)); len(got) != 0 {
-		t.Errorf("a file that says why at its top still named %v", got)
-	}
 }
 
 // withoutAReason names every function of a test file that goes to the real
 // disk and does not say why. The reason is a comment that starts with
-// reason, on the function, inside it, or at the top of the file, apart
-// from the package clause, where it covers the whole file.
+// reason, on the function or inside it.
 func withoutAReason(name string, src []byte) ([]string, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, name, src, parser.ParseComments)
@@ -170,13 +160,6 @@ func withoutAReason(name string, src []byte) ([]string, error) {
 			}
 		}
 		return false
-	}
-	// The top of the file is what comes before the package clause and is
-	// not its doc comment, which is about the package.
-	for _, group := range file.Comments {
-		if group.End() < file.Package && group != file.Doc && saysWhy(group) {
-			return nil, nil
-		}
 	}
 	var found []string
 	for _, decl := range file.Decls {

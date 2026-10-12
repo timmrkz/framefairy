@@ -1,5 +1,3 @@
-// On the real disk: a font is a file ffmpeg's captions read.
-
 package engine
 
 import (
@@ -49,6 +47,7 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 	}
 }
 
+// On the real disk: InstallFont puts the face where ffmpeg's captions read it.
 func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 	dir := t.TempDir()
 	if err := InstallFont(dir, DefaultFont); err != nil {
@@ -93,6 +92,8 @@ func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 // is the cheapest honest proof that a bundled face reaches it. On a machine
 // that has none of these faces installed, a narrow one and a wide one can
 // only come out differently when the bundle was found.
+//
+// On the real disk: ffmpeg reads the bundled face.
 func TestABundledFaceReachesLibass(t *testing.T) {
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {

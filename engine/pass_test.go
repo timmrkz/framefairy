@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -13,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // answering answers like llama-server with the answers given, one a
@@ -63,6 +59,7 @@ func clipAnswer(lines ...int) string {
 	return b.String()
 }
 
+// On the real disk: ffmpeg reads the episode, and the project works beside it.
 func passProject(t *testing.T, url string) *Project {
 	t.Helper()
 	source := testEpisode(t, "40")
@@ -79,6 +76,8 @@ func passProject(t *testing.T, url string) *Project {
 // A window searched again is a second pass with a plan of its own: the
 // clips of the first stay as they are, the model is told which lines are
 // clips already, and a clip that keeps them all the same is left out.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	t.Parallel()
 	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2))
@@ -118,7 +117,6 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 // A search carried on writes to the plan it began, not to a pass of its
 // own: the pass is in its record.
 func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
-	fsys := afero.NewMemMapFs()
 	t.Parallel()
 	server, _ := answering(t, clipAnswer(1), clipAnswer(2))
 	p := passProject(t, server.URL)
@@ -135,7 +133,7 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	if filepath.Base(plan) != "clips-10-30.json" {
 		t.Errorf("a search carried on wrote %s", filepath.Base(plan))
 	}
-	if _, err := fsys.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
+	if _, err := p.Files.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
 		t.Error("a search carried on made a second pass")
 	}
 }

@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -146,6 +144,8 @@ func TestStoriesSaysTheLengthInWords(t *testing.T) {
 // A search with another recipe is an experiment. Its plan goes in a folder
 // of its own, the episode's plan and captions are left alone, nothing is
 // rendered and nothing is recorded for training.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAnExperimentKeepsToItself(t *testing.T) {
 	ownTrainingDir(t)
 	source := testEpisode(t, "20")
@@ -198,6 +198,8 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 // A comparison searches the same window once with each recipe, each as an
 // experiment, the default recipe included, and writes a report that holds
 // every one of them.
+//
+// On the real disk: ffmpeg reads the episode the searches hear.
 func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")
@@ -254,6 +256,8 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 
 // A comparison in which every search failed has nothing to report, and says
 // so rather than pointing at a report of failures.
+//
+// On the real disk: ffmpeg reads the episode the searches hear.
 func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")
@@ -282,6 +286,8 @@ func TestAComparisonOfFailuresIsAFailure(t *testing.T) {
 // A side of a comparison may be a recipe thinking for a set number of
 // tokens. The same recipe then runs twice, each in a folder of its own,
 // and the model is told the budget of each.
+//
+// On the real disk: ffmpeg reads the episode the searches hear.
 func TestAComparisonOfThinkingBudgets(t *testing.T) {
 	t.Parallel()
 	if v, err := ParseVariant("stories@1024"); err != nil || v.Recipe != "stories" || v.Think == nil || *v.Think != 1024 {

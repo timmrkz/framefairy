@@ -1,5 +1,3 @@
-// On the real disk: a search runs ffmpeg on the episode.
-
 package engine
 
 import (
@@ -21,6 +19,8 @@ import (
 // one that comes back nearer the length is the clip. The answer is saved
 // with the reply, so a search that reuses the reply fits it the same way
 // and asks nothing.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -124,6 +124,8 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 // A recipe that edits asks about every clip a second time, not only the
 // ones off the length, splits the thinking between the two asks, and takes
 // the edit as long as it runs no further off the length.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	// Not beside the others: it adds a recipe to the package's list.
 	edit := linesRecipe
@@ -193,6 +195,8 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 // answer, the way Gemma gave the umbrella story when asked about the
 // mirrors. That is no answer about the clip asked for, so it is asked for
 // once more, alone. A reused reply replays both answers and asks nothing.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")

@@ -1,6 +1,3 @@
-// On the real disk: the driver works the app on episodes ffmpeg made and
-// reads.
-
 package main
 
 import (
@@ -99,6 +96,8 @@ func TestPathClipsMadeByHandWhileASearchFinds(t *testing.T) {
 // The app closed on a clip made by hand while its part of the episode is
 // being heard says so where the clip would have been, after it opens
 // again, and Continue makes the clip, hearing nothing twice.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
 func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	d := open(t)
 	ep := d.episode("late", minutes5)

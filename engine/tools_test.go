@@ -1,5 +1,3 @@
-// On the real disk: a tool is a program that is found and run.
-
 package engine
 
 import (
@@ -11,12 +9,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // A bundled app carries its own ffmpeg, built without libx264 so the build
 // is LGPL. Finding Homebrew's on the search path instead undoes the whole
 // point of it: that one is a different build with different encoders, so
 // the short a customer gets is not the short that was tested.
+//
+// On the real disk: a tool is a program that is found on the disk and run.
 func TestAToolBesideTheProgramWinsOverTheSearchPath(t *testing.T) {
 	// The shape of a real bundle, so the macOS branch is read on whatever
 	// machine this runs on rather than only on a Mac.
@@ -152,7 +154,7 @@ func TestTheShippedAppTakesNothingFromTheEnvironment(t *testing.T) {
 func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "/named/ffmpeg")
 	t.Setenv("FRAMEFAIRY_FFPROBE", "/named/ffprobe")
-	e := NewEngine(NewLog(os.Stderr, false, false), disk)
+	e := NewEngine(NewLog(os.Stderr, false, false), afero.NewMemMapFs())
 	if e.FFmpeg != "/named/ffmpeg" || e.FFprobe != "/named/ffprobe" {
 		t.Errorf("ffmpeg %q, ffprobe %q", e.FFmpeg, e.FFprobe)
 	}
@@ -163,6 +165,8 @@ func TestNewEngineTakesItsToolsTheSameWay(t *testing.T) {
 // ever have is the one shipped beside the program. It used to be looked
 // for on the search path alone, which is a search path a shipped app does
 // not have.
+//
+// On the real disk: llama-server is a program that is found on the disk and run.
 func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
 	t.Run("a named one is taken as it stands", func(t *testing.T) {
 		t.Setenv("FRAMEFAIRY_LLAMA_SERVER", "/somewhere/else/llama-server")
@@ -195,6 +199,8 @@ func TestLlamaServerIsFoundTheSameWayAsFfmpeg(t *testing.T) {
 // ffprobe is looked for beside an ffmpeg that was chosen, under the name
 // the system gives it, and one named on its own wins. The app looked for
 // it its own way and missed ffprobe.exe.
+//
+// On the real disk: a tool is a program that is found on the disk and run.
 func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 	for _, c := range []struct{ ffmpeg, ffprobe string }{
 		{"ffmpeg", "ffprobe"},
@@ -230,6 +236,8 @@ func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 // the program was built with: the SHA-256 make builds in, see toolSums. One
 // with no sum built in, or one that does not match, is not run, and one
 // changed after it was checked is checked again.
+//
+// On the real disk: a tool is a program that is found on the disk and run.
 func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "")
 	dir := t.TempDir()
@@ -291,6 +299,8 @@ func TestAToolSaysItsVersion(t *testing.T) {
 // The settings read a tool again whenever they look, and say whether it is
 // the file the program was built with: a tool changed since it was last
 // run is caught by the look, not only by the next run.
+//
+// On the real disk: a tool is a program that is found on the disk and run.
 func TestInspectingAToolReadsItAgain(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "")
 	dir := t.TempDir()

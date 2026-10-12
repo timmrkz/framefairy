@@ -502,8 +502,8 @@ messages, pull request text, code comments and chat replies.
   or llama-server has to read, a link that must not lead out of the
   library, the lock between two programs, the signer's record, an update
   being installed. Such a test says why in a comment that starts with
-  "On the real disk", above it or at the top of its file, and
-  `internal/offdisk` fails on one that goes to the disk without it. A
+  "On the real disk", on the test itself, never once for a whole file,
+  and `internal/offdisk` fails on one that goes to the disk without it. A
   fuzz target that writes a file spends its runs waiting on the drive.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000

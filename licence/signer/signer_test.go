@@ -1,6 +1,3 @@
-// On the real disk: the record is locked against a second signer by the
-// system and flushed to the drive.
-
 package signer
 
 import (
@@ -85,8 +82,10 @@ func trust(s *Signer) licence.Trust {
 	return licence.Trust{Signers: map[uint8]ed25519.PublicKey{s.Number(): s.Public()}}
 }
 
+// On the real disk: the signer's record is flushed and locked by the system.
 func recordPath(t *testing.T) string { return filepath.Join(t.TempDir(), "record.jsonl") }
 
+// On the real disk: the signer's record is flushed and locked by the system.
 func TestPool(t *testing.T) {
 	path := recordPath(t)
 	s := newSigner(t, 3, open(t, path))
@@ -203,6 +202,7 @@ func TestRepeatedIDsAreDrawnAgain(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer's record is flushed and locked by the system.
 func TestBrokenRandomWritesNothing(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)
@@ -227,6 +227,7 @@ func TestBrokenRandomWritesNothing(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer's record is flushed and locked by the system.
 func TestNamed(t *testing.T) {
 	path := recordPath(t)
 	s := newSigner(t, 1, open(t, path))
@@ -401,6 +402,8 @@ func TestClosedRecordRefuses(t *testing.T) {
 
 // A write that fails hands out no key, and a record whose file cannot even
 // be cut back refuses every write after it.
+//
+// On the real disk: what is tested is a record file the system will not let the signer write.
 func TestFailedWriteHandsOutNothing(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)
@@ -437,6 +440,8 @@ func TestFailedWriteHandsOutNothing(t *testing.T) {
 
 // A batch cut short on a line boundary, as a crash can leave it, is
 // dropped whole when the record is opened, and the batches before it stay.
+//
+// On the real disk: the signer's record is cut back on the disk, as after a crash.
 func TestBatchCutShortIsDropped(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)
@@ -500,6 +505,7 @@ func TestAppendTakesOnlyTheNextWholeBatch(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer's record is cut back on the disk, as after a crash.
 func TestHalfWrittenLastLineIsDropped(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)
@@ -524,6 +530,7 @@ func TestHalfWrittenLastLineIsDropped(t *testing.T) {
 	}
 }
 
+// On the real disk: the signer's record is changed by hand in its file.
 func TestRecordChangedByHandIsRefused(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)
@@ -584,6 +591,7 @@ func TestRecordChangedByHandIsRefused(t *testing.T) {
 	}
 }
 
+// On the real disk: what is tested is who may read the record's file.
 func TestEmptyRecordAndItsFile(t *testing.T) {
 	path := recordPath(t)
 	r := open(t, path)

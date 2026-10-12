@@ -1,5 +1,3 @@
-// On the real disk: a stand-in ffmpeg is a program that is run.
-
 package engine
 
 import (
@@ -17,6 +15,8 @@ import (
 // choice can be driven without an ffmpeg that has the encoder in question.
 // The one on this machine has libx264 and no videotoolbox, and the one on
 // Tim's has both, and neither of those is a test.
+//
+// On the real disk: the stand-in ffmpeg is a program that is run.
 func fakeFFmpeg(t *testing.T, encoders ...string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
