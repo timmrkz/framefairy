@@ -36,7 +36,7 @@ import (
 // a quarter of a second after the sound, by an edit list in MOV and by its
 // first timestamp in Matroska. The clip's first piece starts before the
 // picture does. And from MPEG-TS, which has no index of its key frames,
-// plan row 2.200, and a Matroska recording cut off by a crash.
+// plan row 2.200.
 //
 // A short of an episode whose frames keep to their rate has that rate. One
 // whose frames do not has the episode's average rate rounded to the
@@ -128,7 +128,10 @@ var timesCases = []timesCase{
 	{name: "mpegts", file: "ts.ts", gop: 60},
 	// What OBS leaves of a Matroska recording when it crashes: no
 	// duration and no index of its key frames, plan row 2.203.
-	{name: "crashed_mkv", file: "crashed.mkv", rate: "30000/1001", gop: 60, cutOff: true},
+	// Like obs_mkv a file of the video preview's test only, and its rate
+	// not checked like mpegts', since the Mac's encoder in Matroska is
+	// plan row 2.201.
+	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true, previewOnly: true},
 }
 
 // timesEpisode makes the episode of a case: its frames carry their
@@ -154,23 +157,29 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	}
 	args = append(args, codec...)
 	args = append(args, sound...)
+	args = append(args, "-t", seconds, source)
+	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, out)
+	}
 	if !c.cutOff {
-		args = append(args, "-t", seconds, source)
-		if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
-			t.Fatalf("making the test episode: %s %s", err, out)
-		}
 		return source
 	}
-	// Written to a pipe, ffmpeg cannot go back to the start of the file.
-	// Its inputs end by themselves, since a length given with -t is
-	// written into the file before anything else.
+	// Copied into a pipe, ffmpeg cannot go back to the start of the file
+	// to say how long it is. Copied rather than made there, so the
+	// picture's settings are written first, as OBS writes them, which the
+	// Mac's encoder only has once it has made the first frame.
+	whole := source + ".whole.mkv"
+	if err := os.Rename(source, whole); err != nil {
+		t.Fatal(err)
+	}
 	file, err := os.Create(source)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
 	var stderr bytes.Buffer
-	cmd := exec.Command("ffmpeg", append(args, "-f", "matroska", "-")...)
+	// Without the tags, which say how long each track is.
+	cmd := exec.Command("ffmpeg", "-loglevel", "error", "-i", whole, "-map_metadata", "-1", "-c", "copy", "-f", "matroska", "-")
 	cmd.Stdout, cmd.Stderr = file, &stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, stderr.Bytes())
