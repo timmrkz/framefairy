@@ -1363,13 +1363,20 @@
       void refreshClips();
     }
   });
-  // A clip made here that is written, by its key on its way, and the key
-  // it is written under. The chosen card becomes the clip in the same
-  // step the list brings it in, whichever read of the list that is.
-  // Chosen once the read that was asked for it came back, it was a frame
-  // or more late whenever another read had brought it in first, and for
-  // that frame no card was chosen and the clip timeline drew it dimmed.
+  // A clip made here, by its key on its way, and the key it is written
+  // under, from the moment its card says it, which is before it is
+  // written, or else from its job's result. The chosen card becomes the
+  // clip in the same step the list brings it in, whichever read of the
+  // list that is. Chosen once its job was over and the read asked for it
+  // had come back, it was a frame or more late: the job says it has
+  // nothing on the way before it says it is done, a read in between
+  // brought the clip in and took the card away, and for those frames no
+  // card was chosen and the clip timeline drew it dimmed.
   const landing = new Map<string, string>();
+  $effect(() => {
+    const made = new Set(madeHere.values());
+    for (const a of onTheWay) if (a.clip && made.has(a.key)) landing.set(a.key, a.clip);
+  });
   $effect(() => {
     const list = clips;
     for (const [before, key] of landing) {
