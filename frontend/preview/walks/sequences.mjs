@@ -3265,6 +3265,25 @@ for (const seq of toWalk) {
           }
           await sized.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
           await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          // Nothing but the canvas draws them: the caption box over it
+          // shows no word and no pill unless a word is being typed.
+          const painted = await sized.evaluate(() => {
+            const alpha = (c) => {
+              const m = c.match(/rgba?\(([^)]*)\)/);
+              const parts = m ? m[1].split(/[\s,/]+/).filter(Boolean) : [];
+              return parts.length > 3 ? Number(parts[3]) : 1;
+            };
+            return [...document.querySelectorAll(".captions .line, .captions .line *")]
+              .filter((e) => {
+                const s = getComputedStyle(e);
+                return (e.textContent.trim() && alpha(s.color) > 0) || alpha(s.backgroundColor) > 0;
+              })
+              .map((e) => e.textContent.trim());
+          });
+          if (painted.length) {
+            wrong = `the caption box draws "${painted[0]}" over the video preview, a second drawing of the captions`;
+            break;
+          }
           const got = await cropPixels(sized, source);
           // A click lands on a whole pixel of the clip timeline, so the
           // playhead is where it landed, near the moment asked for.
@@ -3279,7 +3298,8 @@ for (const seq of toWalk) {
           // of its pixels, so it is never the same to the level: 3 on
           // average where the preview draws what the short does, against
           // 4.5 and more for the frame before or after with another word
-          // lit, and 30 and more for a preview with no captions.
+          // lit, and 41 for the canvas before 2.211, which drew none and
+          // left the captions to the browser.
           if (d.mean > 3.6) {
             wrong = `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are`;
             break;
