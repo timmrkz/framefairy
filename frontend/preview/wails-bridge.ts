@@ -20,9 +20,31 @@ function listen() {
   source = new EventSource("/events");
   source.onmessage = (message) => {
     const { name, data } = JSON.parse(message.data) as { name: string; data: unknown };
-    for (const fn of listeners.get(name) ?? []) fn({ data });
+    if (paused) paused.push({ name, data });
+    else tell(name, data);
   };
 }
+function tell(name: string, data: unknown) {
+  for (const fn of listeners.get(name) ?? []) fn({ data });
+}
+
+// What the Go side tells the interface waits, in order, while a walk
+// aims at something on screen that an event could change: it reads where
+// a word is with window.__pauseEvents(true), clicks there, and lets what
+// waited through with window.__pauseEvents(false). A person clicks what
+// they see, in the same frame, but a walk reads the page and clicks it in
+// two trips, and the words being heard while dictating changed between
+// the two, so the click landed in other words.
+let paused: { name: string; data: unknown }[] | null = null;
+(window as any).__pauseEvents = (on: boolean) => {
+  if (on) {
+    paused ??= [];
+    return;
+  }
+  const waited = paused ?? [];
+  paused = null;
+  for (const { name, data } of waited) tell(name, data);
+};
 
 // What the menu bar sends, which a browser has no menu bar for: a walk
 // presses Undo and Redo with window.__menu("undo") and window.__menu("redo"),
@@ -30,10 +52,10 @@ function listen() {
 // Help → Report a Problem… is window.__menu("report").
 (window as any).__menu = (what: string) => {
   if (what === "report") {
-    for (const fn of listeners.get("report") ?? []) fn({ data: null });
+    tell("report", null);
     return;
   }
-  for (const fn of listeners.get("undo") ?? []) fn({ data: what });
+  tell("undo", what);
 };
 
 export const Call = {
