@@ -1087,18 +1087,22 @@
   // own font. Tim saw the frame stand off its word on #201. They are asked
   // for by the track alone: what the hand drafts moves no word but for
   // the height, and the height is the caption box's own, see laidWords.
+  // A drag of an edge makes new captions on every step, so an ask the
+  // captions moved on from is called off, and the Go side stops measuring
+  // for it.
   let wordFrames = $state<{ key: string; frames: WordFrame[][] } | null>(null);
   $effect(() => {
     const key = captions?.track ? `${path}\n${captions.track}` : "";
-    if (!key || wordFrames?.key === key) return;
+    if (!key || untrack(() => wordFrames?.key) === key) return;
     const q = new URLSearchParams({ path, track: captions!.track! });
-    void fetch(`/frames/captions/words?${q}`)
+    const off = new AbortController();
+    void fetch(`/frames/captions/words?${q}`, { signal: off.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((frames: WordFrame[][] | null) => {
-        const now = captions?.track ? `${path}\n${captions.track}` : "";
-        if (frames && key === now) wordFrames = { key, frames };
+        if (frames && !off.signal.aborted) wordFrames = { key, frames };
       })
       .catch(() => {});
+    return () => off.abort();
   });
 
   // The words of the caption shown where libass put them, each as a box in

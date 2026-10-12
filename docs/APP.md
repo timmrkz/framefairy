@@ -1533,7 +1533,10 @@ bubble scrolled by those eight pixels.
       the gesture, and saves nothing until the hand lets go. They used to wait for the hand to let go, so a drag showed
       the old captions over the new clip. After letting go they stay until
       the saved clip's captions come back, which are the same, so nothing
-      jumps.
+      jumps. Letting go first waits for the engine's answer to where the
+      hand let go, so on a busy machine, where the answers come late, the
+      playhead still ends on the edge and not where an earlier answer put
+      it, see plan row 2.234.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over. While it plays, a click on an edge does nothing to
       the play.

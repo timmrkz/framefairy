@@ -512,6 +512,13 @@
 //                      word stands on it, its middle within 1.5 px of the
 //                      pill's and as wide within 2 px, and the pill is no
 //                      lower than the frame
+//   ["answers late", ms]
+//                      every answer of the engine to a gesture on the clip
+//                      timeline, while the hand moves, comes ms late, the
+//                      way it does on a busy machine
+//   ["playhead on", edge]
+//                      the playhead is on the frame the clip's "start" or
+//                      "end" edge is on
 //   ["remove mark", kind]
 //                      double-clicks the first "thumbnail" or "crop" mark
 //                      on the clip timeline, and the engine has one fewer,
@@ -1400,6 +1407,18 @@ export const sequences = [
       ["keyframe at", 0.9],
       ["open a word, then the mark", "thumbnail"],
       ["open a word, then the mark", "crop"],
+    ],
+  },
+  {
+    // Found on #201: on a busy machine the walk "an episode opens on its
+    // clip" broke, because the hand let go of the clip's start before the
+    // engine's answer to where it was let go had come, and the playhead
+    // stayed on a frame the trim had cut away.
+    name: "an edge let go before the engine answers leaves the playhead on the edge",
+    steps: [
+      ["answers late", 500],
+      ["trim", "start", 160],
+      ["playhead on", "start"],
     ],
   },
   {
@@ -4795,6 +4814,28 @@ for (const seq of toWalk) {
         if (!got.top) wrong = `something else lies over the ${arg} mark, so the pointer never reaches it`;
         else if (!got.hover) wrong = `the ${arg} mark does not take the hover`;
         else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
+        break;
+      }
+      case "answers late": {
+        await page.evaluate((ms) => {
+          const real = window.fetch;
+          window.fetch = async (input, init) => {
+            if (String(input).endsWith("/call") && init?.body && String(JSON.parse(init.body).name).split(".").pop() === "Shape") {
+              await new Promise((r) => setTimeout(r, ms));
+            }
+            return real(input, init);
+          };
+        }, arg);
+        break;
+      }
+      case "playhead on": {
+        const on = await chosen(page);
+        const clip = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const fps = await rate(page);
+        const want = arg === "start" ? Math.floor((clip.start + 0.001) * fps) : Math.floor((clip.end + 0.001) * fps) - 1;
+        const at = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+        const got = Math.floor((at + 0.001) * fps);
+        if (got !== want) wrong = `the playhead is at ${at} s, frame ${got}, not on the clip's ${arg} at frame ${want}, ${clip[arg]} s`;
         break;
       }
       case "frames on the pills": {

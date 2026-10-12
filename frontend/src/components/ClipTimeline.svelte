@@ -412,6 +412,10 @@
   // landed yet.
   let heldAt = 0;
   let leftAt = 0;
+  // The gesture the engine's last answer was for, and what waits for the
+  // answers to stop coming, see letGo.
+  let answeredFor: Gesture | null = null;
+  let quiet: (() => void)[] = [];
 
   function shape(g: Gesture) {
     if (!hand) heldAt = leftAt = time;
@@ -445,8 +449,10 @@
       // A gesture the engine says no to shows the last one it said yes to.
       // Letting go says what is wrong.
     } finally {
+      answeredFor = g;
       asking = false;
       void ask();
+      if (!asking) for (const done of quiet.splice(0)) done();
     }
   }
 
@@ -461,6 +467,19 @@
       shaped = null;
       return;
     }
+    // The engine's answer to the gesture as the hand left it comes first,
+    // so the playhead is where the edge was let go and the save and its
+    // undo say so. A hand faster than the answers, on a busy machine, let
+    // go while the answer to an earlier place of the edge was on its way,
+    // and the playhead stayed there, outside the clip, where the edge had
+    // been: a trimmed start left it on the frames cut away.
+    // The shape stays drawn meanwhile, as it does while it is saved.
+    saving = true;
+    if (answeredFor !== g) {
+      nextGesture = g;
+      void ask();
+    }
+    if (asking) await new Promise<void>((done) => quiet.push(done));
     await reshape(g, [heldAt, leftAt]);
   }
 
