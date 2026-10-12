@@ -497,8 +497,9 @@ through Apple's CoreML, with more or fewer threads, in pieces of different
 lengths, one or two pieces at a time, and prints how fast each was and how
 many words came out unlike the processor's. It uses the speech model in
 `~/.framefairy/models`. The workflow `.github/workflows/speechbench.yml`
-runs the same on the macOS runner with a recorded talk, when the speech
-code changes or by hand.
+runs the same on the macOS runner with a recorded talk, only when it is
+started by hand, from the Actions tab or through the GitHub API, so a
+session in the cloud can measure a Mac without one.
 
 A second table hears the same speech with several copies of the model at
 once, each taking the next piece as it finishes one, which is how an
