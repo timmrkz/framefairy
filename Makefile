@@ -62,6 +62,11 @@ NPM ?= npm
 FUZZTIME ?= 10000x
 # Only these fuzz targets, by name and separated by spaces, or all of them.
 FUZZTARGETS ?=
+# One share of the targets, like 2/3, so a deep run can be spread over
+# machines. And SIMTIME, the histories the licence simulation plays, 0 to
+# leave it out, see scripts/fuzz.sh.
+FUZZSHARD ?=
+SIMTIME ?=
 BIN := bin
 STAMPS := .build
 # The tests take ffmpeg and llama-server from the PATH, and on a Mac make
@@ -411,7 +416,7 @@ unit: toolchain modules $(FRESH_FRAMES)
 # targets at a time as the machine has cores. A new crasher is written to
 # testdata/fuzz/ next to the code, where it stays as a seed.
 fuzz: toolchain modules
-	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' sh scripts/fuzz.sh
+	@PATH="$(TOOLS_FIRST)" GO='$(GO)' FUZZTIME='$(FUZZTIME)' FUZZTARGETS='$(FUZZTARGETS)' FUZZSHARD='$(FUZZSHARD)' SIMTIME='$(SIMTIME)' sh scripts/fuzz.sh
 
 # The interface in Chromium against the real Go side, see docs/TESTING.md:
 # every sequence and every walk for seeds 1 to WALKS, half as many again at

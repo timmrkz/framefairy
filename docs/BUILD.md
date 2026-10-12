@@ -170,20 +170,30 @@ suite still passes on a machine without it, and fail in CI instead, see
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
-test` fuzzes every one of the 19 of them, because a fuzz target that only
-ever sees its seeds is not fuzzing.
+test` fuzzes every one of the 30 of them, because a fuzz target that only
+ever sees its seeds is not fuzzing. `scripts/fuzz.sh` finds them in the
+source, `sh scripts/fuzz.sh --list` says which there are. Asking go test
+for them compiled the tests of every package first, two minutes of CI's
+fuzz job before anything was fuzzed.
 
 The work is a number of executions, `FUZZTIME`, 10000 per target, and not a
 number of seconds. A count means the same thing on a fast machine and a slow
 one, so a run here and a run in CI do the same work. Go fuzzes one target per
 process, so `scripts/fuzz.sh` runs as many targets side by side as the
-machine has cores, with one worker each. That is around 50 seconds on a small
-four core machine and less on a laptop with more.
+machine has cores, with one worker each. Fuzzing builds each package again
+with coverage counters, so the first target of every package runs once on
+its own first, and the targets after it find the build done instead of
+building it side by side. With the builds there it is under a minute on a
+small four core machine.
 
 One target is the exception. `FuzzSimulation`, the licence dispenser's
 simulation, plays a whole history of 400 steps in one execution, a fifth
 of a second, so it does `SIMTIME` executions, 300 by default, instead of
-10000, which would be half an hour.
+10000, which would be half an hour. Its input is only the seed of a random
+generator, and one bit more is a history that has nothing to do with the
+last, so coverage cannot steer it and fuzzing it is no better than playing
+new seeds. CI leaves it to the nightly run with `SIMTIME=0`. Its known
+seeds play in every go test.
 
 An input that reaches new code is shrunk before it is kept, and Go shrinks
 for up to a minute by the clock, in executions `FUZZTIME` does not count.
@@ -202,6 +212,7 @@ make test FUZZTIME=2000x        # quicker, while working on something else
 make fuzz FUZZTIME=2m           # two minutes per target, on its own
 FUZZJOBS=2 make fuzz            # leave some cores alone
 make fuzz FUZZTARGETS='FuzzSafeChild FuzzPlanEdits'   # only these
+make fuzz FUZZSHARD=2/3         # the second third of the targets
 ```
 
 Every run keeps the inputs it found interesting, in Go's build cache, and
@@ -209,6 +220,22 @@ replays them before it starts fuzzing. That is the point, they are a growing
 regression suite, but after a few days of fuzzing the replay is what a run
 mostly spends its time on. `go clean -fuzzcache`, which `make clean` also
 does, puts it back to the seeds.
+
+CI keeps that cache too, in the Actions cache under `fuzz-v1-`, with the
+packages built for fuzzing. A push to main and the nightly run save it, and
+every pull request starts from the newest. So a run goes on from where the
+last one stopped, rather than spending its 10000 executions finding the same
+easy inputs as every run before it. Should the replay ever take longer than
+the fuzzing, raise the `v1` in `ci.yml` and `fuzz-nightly.yml`, which starts
+the cache over from the seeds.
+
+`.github/workflows/fuzz-nightly.yml` is the long fuzzing, at night on main
+and by hand from the Actions tab: half a minute on every target, 600 new
+histories for the simulation, and two minutes each on a Mac for the two
+targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`,
+since the Mac's disk takes names in either case and `/var` is a link there.
+A crash fails the run and leaves the input as an artifact called
+`crashers`.
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -222,7 +249,7 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is eight jobs on eight machines, all at once, because none of them
+main. It is seven jobs on seven machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
@@ -231,10 +258,9 @@ needs any of the rest:
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
 | `linux` | Linux | `make unit` |
 | `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
-| `fuzz` | Linux | `make fuzz` |
+| `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
 | `outside` | macOS | `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
-| `macos-fuzz` | macOS | `make fuzz` for the two targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`, since the Mac's disk takes names in either case and `/var` is a link there. The rest read text and numbers, the same on both systems, and are fuzzed on Linux only |
 
 When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,

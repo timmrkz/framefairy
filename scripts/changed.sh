@@ -268,14 +268,15 @@ fuzz_what_changed() {
 	done
 	targets=""
 	skipped=""
+	# Every target, found in the source by the script that fuzzes them.
+	all=$(sh scripts/fuzz.sh --list)
 	for pkg in $affected; do
 		dir=${pkg#"$module"}
 		dir=${dir#/}
 		[ -z "$dir" ] && dir=.
-		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
+		for target in $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }'); do
 			if fuzz_reaches "$pkg" "$dir" "$target"; then
-				targets="$targets$pkg $target
-"
+				targets="$targets $target"
 			else
 				skipped="$skipped $target"
 			fi
@@ -283,8 +284,7 @@ fuzz_what_changed() {
 	done
 	[ -n "$skipped" ] && printf 'skip	fuzzing%s, which no change reaches\n' "$skipped"
 	if [ -n "$targets" ]; then
-		printf '%s' "$targets" | GO=$GO FUZZTIME=$FUZZTIME \
-			xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" -n 2 sh scripts/fuzz.sh --one
+		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="${targets# }" sh scripts/fuzz.sh
 	fi
 }
 

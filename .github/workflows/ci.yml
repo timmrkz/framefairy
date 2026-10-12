@@ -266,6 +266,14 @@ jobs:
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
+  #
+  # Go keeps what it learned in its build cache: the inputs that reached
+  # new code, and each package built with the coverage counters fuzzing
+  # needs. Both are kept between runs, saved by main and by the nightly
+  # fuzzing and taken up by every pull request. So a run goes on from where
+  # the last one stopped instead of finding the same easy inputs again, and
+  # does not build every package before it starts. What a pull request
+  # finds is not saved, because a cache a pull request writes is its own.
   fuzz:
     runs-on: ubuntu-24.04
     steps:
@@ -278,7 +286,15 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: fuzz-v1-${{ runner.os }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -294,9 +310,18 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh
+      # The licence dispenser's simulation is fuzzed at night only, see
+      # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       - name: Fuzz
         if: steps.needs.outputs.run == 'true'
-        run: make fuzz
+        run: make fuzz SIMTIME=0
+      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
 
   # Tim's platform, so the build has to be clean and the tests have to pass
   # here too. A warning from clang or the linker fails it.
@@ -459,28 +484,3 @@ jobs:
       - name: Opened from outside
         if: steps.needs.outputs.run == 'true'
         run: make outside
-
-  # Fuzzing on macOS as well, for the two targets that are about paths: the
-  # Mac's disk takes names in either case and some Unicode written in two
-  # ways as one name, and /var is a link to /private/var, which no Linux
-  # disk has to explore. The other targets read text and numbers, which Go
-  # reads the same on both, so they are fuzzed on Linux only: macOS machines
-  # are the few GitHub has, and the build of the app waited behind this job
-  # for one. The known inputs of every target still run here, in make unit
-  # in the job above.
-  macos-fuzz:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Fuzz the targets about paths
-        if: steps.needs.outputs.run == 'true'
-        run: make fuzz FUZZTARGETS='FuzzSafeChild FuzzKnownStaysInTheLibrary'

@@ -1,12 +1,16 @@
 #!/bin/sh
 # Fuzzes every target, as many targets at a time as the machine has cores,
 # or only the targets FUZZTARGETS names, by name and separated by spaces.
+# FUZZSHARD=2/3 fuzzes the second third of them, so a deep run can be
+# spread over machines, and --list says which targets there are.
 #
 # The work is a number of executions, not a number of seconds, so a run here
 # and a run in CI do the same thing on a fast machine and a slow one. Each
 # target gets one worker, so the cores go to different targets rather than to
 # the same one, which is what makes the fan-out worth anything.
 set -eu
+
+cd "$(dirname -- "$0")/.."
 
 GO=${GO:-go}
 FUZZTIME=${FUZZTIME:-10000x}
@@ -27,8 +31,19 @@ if [ "${1:-}" = "--one" ]; then
 	# reads one input in well under a millisecond. Ten thousand of them
 	# would be half an hour, so it plays 300 new histories a run, 36
 	# seconds on the cloud machine.
+	#
+	# Its input is only the seed of a random generator, so coverage cannot
+	# steer it: one bit more is a history that has nothing to do with the
+	# last. It is fuzzed for new histories at night, see fuzz-nightly.yml,
+	# and CI's fuzz job passes SIMTIME=0 to leave it to that. Its known
+	# seeds still play in every go test.
 	if [ "$target" = FuzzSimulation ]; then
 		work=${SIMTIME:-300x}
+		case $work in 0 | 0x | 0s)
+			printf 'skip\t%s, SIMTIME is %s\n' "$target" "$work"
+			exit 0
+			;;
+		esac
 	fi
 	# An input that reaches new code is shrunk before it is kept, and Go
 	# shrinks for up to a minute by the clock, in runs FUZZTIME does not
@@ -37,6 +52,13 @@ if [ "${1:-}" = "--one" ]; then
 	# for the whole minute every time and the fuzzing seemed to hang. A
 	# count bounds that work the way FUZZTIME bounds the rest.
 	if out=$($GO test -run '^$' -fuzz "^$target\$" -fuzztime "$work" -fuzzminimizetime "$SHRINKTIME" -parallel 1 "$pkg" 2>&1); then
+		# A target go test did not find, behind a build tag for one, is
+		# fuzzed by nobody and would read as a pass.
+		case $out in *"no tests to run"* | *"matches no fuzz tests"*)
+			printf 'FAIL\t%s was not found in %s\n%s\n' "$target" "$pkg" "$out"
+			exit 1
+			;;
+		esac
 		printf 'ok  \t%s %s\n' "$target" "$work"
 		exit 0
 	fi
@@ -44,24 +66,66 @@ if [ "${1:-}" = "--one" ]; then
 	exit 1
 fi
 
-# Named targets are found in the source, which takes no time. Listing
-# every target asks every package's tests, which compiles all of them.
+# Every target of the module, a package directory and a name to a line,
+# found in the source. Asking go test for them instead compiles the tests
+# of every package, which was two minutes of CI's fuzz job before anything
+# was fuzzed.
+all_targets() {
+	grep -rlE --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git --exclude-dir=testdata '^func Fuzz[A-Za-z0-9_]*\(f \*testing\.F\)' . |
+		sort | while read -r file; do
+		dir=$(dirname -- "$file")
+		sed -nE 's/^func (Fuzz[A-Za-z0-9_]*)\(f \*testing\.F\).*/\1/p' "$file" | while read -r name; do
+			echo "$dir $name"
+		done
+	done
+}
+
+if [ "${1:-}" = "--list" ]; then
+	all_targets
+	exit 0
+fi
+
 ONLY=${FUZZTARGETS:-}
-targets=$(if [ -n "$ONLY" ]; then
+targets=$(all_targets)
+if [ -n "$ONLY" ]; then
+	named=""
 	for name in $ONLY; do
-		file=$(grep -rl --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git "^func $name(f \*testing.F)" . | head -n 1)
+		line=$(printf '%s\n' "$targets" | awk -v n="$name" '$2 == n { print; exit }')
 		# A name that is no target would fuzz nothing and read as a pass.
-		if [ -z "$file" ]; then
+		if [ -z "$line" ]; then
 			echo "fuzz.sh: there is no fuzz target called $name" >&2
 			exit 1
 		fi
-		echo "./$(dirname "${file#./}") $name"
+		named="$named$line
+"
 	done
-else
-	for pkg in $($GO list ./...); do
-		for target in $($GO test -list 'Fuzz.*' "$pkg" 2>/dev/null | grep '^Fuzz' || true); do
-			echo "$pkg $target"
-		done
-	done
-fi) || exit 1
+	targets=$(printf '%s' "$named")
+fi
+
+# One share of the targets, every nth from the ith on.
+SHARD=${FUZZSHARD:-}
+if [ -n "$SHARD" ]; then
+	i=${SHARD%/*}
+	n=${SHARD#*/}
+	case "$i/$n" in
+	[1-9]/[1-9] | [1-9]/[1-9][0-9] | [1-9][0-9]/[1-9][0-9]) ;;
+	*)
+		echo "fuzz.sh: FUZZSHARD is i/n, like 2/3, not $SHARD" >&2
+		exit 1
+		;;
+	esac
+	targets=$(printf '%s\n' "$targets" | awk -v i="$i" -v n="$n" '(NR - 1) % n == i - 1')
+fi
+
+[ -z "$targets" ] && exit 0
+
+# Fuzzing builds a package's tests with coverage counters of their own,
+# and every target started at once would build the same package again
+# beside the others, four times over on four cores. So the first target
+# of each package is fuzzed for one execution first, the packages side by
+# side, and the rest of the targets then find the build done.
+if [ "${FUZZWARM:-1}" = 1 ]; then
+	printf '%s\n' "$targets" | awk '!seen[$1]++' |
+		xargs -P "$JOBS" -n 2 sh -c '$0 test -run "^\$" -fuzz "^$2\$" -fuzztime 1x -parallel 1 "$1" >/dev/null 2>&1 || true' "$GO"
+fi
 printf '%s\n' "$targets" | xargs -P "$JOBS" -n 2 sh "$0" --one
