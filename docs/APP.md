@@ -1834,6 +1834,12 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     never started over by I or O: a clip plays only with the playhead
     inside it, and outside every clip the episode plays straight on,
     which a new clip there does not change.
+  - **The playhead is on the clip it makes.** The clip is made around
+    the playhead, so from the frame it is there, on its way and once it
+    is written, it is not dimmed, and its crop frame and its captions
+    show. While the video plays, the play goes on as it began, through
+    the clip's cuts and past its end, and the next press of the space
+    bar plays the clip.
   - **Everything shows in the frame the key is pressed in.** The **I** or
     **O** button wears the beam for as long as its clip is on its way.
     The clip's card is in the list at once, in its place in the episode,

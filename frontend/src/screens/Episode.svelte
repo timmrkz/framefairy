@@ -1360,7 +1360,11 @@
       const key = job.result;
       if (job.state !== "done" || !key) continue;
       void refreshClips().then(() => {
-        if (untrack(() => selected) === before && clips.some((c) => c.key === key)) select(key, paused);
+        if (untrack(() => selected) !== before || !clips.some((c) => c.key === key)) return;
+        void select(key, paused);
+        // Playing, the playhead stays on the clip it was made on, which is
+        // written now under its own key. See claim in Player.svelte.
+        if (!paused) player?.claim(before);
       });
     }
   });
@@ -1405,7 +1409,9 @@
   // is put where its frame starts, so the picture is of the clip being
   // made. Brought into view in the frame it was asked for only, the card
   // was still sliding open, at no height, and came to rest half under the
-  // foot of the list.
+  // foot of the list. Where the playhead is not put anywhere, while the
+  // video plays, it is on the clip from the moment the clip is there,
+  // see claim in Player.svelte.
   let followingMade = "";
   $effect(() => {
     const m = making;
@@ -1413,9 +1419,11 @@
     const start = m.segments[0].start;
     const mark = `${m.key}:${start}`;
     if (mark === followingMade) return;
+    const first = !followingMade.startsWith(`${m.key}:`);
     followingMade = mark;
     untrack(() => {
       if (paused && Math.abs(time - start) > 0.05) player?.seek(start);
+      else if (first) player?.claim();
     });
     // After the card has slid open and the list has moved it, 200 ms and
     // 180 ms in ClipList.svelte.

@@ -387,6 +387,22 @@
     sought = queue;
   }
 
+  // A clip made with I or O is made around the playhead, so the playhead
+  // is on it from the moment it is there: making it is a gesture about
+  // it, and it is not dimmed. This moves nothing and changes no running
+  // play, rule 6 of docs/VIDEO-PREVIEW.md. The play goes on as it began,
+  // and the clip's pieces are what the next play plays. Before, the clip
+  // made while the episode played was chosen with no gesture on it, so
+  // it stood dimmed over the very moment it was made from. Found by Tim.
+  //
+  // With from, only where the playhead is on the clip of that key: a clip
+  // on its way that is written comes back under a key of its own, and
+  // the playhead stays on it.
+  export function claim(from?: string) {
+    if (!clip || (from !== undefined && placed.clip !== from)) return;
+    placed = placeOf(pieces, clip.key, time, 1 / oneFrame, "clip", source.videoStart ?? 0);
+  }
+
   // A press on the clip timeline or the range picker while it plays holds
   // the play under the hand, like a nail, for as long as the button is
   // down: the playhead goes to the press and stays there, follows the hand
