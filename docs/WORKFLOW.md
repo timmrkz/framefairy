@@ -129,7 +129,7 @@ you reorder them. See CLAUDE.md.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as nine jobs at the same time, so the
+request and every push to `main`, as eleven jobs at the same time, so the
 answer comes back in the time the slowest takes:
 
 - **interface:** `make interface`, the type check and the interface's own
@@ -137,9 +137,9 @@ answer comes back in the time the slowest takes:
 - **build:** the rules that decide what runs, then `make` on Linux, which
   proves the programs still link with the interface built into them.
 - **linux:** the Go tests under the race detector, `make unit`, including
-  the tests that render, on two machines with every other test each.
+  the tests that render, on three machines with every third test each.
 - **walks:** the interface in Chromium against the real Go side,
-  `make walks`, on two machines with every other run each.
+  `make walks`, on three machines with every third run each.
 - **fuzz:** `make fuzz` on Linux, going on from the fuzz cache main left.
 - **macos:** the Go tests against our own ffmpeg, without the race
   detector, which Linux runs.
