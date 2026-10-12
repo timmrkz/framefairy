@@ -829,3 +829,48 @@ func colours(frame []byte) []int {
 	}
 	return out
 }
+
+// A decoder that stops at once, the way it does for a file with no
+// picture, says why it stopped to a stream that asked while it was
+// stopping. Wait shuts its input before the reason is known, and a stream
+// that asked in between said "file already closed" instead of the reason,
+// so Add left out a file of sound for the wrong reason. Plan row 2.171.
+// Here the decoder's end is held between the two until the stream has
+// asked, or has had time to.
+//
+// On the real disk: the decoder is a program, a script here.
+func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T) {
+	program := filepath.Join(t.TempDir(), "frames")
+	script := "#!/bin/sh\necho 'the file has no picture' >&2\nexit 1\n"
+	if err := os.WriteFile(program, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dec := NewEpisodeFrames(program, "nur-ton.mp4")
+	defer dec.Close()
+	waited, release := make(chan struct{}), make(chan struct{})
+	dec.waited = func() {
+		close(waited)
+		<-release
+	}
+	if err := dec.Ready(); err != nil {
+		t.Fatal(err)
+	}
+	<-waited
+	asked := make(chan error, 1)
+	go func() {
+		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36,
+			func(float64, []byte) error { return nil })
+	}()
+	var err error
+	select {
+	case err = <-asked:
+		close(release)
+	case <-time.After(100 * time.Millisecond):
+		// The stream waits for the reason, as it should: the end goes on.
+		close(release)
+		err = <-asked
+	}
+	if err == nil || !strings.Contains(err.Error(), "has no picture") {
+		t.Errorf("the stream said %v, want the decoder's reason, that the file has no picture", err)
+	}
+}
