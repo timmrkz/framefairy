@@ -19,10 +19,12 @@ import (
 // renders, frames at uneven times, frames left out, a picture that starts
 // after the sound, on files whose frames keep to their rate, in MP4 and
 // in Matroska, on what OBS records, H.264 with B-frames and AAC in
-// Matroska, and on MPEG-TS, which has no index of its key frames, so a
-// jump lands between two. The video preview counts on the same grid and reads
-// nothing of the file itself, so a Matroska file plays as an MP4 does.
-// Plan row 2.198, docs/VIDEO-PREVIEW.md step 5.
+// Matroska, on MPEG-TS, which has no index of its key frames, so a jump
+// lands between two, and on a Matroska recording cut off by a crash,
+// which does not say how long it is, plan row 2.203. The video preview
+// counts on the same grid and reads nothing of the file itself, so a
+// Matroska file plays as an MP4 does. Plan row 2.198,
+// docs/VIDEO-PREVIEW.md step 5.
 func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
@@ -54,6 +56,11 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 			}
 			if end := grid.At(grid.Count); end < info.Duration-1e-6 || end-frame >= info.Duration {
 				t.Errorf("the grid ends at %.4f, the file at %.4f", end, info.Duration)
+			}
+			// The file is as long as it was made, one that does not say
+			// how long it is too.
+			if made := float64(max(c.seconds, 7)); info.Duration < made-0.1 || info.Duration > made+0.3 {
+				t.Errorf("the file is %.3f s long, it was made %.0f s long", info.Duration, made)
 			}
 			holds := frameHolding(t, source)
 			dec := NewEpisodeFrames(program, source)

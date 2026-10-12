@@ -709,6 +709,25 @@ frame. Two kinds of episode do not keep to that, and `Probe` finds both.
   half a second. The video preview reads nothing of the file now, and
   the episode's decoder counts its frames and its sound from where ffmpeg
   does, `TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate`.
+- **A file with no index of its key frames.** MPEG-TS, which OBS records
+  and camcorders write as .MTS, says nowhere where its key frames are, so
+  ffmpeg seeks in it by the times of the packets and lands between two
+  key frames. The decoder dropped everything up to the next one, and a
+  piece from 0.2 s showed frame 60 for every frame before it, where frame
+  5 holds the moment. A render now finds the key frame shown at or before
+  each piece, `keyedPieces`, from the packets of the few seconds before
+  it, and reads from just before that key frame is decoded. How ffmpeg
+  counts the frames' times after such a seek differs between builds, by
+  as much as the sound starts before the picture, 21 ms of AAC in
+  MPEG-TS, so the frames are counted from the key frame, whose time is
+  known, `readFrom`, and the piece keeps its frames by its own rule.
+  MPEG-PS, .mpg and .vob, has no index either, but stamps no time on some
+  of its packets, and its frames are not read right yet, plan row 2.204.
+- **A file that does not say how long it is.** A Matroska recording cut
+  off by a crash, the way OBS leaves one, has no duration and no index,
+  and the app took it for 0 seconds long, with one frame in the video
+  preview. `Probe` then reads through the file once, `lastMoment`, for
+  where its last packet ends.
 - **The rate of a short of uneven frames.** The rate ffmpeg reports for
   uneven frames is the finest step they keep to, not how many come a
   second: 50 for the phone's frames above, which average 29.75, so its

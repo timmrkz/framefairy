@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -34,7 +35,8 @@ import (
 // nothing moved, the way a screen recorder does, and a picture that starts
 // a quarter of a second after the sound, by an edit list in MOV and by its
 // first timestamp in Matroska. The clip's first piece starts before the
-// picture does.
+// picture does. And from MPEG-TS, which has no index of its key frames,
+// plan row 2.200.
 //
 // A short of an episode whose frames keep to their rate has that rate. One
 // whose frames do not has the episode's average rate rounded to the
@@ -71,10 +73,14 @@ type timesCase struct {
 	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
 	// PCM where it is.
 	gop int
+	// Written the way a recording cut off by a crash is left: as it is
+	// made, with no going back to say how long it is or where its key
+	// frames are.
+	cutOff bool
 	// A file only the video preview's test takes, see
 	// TestTheVideoPreviewShowsTheFramesOfTheShort: one whose frames keep to
 	// their rate, which TestARenderCutsOnWholeFrames renders, or one whose
-	// short is not right yet, plan rows 2.200 and 2.201.
+	// short is not right yet, plan row 2.201.
 	previewOnly bool
 }
 
@@ -119,8 +125,13 @@ var timesCases = []timesCase{
 	// two seconds puts every jump of the test inside a GOP.
 	// Its rate is not checked: the Mac's encoder stamps its frames
 	// unevenly in MPEG-TS, and the probe then makes it 30.
-	{name: "mpegts", file: "ts.ts",
-		gop: 60, previewOnly: true},
+	{name: "mpegts", file: "ts.ts", gop: 60},
+	// What OBS leaves of a Matroska recording when it crashes: no
+	// duration and no index of its key frames, plan row 2.203.
+	// Like obs_mkv a file of the video preview's test only, and its rate
+	// not checked like mpegts', since the Mac's encoder in Matroska is
+	// plan row 2.201.
+	{name: "crashed_mkv", file: "crashed.mkv", gop: 60, cutOff: true, previewOnly: true},
 }
 
 // timesEpisode makes the episode of a case: its frames carry their
@@ -149,6 +160,29 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	args = append(args, "-t", seconds, source)
 	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
+	}
+	if !c.cutOff {
+		return source
+	}
+	// Copied into a pipe, ffmpeg cannot go back to the start of the file
+	// to say how long it is. Copied rather than made there, so the
+	// picture's settings are written first, as OBS writes them, which the
+	// Mac's encoder only has once it has made the first frame.
+	whole := source + ".whole.mkv"
+	if err := os.Rename(source, whole); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var stderr bytes.Buffer
+	// Without the tags, which say how long each track is.
+	cmd := exec.Command("ffmpeg", "-loglevel", "error", "-i", whole, "-map_metadata", "-1", "-c", "copy", "-f", "matroska", "-")
+	cmd.Stdout, cmd.Stderr = file, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, stderr.Bytes())
 	}
 	return source
 }
@@ -199,11 +233,12 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(string(out)); got != rate {
+	if got := strings.TrimSpace(string(out)); rate != "" && got != rate {
 		t.Errorf("the short has %s frames a second, not %s", got, rate)
 	}
 	got := barNumbers(t, short, w, h)
 	sound := monoSamples(t, short)
+	heard, soundStart := monoSamples(t, source), soundBegins(t, source)
 
 	frame := float64(info.FPSDen) / float64(info.FPSNum)
 	slots := 0
@@ -222,7 +257,10 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	// sound of that moment, away from the fades at the cuts and from where
 	// the tone starts its second again. The short's AAC reads up to 15 ms
 	// off on one frame and back on the next, so a piece is heard at the
-	// mean of its frames.
+	// mean of its frames. It is heard where the episode itself is heard:
+	// AAC in MPEG-TS keeps the encoder's lead in of silence, 21 ms, and no
+	// word of it, so the episode's sound is that much behind its picture
+	// before anything is cut.
 	j, wrong := 0, 0
 	for p, seg := range clip.Segments {
 		n := int(math.Round(seg.Duration() / frame))
@@ -241,7 +279,11 @@ func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 			if q == 0 || q == n-1 || inSecond < 0.015 || inSecond > 0.985 || k >= len(sound) {
 				continue
 			}
-			sum += (toneAt(sound, k)-0.1)/0.8 - inSecond
+			there := int((middle - soundStart) * 48000)
+			if there < 0 || there >= len(heard) {
+				continue
+			}
+			sum += (toneAt(sound, k) - toneAt(heard, there)) / 0.8
 			count++
 		}
 		if count == 0 {
@@ -316,6 +358,27 @@ func barNumbers(t *testing.T, path string, w, h int, flags ...string) []int {
 		numbers = append(numbers, n)
 	}
 	return numbers
+}
+
+// soundBegins is when the sound of a file begins, in seconds after the
+// start of the file, where monoSamples has its first sample.
+func soundBegins(t *testing.T, path string) float64 {
+	t.Helper()
+	at := func(entries string) float64 {
+		out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a:0",
+			"-show_entries", entries, "-of", "default=nw=1:nk=1", path).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// MPEG-TS says it once for its program and once for the stream.
+		first, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+		v, err := strconv.ParseFloat(first, 64)
+		if err != nil {
+			t.Fatalf("no %s in %s: %q", entries, path, out)
+		}
+		return v
+	}
+	return at("stream=start_time") - at("format=start_time")
 }
 
 // monoSamples is the sound of a file, in one channel at 48 kHz.
