@@ -183,6 +183,8 @@ func TestPathCancelWhileFinding(t *testing.T) {
 // the search New asked for: the search is called off as it arrives, never
 // takes a turn, and says Stopped with Continue, after a restart too. Plan
 // row 2.131.
+//
+// On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
 	d := open(t)
 	ep := d.add("ep", minutes5)
@@ -194,7 +196,7 @@ func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
 	if o := d.outcome(ep); !o.stopped || o.window != (window{60, 240}) {
 		t.Fatalf("a search Cancel reached the Go side ahead of says %+v", o)
 	}
-	rec := engine.ReadSearch(ep)
+	rec := engine.ReadSearch(disk, ep)
 	if rec == nil || rec.Step != engine.StepStopped {
 		t.Fatalf("its record is %+v", rec)
 	}
@@ -257,6 +259,7 @@ func TestPathFailureWhileFinding(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg renders the short.
 func TestPathRenderedToTheEnd(t *testing.T) {
 	d := open(t)
 	ep := d.add("ep", minutes5)
@@ -406,6 +409,8 @@ func TestPathNewOnALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 
 // A video added gets as many clips as its first window suggests, not the
 // target typed for a window of another length. The same length keeps it.
+//
+// On the real disk: the search works beside a video ffmpeg made and reads.
 func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	d := open(t)
 	if err := d.svc.SetSearch(3, 1800, 20, 30); err != nil {
@@ -413,7 +418,7 @@ func TestPathATargetStaysWithItsWindow(t *testing.T) {
 	}
 	asked := func(ep string) int {
 		d.idle(ep)
-		timings := engine.ReadTimings(ep)
+		timings := engine.ReadTimings(disk, ep)
 		if len(timings) != 1 {
 			t.Fatalf("%d searches of %s", len(timings), ep)
 		}

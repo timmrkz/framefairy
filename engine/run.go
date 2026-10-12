@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // Options are everything a run can be told. The command line fills these in,
@@ -150,13 +152,13 @@ func EpisodeName(source string) string {
 	return base
 }
 
-func exists(path string) bool {
-	_, err := os.Stat(path)
+func exists(fsys afero.Fs, path string) bool {
+	_, err := fsys.Stat(path)
 	return err == nil
 }
 
-func isFile(path string) bool {
-	info, err := os.Stat(path)
+func isFile(fsys afero.Fs, path string) bool {
+	info, err := fsys.Stat(path)
 	return err == nil && info.Mode().IsRegular()
 }
 
@@ -216,7 +218,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 	}
 	// A model that cannot be loaded fails the run before the transcript
 	// is made for it.
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(e.Files, r.planPath)) {
 		if err := roomBeforeSearch(r.opts, r.span.End-r.span.Start); err != nil {
 			return err
 		}
@@ -232,7 +234,7 @@ func (e *Engine) execute(ctx context.Context, opts Options) error {
 // for the window, made first when there is none or a new one is asked for.
 func (r *runner) planned(ctx context.Context) (Plan, []Clip, error) {
 	plannedNow := false
-	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.planPath)) {
+	if r.opts.ClipsPath == "" && (r.opts.Replan || !exists(r.e.Files, r.planPath)) {
 		if err := r.plan(ctx); err != nil {
 			return Plan{}, nil, err
 		}
@@ -288,7 +290,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	e.Prefill = opts.Prefill
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
-	if !exists(opts.Source) {
+	if !exists(e.Files, opts.Source) {
 		return nil, fmt.Errorf("source not found: %s", opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
@@ -326,7 +328,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		outDir = filepath.Join(work, "out")
 	}
 	captionDir := filepath.Join(work, "captions")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	if err := e.Files.MkdirAll(work, 0o755); err != nil {
 		return nil, fmt.Errorf("cannot create %s: %w", work, err)
 	}
 
@@ -413,20 +415,20 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	// They are moved rather than ignored, so a plan you are happy with is not
 	// quietly replaced by a paid-for new one.
 	if opts.ClipsPath == "" {
-		stale, _ := filepath.Glob(filepath.Join(work, "clips*.json"))
+		stale, _ := afero.Glob(e.Files, filepath.Join(work, "clips*.json"))
 		sort.Strings(stale)
 		for _, old := range stale {
-			if !isFile(old) {
+			if !isFile(e.Files, old) {
 				continue
 			}
 			moved := filepath.Join(logsDir, filepath.Base(old))
-			if exists(moved) {
+			if exists(e.Files, moved) {
 				continue
 			}
-			if err := os.MkdirAll(logsDir, 0o755); err != nil {
+			if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
 				continue
 			}
-			if err := os.Rename(old, moved); err == nil {
+			if err := e.Files.Rename(old, moved); err == nil {
 				log.Info("moved %s into logs/", filepath.Base(old))
 			}
 		}
@@ -437,12 +439,12 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	// another one. Planning costs money, so an existing plan is looked for
 	// before that happens rather than after.
 	experiment := opts.Experiment || IsExperiment(opts.Recipe)
-	if opts.ClipsPath == "" && !exists(planPath) && !opts.Replan && !opts.TranscribeOnly &&
+	if opts.ClipsPath == "" && !exists(e.Files, planPath) && !opts.Replan && !opts.TranscribeOnly &&
 		!opts.ExactPlan && !experiment {
-		matches, _ := filepath.Glob(filepath.Join(logsDir, "clips*.json"))
+		matches, _ := afero.Glob(e.Files, filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
-			if isFile(m) {
+			if isFile(e.Files, m) {
 				existing = append(existing, m)
 			}
 		}
@@ -523,7 +525,7 @@ func (r *runner) plan(ctx context.Context) error {
 	}
 	if opts.Planner == "api" && !whole {
 		if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
-			saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
+			saved, _ := afero.Glob(r.e.Files, filepath.Join(logsDir, "reply-*.json"))
 			if len(saved) == 0 || opts.Replan {
 				return err
 			}
@@ -571,7 +573,7 @@ func (r *runner) plan(ctx context.Context) error {
 	// undoing its removal would show the episode twice.
 	if whole && len(plan.Clips) > 0 {
 		for _, c := range opts.Removed {
-			if err := DropRemoved(c.Plan, c.ID); err != nil {
+			if err := DropRemoved(r.e.Files, c.Plan, c.ID); err != nil {
 				log.Warn("could not take out the clip %s that was removed: %s", c.ID, err)
 			}
 		}
@@ -587,11 +589,11 @@ func (r *runner) plan(ctx context.Context) error {
 // that held nothing new.
 func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 	opts, log, planPath := r.opts, r.e.Log, r.planPath
-	if !exists(planPath) {
+	if !exists(r.e.Files, planPath) {
 		return Plan{}, nil, fmt.Errorf("clip plan not found: %s", planPath)
 	}
 
-	plan, clips, err := LoadClips(planPath)
+	plan, clips, err := LoadClips(r.e.Files, planPath)
 	if opts.ClipsPath == "" && !plannedNow && err == nil {
 		made := plan.PlannedWith()
 		var differs []string
@@ -746,7 +748,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	// the app shows, see ClipCaptions. Without a transcript there are none.
 	heard := &Transcript{}
 	if !opts.NoCaptions {
-		t, err := SavedTranscript(opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
+		t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
 		if err != nil {
 			log.Warn("there is no transcript to make captions from, so the clips get none")
 		} else {
@@ -797,7 +799,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			// episode's own: a plan file handed to the command line from
 			// elsewhere is the person's, and is read, not written.
 			if own {
-				if err := recordShort(r.planPath, clip.ID, path); err != nil {
+				if err := recordShort(r.e.Files, r.planPath, clip.ID, path); err != nil {
 					failed(fmt.Errorf("%s: could not note where the short went: %w", clip.Basename(), err))
 					continue
 				}
@@ -815,9 +817,10 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 
 	if !opts.DryRun {
 		proof := filepath.Join(logsDir, "proof.txt")
-		_ = os.MkdirAll(logsDir, 0o755)
+		_ = e.Files.MkdirAll(logsDir, 0o755)
+		// The shorts are what ffmpeg writes, so their folder is on the disk.
 		_ = os.MkdirAll(outDir, 0o755)
-		if err := writeProof(proof, clips, cueMap); err != nil {
+		if err := writeProof(e.Files, proof, clips, cueMap); err != nil {
 			log.Warn("could not write %s: %s", proof, err)
 		}
 		log.Info("proof: %s", proof)
@@ -907,7 +910,7 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 	return out
 }
 
-func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) error {
+func writeProof(fsys afero.Fs, path string, clips []Clip, cueMap map[string][]LaidCaption) error {
 	lines := []string{"Render proof", strings.Repeat("=", 60), ""}
 	for _, clip := range clips {
 		lines = append(lines, fmt.Sprintf("[%s]  %ss  %d segment(s)", clip.Basename(),
@@ -935,7 +938,7 @@ func writeProof(path string, clips []Clip, cueMap map[string][]LaidCaption) erro
 		}
 		lines = append(lines, "")
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+	return afero.WriteFile(fsys, path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 // Interrupted is the message shown when a run is stopped with ctrl-c.

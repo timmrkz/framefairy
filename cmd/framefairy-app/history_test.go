@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -23,21 +24,19 @@ const historyPlan = `{
 // clips.
 func anEpisodeWithAPlan(t *testing.T) (*FrameFairy, string, string) {
 	t.Helper()
-	svc, mine, _ := library(t)
-	logs := engine.NewProject(nil, mine, svc.store.Settings().options()).LogsDir()
-	if err := os.MkdirAll(logs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	plan := filepath.Join(logs, "clips.json")
-	if err := os.WriteFile(plan, []byte(historyPlan), 0o644); err != nil {
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	mine := eps[0]
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	if err := afero.WriteFile(svc.store.files, plan, []byte(historyPlan), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return svc, mine, plan
 }
 
-func removed(t *testing.T, plan, id string) bool {
+func removed(t *testing.T, svc *FrameFairy, plan, id string) bool {
 	t.Helper()
-	_, clips, err := engine.LoadClips(plan)
+	_, clips, err := engine.LoadClips(svc.store.files, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,19 +55,19 @@ func TestARemovedClipComesBackWithUndo(t *testing.T) {
 	// The answer describes the clip for the interface, which needs the video
 	// read, and this one is not a video. The edit is made either way.
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
-	if !removed(t, plan, "02") {
+	if !removed(t, svc, plan, "02") {
 		t.Fatal("the clip was not removed")
 	}
 	done, err := svc.Undo(mine)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !done.Done || done.Clip != "clips.json/02" || removed(t, plan, "02") {
-		t.Errorf("undo %+v, still removed %v", done, removed(t, plan, "02"))
+	if !done.Done || done.Clip != "clips.json/02" || removed(t, svc, plan, "02") {
+		t.Errorf("undo %+v, still removed %v", done, removed(t, svc, plan, "02"))
 	}
 	done, err = svc.Redo(mine)
-	if err != nil || !done.Done || !removed(t, plan, "02") {
-		t.Errorf("redo %+v %v, removed %v", done, err, removed(t, plan, "02"))
+	if err != nil || !done.Done || !removed(t, svc, plan, "02") {
+		t.Errorf("redo %+v %v, removed %v", done, err, removed(t, svc, plan, "02"))
 	}
 	// Nothing further back than the first thing done.
 	_, _ = svc.Undo(mine)
@@ -108,8 +107,8 @@ func TestANewEditForgetsWhatWasUndone(t *testing.T) {
 }
 
 func TestUndoIsOnlyForTheLibrary(t *testing.T) {
-	svc, _, home := library(t)
-	other := filepath.Join(home, "not-mine.mp4")
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	other := filepath.Join(filepath.Dir(eps[0]), "not-mine.mp4")
 	if _, err := svc.Undo(other); err == nil {
 		t.Error("Undo answered for a file that is not in the library")
 	}
@@ -141,7 +140,7 @@ func TestEditsAndUndosAtOnce(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if _, _, err := engine.LoadClips(plan); err != nil {
+	if _, _, err := engine.LoadClips(svc.store.files, plan); err != nil {
 		t.Fatalf("the plan no longer loads: %v", err)
 	}
 	// Undo all the way back always ends on the plan as it began.
@@ -150,7 +149,7 @@ func TestEditsAndUndosAtOnce(t *testing.T) {
 			break
 		}
 	}
-	if removed(t, plan, "01") || removed(t, plan, "02") {
+	if removed(t, svc, plan, "01") || removed(t, svc, plan, "02") {
 		t.Error("undoing everything did not end where it began")
 	}
 }
@@ -163,7 +162,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	style := func() engine.Style {
 		t.Helper()
-		p, _, err := engine.LoadClips(plan)
+		p, _, err := engine.LoadClips(svc.store.files, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +188,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 	}
 	// Nothing below may write the plan. Undo counts as an edit of its own,
 	// so the file to compare with is the one after it.
-	before, _ := os.ReadFile(plan)
+	before, _ := afero.ReadFile(svc.store.files, plan)
 	for _, bad := range [][2]string{{"red", ""}, {"", "#12345"}, {"#ffcc00\n", ""}} {
 		if err := svc.SetCaptionColours(ctx, mine, plan, bad[0], 1, bad[1], 0.5, "", 1); err == nil {
 			t.Errorf("%q was taken for a colour", bad)
@@ -202,7 +201,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 		"#ffffff", 1, "", 1, "", 1); err == nil {
 		t.Error("a plan outside the library was written")
 	}
-	after, _ := os.ReadFile(plan)
+	after, _ := afero.ReadFile(svc.store.files, plan)
 	if string(before) != string(after) {
 		t.Errorf("the plan is not as it was:\n%s", after)
 	}
@@ -216,7 +215,7 @@ func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	on := func() bool {
 		t.Helper()
-		p, _, err := engine.LoadClips(plan)
+		p, _, err := engine.LoadClips(svc.store.files, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -266,13 +265,13 @@ func TestThumbnailsAreSavedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	thumbs := func() []float64 {
 		t.Helper()
-		_, clips, err := engine.LoadClips(plan)
+		_, clips, err := engine.LoadClips(svc.store.files, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return clips[0].Thumbnails
 	}
-	_, clips, err := engine.LoadClips(plan)
+	_, clips, err := engine.LoadClips(svc.store.files, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +336,7 @@ func calledOff(t *testing.T, svc *FrameFairy, path, id string) {
 				running = true
 			}
 		}
-		if !running && len(engine.ReadJobs(path)) == 0 {
+		if !running && len(engine.ReadJobs(svc.store.files, path)) == 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

@@ -93,7 +93,7 @@ func checkModel(path, dir string, known LanguageModel) error {
 func noteModelChecked(record string, checks map[string]modelCheck, m LanguageModel, info os.FileInfo) {
 	checks[m.Name] = modelCheck{Size: info.Size(), Mod: info.ModTime(), SHA256: m.SHA256}
 	if body, err := json.MarshalIndent(checks, "", "  "); err == nil {
-		_ = writeAtomic(record, body)
+		_ = WriteAtomic(disk, record, body)
 	}
 }
 

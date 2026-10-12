@@ -189,6 +189,7 @@ func TestTheMachineSaysHowMuchMemoryItHas(t *testing.T) {
 	t.Logf("this machine has %d GB", got/gb)
 }
 
+// On the real disk: memTotal reads a meminfo file with os, the way it reads the system's.
 func TestReadingMemTotal(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -214,6 +215,8 @@ func TestReadingMemTotal(t *testing.T) {
 
 // Installing one, against a server of our own. No network and no real
 // model: the question is what is left on disk afterwards, in each case.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestInstallingALanguageModel(t *testing.T) {
 	body := ggufBytes(4096)
 
@@ -347,6 +350,8 @@ func TestInstallingALanguageModel(t *testing.T) {
 // Carrying on where a stopped download left off. A language model is up to
 // fifteen gigabytes and a connection that drops is an ordinary thing, so
 // this is the difference between a retry and a whole evening.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestADownloadCarriesOnWhereItStopped(t *testing.T) {
 	body := ggufBytes(60_000)
 
@@ -414,6 +419,8 @@ func TestADownloadCarriesOnWhereItStopped(t *testing.T) {
 // A server that will not do ranges answers with the whole file. Then the
 // part file is written again from the start, and what comes out is still
 // the right thing.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestAServerThatWillNotResumeStillWorks(t *testing.T) {
 	body := ggufBytes(20_000)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -443,6 +450,8 @@ func TestAServerThatWillNotResumeStillWorks(t *testing.T) {
 
 // Bytes that turned out to be the wrong ones are not carried on from, or a
 // bad download would be resumed for ever and fail the same way every time.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestWrongBytesAreNotCarriedOnFrom(t *testing.T) {
 	body := ggufBytes(4096)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -465,6 +474,8 @@ func TestWrongBytesAreNotCarriedOnFrom(t *testing.T) {
 
 // A file of the right name is not a model, and this is the only thing that
 // tells the difference.
+//
+// On the real disk: Installed looks at the file llama-server loads.
 func TestOnlyAGGUFCountsAsInstalled(t *testing.T) {
 	dir := t.TempDir()
 	m := LanguageModel{Name: "test.gguf", Title: "Test", Needs: 1}
@@ -643,6 +654,8 @@ func TestTheJudgedContextCoversTheFirstSearch(t *testing.T) {
 // A download that stops arriving is given up after downloadStall, with
 // what came kept to carry on from. Without it, a connection that went
 // quiet without closing held the download until Cancel was pressed.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -684,6 +697,8 @@ func TestADownloadThatStopsArrivingGivesUp(t *testing.T) {
 // What is counted is what the server got out, since the disk is what a
 // server that never stops would fill. Some of it always sits in the
 // connection's buffers, which is the room the test allows.
+//
+// On the real disk: a model is downloaded to the folder llama-server loads it from.
 func TestADownloadNeverGrowsPastItsSize(t *testing.T) {
 	body := ggufBytes(20_000)
 	sum := fmt.Sprintf("%x", sha256.Sum256(body))

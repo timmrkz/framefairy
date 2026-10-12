@@ -15,10 +15,7 @@ import (
 )
 
 func TestLanesRunSideBySide(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	st := openStore()
+	st := memoryStore()
 	q := newQueue(st, func(JobUpdate) {}, nil)
 	release := make(chan struct{})
 	started := make(chan string, 2)
@@ -49,6 +46,9 @@ func TestLanesRunSideBySide(t *testing.T) {
 // in the library: the video preview reads nothing of the file itself, see
 // docs/VIDEO-PREVIEW.md, step 5. The frames route takes an episode's file
 // and nothing else.
+//
+// On the real disk: the frames route hands an episode to its decoder,
+// which reads it.
 func TestNothingServesTheBytesOfAFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -88,18 +88,8 @@ func TestNothingServesTheBytesOfAFile(t *testing.T) {
 // starts in. The reads the workspace makes on opening must answer with
 // nothing rather than fail, or the log fills with errors nobody can act on.
 func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	source := filepath.Join(home, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	st := openStore()
-	if _, err := st.AddEpisodes([]string{source}); err != nil {
-		t.Fatal(err)
-	}
-	svc := &FrameFairy{store: st}
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	source := eps[0]
 
 	peaks, err := svc.Waveform(source, 0, 60, 100)
 	if err != nil || len(peaks) != 0 {

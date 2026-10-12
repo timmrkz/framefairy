@@ -492,6 +492,19 @@ messages, pull request text, code comments and chat replies.
   everything, and a change that reaches everything, `go.mod` or the
   engine, still runs what it reaches. `make test` runs all of it, for a
   deep run by hand. CI runs everything anyway, on both systems.
+- **Tests stay off the disk.** A test is about our code, not the drive
+  under it. The engine, a project and the app's store hold an `afero.Fs`,
+  see `engine/files.go`: the programs hand them the real disk, a test
+  hands them memory, `afero.NewMemMapFs()`, and new code that reads or
+  writes a file of an episode goes through the one it is given, never
+  through `os`. A test goes to the real disk only when the disk itself or
+  another program is what it is about: a file ffmpeg, the frames decoder
+  or llama-server has to read, a link that must not lead out of the
+  library, the lock between two programs, the signer's record, an update
+  being installed. Such a test says why in a comment that starts with
+  "On the real disk", on the test itself, never once for a whole file,
+  and `internal/offdisk` fails on one that goes to the disk without it. A
+  fuzz target that writes a file spends its runs waiting on the drive.
 - **Fuzz targets** cover what reads a model answer, a plan file or a caption
   file. `make test` fuzzes every one of them for `FUZZTIME` executions, 10000
   by default and the same in CI, as many targets at a time as the machine has

@@ -42,6 +42,7 @@ var renderTimingWords = []Cue{
 	{19.10, 19.45, "neun"}, {22.10, 22.45, "zehn"}, {25.10, 25.45, "elf."},
 }
 
+// On the real disk: ffmpeg makes the episode.
 func renderTimingEpisode(t *testing.T) string {
 	t.Helper()
 	var tone []string
@@ -157,10 +158,11 @@ func TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts(t *testing.T) {
 	checkRenderTiming(t, Clip{Segments: pieces})
 }
 
+// On the real disk: ffmpeg reads the episode and the captions and writes the short.
 func checkRenderTiming(t *testing.T, clip Clip) {
 	t.Helper()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

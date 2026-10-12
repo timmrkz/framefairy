@@ -59,6 +59,7 @@ func fakeModel(t *testing.T, asked *int32) *httptest.Server {
 	}))
 }
 
+// On the real disk: ffmpeg makes the episode and reads it.
 func testEpisode(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -92,6 +93,7 @@ type testEpisodes struct {
 	files map[string]string
 }
 
+// On the real disk: ffmpeg makes the episode and reads it.
 func (m *testEpisodes) make(seconds string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -120,6 +122,7 @@ func (m *testEpisodes) make(seconds string) (string, error) {
 	return path, nil
 }
 
+// On the real disk: the project runs ffmpeg on the episode.
 func TestProjectSteps(t *testing.T) {
 	source := testEpisode(t, "40")
 	// The records of every episode go in one folder. This test counts
@@ -132,7 +135,7 @@ func TestProjectSteps(t *testing.T) {
 	rec := &recorder{}
 	log := NewLog(&bytes.Buffer{}, false, false)
 	log.SetSink(rec.sink)
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	// The one test that frames with the face detector, the way the app
 	// does, see TestMain.
@@ -202,7 +205,7 @@ func TestProjectSteps(t *testing.T) {
 	if n := countLines("plans.jsonl"); n != 2 {
 		t.Errorf("%d plan records", n)
 	}
-	firstPlan, _, _ := LoadClips(plan)
+	firstPlan, _, _ := LoadClips(disk, plan)
 	firstID, _ := firstPlan.Raw["plan_id"].(string)
 	if firstID == "" {
 		t.Fatal("no plan_id in the plan file")
@@ -221,7 +224,7 @@ func TestProjectSteps(t *testing.T) {
 	if _, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1}); err != nil {
 		t.Fatal(err)
 	}
-	again, _, _ := LoadClips(plan)
+	again, _, _ := LoadClips(disk, plan)
 	if id, _ := again.Raw["plan_id"].(string); id != firstID || asked != 2 {
 		t.Errorf("reused answer got id %s, model asked %d times", id, asked)
 	}
@@ -229,10 +232,10 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("reused answer recorded again, %d records", n)
 	}
 
-	if err := SetRejected(plan, "t10-01", true); err != nil {
+	if err := SetRejected(disk, plan, "t10-01", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(plan, "t10-01", false); err != nil {
+	if err := SetRejected(disk, plan, "t10-01", false); err != nil {
 		t.Fatal(err)
 	}
 	var decisions []DecisionRecord
@@ -251,7 +254,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("decisions %+v", decisions)
 	}
 
-	st := Status(source, base.ASRModel)
+	st := Status(disk, source, base.ASRModel)
 	if !st.Transcribed || st.TranscriptStale || len(st.Plans) != 2 || st.Previews != 0 {
 		t.Errorf("status %+v", st)
 	}
@@ -280,7 +283,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("preview files %v", matches)
 	}
 
-	view, err := ReadPlan(plan)
+	view, err := ReadPlan(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +292,7 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("plan view %+v", view)
 	}
 	// The clip's words are read off the transcript.
-	if captions, err := ClipCaptionsView(plan, "t10-01", tr, nil); err != nil || len(captions.Captions) == 0 {
+	if captions, err := ClipCaptionsView(disk, plan, "t10-01", tr, nil); err != nil || len(captions.Captions) == 0 {
 		t.Errorf("the clip says nothing: %v %+v", err, captions)
 	}
 
@@ -313,7 +316,7 @@ func TestProjectSteps(t *testing.T) {
 	if _, err := p.Plan(ctx, PlanRequest{From: 10, To: 30, Count: 1}); err != nil {
 		t.Fatalf("plan after reset: %v %s", err, p.LastError())
 	}
-	reset, _, _ := LoadClips(plan)
+	reset, _, _ := LoadClips(disk, plan)
 	if id, _ := reset.Raw["plan_id"].(string); id != firstID || asked != 3 {
 		t.Errorf("after reset id %s, model asked %d times", id, asked)
 	}
@@ -322,10 +325,11 @@ func TestProjectSteps(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode.
 func TestProjectReportsErrors(t *testing.T) {
 	source := testEpisode(t, "2")
 	log := NewLog(&bytes.Buffer{}, false, false)
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return nil, errors.New("no model here")
 	}
@@ -349,12 +353,14 @@ func TestProjectReportsErrors(t *testing.T) {
 // What went wrong reaches whoever asked as the error it is, kept under
 // ErrStepFailed, where it was once only the last line of the log. The
 // command line still says it in the log, and exits with 1.
+//
+// On the real disk: the project runs ffmpeg on the episode.
 func TestAFailedStepSaysWhatWentWrong(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "20")
 	broken := errors.New("the speech model is broken")
 	var logged bytes.Buffer
-	e := NewEngine(NewLog(&logged, false, false))
+	e := NewEngine(NewLog(&logged, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return nil, broken }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

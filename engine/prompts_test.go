@@ -176,6 +176,8 @@ func TestAClipGivenAsThreePoints(t *testing.T) {
 
 // A recipe asked from a prompt file sends one message and no system part,
 // to the local model and to the API alike. middle, the default, is one.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAPromptFileIsOneMessage(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -193,7 +195,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -209,7 +211,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}
 	// One line is too short, and the engine takes in the one after it. A
 	// story the model gave no title is named after its first words.
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
 		clips[0].Title == "" || strings.HasPrefix(clips[0].Slug, "clip") {
 		t.Errorf("clips %+v %v", clips, err)
 	}
@@ -218,7 +220,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	if len(saved) != 1 {
 		t.Fatalf("saved %v", saved)
 	}
-	if _, use := lastLocalAnswer(filepath.Dir(saved[0]), time.Time{}); use.Asks != 1 || use.Read != 100 {
+	if _, use := lastLocalAnswer(disk, filepath.Dir(saved[0]), time.Time{}); use.Asks != 1 || use.Read != 100 {
 		t.Errorf("the saved answer tells %+v", use)
 	}
 
@@ -247,6 +249,9 @@ var updatePrompts = flag.Bool("update-prompts", false, "write testdata/prompts f
 // kept as the Go code made them before they moved into files. A change to
 // lines is a new way of asking, with a new PromptVersion, and saved answers
 // that no longer match their prompt.
+//
+// On the real disk: with -update-prompts it writes the repository's
+// testdata.
 func TestEveryPromptAsksWhatTestdataSays(t *testing.T) {
 	lines := said(
 		0.0, 1.1, "Was ist deine erste Erinnerung?",
@@ -372,6 +377,8 @@ func TestAMiddleAnswer(t *testing.T) {
 // A search asking for a plain answer holds the local model to no schema
 // and no grammar, so it can think first, and takes the clips from the
 // lines it writes, passing over the rest.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestASearchWithAPlainAnswer(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -385,7 +392,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	}))
 	defer server.Close()
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -410,7 +417,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	if most < 256+80 || most > 4096+256+80 {
 		t.Errorf("an answer of one clip may run %v tokens", most)
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
 		t.Errorf("clips %+v %v", clips, err)
 	}
 }

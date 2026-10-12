@@ -46,6 +46,8 @@ func TestVideoPatternAndNames(t *testing.T) {
 // looks like. Two endings side by side are an example, as ep.mp4 and
 // ep.mov sharing a work folder is. Tests and the preview's fake of the Go
 // side may name them, they check the list rather than say it.
+//
+// On the real disk: what is read is the repository's own source.
 func TestVideosAreNamedOnce(t *testing.T) {
 	root := ".."
 	app, err := os.ReadFile(filepath.Join(root, "docs", "APP.md"))

@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 // Project is one episode, driven step by step as the app does it. Every step
@@ -19,6 +20,9 @@ type Project struct {
 	Source string
 	// Base holds the settings every step starts from.
 	Base Options
+	// Files is where the episode's files are, the engine's when the
+	// project has one, see files.go.
+	Files afero.Fs
 
 	engine *Engine
 	mu     sync.Mutex
@@ -36,7 +40,11 @@ var ErrCancelled = errors.New("cancelled")
 // sink, because that is where every message goes.
 func NewProject(e *Engine, source string, base Options) *Project {
 	base.Source = source
-	return &Project{Source: source, Base: base, engine: e}
+	p := &Project{Source: source, Base: base, engine: e}
+	if e != nil {
+		p.Files = e.Files
+	}
+	return p
 }
 
 // WorkDir is the folder next to the episode that holds everything.
@@ -284,7 +292,7 @@ func (p *Project) nextPass(ctx context.Context, req PlanRequest) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		if !exists(PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
+		if !exists(p.Files, PlanFor(p.WorkDir(), opts.folder(), opts.Experiment, PassName(window, pass))) {
 			return pass, nil
 		}
 	}
@@ -300,7 +308,7 @@ func (p *Project) proposed(except string) (taken, listed []Window, removed []Cli
 		if plan == except || !IsPlanFile(plan) {
 			continue
 		}
-		_, clips, err := LoadClips(plan)
+		_, clips, err := LoadClips(p.Files, plan)
 		if err != nil {
 			continue
 		}
@@ -323,9 +331,9 @@ func (p *Project) proposed(except string) (taken, listed []Window, removed []Cli
 
 func (p *Project) planFiles() map[string]int64 {
 	found := map[string]int64{}
-	matches, _ := filepath.Glob(filepath.Join(p.LogsDir(), "clips*.json"))
+	matches, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "clips*.json"))
 	for _, m := range matches {
-		if info, err := os.Stat(m); err == nil && info.Mode().IsRegular() {
+		if info, err := p.Files.Stat(m); err == nil && info.Mode().IsRegular() {
 			found[m] = info.ModTime().UnixNano()
 		}
 	}

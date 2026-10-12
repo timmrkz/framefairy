@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -26,7 +28,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 	}
 	var raw bytes.Buffer
 	binary.Write(&raw, binary.LittleEndian, samples)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	var frames []float32
 	end, err := e.readLevels(context.Background(), &raw, func(f float32) bool {
 		frames = append(frames, f)
@@ -52,6 +54,8 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 // A whole episode is measured, written where the waveform reads it, and
 // forgotten when the file changes. Readers that come while it is written
 // never see frames the json does not vouch for.
+//
+// On the real disk: ffmpeg makes the episode and measures it.
 func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -65,10 +69,10 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if got := ReadLevels(source); len(got.Frames) != 0 || got.Done {
+	if got := ReadLevels(disk, source); len(got.Frames) != 0 || got.Done {
 		t.Fatal("levels out of nowhere")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 
 	var stop atomic.Bool
@@ -78,7 +82,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for !stop.Load() {
-				l := ReadLevels(source)
+				l := ReadLevels(disk, source)
 				if l.To() > 3.1 {
 					t.Errorf("levels reach %.2f s of 3", l.To())
 				}
@@ -93,7 +97,7 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	l := ReadLevels(source)
+	l := ReadLevels(disk, source)
 	if !l.Done || math.Abs(l.To()-3) > 0.05 {
 		t.Fatalf("done %v, %.2f s", l.Done, l.To())
 	}
@@ -119,13 +123,15 @@ func TestMeasureLevelsOfAnEpisode(t *testing.T) {
 	if err := os.Chtimes(source, later, later); err != nil {
 		t.Fatal(err)
 	}
-	if got := ReadLevels(source); len(got.Frames) != 0 {
+	if got := ReadLevels(disk, source); len(got.Frames) != 0 {
 		t.Error("the levels of the file before were read for the file now")
 	}
 }
 
 // Stopped part way, the measuring says so and leaves nothing that claims
 // to be done.
+//
+// On the real disk: ffmpeg makes the episode it would measure.
 func TestMeasureLevelsStops(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -135,20 +141,22 @@ func TestMeasureLevelsStops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := e.MeasureLevels(ctx, source, nil, nil); err == nil {
 		t.Error("a measuring called off said it finished")
 	}
-	if ReadLevels(source).Done {
+	if ReadLevels(disk, source).Done {
 		t.Error("levels called off claim to be done")
 	}
 }
 
 // How far the loudness reaches is read from the json alone, and agrees with
 // the frames.
+//
+// On the real disk: ffmpeg makes the episode and measures it.
 func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	ffmpegtest.Need(t)
 	source := filepath.Join(t.TempDir(), "episode.m4a")
@@ -157,25 +165,27 @@ func TestLevelsReachAgreesWithTheFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if parts, done := LevelsReach(source); len(parts) != 0 || done {
+	if parts, done := LevelsReach(disk, source); len(parts) != 0 || done {
 		t.Fatalf("an episode never measured has %v, done %v", parts, done)
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg = "ffmpeg"
 	if err := e.MeasureLevels(context.Background(), source, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	parts, done := LevelsReach(source)
-	if !done || len(parts) != 1 || parts[0][0] != 0 || math.Abs(parts[0][1]-ReadLevels(source).To()) > 1e-9 {
-		t.Errorf("parts %v done %v, frames %.2f", parts, done, ReadLevels(source).To())
+	parts, done := LevelsReach(disk, source)
+	if !done || len(parts) != 1 || parts[0][0] != 0 || math.Abs(parts[0][1]-ReadLevels(disk, source).To()) > 1e-9 {
+		t.Errorf("parts %v done %v, frames %.2f", parts, done, ReadLevels(disk, source).To())
 	}
-	if st := Status(source, ""); !st.MeasuredAll || st.Measured != parts[0][1] {
+	if st := Status(disk, source, ""); !st.MeasuredAll || st.Measured != parts[0][1] {
 		t.Errorf("the library says %.2f, all %v", st.Measured, st.MeasuredAll)
 	}
 }
 
 // sweep makes an episode whose loudness rises and falls every few seconds,
 // so a frame measured in the wrong place shows.
+//
+// On the real disk: ffmpeg makes the episode.
 func sweep(t *testing.T, seconds string) string {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -192,10 +202,12 @@ func sweep(t *testing.T, seconds string) string {
 // Where the clip timeline looks is measured first, and when it moves to a
 // part not measured yet, the measuring follows it there. What comes out is
 // the same loudness a measuring from the start gives, joins and all.
+//
+// On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "300")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.levelsEvery = 50 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 
@@ -210,7 +222,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	}
 	var first, moved [][2]int
 	err := e.MeasureLevels(context.Background(), source, focus, func(float64) {
-		l := ReadLevels(source)
+		l := ReadLevels(disk, source)
 		if first == nil && len(l.Parts) > 0 {
 			first = l.Parts
 			mu.Lock()
@@ -232,7 +244,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 			partSeconds(moved))
 	}
 
-	jumped := ReadLevels(source)
+	jumped := ReadLevels(disk, source)
 	if !jumped.Done || len(jumped.Parts) != 1 {
 		t.Fatalf("done %v, parts %v", jumped.Done, partSeconds(jumped.Parts))
 	}
@@ -245,7 +257,7 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 	if err := e.MeasureLevels(context.Background(), again, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	whole := ReadLevels(again)
+	whole := ReadLevels(disk, again)
 	if len(whole.Frames) != len(jumped.Frames) {
 		t.Fatalf("%d frames from the start, %d where the view went", len(whole.Frames), len(jumped.Frames))
 	}
@@ -265,10 +277,12 @@ func TestMeasureLevelsGoesWhereTheClipTimelineLooks(t *testing.T) {
 
 // A measuring cut off keeps what it has, and the next carries on from
 // there rather than starting again.
+//
+// On the real disk: ffmpeg measures the episode.
 func TestMeasureLevelsCarriesOn(t *testing.T) {
 	t.Parallel()
 	source := sweep(t, "120")
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.levelsEvery = 20 * time.Millisecond
 	e.FFmpeg = "ffmpeg"
 	// Cut off at the first write, which is part of what the clip timeline
@@ -284,18 +298,18 @@ func TestMeasureLevelsCarriesOn(t *testing.T) {
 		t.Fatal("a measuring cut off said it finished")
 	}
 	e.levelsEvery = 0
-	had := ReadLevels(source)
+	had := ReadLevels(disk, source)
 	if had.Done || len(had.Parts) != 1 || had.Parts[0][0] != int(60/FrameSeconds) {
 		t.Fatalf("cut off with %v, done %v", partSeconds(had.Parts), had.Done)
 	}
-	if st := Status(source, ""); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {
+	if st := Status(disk, source, ""); st.MeasuredAll || st.Measured <= 0 || len(st.MeasuredParts) == 0 {
 		t.Errorf("the library says %.2f in %v, all %v", st.Measured, st.MeasuredParts, st.MeasuredAll)
 	}
 	var calls int
 	if err := e.MeasureLevels(context.Background(), source, nil, func(float64) { calls++ }); err != nil {
 		t.Fatal(err)
 	}
-	l := ReadLevels(source)
+	l := ReadLevels(disk, source)
 	if !l.Done || len(l.Parts) != 1 {
 		t.Fatalf("done %v, parts %v", l.Done, partSeconds(l.Parts))
 	}

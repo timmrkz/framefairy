@@ -9,6 +9,8 @@ import (
 
 // An app bundle as small as can be: a program that says which build it is,
 // and a link, the way a bundle's frameworks are links.
+//
+// On the real disk: a bundle holds a link and a program with its mode.
 func bundle(t *testing.T, at, says string) {
 	t.Helper()
 	macos := filepath.Join(at, "Contents", "MacOS")
@@ -23,6 +25,7 @@ func bundle(t *testing.T, at, says string) {
 	}
 }
 
+// On the real disk: the program read is in a bundle on the disk.
 func says(t *testing.T, app string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(app, "Contents", "MacOS", "framefairy-app"))
@@ -34,6 +37,8 @@ func says(t *testing.T, app string) string {
 
 // The app, and a new build as the updater leaves it, unpacked in a folder
 // of its own.
+//
+// On the real disk: an update moves a bundle with its links and modes.
 func twoBuilds(t *testing.T) (target, from string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -49,6 +54,8 @@ func neverQuits(int, time.Duration) bool { return false }
 
 // Once the app is gone, the new build is where the app was, whole, and
 // nothing is left beside it or where it was unpacked.
+//
+// On the real disk: an update moves a bundle with its links and modes.
 func TestAReadyBuildGoesInPlaceOfTheApp(t *testing.T) {
 	target, from := twoBuilds(t)
 	if err := installWhenGone(target, from, 42, quitAt); err != nil {
@@ -84,6 +91,8 @@ func TestAnAppThatDidNotQuitIsLeftAlone(t *testing.T) {
 
 // The step only ever replaces an app, only with a build the updater
 // unpacked, whatever its environment names.
+//
+// On the real disk: an update would move a bundle with its links and modes.
 func TestTheStepReplacesNothingElse(t *testing.T) {
 	target, from := twoBuilds(t)
 	elsewhere := filepath.Join(t.TempDir(), "Frame Fairy.app")
@@ -104,6 +113,8 @@ func TestTheStepReplacesNothingElse(t *testing.T) {
 }
 
 // A build that is gone by the time the app quits leaves the app as it was.
+//
+// On the real disk: an update moves a bundle with its links and modes.
 func TestAMissingBuildLeavesTheApp(t *testing.T) {
 	target, from := twoBuilds(t)
 	_ = os.RemoveAll(from)
@@ -117,6 +128,8 @@ func TestAMissingBuildLeavesTheApp(t *testing.T) {
 
 // Across volumes a folder cannot be renamed, so it is copied, and a copy
 // keeps the links and the modes an app needs.
+//
+// On the real disk: what is tested is a link and a mode on the disk.
 func TestACopiedBuildKeepsItsLinksAndModes(t *testing.T) {
 	_, from := twoBuilds(t)
 	to := filepath.Join(t.TempDir(), "Frame Fairy.app")
@@ -185,6 +198,8 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 
 // When the app starts, it removes what updating left in the temporary
 // folder once it is old, and only what is Frame Fairy's.
+//
+// On the real disk: what is tested is the age the system gives a file.
 func TestOldLeftoversAreRemoved(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

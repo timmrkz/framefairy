@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // A clip plan is written by a model, read back by both front ends and edited
@@ -35,6 +37,8 @@ func TestSanitiseNameKeepsFilesAndFilterGraphsSafe(t *testing.T) {
 	}
 }
 
+// On the real disk: what is tested is that a link on the disk is no way
+// out of a folder, and memory has no links.
 func TestSafeChildStaysInsideItsFolder(t *testing.T) {
 	base := t.TempDir()
 	for _, name := range []string{"01_a.mp4", "sub/01.mp4", "sub/../01.mp4", "./a"} {
@@ -63,8 +67,35 @@ func TestSafeChildStaysInsideItsFolder(t *testing.T) {
 	}
 }
 
+// A folder in memory is joined as it is named, even where the disk has a
+// link of the same name. On a Mac /home is one, so the chosen clip of an
+// episode under /home was written to one path and looked for at another.
+//
+// On the real disk: the link that must not be followed is one on the disk.
+func TestSafeChildInMemoryFollowsNoLinkOnTheDisk(t *testing.T) {
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+	base := filepath.Join(link, "tim", "ep.framefairy")
+	want := filepath.Join(base, "chosen.json")
+	if got, err := SafeChildIn(afero.NewMemMapFs(), base, "chosen.json"); err != nil || got != want {
+		t.Errorf("in memory gave %q, %v, wanted %q", got, err, want)
+	}
+	if got, err := SafeChild(base, "chosen.json"); err != nil || got == want {
+		t.Errorf("on the disk gave %q, %v, wanted the path the link leads to", got, err)
+	}
+	if path, err := SafeChildIn(afero.NewMemMapFs(), base, "../out.json"); err == nil {
+		t.Errorf("in memory a way out of the folder was allowed: %s", path)
+	}
+}
+
 // FuzzSafeChild makes sure the check itself cannot be talked around. Every
 // name it accepts has to land inside the folder.
+//
+// On the real disk: what is tested is that a link on the disk is no way
+// out of a folder, and memory has no links.
 func FuzzSafeChild(f *testing.F) {
 	for _, name := range []string{"01_a.mp4", "..", "../x", "a/../../x", "/etc/passwd",
 		"a//b", ".", "", "a\x00b", "C:\\x"} {
@@ -131,15 +162,6 @@ func FuzzParseTime(f *testing.F) {
 	})
 }
 
-func writePlan(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "clips.json")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 	segments := func(n int) string {
 		var parts []string
@@ -171,7 +193,7 @@ func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, clips, err := LoadClips(writePlan(t, c.body)); err == nil {
+			if _, clips, err := LoadClips(writePlanAt(t, c.body)); err == nil {
 				t.Errorf("accepted, gave %d clip(s)", len(clips))
 			}
 		})
@@ -179,7 +201,7 @@ func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 }
 
 func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
-	path := writePlan(t, `{
+	fsys, path := writePlanAt(t, `{
   "source": "ep.mp4",
   "unknown": {"kept": true},
   "clips": [
@@ -192,7 +214,7 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
     {"id": "03", "rejected": true, "segments": [{"start": 30, "end": 31}]}
   ]
 }`)
-	plan, clips, err := LoadClips(path)
+	plan, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +270,7 @@ func FuzzLoadClips(f *testing.F) {
 		` "crop_marks": [{"at": 0.5, "x": 10}, {"at": "0.6", "x": 4}, {"at": 1.5, "x": 1.5}, {"at": 0.5}, 3, null]}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
-		path := filepath.Join(t.TempDir(), "clips.json")
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Skip()
-		}
-		plan, clips, err := LoadClips(path)
+		plan, clips, err := LoadClips(writePlanAt(t, body))
 		if err != nil {
 			return
 		}
@@ -333,7 +351,7 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		_, clips, err := LoadClips(writePlan(t, c.body))
+		_, clips, err := LoadClips(writePlanAt(t, c.body))
 		if err == nil {
 			t.Errorf("%s: loaded %d clips", c.name, len(clips))
 			continue
@@ -348,12 +366,12 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 		many = append(many, fmt.Sprintf(
 			`{"id": "c%d", "slug": "s%d", "segments": [{"start": %d, "end": %d}]}`, i, i, i, i+1))
 	}
-	if _, _, err := LoadClips(writePlan(t, `{"clips": [`+strings.Join(many, ",")+`]}`)); err == nil {
+	if _, _, err := LoadClips(writePlanAt(t, `{"clips": [`+strings.Join(many, ",")+`]}`)); err == nil {
 		t.Error("a plan of a thousand and one clips was loaded")
 	}
 
 	// What is fine stays fine.
-	_, clips, err := LoadClips(writePlan(t, `{"clips": [
+	_, clips, err := LoadClips(writePlanAt(t, `{"clips": [
 		{"id": "01", "slug": "eins", "segments": [{"start": 1, "end": 2}]},
 		{"id": "02", "slug": "zwei", "segments": [{"start": 3, "end": 4}]}]}`))
 	if err != nil || len(clips) != 2 {
@@ -364,6 +382,9 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 // Settings that cannot be met are refused before anything is asked of the
 // model, because the prompt would ask for clips between thirty and twenty
 // seconds and the answer would be nonsense either way.
+//
+// On the real disk: the command line's run takes the episode from the
+// disk, for ffmpeg.
 func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "ep.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -379,7 +400,7 @@ func TestASearchThatCouldFindNothingIsRefused(t *testing.T) {
 		{"no clips at all", Options{Min: 20, Max: 30, Count: -1}, "at least one clip"},
 	} {
 		var said bytes.Buffer
-		e := NewEngine(NewLog(&said, false, false))
+		e := NewEngine(NewLog(&said, false, false), disk)
 		c.opts.Source = source
 		c.opts.Planner = "local"
 		if code := e.Run(context.Background(), c.opts); code == 0 {

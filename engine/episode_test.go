@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // The app searches by itself only for an episode nobody has ever searched.
@@ -16,56 +18,55 @@ import (
 // undone by removing the clips again, and deleting the work folder makes
 // the episode new.
 func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("not really a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if EverSearched(source) {
+	if EverSearched(fsys, source) {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(source, ""); st.EverSearched || st.Work {
+	if st := Status(fsys, source, ""); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
 	// Clips made by hand search nothing: neither their set nor their
 	// jobs' timings say the episode was searched.
-	p := NewProject(NewEngine(NewLog(io.Discard, false, false)), source, DefaultOptions())
+	p := NewProject(NewEngine(NewLog(io.Discard, false, false), fsys), source, DefaultOptions())
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
-	if _, err := addClip(p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
+	if _, err := addClip(fsys, p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: "clip-1", Kind: JobClip})
-	if EverSearched(source) {
+	if EverSearched(fsys, source) {
 		t.Fatal("clips made by hand made the episode searched")
 	}
 
 	// A search that was asked for keeps its record, and its timings once
 	// it is done, and either is enough.
-	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
+	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
 		t.Fatal(err)
 	}
-	if !EverSearched(source) {
+	if !EverSearched(fsys, source) {
 		t.Fatal("an episode being searched says it was not searched")
 	}
-	if err := RemoveJob(source, SearchID); err != nil {
+	if err := RemoveJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})
-	if !EverSearched(source) {
+	if !EverSearched(fsys, source) {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(source, ""); !st.EverSearched || !st.Work {
+	if st := Status(fsys, source, ""); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
-	if err := DeleteWork(source); err != nil {
+	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if EverSearched(source) {
+	if EverSearched(fsys, source) {
 		t.Error("an episode whose work folder is gone is new again")
 	}
 }
@@ -73,6 +74,8 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 // A short is a file a render wrote and noted in the plan. One still being
 // written is not a short, and neither is a file in the out folder no clip
 // is named for, nor one of a clip's name that the plan says nothing of.
+//
+// On the real disk: a short is a file ffmpeg wrote, looked for on the disk.
 func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
@@ -99,10 +102,10 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 		}
 	}
 	// Noted the way a render notes its short once it is written.
-	if err := recordShort(plan, "01", filepath.Join(out, "done.mp4")); err != nil {
+	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(source, "").Rendered; got != 1 {
+	if got := Status(disk, source, "").Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
 	}
 }
@@ -114,6 +117,8 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 // file is. A file of the same name that another episode put in that
 // folder is not this clip's short, and neither is anything beside it, and
 // the render gives the short a number rather than write over it.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -123,13 +128,13 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	}
 	clip := func() ClipView {
 		t.Helper()
-		view, err := ReadPlan(plan)
+		view, err := ReadPlan(disk, plan)
 		if err != nil || len(view.Clips) == 0 {
 			t.Fatalf("the plan: %v", err)
 		}
 		return view.Clips[0]
 	}
-	rendered := func() int { return Status(p.Source, p.Base.ASRModel).Rendered }
+	rendered := func() int { return Status(disk, p.Source, p.Base.ASRModel).Rendered }
 	shorts := t.TempDir()
 	other := filepath.Join(ResolvePath(shorts), clip().Slug+".mp4")
 	short := filepath.Join(ResolvePath(shorts), clip().Slug+" 2.mp4")
@@ -140,7 +145,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != "" {
 		t.Errorf("a clip never rendered says it is, at %s", got)
 	}
-	if IsShort(p.Source, other) {
+	if IsShort(disk, p.Source, other) {
 		t.Error("another episode's short is taken for this clip's")
 	}
 
@@ -151,7 +156,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != short {
 		t.Errorf("rendered into the folder for shorts, the clip says %q, not %q", got, short)
 	}
-	if !IsShort(p.Source, short) {
+	if !IsShort(disk, p.Source, short) {
 		t.Error("the short in the folder for shorts is not the clip's")
 	}
 	if n := rendered(); n != 1 {
@@ -166,7 +171,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if IsShort(p.Source, beside) || IsShort(p.Source, shorts) {
+	if IsShort(disk, p.Source, beside) || IsShort(disk, p.Source, shorts) {
 		t.Error("what is beside the short is taken for one")
 	}
 
@@ -176,7 +181,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != "" {
 		t.Errorf("a short removed by hand is still the clip's, at %s", got)
 	}
-	if IsShort(p.Source, short) || rendered() != 0 {
+	if IsShort(disk, p.Source, short) || rendered() != 0 {
 		t.Error("a short removed by hand is still counted")
 	}
 }
@@ -188,6 +193,7 @@ type shortsEpisode struct {
 	plan string
 }
 
+// On the real disk: ffmpeg reads the episode.
 func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 	t.Helper()
 	p, _ := searchProject(t, nil)
@@ -202,15 +208,16 @@ func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 	}
 	ep := shortsEpisode{p, plan}
 	c := ep.clip(t)
-	if err := SetThumbnail(plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
+	if err := SetThumbnail(disk, plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
 		t.Fatal(err)
 	}
 	return ep
 }
 
+// On the real disk: the plan is beside the episode ffmpeg reads.
 func (ep shortsEpisode) clip(t *testing.T) ClipView {
 	t.Helper()
-	view, err := ReadPlan(ep.plan)
+	view, err := ReadPlan(disk, ep.plan)
 	if err != nil || len(view.Clips) == 0 {
 		t.Fatalf("the plan: %v", err)
 	}
@@ -231,6 +238,8 @@ func (ep shortsEpisode) render(t *testing.T) string {
 }
 
 // files are the short and its first picture as they are on disk now.
+//
+// On the real disk: the short is a file ffmpeg wrote.
 func files(t *testing.T, short string) [2]os.FileInfo {
 	t.Helper()
 	var out [2]os.FileInfo
@@ -254,12 +263,14 @@ func untouched(t *testing.T, short string, was [2]os.FileInfo) bool {
 }
 
 // neitherClaims says whether each episode leaves the other's short alone.
+//
+// On the real disk: the shorts are files ffmpeg wrote.
 func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
 	t.Helper()
-	if IsShort(a.p.Source, bShort) {
+	if IsShort(disk, a.p.Source, bShort) {
 		t.Errorf("%s takes %s for its own", filepath.Base(a.p.Source), bShort)
 	}
-	if IsShort(b.p.Source, aShort) {
+	if IsShort(disk, b.p.Source, aShort) {
 		t.Errorf("%s takes %s for its own", filepath.Base(b.p.Source), aShort)
 	}
 }
@@ -270,6 +281,8 @@ func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
 // the clip's own name. The second render leaves the first episode's short
 // and its picture as they were, and neither clip takes the other's short
 // for its own.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 	t.Parallel()
 	shorts := ResolvePath(t.TempDir())
@@ -305,6 +318,8 @@ func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 // shorts, so the second short of the same name gets a number the way
 // Finder gives one, and its pictures go with it. A render again writes
 // over the clip's own short, under the name it has, and nothing else.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
 	t.Parallel()
 	shorts := ResolvePath(t.TempDir())
@@ -344,6 +359,8 @@ func TestTwoEpisodesOfOneNameNumberTheirShorts(t *testing.T) {
 // episode's short of the same words gets a number there. A short written
 // over by hand is no longer the clip's, because it is not the file it
 // wrote.
+//
+// On the real disk: ffmpeg reads the episodes and writes the shorts.
 func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
 	t.Parallel()
 	out := ResolvePath(t.TempDir())
@@ -368,6 +385,8 @@ func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
 // A plan is untrusted, so what it says of a short names a file of the
 // clip's own name, or that with a number, and nothing else, whatever the
 // folder.
+//
+// On the real disk: a short is a file ffmpeg wrote, looked for on the disk.
 func TestAPlanNamesNoFileButAShort(t *testing.T) {
 	t.Parallel()
 	dir := ResolvePath(t.TempDir())
@@ -398,6 +417,8 @@ func TestAPlanNamesNoFileButAShort(t *testing.T) {
 // What a render makes is no edit, so an edit made before a render is
 // undone after it as it would have been without it, and the clip is still
 // rendered afterwards.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -405,12 +426,12 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	view, err := ReadPlan(plan)
+	view, err := ReadPlan(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := view.Clips[0].ID
-	change := edited(t, filepath.Dir(plan), func() error { return SetCaptionY(plan, id, 400) })
+	change := edited(t, disk, filepath.Dir(plan), func() error { return SetCaptionY(disk, plan, id, 400) })
 	p.Base.Out = t.TempDir()
 	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
@@ -418,7 +439,7 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	if _, err := change.Undo(); err != nil {
 		t.Fatalf("the edit before the render cannot be undone: %v", err)
 	}
-	view, err = ReadPlan(plan)
+	view, err = ReadPlan(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,6 +454,8 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 // one episode with the same words, as two searches can find, get a number
 // in the episode's own out folder and in --out alike, and a render again
 // writes each over in place.
+//
+// On the real disk: ffmpeg reads the episode and writes the shorts.
 func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 	t.Parallel()
 	for _, into := range []string{"out", "--out"} {
@@ -446,7 +469,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 			}
 			c := ep.clip(t)
 			// The first clip again, under the id of another search.
-			if err := editPlan(ep.plan, func(top *object, clips []*object) error {
+			if err := editPlan(disk, ep.plan, func(top *object, clips []*object) error {
 				again := newObject()
 				for _, k := range clips[0].keys {
 					again.set(k, clips[0].values[k])
@@ -461,7 +484,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 			var was [][2]os.FileInfo
 			for range 2 {
 				ep.render(t)
-				view, err := ReadPlan(ep.plan)
+				view, err := ReadPlan(disk, ep.plan)
 				if err != nil || len(view.Clips) != 2 {
 					t.Fatalf("the plan: %v", err)
 				}
@@ -482,6 +505,8 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 // A preview rendered into the folder --out names never writes over the
 // short there: the preview keeps the clip's id in its name and the short
 // does not. The clip still says the short is its own afterwards.
+//
+// On the real disk: ffmpeg writes the short and the preview.
 func TestAPreviewLeavesTheShortAlone(t *testing.T) {
 	t.Parallel()
 	ep := newShortsEpisode(t, "folge")

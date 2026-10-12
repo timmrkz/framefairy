@@ -19,6 +19,8 @@ import (
 // one that comes back nearer the length is the clip. The answer is saved
 // with the reply, so a search that reuses the reply fits it the same way
 // and asks nothing.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "40")
@@ -58,7 +60,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 			steps = append(steps, fmt.Sprintf("%d:%s", u.N, u.Step))
 		}
 	})
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -92,7 +94,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 			t.Errorf("the second ask has no %q:\n%s", want, again[3].Content)
 		}
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
@@ -114,7 +116,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	if len(asks) != 2 {
 		t.Errorf("a reused reply asked the model %d more times", len(asks)-2)
 	}
-	if _, clips, _ := LoadClips(path); len(clips) != 1 || clips[0].Duration() < 20 {
+	if _, clips, _ := LoadClips(disk, path); len(clips) != 1 || clips[0].Duration() < 20 {
 		t.Errorf("the reused reply was not fitted: %+v", clips)
 	}
 }
@@ -122,6 +124,8 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 // A recipe that edits asks about every clip a second time, not only the
 // ones off the length, splits the thinking between the two asks, and takes
 // the edit as long as it runs no further off the length.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	// Not beside the others: it adds a recipe to the package's list.
 	edit := linesRecipe
@@ -148,7 +152,7 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -175,7 +179,7 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	if !strings.Contains(last, "Now the edit") || !strings.Contains(last, `"ganz" runs`) {
 		t.Errorf("the second ask is not the edit:\n%s", last)
 	}
-	plan, clips, err := LoadClips(path)
+	plan, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
@@ -191,6 +195,8 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 // answer, the way Gemma gave the umbrella story when asked about the
 // mirrors. That is no answer about the clip asked for, so it is asked for
 // once more, alone. A reused reply replays both answers and asks nothing.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -217,7 +223,7 @@ func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -240,7 +246,7 @@ func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	}
 	check := func(path string) {
 		t.Helper()
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(disk, path)
 		if err != nil || len(clips) != 2 {
 			t.Fatalf("clips %v %v", clips, err)
 		}

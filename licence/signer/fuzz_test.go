@@ -12,6 +12,8 @@ import (
 // it or keep exactly the whole batches in it: what is left in the file is
 // what the record holds, written as the signer writes it, it is what was
 // there minus what was dropped from the end, and it opens again the same.
+//
+// On the real disk: the signer's record is flushed and locked by the system.
 func FuzzOpenRecord(f *testing.F) {
 	pool := `{"day":"2026-10-28","signer":1,"id":"652B-757A-8DC4-F04A","fingerprint":"62fe5cd6c5086b5e1a4d9e0d2ad392f3","edition":0,"batch":1,"index":1,"of":1,"kind":"pool"}` + "\n"
 	named := `{"day":"2026-11-12","signer":1,"id":"F625-9A14-E805-9D0D","fingerprint":"0123456789abcdef0123456789abcdef","edition":0,"batch":2,"index":1,"of":1,"kind":"named","note":"review"}` + "\n"

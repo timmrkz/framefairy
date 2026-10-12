@@ -331,8 +331,10 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 // The measurement has to agree with what libass draws, or a line that fits
 // here runs over the box there. Ink is narrower than the pen travels, by
 // the bearings at either end, so the two are compared with room to spare.
+//
+// On the real disk: ffmpeg measures the captions.
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -355,6 +357,8 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 // writeCaptionFile writes an ASS file without measuring, which needs no
 // ffmpeg: no rounded box and no highlight. Captions are made from words, so
 // a caption given only its text gets one word for each word of it.
+//
+// On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func writeCaptionFile(t *testing.T, captions []Caption) string {
 	t.Helper()
 	for i, c := range captions {
@@ -368,7 +372,7 @@ func writeCaptionFile(t *testing.T, captions []Caption) string {
 				Cue{c.Start + float64(k)*share, c.Start + float64(k+1)*share, part})
 		}
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	path := filepath.Join(t.TempDir(), "clip.ass")
 	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
 	laid := LayOutCaptions(captions, ResolveStyle(overrides), "de")
@@ -488,8 +492,10 @@ func FuzzResolveStyle(f *testing.F) {
 // The box switched off in the captions column draws no box, and keeps the
 // colour it had for when it is switched on again. With it on, the box is
 // there in its colour.
+//
+// On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func TestTheBoxCanBeSwitchedOff(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	write := func(style map[string]any) string {
 		path := filepath.Join(t.TempDir(), "clip.ass")
 		laid := LayOutCaptions([]Caption{{Start: 0, End: 2, Text: "zwei worte"}}, ResolveStyle(style), "de")

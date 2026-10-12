@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 type recorder struct {
@@ -169,7 +170,8 @@ func TestPeaksNeverPromiseMoreThanWasMeasured(t *testing.T) {
 }
 
 func TestSetRejectedKeepsTheFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "clips.json")
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join(memDir(t, fsys), "clips.json")
 	original := `{
   "source": "episode.mp4",
   "custom": {"z": 1, "a": 2.50},
@@ -178,20 +180,20 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
     {"id": "02", "segments": [{"start": 3, "end": 4}]}
   ]
 }`
-	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(path, "02", true); err != nil {
+	if err := SetRejected(fsys, path, "02", true); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if clips[0].Rejected || !clips[1].Rejected {
 		t.Errorf("rejected flags %v %v", clips[0].Rejected, clips[1].Rejected)
 	}
-	body, _ := os.ReadFile(path)
+	body, _ := afero.ReadFile(fsys, path)
 	text := string(body)
 	for _, want := range []string{`"z": 1`, `"a": 2.50`, `"note": "mine"`, `"start": 1.0`, `"revision": 1`} {
 		if !strings.Contains(text, want) {
@@ -202,14 +204,14 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
 		strings.Index(text, `"z"`) > strings.Index(text, `"a"`) {
 		t.Errorf("key order changed\n%s", text)
 	}
-	if err := SetRejected(path, "02", false); err != nil {
+	if err := SetRejected(fsys, path, "02", false); err != nil {
 		t.Fatal(err)
 	}
-	body, _ = os.ReadFile(path)
+	body, _ = afero.ReadFile(fsys, path)
 	if strings.Contains(string(body), "rejected") || !strings.Contains(string(body), `"revision": 2`) {
 		t.Errorf("after keeping again\n%s", body)
 	}
-	if err := SetRejected(path, "07", true); err == nil {
+	if err := SetRejected(fsys, path, "07", true); err == nil {
 		t.Errorf("unknown clip accepted")
 	}
 }
@@ -234,37 +236,33 @@ func TestLinesForSegments(t *testing.T) {
 // records are not in there: they live in one folder of their own, so they
 // are not touched by this and outlive every episode.
 func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
-	ownTrainingDir(t)
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {
+	dir := ownTrainingDir(t)
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	work := WorkDir(source)
 	for _, name := range []string{"logs/words.json", "out/01.mp4", "cache/stills/1-000000.jpg"} {
-		path := filepath.Join(work, name)
-		_ = os.MkdirAll(filepath.Dir(path), 0o755)
-		_ = os.WriteFile(path, []byte("x"), 0o644)
+		_ = afero.WriteFile(fsys, filepath.Join(work, name), []byte("x"), 0o644)
 	}
-	records := filepath.Join(TrainingDir(), "plans.jsonl")
-	_ = os.MkdirAll(filepath.Dir(records), 0o755)
-	if err := os.WriteFile(records, []byte("{}\n"), 0o644); err != nil {
+	records := filepath.Join(dir, "plans.jsonl")
+	if err := afero.WriteFile(TrainingFiles(), records, []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := DeleteWork(source); err != nil {
+	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if exists(work) {
+	if exists(fsys, work) {
 		t.Errorf("the work folder is still there")
 	}
-	if !exists(source) {
+	if !exists(fsys, source) {
 		t.Errorf("the episode itself was deleted")
 	}
-	if !exists(records) {
+	if !exists(TrainingFiles(), records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
-	if err := DeleteWork(filepath.Join(dir, "missing.mp4")); err != nil {
+	if err := DeleteWork(fsys, "/home/tim/missing.mp4"); err != nil {
 		t.Errorf("missing work folder: %v", err)
 	}
 }
@@ -319,19 +317,20 @@ func TestDiffClip(t *testing.T) {
 }
 
 func TestTrimClipSnapsToWords(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	words := []Cue{{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"}, {14, 14.5, "fünf"}}
 	tr := &Transcript{Words: words}
-	path := filepath.Join(t.TempDir(), "clips.json")
+	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
 		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 300}]}]}`
-	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Start moved earlier onto "eins", end moved later onto "vier".
-	if err := TrimClip(path, "01", 9.9, 13.4, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(fsys, path, "01", 9.9, 13.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,14 +343,14 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 	}
 	// Trimming the end back past the second piece drops it. "zwei" ends at
 	// 11 and the next word starts at 12, so the edge is 11.1.
-	if err := TrimClip(path, "01", 10, 11.2, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(fsys, path, "01", 10, 11.2, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(fsys, path)
 	if segs := clips[0].Segments; len(segs) != 1 || segs[0].Start != 9.9 || segs[0].End != 11.1 {
 		t.Errorf("after trimming in %+v", segs)
 	}
-	if err := TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords); err == nil {
+	if err := TrimClip(fsys, path, "01", 12, 12.2, tr, 0.1, ToWords); err == nil {
 		t.Errorf("a clip under a second was accepted")
 	}
 }
@@ -360,20 +359,21 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 // the same as the edge of a cut. It may stop inside a word, which is what
 // taking a breath off the end of a clip needs. The checks still hold.
 func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	words := []Cue{{10, 10.5, "eins"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}, {13, 13.5, "vier"}}
 	tr := &Transcript{Words: words}
-	path := filepath.Join(t.TempDir(), "clips.json")
+	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
 		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 300}]}]}`
-	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// 10.24 is inside "eins" and 12.84 is in the pause before "vier", so
 	// snapping would move both.
-	if err := TrimClip(path, "01", 10.24, 12.84, tr, 0.1, ToFrames); err != nil {
+	if err := TrimClip(fsys, path, "01", 10.24, 12.84, tr, 0.1, ToFrames); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,13 +381,13 @@ func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 	if len(segs) != 2 || segs[0].Start != 10.24 || segs[1].End != 12.84 {
 		t.Errorf("segments %+v", segs)
 	}
-	if err := TrimClip(path, "01", 12, 12.5, tr, 0.1, ToFrames); err == nil {
+	if err := TrimClip(fsys, path, "01", 12, 12.5, tr, 0.1, ToFrames); err == nil {
 		t.Errorf("a clip under a second was accepted")
 	}
-	if err := TrimClip(path, "01", -3, 12.5, tr, 0.1, ToFrames); err != nil {
+	if err := TrimClip(fsys, path, "01", -3, 12.5, tr, 0.1, ToFrames); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(fsys, path)
 	if clips[0].Segments[0].Start != 0 {
 		t.Errorf("a clip starts before the episode: %+v", clips[0].Segments)
 	}
@@ -421,20 +421,21 @@ func TestTouchingRunsCutOnlyThePause(t *testing.T) {
 }
 
 func TestWordCorrections(t *testing.T) {
-	dir := t.TempDir()
+	fsys := afero.NewMemMapFs()
+	dir := memDir(t, fsys)
 	logs := filepath.Join(dir, "ep.framefairy", "logs")
-	_ = os.MkdirAll(logs, 0o755)
+	_ = fsys.MkdirAll(logs, 0o755)
 	words := []Cue{{10, 10.5, "Tipfeler"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
 	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
 	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.1}]},` +
 		` {"id": "02", "slug": "b", "segments": [{"start": 11.9, "end": 12.5}]}]}`
 	path := filepath.Join(logs, "clips.json")
-	_ = os.WriteFile(path, []byte(plan), 0o644)
+	_ = afero.WriteFile(fsys, path, []byte(plan), 0o644)
 
-	if err := SetWordText(logs, 10.0004, "  Tippfehler ", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.0004, "  Tippfehler ", tr); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ := LoadClips(path)
+	_, clips, _ := LoadClips(fsys, path)
 	one, two := Said(clips[0], tr.Words), Said(clips[1], tr.Words)
 	if len(one) != 2 || one[0].Text != "Tippfehler" || len(two) != 1 || two[0].Text != "drei" {
 		t.Errorf("clip words %v %v", one, two)
@@ -442,20 +443,20 @@ func TestWordCorrections(t *testing.T) {
 	// A transcript read again from what the recogniser heard takes the
 	// correction from corrections.json.
 	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(fsys, logs))
 	if again.Words[0].Text != "Tippfehler" {
 		t.Errorf("the correction was not kept: %v", again.Words)
 	}
 	// A trim keeps the fix, because the clip reads its words from the
 	// transcript.
-	if err := TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(fsys, path, "01", 10, 12.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(fsys, path)
 	if said := Said(clips[0], tr.Words); len(said) == 0 || said[0].Text != "Tippfehler" {
 		t.Errorf("trim lost the correction: %v", said)
 	}
-	if err := SetWordText(logs, 99, "x", tr); err == nil {
+	if err := SetWordText(fsys, logs, 99, "x", tr); err == nil {
 		t.Errorf("a word that does not exist was accepted")
 	}
 }
@@ -465,9 +466,10 @@ func TestWordCorrections(t *testing.T) {
 // correcting it again brings it back, and so does reading the transcript
 // again from what the recogniser heard.
 func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
-	dir := t.TempDir()
+	fsys := afero.NewMemMapFs()
+	dir := memDir(t, fsys)
 	logs := filepath.Join(dir, "ep.framefairy", "logs")
-	_ = os.MkdirAll(logs, 0o755)
+	_ = fsys.MkdirAll(logs, 0o755)
 	words := []Cue{{10, 10.5, "äh"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
 	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
 	clip := Clip{Segments: []Segment{{Start: 9.9, End: 12.5}}}
@@ -479,7 +481,7 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 
-	if err := SetWordText(logs, 10.2, "  ", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.2, "  ", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := said(); got != "zwei drei" {
@@ -489,11 +491,11 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 		t.Errorf("the word heard there is %+v, %v", w, ok)
 	}
 	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(fsys, logs))
 	if len(again.Words) != 2 || again.Words[0].Text != "zwei" {
 		t.Errorf("the removal was not kept: %v", again.Words)
 	}
-	if err := SetWordText(logs, 10.2, "ja", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.2, "ja", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := said(); got != "ja zwei drei" {
@@ -506,6 +508,7 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 // laid out the way it was. It ended at the word before, and the words
 // after went on to the next caption, with nothing on screen between.
 func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	heard := []Cue{{60, 60.4, "wurde"}, {60.45, 61, "irgendein"}, {61.05, 61.4, "Typ"},
 		{61.45, 62.1, "auf"}, {62.15, 62.4, "dem"}, {62.45, 63, "Schulhof."},
 		{64, 64.4, "Und"}, {64.45, 64.9, "dann"}}
@@ -524,9 +527,9 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	}
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
 	before := laid(tr)
-	logs := filepath.Join(t.TempDir(), "logs")
-	_ = os.MkdirAll(logs, 0o755)
-	if err := SetWordText(logs, 61.7, "", tr); err != nil {
+	logs := filepath.Join(memDir(t, fsys), "logs")
+	_ = fsys.MkdirAll(logs, 0o755)
+	if err := SetWordText(fsys, logs, 61.7, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "Typ auf dem", "Typ dem", 1)
@@ -540,6 +543,7 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 // frontend/preview/walks: removing "auf" brought "irgendein" up from the
 // caption after.
 func TestRemovingAWordPullsNoWordUp(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
 		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
 		{61.95, 62.2, "Typ"}}
@@ -556,9 +560,9 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	if !strings.Contains(before, "Schulhof]") {
 		t.Fatalf("the test needs a break after Schulhof: %s", before)
 	}
-	logs := filepath.Join(t.TempDir(), "logs")
-	_ = os.MkdirAll(logs, 0o755)
-	if err := SetWordText(logs, 60.6, "", tr); err != nil {
+	logs := filepath.Join(memDir(t, fsys), "logs")
+	_ = fsys.MkdirAll(logs, 0o755)
+	if err := SetWordText(fsys, logs, 60.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
@@ -569,7 +573,7 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	// the way it does when its left edge is dragged in over the word, and
 	// the caption before it still goes when it did. Tim asked for the two
 	// to end the same.
-	if err := SetWordText(logs, 61.5, "", tr); err != nil {
+	if err := SetWordText(fsys, logs, 61.5, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want = strings.Replace(want, "[1.55-2.70 irgendein Typ]", "[2.05-2.70 Typ]", 1)
@@ -583,6 +587,7 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 // "vielleicht" corrected to "auf" and removed took ten letters' room again,
 // and the caption overflowed.
 func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 61.2, "vielleicht"},
 		{61.25, 61.4, "dem"}, {61.45, 61.9, "Schulhof"}, {61.95, 62.4, "irgendein"},
 		{62.45, 62.7, "Typ"}}
@@ -594,14 +599,14 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	logs := filepath.Join(t.TempDir(), "logs")
-	_ = os.MkdirAll(logs, 0o755)
+	logs := filepath.Join(memDir(t, fsys), "logs")
+	_ = fsys.MkdirAll(logs, 0o755)
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	if err := SetWordText(logs, 60.8, "auf", tr); err != nil {
+	if err := SetWordText(fsys, logs, 60.8, "auf", tr); err != nil {
 		t.Fatal(err)
 	}
 	before := laid(tr)
-	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+	if err := SetWordText(fsys, logs, 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
@@ -610,12 +615,12 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 	}
 	// And read again from the file, the same.
 	again := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(fsys, logs))
 	if got := laid(again); got != want {
 		t.Errorf("read again\n got %s\nwant %s", got, want)
 	}
 	// Removed a second time, it keeps what it read the first time.
-	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+	if err := SetWordText(fsys, logs, 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := laid(tr); got != want {
@@ -627,6 +632,7 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.
 func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
+	fsys := afero.NewMemMapFs()
 	heard := []Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}, {11.5, 12, "echtes"}}
 	for _, c := range []struct {
 		name   string
@@ -644,15 +650,15 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": removedMark + "ein"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			logs := filepath.Join(t.TempDir(), "logs")
-			_ = os.MkdirAll(logs, 0o755)
+			logs := filepath.Join(memDir(t, fsys), "logs")
+			_ = fsys.MkdirAll(logs, 0o755)
 			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
 			for _, at := range c.remove {
-				if err := SetWordText(logs, at, "", tr); err != nil {
+				if err := SetWordText(fsys, logs, at, "", tr); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := SetWordText(logs, c.at, c.text, tr); err != nil {
+			if err := SetWordText(fsys, logs, c.at, c.text, tr); err != nil {
 				t.Fatal(err)
 			}
 			var got []string
@@ -662,7 +668,7 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 			if strings.Join(got, " ") != c.want {
 				t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), c.want)
 			}
-			if fixes := LoadCorrections(logs); !maps.Equal(fixes, c.fixes) {
+			if fixes := LoadCorrections(fsys, logs); !maps.Equal(fixes, c.fixes) {
 				t.Errorf("corrections %v, want %v", fixes, c.fixes)
 			}
 		})
@@ -742,19 +748,17 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 // is still the one moment, and the words split that moment between
 // however many words now stand in it.
 func TestAnAddedWordReachesTheCaptions(t *testing.T) {
-	dir := t.TempDir()
-	logs := filepath.Join(dir, "ep.framefairy", "logs")
-	_ = os.MkdirAll(logs, 0o755)
+	fsys, logs := afero.NewMemMapFs(), "/home/tim/ep.framefairy/logs"
 
 	words := []Cue{{10, 10.4, "mach"}, {10.5, 11.1, "was"}, {11.2, 11.6, "nicht"}}
 	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
 	plan := `{"clips": [{"id": "01", "slug": "a", "segments": [{"start": 9.9, "end": 11.8}]}]}`
 	path := filepath.Join(logs, "clips.json")
-	_ = os.WriteFile(path, []byte(plan), 0o644)
+	_ = afero.WriteFile(fsys, path, []byte(plan), 0o644)
 
 	// The captions of the clip, built the way a render builds them.
 	captions := func() []Caption {
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -774,7 +778,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// A word is added: what was heard as one word was two.
-	if err := SetWordText(logs, 10.5, "was wo", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.5, "was wo", tr); err != nil {
 		t.Fatalf("adding a word: %v", err)
 	}
 	added := said()
@@ -801,7 +805,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// Taking it away again is the same correction the other way.
-	if err := SetWordText(logs, 10.5, "was", tr); err != nil {
+	if err := SetWordText(fsys, logs, 10.5, "was", tr); err != nil {
 		t.Fatalf("taking the word away: %v", err)
 	}
 	gone := said()
@@ -814,15 +818,16 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 }
 
 func TestCropByHand(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "clips.json")
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"clips": [{"id": "01", "segments": [` +
 		`{"start": 0, "end": 5, "crop_x": 400}, {"start": 5, "end": 9, "crop_x": 1200}, ` +
 		`{"start": 10, "end": 14, "crop_x": 400}, {"start": 14, "end": 18}]}]}`
-	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	crops := func() string {
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -840,37 +845,37 @@ func TestCropByHand(t *testing.T) {
 		return out
 	}
 	// Moving the first angle moves both of its pieces, not the others.
-	if err := SetCrop(path, "01", 2, 501, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 2, 501, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "500* 1200 500* centre " {
 		t.Errorf("after moving %q", got)
 	}
 	// Moving it again keeps the automatic placement from the first time.
-	if err := SetCrop(path, "01", 11, 600, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 11, 600, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	// A centred piece can be moved and reset too.
-	if err := SetCrop(path, "01", 16, 100, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(fsys, path, "01", 16, 100, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "600* 1200 600* 100* " {
 		t.Errorf("after moving again %q", got)
 	}
-	if err := ResetCrop(path, "01", 3); err != nil {
+	if err := ResetCrop(fsys, path, "01", 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetCrop(path, "01", 15); err != nil {
+	if err := ResetCrop(fsys, path, "01", 15); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "400 1200 400 centre " {
 		t.Errorf("after resetting %q", got)
 	}
-	body, _ := os.ReadFile(path)
+	body, _ := afero.ReadFile(fsys, path)
 	if strings.Contains(string(body), "crop_x_auto") {
 		t.Errorf("reset left the automatic value behind\n%s", body)
 	}
-	if err := SetCrop(path, "01", 2, -4, SourceInfo{}, 0); err == nil {
+	if err := SetCrop(fsys, path, "01", 2, -4, SourceInfo{}, 0); err == nil {
 		t.Errorf("a negative crop was accepted")
 	}
 }

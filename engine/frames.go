@@ -3,6 +3,8 @@ package engine
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/spf13/afero"
 )
 
 // Log is the log the project's steps write to.
@@ -16,12 +18,12 @@ func (p *Project) Engine() *Engine { return p.engine }
 // clip sets, captions, previews and renders. The training records are not
 // in there, they live in one folder of their own, so they outlive it. The
 // episode file itself is never touched.
-func DeleteWork(source string) error {
+func DeleteWork(fsys afero.Fs, source string) error {
 	work := WorkDir(source)
 	if filepath.Ext(work) != ".framefairy" || filepath.Clean(work) == filepath.Clean(source) {
 		return renderErr("refusing to delete %s", work)
 	}
-	if err := os.RemoveAll(work); err != nil && !os.IsNotExist(err) {
+	if err := fsys.RemoveAll(work); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

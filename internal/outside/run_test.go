@@ -219,6 +219,8 @@ func TestEveryVerbIsDone(t *testing.T) {
 }
 
 // setUp makes this Mac one whose setup is done, the way Tim's is.
+//
+// On the real disk: the built app reads its settings and the speech model from this Mac's home folder.
 func (m *mac) setUp(_ []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -390,6 +392,8 @@ func (m *mac) start(_ []string) error {
 
 // addVideo makes a video of a test picture and a tone, with the ffmpeg the
 // app carries, and adds it the way Add does once a file is picked.
+//
+// On the real disk: ffmpeg makes the video and the built app reads it.
 func (m *mac) addVideo(a []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -558,6 +562,7 @@ func say(level, title, text string) {
 	fmt.Printf("::%s title=%s::%s\n", level, prop.Replace(title), esc.Replace(text))
 }
 
+// On the real disk: the log is what the built app wrote on this Mac.
 func showLog(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	b, err := os.ReadFile(filepath.Join(home, "Library", "Logs", "FrameFairy-outside.log"))

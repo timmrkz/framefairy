@@ -3,27 +3,25 @@ package train
 import (
 	"bufio"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
-func writeFile(t *testing.T, path, body string) {
+func writeFile(t *testing.T, fsys afero.Fs, path, body string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func readJSONL(t *testing.T, path string) []map[string]any {
+func readJSONL(t *testing.T, fsys afero.Fs, path string) []map[string]any {
 	t.Helper()
-	f, err := os.Open(path)
+	f, err := fsys.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +55,10 @@ const plan2 = `{"plan_id":"p2","example_key":"ex1","prompt_version":1,"system":"
 	`{"cid":"02","slug":"e","title":"E","reason":"r","keep":[[14,15]],"segments":[[50,55]]}]}`
 
 func TestExportCountsEachSignalOnce(t *testing.T) {
-	root := t.TempDir()
+	fsys, root := afero.NewMemMapFs(), "/home/tim/records"
 	dir := filepath.Join(root, "ep1.framefairy", "training")
-	writeFile(t, filepath.Join(dir, "plans.jsonl"), plan1+"\n"+plan2+"\nnot json\n")
-	writeFile(t, filepath.Join(dir, "decisions.jsonl"), strings.Join([]string{
+	writeFile(t, fsys, filepath.Join(dir, "plans.jsonl"), plan1+"\n"+plan2+"\nnot json\n")
+	writeFile(t, fsys, filepath.Join(dir, "decisions.jsonl"), strings.Join([]string{
 		// 01 rendered as proposed, twice, once in each plan: one full hit.
 		`{"plan_id":"p1","cid":"01","event":"rendered","final":{"lines":[[1,3]],"segments":[[0,9]]},"changes":{"unchanged":true}}`,
 		`{"plan_id":"p2","cid":"01","event":"rendered","final":{"lines":[[1,3]],"segments":[[0,9]]},"changes":{"unchanged":true}}`,
@@ -80,21 +78,21 @@ func TestExportCountsEachSignalOnce(t *testing.T) {
 	// A copy of the same episode under another name counts once.
 	copyDir := filepath.Join(root, "copy.framefairy", "training")
 	for _, name := range []string{"plans.jsonl", "decisions.jsonl"} {
-		body, _ := os.ReadFile(filepath.Join(dir, name))
-		writeFile(t, filepath.Join(copyDir, name), string(body))
+		body, _ := afero.ReadFile(fsys, filepath.Join(dir, name))
+		writeFile(t, fsys, filepath.Join(copyDir, name), string(body))
 	}
 
-	episodes, err := FindEpisodes(root)
+	episodes, err := FindEpisodes(fsys, root)
 	if err != nil || len(episodes) != 2 {
 		t.Fatalf("episodes %v %v", episodes, err)
 	}
 	out := filepath.Join(root, "dataset")
-	m, err := Export(episodes, out, 0)
+	m, err := Export(fsys, episodes, out, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sft := readJSONL(t, filepath.Join(out, "train", "sft.jsonl"))
-	dpo := readJSONL(t, filepath.Join(out, "train", "dpo.jsonl"))
+	sft := readJSONL(t, fsys, filepath.Join(out, "train", "sft.jsonl"))
+	dpo := readJSONL(t, fsys, filepath.Join(out, "train", "dpo.jsonl"))
 	if len(sft) != 1 || len(dpo) != 3 {
 		t.Fatalf("%d sft and %d dpo records, want 1 and 3", len(sft), len(dpo))
 	}
@@ -158,7 +156,7 @@ func TestExportCountsEachSignalOnce(t *testing.T) {
 	})
 
 	t.Run("the split", func(t *testing.T) {
-		if len(readJSONL(t, filepath.Join(out, "eval", "sft.jsonl"))) != 0 {
+		if len(readJSONL(t, fsys, filepath.Join(out, "eval", "sft.jsonl"))) != 0 {
 			t.Errorf("eval should be empty with share 0")
 		}
 		if !isEval("k1", 1.0) || isEval("k1", 0) {
@@ -171,16 +169,16 @@ func TestExportCountsEachSignalOnce(t *testing.T) {
 // its own format: no system message, since middle sends none, and a line
 // a story with where it starts, a line inside it and where it ends.
 func TestAMiddleExampleIsWrittenAsMiddleAnswers(t *testing.T) {
-	root := t.TempDir()
+	fsys, root := afero.NewMemMapFs(), "/home/tim/records"
 	dir := filepath.Join(root, "ep.framefairy", "training")
-	writeFile(t, filepath.Join(dir, "plans.jsonl"),
+	writeFile(t, fsys, filepath.Join(dir, "plans.jsonl"),
 		`{"plan_id":"m1","prompt_version":5,"system":"","prompt":"M",`+
 			`"episode":{"file":"ep.mp4","key":"k"},"candidates":[`+
 			`{"cid":"01","title":"A","keep":[[1,6]],"heart":[3,3]},`+
 			`{"cid":"02","title":"B","keep":[[10,20]],"heart":[12,13]},`+
 			`{"cid":"03","title":"C","keep":[[30,39]],"heart":[33,33]},`+
 			`{"cid":"04","title":"D","keep":[[50,55]],"heart":[52,52]}]}`+"\n")
-	writeFile(t, filepath.Join(dir, "decisions.jsonl"), strings.Join([]string{
+	writeFile(t, fsys, filepath.Join(dir, "decisions.jsonl"), strings.Join([]string{
 		`{"plan_id":"m1","cid":"01","event":"rendered","final":{"lines":[[1,6]]},"changes":{"unchanged":true}}`,
 		// Started later, past the line inside it.
 		`{"plan_id":"m1","cid":"02","event":"rendered","final":{"lines":[[14,20]]},"changes":{"unchanged":false}}`,
@@ -188,15 +186,15 @@ func TestAMiddleExampleIsWrittenAsMiddleAnswers(t *testing.T) {
 		`{"plan_id":"m1","cid":"03","event":"rendered","final":{"lines":[[30,34],[35,39]]},"changes":{"unchanged":false}}`,
 		`{"plan_id":"m1","cid":"04","event":"rejected"}`,
 	}, "\n")+"\n")
-	episodes, err := FindEpisodes(root)
+	episodes, err := FindEpisodes(fsys, root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(root, "dataset")
-	if _, err := Export(episodes, out, 0); err != nil {
+	if _, err := Export(fsys, episodes, out, 0); err != nil {
 		t.Fatal(err)
 	}
-	sft := readJSONL(t, filepath.Join(out, "train", "sft.jsonl"))
+	sft := readJSONL(t, fsys, filepath.Join(out, "train", "sft.jsonl"))
 	if len(sft) != 1 {
 		t.Fatalf("%d sft records, want 1", len(sft))
 	}
@@ -208,7 +206,7 @@ func TestAMiddleExampleIsWrittenAsMiddleAnswers(t *testing.T) {
 		t.Errorf("the answer is %q", got)
 	}
 	var pairs []string
-	for _, d := range readJSONL(t, filepath.Join(out, "train", "dpo.jsonl")) {
+	for _, d := range readJSONL(t, fsys, filepath.Join(out, "train", "dpo.jsonl")) {
 		chosen := d["chosen"].([]any)[0].(map[string]any)["content"].(string)
 		rejected := d["rejected"].([]any)[0].(map[string]any)["content"].(string)
 		pairs = append(pairs, d["meta"].(map[string]any)["kind"].(string)+": "+chosen+" over "+rejected)
@@ -246,15 +244,15 @@ func TestTheSplitIsTheSameEverywhere(t *testing.T) {
 // TestFindEpisodesTakesOnlyTrainingFolders keeps the export from walking
 // into whatever else lives next to an episode.
 func TestFindEpisodesTakesOnlyTrainingFolders(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "b.framefairy", "training", "plans.jsonl"), plan1+"\n")
-	writeFile(t, filepath.Join(root, "a.framefairy", "training", "plans.jsonl"), plan1+"\n")
+	fsys, root := afero.NewMemMapFs(), "/home/tim/records"
+	writeFile(t, fsys, filepath.Join(root, "b.framefairy", "training", "plans.jsonl"), plan1+"\n")
+	writeFile(t, fsys, filepath.Join(root, "a.framefairy", "training", "plans.jsonl"), plan1+"\n")
 	// No plans, not a .framefairy folder, and a training folder nested deeper.
-	writeFile(t, filepath.Join(root, "c.framefairy", "training", "decisions.jsonl"), "")
-	writeFile(t, filepath.Join(root, "notes", "training", "plans.jsonl"), plan1+"\n")
-	writeFile(t, filepath.Join(root, "d.framefairy", "logs", "clips.json"), "{}")
+	writeFile(t, fsys, filepath.Join(root, "c.framefairy", "training", "decisions.jsonl"), "")
+	writeFile(t, fsys, filepath.Join(root, "notes", "training", "plans.jsonl"), plan1+"\n")
+	writeFile(t, fsys, filepath.Join(root, "d.framefairy", "logs", "clips.json"), "{}")
 
-	episodes, err := FindEpisodes(root)
+	episodes, err := FindEpisodes(fsys, root)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -176,23 +177,23 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.
 		dir := filepath.Join(work, "experiments", name)
-		if body, err := os.ReadFile(filepath.Join(logs, "plan-prompt.txt")); err == nil &&
-			!modifiedBefore(filepath.Join(logs, "plan-prompt.txt"), began) {
+		if body, err := afero.ReadFile(e.Files, filepath.Join(logs, "plan-prompt.txt")); err == nil &&
+			!modifiedBefore(e.Files, filepath.Join(logs, "plan-prompt.txt"), began) {
 			run.PromptChars = runeLen(string(body))
-			keepCopy(dir, "prompt.txt", body)
+			keepCopy(e.Files, dir, "prompt.txt", body)
 		}
 		var reply string
-		reply, run.Use = lastLocalAnswer(logs, began)
-		if body, err := os.ReadFile(reply); reply != "" && err == nil {
-			keepCopy(dir, "reply.json", body)
+		reply, run.Use = lastLocalAnswer(e.Files, logs, began)
+		if body, err := afero.ReadFile(e.Files, reply); reply != "" && err == nil {
+			keepCopy(e.Files, dir, "reply.json", body)
 		}
-		run.Plan = newestPlan(dir, began)
+		run.Plan = newestPlan(e.Files, dir, began)
 		if run.Plan != "" {
-			heard, err := SavedTranscript(opts.Source, logs, opts.ASRModel, opts.SilenceDB)
+			heard, err := SavedTranscript(e.Files, opts.Source, logs, opts.ASRModel, opts.SilenceDB)
 			if err != nil {
 				heard = &Transcript{}
 			}
-			run.Clips = foundClips(run.Plan, heard.Words)
+			run.Clips = foundClips(e.Files, run.Plan, heard.Words)
 		}
 		runs = append(runs, run)
 	}
@@ -204,26 +205,26 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 	}
 	report := filepath.Join(work, "experiments",
 		"compare-"+time.Now().Format("2006-01-02-150405")+".md")
-	if err := os.MkdirAll(filepath.Dir(report), 0o755); err != nil {
+	if err := e.Files.MkdirAll(filepath.Dir(report), 0o755); err != nil {
 		return runs, "", err
 	}
-	if err := os.WriteFile(report, []byte(compareReport(opts, runs)), 0o644); err != nil {
+	if err := afero.WriteFile(e.Files, report, []byte(compareReport(opts, runs)), 0o644); err != nil {
 		return runs, "", err
 	}
 	return runs, report, nil
 }
 
 // modifiedBefore is true for a file last written before t, or not there.
-func modifiedBefore(path string, t time.Time) bool {
-	info, err := os.Stat(path)
+func modifiedBefore(fsys afero.Fs, path string, t time.Time) bool {
+	info, err := fsys.Stat(path)
 	return err != nil || info.ModTime().Before(t)
 }
 
 // keepCopy writes a copy into dir. A copy that cannot be written costs the
 // report nothing, so it is only left out.
-func keepCopy(dir, name string, body []byte) {
-	if os.MkdirAll(dir, 0o755) == nil {
-		_ = os.WriteFile(filepath.Join(dir, name), body, 0o644)
+func keepCopy(fsys afero.Fs, dir, name string, body []byte) {
+	if fsys.MkdirAll(dir, 0o755) == nil {
+		_ = afero.WriteFile(fsys, filepath.Join(dir, name), body, 0o644)
 	}
 }
 
@@ -243,12 +244,12 @@ type modelUse struct {
 // lastLocalAnswer finds the answer saved since began and reads what the
 // local model said about it. It is all zero for the API, and the path empty
 // for an answer reused.
-func lastLocalAnswer(logs string, began time.Time) (path string, use modelUse) {
-	matches, _ := filepath.Glob(filepath.Join(logs, "reply-*.json"))
+func lastLocalAnswer(fsys afero.Fs, logs string, began time.Time) (path string, use modelUse) {
+	matches, _ := afero.Glob(fsys, filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
 	for _, m := range matches {
-		info, err := os.Stat(m)
+		info, err := fsys.Stat(m)
 		if err != nil || info.ModTime().Before(began) || info.ModTime().Before(at) {
 			continue
 		}
@@ -257,7 +258,7 @@ func lastLocalAnswer(logs string, began time.Time) (path string, use modelUse) {
 	if newest == "" {
 		return "", use
 	}
-	body, err := os.ReadFile(newest)
+	body, err := afero.ReadFile(fsys, newest)
 	if err != nil {
 		return "", use
 	}
@@ -295,15 +296,15 @@ func lastLocalAnswer(logs string, began time.Time) (path string, use modelUse) {
 }
 
 // newestPlan is the plan written in dir since began.
-func newestPlan(dir string, began time.Time) string {
-	matches, _ := filepath.Glob(filepath.Join(dir, "clips*.json"))
+func newestPlan(fsys afero.Fs, dir string, began time.Time) string {
+	matches, _ := afero.Glob(fsys, filepath.Join(dir, "clips*.json"))
 	sort.Slice(matches, func(a, b int) bool {
-		ia, _ := os.Stat(matches[a])
-		ib, _ := os.Stat(matches[b])
+		ia, _ := fsys.Stat(matches[a])
+		ib, _ := fsys.Stat(matches[b])
 		return ia != nil && ib != nil && ia.ModTime().After(ib.ModTime())
 	})
 	for _, m := range matches {
-		if info, err := os.Stat(m); err == nil && !info.ModTime().Before(began) {
+		if info, err := fsys.Stat(m); err == nil && !info.ModTime().Before(began) {
 			return m
 		}
 	}
@@ -312,8 +313,8 @@ func newestPlan(dir string, began time.Time) string {
 
 // foundClips reads a plan the way the engine does, and writes each clip
 // out as it is heard, in the episode's words.
-func foundClips(path string, words []Cue) []FoundClip {
-	plan, clips, err := LoadClips(path)
+func foundClips(fsys afero.Fs, path string, words []Cue) []FoundClip {
+	plan, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		return nil
 	}
