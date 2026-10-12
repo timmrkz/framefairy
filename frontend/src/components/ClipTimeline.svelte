@@ -25,6 +25,7 @@
     type ClipEntry,
     type Word,
     type CaptionCue,
+    type CropMark,
   } from "../lib/api";
   import {
     heardIn,
@@ -33,6 +34,7 @@
     endInEpisode,
     frameAt,
     frameMiddle,
+    frameBegins,
     insideClip,
     litWord,
     type CaptionDraft,
@@ -54,6 +56,7 @@
     measured = 0,
     measuredParts = [],
     time,
+    shown = NaN,
     locked = false,
     frame = 1 / 30,
     frameStart = 0,
@@ -74,6 +77,8 @@
     onshape,
     thumbnails = [],
     onthumbnail,
+    cropMarks = [],
+    oncropmark,
     marks = [],
     hovered = "",
     onhover,
@@ -102,6 +107,10 @@
     measured?: number;
     measuredParts?: [number, number][];
     time: number;
+    // Where the frame on the video preview begins, the frame a mark lights
+    // for, which at the end of a clip played through is its last frame
+    // while the playhead stands past it. NaN goes by the playhead.
+    shown?: number;
     locked?: boolean;
     // One frame of the episode, which is what an arrow key is worth.
     frame?: number;
@@ -177,6 +186,13 @@
     // A thumbnail dragged to another frame, from where it was to where it
     // was let go, both in the episode.
     onthumbnail?: (from: number, to: number) => Promise<void>;
+    // The clip's keyframes, each a crop placed by hand on one frame. Each
+    // is a diamond on the foot line of the track, under the thumbnails. Plan
+    // row 3.26.
+    cropMarks?: CropMark[];
+    // A keyframe dragged to another frame, from where it was to where it
+    // was let go, or removed, with to below nought.
+    oncropmark?: (from: number, to: number) => Promise<void>;
     // Every clip of the episode, the way the range picker has them, so
     // the timeline zoomed out shows where the others are. The chosen one
     // is the frame and has no mark.
@@ -1415,16 +1431,23 @@
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,
   // and the step is round and wide enough that the labels never crowd.
-  // A thumbnail being dragged. It is drawn where the hand is, the playhead
-  // goes with it so the video preview shows the frame under the hand, and
-  // it stays where it was let go until the clip comes back with it saved.
-  let thumbDrag = $state<null | { from: number; to: number }>(null);
-  const thumbMarks = $derived(
-    thumbnails.map((at) => ({
-      at,
-      shown: thumbDrag && thumbDrag.from === at ? thumbDrag.to : at,
-    })),
+  // A thumbnail or a keyframe being dragged. It is drawn where the hand
+  // is, the playhead goes with it so the video preview shows the frame
+  // under the hand, and it stays where it was let go until the clip comes
+  // back with it saved. The two are one kind of mark, taken hold of,
+  // dragged and removed the same way.
+  type MarkKind = "thumbnail" | "crop";
+  let markDrag = $state<null | { kind: MarkKind; from: number; to: number }>(null);
+  const shownAt = (kind: MarkKind, at: number) =>
+    markDrag && markDrag.kind === kind && markDrag.from === at ? markDrag.to : at;
+  const thumbMarks = $derived(thumbnails.map((at) => ({ at, shown: shownAt("thumbnail", at) })));
+  const cropDots = $derived(
+    cropMarks
+      .map((m) => ({ at: m.at, shown: shownAt("crop", m.at) }))
+      .filter((m) => m.shown >= view.from && m.shown <= view.to),
   );
+  const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
+
   // Where each rotated stretch of the clip starts, and how far it is
   // rotated: the first piece of a part, or the piece where a part that
   // had its cut put back turns, see lib/rotate.ts.
@@ -1438,14 +1461,17 @@
       .filter((r) => r.starts && r.rotate !== 0),
   );
 
-  // The frame the playhead is in, which is how a mark knows it is the one
-  // on screen. A state, never a distance.
-  const playFrame = $derived(frameAt(time, frame, frameStart));
+  // The frame on the video preview, which is how a mark knows it is the
+  // one on screen. A state, never a distance.
+  const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
 
-  // The middle of the frame a moment falls in, inside a piece the clip
-  // keeps: a moment that was cut out is not in the short, so a mark held
-  // over a cut stays at the edge of the piece nearest the hand.
-  function thumbFrame(t: number): number {
+  // The frame a moment falls in, inside a piece the clip keeps: a moment
+  // that was cut out is not in the short, so a mark held over a cut stays
+  // at the edge of the piece nearest the hand. Where on the frame is where
+  // the engine keeps the mark, the middle for a thumbnail and the start
+  // for a keyframe, so a mark held is drawn where it stays once let go,
+  // and never past the clip's edge.
+  function markFrame(kind: MarkKind, t: number): number {
     const mid = (u: number) => frameMiddle(frameAt(u, frame, frameStart), frame, frameStart);
     let best = mid(t);
     let gap = Infinity;
@@ -1459,10 +1485,10 @@
         best = at;
       }
     }
-    return best;
+    return kind === "crop" ? frameBegins(frameAt(best, frame, frameStart), frame, frameStart) : best;
   }
 
-  function grabThumb(at: number, event: PointerEvent) {
+  function grabMark(kind: MarkKind, at: number, event: PointerEvent) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1471,21 +1497,21 @@
     const startX = event.clientX;
     let moved = false;
     const move = (e: PointerEvent) => {
-      if (locked || !onthumbnail) return;
+      if (locked || !markChange(kind)) return;
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      const to = thumbFrame(timeAt(e.clientX));
-      thumbDrag = { from: at, to };
+      const to = markFrame(kind, timeAt(e.clientX));
+      markDrag = { kind, from: at, to };
       seekSoon(to);
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      const d = thumbDrag;
+      const d = markDrag;
       // A click puts the playhead on it, so the video preview shows it.
       if (!moved || !d) {
-        thumbDrag = null;
+        markDrag = null;
         onseek(at);
         return;
       }
@@ -1493,18 +1519,26 @@
       queued = 0;
       onseek(d.to);
       if (frameAt(d.to, frame, frameStart) === frameAt(d.from, frame, frameStart)) {
-        thumbDrag = null;
+        markDrag = null;
         return;
       }
       try {
-        await onthumbnail?.(d.from, d.to);
+        await markChange(kind)?.(d.from, d.to);
       } finally {
-        thumbDrag = null;
+        markDrag = null;
       }
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
+  }
+
+  // A double-click removes a mark, the way it removes a cut.
+  function removeMark(kind: MarkKind, at: number, event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (locked) return;
+    void markChange(kind)?.(at, -1);
   }
 
   const ticks = $derived.by(() => {
@@ -1552,7 +1586,8 @@
         Double-click in the clip to cut a part out, drag its edges to
         size it and double-click it to remove it. Shift puts the edges of a clip or a cut on whole
         words. Along the foot are the captions: drag an edge to retime one and double-click a moved
-        edge to reset it.
+        edge to reset it. The pictures along the foot are thumbnails and the diamonds on its edge
+        keyframes: click one to go to it, drag it to another frame and double-click it to remove it.
       </Info>
     </span>
     <!-- The ruler in two layers, the same as on the range picker: the line
@@ -1588,18 +1623,6 @@
          while the playhead is on the video, see .chosen.dim in app.css.
          It lays nothing out: each part is still placed on the track. -->
     <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
-      <!-- The clip, whole, from its first piece to its last. The rules above
-           and below run the length of it whatever is cut out in between,
-           because the holes are inside one clip and not between several: a
-           rule that broke at every cut would read as three clips standing in
-           a row. -->
-      {#if wholeClip}
-        <div
-          class="span frame"
-          class:lit={!!clip && clip.key === hovered}
-          style="left: {x(wholeClip.start)}%; width: {x(wholeClip.end) - x(wholeClip.start)}%"
-        ></div>
-      {/if}
       {#each drawnPieces as p, i (i)}
         <div
           class="piece"
@@ -1767,7 +1790,7 @@
           <div
             class="thumb"
             class:here={frameAt(m.shown, frame, frameStart) === playFrame}
-            class:active={thumbDrag?.from === m.at}
+            class:active={markDrag?.kind === "thumbnail" && markDrag.from === m.at}
             style="left: {x(m.shown)}%"
             role="slider"
             tabindex="-1"
@@ -1775,8 +1798,9 @@
             aria-valuenow={m.shown}
             title={locked
               ? "A thumbnail. Click to see it"
-              : "A thumbnail. Click to see it, drag it to another frame. The thumbnail button or T removes it"}
-            onpointerdown={(e) => grabThumb(m.at, e)}
+              : "A thumbnail. Click to see it, drag it to another frame, double-click to remove it"}
+            onpointerdown={(e) => grabMark("thumbnail", m.at, e)}
+            ondblclick={(e) => removeMark("thumbnail", m.at, e)}
           >
             <Icon name="thumbnail" size={18} />
           </div>
@@ -1793,6 +1817,55 @@
       {/if}
     </div>
   </div>
+    {#if wholeClip}
+      <!-- The clip, whole, from its first piece to its last. The rules above
+           and below run the length of it whatever is cut out in between,
+           because the holes are inside one clip and not between several: a
+           rule that broke at every cut would read as three clips standing in
+           a row. Drawn over the track rather than in it, so its rules lie on
+           the track's top and bottom border, the way the window lies on the
+           range picker's, where inside the track they stood just within the
+           border with a grey line showing past them. See .frames. -->
+      <div class="frames">
+        <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+          <div
+            class="span frame"
+            class:lit={!!clip && clip.key === hovered}
+            style="left: calc(1px + (100% - 2px) * {x(wholeClip.start) / 100}); width: calc((100% - 2px) * {(x(wholeClip.end) - x(wholeClip.start)) / 100})"
+          ></div>
+        </div>
+      </div>
+    {/if}
+    {#if clip}
+      <!-- The keyframes, each a diamond centred on the clip's bottom rule, half
+           in the track and half under it, so on the frame of a thumbnail the
+           diamond sits just under it and each takes its own hand. They are
+           drawn over the track, like the playhead, because the track clips
+           what is inside it, and on the track's inside, see .inside, so a
+           diamond stands on its frame where the waveform has it. Taken hold of
+           the way a thumbnail is. Plan row 3.26. -->
+      <div class="inside">
+      <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+        {#each cropDots as m, i (m.at)}
+          <div
+            class="cropdot"
+            class:here={frameAt(m.shown, frame, frameStart) === playFrame}
+            class:active={markDrag?.kind === "crop" && markDrag.from === m.at}
+            style="left: {x(m.shown)}%"
+            role="slider"
+            tabindex="-1"
+            aria-label="Keyframe {i + 1}"
+            aria-valuenow={m.shown}
+            title={locked
+              ? "A keyframe. Click to see it"
+              : "A keyframe, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
+            onpointerdown={(e) => grabMark("crop", m.at, e)}
+            ondblclick={(e) => removeMark("crop", m.at, e)}
+          ></div>
+        {/each}
+      </div>
+      </div>
+    {/if}
     {#if time >= view.from && time <= view.to}
       <div class="at" style="left: {x(time)}%">
         <!-- The line takes the drag as well as its head, a few pixels
@@ -1875,6 +1948,30 @@
     font-size: 11px;
     color: var(--faint);
     white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Over the track, its whole box, rounded the same, so the clip's frame
+     lies on the track's border and a clip that runs out of view is cut at
+     the track's edge. A share across it is a share of the track's inside,
+     a pixel in from either side, where the waveform and the pieces are
+     drawn, so the frame is placed with that pixel added. */
+  .frames {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-m);
+    overflow: clip;
+    pointer-events: none;
+  }
+
+  /* Over the track, as wide as its inside, so a share across it is where
+     the same moment is in the track. */
+  .inside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 1px;
+    right: 1px;
     pointer-events: none;
   }
 
@@ -2159,6 +2256,67 @@
   .thumb.active {
     background: var(--accent);
     color: #fff;
+  }
+
+  /* A keyframe: a diamond of the app's colour centred on the clip's
+     bottom rule, the shape editors draw a keyframe in, in a box wide
+     enough to take hold of. It is filled white with a ring of the app's
+     colour while the playhead is on its frame, under the hand or being
+     dragged, the way a thumbnail sits on a chip then. The ring is a
+     larger diamond under it, since an outline would be cut away with the
+     corners. Even sizes in an even box, so every edge is on a whole
+     pixel. */
+  .cropdot {
+    position: absolute;
+    /* Its middle on the middle of the clip's bottom rule, which lies on
+       the track's border and a pixel in from it. */
+    bottom: calc(var(--frame-line) / 2 - 8px);
+    pointer-events: auto;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
+    display: grid;
+    place-items: center;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 7;
+  }
+
+  /* The diamond of the keyframe button, Lucide's, filled: its own path
+     with the line it is drawn with, so the corners are rounded the same
+     and the shape scales with the box. Plan row 2.199. */
+  .cropdot::before,
+  .cropdot::after {
+    content: "";
+    grid-area: 1 / 1;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41L13.7 2.71a2.41 2.41 0 0 0-3.41 0z' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+
+  .cropdot::before {
+    width: 16px;
+    height: 16px;
+    background: var(--well);
+  }
+
+  .cropdot::after {
+    width: 14px;
+    height: 14px;
+    background: var(--accent-hi);
+  }
+
+  .cropdot:hover::before,
+  .cropdot.here::before,
+  .cropdot.active::before {
+    width: 18px;
+    height: 18px;
+    background: var(--accent);
+  }
+
+  .cropdot:hover::after,
+  .cropdot.here::after,
+  .cropdot.active::after {
+    background: #fff;
   }
 
   /* The mark at the start of a rotated part: the Rotate button's icon,

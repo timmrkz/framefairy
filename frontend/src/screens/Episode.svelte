@@ -87,7 +87,8 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { said } from "../lib/said";
-  import { rotated } from "../lib/rotate";
+  import { pieceHolding, rotated } from "../lib/rotate";
+  import { markOn } from "../lib/glide";
 
   let {
     path,
@@ -1210,19 +1211,30 @@
   const frameLen = $derived(source && source.fps > 0 ? 1 / source.fps : 1 / 30);
   // Where the picture's frames begin, see frameAt in lib/flow.ts.
   const frameStart = $derived(source?.videoStart ?? 0);
-  // The thumbnail under the playhead, told by the frame the playhead is in
-  // and never by how far it is from one, because the playhead is never
-  // quite where it was put.
+  // Where the frame on the video preview begins, as its queue drew it, NaN
+  // before the first. A mark, a thumbnail and the crop dragged belong to
+  // the frame on screen, which is the playhead's own frame but at the end
+  // of a clip played through, where the playhead stands past the last
+  // frame and the picture shows the last. So that moment, and the playhead
+  // only before there is a picture.
+  let shownStart = $state(NaN);
+  const shownMoment = $derived(Number.isFinite(shownStart) ? shownStart : time);
+  // The thumbnail on the frame shown, told by the frame and never by how
+  // far the playhead is from one, because the playhead is never quite
+  // where it was put.
   const thumbHere = $derived.by(() => {
     if (!current) return null;
-    const f = frameAt(time, frameLen, frameStart);
+    const f = frameAt(shownMoment, frameLen, frameStart);
     return current.thumbnails?.find((t) => frameAt(t, frameLen, frameStart) === f) ?? null;
   });
-  // Whether the short shows the frame under the playhead, which is where a
-  // thumbnail can be.
-  const inShort = $derived(
-    !!current && current.segments.some((p) => time >= p.start && time < p.end),
-  );
+  // Whether the short shows the frame on the video preview, which is where
+  // a thumbnail or a keyframe can be. Told by the frame, as the engine
+  // tells it, not by the playhead to the millisecond: a play of the clip
+  // leaves the playhead on its end, past its last frame, and steps of a
+  // frame leave it a hair short of a frame's start, where the clip's first
+  // frame was on screen and the buttons said it was not in the short.
+  // Found by Tim on #192.
+  const inShort = $derived(!!current && pieceHolding(current.segments, shownMoment) >= 0);
 
   // A thumbnail added, moved or removed, shown at once and saved straight
   // after. A from below nought adds, a to below nought removes.
@@ -1243,6 +1255,49 @@
     }
   }
 
+  // The keyframe on the frame shown, told by the frame, the way thumbHere
+  // is. Plan row 3.26.
+  const cropHere = $derived(
+    current && source ? markOn(current.cropMarks, shownMoment, source.fps, source.videoStart ?? 0) : null,
+  );
+
+  // A keyframe added, moved or removed: the diamond shows at once, and the
+  // glide it makes comes back with the clip. A from below nought adds one
+  // at to with its crop at x, a to below nought removes the one at from.
+  async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
+    problem = "";
+    const ms = (t: number) => Math.round(t * 1000);
+    const was = clip.cropMarks ?? [];
+    const moving = was.find((m) => from >= 0 && ms(m.at) === ms(from));
+    const next = was.filter((m) => m !== moving);
+    if (to >= 0) next.push({ at: Math.round(to * 1000) / 1000, x: moving?.x ?? x });
+    next.sort((a, b) => a.at - b.at);
+    clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: next } : c));
+    try {
+      const updated = await api.setCropMark(path, clip.plan, clip.id, from, to, x);
+      putClip(updated);
+    } catch (err) {
+      problem = errorText(err);
+      clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: was } : c));
+    }
+  }
+
+  // The button and C: a keyframe on the frame under the playhead, with
+  // the crop where it stands there now, or the one there removed, so what
+  // one click adds one click takes away.
+  function toggleCropMark() {
+    if (!current || renderingCurrent) return;
+    if (cropHere !== null) {
+      void setCropMark(current, cropHere.at, -1, -1);
+      return;
+    }
+    const left = player?.cropLeftNow();
+    if (!inShort || left === null || left === undefined) return;
+    // The start of the frame, the moment a mark is kept at.
+    const at = frameStart + frameAt(shownMoment, frameLen, frameStart) * frameLen;
+    void setCropMark(current, -1, at, Math.round(left));
+  }
+
   // The button and T: the frame under the playhead becomes a thumbnail, or
   // stops being one, so what one click adds one click takes away.
   function toggleThumbnail() {
@@ -1252,7 +1307,7 @@
     } else if (inShort) {
       // The middle of the frame, so the picture and the playhead agree on
       // which frame it is whichever way either rounds.
-      void setThumbnail(current, -1, frameMiddle(frameAt(time, frameLen, frameStart), frameLen, frameStart));
+      void setThumbnail(current, -1, frameMiddle(frameAt(shownMoment, frameLen, frameStart), frameLen, frameStart));
     }
   }
 
@@ -1402,6 +1457,18 @@
     if (!current) return;
     event.preventDefault();
     void rotatePart();
+  }
+
+  // C puts a keyframe on the frame under the playhead, or removes the one
+  // there, the keyframe button's key, the way T is the thumbnail's.
+  function cropMarkKey(event: KeyboardEvent) {
+    if (event.key !== "c" && event.key !== "C") return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.defaultPrevented || event.repeat) return;
+    if (keysElsewhere() || asleep(root)) return;
+    if (!current) return;
+    event.preventDefault();
+    toggleCropMark();
   }
 
   function thumbnailKey(event: KeyboardEvent) {
@@ -2405,12 +2472,14 @@
   onMount(() => {
     window.addEventListener("keydown", walkClips);
     window.addEventListener("keydown", thumbnailKey);
+    window.addEventListener("keydown", cropMarkKey);
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", thumbnailKey);
+      window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
       window.removeEventListener("keydown", loopKey);
       window.removeEventListener("keydown", inOutKey);
@@ -2841,12 +2910,14 @@
           clip={shownClip}
           opening={!opened}
           bind:pictured
+          bind:frameStart={shownStart}
           sleeping={away}
           bind:time
           captions={shownCaptions}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
+          oncropmark={(from, to, x) => (current ? setCropMark(current, from, to, x) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
           locked={renderingCurrent}
@@ -2932,6 +3003,7 @@
         {measured}
         {measuredParts}
         {time}
+        shown={shownMoment}
         locked={renderingCurrent || (!current && !!making)}
         arriving={!current && !!making}
         frame={source.fps > 0 ? 1 / source.fps : 1 / 30}
@@ -2948,6 +3020,8 @@
         playing={!paused}
         thumbnails={current?.thumbnails ?? []}
         onthumbnail={(from, to) => (current ? setThumbnail(current, from, to) : Promise.resolve())}
+        cropMarks={current?.cropMarks ?? []}
+        oncropmark={(from, to) => (current ? setCropMark(current, from, to, -1) : Promise.resolve())}
         {marks}
         {hovered}
         onhover={hoverClip}
@@ -2997,9 +3071,11 @@
             aria-pressed={looping}
             aria-label="Loop the clip"
             onclick={() => (looping = !looping)}
-            title="Play the clip again at its end. L does the same"
+            title={looping
+              ? "Stop looping, so the clip stops at its end. L does the same"
+              : "Play the clip again at its end. L does the same"}
           >
-            <Icon name="loop" />
+            <Icon name={looping ? "loop-off" : "loop"} />
           </button>
         {/if}
         {#if current}
@@ -3020,6 +3096,23 @@
           >
             <Icon name={thumbHere !== null ? "thumbnail-remove" : "thumbnail-add"} />
           </button>
+          <!-- A keyframe on the frame under the playhead, made the way a
+               thumbnail is: a plus to put one with the crop where it stands,
+               a minus when the playhead stands on one. With two or more the
+               crop glides from each to the next. Plan row 3.26. -->
+          <button
+            class="glyph"
+            aria-label={cropHere !== null ? "Remove this keyframe" : "Put a keyframe on this frame"}
+            disabled={renderingCurrent || (cropHere === null && !inShort)}
+            onclick={toggleCropMark}
+            title={cropHere !== null
+              ? "Remove the keyframe at the playhead. C does the same"
+              : inShort
+                ? "Put a keyframe on the frame under the playhead, with the crop where it stands. With two or more the crop moves from each to the next. C does the same"
+                : "Put the playhead in the clip to put a keyframe on the frame there"}
+          >
+            <Icon name={cropHere !== null ? "keyframe-remove" : "keyframe-add"} />
+          </button>
           <!-- Rotate Left, the way Preview and Photos rotate: the part of
                the clip between two cuts the playhead stands in, a quarter
                turn to the left a click, four clicks round. -->
@@ -3035,32 +3128,33 @@
             <Icon name="rotate" />
           </button>
         {/if}
-        <!-- In and Out, the way every editor marks a clip, with the keys of
-             the same letters. Each makes a clip at the playhead, and only
-             where no clip is: inside one, its edges are dragged instead. -->
+        <!-- Mark In and Mark Out, the way every editor marks a clip: the
+             two square brackets on the buttons, and I and O on the keys.
+             Each makes a clip at the playhead, and only where no clip is:
+             inside one, its edges are dragged instead. -->
         <button
-          class="glyph letter"
+          class="glyph"
           disabled={duration <= 0 || inClip}
           onclick={() => makeClip(false)}
-          aria-label="Start a clip at the playhead"
+          aria-label="Mark In"
           title={makingIn
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
-          >{#if makingIn}<Busy />{/if}I</button
+              : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+          >{#if makingIn}<Busy />{/if}<Icon name="mark-in" /></button
         >
         <button
-          class="glyph letter"
+          class="glyph"
           disabled={duration <= 0 || inClip}
           onclick={() => makeClip(true)}
-          aria-label="End a clip at the playhead"
+          aria-label="Mark Out"
           title={makingOut
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "End a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
-          >{#if makingOut}<Busy />{/if}O</button
+              : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+          >{#if makingOut}<Busy />{/if}<Icon name="mark-out" /></button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to
              the clip is what clicking it in the list does. -->
@@ -3261,18 +3355,16 @@
      than a word: the three of them are known everywhere, and a mark cannot
      change length as you use it. They are as tall as every other control in
      the row and as wide as they are tall. */
+  /* Square, as tall as every control and as wide, and never squeezed: in
+     a row narrower than its controls a button gave way first, and stood
+     taller than it was wide. Found by Tim on #192. */
   .detail .row .glyph {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: none;
     width: var(--control-h);
     padding: 0;
-  }
-
-  /* I and O are their letters, the keys they stand for, the way an editor
-     labels In and Out. */
-  .detail .row .glyph.letter {
-    font-weight: 600;
   }
 
   h2 {

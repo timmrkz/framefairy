@@ -67,7 +67,7 @@ func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
 		{"a clip that is not there", func() error { return SetRejected(path, "99", true) }},
 		{"a reason nobody knows", func() error { return SetRejected(path, "01", true, "langweilig") }},
 		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords) }},
-		{"a crop to the left of the frame", func() error { return SetCrop(path, "01", 10.5, -4) }},
+		{"a crop to the left of the frame", func() error { return SetCrop(path, "01", 10.5, -4, SourceInfo{}, 0) }},
 	}
 	for _, c := range failures {
 		t.Run(c.name, func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 	steps := []func() error{
 		func() error { return SetRejected(path, "02", true) },
 		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords) },
-		func() error { return SetCrop(path, "01", 10.5, 200) },
+		func() error { return SetCrop(path, "01", 10.5, 200, SourceInfo{}, 0) },
 		func() error { return ResetCrop(path, "01", 10.5) },
 	}
 	for i, step := range steps {
@@ -521,7 +521,7 @@ func FuzzPlanEdits(f *testing.F) {
 			case 1:
 				_ = SetCaptionStyle(path, map[string]any{"size": float64(24 + int(script[i+2])%176)})
 			case 2:
-				_ = SetCrop(path, clip, at(script[i+1]), int(script[i+2])*4)
+				_ = SetCrop(path, clip, at(script[i+1]), int(script[i+2])*4, SourceInfo{}, 0)
 			case 3:
 				_ = ResetCrop(path, clip, at(script[i+1]))
 			case 4:

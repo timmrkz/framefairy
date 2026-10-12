@@ -49,7 +49,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	}
 	cw := s.cropWidth(upright)
 	left = max(0, min(left, upright.Width-cw))
-	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left) }); err != nil {
+	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left, info, cw) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -247,6 +247,27 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 	}
 	if err := s.edit(path, func() error {
 		return engine.SetThumbnail(plan, clipID, from, to)
+	}); err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// SetCropMark adds, moves or removes a keyframe of a clip, a crop placed
+// by hand on one frame, see engine.CropMark, and returns the clip as it is
+// now. A from below nought adds one at to with its crop at x, a to below
+// nought removes the one at from, and both moments move the mark with its
+// crop.
+func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string, from, to float64, x int) (ClipEntry, error) {
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	info, err := s.probe(ctx, path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	if err := s.edit(path, func() error {
+		return engine.SetCropMark(plan, clipID, from, to, x, info)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

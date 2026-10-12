@@ -67,4 +67,11 @@ const (
 	// runs to that end of the video.
 	keyRotations = "rotations"
 	keyDeg       = "deg"
+
+	// keyCropMarks is the crops a person placed on frames of a clip, each
+	// at, the moment the frame starts, and x, the left edge of the crop
+	// there, see CropMark.
+	keyCropMarks = "crop_marks"
+	keyAt        = "at"
+	keyX         = "x"
 )

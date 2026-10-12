@@ -18,6 +18,8 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["button", label]  clicks the button that says label, and waits until
+//                      it has done its work
 //   ["type", text]     types
 //   ["undo"], ["redo"] the menu bar's Undo and Redo
 //   ["undo refused"]   the menu bar's Undo, which the Go side refuses
@@ -281,6 +283,9 @@
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
 //   ["app size", w, h] makes the app w by h pixels
+//   ["square buttons"] every button in the row under the clip timeline
+//                      that wears an icon or a key's letter is as wide as
+//                      it is tall, and as tall as every control
 //   ["sharp"]          the frame on the video preview, as the workspace
 //                      opened and before anything played, was decoded at
 //                      the size of the canvas, no larger than the file's
@@ -307,6 +312,14 @@
 //                      nothing bright left there, the inside of the frame
 //                      is not shaded and the picture beside it is, and the
 //                      line stands where the crop the hand moves stands
+//   ["on borders"]     the chosen clip's frame on the clip timeline and the
+//                      bars of the window at rest on the range picker lie
+//                      on their track's top and bottom border, read off a
+//                      screenshot: the outermost rows of the track's box
+//                      are the app's colour, as deep as the line is thick,
+//                      and the row just outside it is not, so no grey of
+//                      the border shows beside them, away from the
+//                      playhead and the marks that stand on the lines
 //   ["frame whole", "turned"]
 //                      the same on a part rotated a quarter, whose picture
 //                      stands inside the viewer rather than filling it
@@ -406,6 +419,61 @@
 //                      frame of the episode, read across its top, while in
 //                      the pieces not rotated most are not, since there it
 //                      lies on its side
+//   ["keyframe at", share]
+//                      puts the playhead in the clip, this share of the
+//                      way along it, with a click on the clip timeline, and
+//                      presses C, and the clip timeline has to show a crop
+//                      mark lit on the playhead's frame within 300 ms,
+//                      before a held answer comes
+//   ["thumbnail at", share]
+//                      puts the playhead in the clip, this share of the
+//                      way along it, with a click on the clip timeline, and
+//                      presses T, and the engine has a thumbnail more
+//   ["under the hand", kind]
+//                      moves the pointer onto the first "thumbnail" or
+//                      "crop" mark on the clip timeline: the mark is what
+//                      is under the pointer, it takes the hover, and it
+//                      lights the way it does under the hand
+//   ["remove mark", kind]
+//                      double-clicks the first "thumbnail" or "crop" mark
+//                      on the clip timeline, and the engine has one fewer,
+//                      and no cut more
+//   ["keyframe on", "last"]
+//                      a click on the clip's end edge, which leaves the
+//                      playhead on the end with the last frame on the
+//                      video preview, then C: a keyframe comes on the
+//                      clip's last frame and its diamond lights, and C again
+//                      removes it
+//   ["keyframe on", "first"]
+//                      a click on the clip's start edge and three steps
+//                      on and three back with the arrow keys, which leave
+//                      the playhead a hair off the first frame's start
+//                      with that frame on the video preview, then the same
+//   ["keyframe past", edge]
+//                      drags the first keyframe's diamond well past the
+//                      clip's "end" or "start" edge and lets go: the engine
+//                      has it on the clip's last or first frame, and the
+//                      diamond never stood further out while it was held
+//                      than where it stays once it is let go
+//   ["drag crop", px]  drags the crop frame in the video preview sideways
+//                      by px, in ten steps, and lets go
+//   ["keyframes", n]  the engine has n keyframes on the clip, at as many
+//                      left edges, and the clip timeline draws n
+//                      diamonds, each 16 px wide
+//   ["glides"]         with the playhead put by a click on the clip
+//                      timeline on the first keyframe, a quarter, half
+//                      and three quarters of the way to the next and on
+//                      it, the crop frame in the video preview stands on
+//                      each frame read off the canvas where smoothstep from
+//                      the one mark to the next puts it, as the engine's
+//                      render does
+//   ["glides while playing"]
+//                      plays from two fifths of the way from the first
+//                      keyframe to the next for two seconds and
+//                      reads the frame on the canvas and the crop frame on
+//                      every animation frame: on each, the crop frame
+//                      stands where the glide puts it for that frame, and
+//                      it moves on many frames, not once
 //   ["fits"]           the list's trigger is as wide as the channel it
 //                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
@@ -1003,6 +1071,92 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 3.26: keyframes put with C, the second dragged to another
+    // place, glide the crop from the one to the other, in the video
+    // preview frame by frame while it plays as the render crops it.
+    // TestTheRenderGlidesTheCropOverTheMarks holds the render to the same
+    // glide, and glide.cases.json the window and the engine to each other.
+    name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["hold", "SetCropMark", 1000],
+      ["keyframe at", 0.2],
+      ["keyframe at", 0.8],
+      ["drag crop", 400],
+      ["keyframes", 2],
+      ["glides"],
+      ["glides while playing"],
+      ["under the hand", "crop"],
+      ["remove mark", "crop"],
+      ["keyframes", 1],
+    ],
+  },
+  {
+    // Found by Tim on #192: C put no mark on a clip's first or last frame,
+    // only one frame in.
+    name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["keyframe on", "last"],
+      ["keyframe on", "first"],
+    ],
+  },
+  {
+    // Found on #192: Automatic crop took the keyframes of the angle away
+    // with the crop, and Put the crop back brought back the crop alone,
+    // so the glide was lost to one click.
+    name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["keyframe at", 0.2],
+      ["keyframe at", 0.8],
+      ["drag crop", 400],
+      ["keyframes", 2],
+      ["button", "Automatic crop"],
+      ["keyframes", 0],
+      ["button", "Put the crop back"],
+      ["keyframes", 2],
+      ["glides"],
+    ],
+  },
+  {
+    // Found by Tim on #192: a keyframe dragged past the clip's end went a
+    // pixel past the clip edge while held and jumped back to the last
+    // frame when let go. It was drawn on the middle of the frame under the
+    // hand while held and on the start of the frame once saved.
+    name: "a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["keyframe at", 0.5],
+      ["keyframe past", "end"],
+      ["keyframe past", "start"],
+    ],
+  },
+  {
+    // Plan row 2.190, found by Tim on #188: a thumbnail mark did not
+    // react to the pointer, and was removed only by putting the playhead
+    // on it and pressing T. It is the keyframe's kind of mark, lit under
+    // the hand and removed with a double-click, the way a cut is.
+    name: "a thumbnail mark lights under the hand and a double-click removes it",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["thumbnail at", 0.5],
+      ["thumbnail at", 0.2],
+      ["under the hand", "thumbnail"],
+      ["remove mark", "thumbnail"],
+    ],
+  },
+  {
     // Plan row 2.130: a picture that starts after its sound, by an edit
     // list. The clip's start is dragged to before the picture starts,
     // where the render took the picture's frames from its first on and the
@@ -1341,6 +1495,20 @@ export const sequences = [
     // the picture in the frame's own rounded corners, where the shade
     // beside it stopped short of them. An app this size makes the picture
     // fill the viewer, so its corners are the viewer's. Plan row 2.195.
+    // Found by Tim on #192: the clip's frame on the clip timeline stood
+    // just inside the track's border, with the grey of the border showing
+    // above and below it, and the window's bars on the range picker stood
+    // just outside it, with the border showing under them.
+    name: "the clip's frame and the window's bars lie on their track's borders",
+    steps: [["on borders"]],
+  },
+  {
+    // Found by Tim on #192: in a narrow app the buttons under the clip
+    // timeline gave way first and stood taller than they were wide.
+    name: "the buttons under the clip timeline stay square in a narrow app",
+    steps: [["square buttons"], ["app size", 900, 800], ["square buttons"]],
+  },
+  {
     name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
     steps: [
       ["app size", 1000, 1000],
@@ -2150,6 +2318,15 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await word(arg).click();
         await watch.step("click", s);
         break;
+      case "button": {
+        const button = page.getByRole("button", { name: arg, exact: true });
+        await button.click();
+        await page.waitForFunction(
+          (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled),
+          arg,
+        );
+        break;
+      }
       case "press":
         await page.keyboard.press(arg);
         await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s);
@@ -3024,6 +3201,16 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         await page.waitForTimeout(600);
         await settle(page);
         break;
+      case "square buttons": {
+        const got = await page.evaluate(() => {
+          const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h"));
+          return { h, sizes: [...document.querySelectorAll(".detail .row .glyph")].map((b) => [b.title || b.textContent.trim(), b.getBoundingClientRect().width, b.getBoundingClientRect().height]) };
+        });
+        const off = got.sizes.filter(([, w, h]) => Math.abs(w - got.h) > 0.01 || Math.abs(h - got.h) > 0.01);
+        if (got.sizes.length < 5) wrong = `the row under the clip timeline has ${got.sizes.length} buttons with an icon, not the row`;
+        else if (off.length) wrong = `${off.length} of ${got.sizes.length} buttons are not ${got.h} by ${got.h}, the first, "${off[0][0].slice(0, 40)}", is ${off[0][1].toFixed(2)} by ${off[0][2].toFixed(2)}`;
+        break;
+      }
       case "sharp": {
         // The playhead stands still and nothing plays, so the frame on the
         // canvas is the one asked for while paused.
@@ -3643,6 +3830,9 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
       case "frame whole":
         wrong = await frameWhole(page, arg === "turned");
         break;
+      case "on borders":
+        wrong = await onBorders(page);
+        break;
       case "edges as rendered":
         wrong = await edgesAsRendered(page);
         break;
@@ -3661,6 +3851,306 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         if (took < 0) wrong = `R left the video preview rotated ${before}`;
         else if (took > 300) wrong = `the video preview rotated ${took} ms after R, not at once`;
         await watch.step("press", s);
+        break;
+      }
+      case "keyframe at": {
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await settle(page);
+        const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+        const before = await count();
+        const pressed = Date.now();
+        await page.keyboard.press("c");
+        const took = await page
+          .waitForFunction(
+            (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
+            before,
+            { polling: "raf", timeout: 3000 },
+          )
+          .then(() => Date.now() - pressed, () => -1);
+        if (took < 0) wrong = "C put no keyframe on the playhead's frame";
+        else if (took > 300) wrong = `the keyframe showed ${took} ms after C, not at once`;
+        await watch.step("press", s);
+        await settle(page);
+        break;
+      }
+      case "keyframe on": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const pieces = (await entry()).segments;
+        const want = arg === "last" ? pieces[pieces.length - 1].end - 1 / src.fps : pieces[0].start;
+        const g = await handles(page);
+        const edge = arg === "last" ? g.end : g.start;
+        await page.mouse.click(edge.x + edge.w / 2, edge.y + edge.h / 2);
+        await settle(page);
+        if (arg === "first") {
+          for (const key of ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowLeft", "ArrowLeft", "ArrowLeft"]) {
+            await page.keyboard.press(key);
+            await settle(page);
+          }
+        }
+        const marks = async () => (await entry()).cropMarks ?? [];
+        const before = (await marks()).length;
+        const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
+        await page.keyboard.press("c");
+        let got = [];
+        for (let i = 0; i < 30 && got.length <= before; i++) {
+          await page.waitForTimeout(100);
+          got = await marks();
+        }
+        const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
+        if (got.length <= before) {
+          const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
+          wrong = `C put no keyframe with the playhead at ${Number(at).toFixed(4)} s, on the clip's ${arg} frame at ${want.toFixed(4)} s`;
+          break;
+        }
+        if (!near) {
+          wrong = `C put a keyframe at ${got.map((m) => m.at).join(", ")}, not on the clip's ${arg} frame at ${want.toFixed(3)} s`;
+          break;
+        }
+        await settle(page);
+        if (!(await lit())) {
+          wrong = `the keyframe on the clip's ${arg} frame does not light while that frame is on the video preview`;
+          break;
+        }
+        await page.keyboard.press("c");
+        for (let i = 0; i < 30 && (await marks()).length > before; i++) await page.waitForTimeout(100);
+        if ((await marks()).length > before) wrong = `C again did not remove the keyframe on the clip's ${arg} frame`;
+        await settle(page);
+        break;
+      }
+      case "thumbnail at": {
+        const on = await chosen(page);
+        const count = async () => ((await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.thumbnails ?? []).length;
+        const before = await count();
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await settle(page);
+        await page.keyboard.press("t");
+        await watch.step("press", s);
+        await settle(page);
+        if ((await count()) !== before + 1) wrong = "T made no thumbnail";
+        break;
+      }
+      case "under the hand": {
+        // A mark the playhead is not on, so only the hand can light it,
+        // tagged so it is the same element all the way through.
+        const kind = arg === "crop" ? ".cropdot" : ".thumb";
+        const tagged = await page.evaluate((kind) => {
+          const el = [...document.querySelectorAll(`.clip-timeline ${kind}`)].find((m) => !m.classList.contains("here"));
+          el?.setAttribute("data-probe", "");
+          return !!el;
+        }, kind);
+        const box = tagged ? await page.locator("[data-probe]").boundingBox() : null;
+        if (!box) {
+          wrong = `the clip timeline shows no ${arg} mark off the playhead`;
+          break;
+        }
+        const paint = () =>
+          page.evaluate(() => {
+            const el = document.querySelector("[data-probe]");
+            const look = getComputedStyle(el, el.classList.contains("cropdot") ? "::after" : null);
+            return `${look.backgroundColor} ${look.color}`;
+          });
+        const away = await paint();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        await page.mouse.move(x, y);
+        await page.waitForTimeout(100);
+        const got = await page.evaluate(
+          ({ x, y }) => {
+            const el = document.querySelector("[data-probe]");
+            return { top: document.elementFromPoint(x, y)?.closest("[data-probe]") === el, hover: el.matches(":hover") };
+          },
+          { x, y },
+        );
+        const lit = await paint();
+        await page.evaluate(() => document.querySelector("[data-probe]")?.removeAttribute("data-probe"));
+        if (!got.top) wrong = `something else lies over the ${arg} mark, so the pointer never reaches it`;
+        else if (!got.hover) wrong = `the ${arg} mark does not take the hover`;
+        else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
+        break;
+      }
+      case "remove mark": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const count = (c) => (arg === "crop" ? c?.cropMarks ?? [] : c?.thumbnails ?? []).length;
+        const was = await entry();
+        const box = await page.locator(arg === "crop" ? ".clip-timeline .cropdot" : ".clip-timeline .thumb").first().boundingBox();
+        if (!box) {
+          wrong = `the clip timeline shows no ${arg} mark`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step("double-click", s);
+        await settle(page);
+        const now = await entry();
+        if (count(now) !== count(was) - 1) wrong = `a double-click left the clip ${count(now)} ${arg} marks, not ${count(was) - 1}`;
+        else if (now.segments.length !== was.segments.length) wrong = `a double-click on the ${arg} mark cut the clip`;
+        break;
+      }
+      case "keyframe past": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const pieces = (await entry()).segments;
+        const want = arg === "end" ? pieces[pieces.length - 1].end - 1 / src.fps : pieces[0].start;
+        const centre = () =>
+          page.evaluate(() => {
+            const b = document.querySelector(".clip-timeline .cropdot").getBoundingClientRect();
+            return b.left + b.width / 2;
+          });
+        const dot = await page.locator(".clip-timeline .cropdot").first().boundingBox();
+        const g = await handles(page);
+        const y = dot.y + dot.height / 2;
+        const x = dot.x + dot.width / 2;
+        const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        const held = [];
+        for (let i = 1; i <= 12; i++) {
+          await page.mouse.move(x + ((to - x) * i) / 12, y);
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          held.push(await centre());
+        }
+        await page.mouse.up();
+        let got = [];
+        for (let i = 0; i < 30; i++) {
+          got = (await entry()).cropMarks ?? [];
+          if (got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps)) break;
+          await page.waitForTimeout(100);
+        }
+        await settle(page);
+        const left = await centre();
+        const out = arg === "end" ? Math.max(...held) - left : left - Math.min(...held);
+        if (!got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps))
+          wrong = `the keyframe dragged past the clip's ${arg} is at ${got.map((m) => m.at).join(", ")}, not on its ${arg === "end" ? "last" : "first"} frame at ${want.toFixed(3)} s`;
+        else if (out > 0.25)
+          wrong = `the keyframe stood ${out.toFixed(2)} px past where it stays while it was held past the clip's ${arg}, and jumped back when let go`;
+        else if (Math.abs(held[held.length - 1] - left) > 0.25)
+          wrong = `the keyframe was held at ${held[held.length - 1].toFixed(2)} px and stays at ${left.toFixed(2)} px once let go`;
+        await watch.step("drag", s);
+        break;
+      }
+      case "drag crop": {
+        const box = await page.locator(".screen .crop").boundingBox();
+        if (!box) {
+          wrong = "the video preview shows no crop frame to drag";
+          break;
+        }
+        const y = box.y + box.height / 2;
+        const x = box.x + box.width / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x + (arg * i) / 10, y);
+        await page.mouse.up();
+        await watch.step("drag", s);
+        await settle(page);
+        break;
+      }
+      case "keyframes": {
+        const on = await chosen(page);
+        const marks = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
+        let got = [];
+        for (let i = 0; i < 50; i++) {
+          got = await marks();
+          if (got.length === arg && new Set(got.map((m) => m.x)).size === arg) break;
+          await page.waitForTimeout(100);
+        }
+        const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
+        // Drawn as a diamond, the shape editors draw a keyframe in, and
+        // the keyframe button's own: Lucide's diamond, filled.
+        const shapes = await page.evaluate(() =>
+          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").maskImage),
+        );
+        const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
+        if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
+        else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
+        else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
+        else if (shapes.some((c) => !c.includes("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
+          wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
+        else if (sizes.some((w) => w !== 16)) wrong = `a keyframe's diamond is ${sizes.join(", ")} px wide, not 16 px, found too small by Tim on #192`;
+        break;
+      }
+      case "glides":
+      case "glides while playing": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const piece = entry?.segments.find((p) => (p.marks ?? []).length >= 2);
+        if (!piece) {
+          wrong = "no piece of the clip has two keyframes to glide between";
+          break;
+        }
+        const glide = glideOf(piece.marks, src);
+        const [a, b] = piece.marks;
+        const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
+        // The episode is a filmed one, at a camera's rate, whose frame
+        // number is read off the canvas from its bands.
+        await filmedOnScreen(page);
+        if (what === "glides") {
+          const problems = [];
+          for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+            // Half a frame in, so the click lands in the frame meant.
+            const at = a.at + share * (b.at - a.at) + (share < 1 ? 0.5 / src.fps : 0);
+            const g = await handles(page);
+            await page.mouse.click(await xOf(page, at), high(g.track));
+            await settle(page);
+            const came = await page
+              .waitForFunction(
+                (fps) => {
+                  const at = Number(document.querySelector(".screen").dataset.playhead);
+                  // The frame that holds the playhead, see frameAt in lib/flow.ts.
+                  return window.__filmed() === Math.floor((at + 0.001) * fps);
+                },
+                src.fps,
+                { polling: 50, timeout: 5000 },
+              )
+              .then(() => true, () => false);
+            if (!came) {
+              problems.push(`no frame came for ${at.toFixed(3)} s`);
+              continue;
+            }
+            const k = await filmedOnScreen(page);
+            const got = await crop();
+            if (got !== glide(k)) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${glide(k)}`);
+          }
+          const ends = [glide(Math.round(a.at * src.fps)), glide(Math.round(b.at * src.fps))];
+          if (ends[0] === ends[1]) problems.push(`the two keyframes stand at ${ends[0]} both, so nothing glides`);
+          if (problems.length) wrong = problems.join("; ");
+          break;
+        }
+        const g = await handles(page);
+        // Two fifths of the way, where smoothstep moves the crop fastest.
+        await page.mouse.click(await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
+        await settle(page);
+        await page.evaluate(() => {
+          window.__glide = [];
+          const read = () => {
+            const el = document.querySelector(".screen");
+            window.__glide.push({ k: window.__filmed(), crop: Number(el.dataset.crop) });
+            if (window.__glide.length < 2000) window.__glideRaf = requestAnimationFrame(read);
+          };
+          window.__glideRaf = requestAnimationFrame(read);
+        });
+        await page.keyboard.press(" ");
+        await page.waitForTimeout(2000);
+        await page.keyboard.press(" ");
+        const seen = await page.evaluate(() => {
+          cancelAnimationFrame(window.__glideRaf);
+          return window.__glide;
+        });
+        await settle(page);
+        const off = seen.filter((r) => r.k >= 0 && r.crop !== glide(r.k));
+        const places = new Set(seen.filter((r) => r.k >= 0).map((r) => r.crop));
+        if (off.length) {
+          wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
+        } else if (places.size < 10) {
+          wrong = `while playing, the crop frame stood in ${places.size} places, not following the glide`;
+        }
         break;
       }
       case "turned": {
@@ -3873,6 +4363,30 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
 }
 process.exit(failures ? 1 : 0);
 
+// The left edge of the crop on each frame of the video, gliding over a
+// piece's keyframes by smoothstep, the way the engine's glideX and
+// lib/glide.ts work it out, see glide.cases.json, for frame numbers
+// counted from the picture's first frame.
+function glideOf(marks, src) {
+  const v0 = src.videoStart ?? 0;
+  const most = src.width - src.cropWidth;
+  const on = marks.map((m) => {
+    const x = Math.max(0, Math.min(m.x, most));
+    return [Math.floor((m.at - v0) * src.fps + 0.5), x - (x % 2)];
+  });
+  return (k) => {
+    if (k <= on[0][0]) return on[0][1];
+    for (let i = 1; i < on.length; i++) {
+      const [kb, xb] = on[i];
+      if (k >= kb) continue;
+      const [ka, xa] = on[i - 1];
+      const u = (k - ka) / (kb - ka);
+      return xa + (xb - xa) * (u * u * (3 - 2 * u));
+    }
+    return on[on.length - 1][1];
+  };
+}
+
 // Holds files over the app and drops them, the way the runtime reports a
 // drag from Finder, its start and where it is, and a drop, see wails-bridge.ts, somewhere left of the
 // middle and below it, over whatever the page has there. Says what was
@@ -4034,4 +4548,94 @@ async function frameWhole(page, turned) {
     },
     { shot, at, clip },
   );
+}
+
+// What is wrong with where the frames lie on the two tracks, or null, read
+// off a screenshot of each: the chosen clip's frame on the clip timeline
+// and the bars of the window at rest on the range picker. Each lies on its
+// track's top and bottom border, so the outermost rows of the track's box
+// are the app's colour as deep as the line is thick, and the row just
+// outside the box is not. Columns near the playhead and the marks standing
+// on a line are left out, and so are the frame's rounded ends. See
+// ["on borders"].
+async function onBorders(page) {
+  const at = await page.evaluate(() => {
+    const box = (e) => e?.getBoundingClientRect().toJSON();
+    const span = document.querySelector(".clip-timeline .span");
+    const aim = document.querySelector(".aim");
+    const bar = aim?.querySelector(".bar.top");
+    // The app's colour and its lighter shade, the frame under the hand,
+    // as numbers, whether the browser says them as rgb() or color(srgb).
+    const colour = (css) => {
+      const e = document.createElement("i");
+      e.style.color = css;
+      document.body.append(e);
+      const said = getComputedStyle(e).color;
+      e.remove();
+      const n = said.match(/[\d.]+/g).map(Number);
+      return said.startsWith("color(") ? n.slice(0, 3).map((v) => Math.round(v * 255)) : n.slice(0, 3);
+    };
+    const away = [...document.querySelectorAll(".playhead, .head, .cropdot, .thumb, .tip")].map((e) => box(e));
+    return {
+      dpr: devicePixelRatio,
+      accent: [colour("var(--accent)"), colour("var(--accent-hi)")],
+      clip: span && { track: box(document.querySelector(".clip-timeline .track")), from: box(span).left, to: box(span).right, deep: parseFloat(getComputedStyle(span).borderTopWidth) },
+      range: aim && { track: box(aim.parentElement.querySelector(".track")), from: box(aim).left, to: box(aim).right, deep: parseFloat(getComputedStyle(bar, null).backgroundSize.split(" ")[1]) },
+      away,
+    };
+  });
+  if (!at.clip) return "the clip timeline shows no frame for the chosen clip";
+  if (!at.range) return "the range picker shows no window at rest";
+  const problems = [];
+  for (const [name, t] of [["the clip's frame on the clip timeline", at.clip], ["the window's bars on the range picker", at.range]]) {
+    const clip = { x: Math.floor(t.track.left) - 2, y: Math.floor(t.track.top) - 4, width: Math.ceil(t.track.width) + 4, height: Math.ceil(t.track.height) + 8 };
+    const shot = (await page.screenshot({ clip })).toString("base64");
+    const found = await page.evaluate(
+      async ({ shot, at, t, clip, name }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${shot}`;
+        await img.decode();
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const g = c.getContext("2d", { willReadFrequently: true });
+        g.drawImage(img, 0, 0);
+        const data = g.getImageData(0, 0, c.width, c.height).data;
+        const d = at.dpr;
+        // The pixel in the middle of a CSS pixel of the page.
+        const px = (x, y) => {
+          const i = (Math.floor((y - clip.y + 0.5) * d) * c.width + Math.floor((x - clip.x + 0.5) * d)) * 4;
+          return [data[i], data[i + 1], data[i + 2]];
+        };
+        const accent = (p) => at.accent.some((a) => p.every((v, k) => Math.abs(v - a[k]) <= 24));
+        const say = (p) => `rgb(${p.join(", ")})`;
+        const near = (x) => at.away.some((b) => b && x > b.left - 4 && x < b.right + 4);
+        const problems = [];
+        let looked = 0;
+        for (let x = Math.ceil(t.from) + 12; x < Math.floor(t.to) - 12; x += 3) {
+          if (near(x)) continue;
+          looked++;
+          for (const [side, edge, inward] of [["top", t.track.top, 1], ["bottom", t.track.bottom - 1, -1]]) {
+            for (let k = 0; k < t.deep; k++) {
+              const p = px(x, edge + inward * k);
+              if (!accent(p)) {
+                problems.push(`${name} does not cover the ${side} border at ${(x - t.from).toFixed(0)} px along it: ${k} px in from the track's edge is ${say(p)}`);
+                return problems;
+              }
+            }
+            const out = px(x, edge - inward);
+            if (accent(out)) {
+              problems.push(`${name} stands outside the ${side} border at ${(x - t.from).toFixed(0)} px along it: the row just past the track's edge is the app's colour`);
+              return problems;
+            }
+          }
+        }
+        if (looked < 5) problems.push(`${name} had only ${looked} places to look at away from the playhead and the marks`);
+        return problems;
+      },
+      { shot, at, t, clip, name },
+    );
+    problems.push(...found);
+  }
+  return problems.length ? problems.join("; ") : null;
 }

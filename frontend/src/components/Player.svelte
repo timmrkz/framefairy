@@ -30,11 +30,13 @@
     snapCaptionY,
     type CaptionsView,
     type ClipEntry,
+    type CropMark,
     type SourceView,
   } from "../lib/api";
   import { rgbToHex } from "../lib/colour";
   import { asleep, keysElsewhere } from "../lib/keys";
   import { pictureOf, pieceHolding, rotationAt, shownAt } from "../lib/rotate";
+  import { glidingLeft } from "../lib/glide";
 
   let {
     path,
@@ -46,6 +48,7 @@
     oncaptionmoved,
     oncrop,
     onresetcrop,
+    oncropmark,
     oncaptiony,
     onword,
     locked = false,
@@ -56,6 +59,7 @@
     offers = $bindable({ crop: "", savingCrop: false, hint: "" } as PlayerOffers),
     opening = false,
     pictured = $bindable(false),
+    frameStart = $bindable(NaN),
     sleeping = false,
   }: {
     path: string;
@@ -77,6 +81,9 @@
     oncaptionmoved?: (y: number) => void;
     oncrop?: (at: number, left: number) => Promise<void>;
     onresetcrop?: (at: number) => Promise<void>;
+    // Puts a keyframe back at a moment with its crop, the way the clip
+    // timeline puts one, for the marks a reset took away.
+    oncropmark?: (from: number, to: number, x: number) => Promise<void>;
     // Puts the captions at a distance from the bottom of a 1080x1920
     // frame. There is one place for every clip of every episode, so this
     // saves a setting rather than editing the clip.
@@ -105,6 +112,10 @@
     // why it cannot. The workspace is not put in front of the person
     // before, see ready in Episode.svelte.
     pictured?: boolean;
+    // Where the frame on the canvas begins, in the episode, as the queue
+    // says it drew it. NaN before the first. The frame a mark is put on,
+    // see shownMoment in Episode.svelte.
+    frameStart?: number;
     // The workspace is kept for coming back to while another episode is
     // in front, see App.svelte. Asleep, the video preview holds nothing
     // but the frame on its canvas and what it plays: no decoder on the
@@ -123,9 +134,16 @@
   let savingCaptions = $state(false);
 
   // Going back to the automatic crop is one click, so taking that back has
-  // to be one click too. What a reset threw away is kept until the clip
-  // changes or it is placed by hand again.
-  let undoCrop = $state<{ key: string; piece: number; at: number; left: number } | null>(null);
+  // to be one click too. What a reset threw away, the crop and the crop
+  // marks of the angle, is kept until the clip changes or it is placed by
+  // hand again.
+  let undoCrop = $state<{
+    key: string;
+    piece: number;
+    at: number;
+    left: number | null;
+    marks: CropMark[];
+  } | null>(null);
 
   // The episode, played from its own file onto the canvas by the frame
   // queue, see lib/frames/. Every frame drawn, playing or paused, comes
@@ -462,9 +480,6 @@
     return best;
   });
 
-  // Where the frame on the canvas begins, in the episode, as the queue
-  // says it drew it. NaN before the first.
-  let frameStart = $state(NaN);
   // The moment the frame on the canvas starts, which the picture is turned
   // for and its crop stands for, see lib/rotate.ts.
   const frameAt = $derived(shownAt(frameStart, time));
@@ -491,7 +506,10 @@
   $effect(() => {
     if (!clip) return;
     const pieces = clip.segments
-      .map((s) => `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}`)
+      .map(
+        (s) =>
+          `${s.start.toFixed(3)}-${s.end.toFixed(3)}${s.rotate ? ` turned ${s.rotate}` : ""}${s.moved ? " placed" : ""}${s.marks?.length ? ` gliding over ${s.marks.map((m) => `${m.at.toFixed(3)}@${m.x}`).join(" ")}` : ""}`,
+      )
       .join(", ");
     const turns = (clip.rotations ?? []).map((r) => `${r.from ?? "start"}-${r.to ?? "end"} ${r.deg}`).join(", ");
     const line = `video preview: clip ${clip.id} has the pieces ${pieces}${turns ? `, rotated ${turns}` : ""}`;
@@ -516,18 +534,36 @@
     return () => clearTimeout(settled);
   });
 
+  // The left edge of the crop on the frame on the canvas, in pixels of the
+  // picture: gliding over the piece's keyframes frame by frame while the
+  // clip plays, the way the render crops it, or standing still. Plan row
+  // 3.26.
+  const cropLeft = $derived.by(() => {
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
+    const gliding =
+      place !== "video"
+        ? glidingLeft(clip.segments[cropped]?.marks, frameAt, source.fps, source.videoStart ?? 0, picture.cropWidth, picture.width)
+        : null;
+    return gliding ?? clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+  });
+
+  // The crop's left edge as the video preview shows it now, which a crop
+  // mark put on this frame keeps.
+  export function cropLeftNow(): number | null {
+    return cropLeft;
+  }
+
   // Its crop, as shares of the video preview, with a drag applied.
   const crop = $derived.by(() => {
-    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
-    const auto = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
-    const left = dragLeft ?? auto;
+    if (!clip || cropped < 0 || !picture.width || !picture.cropWidth || cropLeft === null) return null;
+    const left = dragLeft ?? cropLeft;
     return {
       left: (left / picture.width) * 100,
       width: (picture.cropWidth / picture.width) * 100,
       // On the video the clip's rules are not in play, and the video
       // preview shows the episode alone, the clip's moments included.
       inside: place !== "video" && insideClip(clip.segments, time, oneFrame),
-      moved: clip.segments[cropped]?.moved ?? false,
+      moved: !!clip.segments[cropped]?.moved || !!clip.segments[cropped]?.marks?.length,
     };
   });
 
@@ -1036,12 +1072,15 @@
     target.addEventListener("pointercancel", up);
   }
 
-  // The moment the crop change applies to: the playhead when it is inside
-  // the clip, otherwise the start of the piece shown.
+  // The moment the crop change applies to: the start of the frame on the
+  // canvas, whose crop is the one dragged, when it is in the clip,
+  // otherwise the start of the piece shown. Not the playhead, which a play
+  // of the clip leaves at its end, past its last frame, where the canvas
+  // still shows that frame.
   function cropMoment(): number {
     if (!clip) return time;
-    const seg = clip.segments[piece];
-    return time >= seg.start && time < seg.end ? time : seg.start;
+    if (pieceHolding(clip.segments, frameAt) >= 0) return frameAt;
+    return clip.segments[piece].start;
   }
 
   function dragCrop(event: PointerEvent) {
@@ -1051,7 +1090,7 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
-    const start = clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+    const start = cropLeft ?? (picture.width - picture.cropWidth) / 2;
     const scale = picture.width / screen.clientWidth;
     const most = picture.width - picture.cropWidth;
     let moved = false;
@@ -1087,11 +1126,14 @@
     if (!clip || !onresetcrop) return;
     const at = cropMoment();
     const was = piece;
-    const had = clip.cropLefts[was];
+    const had = clip.cropLefts[was] ?? null;
+    const marked = clip.cropMarks ?? [];
     savingCrop = true;
     try {
       await onresetcrop(at);
-      if (had !== undefined && had !== null) undoCrop = { key: clip.key, piece: was, at, left: had };
+      const still = clip?.cropMarks ?? [];
+      const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
+      if (had !== null || marks.length) undoCrop = { key: clip!.key, piece: was, at, left: had, marks };
     } finally {
       savingCrop = false;
     }
@@ -1102,7 +1144,8 @@
     if (!back || !oncrop) return;
     savingCrop = true;
     try {
-      await oncrop(back.at, back.left);
+      if (back.left !== null) await oncrop(back.at, back.left);
+      for (const m of back.marks) await oncropmark?.(-1, m.at, m.x);
       undoCrop = null;
     } finally {
       savingCrop = false;
@@ -1205,7 +1248,8 @@
 <div class="player" bind:this={shell}>
   <!-- data-playhead says where the playhead is. Nothing on screen reads
        it: it is there so a probe can follow the playhead across a cut on
-       every frame, the way the caption words say their moments. -->
+       every frame, the way the caption words say their moments. data-crop
+       is the crop's left edge in pixels of the picture, for the same. -->
   <!-- The viewer: as wide as the middle column and as tall as the picture
        may be, black, with the picture in the middle of it. The columns
        beside it take their width from the app's width alone, so on an app
@@ -1223,6 +1267,7 @@
     bind:this={screen}
     data-playhead={time}
     data-turn={turn}
+    data-crop={crop?.inside ? (dragLeft ?? cropLeft) : null}
     style="--turn: {-turn}deg"
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->

@@ -244,6 +244,8 @@ func FuzzLoadClips(f *testing.F) {
 		` "segments": [{"start": 0, "end": 1}]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}, {"start": 1, "end": 2, "crop_x_turned": 4}],` +
 		` "rotations": [{"to": 0.5, "deg": 90}, {"from": 1, "deg": 45.5}]}]}`)
+	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1, "crop_x": 8}, {"start": 1, "end": 2}],` +
+		` "crop_marks": [{"at": 0.5, "x": 10}, {"at": "0.6", "x": 4}, {"at": 1.5, "x": 1.5}, {"at": 0.5}, 3, null]}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
 		path := filepath.Join(t.TempDir(), "clips.json")
