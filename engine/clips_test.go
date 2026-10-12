@@ -131,15 +131,6 @@ func FuzzParseTime(f *testing.F) {
 	})
 }
 
-func writePlan(t *testing.T, body string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "clips.json")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 	segments := func(n int) string {
 		var parts []string
@@ -171,7 +162,7 @@ func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, clips, err := LoadClips(writePlan(t, c.body)); err == nil {
+			if _, clips, err := LoadClips(writePlanAt(t, c.body)); err == nil {
 				t.Errorf("accepted, gave %d clip(s)", len(clips))
 			}
 		})
@@ -179,7 +170,7 @@ func TestLoadClipsRefusesPlansThatCannotRender(t *testing.T) {
 }
 
 func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
-	path := writePlan(t, `{
+	fsys, path := writePlanAt(t, `{
   "source": "ep.mp4",
   "unknown": {"kept": true},
   "clips": [
@@ -192,7 +183,7 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
     {"id": "03", "rejected": true, "segments": [{"start": 30, "end": 31}]}
   ]
 }`)
-	plan, clips, err := LoadClips(path)
+	plan, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +239,7 @@ func FuzzLoadClips(f *testing.F) {
 		` "crop_marks": [{"at": 0.5, "x": 10}, {"at": "0.6", "x": 4}, {"at": 1.5, "x": 1.5}, {"at": 0.5}, 3, null]}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
-		path := filepath.Join(t.TempDir(), "clips.json")
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Skip()
-		}
-		plan, clips, err := LoadClips(path)
+		plan, clips, err := LoadClips(writePlanAt(t, body))
 		if err != nil {
 			return
 		}
@@ -333,7 +320,7 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		_, clips, err := LoadClips(writePlan(t, c.body))
+		_, clips, err := LoadClips(writePlanAt(t, c.body))
 		if err == nil {
 			t.Errorf("%s: loaded %d clips", c.name, len(clips))
 			continue
@@ -348,12 +335,12 @@ func TestAPlanThatWouldEditTheWrongClipIsRefused(t *testing.T) {
 		many = append(many, fmt.Sprintf(
 			`{"id": "c%d", "slug": "s%d", "segments": [{"start": %d, "end": %d}]}`, i, i, i, i+1))
 	}
-	if _, _, err := LoadClips(writePlan(t, `{"clips": [`+strings.Join(many, ",")+`]}`)); err == nil {
+	if _, _, err := LoadClips(writePlanAt(t, `{"clips": [`+strings.Join(many, ",")+`]}`)); err == nil {
 		t.Error("a plan of a thousand and one clips was loaded")
 	}
 
 	// What is fine stays fine.
-	_, clips, err := LoadClips(writePlan(t, `{"clips": [
+	_, clips, err := LoadClips(writePlanAt(t, `{"clips": [
 		{"id": "01", "slug": "eins", "segments": [{"start": 1, "end": 2}]},
 		{"id": "02", "slug": "zwei", "segments": [{"start": 3, "end": 4}]}]}`))
 	if err != nil || len(clips) != 2 {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
@@ -123,8 +124,11 @@ func (s Settings) options() engine.Options {
 // store keeps the settings and the list of episodes in the user's
 // configuration folder. Plain JSON files, no database.
 type store struct {
-	mu       sync.Mutex
-	dir      string
+	mu  sync.Mutex
+	dir string
+	// files is where the library's episodes and their work folders are
+	// read and written, the real disk in the app. See engine/files.go.
+	files    afero.Fs
 	settings Settings
 	episodes []string
 }
@@ -134,7 +138,7 @@ func openStore() *store {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	s := &store{dir: filepath.Join(dir, "FrameFairy"), settings: defaultSettings()}
+	s := &store{dir: filepath.Join(dir, "FrameFairy"), files: afero.NewOsFs(), settings: defaultSettings()}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
@@ -316,7 +320,7 @@ func (s *store) Known(path string) bool {
 		return false
 	}
 	for _, ep := range episodes {
-		if linkedEpisode(ep) == "" && engine.IsShort(ep, real) {
+		if linkedEpisode(ep) == "" && engine.IsShort(s.files, ep, real) {
 			return true
 		}
 	}

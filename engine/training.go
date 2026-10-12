@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
@@ -571,8 +572,8 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 // RecordDecision appends a decision about a clip of a plan. Plans made
 // before recording existed have no plan id, and nothing is recorded for
 // them.
-func RecordDecision(planPath, clipID, event string, reasons []string) error {
-	plan, clips, err := LoadClips(planPath)
+func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []string) error {
+	plan, clips, err := LoadClips(fsys, planPath)
 	if err != nil {
 		return err
 	}

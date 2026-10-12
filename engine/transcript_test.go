@@ -73,13 +73,13 @@ func TestTranscriptionResumes(t *testing.T) {
 		}
 	}
 	file.Parts, file.Words = [][2]PyFloat{{0, PyFloat(cut)}}, storedWords(early)
-	if err := writeTranscript(path, file, frames); err != nil {
+	if err := writeTranscript(disk, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
 	if got, done := Coverage(source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
-	if st := Status(source, base.ASRModel); st.Transcribed || st.Covered != cut {
+	if st := Status(disk, source, base.ASRModel); st.Transcribed || st.Covered != cut {
 		t.Errorf("status of a partial transcript %+v", st)
 	}
 
@@ -141,7 +141,7 @@ func storedTranscript(t *testing.T, words []Cue, frames []float32, to float64,
 	file := transcriptFile{Version: transcriptVersion, Source: stamp, Model: "modell",
 		Mean: PyFloat(-30), Parts: [][2]PyFloat{{0, PyFloat(to)}}, End: PyFloat(end),
 		Words: storedWords(words)}
-	if err := writeTranscript(path, file, frames); err != nil {
+	if err := writeTranscript(disk, path, file, frames); err != nil {
 		t.Fatal(err)
 	}
 	return source, path
@@ -160,13 +160,13 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		transcriptVersion + 1: false} {
 		file := transcriptFile{Version: version, Source: stamp, Model: "modell",
 			To: 3, Mean: -30, Words: storedWords(words)}
-		if err := writeTranscript(path, file, make([]float32, 300)); err != nil {
+		if err := writeTranscript(disk, path, file, make([]float32, 300)); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, _, ok := readTranscriptFile(path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(source, "modell"); st.TranscriptStale == read {
+		if st := Status(disk, source, "modell"); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -176,7 +176,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 	// the word it left to be heard again.
 	file := transcriptFile{Version: 2, Source: stamp, Model: "modell", To: 3, Resume: 2.5,
 		Partial: true, Mean: -30, Words: storedWords(append(words, Cue{2.6, 2.9, "noch"}))}
-	if err := writeTranscript(path, file, make([]float32, 300)); err != nil {
+	if err := writeTranscript(disk, path, file, make([]float32, 300)); err != nil {
 		t.Fatal(err)
 	}
 	read, got, _, ok := readTranscriptFile(path, stamp, "modell")
@@ -433,7 +433,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
-			st := Status(source, model)
+			st := Status(disk, source, model)
 			if st.Covered > 0 && !st.Transcribed {
 				seen = append(seen, st.Covered)
 			}
@@ -452,7 +452,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	if seen[len(seen)-1] <= seen[0] {
 		t.Errorf("coverage did not grow while it ran: %v", seen)
 	}
-	if st := Status(source, model); !st.Transcribed || st.Covered < 69.9 {
+	if st := Status(disk, source, model); !st.Transcribed || st.Covered < 69.9 {
 		t.Errorf("status when it is done %+v", st)
 	}
 }
@@ -583,7 +583,7 @@ func TestCarryingOnFromFilesOutOfStep(t *testing.T) {
 		}
 	}
 	file.Parts, file.Words = [][2]PyFloat{{0, 40}}, storedWords(early)
-	if err := writeTranscript(path, file, frames[:2000]); err != nil {
+	if err := writeTranscript(disk, path, file, frames[:2000]); err != nil {
 		t.Fatal(err)
 	}
 	if covered, _ := Coverage(source, base.ASRModel); covered != 20 {
@@ -676,7 +676,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 				default:
 				}
 				covered, done := Coverage(source, base.ASRModel)
-				st := Status(source, base.ASRModel)
+				st := Status(disk, source, base.ASRModel)
 				mu.Lock()
 				if covered < last-0.001 {
 					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))
@@ -864,11 +864,11 @@ func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
 func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "plan.json")
-	if err := writeAtomic(path, []byte("before")); err != nil {
+	if err := writeAtomic(disk, path, []byte("before")); err != nil {
 		t.Fatal(err)
 	}
 	refuse := func(string) error { return errors.New("not a plan") }
-	if err := replaceFile(path, ".plan-*", []byte("after"), refuse); err == nil {
+	if err := replaceFile(disk, path, ".plan-*", []byte("after"), refuse); err == nil {
 		t.Fatal("a refused write went through")
 	}
 	if got, _ := os.ReadFile(path); string(got) != "before" {
@@ -877,7 +877,7 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 	if left, _ := filepath.Glob(filepath.Join(dir, ".*")); len(left) != 0 {
 		t.Errorf("left beside it: %v", left)
 	}
-	if err := writeAtomic(path, []byte("after")); err != nil {
+	if err := writeAtomic(disk, path, []byte("after")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(path); string(got) != "after" {

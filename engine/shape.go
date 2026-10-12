@@ -1,9 +1,10 @@
 package engine
 
 import (
+	"github.com/spf13/afero"
+
 	"fmt"
 	"math"
-	"os"
 )
 
 // What a hand does to a clip on the clip timeline, and what it makes of the
@@ -60,8 +61,8 @@ type Shaped struct {
 }
 
 // ShapeClip works out what a gesture makes of a clip, and writes nothing.
-func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause float64) (Shaped, error) {
-	plan, clip, err := planClip(planPath, clipID)
+func ShapeClip(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) (Shaped, error) {
+	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -69,7 +70,7 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 	if err != nil {
 		return Shaped{}, err
 	}
-	data, err := os.ReadFile(planPath)
+	data, err := afero.ReadFile(fsys, planPath)
 	if err != nil {
 		return Shaped{}, err
 	}
@@ -109,8 +110,8 @@ func ShapeClip(planPath, clipID string, g Gesture, t *Transcript, keepPause floa
 
 // Reshape makes a gesture's change to a clip and saves it, the same change
 // ShapeClip shows while the hand moves.
-func Reshape(planPath, clipID string, g Gesture, t *Transcript, keepPause float64) error {
-	plan, clip, err := planClip(planPath, clipID)
+func Reshape(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) error {
+	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return err
 	}
@@ -118,7 +119,7 @@ func Reshape(planPath, clipID string, g Gesture, t *Transcript, keepPause float6
 	if err != nil {
 		return err
 	}
-	return editPieces(planPath, clipID, change, g.Frames)
+	return editPieces(fsys, planPath, clipID, change, g.Frames)
 }
 
 // change is what a gesture does to a clip's pieces, with its edges where

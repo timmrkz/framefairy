@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"github.com/spf13/afero"
+
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -122,7 +124,7 @@ func framesPath(jsonPath string) string {
 // writeTranscript saves the frames first and the words last, each replaced
 // in one step. The words file says how far the transcript goes, and the
 // frames only ever grow, so a reader never sees words without their frames.
-func writeTranscript(path string, file transcriptFile, frames []float32) error {
+func writeTranscript(fsys afero.Fs, path string, file transcriptFile, frames []float32) error {
 	body, err := MarshalPlan(file)
 	if err != nil {
 		return err
@@ -131,16 +133,16 @@ func writeTranscript(path string, file transcriptFile, frames []float32) error {
 	if err := binary.Write(&raw, binary.LittleEndian, frames); err != nil {
 		return err
 	}
-	if err := writeAtomic(framesPath(path), raw.Bytes()); err != nil {
+	if err := writeAtomic(fsys, framesPath(path), raw.Bytes()); err != nil {
 		return err
 	}
-	return writeAtomic(path, body)
+	return writeAtomic(fsys, path, body)
 }
 
 // writeAtomic replaces the file at path with body in one step as far as
 // any reader is concerned, see replaceFile.
-func writeAtomic(path string, body []byte) error {
-	return replaceFile(path, "."+filepath.Base(path)+"-*", body, nil)
+func writeAtomic(fsys afero.Fs, path string, body []byte) error {
+	return replaceFile(fsys, path, "."+filepath.Base(path)+"-*", body, nil)
 }
 
 // replaceFile writes body beside path, under a temporary name made from
@@ -152,10 +154,10 @@ func writeAtomic(path string, body []byte) error {
 // body. Without the flush the move can reach the disk before the bytes do,
 // and a plan or a transcript comes back empty. On macOS Go's Sync is a
 // full flush, F_FULLFSYNC, which is the one the drive does not keep in
-// its own cache.
-func replaceFile(path, pattern string, body []byte, check func(tmp string) error) error {
+// its own cache. In memory both flushes are nothing.
+func replaceFile(fsys afero.Fs, path, pattern string, body []byte, check func(tmp string) error) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, pattern)
+	tmp, err := afero.TempFile(fsys, dir, pattern)
 	if err != nil {
 		return err
 	}
@@ -171,15 +173,15 @@ func replaceFile(path, pattern string, body []byte, check func(tmp string) error
 		err = check(name)
 	}
 	if err == nil {
-		err = os.Rename(name, path)
+		err = fsys.Rename(name, path)
 	}
 	if err != nil {
-		os.Remove(name)
+		fsys.Remove(name)
 		return err
 	}
 	// The move is kept by the folder, so the folder is flushed too. A
 	// system that cannot open a folder for that, Windows, keeps it anyway.
-	if d, err := os.Open(dir); err == nil {
+	if d, err := fsys.Open(dir); err == nil {
 		_ = d.Sync()
 		d.Close()
 	}
@@ -425,7 +427,7 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 	if err != nil {
 		return nil, err
 	}
-	t.Correct(LoadCorrections(logsDir))
+	t.Correct(LoadCorrections(e.Files, logsDir))
 	return t, nil
 }
 
@@ -444,7 +446,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 	if e.OpenRecognizer == nil {
 		return nil, renderErr("this build has no speech recogniser")
 	}
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+	if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
 		return nil, err
 	}
 	// On frames, outward, so what is heard lines up with the loudness.
@@ -482,7 +484,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 					return
 				}
 				part := Window{gap.Start, math.Min(covered, gap.End)}
-				if err := addHeard(path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
+				if err := addHeard(e.Files, path, stamp, model, duration, part, raw, frames, read.Start); err != nil {
 					e.Log.Detail("could not save the transcript so far: %s", err)
 				}
 			}
@@ -490,7 +492,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 			if err != nil {
 				return err
 			}
-			if err := addHeard(path, stamp, model, duration, gap, t.RawWords, t.Frames, read.Start); err != nil {
+			if err := addHeard(e.Files, path, stamp, model, duration, gap, t.RawWords, t.Frames, read.Start); err != nil {
 				return renderErr("could not save the transcript: %s", err)
 			}
 			words += len(t.RawWords)
@@ -521,9 +523,9 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 // part it starts in. The same word heard twice can start a few hundredths
 // apart, so a word of the new part that starts within a tenth of a second
 // of the neighbour's word across the join is that word again, and left out.
-func addHeard(path string, stamp sourceStamp, model string, duration float64, part Window,
+func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, duration float64, part Window,
 	raw []Cue, frames []float32, read float64) error {
-	defer lockFile(path)()
+	defer lockFile(fsys, path)()
 	file, had, hadFrames, ok := readTranscriptFile(path, stamp, model)
 	var parts [][2]float64
 	if ok {
@@ -600,7 +602,7 @@ func addHeard(path string, stamp sourceStamp, model string, duration float64, pa
 		stored[i] = [2]PyFloat{PyFloat(p[0]), PyFloat(p[1])}
 	}
 	end := PyFloat(roundTo(duration, 3))
-	return writeTranscript(path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
+	return writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
 		To: end, Mean: PyFloat(roundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
 }

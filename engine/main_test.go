@@ -81,7 +81,7 @@ func stubbornServer() {
 // holdLock is this test binary run as another program that edits a file:
 // it takes the file's lock, says so, and holds it until its input closes.
 func holdLock(path string) {
-	release := lockFile(path)
+	release := lockFile(disk, path)
 	fmt.Println("held")
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	release()

@@ -181,10 +181,10 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(path, "02", true); err != nil {
+	if err := SetRejected(disk, path, "02", true); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,14 +202,14 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
 		strings.Index(text, `"z"`) > strings.Index(text, `"a"`) {
 		t.Errorf("key order changed\n%s", text)
 	}
-	if err := SetRejected(path, "02", false); err != nil {
+	if err := SetRejected(disk, path, "02", false); err != nil {
 		t.Fatal(err)
 	}
 	body, _ = os.ReadFile(path)
 	if strings.Contains(string(body), "rejected") || !strings.Contains(string(body), `"revision": 2`) {
 		t.Errorf("after keeping again\n%s", body)
 	}
-	if err := SetRejected(path, "07", true); err == nil {
+	if err := SetRejected(disk, path, "07", true); err == nil {
 		t.Errorf("unknown clip accepted")
 	}
 }
@@ -328,10 +328,10 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Start moved earlier onto "eins", end moved later onto "vier".
-	if err := TrimClip(path, "01", 9.9, 13.4, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(disk, path, "01", 9.9, 13.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,14 +344,14 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 	}
 	// Trimming the end back past the second piece drops it. "zwei" ends at
 	// 11 and the next word starts at 12, so the edge is 11.1.
-	if err := TrimClip(path, "01", 10, 11.2, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(disk, path, "01", 10, 11.2, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(disk, path)
 	if segs := clips[0].Segments; len(segs) != 1 || segs[0].Start != 9.9 || segs[0].End != 11.1 {
 		t.Errorf("after trimming in %+v", segs)
 	}
-	if err := TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords); err == nil {
+	if err := TrimClip(disk, path, "01", 12, 12.2, tr, 0.1, ToWords); err == nil {
 		t.Errorf("a clip under a second was accepted")
 	}
 }
@@ -370,10 +370,10 @@ func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 	}
 	// 10.24 is inside "eins" and 12.84 is in the pause before "vier", so
 	// snapping would move both.
-	if err := TrimClip(path, "01", 10.24, 12.84, tr, 0.1, ToFrames); err != nil {
+	if err := TrimClip(disk, path, "01", 10.24, 12.84, tr, 0.1, ToFrames); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,13 +381,13 @@ func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 	if len(segs) != 2 || segs[0].Start != 10.24 || segs[1].End != 12.84 {
 		t.Errorf("segments %+v", segs)
 	}
-	if err := TrimClip(path, "01", 12, 12.5, tr, 0.1, ToFrames); err == nil {
+	if err := TrimClip(disk, path, "01", 12, 12.5, tr, 0.1, ToFrames); err == nil {
 		t.Errorf("a clip under a second was accepted")
 	}
-	if err := TrimClip(path, "01", -3, 12.5, tr, 0.1, ToFrames); err != nil {
+	if err := TrimClip(disk, path, "01", -3, 12.5, tr, 0.1, ToFrames); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(disk, path)
 	if clips[0].Segments[0].Start != 0 {
 		t.Errorf("a clip starts before the episode: %+v", clips[0].Segments)
 	}
@@ -431,10 +431,10 @@ func TestWordCorrections(t *testing.T) {
 	path := filepath.Join(logs, "clips.json")
 	_ = os.WriteFile(path, []byte(plan), 0o644)
 
-	if err := SetWordText(logs, 10.0004, "  Tippfehler ", tr); err != nil {
+	if err := SetWordText(disk, logs, 10.0004, "  Tippfehler ", tr); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ := LoadClips(path)
+	_, clips, _ := LoadClips(disk, path)
 	one, two := Said(clips[0], tr.Words), Said(clips[1], tr.Words)
 	if len(one) != 2 || one[0].Text != "Tippfehler" || len(two) != 1 || two[0].Text != "drei" {
 		t.Errorf("clip words %v %v", one, two)
@@ -442,20 +442,20 @@ func TestWordCorrections(t *testing.T) {
 	// A transcript read again from what the recogniser heard takes the
 	// correction from corrections.json.
 	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(disk, logs))
 	if again.Words[0].Text != "Tippfehler" {
 		t.Errorf("the correction was not kept: %v", again.Words)
 	}
 	// A trim keeps the fix, because the clip reads its words from the
 	// transcript.
-	if err := TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords); err != nil {
+	if err := TrimClip(disk, path, "01", 10, 12.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(disk, path)
 	if said := Said(clips[0], tr.Words); len(said) == 0 || said[0].Text != "Tippfehler" {
 		t.Errorf("trim lost the correction: %v", said)
 	}
-	if err := SetWordText(logs, 99, "x", tr); err == nil {
+	if err := SetWordText(disk, logs, 99, "x", tr); err == nil {
 		t.Errorf("a word that does not exist was accepted")
 	}
 }
@@ -479,7 +479,7 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 
-	if err := SetWordText(logs, 10.2, "  ", tr); err != nil {
+	if err := SetWordText(disk, logs, 10.2, "  ", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := said(); got != "zwei drei" {
@@ -489,11 +489,11 @@ func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
 		t.Errorf("the word heard there is %+v, %v", w, ok)
 	}
 	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(disk, logs))
 	if len(again.Words) != 2 || again.Words[0].Text != "zwei" {
 		t.Errorf("the removal was not kept: %v", again.Words)
 	}
-	if err := SetWordText(logs, 10.2, "ja", tr); err != nil {
+	if err := SetWordText(disk, logs, 10.2, "ja", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := said(); got != "ja zwei drei" {
@@ -526,7 +526,7 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	before := laid(tr)
 	logs := filepath.Join(t.TempDir(), "logs")
 	_ = os.MkdirAll(logs, 0o755)
-	if err := SetWordText(logs, 61.7, "", tr); err != nil {
+	if err := SetWordText(disk, logs, 61.7, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "Typ auf dem", "Typ dem", 1)
@@ -558,7 +558,7 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	}
 	logs := filepath.Join(t.TempDir(), "logs")
 	_ = os.MkdirAll(logs, 0o755)
-	if err := SetWordText(logs, 60.6, "", tr); err != nil {
+	if err := SetWordText(disk, logs, 60.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
@@ -569,7 +569,7 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	// the way it does when its left edge is dragged in over the word, and
 	// the caption before it still goes when it did. Tim asked for the two
 	// to end the same.
-	if err := SetWordText(logs, 61.5, "", tr); err != nil {
+	if err := SetWordText(disk, logs, 61.5, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want = strings.Replace(want, "[1.55-2.70 irgendein Typ]", "[2.05-2.70 Typ]", 1)
@@ -597,11 +597,11 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 	logs := filepath.Join(t.TempDir(), "logs")
 	_ = os.MkdirAll(logs, 0o755)
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	if err := SetWordText(logs, 60.8, "auf", tr); err != nil {
+	if err := SetWordText(disk, logs, 60.8, "auf", tr); err != nil {
 		t.Fatal(err)
 	}
 	before := laid(tr)
-	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+	if err := SetWordText(disk, logs, 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
@@ -610,12 +610,12 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 	}
 	// And read again from the file, the same.
 	again := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(logs))
+	again.Correct(LoadCorrections(disk, logs))
 	if got := laid(again); got != want {
 		t.Errorf("read again\n got %s\nwant %s", got, want)
 	}
 	// Removed a second time, it keeps what it read the first time.
-	if err := SetWordText(logs, 60.8, "", tr); err != nil {
+	if err := SetWordText(disk, logs, 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := laid(tr); got != want {
@@ -648,11 +648,11 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 			_ = os.MkdirAll(logs, 0o755)
 			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
 			for _, at := range c.remove {
-				if err := SetWordText(logs, at, "", tr); err != nil {
+				if err := SetWordText(disk, logs, at, "", tr); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := SetWordText(logs, c.at, c.text, tr); err != nil {
+			if err := SetWordText(disk, logs, c.at, c.text, tr); err != nil {
 				t.Fatal(err)
 			}
 			var got []string
@@ -662,7 +662,7 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 			if strings.Join(got, " ") != c.want {
 				t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), c.want)
 			}
-			if fixes := LoadCorrections(logs); !maps.Equal(fixes, c.fixes) {
+			if fixes := LoadCorrections(disk, logs); !maps.Equal(fixes, c.fixes) {
 				t.Errorf("corrections %v, want %v", fixes, c.fixes)
 			}
 		})
@@ -754,7 +754,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 
 	// The captions of the clip, built the way a render builds them.
 	captions := func() []Caption {
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(disk, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -774,7 +774,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// A word is added: what was heard as one word was two.
-	if err := SetWordText(logs, 10.5, "was wo", tr); err != nil {
+	if err := SetWordText(disk, logs, 10.5, "was wo", tr); err != nil {
 		t.Fatalf("adding a word: %v", err)
 	}
 	added := said()
@@ -801,7 +801,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// Taking it away again is the same correction the other way.
-	if err := SetWordText(logs, 10.5, "was", tr); err != nil {
+	if err := SetWordText(disk, logs, 10.5, "was", tr); err != nil {
 		t.Fatalf("taking the word away: %v", err)
 	}
 	gone := said()
@@ -822,7 +822,7 @@ func TestCropByHand(t *testing.T) {
 		t.Fatal(err)
 	}
 	crops := func() string {
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(disk, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -840,27 +840,27 @@ func TestCropByHand(t *testing.T) {
 		return out
 	}
 	// Moving the first angle moves both of its pieces, not the others.
-	if err := SetCrop(path, "01", 2, 501, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 2, 501, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "500* 1200 500* centre " {
 		t.Errorf("after moving %q", got)
 	}
 	// Moving it again keeps the automatic placement from the first time.
-	if err := SetCrop(path, "01", 11, 600, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 11, 600, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	// A centred piece can be moved and reset too.
-	if err := SetCrop(path, "01", 16, 100, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 16, 100, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "600* 1200 600* 100* " {
 		t.Errorf("after moving again %q", got)
 	}
-	if err := ResetCrop(path, "01", 3); err != nil {
+	if err := ResetCrop(disk, path, "01", 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetCrop(path, "01", 15); err != nil {
+	if err := ResetCrop(disk, path, "01", 15); err != nil {
 		t.Fatal(err)
 	}
 	if got := crops(); got != "400 1200 400 centre " {
@@ -870,7 +870,7 @@ func TestCropByHand(t *testing.T) {
 	if strings.Contains(string(body), "crop_x_auto") {
 		t.Errorf("reset left the automatic value behind\n%s", body)
 	}
-	if err := SetCrop(path, "01", 2, -4, SourceInfo{}, 0); err == nil {
+	if err := SetCrop(disk, path, "01", 2, -4, SourceInfo{}, 0); err == nil {
 		t.Errorf("a negative crop was accepted")
 	}
 }

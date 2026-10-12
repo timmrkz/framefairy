@@ -46,7 +46,7 @@ func rotatablePlanPath(t *testing.T) string {
 
 func rotations(t *testing.T, path string) ([]int, []*int) {
 	t.Helper()
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func rotations(t *testing.T, path string) ([]int, []*int) {
 // rotate presses R at a moment of the clip of rotatablePlan.
 func rotate(t *testing.T, path string, at float64) {
 	t.Helper()
-	if err := RotatePart(path, "01", at, at25); err != nil {
+	if err := RotatePart(disk, path, "01", at, at25); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,7 +73,7 @@ func reshape(t *testing.T, path string, g Gesture) {
 	if g.Frames.FPSNum == 0 {
 		g.Frames = at25
 	}
-	if err := Reshape(path, "01", g, editableTranscript(), 0.1); err != nil {
+	if err := Reshape(disk, path, "01", g, editableTranscript(), 0.1); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -81,7 +81,7 @@ func reshape(t *testing.T, path string, g Gesture) {
 // pieceAt is the piece of the clip of rotatablePlan holding a moment.
 func pieceAt(t *testing.T, path string, at float64) Segment {
 	t.Helper()
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 		if crops[2] == nil || *crops[2] != 120 {
 			t.Errorf("after %d turns the piece after the cut lost its crop", i+1)
 		}
-		_, clips, _ := LoadClips(path)
+		_, clips, _ := LoadClips(disk, path)
 		if want != 0 {
 			spans := clips[0].Rotations
 			if len(spans) != 1 || !math.IsInf(spans[0].From, -1) || spans[0].To != 12.52 || spans[0].Deg != want {
@@ -136,7 +136,7 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	path := rotatablePlanPath(t)
 	rotate(t, path, 13.5)
-	if err := SetCrop(path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	_, crops := rotations(t, path)
@@ -149,7 +149,7 @@ func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	// Both parts turned: the first piece is the same shot as the last,
 	// the second another shot.
 	rotate(t, path, 10.5)
-	if err := SetCrop(path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	turns, crops := rotations(t, path)
@@ -170,14 +170,14 @@ func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 func TestAnEditElsewhereLeavesARotatedCropAlone(t *testing.T) {
 	path := rotatablePlanPath(t)
 	rotate(t, path, 13.5)
-	if err := SetCrop(path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
+	if err := SetCrop(disk, path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetCrop(path, "01", 10.5); err != nil {
+	if err := ResetCrop(disk, path, "01", 10.5); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.ReadFile(path)
@@ -219,7 +219,7 @@ func TestARotationStaysWithTheVideoAsTheClipIsCut(t *testing.T) {
 	t.Run("the cut put back and made again", func(t *testing.T) {
 		path := rotatablePlanPath(t)
 		rotate(t, path, 13.5)
-		if err := SetCrop(path, "01", 13.5, 700, SourceInfo{}, 0); err != nil {
+		if err := SetCrop(disk, path, "01", 13.5, 700, SourceInfo{}, 0); err != nil {
 			t.Fatal(err)
 		}
 		reshape(t, path, Gesture{Kind: "join", From: 12.5})
@@ -255,7 +255,7 @@ func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
 		if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := LoadClips(path); err == nil {
+		if _, _, err := LoadClips(disk, path); err == nil {
 			t.Errorf("the rotations %s were taken", rotations)
 		}
 	}
@@ -265,7 +265,7 @@ func TestAPlansRotationsAreCheckedNotRepaired(t *testing.T) {
 	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}

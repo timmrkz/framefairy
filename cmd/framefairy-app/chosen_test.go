@@ -50,7 +50,7 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), episodes: []string{source}}
 	s := &FrameFairy{store: st}
 
 	if got := s.ChosenClip(source); got != "" {
@@ -188,7 +188,7 @@ func chosenApp(t *testing.T) (*FrameFairy, string) {
 	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), episodes: []string{source}}
 	return &FrameFairy{store: st}, source
 }
 
@@ -245,7 +245,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 		}
 		eps = append(eps, ep)
 	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: eps}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), episodes: eps}
 	s := &FrameFairy{store: st}
 	if got := s.Opened(4); len(got) != 0 {
 		t.Fatalf("nothing opened yet gave %v", got)

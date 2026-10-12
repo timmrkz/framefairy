@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"io/fs"
 	"math"
 	"os"
@@ -172,18 +173,18 @@ func NewRenderID() string {
 }
 
 // WriteJob writes a job's record, all at once.
-func WriteJob(source string, rec JobRecord) error {
+func WriteJob(fsys afero.Fs, source string, rec JobRecord) error {
 	if !jobID.MatchString(rec.ID) {
 		return fmt.Errorf("%q is no job id", rec.ID)
 	}
-	if err := os.MkdirAll(JobsDir(source), 0o755); err != nil {
+	if err := fsys.MkdirAll(JobsDir(source), 0o755); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(JobsDir(source), rec.ID+".json"), body)
+	return writeAtomic(fsys, filepath.Join(JobsDir(source), rec.ID+".json"), body)
 }
 
 // RemoveJob takes a job's record away. A job that has none is fine.
@@ -233,7 +234,7 @@ func ReadJobs(source string) []JobRecord {
 // stopped. What it did stays and it can be carried on, so it says so where
 // its work was, the same way a job cut off by the app closing does, see
 // docs/JOBS.md. A job with no record is left alone.
-func StopJob(source, id string) error {
+func StopJob(fsys afero.Fs, source, id string) error {
 	for _, rec := range ReadJobs(source) {
 		if rec.ID != id {
 			continue
@@ -244,7 +245,7 @@ func StopJob(source, id string) error {
 		}
 		rec.Step = StepStopped
 		rec.Steps = append(rec.Steps, StepTime{Step: StepStopped, From: now, To: &now})
-		return WriteJob(source, rec)
+		return WriteJob(fsys, source, rec)
 	}
 	return nil
 }
@@ -343,7 +344,7 @@ func (p *Project) startJob(rec JobRecord) *job {
 }
 
 func (j *job) write() {
-	if err := WriteJob(j.p.Source, j.rec); err != nil {
+	if err := WriteJob(j.p.Files, j.p.Source, j.rec); err != nil {
 		j.p.engine.Log.Warn("could not note the %s: %s", j.rec.Kind, err)
 	}
 }
@@ -532,7 +533,7 @@ func (p *Project) windowEnd(ctx context.Context, req PlanRequest) (float64, erro
 func (p *Project) RenderJob(ctx context.Context, id string, req RenderRequest, carry *JobRecord, turn Turn) (err error) {
 	clips := req.Clips
 	if len(clips) == 0 {
-		view, err := ReadPlan(req.Plan)
+		view, err := ReadPlan(p.Files, req.Plan)
 		if err != nil {
 			return err
 		}
@@ -621,7 +622,7 @@ func (p *Project) addTimings(rec JobRecord) {
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(JobsDir(p.Source), timingsName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := p.Files.OpenFile(filepath.Join(JobsDir(p.Source), timingsName), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		p.engine.Log.Warn("could not keep the timings: %s", err)
 		return

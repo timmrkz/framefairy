@@ -46,7 +46,7 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 	showReport = func(p string) error { shown = append(shown, p); return nil }
 	t.Cleanup(func() { showReport = was })
 
-	st := &store{dir: t.TempDir(), settings: defaultSettings()}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings()}
 	st.settings.OutputDir = filepath.Join(home, "Shorts")
 	f := &FrameFairy{store: st}
 	first, err := f.ReportProblem("  The picture stopped at 46 s in "+video+".  ", video)

@@ -209,7 +209,7 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	}
 	// One line is too short, and the engine takes in the one after it. A
 	// story the model gave no title is named after its first words.
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 || clips[0].Duration() < 20 ||
 		clips[0].Title == "" || strings.HasPrefix(clips[0].Slug, "clip") {
 		t.Errorf("clips %+v %v", clips, err)
 	}
@@ -410,7 +410,7 @@ func TestASearchWithAPlainAnswer(t *testing.T) {
 	if most < 256+80 || most > 4096+256+80 {
 		t.Errorf("an answer of one clip may run %v tokens", most)
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 || clips[0].Title != "Kurz" {
 		t.Errorf("clips %+v %v", clips, err)
 	}
 }

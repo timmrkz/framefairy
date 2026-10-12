@@ -321,7 +321,7 @@ func TestEditsAreLogged(t *testing.T) {
 // words, as far as seconds, the way a transcription leaves it.
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
 	t.Helper()
-	p := engine.NewProject(nil, path, svc.store.Settings().options())
+	p := svc.project(path)
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)

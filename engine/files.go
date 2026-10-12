@@ -1,0 +1,45 @@
+package engine
+
+import (
+	"path/filepath"
+
+	"github.com/spf13/afero"
+)
+
+// The engine reads and writes the files of an episode through an afero.Fs,
+// never through os directly. The programs hand it the real disk,
+// afero.NewOsFs, and a test hands it memory, afero.NewMemMapFs, because a
+// test is about what our code does with a plan or a transcript, not about
+// the drive under it. The file system is held by what owns the files, the
+// Engine, a Project and the app's store, and a function that has no owner
+// takes it as its first argument. It is never a variable of the package: a
+// test that swapped one would change it under the tests running beside it
+// that must stay on the disk.
+//
+// What an outside program reads or writes, ffmpeg, the frames decoder,
+// llama-server, is on the real disk whatever the engine is given, because
+// a separate process cannot see the memory of this one.
+
+// disk is the real disk, for the files that are on it whatever the engine
+// is given: the models, which llama-server reads, and the notes about the
+// programs this one started. It is never swapped.
+var disk afero.Fs = afero.NewOsFs()
+
+// OnDisk tells whether fsys is the real disk. Only the disk has links to
+// follow and other programs to share a lock with.
+func OnDisk(fsys afero.Fs) bool {
+	_, ok := fsys.(*afero.OsFs)
+	return ok
+}
+
+// resolveIn is resolvePath for a path in fsys. Memory holds no links, so a
+// path there leads where it says, and cleaning it is all there is to do.
+func resolveIn(fsys afero.Fs, path string) string {
+	if OnDisk(fsys) {
+		return resolvePath(path)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return filepath.Clean(path)
+}

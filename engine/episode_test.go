@@ -22,10 +22,10 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if EverSearched(source) {
+	if EverSearched(disk, source) {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(source, ""); st.EverSearched || st.Work {
+	if st := Status(disk, source, ""); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
@@ -35,37 +35,37 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	hand := PlanFile{Source: "ep.mp4", PlannedWith: PlannedWith{By: ByHand}, Clips: []PlanClip{{ID: "h01",
 		Slug: "hand", Keep: [][2]int{{1, 1}},
 		Segments: []PlanSegment{{Start: 1, End: 20, CropX: "center"}}}}}
-	if _, err := addClip(p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
+	if _, err := addClip(disk, p.HandPlanPath(), hand, hand.Clips[0], "h"); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: "clip-1", Kind: JobClip})
-	if EverSearched(source) {
+	if EverSearched(disk, source) {
 		t.Fatal("clips made by hand made the episode searched")
 	}
 
 	// A search that was asked for keeps its record, and its timings once
 	// it is done, and either is enough.
-	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
+	if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepWaiting}); err != nil {
 		t.Fatal(err)
 	}
-	if !EverSearched(source) {
+	if !EverSearched(disk, source) {
 		t.Fatal("an episode being searched says it was not searched")
 	}
 	if err := RemoveJob(source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	p.addTimings(JobRecord{ID: SearchID, Kind: JobSearch})
-	if !EverSearched(source) {
+	if !EverSearched(disk, source) {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(source, ""); !st.EverSearched || !st.Work {
+	if st := Status(disk, source, ""); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
 	if err := DeleteWork(source); err != nil {
 		t.Fatal(err)
 	}
-	if EverSearched(source) {
+	if EverSearched(disk, source) {
 		t.Error("an episode whose work folder is gone is new again")
 	}
 }
@@ -99,10 +99,10 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 		}
 	}
 	// Noted the way a render notes its short once it is written.
-	if err := recordShort(plan, "01", filepath.Join(out, "done.mp4")); err != nil {
+	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(source, "").Rendered; got != 1 {
+	if got := Status(disk, source, "").Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
 	}
 }
@@ -123,13 +123,13 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	}
 	clip := func() ClipView {
 		t.Helper()
-		view, err := ReadPlan(plan)
+		view, err := ReadPlan(disk, plan)
 		if err != nil || len(view.Clips) == 0 {
 			t.Fatalf("the plan: %v", err)
 		}
 		return view.Clips[0]
 	}
-	rendered := func() int { return Status(p.Source, p.Base.ASRModel).Rendered }
+	rendered := func() int { return Status(disk, p.Source, p.Base.ASRModel).Rendered }
 	shorts := t.TempDir()
 	other := filepath.Join(ResolvePath(shorts), clip().Slug+".mp4")
 	short := filepath.Join(ResolvePath(shorts), clip().Slug+" 2.mp4")
@@ -140,7 +140,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != "" {
 		t.Errorf("a clip never rendered says it is, at %s", got)
 	}
-	if IsShort(p.Source, other) {
+	if IsShort(disk, p.Source, other) {
 		t.Error("another episode's short is taken for this clip's")
 	}
 
@@ -151,7 +151,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != short {
 		t.Errorf("rendered into the folder for shorts, the clip says %q, not %q", got, short)
 	}
-	if !IsShort(p.Source, short) {
+	if !IsShort(disk, p.Source, short) {
 		t.Error("the short in the folder for shorts is not the clip's")
 	}
 	if n := rendered(); n != 1 {
@@ -166,7 +166,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.WriteFile(beside, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if IsShort(p.Source, beside) || IsShort(p.Source, shorts) {
+	if IsShort(disk, p.Source, beside) || IsShort(disk, p.Source, shorts) {
 		t.Error("what is beside the short is taken for one")
 	}
 
@@ -176,7 +176,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if got := clip().Rendered; got != "" {
 		t.Errorf("a short removed by hand is still the clip's, at %s", got)
 	}
-	if IsShort(p.Source, short) || rendered() != 0 {
+	if IsShort(disk, p.Source, short) || rendered() != 0 {
 		t.Error("a short removed by hand is still counted")
 	}
 }
@@ -202,7 +202,7 @@ func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 	}
 	ep := shortsEpisode{p, plan}
 	c := ep.clip(t)
-	if err := SetThumbnail(plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
+	if err := SetThumbnail(disk, plan, c.ID, -1, (c.Segments[0].Start+c.Segments[0].End)/2); err != nil {
 		t.Fatal(err)
 	}
 	return ep
@@ -210,7 +210,7 @@ func newShortsEpisode(t *testing.T, name string) shortsEpisode {
 
 func (ep shortsEpisode) clip(t *testing.T) ClipView {
 	t.Helper()
-	view, err := ReadPlan(ep.plan)
+	view, err := ReadPlan(disk, ep.plan)
 	if err != nil || len(view.Clips) == 0 {
 		t.Fatalf("the plan: %v", err)
 	}
@@ -256,10 +256,10 @@ func untouched(t *testing.T, short string, was [2]os.FileInfo) bool {
 // neitherClaims says whether each episode leaves the other's short alone.
 func neitherClaims(t *testing.T, a, b shortsEpisode, aShort, bShort string) {
 	t.Helper()
-	if IsShort(a.p.Source, bShort) {
+	if IsShort(disk, a.p.Source, bShort) {
 		t.Errorf("%s takes %s for its own", filepath.Base(a.p.Source), bShort)
 	}
-	if IsShort(b.p.Source, aShort) {
+	if IsShort(disk, b.p.Source, aShort) {
 		t.Errorf("%s takes %s for its own", filepath.Base(b.p.Source), aShort)
 	}
 }
@@ -405,12 +405,12 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	view, err := ReadPlan(plan)
+	view, err := ReadPlan(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := view.Clips[0].ID
-	change := edited(t, filepath.Dir(plan), func() error { return SetCaptionY(plan, id, 400) })
+	change := edited(t, disk, filepath.Dir(plan), func() error { return SetCaptionY(disk, plan, id, 400) })
 	p.Base.Out = t.TempDir()
 	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
@@ -418,7 +418,7 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	if _, err := change.Undo(); err != nil {
 		t.Fatalf("the edit before the render cannot be undone: %v", err)
 	}
-	view, err = ReadPlan(plan)
+	view, err = ReadPlan(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 			}
 			c := ep.clip(t)
 			// The first clip again, under the id of another search.
-			if err := editPlan(ep.plan, func(top *object, clips []*object) error {
+			if err := editPlan(disk, ep.plan, func(top *object, clips []*object) error {
 				again := newObject()
 				for _, k := range clips[0].keys {
 					again.set(k, clips[0].values[k])
@@ -461,7 +461,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 			var was [][2]os.FileInfo
 			for range 2 {
 				ep.render(t)
-				view, err := ReadPlan(ep.plan)
+				view, err := ReadPlan(disk, ep.plan)
 				if err != nil || len(view.Clips) != 2 {
 					t.Fatalf("the plan: %v", err)
 				}

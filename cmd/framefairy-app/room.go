@@ -30,7 +30,7 @@ func (s *FrameFairy) Room(path string) (RoomView, error) {
 		return RoomView{}, errNotInLibrary
 	}
 	opts := s.store.Settings().options()
-	p := engine.NewProject(nil, path, opts)
+	p := s.projectWith(path, opts)
 	room := engine.SearchRoom(opts, p.LogsDir())
 	out := RoomView{Chars: room.Chars, By: room.By, Lines: []engine.LineWeight{},
 		Heard: [][2]float64{}, Rate: engine.SpokenChars}

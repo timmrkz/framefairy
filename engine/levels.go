@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"github.com/spf13/afero"
 	"io"
 	"math"
 	"os"
@@ -308,7 +309,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		return err
 	}
 	logs := filepath.Join(WorkDir(source), "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
+	if err := e.Files.MkdirAll(logs, 0o755); err != nil {
 		return err
 	}
 	st := &levelState{end: -1}
@@ -321,7 +322,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		}
 	}
 	tell := func() {
-		if err := writeLevels(logs, stamp, st); err == nil && progress != nil {
+		if err := writeLevels(e.Files, logs, stamp, st); err == nil && progress != nil {
 			progress(st.measured())
 		}
 	}
@@ -339,7 +340,7 @@ func (e *Engine) MeasureLevels(ctx context.Context, source string, focus func() 
 		// until the measuring had moved on.
 		tell()
 	}
-	if err := writeLevels(logs, stamp, st); err != nil {
+	if err := writeLevels(e.Files, logs, stamp, st); err != nil {
 		return err
 	}
 	if progress != nil {
@@ -515,7 +516,7 @@ func (e *Engine) readLevels(ctx context.Context, r io.Reader, put func(float32) 
 
 // writeLevels writes the frames and then the json that says which are
 // measured, each replaced in one step.
-func writeLevels(logs string, stamp sourceStamp, st *levelState) error {
+func writeLevels(fsys afero.Fs, logs string, stamp sourceStamp, st *levelState) error {
 	meta, framesAt := levelsPaths(logs)
 	parts := st.parts()
 	reach := 0
@@ -526,7 +527,7 @@ func writeLevels(logs string, stamp sourceStamp, st *levelState) error {
 	if err := binary.Write(&raw, binary.LittleEndian, st.frames[:reach]); err != nil {
 		return err
 	}
-	if err := writeAtomic(framesAt, raw.Bytes()); err != nil {
+	if err := writeAtomic(fsys, framesAt, raw.Bytes()); err != nil {
 		return err
 	}
 	file := levelsFile{Version: levelsVersion, Source: stamp, Parts: parts, Done: st.done()}
@@ -537,5 +538,5 @@ func writeLevels(logs string, stamp sourceStamp, st *levelState) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(meta, body)
+	return writeAtomic(fsys, meta, body)
 }

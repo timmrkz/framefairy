@@ -43,7 +43,7 @@ func planOnDisk(t *testing.T, clips int) (string, []byte) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := LoadClips(path); err != nil {
+	if _, _, err := LoadClips(disk, path); err != nil {
 		t.Fatalf("the plan this test writes is not a plan: %v", err)
 	}
 	return path, body
@@ -68,7 +68,7 @@ func TestAPlanIsReplacedRatherThanOverwritten(t *testing.T) {
 	}
 	defer reader.Close()
 
-	if err := writePlanFile(path, after); err != nil {
+	if err := writePlanFile(disk, path, after); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +103,7 @@ func TestAPlanBeingWrittenIsNotOneOfThePlans(t *testing.T) {
 	tmp.WriteString(`{"source":"ep.mp4","clips":[`)
 	tmp.Close()
 
-	if got := PlanSummaries(logs); len(got) != 1 {
+	if got := PlanSummaries(disk, logs); len(got) != 1 {
 		names := []string{}
 		for _, s := range got {
 			names = append(names, s.Name)
@@ -117,18 +117,18 @@ func TestAPlanBeingWrittenIsNotOneOfThePlans(t *testing.T) {
 // app does removes a person's work.
 func TestAFailedWriteLeavesThePlanThatWasThere(t *testing.T) {
 	path, _ := planOnDisk(t, 3)
-	if err := writePlanFile(path, []byte("{ this is not a plan")); err == nil {
+	if err := writePlanFile(disk, path, []byte("{ this is not a plan")); err == nil {
 		t.Error("a plan that is not a plan was written")
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 3 {
 		t.Errorf("the plan that was there is gone: %d clips, %v", len(clips), err)
 	}
 	// And one that is JSON but not a plan at all.
-	if err := writePlanFile(path, []byte(`["not", "a", "plan"]`)); err == nil {
+	if err := writePlanFile(disk, path, []byte(`["not", "a", "plan"]`)); err == nil {
 		t.Error("something that is not a plan was written")
 	}
-	if _, clips, _ := LoadClips(path); len(clips) != 3 {
+	if _, clips, _ := LoadClips(disk, path); len(clips) != 3 {
 		t.Errorf("the plan that was there is gone, %d clips left", len(clips))
 	}
 }
@@ -147,7 +147,7 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 60; i++ {
-			if err := writePlanFile(path, body); err != nil {
+			if err := writePlanFile(disk, path, body); err != nil {
 				t.Errorf("writing the plan: %v", err)
 				break
 			}
@@ -165,7 +165,7 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 				default:
 				}
 				atomic.AddInt64(&edits, 1)
-				err := editPlan(path, func(top *object, clips []*object) error {
+				err := editPlan(disk, path, func(top *object, clips []*object) error {
 					if len(clips) != 4 {
 						atomic.AddInt64(&bad, 1)
 					}
@@ -184,7 +184,7 @@ func TestASearchAndAnEditDoNotOverwriteEachOther(t *testing.T) {
 	}
 	// Every edit raises the revision, so the plan is still a plan and the
 	// edits were not silently lost.
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 4 {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 4 {
 		t.Errorf("the plan did not survive: %d clips, %v", len(clips), err)
 	}
 }
@@ -205,7 +205,7 @@ func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 60; i++ {
-			if err := writePlanFile(path, body); err != nil {
+			if err := writePlanFile(disk, path, body); err != nil {
 				t.Errorf("writing the plan: %v", err)
 				break
 			}
@@ -223,10 +223,10 @@ func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
 				default:
 				}
 				atomic.AddInt64(&reads, 1)
-				if _, clips, err := LoadClips(path); err != nil || len(clips) != 12 {
+				if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 12 {
 					atomic.AddInt64(&torn, 1)
 				}
-				if len(PlanSummaries(logs)) != 1 {
+				if len(PlanSummaries(disk, logs)) != 1 {
 					atomic.AddInt64(&torn, 1)
 				}
 			}

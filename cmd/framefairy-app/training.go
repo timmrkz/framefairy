@@ -14,7 +14,7 @@ func (s *FrameFairy) ClipPlayed(plan, clipID string) error {
 	if !s.store.Known(plan) {
 		return errNotInLibrary
 	}
-	return engine.RecordDecision(plan, clipID, engine.DecisionViewed, nil)
+	return engine.RecordDecision(s.store.files, plan, clipID, engine.DecisionViewed, nil)
 }
 
 // TrainingStatus is the one folder the records live in and how much is in

@@ -24,5 +24,7 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/spf13/afero v1.15.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )

@@ -68,7 +68,7 @@ func landed(t *testing.T, path string, n int) []Clip {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, clips, err := LoadClips(path); err == nil && len(clips) >= n {
+		if _, clips, err := LoadClips(disk, path); err == nil && len(clips) >= n {
 			return clips
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -98,7 +98,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	if len(clips) != 1 || clips[0].ID != "t10-01" {
 		t.Fatalf("clips %+v", clips)
 	}
-	plan, _, _ := LoadClips(path)
+	plan, _, _ := LoadClips(disk, path)
 	early, _ := plan.Raw["plan_id"].(string)
 	if early == "" {
 		t.Fatal("the first clip landed without the plan's id")
@@ -119,19 +119,19 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 			defer wg.Done()
 			switch i % 4 {
 			case 0:
-				if err := SetCaptionY(path, "t10-01", 0.3); err != nil {
+				if err := SetCaptionY(disk, path, "t10-01", 0.3); err != nil {
 					t.Errorf("caption height: %v", err)
 				}
 			case 1:
-				if err := SetRejected(path, "t10-01", false); err != nil {
+				if err := SetRejected(disk, path, "t10-01", false); err != nil {
 					t.Errorf("keep: %v", err)
 				}
 			case 2:
-				if err := RecordDecision(path, "t10-01", DecisionKept, nil); err != nil {
+				if err := RecordDecision(disk, path, "t10-01", DecisionKept, nil); err != nil {
 					t.Errorf("decision: %v", err)
 				}
 			case 3:
-				if _, _, err := LoadClips(path); err != nil {
+				if _, _, err := LoadClips(disk, path); err != nil {
 					t.Errorf("a plan read while it was written: %v", err)
 				}
 			}
@@ -144,7 +144,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	if r.err != nil {
 		t.Fatalf("plan: %v %s", r.err, p.LastError())
 	}
-	final, clips, err := LoadClips(r.plan)
+	final, clips, err := LoadClips(disk, r.plan)
 	if err != nil || len(clips) != 2 {
 		t.Fatalf("final plan: %v, %d clip(s)", err, len(clips))
 	}
@@ -182,7 +182,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	if err := <-finished; err == nil {
 		t.Fatal("a stopped search said it finished")
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 {
 		t.Errorf("what arrived before the stop: %v, %d clip(s)", err, len(clips))
 	}
 }
@@ -207,7 +207,7 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatalf("a search with one clip that panicked: %v", err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 || clips[0].ID != "t10-02" {
 		t.Errorf("the clip that did not panic should be in the plan: %v, %+v", err, clips)
 	}
@@ -285,7 +285,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	defer mu.Unlock()
 	// Every card said which clip it would be, so the list keeps one row
 	// from the card to the clip.
-	_, clips, err := LoadClips(plan)
+	_, clips, err := LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) == 0 {
 		t.Fatalf("clips %+v, %v", clips, err)
 	}
@@ -434,7 +434,7 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 		if fmt.Sprint(proposed) != fmt.Sprint(kept) {
 			t.Errorf("%s was proposed as %v and entered the plan as %v", c.ID, proposed, kept)
 		}
-		if err := RecordDecision(path, c.ID, DecisionRendered, nil); err != nil {
+		if err := RecordDecision(disk, path, c.ID, DecisionRendered, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, dir)

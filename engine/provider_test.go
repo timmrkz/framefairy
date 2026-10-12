@@ -350,7 +350,7 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 || !strings.HasPrefix(clips[0].Title, "wort") {
 		t.Fatalf("the plan from OpenAI's answer: %+v, %v", clips, err)
 	}
@@ -384,7 +384,7 @@ func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 {
 		t.Fatalf("the plan from Claude's answer: %+v, %v", clips, err)
 	}
 	seen := fake.seen()

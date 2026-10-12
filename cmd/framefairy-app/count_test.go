@@ -39,7 +39,7 @@ func TestARefusedSearchKeepsItsWindow(t *testing.T) {
 	// An older search of another window, stopped, left on disk.
 	older := engine.JobRecord{ID: engine.SearchID, Kind: engine.JobSearch, From: 0, To: 60, Count: 1,
 		Min: 5, Step: engine.StepStopped, Asked: time.Now()}
-	if err := engine.WriteJob(ep, older); err != nil {
+	if err := engine.WriteJob(disk, ep, older); err != nil {
 		t.Fatal(err)
 	}
 	d.svc.jobs.shutDown()

@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"github.com/spf13/afero"
+
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
+
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -270,8 +272,8 @@ const MaxEpisodeSeconds = 100 * 3600
 
 // LoadClips reads and validates a clip plan. The plan is treated as untrusted
 // input, because it is generated from transcript text.
-func LoadClips(path string) (Plan, []Clip, error) {
-	data, err := os.ReadFile(path)
+func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
+	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		return Plan{}, nil, err
 	}

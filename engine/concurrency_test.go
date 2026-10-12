@@ -34,10 +34,10 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 				if err := appendRecord(filepath.Join(TrainingDir(), "decisions.jsonl"), record); err != nil {
 					t.Error(err)
 				}
-				if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
+				if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
 					t.Error(err)
 				}
-				if !EverSearched(source) || ReadSearch(source) == nil {
+				if !EverSearched(disk, source) || ReadSearch(source) == nil {
 					t.Error("a search being written was not read whole")
 				}
 			}

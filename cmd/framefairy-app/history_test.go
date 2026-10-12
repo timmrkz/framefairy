@@ -37,7 +37,7 @@ func anEpisodeWithAPlan(t *testing.T) (*FrameFairy, string, string) {
 
 func removed(t *testing.T, plan, id string) bool {
 	t.Helper()
-	_, clips, err := engine.LoadClips(plan)
+	_, clips, err := engine.LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestEditsAndUndosAtOnce(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if _, _, err := engine.LoadClips(plan); err != nil {
+	if _, _, err := engine.LoadClips(disk, plan); err != nil {
 		t.Fatalf("the plan no longer loads: %v", err)
 	}
 	// Undo all the way back always ends on the plan as it began.
@@ -163,7 +163,7 @@ func TestCaptionColoursAreSavedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	style := func() engine.Style {
 		t.Helper()
-		p, _, err := engine.LoadClips(plan)
+		p, _, err := engine.LoadClips(disk, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -216,7 +216,7 @@ func TestCaptionSwitchesAreSwitchedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	on := func() bool {
 		t.Helper()
-		p, _, err := engine.LoadClips(plan)
+		p, _, err := engine.LoadClips(disk, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -266,13 +266,13 @@ func TestThumbnailsAreSavedAndUndone(t *testing.T) {
 	ctx := context.Background()
 	thumbs := func() []float64 {
 		t.Helper()
-		_, clips, err := engine.LoadClips(plan)
+		_, clips, err := engine.LoadClips(disk, plan)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return clips[0].Thumbnails
 	}
-	_, clips, err := engine.LoadClips(plan)
+	_, clips, err := engine.LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

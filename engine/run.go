@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
@@ -326,7 +327,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		outDir = filepath.Join(work, "out")
 	}
 	captionDir := filepath.Join(work, "captions")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	if err := e.Files.MkdirAll(work, 0o755); err != nil {
 		return nil, fmt.Errorf("cannot create %s: %w", work, err)
 	}
 
@@ -413,7 +414,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	// They are moved rather than ignored, so a plan you are happy with is not
 	// quietly replaced by a paid-for new one.
 	if opts.ClipsPath == "" {
-		stale, _ := filepath.Glob(filepath.Join(work, "clips*.json"))
+		stale, _ := afero.Glob(e.Files, filepath.Join(work, "clips*.json"))
 		sort.Strings(stale)
 		for _, old := range stale {
 			if !isFile(old) {
@@ -423,10 +424,10 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 			if exists(moved) {
 				continue
 			}
-			if err := os.MkdirAll(logsDir, 0o755); err != nil {
+			if err := e.Files.MkdirAll(logsDir, 0o755); err != nil {
 				continue
 			}
-			if err := os.Rename(old, moved); err == nil {
+			if err := e.Files.Rename(old, moved); err == nil {
 				log.Info("moved %s into logs/", filepath.Base(old))
 			}
 		}
@@ -439,7 +440,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	experiment := opts.Experiment || IsExperiment(opts.Recipe)
 	if opts.ClipsPath == "" && !exists(planPath) && !opts.Replan && !opts.TranscribeOnly &&
 		!opts.ExactPlan && !experiment {
-		matches, _ := filepath.Glob(filepath.Join(logsDir, "clips*.json"))
+		matches, _ := afero.Glob(e.Files, filepath.Join(logsDir, "clips*.json"))
 		var existing []string
 		for _, m := range matches {
 			if isFile(m) {
@@ -523,7 +524,7 @@ func (r *runner) plan(ctx context.Context) error {
 	}
 	if opts.Planner == "api" && !whole {
 		if _, err := ReadAPIKey(ctx, ProviderFor(opts.Model)); err != nil {
-			saved, _ := filepath.Glob(filepath.Join(logsDir, "reply-*.json"))
+			saved, _ := afero.Glob(r.e.Files, filepath.Join(logsDir, "reply-*.json"))
 			if len(saved) == 0 || opts.Replan {
 				return err
 			}
@@ -571,7 +572,7 @@ func (r *runner) plan(ctx context.Context) error {
 	// undoing its removal would show the episode twice.
 	if whole && len(plan.Clips) > 0 {
 		for _, c := range opts.Removed {
-			if err := DropRemoved(c.Plan, c.ID); err != nil {
+			if err := DropRemoved(r.e.Files, c.Plan, c.ID); err != nil {
 				log.Warn("could not take out the clip %s that was removed: %s", c.ID, err)
 			}
 		}
@@ -591,7 +592,7 @@ func (r *runner) clips(plannedNow bool) (Plan, []Clip, error) {
 		return Plan{}, nil, fmt.Errorf("clip plan not found: %s", planPath)
 	}
 
-	plan, clips, err := LoadClips(planPath)
+	plan, clips, err := LoadClips(r.e.Files, planPath)
 	if opts.ClipsPath == "" && !plannedNow && err == nil {
 		made := plan.PlannedWith()
 		var differs []string
@@ -746,7 +747,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	// the app shows, see ClipCaptions. Without a transcript there are none.
 	heard := &Transcript{}
 	if !opts.NoCaptions {
-		t, err := SavedTranscript(opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
+		t, err := SavedTranscript(r.e.Files, opts.Source, logsDir, opts.ASRModel, opts.SilenceDB)
 		if err != nil {
 			log.Warn("there is no transcript to make captions from, so the clips get none")
 		} else {
@@ -797,7 +798,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			// episode's own: a plan file handed to the command line from
 			// elsewhere is the person's, and is read, not written.
 			if own {
-				if err := recordShort(r.planPath, clip.ID, path); err != nil {
+				if err := recordShort(r.e.Files, r.planPath, clip.ID, path); err != nil {
 					failed(fmt.Errorf("%s: could not note where the short went: %w", clip.Basename(), err))
 					continue
 				}

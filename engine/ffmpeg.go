@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"github.com/spf13/afero"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -45,6 +47,10 @@ type Engine struct {
 	Log     *Log
 	FFmpeg  string
 	FFprobe string
+
+	// Files is where the files of episodes are read and written, the real
+	// disk in the programs, see files.go.
+	Files afero.Fs
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
@@ -93,6 +99,7 @@ type Engine struct {
 // why.
 func NewEngine(log *Log) *Engine {
 	return &Engine{Log: log,
+		Files:   afero.NewOsFs(),
 		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
 		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}

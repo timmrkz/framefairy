@@ -93,10 +93,10 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	if filepath.Base(first) != "clips-10-30.json" || filepath.Base(second) != "clips-10-30-2.json" {
 		t.Fatalf("the two passes wrote %s and %s", filepath.Base(first), filepath.Base(second))
 	}
-	if _, clips, err := LoadClips(first); err != nil || len(clips) != 1 || clips[0].ID != "t10-01" {
+	if _, clips, err := LoadClips(disk, first); err != nil || len(clips) != 1 || clips[0].ID != "t10-01" {
 		t.Errorf("the first pass after the second: %v, %+v", err, clips)
 	}
-	_, clips, err := LoadClips(second)
+	_, clips, err := LoadClips(disk, second)
 	if err != nil || len(clips) != 1 || clips[0].ID != "t10-2-01" {
 		t.Errorf("the second pass should hold only the new moment: %v, %+v", err, clips)
 	}

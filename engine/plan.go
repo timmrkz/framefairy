@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
@@ -226,7 +227,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	fingerprint := hex.EncodeToString(sum[:])[:16]
 	cachePath := ""
 	if opts.LogDir != "" {
-		if err := os.MkdirAll(opts.LogDir, 0o755); err != nil {
+		if err := e.Files.MkdirAll(opts.LogDir, 0o755); err != nil {
 			return nil, err
 		}
 		cachePath = filepath.Join(opts.LogDir, "reply-"+fingerprint+".json")
@@ -236,10 +237,10 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	var savedFits []string
 	var how *localAnswer
 	if cachePath != "" {
-		if _, err := os.Stat(cachePath); err == nil {
+		if _, err := e.Files.Stat(cachePath); err == nil {
 			if opts.Fresh {
 				e.Log.Detail("--replan: ignoring the saved reply and asking again")
-			} else if data, err := os.ReadFile(cachePath); err == nil {
+			} else if data, err := afero.ReadFile(e.Files, cachePath); err == nil {
 				var saved savedReply
 				var probe map[string]json.RawMessage
 				if json.Unmarshal(data, &saved) == nil && json.Unmarshal(data, &probe) == nil {

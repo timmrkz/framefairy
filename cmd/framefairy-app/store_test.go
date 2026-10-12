@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/spf13/afero"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,10 @@ import (
 // The store is the app's whole memory: the settings and the list of
 // episodes, as plain files. It also decides which files the interface is
 // allowed to read, so what it says is known matters beyond convenience.
+
+// disk is the real disk, for the tests whose files an outside program or
+// the system itself has to see.
+var disk = afero.NewOsFs()
 
 func configHome(t *testing.T) string {
 	t.Helper()

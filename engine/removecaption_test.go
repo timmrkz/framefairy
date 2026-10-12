@@ -55,7 +55,7 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	path := captionPlanPath(t)
 	logs := filepath.Dir(path)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
-	before, err := ClipCaptionsView(path, "01", tr, nil)
+	before, err := ClipCaptionsView(disk, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +63,10 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 		t.Fatalf("the test needs two captions, the clip has %d", len(before.Captions))
 	}
 	gone := before.Captions[0]
-	if err := RemoveCaption(logs, path, "01", gone.First, tr, nil); err != nil {
+	if err := RemoveCaption(disk, logs, path, "01", gone.First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	after, err := ClipCaptionsView(path, "01", tr, nil)
+	after, err := ClipCaptionsView(disk, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,10 +82,10 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	// Each word is removed as it would be on its own, so each comes back
 	// on its own too: corrected again, it reads what it is given.
 	first := gone.Lines[0].Words[0]
-	if err := SetWordText(logs, *first.Said, "Hier", tr); err != nil {
+	if err := SetWordText(disk, logs, *first.Said, "Hier", tr); err != nil {
 		t.Fatal(err)
 	}
-	again, _ := ClipCaptionsView(path, "01", tr, nil)
+	again, _ := ClipCaptionsView(disk, path, "01", tr, nil)
 	if !strings.HasPrefix(cueWords(again.Captions[0]), "Hier") {
 		t.Errorf("the word put back reads %q", cueWords(again.Captions[0]))
 	}
@@ -96,7 +96,7 @@ func TestRemovingACaptionThatIsNotThereIsRefused(t *testing.T) {
 	path := captionPlanPath(t)
 	logs := filepath.Dir(path)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
-	if err := RemoveCaption(logs, path, "01", 63.5, tr, nil); err == nil {
+	if err := RemoveCaption(disk, logs, path, "01", 63.5, tr, nil); err == nil {
 		t.Error("a caption beginning where no word is was removed")
 	}
 	if _, err := os.Stat(correctionsPath(logs)); err == nil {
@@ -117,7 +117,7 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 		at += 0.35
 	}
 	tr := fromStored(heard, nil, 0, 0, nil)
-	before, err := ClipCaptionsView(captionPlanPath(t), "01", tr, nil)
+	before, err := ClipCaptionsView(disk, captionPlanPath(t), "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,10 +126,10 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 	}
 	for k := range before.Captions {
 		path := captionPlanPath(t)
-		if err := RemoveCaption(filepath.Dir(path), path, "01", before.Captions[k].First, tr, nil); err != nil {
+		if err := RemoveCaption(disk, filepath.Dir(path), path, "01", before.Captions[k].First, tr, nil); err != nil {
 			t.Fatal(err)
 		}
-		after, err := ClipCaptionsView(path, "01", tr, nil)
+		after, err := ClipCaptionsView(disk, path, "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

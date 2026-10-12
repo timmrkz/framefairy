@@ -92,7 +92,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 			t.Errorf("the second ask has no %q:\n%s", want, again[3].Content)
 		}
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
@@ -114,7 +114,7 @@ func TestAClipThatDoesNotFitIsAskedForAgain(t *testing.T) {
 	if len(asks) != 2 {
 		t.Errorf("a reused reply asked the model %d more times", len(asks)-2)
 	}
-	if _, clips, _ := LoadClips(path); len(clips) != 1 || clips[0].Duration() < 20 {
+	if _, clips, _ := LoadClips(disk, path); len(clips) != 1 || clips[0].Duration() < 20 {
 		t.Errorf("the reused reply was not fitted: %+v", clips)
 	}
 }
@@ -175,7 +175,7 @@ func TestAnEditRecipeAsksAboutEveryClip(t *testing.T) {
 	if !strings.Contains(last, "Now the edit") || !strings.Contains(last, `"ganz" runs`) {
 		t.Errorf("the second ask is not the edit:\n%s", last)
 	}
-	plan, clips, err := LoadClips(path)
+	plan, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
@@ -240,7 +240,7 @@ func TestAFitThatGivesAnotherClipIsAskedOnceMore(t *testing.T) {
 	}
 	check := func(path string) {
 		t.Helper()
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(disk, path)
 		if err != nil || len(clips) != 2 {
 			t.Fatalf("clips %v %v", clips, err)
 		}

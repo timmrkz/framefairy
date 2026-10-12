@@ -87,7 +87,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err, p.LastError())
 	}
-	if _, clips, err := LoadClips(again); err != nil || len(clips) != 0 {
+	if _, clips, err := LoadClips(disk, again); err != nil || len(clips) != 0 {
 		t.Errorf("a window with nothing new: %v, %d clip(s)", err, len(clips))
 	}
 	if strings.Join(turns, " ") != "finding" {
@@ -217,7 +217,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := ReadPlan(plan)
+	view, err := ReadPlan(disk, plan)
 	if err != nil || len(view.Clips) == 0 {
 		t.Fatalf("plan: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
 	}
 	for _, r := range good {
-		if err := WriteJob(source, r); err != nil {
+		if err := WriteJob(disk, source, r); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -296,7 +296,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 	if len(got) != 2 || got[0].ID != SearchID || got[1].ID != "render-1" {
 		t.Errorf("read %+v", got)
 	}
-	if err := WriteJob(source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
+	if err := WriteJob(disk, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
 	if err := RemoveJob(source, "render-1"); err != nil || len(ReadJobs(source)) != 1 {
@@ -384,11 +384,11 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 // numbers it was asked for, so it can be carried on.
 func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "ep.mp4")
-	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
+	if err := WriteJob(disk, source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
 		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := StopJob(source, SearchID); err != nil {
+	if err := StopJob(disk, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
 	rec := ReadSearch(source)
@@ -398,7 +398,7 @@ func TestAJobCalledOffByHandSaysSo(t *testing.T) {
 	if rec.Steps[0].To == nil {
 		t.Error("the step it was in did not end")
 	}
-	if err := StopJob(source, "render-9"); err != nil {
+	if err := StopJob(disk, source, "render-9"); err != nil {
 		t.Errorf("a job with no record: %v", err)
 	}
 }
@@ -461,7 +461,7 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCaptionStyle(plan, map[string]any{"text": false}); err != nil {
+	if err := SetCaptionStyle(disk, plan, map[string]any{"text": false}); err != nil {
 		t.Fatal(err)
 	}
 	p.Base.Out = t.TempDir()

@@ -70,7 +70,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if covered, _ := Coverage(source, p.Base.ASRModel); covered != 0 {
 		t.Errorf("heard from the start to %.1f s", covered)
 	}
-	view, err := ReadPlan(p.HandPlanPath())
+	view, err := ReadPlan(disk, p.HandPlanPath())
 	if err != nil || len(view.Clips) != 1 {
 		t.Fatalf("%v %+v", err, view)
 	}
@@ -83,7 +83,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	summaries := Status(source, p.Base.ASRModel).Plans
+	summaries := Status(disk, source, p.Base.ASRModel).Plans
 	if len(summaries) != 1 || summaries[0].By != ByHand {
 		t.Fatalf("clip sets %+v", summaries)
 	}
@@ -134,8 +134,8 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	arriving := ArrivingCaptionsView(p.HandPlanPath(), *cut, heard, nil)
-	written, err := ClipCaptionsView(p.HandPlanPath(), c.ID, heard, nil)
+	arriving := ArrivingCaptionsView(disk, p.HandPlanPath(), *cut, heard, nil)
+	written, err := ClipCaptionsView(disk, p.HandPlanPath(), c.ID, heard, nil)
 	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}
@@ -145,7 +145,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil || key != HandPlanName+"/h02" {
 		t.Fatalf("%q %v", key, err)
 	}
-	view, _ = ReadPlan(p.HandPlanPath())
+	view, _ = ReadPlan(disk, p.HandPlanPath())
 	if len(view.Clips) != 2 {
 		t.Fatalf("%d clips", len(view.Clips))
 	}
@@ -194,7 +194,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 		}
 		seen[key] = true
 	}
-	view, err := ReadPlan(p.HandPlanPath())
+	view, err := ReadPlan(disk, p.HandPlanPath())
 	if err != nil || len(view.Clips) != 4 {
 		t.Fatalf("%v, %d clips", err, len(view.Clips))
 	}
@@ -213,7 +213,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 	if _, err := p.MakeClip(ctx, "clip-9", ClipRequest{At: 30}, nil); err == nil {
 		t.Fatal("a clip called off was made")
 	}
-	if _, clips, err := LoadClips(p.HandPlanPath()); err == nil && len(clips) > 0 {
+	if _, clips, err := LoadClips(disk, p.HandPlanPath()); err == nil && len(clips) > 0 {
 		t.Errorf("%d clips made", len(clips))
 	}
 	lists := told()

@@ -35,7 +35,7 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	if asked != 0 {
 		t.Errorf("the model was asked %d times about a clip there is only one of", asked)
 	}
-	_, clips, err := LoadClips(plan)
+	_, clips, err := LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,26 +85,26 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a search with the clip still there failed: %v %s", err, p.LastError())
 	}
-	if _, clips, _ := LoadClips(again); len(clips) != 0 {
+	if _, clips, _ := LoadClips(disk, again); len(clips) != 0 {
 		t.Errorf("a search with the clip still there made %d clips more", len(clips))
 	}
 
-	_, clips, err := LoadClips(first)
+	_, clips, err := LoadClips(disk, first)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("first plan: %d clips, %v", len(clips), err)
 	}
 	removed := clips[0].ID
-	before := TakeSnapshot(p.LogsDir())
-	if err := SetRejected(first, removed, true); err != nil {
+	before := TakeSnapshot(disk, p.LogsDir())
+	if err := SetRejected(disk, first, removed, true); err != nil {
 		t.Fatal(err)
 	}
-	removal := ChangeBetween(before, TakeSnapshot(p.LogsDir()))
+	removal := ChangeBetween(before, TakeSnapshot(disk, p.LogsDir()))
 
 	plan, err := p.Search(ctx, req, nil)
 	if err != nil {
 		t.Fatalf("search after the clip was removed: %v %s", err, p.LastError())
 	}
-	_, clips, err = LoadClips(plan)
+	_, clips, err = LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,10 +122,10 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	// The clip made again is the clip that was removed, so the removed one
 	// is gone: putting it back or undoing its removal showed the episode
 	// twice.
-	if _, clips, _ := LoadClips(first); len(clips) != 0 {
+	if _, clips, _ := LoadClips(disk, first); len(clips) != 0 {
 		t.Errorf("the removed clip is still in its plan beside the one made again")
 	}
-	if err := SetRejected(first, removed, false); err == nil {
+	if err := SetRejected(disk, first, removed, false); err == nil {
 		t.Errorf("the removed clip could be put back beside the one made again")
 	}
 	if _, err := removal.Undo(); !errors.Is(err, ErrChangedSince) {
@@ -133,7 +133,7 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	}
 	listed := 0
 	for _, path := range p.Plans() {
-		_, clips, _ := LoadClips(path)
+		_, clips, _ := LoadClips(disk, path)
 		for _, c := range clips {
 			if !c.Rejected {
 				listed++

@@ -133,7 +133,7 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	// measuring goes there first.
 	s.levels.look(path, from, to)
 	s.levels.start(path)
-	p := engine.NewProject(nil, path, s.store.Settings().options())
+	p := s.project(path)
 	t, err := s.transcript(p)
 	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err

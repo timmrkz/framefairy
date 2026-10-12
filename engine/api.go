@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"io"
 	"net"
 	"net/http"
@@ -640,12 +641,12 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		heard = &copied
 	}
 	if logDir != "" {
-		if err := os.MkdirAll(logDir, 0o755); err != nil {
+		if err := e.Files.MkdirAll(logDir, 0o755); err != nil {
 			return "", err
 		}
 		// The whole request, not half of it, so the log shows what the model
 		// was actually asked.
-		_ = os.WriteFile(filepath.Join(logDir, tag+"-prompt.txt"),
+		_ = afero.WriteFile(e.Files, filepath.Join(logDir, tag+"-prompt.txt"),
 			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644)
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,

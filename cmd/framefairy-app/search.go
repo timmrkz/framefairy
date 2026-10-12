@@ -142,7 +142,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 			// it is recorded with the clip as it was rendered.
 			ids := req.Clips
 			if len(ids) == 0 {
-				if view, err := engine.ReadPlan(req.Plan); err == nil {
+				if view, err := engine.ReadPlan(s.store.files, req.Plan); err == nil {
 					for _, c := range view.Clips {
 						if !c.Rejected {
 							ids = append(ids, c.ID)
@@ -151,7 +151,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 				}
 			}
 			for _, id := range ids {
-				_ = engine.RecordDecision(req.Plan, id, engine.DecisionRendered, nil)
+				_ = engine.RecordDecision(s.store.files, req.Plan, id, engine.DecisionRendered, nil)
 			}
 		}
 		return req.Plan, nil
@@ -197,7 +197,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 // engine.SuggestedWindow, and no more than the model can read at once. It
 // looks for the clips its window suggests, or for the target typed.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
-	if engine.EverSearched(path) {
+	if engine.EverSearched(s.store.files, path) {
 		return
 	}
 	info, err := s.probe(ctx, path)

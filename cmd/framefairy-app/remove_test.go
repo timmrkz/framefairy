@@ -46,7 +46,7 @@ func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 		t.Fatal(err)
 	}
 
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
+	st := &store{dir: t.TempDir(), files: disk, settings: defaultSettings(), episodes: []string{source}}
 	s := &FrameFairy{store: st}
 	s.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
 	return s, source, work

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/afero"
 	"math"
 	"os"
 	"path/filepath"
@@ -176,23 +177,23 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.
 		dir := filepath.Join(work, "experiments", name)
-		if body, err := os.ReadFile(filepath.Join(logs, "plan-prompt.txt")); err == nil &&
+		if body, err := afero.ReadFile(e.Files, filepath.Join(logs, "plan-prompt.txt")); err == nil &&
 			!modifiedBefore(filepath.Join(logs, "plan-prompt.txt"), began) {
 			run.PromptChars = runeLen(string(body))
 			keepCopy(dir, "prompt.txt", body)
 		}
 		var reply string
 		reply, run.Use = lastLocalAnswer(logs, began)
-		if body, err := os.ReadFile(reply); reply != "" && err == nil {
+		if body, err := afero.ReadFile(e.Files, reply); reply != "" && err == nil {
 			keepCopy(dir, "reply.json", body)
 		}
 		run.Plan = newestPlan(dir, began)
 		if run.Plan != "" {
-			heard, err := SavedTranscript(opts.Source, logs, opts.ASRModel, opts.SilenceDB)
+			heard, err := SavedTranscript(e.Files, opts.Source, logs, opts.ASRModel, opts.SilenceDB)
 			if err != nil {
 				heard = &Transcript{}
 			}
-			run.Clips = foundClips(run.Plan, heard.Words)
+			run.Clips = foundClips(e.Files, run.Plan, heard.Words)
 		}
 		runs = append(runs, run)
 	}
@@ -204,10 +205,10 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 	}
 	report := filepath.Join(work, "experiments",
 		"compare-"+time.Now().Format("2006-01-02-150405")+".md")
-	if err := os.MkdirAll(filepath.Dir(report), 0o755); err != nil {
+	if err := e.Files.MkdirAll(filepath.Dir(report), 0o755); err != nil {
 		return runs, "", err
 	}
-	if err := os.WriteFile(report, []byte(compareReport(opts, runs)), 0o644); err != nil {
+	if err := afero.WriteFile(e.Files, report, []byte(compareReport(opts, runs)), 0o644); err != nil {
 		return runs, "", err
 	}
 	return runs, report, nil
@@ -312,8 +313,8 @@ func newestPlan(dir string, began time.Time) string {
 
 // foundClips reads a plan the way the engine does, and writes each clip
 // out as it is heard, in the episode's words.
-func foundClips(path string, words []Cue) []FoundClip {
-	plan, clips, err := LoadClips(path)
+func foundClips(fsys afero.Fs, path string, words []Cue) []FoundClip {
+	plan, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		return nil
 	}

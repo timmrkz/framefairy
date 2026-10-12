@@ -122,7 +122,7 @@ func TestASearchTakesWhatItsWindowSuggests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	plan, _, err := LoadClips(path)
+	plan, _, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}

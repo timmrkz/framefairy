@@ -19,7 +19,7 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	asrDir := s.store.Settings().ASRModel
 	out := []engine.EpisodeStatus{}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, engine.Status(ep, asrDir))
+		out = append(out, engine.Status(s.store.files, ep, asrDir))
 	}
 	return out
 }
@@ -29,7 +29,7 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}
 	}
-	return engine.Status(path, s.store.Settings().ASRModel)
+	return engine.Status(s.store.files, path, s.store.Settings().ASRModel)
 }
 
 // ChooseFolder asks for a folder, the way a Mac app asks where to save

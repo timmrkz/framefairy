@@ -174,7 +174,7 @@ func TestTheHeartRecipeAsksOnce(t *testing.T) {
 	if asks != 1 {
 		t.Errorf("the model was asked %d times", asks)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 {
 		t.Fatalf("clips %v %v", clips, err)
 	}
