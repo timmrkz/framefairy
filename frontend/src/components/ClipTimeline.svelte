@@ -8,8 +8,8 @@
     saving: boolean;
   };
 
-  // The shapes of a keyframe and a thumbnail on the clip timeline, and of
-  // the playhead's head: Lucide's diamond and camera, the icons of their
+  // The shapes of a keyframe and a thumbnail on the clip timeline:
+  // Lucide's diamond and camera, the icons of their
   // buttons, drawn filled rather than as a line, the camera with its lens
   // left open. Plan row 2.232.
   const DIAMOND =
@@ -1863,10 +1863,9 @@
            icon of its button drawn filled, with nothing behind it but its
            shape, in the app's light colour, and white while the playhead
            is on its frame, under the hand or being dragged. A keyframe is
-           centred on the clip's top rule, on the playhead's head, which is
-           the same diamond and larger, and a thumbnail on the clip's bottom
+           centred on the clip's top rule and a thumbnail on its bottom
            rule, so the two on one frame stand at either end of the
-           playhead's line. They are drawn over the track, like the
+           playhead's line, which runs on past both. They are drawn over the track, like the
            playhead, because the track clips what is inside it, and on its
            inside, see .inside, so a mark stands where the waveform has its
            frame. Taken hold of, dragged and removed the same way. Plan
@@ -1924,18 +1923,6 @@
              the hand finds it, the same as on the range picker. -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="playhead" onpointerdown={scrub} title="Drag to move the playhead"></div>
-        <!-- The head is its own element rather than something drawn on the
-             line, because it stands above the track and the track is what
-             takes the drag. Drawn but not grabbable, its top five pixels
-             did nothing: the eye saw a handle and the hand went through it.
-             It scrubs the same way the track does, so where a drag starts
-             makes no difference to what it does. -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="head"
-          onpointerdown={scrub}
-          title="Drag to move the playhead"
-        >{@render solid(DIAMOND, 24)}</div>
       </div>
     {/if}
   </div>
@@ -2324,10 +2311,8 @@
     color: #fff;
   }
 
-  /* A keyframe is centred on the clip's top rule, where the playhead's
-     head is the same diamond, larger, so on the keyframe's frame the two
-     lie one on the other and the keyframe is the one on top. The rule
-     lies on the track's border and a pixel in from it. */
+  /* A keyframe is centred on the clip's top rule, which lies on the
+     track's border and a pixel in from it. */
   .cropdot {
     top: calc(var(--frame-line) / 2 - 9px);
   }
@@ -2395,19 +2380,17 @@
     background: var(--accent-hi);
   }
 
-  /* A thin line with a head at the top, the way every editor draws one.
-     The head is what says this is the playhead and not a mark or an edge,
-     and it is what the eye finds when the line itself is lost in a
-     waveform. */
-  /* The head stands above the track, which is where an editor puts it and
-     what says this is the playhead rather than a line someone drew. */
-  /* It is dragged left and right, and says so under the pointer, head and
-     line alike, the way a clip's edges do. A press on the empty track also
-     moves it, and there the pointer is the hand of anything pressed. */
+  /* It is dragged left and right, and says so under the pointer, the way
+     a clip's edges do. A press on the empty track also moves it, and there
+     the pointer is the hand of anything pressed. */
   .playhead {
     position: absolute;
-    top: calc(var(--frame-line) / 2);
-    bottom: 0;
+    /* A line and nothing else, running past the track's top and bottom
+       border, further than a keyframe or a thumbnail stands out, so it is
+       seen going on past a mark on its frame and is never taken for one.
+       Asked for by Tim in place of a head. Plan row 2.232. */
+    top: -12px;
+    bottom: -12px;
     left: -1px;
     width: 2px;
     background: var(--accent-hi);
@@ -2428,32 +2411,8 @@
      It is an element of its own now so it can take the drag: it stands
      above the track, the track is what scrubs, and a head that is drawn
      outside it is a handle the hand goes straight through. */
-  .head {
-    position: absolute;
-    /* Its middle on the middle of the clip's top rule, where a keyframe
-       stands, a diamond the size of a keyframe's and a little more, so a
-       keyframe on the playhead's frame lies on it with the head's edge
-       showing round it. */
-    top: calc(var(--frame-line) / 2 - 12px);
-    left: -12px;
-    width: 24px;
-    height: 24px;
-    color: var(--accent-hi);
-    cursor: ew-resize;
-    touch-action: none;
-  }
-
-  .head :global(svg) {
-    display: block;
-    pointer-events: none;
-  }
-
   .over.scrubbing .playhead {
     background: #fff;
-  }
-
-  .over.scrubbing .head {
-    color: #fff;
   }
 
   /* The caption blocks of a clip on its way come in one after another, in

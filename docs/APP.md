@@ -1671,7 +1671,7 @@ bubble scrolled by those eight pixels.
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
       to the whole episode. Both are heard anywhere over the clip timeline,
-      the playhead and its head included: a click puts the playhead under
+      the playhead included: a click puts the playhead under
       the hand, and a swipe from there goes on, 2.230. **Both ends are walls.** A pinch that can go no
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
@@ -1933,11 +1933,9 @@ or walks across the picture. Plan row 3.26, the design is in
   clip timeline, drawn and lit the way a thumbnail is: filled in the
   app's light colour, and white while the playhead is on its frame, the
   clip's first and last frame included. It is 18 px, larger than it was
-  at first, after Tim found it too small. The playhead's head is the
-  same diamond, larger, on the same rule, so on a keyframe's frame the
-  keyframe lies on the head, middle on middle, with the head's edge round
-  it. A thumbnail and a keyframe on one frame stand at either end of the
-  playhead's line. It is the thumbnail's kind of mark: a click puts the
+  at first, after Tim found it too small. A thumbnail and a keyframe on
+  one frame stand at either end of the playhead's line, which runs 12 px
+  on past the clip timeline's top and bottom border, past both marks. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past

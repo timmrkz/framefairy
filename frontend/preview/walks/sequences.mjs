@@ -508,7 +508,7 @@
 //   ["on the playhead", n]
 //                      n marks are lit by the playhead, a thumbnail or a
 //                      keyframe on its frame, and each stands centred on
-//                      the playhead's line, a keyframe on its head
+//                      the playhead's line
 //   ["pinch in"]       pinches the clip timeline in to a tenth on the
 //                      playhead, where a frame is many pixels wide, and
 //                      takes the hand off it
@@ -4610,20 +4610,14 @@ for (const seq of toWalk) {
             const b = e.getBoundingClientRect();
             return b.left + b.width / 2;
           };
-          const high = (e) => {
-            const b = e.getBoundingClientRect();
-            return b.top + b.height / 2;
-          };
           const line = document.querySelector(".clip-timeline .playhead");
           const head = document.querySelector(".clip-timeline .head") ?? line;
           return {
             line: line ? mid(line) : NaN,
             head: mid(head),
-            headHigh: high(head),
             lit: [...document.querySelectorAll(".clip-timeline .thumb.here, .clip-timeline .cropdot.here")].map((e) => ({
               kind: e.classList.contains("thumb") ? "thumbnail" : "keyframe",
               at: mid(e),
-              high: high(e),
             })),
           };
         });
@@ -4632,10 +4626,7 @@ for (const seq of toWalk) {
         else if (m.lit.length !== arg) wrong = `${m.lit.length} marks light on the playhead's frame, not ${arg}`;
         else if (off) wrong = `the ${off.kind} lit by the playhead stands ${(off.at - m.line).toFixed(2)} px from its line`;
         else if (Math.abs(m.head - m.line) > 0.01) wrong = `the playhead's head stands ${(m.head - m.line).toFixed(2)} px from its line`;
-        // The head is the keyframe's diamond, larger, so a keyframe the
-        // playhead is on lies on it, middle on middle. Asked for by Tim.
-        else if (m.lit.some((l) => l.kind === "keyframe" && Math.abs(l.high - m.headHigh) > 0.01))
-          wrong = `the keyframe lit by the playhead stands ${(m.lit.find((l) => l.kind === "keyframe").high - m.headHigh).toFixed(2)} px below the playhead's head`;
+
         break;
       }
       case "pinch in": {
