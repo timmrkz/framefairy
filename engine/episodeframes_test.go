@@ -836,7 +836,7 @@ func colours(frame []byte) []int {
 // that asked in between said "file already closed" instead of the reason,
 // so Add left out a file of sound for the wrong reason. Plan row 2.171.
 // Here the decoder's end is held between the two until the stream has
-// asked, or has had time to.
+// asked, which it has once it took a cursor.
 //
 // On the real disk: the decoder is a program, a script here.
 func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T) {
@@ -848,27 +848,50 @@ func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T)
 	dec := NewEpisodeFrames(program, "nur-ton.mp4")
 	defer dec.Close()
 	waited, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
 	dec.waited = func() {
-		close(waited)
+		once.Do(func() { close(waited) })
 		<-release
 	}
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
 	if err := dec.Ready(); err != nil {
 		t.Fatal(err)
 	}
 	<-waited
+	cursor := func() uint32 {
+		dec.mu.Lock()
+		defer dec.mu.Unlock()
+		return dec.nextID
+	}
+	before := cursor()
 	asked := make(chan error, 1)
 	go func() {
 		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36,
 			func(float64, []byte) error { return nil })
 	}()
 	var err error
-	select {
-	case err = <-asked:
-		close(release)
-	case <-time.After(100 * time.Millisecond):
-		// The stream waits for the reason, as it should: the end goes on.
-		close(release)
-		err = <-asked
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+wait:
+	for {
+		select {
+		case err = <-asked:
+			// It gave up without waiting for the reason.
+			break wait
+		case <-tick.C:
+			if cursor() != before {
+				// It took a cursor and asked: the end goes on.
+				close(release)
+				err = <-asked
+				break wait
+			}
+		}
 	}
 	if err == nil || !strings.Contains(err.Error(), "has no picture") {
 		t.Errorf("the stream said %v, want the decoder's reason, that the file has no picture", err)

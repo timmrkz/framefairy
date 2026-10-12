@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/iotest"
 	"time"
 )
 
@@ -267,7 +266,7 @@ func TestADownloadCalledOffStopsWhenTheBuildIsAlreadyThere(t *testing.T) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Status:     "200 OK",
-			Body:       io.NopCloser(iotest.HalfReader(bytes.NewReader(build))),
+			Body:       io.NopCloser(bytes.NewReader(build)),
 			Request:    r,
 		}, nil
 	})}}

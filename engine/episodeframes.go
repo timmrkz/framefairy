@@ -286,22 +286,21 @@ func (f *EpisodeFrames) send(gone chan struct{}, format string, args ...any) err
 }
 
 // refused is why a request the program whose gone this is could not take
-// failed. A write fails only once the program's input is shut, when it
-// stopped, and Wait shuts it before gone is closed and the reason is
+// failed. A write fails once the program's input is shut, and Wait shuts
+// it when the program stopped, before gone is closed and the reason is
 // known: a file with no picture stops its decoder at once, and a stream
 // that asked in between said "file already closed" where it should have
-// said that the file has no picture. So the reason is waited for. Not
-// under the lock, which the end of the program takes.
+// said that the file has no picture. So the reason is waited for. The
+// wait ends with gone, when the program ends, or with ctx: a program that
+// shut its input and runs on is ended by Close, and every stream has a
+// context that ends. Not under the lock, which the end of the program
+// takes.
 func (f *EpisodeFrames) refused(ctx context.Context, gone chan struct{}, err error) error {
 	f.mu.Lock()
-	known, why := f.gone != gone || f.cmd == nil, f.ended(gone)
+	why := f.ended(gone)
 	f.mu.Unlock()
-	switch {
-	case why != nil:
+	if why != nil {
 		return why
-	case known:
-		// Not a write: send said itself why, the program was closed.
-		return err
 	}
 	select {
 	case <-gone:
