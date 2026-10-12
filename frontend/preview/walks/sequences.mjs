@@ -176,6 +176,11 @@
 //                      click on the clip timeline and plays until the play
 //                      stops there, so the episode's decoder reads to the
 //                      end of the file
+//   ["past the end"]
+//                      drags the clip's end far to the right three times,
+//                      each from where the end is drawn then, and checks
+//                      after each that the clip ends where the video does
+//                      at the latest, in the engine's plan
 //   ["no browser decoder"]
 //                      takes the browser's picture and sound decoders away,
 //                      every one, and opens the episode again
@@ -1669,6 +1674,14 @@ export const sequences = [
     // at once. Plan row 2.166.
     name: "the picture comes back after the playhead reached the end of the episode",
     steps: [["play to the end"], ["from the app", 4]],
+  },
+  {
+    // A clip's end dragged past the end of the video was saved there, and
+    // its short then came out shorter than the clip and failed its check.
+    // On the bridge's video of 120 s the second drag saved 456.4 s. Plan
+    // row 2.170.
+    name: "a clip's end dragged past the end of the video stops where the video ends",
+    steps: [["past the end"], ["from the app", 4]],
   },
   {
     // Tim saw the first frame of a workspace blurred until he played, and
@@ -3453,6 +3466,23 @@ for (const seq of toWalk) {
           }
         });
         if (problems.length) wrong = problems.join("\n");
+        break;
+      }
+      case "past the end": {
+        const { duration, fps } = await ask(page, "Source", await episodeOn(page));
+        // The end of the video is the frame after its last, which a length
+        // that falls inside a frame puts up to a frame later.
+        const last = duration + 1 / fps + 0.001;
+        for (let i = 1; i <= 3 && !wrong; i++) {
+          const g = await handles(page);
+          await drag(page, middle(g.end), high(g.track), 4000, false);
+          await watch.step("trim", s);
+          const { segments } = await engineState(page, watch.at);
+          const end = segments[segments.length - 1].end;
+          if (end > last) {
+            wrong = `dragged past the end ${i} times, the clip ends at ${end.toFixed(2)}, after the video, which ends at ${duration.toFixed(2)}`;
+          }
+        }
         break;
       }
       case "play to the end": {

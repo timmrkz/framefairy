@@ -289,16 +289,46 @@ func (s SourceInfo) Grid() framewire.Grid {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return framewire.Grid{}
 	}
-	first, _ := s.pieceFrames(0, 0)
-	start := s.frameBegins(first)
-	frames := math.Ceil((s.Duration-start)*float64(s.FPSNum)/float64(s.FPSDen) - 1e-6)
+	first, end := s.firstFrame(), s.endFrame()
+	// The grid names the clock it counts from, so the decoder counts from
+	// the moment the engine does and never reads it a second time.
+	return framewire.Grid{Origin: s.origin, Start: s.frameBegins(first), Num: s.FPSNum, Den: s.FPSDen,
+		Count: int(min(end-first, framewire.MaxFrames))}
+}
+
+// firstFrame is the first frame of the grid inside the file, see Grid.
+func (s SourceInfo) firstFrame() int64 {
+	first := s.nearestFrame(0)
+	if s.frameBegins(first) < 0 {
+		first++
+	}
+	return first
+}
+
+// endFrame is the frame after the last one of the grid inside the file,
+// see Grid: where the video ends, and so where every piece ends at the
+// latest. A file of no known length has a frame after its first.
+func (s SourceInfo) endFrame() int64 {
+	first := s.firstFrame()
+	frames := math.Ceil((s.Duration-s.frameBegins(first))*float64(s.FPSNum)/float64(s.FPSDen) - 1e-6)
 	if math.IsNaN(frames) || frames < 1 {
 		frames = 1
 	}
-	// The grid names the clock it counts from, so the decoder counts from
-	// the moment the engine does and never reads it a second time.
-	return framewire.Grid{Origin: s.origin, Start: start, Num: s.FPSNum, Den: s.FPSDen,
-		Count: int(min(frames, framewire.MaxFrames))}
+	return first + int64(min(frames, math.MaxInt32))
+}
+
+// End is when the video ends, on the frame after its last, kept to the
+// millisecond the way a plan keeps every moment, see PieceOnFrames. It is
+// the furthest any edge of a clip goes. Nought where the length is not
+// known, and the length itself where the frame rate is not.
+func (s SourceInfo) End() float64 {
+	if s.Duration <= 0 || math.IsNaN(s.Duration) {
+		return 0
+	}
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return roundTo(s.Duration, 3)
+	}
+	return s.keptAt(s.endFrame())
 }
 
 // PieceOnFrames is a piece of a clip with both its edges on the start of
@@ -306,8 +336,11 @@ func (s SourceInfo) Grid() framewire.Grid {
 // a plan keeps every moment. A piece holds at least one frame. A grid
 // that begins after the file does reaches before it too, where there is
 // nothing to read, so a piece starts on the first frame of the grid inside
-// the file at the earliest. Without a frame rate the piece is left where
-// it is.
+// the file at the earliest. In the same way it ends where the video does
+// at the latest, see End, and one that starts after that is the last
+// frame. An end dragged past the video was saved there, and the short
+// then came out shorter than its clip and failed its check. Without a
+// frame rate the piece is left where it is, but for the end of the video.
 //
 // Every piece enters a plan through it: the pieces a search or a clip made
 // by hand is made of, see planBuilder.frame, and the pieces a gesture
@@ -317,10 +350,32 @@ func (s SourceInfo) Grid() framewire.Grid {
 // frames again, an edge stays where it is.
 func (s SourceInfo) PieceOnFrames(start, end float64) (float64, float64) {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		if over := s.End(); over > 0 {
+			end = math.Min(end, over)
+		}
 		return roundTo(start, 3), roundTo(end, 3)
 	}
 	first, last := s.pieceFrames(start, end)
 	return s.keptAt(first), s.keptAt(last)
+}
+
+// FrameAt is a moment on the start of the frame it means, see
+// nearestFrame, inside the video: from its first frame to its end, see
+// End. It is where a single edge lands, the edge of a cut or the start or
+// end of a clip, and without a frame rate it is the moment to the
+// millisecond.
+func (s SourceInfo) FrameAt(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		if over := s.End(); over > 0 {
+			at = math.Min(at, over)
+		}
+		return roundTo(at, 3)
+	}
+	k := max(s.nearestFrame(at), s.firstFrame())
+	if s.Duration > 0 {
+		k = min(k, s.endFrame())
+	}
+	return s.keptAt(k)
 }
 
 // keptAt is when frame k begins, to the millisecond and half a millisecond
@@ -336,11 +391,13 @@ func (s SourceInfo) keptAt(k int64) float64 {
 // pieceFrames is the frame a piece starts on and the frame after its
 // last, see PieceOnFrames.
 func (s SourceInfo) pieceFrames(start, end float64) (int64, int64) {
-	first := s.nearestFrame(start)
-	if s.frameBegins(first) < 0 {
-		first++
+	first := max(s.nearestFrame(start), s.firstFrame())
+	last := s.nearestFrame(end)
+	if s.Duration > 0 {
+		over := s.endFrame()
+		first, last = min(first, over-1), min(last, over)
 	}
-	return first, max(s.nearestFrame(end), first+1)
+	return first, max(last, first+1)
 }
 
 // cutOf works out a piece on the frames of the episode, by their number
