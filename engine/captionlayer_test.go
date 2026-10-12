@@ -285,3 +285,118 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 		}
 	}
 }
+
+// The video preview draws the captions at the size the crop has on the
+// screen, smaller than the short, from the short's own caption file, and
+// libass draws them there as the short's frames would show them made that
+// small. Drawn at a third of the short, the layer is the short's layer
+// made a third as big, closer than a frame of the bounce apart.
+//
+// On the real disk: the decoder reads the caption file and its fonts.
+func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testing.T) {
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.30, "ist."}}
+	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
+	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
+	const W, H, by = 1080, 1920, 3
+	track, err := e.CaptionTrack(ctx, laid, W, H, nil, framewire.SDR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "01.ass")
+	if err := os.WriteFile(file, track, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallFont(dir, ResolveStyle(nil).Font); err != nil {
+		t.Fatal(err)
+	}
+	// The decoder is the video's, so it opens one, though no frame of it
+	// is drawn on.
+	source := filepath.Join(dir, "episode.mkv")
+	if out, err := exec.Command(builtFFmpeg(program), "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "color=c=gray:s=64x64:r=25:d=1", "-c:v", "ffv1", source).CombinedOutput(); err != nil {
+		t.Fatalf("making the test video: %s %s", err, out)
+	}
+	dec := NewEpisodeFrames(program, source)
+	defer dec.Close()
+	draw := func(w, h, shortW, shortH int, ms int64) framewire.Layer {
+		t.Helper()
+		l, err := dec.Captions(ctx, framewire.Captions{Width: w, Height: h, ShortW: shortW, ShortH: shortH,
+			File: file, Fonts: filepath.Join(dir, FontsFolder)}, ms)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l.W == 0 {
+			t.Fatalf("nothing drawn at %d ms at %dx%d", ms, w, h)
+		}
+		return l
+	}
+	// A word at rest, one in the middle of its bounce, and the last.
+	const limit = 2.5
+	for _, ms := range []int64{350, 560, 900} {
+		want := shrunk(draw(W, H, W, H, ms), W, H, by)
+		if d := alphaDiff(draw(W/by, H/by, W, H, ms), want, W/by, H/by); d > limit {
+			t.Errorf("at %d ms the captions drawn a third as big differ from the short's made a third as big by %.1f", ms, d)
+		}
+	}
+	// The measure tells a frame apart: in the bounce, 20 ms further on, a
+	// frame of a short at 50 frames a second, is beyond the limit.
+	if off := alphaDiff(draw(W/by, H/by, W, H, 580), shrunk(draw(W, H, W, H, 560), W, H, by), W/by, H/by); off < 2*limit {
+		t.Errorf("a frame off in the bounce differs by only %.1f, so the limit of %.1f proves little", off, limit)
+	}
+}
+
+// shrunk is a layer of a picture width by height made by times smaller,
+// each pixel the mean of the by by by pixels it covers, as a scaler that
+// averages does. The alpha is multiplied in, so the mean is right.
+func shrunk(l framewire.Layer, width, height, by int) []byte {
+	w, h := width/by, height/by
+	out := make([]byte, w*h*4)
+	sum := make([]int, w*h*4)
+	for y := 0; y < l.H; y++ {
+		for x := 0; x < l.W; x++ {
+			sx, sy := (l.X+x)/by, (l.Y+y)/by
+			if sx >= w || sy >= h {
+				continue
+			}
+			for c := range 4 {
+				sum[(sy*w+sx)*4+c] += int(l.Pixels[(y*l.W+x)*4+c])
+			}
+		}
+	}
+	for i, s := range sum {
+		out[i] = byte((s + by*by/2) / (by * by))
+	}
+	return out
+}
+
+// alphaDiff is how far a layer's alpha is from a whole picture's of width
+// by height, on average over the pixels where either has any, in steps of
+// 8 bits.
+func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
+	have := make([]byte, width*height)
+	for y := 0; y < l.H; y++ {
+		for x := 0; x < l.W; x++ {
+			have[(l.Y+y)*width+l.X+x] = l.Pixels[(y*l.W+x)*4+3]
+		}
+	}
+	sum, n := 0, 0
+	for i, a := range have {
+		b := picture[i*4+3]
+		if a == 0 && b == 0 {
+			continue
+		}
+		sum += max(int(a)-int(b), int(b)-int(a))
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	return float64(sum) / float64(n)
+}

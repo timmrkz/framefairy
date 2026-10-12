@@ -63,13 +63,21 @@ shown, see `engine.Engine.PreviewCaptions` in `engine/captionlayer.go`. The
 caption view a clip's captions came with names them by its `track`, and
 the colours and the height being dragged on the way come along as drafts,
 checked the way the edit that saves them checks them. The caption file is
-written once, under a name made from what is in it, in
-`<episode>.framefairy/captions/preview/`, with its fonts beside it.
+written once, under a name made from what it is drawn from, in
+`<episode>.framefairy/captions/preview/`, with its fonts beside it. Many
+frames ask for the same file at the same time while a clip plays, so it
+is made once however many ask, and the others wait for it, see
+`trackCache.once`. It is written whole under a name of its own and then
+renamed into place, so no ask reads half a file. A file that could not be
+made is not remembered, so the next ask tries again. The folder keeps the
+256 used last and removes the rest, those of earlier runs first.
 
 The decoder draws the file twice, over black and over white, and takes
 colour and coverage from the two, `framewire.Layer`: red, green and blue
 with the alpha multiplied in, in full range, and only the box that has any
-ink. Full range, because the ass filter draws a file of standard video in
+ink. Only the rows and columns where the two drawings differ are worked
+out pixel by pixel, `inked` in `cmd/framefairy-frames/ink.go`: elsewhere
+nothing is drawn, and a caption is a strip of the frame. Full range, because the ass filter draws a file of standard video in
 video range on a picture of red, green and blue too, see `videoRange` in
 `cmd/framefairy-frames/captions.go`, and the frames of the video preview
 are read the same way.
@@ -88,7 +96,11 @@ the canvas's own pixels, so the captions are as sharp as the screen.
 A frame on its way to the screen asks for its layer ahead, `coming` in
 `CaptionLayers`, so playing keeps up. A frame shown before its layer has
 come keeps the last one up and is drawn again when its own arrives, so the
-captions never blink off.
+captions never blink off. A layer that does not come is not kept: the
+frame keeps the last one up and asks once more a moment later. A change
+of clip drops the last layer, so the old clip's captions never stand over
+the new one, and what a frame waits for is asked for with the ask it was
+drawn with, never the next one's.
 
 ## The caption box
 
@@ -106,6 +118,18 @@ file yet, and the layer steps aside until the word is saved.
   decoder's layer for that frame laid over it, within a tenth of a step on
   average. The frame before is told apart, so a layer a frame off in the
   bounce does not pass.
+- `TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem` in
+  the same file: the layer drawn at a third of the short is the short's
+  layer made a third as big, closer than a frame of the bounce apart.
+- `TestOneCaptionFileIsMadeOnceForManyAtOnce` and
+  `TestACaptionTrackIsNamedByWhatItIs` in the same file, and
+  `TestTheCaptionsRouteAnswersManyAtOnce` in
+  `cmd/framefairy-app/captions_test.go`: many asks at once, at two sizes,
+  with drafts and with asks called off, each get the layer they get alone,
+  under the race detector.
+- `TestTheLayerOfTheBoxIsTheLayerOfTheFrame` in
+  `cmd/framefairy-frames/ink_test.go`: the layer worked out in its box is
+  the layer of the whole frame, pixel for pixel.
 - The walk "the video preview shows the short's captions, frame for
   frame" in `frontend/preview/walks/sequences.mjs`, against the real Go
   side: it renders a short, makes the video preview as large as the short,

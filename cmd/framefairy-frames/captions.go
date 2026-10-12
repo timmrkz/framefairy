@@ -27,8 +27,10 @@ type layer struct {
 	graph         *astiav.FilterGraph
 	src           *astiav.BuffersrcFilterContext
 	sink          *astiav.BuffersinkFilterContext
-	blank         []byte
-	in, out       *astiav.Frame
+	// A picture of black and one of white the size of the layer, kept
+	// from one draw to the next.
+	blanks  [2][]byte
+	in, out *astiav.Frame
 	// Whether the filter puts the colours in video range, see videoRange.
 	video bool
 }
@@ -202,7 +204,7 @@ func (l *layer) draw(ms int64) {
 		var white []byte
 		white, err = l.drawOn(255, ms)
 		if err == nil {
-			drawn := framewire.Inked(layerOf(black, white, l.video), l.width, l.height)
+			drawn := inked(black, white, l.width, l.height, l.video)
 			l.d.answer(framewire.Record{Cursor: l.id, Kind: framewire.Frame, At: float64(ms) / 1000, Body: drawn.Body()})
 			return
 		}
@@ -210,7 +212,8 @@ func (l *layer) draw(ms int64) {
 	l.fail(err.Error())
 }
 
-// drawOn draws the captions at ms on a picture of one grey.
+// drawOn draws the captions at ms on a picture of black, grey 0, or of
+// white, 255.
 func (l *layer) drawOn(grey byte, ms int64) ([]byte, error) {
 	l.in.SetWidth(l.width)
 	l.in.SetHeight(l.height)
@@ -219,10 +222,11 @@ func (l *layer) drawOn(grey byte, ms int64) ([]byte, error) {
 	if err := l.in.AllocBuffer(1); err != nil {
 		return nil, fmt.Errorf("the captions could not be drawn: %w", err)
 	}
-	if len(l.blank) != l.width*l.height*3 || l.blank[0] != grey {
-		l.blank = bytes.Repeat([]byte{grey}, l.width*l.height*3)
+	blank := &l.blanks[grey&1]
+	if len(*blank) != l.width*l.height*3 {
+		*blank = bytes.Repeat([]byte{grey}, l.width*l.height*3)
 	}
-	if err := l.in.Data().SetBytes(l.blank, 1); err != nil {
+	if err := l.in.Data().SetBytes(*blank, 1); err != nil {
 		l.in.Unref()
 		return nil, fmt.Errorf("the captions could not be drawn: %w", err)
 	}
@@ -241,29 +245,4 @@ func (l *layer) drawOn(grey byte, ms int64) ([]byte, error) {
 		return nil, fmt.Errorf("the captions could not be read out: %w", err)
 	}
 	return pixels, nil
-}
-
-// layerOf is the captions drawn on black and on white as a layer of red,
-// green, blue and alpha, with the alpha multiplied in, see
-// framewire.Layer. The alpha is what of the white is hidden, the mean of
-// the three colours. In video range, see videoRange, a colour c times its
-// alpha a is put back in full range as (c − 16·a/255)·255/219, since the
-// 16 the range adds is blended by the alpha too.
-func layerOf(black, white []byte, video bool) []byte {
-	n := len(black) / 3
-	out := make([]byte, 4*n)
-	for i := range n {
-		b, w := black[3*i:3*i+3], white[3*i:3*i+3]
-		shown := int(w[0]) - int(b[0]) + int(w[1]) - int(b[1]) + int(w[2]) - int(b[2])
-		a := max(0, min(255, 255-(shown+1)/3))
-		for k := range 3 {
-			v := int(b[k])
-			if video {
-				v = (255*v - 16*a + 109) / 219
-			}
-			out[4*i+k] = byte(max(0, min(a, v)))
-		}
-		out[4*i+3] = byte(a)
-	}
-	return out
 }
