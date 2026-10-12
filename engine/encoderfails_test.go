@@ -257,6 +257,9 @@ func TestTheProcessorIsAskedForABitRate(t *testing.T) {
 //
 // On the real disk: ffmpeg writes the short it encodes.
 func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple's encoders are only on a Mac")
+	}
 	t.Parallel()
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -277,7 +280,7 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if !hasEncoder(string(listing), c.encoder.Name) {
-				t.Skipf("this ffmpeg has no %s, which only a Mac has", c.encoder.Name)
+				t.Fatalf("the ffmpeg of this Mac has no %s", c.encoder.Name)
 			}
 			out := filepath.Join(t.TempDir(), "short.mp4")
 			args := []string{"-hide_banner", "-loglevel", "error", "-y",
