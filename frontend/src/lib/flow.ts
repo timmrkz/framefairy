@@ -343,6 +343,11 @@ export function frameMiddle(k: number, frame: number, start = 0): number {
   return start + (k + 0.5) * frame;
 }
 
+// The start of frame k, counted the same way, where a keyframe is kept.
+export function frameBegins(k: number, frame: number, start = 0): number {
+  return start + k * frame;
+}
+
 // A caption edge being dragged, on the clip's clock. Where it lands and
 // what it does to the words is the engine's to say, see ShapeCaptionTime
 // in engine/episode.go.

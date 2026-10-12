@@ -83,6 +83,9 @@ type Job struct {
 	// first search of an episode is asked for by the Go side, and a number
 	// worked out again in the workspace told the list another.
 	Count int `json:"count,omitempty"`
+	// Min is the Shortest a search was asked for, so what it found is
+	// read by the clips it was asked for, not by Shortest as it is now.
+	Min float64 `json:"min,omitempty"`
 	// Whole is, for a search, that its answer is read to its end, so every
 	// clip still to come is in Underway.
 	Whole bool `json:"whole,omitempty"`
@@ -382,7 +385,7 @@ func (q *queue) restore(episodes []string) {
 			q.next++
 			job := &Job{ID: fmt.Sprintf("job-%d", q.next), Episode: episode, Kind: rec.Kind,
 				Label: jobLabel(rec.Kind, rec.Preview), State: state, Error: rec.Error, Queued: rec.Asked,
-				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count,
+				Lane: laneFor(rec.Kind), Step: rec.Step, Record: rec.ID, From: rec.From, To: rec.To, Count: rec.Count, Min: rec.Min,
 				At: rec.At, Backward: rec.Backward, Underway: rec.Underway(), Plan: rec.Plan,
 				Clips: append([]string(nil), rec.Clips...), cancel: func() {}, ctx: context.Background()}
 			q.stampLocked(job)
@@ -819,13 +822,13 @@ func (q *queue) runJob(job *Job) {
 		}
 	})
 	q.mu.Lock()
-	state, failed := job.State, job.Error
+	state, failed, written := job.State, job.Error, job.Written
 	q.mu.Unlock()
 	ended := theLog.jobLine(zerolog.InfoLevel, job)
 	if state == JobFailed {
 		ended = theLog.jobLine(zerolog.ErrorLevel, job).Str("error", failed)
 	}
-	ended.Str("state", string(state)).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
+	ended.Str("state", string(state)).Int("written", written).Int64("ms", time.Since(started).Milliseconds()).Msg("the job ended")
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}

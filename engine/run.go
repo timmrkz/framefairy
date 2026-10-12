@@ -104,6 +104,13 @@ type Options struct {
 	// Taken are the parts of the episode clips were proposed for already.
 	// The model is told to leave them, see PlanOptions.Taken.
 	Taken []Window
+	// Listed are the parts of Taken whose clips are not removed, see
+	// PlanOptions.Listed.
+	Listed []Window
+	// Removed are the clips of the episode that were removed. An episode
+	// shorter than a clip whose clip is made again has them taken out of
+	// their plans, see DropRemoved.
+	Removed []ClipRef
 	// NoRecord stops training records from being written.
 	NoRecord bool
 	// TrainingDir is the one folder the records go in. Empty means the
@@ -551,13 +558,23 @@ func (r *runner) plan(ctx context.Context) error {
 			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
 			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
 			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
-			Pass: opts.Pass, Taken: opts.Taken,
+			Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
 			Recipe:   opts.Recipe,
 			Switches: opts.Switches,
 			PlanPath: planPath,
 		})
 	if err != nil {
 		return e.planFailed(ctx, err)
+	}
+	// The one clip of a short episode made again is the clip that was
+	// removed, made afresh. The removed one goes, or putting it back or
+	// undoing its removal would show the episode twice.
+	if whole && len(plan.Clips) > 0 {
+		for _, c := range opts.Removed {
+			if err := DropRemoved(c.Plan, c.ID); err != nil {
+				log.Warn("could not take out the clip %s that was removed: %s", c.ID, err)
+			}
+		}
 	}
 	// Each clip was written to the plan the moment it was framed, so
 	// there is nothing left to write.

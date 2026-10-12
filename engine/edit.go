@@ -377,6 +377,31 @@ func SetRejected(planPath, clipID string, rejected bool, reasons ...string) erro
 	return nil
 }
 
+// DropRemoved takes a removed clip out of its plan for good. Only the one
+// clip of an episode shorter than a clip is ever taken out, once a search
+// has made it again: there is one moment, and the clip made again is it.
+// A clip that is not removed, or no longer there, is left as it is.
+func DropRemoved(planPath, clipID string) error {
+	return editPlan(planPath, func(top *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return nil
+		}
+		if rejected, _ := c.get(keyRejected); rejected != true {
+			return nil
+		}
+		list, _ := top.values[keyClips].([]any)
+		kept := []any{}
+		for _, item := range list {
+			if item != c {
+				kept = append(kept, item)
+			}
+		}
+		top.set(keyClips, kept)
+		return nil
+	})
+}
+
 func number(v any) float64 {
 	f, _ := toFloat(v)
 	return f
@@ -490,7 +515,8 @@ func autoCrop(seg *object) any {
 //
 // The crop of a rotated piece stands in the middle of the picture rotated
 // until it is placed, and the crop it has unrotated is kept as it was, so
-// a part rotated back has it again. Framing is not a judgement of the
+// a part rotated back has it again. The keyframes of the stretch are
+// removed, since they were placed on the picture as it stood. Framing is not a judgement of the
 // clip, so nothing is recorded for training.
 func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
 	return editPlan(planPath, func(_ *object, clips []*object) error {
@@ -515,6 +541,18 @@ func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
 		turned := (rotationOf(pieces[target], spans) + 90) % 360
 		spans = turnStretch(spans, from, to, turned)
 		setRotations(c, spans)
+		// A keyframe of the stretch was placed on the picture as it stood
+		// before, which is now another shape.
+		var kept []CropMark
+		marks := cropMarksOf(c)
+		for _, m := range marks {
+			if m.At < from || m.At >= to {
+				kept = append(kept, m)
+			}
+		}
+		if len(kept) != len(marks) {
+			setCropMarks(c, kept)
+		}
 		for _, seg := range pieces {
 			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
 				seg.remove(keyCropXTurned)
@@ -823,7 +861,14 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // framed the same way, which is the same camera angle, moves with it. The
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
-func SetCrop(planPath, clipID string, at float64, left int) error {
+//
+// With keyframes, see CropMark, a crop placed on the frame of a mark moves
+// that mark alone. Placed anywhere else, every mark of the angle moves by
+// as far as the crop shown there did, so a glide keeps its shape. frames
+// is the video, for the frame a moment means, and cropW how wide the crop
+// is on the picture as the piece at the moment stands, for where a crop
+// that was never placed stands.
+func SetCrop(planPath, clipID string, at float64, left int, frames SourceInfo, cropW int) error {
 	if left < 0 {
 		return renderErr("the crop cannot start left of the picture")
 	}
@@ -840,6 +885,35 @@ func SetCrop(planPath, clipID string, at float64, left int) error {
 		}
 		spans := rotationsOf(c)
 		angle := angleOf(pieces[target], spans)
+		marks := cropMarksOf(c)
+		ofAngle := marksOfAngle(marks, pieces, spans, angle)
+		for i := range marks {
+			if ofAngle[i] && frames.markFrame(marks[i].At) == frames.frameHolding(at) {
+				marks[i].X = left
+				setCropMarks(c, marks)
+				return nil
+			}
+		}
+		if len(ofAngle) > 0 {
+			width := frames.Rotated(rotationOf(pieces[target], spans)).Width
+			shown := (width - cropW) / 2
+			if x := cropShown(c, pieces, target, at, frames, cropW, width); x != nil {
+				shown = *x
+			}
+			// A mark moved with the rest stays in the picture, or the
+			// render would hold it at the edge while the others move on,
+			// and the next drag would move it from a place nobody sees.
+			for i := range marks {
+				if ofAngle[i] {
+					x := max(0, marks[i].X+left-shown)
+					if width > cropW {
+						x = min(x, width-cropW)
+					}
+					marks[i].X = x - x%2
+				}
+			}
+			setCropMarks(c, marks)
+		}
 		for _, seg := range pieces {
 			if angleOf(seg, spans) != angle {
 				continue
@@ -1210,7 +1284,8 @@ func ClearCaptionY(planPath string) (int, error) {
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, for every piece with that camera angle.
+// clip, for every piece with that camera angle, and removes every keyframe
+// of the angle.
 func ResetCrop(planPath, clipID string, at float64) error {
 	return editPlan(planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
@@ -1224,6 +1299,16 @@ func ResetCrop(planPath, clipID string, at float64) error {
 		}
 		spans := rotationsOf(c)
 		angle := angleOf(pieces[target], spans)
+		marks := cropMarksOf(c)
+		if ofAngle := marksOfAngle(marks, pieces, spans, angle); len(ofAngle) > 0 {
+			var kept []CropMark
+			for i, m := range marks {
+				if !ofAngle[i] {
+					kept = append(kept, m)
+				}
+			}
+			setCropMarks(c, kept)
+		}
 		for _, seg := range pieces {
 			if angleOf(seg, spans) != angle {
 				continue

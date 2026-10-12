@@ -136,7 +136,7 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	path := rotatablePlanPath(t)
 	rotate(t, path, 13.5)
-	if err := SetCrop(path, "01", 13.5, 400); err != nil {
+	if err := SetCrop(path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	_, crops := rotations(t, path)
@@ -149,7 +149,7 @@ func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	// Both parts turned: the first piece is the same shot as the last,
 	// the second another shot.
 	rotate(t, path, 10.5)
-	if err := SetCrop(path, "01", 13.5, 500); err != nil {
+	if err := SetCrop(path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	turns, crops := rotations(t, path)
@@ -170,7 +170,7 @@ func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 func TestAnEditElsewhereLeavesARotatedCropAlone(t *testing.T) {
 	path := rotatablePlanPath(t)
 	rotate(t, path, 13.5)
-	if err := SetCrop(path, "01", 13.5, 500); err != nil {
+	if err := SetCrop(path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(path)
@@ -219,7 +219,7 @@ func TestARotationStaysWithTheVideoAsTheClipIsCut(t *testing.T) {
 	t.Run("the cut put back and made again", func(t *testing.T) {
 		path := rotatablePlanPath(t)
 		rotate(t, path, 13.5)
-		if err := SetCrop(path, "01", 13.5, 700); err != nil {
+		if err := SetCrop(path, "01", 13.5, 700, SourceInfo{}, 0); err != nil {
 			t.Fatal(err)
 		}
 		reshape(t, path, Gesture{Kind: "join", From: 12.5})

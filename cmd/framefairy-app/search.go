@@ -24,7 +24,7 @@ import (
 func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) Job {
 	if !s.store.Known(path) {
 		return s.jobs.refuse(path, engine.JobSearch, jobLabel(engine.JobSearch, false), notInLibrary, func(j *Job) {
-			j.From, j.To, j.Count = req.From, req.To, req.Count
+			j.From, j.To, j.Count, j.Min = req.From, req.To, req.Count, req.Min
 		})
 	}
 	// A search called off a moment ago may still be on its way out, and it
@@ -38,7 +38,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 	// of its own in its place.
 	s.jobs.settle(path, engine.JobSearch, "")
 	return s.jobs.addSteps(path, engine.JobSearch, jobLabel(engine.JobSearch, false), true, func(j *Job) {
-		j.Record, j.From, j.To, j.Count, j.click = engine.SearchID, req.From, req.To, req.Count, click
+		j.Record, j.From, j.To, j.Count, j.Min, j.click = engine.SearchID, req.From, req.To, req.Count, req.Min, click
 	}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
 		// The model loads while the episode is still being heard, so the
 		// search has nothing to wait for once it comes to finding.

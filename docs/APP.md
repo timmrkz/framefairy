@@ -1033,8 +1033,9 @@ bubble scrolled by those eight pixels.
   off. The frame is there while the playhead is in the clip, and only
   then. The new place applies to every piece of the clip filmed from the same
   camera angle. **Automatic crop** appears once a crop was moved and brings
-  back the automatic placement for that angle, and **Put the crop back**
-  takes that click back again. A click on the frame without dragging plays
+  back the automatic placement for that angle, removing its keyframes
+  with it, and **Put the crop back** takes that click back again, crop
+  marks and all. A click on the frame without dragging plays
   or pauses.
 - **Clip list:** beside the player, exactly as tall as the video preview with
   the range picker under it, every clip found, in time order, with its start
@@ -1239,6 +1240,18 @@ bubble scrolled by those eight pixels.
       only once the last removed row has closed, so they never push it
       down the column as it goes. An episode whose first search was stopped, by
       quitting among other things, had a bare column there before.
+    - **A search that found nothing new says so.** A search that ends
+      with no clip beyond the ones in the list, a window searched again
+      or a video shorter than Shortest with its clip in the list, leaves
+      one row after the clips, **Nothing new found**, with its window or
+      **All clips already found** under it and why in its title. It is
+      news, not a state, so it runs down in grey for as long as a removed
+      clip's row can be put back, stands still under the pointer, and
+      closes. Its time runs on while another video is open. Each search
+      that finds nothing says so once, so New pressed again and again
+      says Finding and then this, every time. Its row used to close
+      again with nothing said. It is not kept across a restart, since
+      there is nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
       **New** becomes **Continue**. *Interrupted. Click Continue* is a
@@ -1311,8 +1324,8 @@ bubble scrolled by those eight pixels.
   where the playhead stands, and while clips are being found, the part
   being searched.
     - **At rest the window is marked at its corners, not drawn.** A bar
-      runs just outside the top border and one just outside the bottom
-      border, over the window's width, and a triangle hangs from each end
+      lies on the top border and one on the bottom border, over them,
+      across the window's width, and a triangle hangs from each end
       of them with its tip reaching into the track. Nothing else of it
       lies over the track, so it hides no clip and does not read as a
       window. It says where New looks next, which the app decides, see
@@ -1370,7 +1383,9 @@ bubble scrolled by those eight pixels.
 - **One row under the clip up close**, so the range picker and the waveform
   stand together with nothing between them: play, loop and the crosshair
   that goes to the playhead, with **L** for loop the way **T** is the
-  thumbnail's, as the three marks anyone knows. Loop switched on or off
+  thumbnail's, as the three marks anyone knows. Like play, which shows
+  pause while it plays, the loop shows itself crossed out while it is on,
+  which is what a click does then. Loop switched on or off
   while the clip plays changes nothing that plays: the loop only says
   where the play ends. The play works out the next time through before
   the clip's end, and when the loop goes off it keeps it but stops at
@@ -1694,6 +1709,11 @@ bubble scrolled by those eight pixels.
       frame round the wash, nearly three times as tall as the rest. Zoomed out, the
       track is the episode with all its clips, the way an editor's
       timeline shows every clip on it.
+    - **A frame lies on the border of its track.** The chosen clip's frame
+      on the clip timeline, and the window on the range picker, at rest
+      and while it is searched, lie over the track's top and bottom border
+      rather than just inside or just outside it, so no grey line runs
+      beside them. Found by Tim on #192.
     - **Detail comes in as there is room for it.** The caption blocks are
       drawn only while the caption in the middle of the clip is at least
       as wide as a block is tall, 16 pixels. Narrower, a block's line has
@@ -1801,8 +1821,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   for a moment noticed only once it has passed, and grows it back. Either
   grows a line at a time until it is as long as **Shortest**, never past
   **Longest**, and then its far edge goes onto a sentence the way every
-  clip's does. The two letters are buttons in the row under the clip
-  timeline too. No model is asked: the pauses are cut and the crop placed
+  clip's does. Mark In and Mark Out are buttons in the row under the clip
+  timeline too, with the square brackets editors draw on them, and the
+  key is named in each one's title. No model is asked: the pauses are cut and the crop placed
   exactly as for a clip a search found, and after that it is an ordinary
   clip.
   - **Only where no clip is.** With the playhead anywhere from a clip's
@@ -1848,12 +1869,12 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a
-  picture with a plus adds one, and a picture with a minus, shown while
-  the playhead stands on a thumbnail, removes it. It can only be pressed
+  camera adds one, and the camera crossed out, shown while the playhead
+  stands on a thumbnail, removes it. It can only be pressed
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
 - **Each thumbnail is a mark** along the foot of the clip timeline, the
-  same picture icon in the app's colour, so a click on the button is seen
+  same camera in the app's colour, so a click on the button is seen
   leaving its picture on the timeline. It sits on a chip of the app's
   colour while the playhead is on its frame.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
@@ -1863,9 +1884,53 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - **A mark is dragged** to another frame. The playhead goes with it, so the
   video preview shows the frame under the hand, and the mark stays inside
   the pieces the clip keeps. It is saved when the hand lets go.
+- **A double-click on a mark** removes it, the way it removes a cut.
 - **Undo** takes back adding, moving and removing one.
 - A trim or a cut that leaves a thumbnail outside the clip hides it. It
   comes back with the part it was in.
+
+### Keyframes
+
+A crop that moves while a clip plays, for a person who shifts in the seat
+or walks across the picture. Plan row 3.26, the design is in
+[ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
+
+- **The keyframe button**, beside the thumbnail button under the clip
+  timeline, puts a keyframe on the frame under the playhead, with the
+  crop where it stands there now. **C** does the same. Like the thumbnail
+  button it is not a mode: its icon is a diamond with a plus, and with a
+  minus while the playhead stands on a keyframe, where a click removes
+  it.
+- **No keyframe, or one, is a crop that stands still.** With two or more the
+  crop glides from each to the next over the whole time between them,
+  starting and settling gently, the way a camera operator pans. The
+  tempo is where the keyframes are: two far apart are a slow drift, and
+  two a frame apart are an instant move. No glide crosses a cut, and a
+  keyframe moves only the crop of its own shot.
+- **Dragging the crop frame places the crop, and nothing else.** With the
+  playhead on a keyframe it moves that keyframe. Anywhere else it moves
+  the crop of the whole shot, every keyframe of it by the same distance,
+  kept inside the picture.
+- **The video preview follows the glide frame by frame** while the clip
+  plays, so what plays is what renders. The glide is not rounded to a
+  pixel of the video, and the short places it to its own pixel, so a slow
+  glide moves on every frame instead of standing and jumping.
+- **Each keyframe is a diamond** on the clip's bottom rule on the clip
+  timeline, under the thumbnails, in the app's colour, filled white while
+  the playhead is on its frame, the clip's first and last frame included.
+  It is 16 px wide, larger than it was at first, after Tim found it too
+  small. It is the thumbnail's kind of mark: a click puts the
+  playhead on it, a drag moves it to another frame with its crop, and a
+  double-click removes it. While it is dragged it stands on the start of
+  the frame under the hand, where it stays once let go, so dragged past
+  the clip's edge it stops on the first or last frame and does not jump.
+- **Automatic crop** removes every keyframe of the shot and brings back
+  the crop the engine found, and **Put the crop back** brings back the
+  keyframes with the crop. Removing the first of two keyframes leaves the
+  crop standing at the other for the whole clip, as removing a keyframe
+  does in Resolve and Premiere. Rotating a part removes the keyframes in
+  it, which were placed on the picture as it stood.
+- **Undo** takes back adding, moving and removing one.
 
 ### Rotate
 

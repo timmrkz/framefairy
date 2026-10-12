@@ -632,21 +632,21 @@ every frame, and checks that no frame is lost or shown twice at the switch
 and that the tone neither dips nor jumps there.
 
 The lead of a fifth of a second that each piece's sound is read with,
-`soundLead`, also settles the decoder. ffmpeg seeks to the keyframe of the
+`soundLead`, also settles the decoder. ffmpeg seeks to the key frame of the
 picture at or before the point and decodes the sound from there, and
 leaves nothing out ahead of it, though its demuxers know how much Opus
 needs, `seek_preroll`, in 8.1 and in 9.0 alike. A decoder that starts
 cold is not settled: Opus needs 80 ms of what came before, RFC 7845
 section 4.6, and gave about 70% of a steady tone at the start of a piece,
 and MP3, which keeps part of a frame in the frames before it, gave
-silence for 40 ms. Where the keyframe was a frame or less before a piece,
+silence for 40 ms. Where the key frame was a frame or less before a piece,
 as in footage where every frame is one, or at a camera switch where an
 encoder put one, the piece started quiet. Read from a fifth of a second
 earlier, more than twice what Opus needs, every codec is settled where
 the piece starts, and none needs a case of its own.
 `TestEveryPieceIsHeardFromItsFirstMoment` in `engine/preroll_test.go`
 renders two cuts and a camera switch from a 29.97 fps episode where every
-frame is a keyframe, with a steady tone in Opus in MP4 and in Matroska,
+frame is a key frame, with a steady tone in Opus in MP4 and in Matroska,
 and in MP3 where the ffmpeg can make it, and checks that every piece is
 at least 90% of the tone from its first moment, after the fade of a cut.
 Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
@@ -941,6 +941,34 @@ crop placed by hand moves every piece of one shot rotated alike, `angleOf`.
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
 
+**A crop that follows.** A person can put keyframes on frames of a clip,
+the way thumbnails are put, each with the crop where it stands on that
+frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
+`crop_marks`, each `at`, the start of its frame, and `x`, the left edge of
+the crop there, read like thumbnails: a mark that is not a number and a
+whole left edge is left out, and so is one outside every piece, which stays
+in the plan and comes back with its piece. A mark steers the pieces of its
+camera angle in its part, `markedPieces`, so no glide crosses a cut. With
+no mark, or one, the crop stands still. With two or more it glides from
+each to the next over the whole time between them by smoothstep, `glideX`,
+on the frames of the video. The left edge is not rounded to a pixel of the
+picture: a slow glide moves less than one a frame, and rounded to even
+pixels it stood still for frames and then jumped, which read as a crop
+frame that stutters. The render gives ffmpeg the same sum as an
+expression in the frame, `glideExpr`, step by step in the same order, and
+places it to the pixel of the short, `glideCrop`: it cuts the picture two
+pixels wider than the crop on an even pixel, scales that, and crops it
+again at the pixel of the short nearest the glide, in colours with no
+chroma shared between two columns. That is within half a pixel of the
+short of the glide on every frame, and a slow glide moves on every frame.
+The video preview works the glide out in `lib/glide.ts`, and the two are
+held to one table, `frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
+frame moves that mark, and anywhere else it moves the angle's crop and
+every mark of the angle as far as the crop shown there moved, `SetCrop`.
+Automatic crop removes the angle's marks, and a rotation removes the marks
+of the stretch it turns, since they were placed on a picture of another
+shape.
+
 Each camera angle in a clip gets one crop, measured across the whole shot and
 held still, so removing a pause never makes the picture jump. Framing
 decodes only what a clip keeps, and each kept span once. One ffmpeg run per
@@ -1027,7 +1055,15 @@ length, one after another. A run that asks for more is refused before it
 transcribes. An episode shorter than a clip at its shortest is the one
 exception: it has one clip, the whole of it, shaped and framed like any
 other, and the model is not asked. Nothing chose it, so nothing about it
-is recorded for training.
+is recorded for training. Searched again, it looks only at the clips
+still in the list, `PlanOptions.Listed`: with any clip of it there,
+however trimmed, the search finds nothing new, and with its clip removed
+the search makes it again, since the episode has no other moment to
+offer. The clip made again is the removed one made afresh, so the removed
+one is taken out of its plan, `DropRemoved`, once the new one is written.
+Left in, putting it back or undoing its removal showed the episode twice.
+An undo of the removal is then refused as changed since, the way an undo
+of anything a search has changed is.
 
 ## Planning on your machine
 

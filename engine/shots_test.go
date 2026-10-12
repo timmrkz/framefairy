@@ -95,7 +95,7 @@ func TestACutPutBackKeepsACropPlacedByHand(t *testing.T) {
 	if err := Reshape(path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCrop(path, "01", 15, 700); err != nil {
+	if err := SetCrop(path, "01", 15, 700, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := Reshape(path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
