@@ -32,6 +32,7 @@
 //   playing.
 import { AppFrames, AppPictures } from "./app";
 import type { Picture } from "./picture";
+import type { Over } from "./captions";
 import { screenOf, type Screen } from "./screen";
 import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
@@ -1080,9 +1081,21 @@ export class FrameQueue {
     this.report(true, true);
   }
 
+  // What lies over the frames, the captions: asked for each frame as it
+  // is drawn, by the moment of the episode it starts at, and told of each
+  // frame on its way to the screen a few frames ahead, so what lies over it
+  // can be there when it is drawn. See captions.ts.
+  over: { at(frame: number): Over | null; coming(frame: number): void } | null = null;
+
   // The frame on screen, see screen.ts.
   private paint() {
-    this.screen?.draw(this.shown?.frame ?? null);
+    const s = this.shown;
+    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank)) : null);
+  }
+
+  // The frame on screen drawn again, for what lies over it has changed.
+  repaint() {
+    if (!this.closed) this.paint();
   }
 
   private shownAt(rank: number): number {
@@ -1555,7 +1568,10 @@ export class FrameQueue {
     if (rank >= slot.firstRank && rank <= run.lastRank) slot.coming = Math.max(0, slot.coming - 1);
     // A still: kept for still() to pick out.
     if (run.id < 0) {
-      if (rank === run.lastRank) slot.ready.push({ frame, rank });
+      if (rank === run.lastRank) {
+        slot.ready.push({ frame, rank });
+        this.over?.coming(this.shownAt(rank));
+      }
       else {
         this.stats.unseen++;
         this.closeFrame(frame);
@@ -1567,6 +1583,7 @@ export class FrameQueue {
       this.closeFrame(frame);
     } else {
       slot.ready.push({ frame, rank });
+      this.over?.coming(this.shownAt(rank));
     }
     if (this.state === "starting" || this.state === "cued") this.maybeBegin();
     this.pump();

@@ -43,6 +43,30 @@ type RenderSettings struct {
 	ScaleFlags   string
 }
 
+// RenderSettings are the choices a render makes with these options. Whatever
+// is held to what a render makes takes them from here, the video preview's
+// captions among them, see Engine.PreviewCaptions.
+func (o Options) RenderSettings() RenderSettings {
+	rs := RenderSettings{OutW: o.Width, OutH: o.Height, CRF: o.CRF,
+		Preset: o.Preset, AudioBitrate: o.AudioBitrate, ScaleUp: !o.NoUpscale}
+	if o.Preview {
+		rs.OutW, rs.OutH = o.Width/2, o.Height/2
+		rs.CRF, rs.Preset = 30, "veryfast"
+	}
+	return rs
+}
+
+// FrameSize is the size of the short's frames for a piece: the size asked
+// for, or the crop's own where the render does not make it larger. The
+// captions are laid out at the size asked for either way, and libass
+// draws them on frames of this size.
+func (rs RenderSettings) FrameSize(source SourceInfo, seg Segment) (int, int) {
+	if rs.ScaleUp {
+		return rs.OutW, rs.OutH
+	}
+	return CropWindow(source.Rotated(seg.Rotate), rs.OutW, rs.OutH)
+}
+
 // BuildFilterGraph makes one filter chain per segment, each reading its own
 // seeked input.
 //
@@ -80,10 +104,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if source.Light() != framewire.SDR {
 			pixels, deep = "yuv420p10le", "yuv444p10le"
 		}
-		outW, outH := cropW, cropH
-		if rs.ScaleUp {
-			outW, outH = rs.OutW, rs.OutH
-		}
+		outW, outH := rs.FrameSize(source, seg)
 		chain = append(chain, source.cropFilters(seg, cropW, cropH, cropY, upright.Width, outW, outH, "flags="+flags, deep)...)
 		chain = append(chain, "fps="+source.FPSString(), "format="+pixels, "setsar=1")
 		if tags := source.colourParams(); tags != "" {
@@ -643,24 +664,46 @@ func (s SourceInfo) CaptionMoment(clip Clip, at float64) int64 {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
 		return int64(math.Round(ClipTime(clip, at) * 1000))
 	}
+	k, _ := s.shortFrame(clip, at)
+	us := int64(math.Round(float64(k) * float64(s.FPSDen) * 1_000_000 / float64(s.FPSNum)))
+	return (us + 500) / 1000
+}
+
+// PieceShowing is the piece of a clip whose frames the short shows for
+// the frame of the episode that holds at, see shortFrame, or -1 for a clip
+// of no pieces.
+func (s SourceInfo) PieceShowing(clip Clip, at float64) int {
+	if len(clip.Segments) == 0 {
+		return -1
+	}
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		for i, seg := range clip.Segments {
+			if at < seg.End {
+				return i
+			}
+		}
+		return len(clip.Segments) - 1
+	}
+	_, piece := s.shortFrame(clip, at)
+	return piece
+}
+
+// shortFrame is the frame of the short, from nought, that shows the frame
+// of the episode that holds at, and the piece it is in: a frame in a cut
+// shows as the first frame after it, and one before or after the clip as
+// its first or last.
+func (s SourceInfo) shortFrame(clip Clip, at float64) (int64, int) {
 	holds := s.frameHolding(at)
 	var k int64
-	inside := false
-	for _, seg := range clip.Segments {
+	for i, seg := range clip.Segments {
 		first, end := s.pieceFrames(seg.Start, seg.End)
 		if holds < end {
-			k += max(0, holds-first)
-			inside = true
-			break
+			return k + max(0, holds-first), i
 		}
 		k += end - first
 	}
-	if !inside {
-		// After the clip, its last frame.
-		k = max(0, k-1)
-	}
-	us := int64(math.Round(float64(k) * float64(s.FPSDen) * 1_000_000 / float64(s.FPSNum)))
-	return (us + 500) / 1000
+	// After the clip, its last frame.
+	return max(0, k-1), len(clip.Segments) - 1
 }
 
 // thumbnailSeek is where ffmpeg is sent for the frame of a short that

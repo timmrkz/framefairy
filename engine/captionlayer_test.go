@@ -128,7 +128,8 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	}
 	laidOver := func(ms int64, under []byte) []byte {
 		t.Helper()
-		l, err := dec.Captions(ctx, filepath.Join(captions, "01.ass"), fonts, w, h, ms)
+		l, err := dec.Captions(ctx, framewire.Captions{Width: w, Height: h, ShortW: w, ShortH: h,
+			File: filepath.Join(captions, "01.ass"), Fonts: fonts}, ms)
 		if err != nil {
 			t.Fatal(err)
 		}

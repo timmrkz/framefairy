@@ -1,0 +1,163 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CaptionLayers, laidPart, readLayer, turned, unturned, type Layer, type Over } from "./captions";
+
+// A pixel of 10 bits a colour, red lowest, as the Go side sends every frame.
+const word = (r: number, g: number, b: number) => (r | (g << 10) | (b << 20)) >>> 0;
+const colours = (w: number) => [w & 1023, (w >>> 10) & 1023, (w >>> 20) & 1023];
+
+function frame(w: number, h: number, grey: number): Uint8Array {
+  return new Uint8Array(new Uint32Array(w * h).fill(word(grey, grey, grey)).buffer);
+}
+
+function pixelsOf(data: Uint8Array): number[][] {
+  return [...new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4)].map(colours);
+}
+
+// The frame with the layer laid over it, drawn at its own size.
+function laidOver(data: Uint8Array, fw: number, fh: number, o: Over): Uint8Array {
+  const out = data.slice();
+  const part = laidPart(data, fw, fh, fw, fh, o);
+  if (!part) return out;
+  const to = new Uint32Array(out.buffer);
+  const from = new Uint32Array(part.data.buffer);
+  for (let y = 0; y < part.h; y++)
+    for (let x = 0; x < part.w; x++) to[(part.y + y) * fw + part.x + x] = from[y * part.w + x];
+  return out;
+}
+
+function layer(x: number, y: number, w: number, h: number, pixel: number[]): Layer {
+  return { x, y, w, h, pixels: new Uint8Array(Array.from({ length: w * h }, () => pixel).flat()) };
+}
+
+describe("a layer of captions", () => {
+  it("is read the way framewire.Layer writes it", () => {
+    const body = new ArrayBuffer(8 + 2 * 1 * 4);
+    const v = new DataView(body);
+    [3, 4, 2, 1].forEach((n, i) => v.setUint16(2 * i, n, true));
+    new Uint8Array(body, 8).set([1, 2, 3, 4, 5, 6, 7, 8]);
+    const l = readLayer(body);
+    expect(l && { x: l.x, y: l.y, w: l.w, h: l.h, pixels: [...l.pixels] }).toEqual({
+      x: 3,
+      y: 4,
+      w: 2,
+      h: 1,
+      pixels: [1, 2, 3, 4, 5, 6, 7, 8],
+    });
+    expect(readLayer(body.slice(0, 12))).toBeNull();
+    expect(readLayer(new ArrayBuffer(4))).toBeNull();
+  });
+
+  it("turns with the picture and back", () => {
+    for (const turn of [0, 90, 180, 270, -90, -180]) {
+      for (const [u, v] of [
+        [0.1, 0.2],
+        [0.9, 0.3],
+        [0.5, 0.75],
+      ]) {
+        const [du, dv] = turned(u, v, turn);
+        const [bu, bv] = unturned(du, dv, turn);
+        expect(bu).toBeCloseTo(u, 9);
+        expect(bv).toBeCloseTo(v, 9);
+      }
+    }
+    // The stylesheet turns the frame through -turn degrees, clockwise for
+    // a turn of -90: the frame's top left is then the picture's top right.
+    expect(turned(0, 0, -90)).toEqual([1, 0]);
+    expect(turned(0, 0, 90)).toEqual([0, 1]);
+  });
+
+  it("is laid over the frame as the render blends it, colour plus frame times one less alpha", () => {
+    // A frame of 4 by 2, the crop its middle half, and a layer over all of
+    // the crop: red at half, which lets half of the grey through.
+    const data = frame(4, 2, 512);
+    const o: Over = { layer: layer(0, 0, 2, 2, [128, 0, 0, 128]), size: [2, 2], left: 0.25, width: 0.5, turn: 0 };
+    const got = pixelsOf(laidOver(data, 4, 2, o));
+    const half = Math.round(512 * (127 / 255));
+    const red = [Math.min(1023, Math.round((128 * 1023) / 255) + half), half, half];
+    expect(got).toEqual([[512, 512, 512], red, red, [512, 512, 512], [512, 512, 512], red, red, [512, 512, 512]]);
+    // The frame itself is left as it was, for whoever holds it.
+    expect(pixelsOf(data).every((p) => p[0] === 512)).toBe(true);
+  });
+
+  it("lays only its ink, where the ink is in the crop", () => {
+    // A crop as large as the frame, drawn at 4 by 4, and ink only in its
+    // bottom right pixel.
+    const data = frame(4, 4, 100);
+    const o: Over = { layer: layer(3, 3, 1, 1, [255, 255, 255, 255]), size: [4, 4], left: 0, width: 1, turn: 0 };
+    const got = pixelsOf(laidOver(data, 4, 4, o));
+    got.forEach((p, i) => expect(p[0]).toBe(i === 15 ? 1023 : 100));
+  });
+
+  it("is drawn at the size it is shown, not the frame's", () => {
+    // A frame of 2 by 1, black and white, drawn at 8 by 4 with a layer as
+    // large as all of it with ink in one pixel: the part is that pixel
+    // alone, and the frame under the ink is sampled between its pixels.
+    const data = new Uint8Array(new Uint32Array([word(0, 0, 0), word(1000, 1000, 1000)]).buffer);
+    const o: Over = { layer: layer(3, 1, 1, 1, [0, 0, 0, 0]), size: [8, 4], left: 0, width: 1, turn: 0 };
+    const part = laidPart(data, 2, 1, 8, 4, o)!;
+    expect([part.x, part.y, part.w, part.h]).toEqual([3, 1, 1, 1]);
+    // The middle of the fourth of 8 pixels is 3.5 / 8 of the way, which is
+    // 0.375 of the way from the black pixel's middle to the white one's.
+    expect(pixelsOf(part.data)[0][0]).toBe(375);
+  });
+
+  it("stands on the picture as shown when the picture is turned", () => {
+    // A frame of 2 by 4 shown a quarter turn clockwise, 4 by 2, and ink in
+    // the top left pixel of the picture as shown, which is the bottom left
+    // of the frame.
+    const data = frame(2, 4, 0);
+    const o: Over = { layer: layer(0, 0, 1, 1, [255, 255, 255, 255]), size: [4, 2], left: 0, width: 1, turn: -90 };
+    const got = pixelsOf(laidOver(data, 2, 4, o));
+    got.forEach((p, i) => expect(p[0]).toBe(i === 6 ? 1023 : 0));
+  });
+});
+
+describe("the layers of the captions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function body(l: Layer): ArrayBuffer {
+    const b = new ArrayBuffer(8 + l.pixels.length);
+    const v = new DataView(b);
+    [l.x, l.y, l.w, l.h].forEach((n, i) => v.setUint16(2 * i, n, true));
+    new Uint8Array(b, 8).set(l.pixels);
+    return b;
+  }
+
+  it("keeps the last layer up while the one for a newer frame is on its way, and draws again when it comes", async () => {
+    const asked: string[] = [];
+    let answer: (() => void)[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      asked.push(url);
+      const n = asked.length;
+      return new Promise((done) => {
+        answer.push(() => done({ ok: true, arrayBuffer: async () => body(layer(0, 0, 1, 1, [n, 0, 0, 255])) }));
+      });
+    });
+    let came = 0;
+    const layers = new CaptionLayers(() => came++);
+    layers.set({ path: "/v.mp4", track: "abc", drafts: { text: "#ffffff" } });
+    expect(layers.at(1.0, [10, 20])).toBeNull();
+    expect(asked[0]).toContain("/frames/captions?");
+    const q = new URLSearchParams(asked[0].split("?")[1]);
+    expect(Object.fromEntries(q)).toEqual({ path: "/v.mp4", track: "abc", at: "1.000000", w: "10", h: "20", text: "#ffffff" });
+    answer.shift()!();
+    await vi.waitFor(() => expect(came).toBe(1));
+    expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
+    // The next frame: the first one's layer stays until its own comes.
+    expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(1);
+    answer.shift()!();
+    await vi.waitFor(() => expect(came).toBe(2));
+    expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(2);
+    // A frame on its way asks ahead, and is there when it is drawn.
+    layers.coming(1.08, [10, 20]);
+    answer.shift()!();
+    await vi.waitFor(() => expect(asked.length).toBe(3));
+    await new Promise((r) => setTimeout(r));
+    expect(layers.at(1.08, [10, 20])?.pixels[0]).toBe(3);
+    expect(came).toBe(2);
+    // No captions, nothing drawn and nothing kept up.
+    layers.set(null);
+    expect(layers.at(1.08, [10, 20])).toBeNull();
+    answer = [];
+  });
+});

@@ -781,9 +781,7 @@ func (q *queue) runJob(job *Job) {
 	started := time.Now()
 	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
 	e := engine.NewEngine(log)
-	opts := q.store.Settings().options()
-	setUp(e, &opts)
-	project := engine.NewProject(e, job.Episode, opts)
+	project := engine.NewProject(e, job.Episode, jobOptions(q.store, e))
 
 	result, err := run(ctx, job, project, q.turn(job))
 	// A search called off by hand says so in its record before it says
@@ -832,6 +830,16 @@ func (q *queue) runJob(job *Job) {
 	if q.notify != nil {
 		q.notify(job.Episode)
 	}
+}
+
+// jobOptions are the options a job runs with, the engine readied for it.
+// Whatever is held to what a job makes takes them from here too, the size
+// of the short the video preview draws the captions of among them, see
+// serveCaptions, so the two never decide it apart.
+func jobOptions(st *store, e *engine.Engine) engine.Options {
+	opts := st.Settings().options()
+	setUp(e, &opts)
+	return opts
 }
 
 // setUp readies the engine and the options a job runs with: the speech

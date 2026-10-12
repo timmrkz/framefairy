@@ -50,18 +50,22 @@ export function random(seed) {
 }
 
 // The interface on the bridge, in the episode's workspace with its clip
-// chosen and the keyboard on the page.
-export async function open(url) {
+// chosen and the keyboard on the page. viewport is the size of the page,
+// and again opens another page on the episode as it is now, beside the
+// first, in its browser.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, again = null } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
-  const reset = await fetch(new URL("/reset", url), { method: "POST" });
-  if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
+  if (!again) {
+    const reset = await fetch(new URL("/reset", url), { method: "POST" });
+    if (!reset.ok) throw new Error(`the bridge did not reset: ${await reset.text()}`);
+  }
   // WebGPU on, which headless Chromium on Linux only gives when asked, for
   // the step that checks what the GPU draws, ["screen light"]. The video
   // preview itself draws on a 2D canvas here, __flatScreen, because
   // headless Chromium gives nothing back from a WebGPU canvas, and the
   // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] });
-  const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
+  const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
+  const page = await browser.newPage({ viewport });
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });
@@ -679,4 +683,35 @@ export function shortSound(path) {
   const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-ac", "1", "-ar", "48000",
     "-f", "f32le", "-"], { maxBuffer: 1 << 30 });
   return new Float32Array(Uint8Array.from(raw).buffer);
+}
+
+// The crop in the video preview as the canvas has it, at the canvas's own
+// pixels, where the captions are drawn: from the crop's left edge in
+// pixels of the picture, data-crop, and the episode's width and the
+// crop's, source, as the video preview works it out, and its pixels, red,
+// green, blue and alpha, row after row. Null while there is no crop.
+export async function cropPixels(page, source) {
+  return page.evaluate(({ width, cropWidth }) => {
+    const left = Number(document.querySelector(".screen").dataset.crop);
+    const canvas = document.querySelector(".screen canvas");
+    if (!Number.isFinite(left) || !canvas?.width) return null;
+    const x = Math.round((left / width) * canvas.width);
+    const w = Math.round((cropWidth / width) * canvas.width);
+    const h = canvas.height;
+    // The canvas may be a WebGPU canvas, which has no 2D context, so the
+    // piece is copied to a 2D canvas to be read.
+    const s = document.createElement("canvas");
+    s.width = w;
+    s.height = h;
+    const t = s.getContext("2d", { willReadFrequently: true });
+    t.drawImage(canvas, x, 0, w, h, 0, 0, w, h);
+    return { x, w, h, pixels: [...t.getImageData(0, 0, w, h).data] };
+  }, source);
+}
+
+// One frame of a short read back from disk with ffmpeg, the nth from
+// nought, at width by height, red, green and blue, row after row.
+export function shortFrame(path, n, w, h) {
+  return execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=eq(n\\,${n}),scale=${w}:${h}:flags=area`,
+    "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
 }

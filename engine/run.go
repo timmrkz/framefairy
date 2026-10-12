@@ -346,14 +346,9 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 		return nil, fmt.Errorf("cannot read %s: %w", opts.Source, err)
 	}
 
-	rs := RenderSettings{OutW: opts.Width, OutH: opts.Height, CRF: opts.CRF,
-		Preset: opts.Preset, AudioBitrate: opts.AudioBitrate, ScaleUp: !opts.NoUpscale}
-	if opts.Preview {
-		rs.OutW, rs.OutH = opts.Width/2, opts.Height/2
-		rs.CRF, rs.Preset = 30, "veryfast"
-		if opts.Out == "" {
-			outDir = filepath.Join(work, "preview")
-		}
+	rs := opts.RenderSettings()
+	if opts.Preview && opts.Out == "" {
+		outDir = filepath.Join(work, "preview")
 	}
 
 	turned := ""

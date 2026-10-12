@@ -259,13 +259,13 @@ func (d *decoder) request(f []string) {
 		}
 		c.work <- func() { c.next(min(n, 16), skip) }
 	case f[0] == "captions":
-		_, w, h, file, fonts, ok := framewire.ReadCaptions(f)
+		_, c, ok := framewire.ReadCaptions(f)
 		if !ok {
 			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("captions the decoder cannot take")})
 			return
 		}
 		if l := d.layer(id); l != nil {
-			l.work <- func() { l.open(w, h, file, fonts) }
+			l.work <- func() { l.open(c) }
 		}
 	case f[0] == "draw":
 		_, ms, ok := framewire.ReadDraw(f)

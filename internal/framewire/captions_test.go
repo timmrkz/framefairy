@@ -10,21 +10,22 @@ import (
 // them, and a layer comes back as it went.
 func TestCaptionsRequestsAndLayers(t *testing.T) {
 	file, fonts := "/Users/tim/My First Memory: it's [a], b; c\\d.ass", "/fonts dir/ä"
-	id, w, h, gotFile, gotFonts, ok := ReadCaptions(strings.Fields(CaptionsRequest(7, 1080, 1920, file, fonts)))
-	if !ok || id != 7 || w != 1080 || h != 1920 || gotFile != file || gotFonts != fonts {
-		t.Fatalf("read back %d %d %d %q %q %v", id, w, h, gotFile, gotFonts, ok)
+	sent := Captions{Width: 540, Height: 960, ShortW: 1080, ShortH: 1920, File: file, Fonts: fonts}
+	id, got, ok := ReadCaptions(strings.Fields(CaptionsRequest(7, sent)))
+	if !ok || id != 7 || got != sent {
+		t.Fatalf("read back %d %+v %v", id, got, ok)
 	}
 	if id, ms, ok := ReadDraw(strings.Fields(DrawRequest(7, 12345))); !ok || id != 7 || ms != 12345 {
 		t.Fatalf("read back %d %d %v", id, ms, ok)
 	}
-	for _, bad := range []string{"captions 1 0 10 61 62", "captions 1 10 10 zz 62", "captions 1 10 10 61",
-		"captions 1 99999 10 61 62", "draw 1 -4", "draw 1"} {
+	for _, bad := range []string{"captions 1 0 10 10 10 61 62", "captions 1 10 10 10 10 zz 62", "captions 1 10 10 10 10 61",
+		"captions 1 99999 10 10 10 61 62", "captions 1 10 10 0 10 61 62", "captions 1 10 10 61 62", "draw 1 -4", "draw 1"} {
 		f := strings.Fields(bad)
 		if f[0] == "draw" {
 			if _, _, ok := ReadDraw(f); ok {
 				t.Errorf("%q was taken", bad)
 			}
-		} else if _, _, _, _, _, ok := ReadCaptions(f); ok {
+		} else if _, _, ok := ReadCaptions(f); ok {
 			t.Errorf("%q was taken", bad)
 		}
 	}

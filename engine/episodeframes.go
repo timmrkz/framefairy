@@ -503,16 +503,16 @@ type captionsCursor struct {
 	held string
 }
 
-// Captions is the captions of a caption file drawn by libass at width by
-// height, at ms milliseconds of the short, see SourceInfo.CaptionMoment:
-// the layer the video preview lays over a frame, see framewire.Layer. The
-// file is the one the render burns in, made by Engine.CaptionTrack, and
-// the faces it names are in fonts. A file is held open until another is
-// asked for, so the frames of a clip each only draw.
-func (f *EpisodeFrames) Captions(ctx context.Context, file, fonts string, width, height int,
-	ms int64) (framewire.Layer, error) {
-	if !framewire.LayerFits(width, height) {
-		return framewire.Layer{}, fmt.Errorf("captions cannot be drawn %d by %d", width, height)
+// Captions is the captions of a caption file drawn by libass at a size,
+// at ms milliseconds of the short, see SourceInfo.CaptionMoment: the layer
+// the video preview lays over a frame, see framewire.Layer. The file is
+// the one the render burns in, made by Engine.CaptionTrack, and the faces
+// it names are in its folder of fonts. A file is held open until another
+// is asked for, so the frames of a clip each only draw.
+func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Captions, ms int64) (framewire.Layer, error) {
+	if !framewire.LayerFits(captions.Width, captions.Height) || !framewire.LayerFits(captions.ShortW, captions.ShortH) {
+		return framewire.Layer{}, fmt.Errorf("captions cannot be drawn %d by %d of %d by %d",
+			captions.Width, captions.Height, captions.ShortW, captions.ShortH)
 	}
 	f.captionsMu.Lock()
 	defer f.captionsMu.Unlock()
@@ -529,11 +529,11 @@ func (f *EpisodeFrames) Captions(ctx context.Context, file, fonts string, width,
 		f.answers[c.id] = c.ch
 		f.captions = c
 	}
-	held := fmt.Sprintf("%s\x00%s\x00%dx%d", file, fonts, width, height)
+	held := fmt.Sprintf("%+v", captions)
 	var err error
 	if c.held != held {
 		c.held = ""
-		err = f.send(c.gone, "%s", framewire.CaptionsRequest(c.id, width, height, file, fonts))
+		err = f.send(c.gone, "%s", framewire.CaptionsRequest(c.id, captions))
 	}
 	if err == nil {
 		err = f.send(c.gone, "%s", framewire.DrawRequest(c.id, ms))

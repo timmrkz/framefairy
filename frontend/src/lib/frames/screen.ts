@@ -6,17 +6,20 @@
 // frame is drawn as large as the canvas allows, in its own shape, in the
 // middle, on whole pixels, and black around it. The frames are ffmpeg's
 // colours, which light.ts gives the look of standard video or turns from
-// HDR into light.
+// HDR into light. The captions are laid over the frame before that, the
+// way the render burns them into the short before anything shows it, see
+// captions.ts.
 
+import { laidPart, inkBox, quarters, type Over } from "./captions";
 import { lift, lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
 import { Picture } from "./picture";
 
 export interface Screen {
   readonly kind: "webgpu" | "2d";
-  // Draws the frame, or black for none. The frame is only read, never
-  // kept, so whoever owns it may close it straight after. What is drawn
-  // stays until the next draw.
-  draw(frame: Picture | null): void;
+  // Draws the frame, or black for none, with what lies over it. The frame
+  // is only read, never kept, so whoever owns it may close it straight
+  // after. What is drawn stays until the next draw.
+  draw(frame: Picture | null, over?: Over | null): void;
   // Called once a lost GPU is back, so the frame can be drawn again.
   onRestored?: () => void;
 }
@@ -86,7 +89,7 @@ class FlatScreen implements Screen {
     this.ownG = ownG;
   }
 
-  draw(frame: Picture | null) {
+  draw(frame: Picture | null, over: Over | null = null) {
     const c = this.canvas;
     this.g.fillStyle = "#000";
     this.g.fillRect(0, 0, c.width, c.height);
@@ -102,6 +105,14 @@ class FlatScreen implements Screen {
     toSDR(frame.light, d, this.sdr.data);
     this.ownG.putImageData(this.sdr, 0, 0);
     this.g.drawImage(this.own, at.x, at.y, at.w, at.h);
+    // The captions, at the canvas's own pixels: the part they fall on
+    // drawn again with them laid over it, before its look.
+    const part = over && laidPart(d, frame.width, frame.height, at.w, at.h, over);
+    if (part) {
+      const img = new ImageData(part.w, part.h);
+      toSDR(frame.light, part.data, img.data);
+      this.g.putImageData(img, at.x + part.x, at.y + part.y);
+    }
   }
 }
 
@@ -124,9 +135,44 @@ struct Out {
 @group(0) @binding(1) var frame: texture_2d<f32>;
 // 0 for standard video, 1 for PQ, 2 for HLG.
 @group(0) @binding(2) var<uniform> kind: u32;
+
+// The captions, see captions.ts: the box of the layer's ink in the picture
+// as shown, in shares, the share of the texture the layer fills, how many
+// quarter turns clockwise the picture as shown is of the frame, and
+// whether there is a layer at all. Its pixels are each taken whole, the
+// way laidPart takes them, since it is drawn at the size it is shown.
+struct Over {
+  box: vec4f,
+  fill: vec2f,
+  turn: u32,
+  on: u32,
+}
+@group(1) @binding(0) var words: texture_2d<f32>;
+@group(1) @binding(1) var<uniform> laid: Over;
+@group(1) @binding(2) var whole: sampler;
 ${wgsl}
+fn turned(uv: vec2f, q: u32) -> vec2f {
+  if (q == 1u) {
+    return vec2f(1.0 - uv.y, uv.x);
+  }
+  if (q == 2u) {
+    return vec2f(1.0) - uv;
+  }
+  if (q == 3u) {
+    return vec2f(uv.y, 1.0 - uv.x);
+  }
+  return uv;
+}
+
+// The frame with the captions laid over it as colour plus frame times one
+// less alpha, the blend the render makes, and then its look.
 @fragment fn fs(o: Out) -> @location(0) vec4f {
-  return vec4f(shown(textureSample(frame, pick, o.uv).rgb, kind), 1);
+  var c = textureSample(frame, pick, o.uv).rgb;
+  let p = (turned(o.uv, laid.turn) - laid.box.xy) / max(laid.box.zw - laid.box.xy, vec2f(1e-6));
+  let l = textureSampleLevel(words, whole, p * laid.fill, 0.0);
+  let inside = laid.on == 1u && all(p >= vec2f(0.0)) && all(p < vec2f(1.0));
+  c = select(c, l.rgb + c * (1.0 - l.a), inside);
+  return vec4f(shown(c, kind), 1);
 }
 `;
 
@@ -164,6 +210,11 @@ class Painter {
   private texture: GPUTexture | null = null;
   private light: Light = "";
   private binding: GPUBindGroup | null = null;
+  // The layer of captions, in a texture kept while layers fit in it.
+  private wordsSampler: GPUSampler;
+  private overBuffer: GPUBuffer;
+  private words: GPUTexture | null = null;
+  private overBinding: GPUBindGroup | null = null;
 
   constructor(readonly device: GPUDevice) {
     const module = device.createShaderModule({ code: shader });
@@ -180,6 +231,57 @@ class Painter {
       size: 16,
       usage: BUFFER.uniform | BUFFER.copyDst,
     });
+    this.wordsSampler = device.createSampler({
+      magFilter: "nearest",
+      minFilter: "nearest",
+    });
+    this.overBuffer = device.createBuffer({
+      size: 32,
+      usage: BUFFER.uniform | BUFFER.copyDst,
+    });
+    this.wordsFor(1, 1);
+  }
+
+  // The texture the layer of captions is written to, kept while layers
+  // fit in it.
+  private wordsFor(w: number, h: number): GPUTexture {
+    if (this.words && this.words.width >= w && this.words.height >= h) return this.words;
+    this.words?.destroy();
+    this.words = this.device.createTexture({
+      size: [Math.max(w, this.words?.width ?? 1), Math.max(h, this.words?.height ?? 1)],
+      format: "rgba8unorm",
+      usage: TEXTURE.copyDst | TEXTURE.binding,
+    });
+    this.overBinding = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: this.words.createView() },
+        { binding: 1, resource: { buffer: this.overBuffer } },
+        { binding: 2, resource: this.wordsSampler },
+      ],
+    });
+    return this.words;
+  }
+
+  // What lies over the frame, written for the shader.
+  private lay(over: Over | null) {
+    const l = over?.layer;
+    const on = !!l && l.w > 0 && l.h > 0;
+    const head = new ArrayBuffer(32);
+    const f = new Float32Array(head, 0, 6);
+    const u = new Uint32Array(head, 24, 2);
+    if (on) {
+      const words = this.wordsFor(l.w, l.h);
+      this.device.queue.writeTexture(
+        { texture: words },
+        l.pixels as Uint8Array<ArrayBuffer>,
+        { bytesPerRow: l.w * 4 },
+        [l.w, l.h],
+      );
+      f.set([...inkBox(over), l.w / words.width, l.h / words.height]);
+      u.set([quarters(over.turn), 1]);
+    }
+    this.device.queue.writeBuffer(this.overBuffer, 0, head);
   }
 
   // The texture the frame is written to, kept while frames keep their size
@@ -224,10 +326,12 @@ class Painter {
     width: number,
     height: number,
     frame: Picture | null,
+    over: Over | null = null,
   ) {
     const d = frame?.data;
     const at = frame && d && fit(width, height, frame.width, frame.height);
     if (at) {
+      this.lay(over);
       const texture = this.textureFor(frame.width, frame.height, frame.light);
       this.device.queue.writeTexture(
         { texture },
@@ -241,10 +345,11 @@ class Painter {
         { view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] },
       ],
     });
-    if (at && this.binding) {
+    if (at && this.binding && this.overBinding) {
       pass.setViewport(at.x, at.y, at.w, at.h, 0, 1);
       pass.setPipeline(this.pipeline);
       pass.setBindGroup(0, this.binding);
+      pass.setBindGroup(1, this.overBinding);
       pass.draw(3);
     }
     pass.end();
@@ -252,7 +357,9 @@ class Painter {
 
   destroy() {
     this.texture?.destroy();
+    this.words?.destroy();
     this.lightBuffer.destroy();
+    this.overBuffer.destroy();
   }
 }
 
@@ -309,7 +416,7 @@ class GPUScreen implements Screen {
     console.error("video preview:", what);
   }
 
-  draw(frame: Picture | null) {
+  draw(frame: Picture | null, over: Over | null = null) {
     const c = this.canvas;
     if (!c.width || !c.height) return;
     try {
@@ -321,6 +428,7 @@ class GPUScreen implements Screen {
         c.width,
         c.height,
         frame,
+        over,
       );
       device.queue.submit([encoder.finish()]);
     } catch (e) {
@@ -346,6 +454,7 @@ function half(h: number): number {
 // preview/walks/bridge.mjs. Null without WebGPU.
 export async function checkScreen(
   frames: Picture[],
+  overs: (Over | null)[] = [],
 ): Promise<number[][] | null> {
   const device = await gpuDevice();
   if (!device) return null;
@@ -369,6 +478,7 @@ export async function checkScreen(
       frame.width,
       frame.height,
       frame,
+      overs[frames.indexOf(frame)] ?? null,
     );
     encoder.copyTextureToBuffer(
       { texture: drawn, origin: [frame.width >> 1, frame.height >> 1] },
@@ -390,9 +500,11 @@ export async function checkScreen(
 
 // A pixel as the Go side sends it, 4 bytes, drawn by the GPU and worked
 // out here on the processor by light.ts, both as the extended canvas
-// takes it, for the walks to hold one to the other.
+// takes it, for the walks to hold one to the other. over is a pixel of a
+// layer of captions laid over it, red, green, blue and alpha with the
+// alpha multiplied in, which the processor lays over it with laidPart.
 export async function checkPixels(
-  pixels: { light: Light; bytes: number[] }[],
+  pixels: { light: Light; bytes: number[]; over?: number[] }[],
 ): Promise<{ gpu: number[][]; cpu: number[][] } | null> {
   const frames = pixels.map(
     (p) =>
@@ -404,9 +516,24 @@ export async function checkPixels(
         p.light,
       ),
   );
-  const gpu = await checkScreen(frames);
+  // A layer of 2 by 2 over the whole of each frame, the turn of the
+  // second quarter, so the turn is gone through too.
+  const overs = pixels.map(({ over }) =>
+    over
+      ? {
+          layer: { x: 0, y: 0, w: 2, h: 2, pixels: new Uint8Array([...over, ...over, ...over, ...over]) },
+          size: [2, 2] as [number, number],
+          left: 0,
+          width: 1,
+          turn: -180,
+        }
+      : null,
+  );
+  const gpu = await checkScreen(frames, overs);
   if (!gpu) return null;
-  const cpu = pixels.map(({ light, bytes }) => {
+  const cpu = pixels.map(({ light, bytes: sent }, i) => {
+    const o = overs[i];
+    const bytes = o ? [...laidPart(new Uint8Array(sent), 1, 1, 1, 1, o)!.data] : sent;
     const w =
       (bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)) >>> 0;
     const c = [w & 1023, (w >>> 10) & 1023, (w >>> 20) & 1023].map(

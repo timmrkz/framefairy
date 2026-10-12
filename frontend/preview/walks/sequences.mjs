@@ -90,6 +90,11 @@
 //                      the same in Matroska, the way OBS records, with ""
 //                      for frames at the rate
 //   ["render"]         presses Render and waits until the short is written
+//   ["captions like the short"]
+//                      puts the playhead on the first frame of the clip's
+//                      words and in their middle, and holds the lower half
+//                      of the crop in the video preview to the frame of
+//                      the short Render wrote that shows the same moment
 //   ["add sound alone"] adds a file of sound with no picture, named like a
 //                      video, with Add
 //   ["add cameras", seconds, switch]
@@ -489,7 +494,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC } from "./bridge.mjs";
+import { recordFrames, addHEVC, cropPixels, shortFrame } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -1728,6 +1733,55 @@ const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
 
+// How far the captions in the crop of the video preview are from a frame
+// of the short at the same size, in brightness, in blocks of 4 by 4
+// pixels, on average and at most, in steps of 8 bits. The captions are
+// the rows of the lower half of the short that have white text in them,
+// and a few pixels round them. The short is given the video preview's
+// look first, see lift in lib/frames/light.ts. Blocks, since the short
+// burns its captions in at its own size and is made smaller to compare,
+// and the preview draws them at the size it shows them, so the edges of a
+// letter fall a little differently.
+const look = (v) => {
+  const c = Math.min(Math.max(v / 255, 0), 1);
+  return 255 * Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
+};
+function captionDiff(rgba, rgb, w, h, channels = 4) {
+  const B = 4;
+  const luma = (d, i, n, f) => 0.2126 * f(d[n * i]) + 0.7152 * f(d[n * i + 1]) + 0.0722 * f(d[n * i + 2]);
+  let top = h;
+  let bottom = -1;
+  for (let y = Math.floor(h / 2); y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (luma(rgb, y * w + x, 3, (v) => v) > 200) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (bottom < 0) return { mean: Infinity, most: Infinity, rows: 0 };
+  let sum = 0;
+  let most = 0;
+  let n = 0;
+  for (let by = Math.max(0, top - 2 * B); by + B <= Math.min(h, bottom + 2 * B); by += B) {
+    for (let bx = 0; bx + B <= w; bx += B) {
+      let a = 0;
+      let b = 0;
+      for (let y = by; y < by + B; y++) {
+        for (let x = bx; x < bx + B; x++) {
+          a += luma(rgba, y * w + x, channels, channels === 3 ? look : (v) => v);
+          b += luma(rgb, y * w + x, 3, look);
+        }
+      }
+      const d = Math.abs(a - b) / (B * B);
+      sum += d;
+      most = Math.max(most, Math.round(d));
+      n++;
+    }
+  }
+  return { mean: sum / Math.max(n, 1), most, rows: bottom - top + 1 };
+}
+
 // What is wrong with the short Render wrote, against the video preview, or
 // null. The frame of the short that stands for a moment is the frame of
 // the episode the video preview shows there: the last one to begin at or
@@ -2828,6 +2882,114 @@ for (const seq of toWalk) {
         await watch.step("render", s);
         break;
       }
+      case "captions like the short": {
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        const short = await shortOf(page, watch.at);
+        if (!short || !existsSync(short)) {
+          wrong = "the clip has no short to compare with";
+          break;
+        }
+        const pieces = state.segments;
+        const source = await ask(page, "Source", await episodeOn(page));
+        // The video preview at the short's own size, so the two are drawn
+        // at one size and compared pixel for pixel: on a page of its own,
+        // made taller until the crop is as tall as the short.
+        const tall = Number(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries",
+          "stream=height", "-of", "csv=p=0", short]).toString().trim());
+        const sized = (await open(url, { viewport: { width: 2400, height: 1000 }, again: page.context().browser() })).page;
+        const canvasTall = () => sized.evaluate(() => document.querySelector(".screen canvas").height);
+        for (let i = 0, high = 1000; i < 12 && (await canvasTall()) !== tall; i++) {
+          high += Math.round((tall - (await canvasTall())) * 1.4) || Math.sign(tall - (await canvasTall()));
+          await sized.setViewportSize({ width: 2400, height: high });
+          await settle(sized);
+        }
+        if ((await canvasTall()) !== tall) {
+          wrong = `the video preview could not be made ${tall} pixels tall, it is ${await canvasTall()}`;
+          await sized.close();
+          break;
+        }
+        // A moment of the clip's clock in the episode, and the frame of the
+        // short that shows the frame of the episode that holds it: the
+        // frames of the pieces before, and the frames into its own, each
+        // piece the frames from its start up to the one before its end,
+        // see pieceFrames in engine/render.go.
+        const into = (t) => {
+          let sum = 0;
+          for (const p of pieces) {
+            if (t < sum + p.end - p.start) return p.start + t - sum;
+            sum += p.end - p.start;
+          }
+          return null;
+        };
+        const shortIndex = (at) => {
+          const k = Math.floor(at * fps + 1e-6);
+          let n = 0;
+          for (const p of pieces) {
+            const [first, end] = [Math.round(p.start * fps), Math.round(p.end * fps)];
+            if (k < end) return n + k - first;
+            n += end - first;
+          }
+          return -1;
+        };
+        // The first frame of every word, where the highlight bounces, and
+        // a frame in its middle, where it has settled.
+        const words = (state.captions ?? []).flatMap((c) => c.lines.flatMap((l) => l.words));
+        const moments = words
+          .flatMap((w) => [w.start + 0.5 / fps, (w.start + w.end) / 2])
+          .map(into)
+          .filter((at) => at !== null);
+        let compared = 0;
+        let apart = 0;
+        const report = [];
+        for (const at of moments.slice(0, 12)) {
+          if (!(await seekTo(sized, at, fps))) {
+            wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+            break;
+          }
+          await sized.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+          await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const got = await cropPixels(sized, source);
+          // A click lands on a whole pixel of the clip timeline, so the
+          // playhead is where it landed, near the moment asked for.
+          const landed = Number(await sized.evaluate(() => document.querySelector(".screen").dataset.playhead));
+          const n = shortIndex(landed);
+          if (!got || n < 0) continue;
+          const want = shortFrame(short, n, got.w, got.h);
+          const d = captionDiff(got.pixels, want, got.w, got.h);
+          compared++;
+          report.push(`${landed.toFixed(2)} s, frame ${n} of the short: ${d.mean.toFixed(2)} on average, ${d.most} at most`);
+          if (process.env.DUMP) {
+            const head = Buffer.from(`P6 ${got.w} ${got.h} 255\n`);
+            const rgb = Buffer.alloc(got.w * got.h * 3);
+            for (let i = 0; i < got.w * got.h; i++) for (let c = 0; c < 3; c++) rgb[3 * i + c] = got.pixels[4 * i + c];
+            writeFileSync(`${process.env.DUMP}/preview-${compared}.ppm`, Buffer.concat([head, rgb]));
+            writeFileSync(`${process.env.DUMP}/short-${compared}.ppm`, Buffer.concat([head, Buffer.from(want)]));
+          }
+          if (d.mean > 3 || d.most > 40) {
+            wrong = `at ${landed.toFixed(2)} s the captions in the video preview differ from frame ${n} of the short by ${d.mean.toFixed(2)} on average and ${d.most} at most, where the captions are, in blocks of 4 pixels`;
+            if (!process.env.DUMP) break;
+          }
+          // The frames of the short either side, where their captions are
+          // drawn otherwise, are told apart from it, so a frame off in the
+          // highlight would not pass.
+          for (const m of [n - 1, n + 1]) {
+            if (m < 0) continue;
+            const other = shortFrame(short, m, got.w, got.h);
+            if (other.length !== want.length) continue;
+            const o = captionDiff(want, other, got.w, got.h, 3);
+            if (o.mean < 1) continue;
+            const off = captionDiff(got.pixels, other, got.w, got.h);
+            report.push(`  frame ${m}, drawn otherwise by ${o.mean.toFixed(2)}: ${off.mean.toFixed(2)} on average`);
+            if (off.mean > d.mean + 0.5) apart++;
+          }
+        }
+        await sized.close();
+        if (process.env.VERBOSE) console.log(`        ${report.join("\n        ")}`);
+        if (!wrong && apart < 4) wrong = `only ${apart} frames of the short either side were told apart from the video preview, so a frame off would pass`;
+        if (!wrong && compared < 6) wrong = `only ${compared} frames of the short were compared`;
+        break;
+      }
       case "head":
         await pressHead(page);
         await watch.step("head", s);
@@ -3017,8 +3179,16 @@ for (const seq of toWalk) {
           { light: "hlg", bytes: word(hlgWhite, hlgWhite, hlgWhite), name: "HLG's reference white", white: true },
           { light: "hlg", bytes: word(1023, 1023, 1023), name: "HLG's peak", bright: true },
           { light: "pq", bytes: word(0, pqWhite, 0), name: "a green of BT.2020", outside: true },
+          // Captions laid over the frame before its look, the way the
+          // render burns them in, see lib/frames/captions.ts: the purple
+          // of a highlight over grey, and a box of black at half that lets
+          // half of the grey through.
+          { light: "", bytes: word(512, 512, 512), name: "a middle grey" },
+          { light: "", bytes: word(512, 512, 512), over: [148, 33, 146, 255], name: "a highlight over standard video" },
+          { light: "", bytes: word(512, 512, 512), over: [0, 0, 0, 128], name: "a box at half over standard video", darker: 8 },
+          { light: "pq", bytes: word(pqWhite, pqWhite, pqWhite), over: [255, 255, 255, 255], name: "a white caption over PQ" },
         ];
-        const got = await page.evaluate((p) => window.__checkPixels?.(p) ?? null, pixels.map(({ light, bytes }) => ({ light, bytes })));
+        const got = await page.evaluate((p) => window.__checkPixels?.(p) ?? null, pixels.map(({ light, bytes, over }) => ({ light, bytes, over })));
         if (!got) {
           console.log("        no WebGPU in this browser, so what the GPU draws is not checked");
           break;
@@ -3035,6 +3205,7 @@ for (const seq of toWalk) {
           if (p.bright && gpu.some((v) => v < 1.5)) problems.push(`${p.name} is ${gpu.map((v) => v.toFixed(4))}, not brighter than white`);
           if (p.outside && !(gpu[0] < 0)) problems.push(`${p.name} has a red of ${gpu[0].toFixed(4)}, inside BT.709`);
           if (p.shown !== undefined && gpu.some((v) => Math.abs(v - p.shown) > 0.5 / 255)) problems.push(`${p.name} is ${gpu.map((v) => (v * 255).toFixed(2))} in 255, not ${(p.shown * 255).toFixed(0)}`);
+          if (p.darker !== undefined && !(gpu[0] < got.gpu[p.darker][0] * 0.9)) problems.push(`${p.name} is ${gpu.map((v) => v.toFixed(4))}, no darker than the grey under it`);
           if (p.above !== undefined) {
             const step = (gpu[0] - got.gpu[p.above][0]) * 255;
             if (!(step > 0 && step < 1)) problems.push(`${p.name} is ${step.toFixed(2)} above the one before in 255, not a step of its own below 1`);

@@ -106,11 +106,13 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		var dec *engine.EpisodeFrames
 		dec, err = p.decoder(path)
 		if err == nil {
-			o := st.Settings().options()
+			// The short's size as the render takes it, which is what the
+			// caption file is laid out at.
 			e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+			o := jobOptions(st, e)
 			dir := filepath.Join(engine.WorkDir(path), "captions", "preview")
 			var l framewire.Layer
-			l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, at, o.Width, o.Height, width, height)
+			l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
 			if err == nil {
 				w.Header().Set("Content-Type", "application/octet-stream")
 				_, _ = w.Write(l.Body())

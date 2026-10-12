@@ -171,7 +171,7 @@
     // The captions as the engine has them with a caption edge where the
     // hand is, so the caption box in the video preview follows the drag.
     // Null once the captions have come back with it saved.
-    oncaptionshape?: (cues: CaptionCue[] | null) => void;
+    oncaptionshape?: (shape: { cues: CaptionCue[]; track?: string } | null) => void;
     // A caption block clicked and then removed with delete, known by the
     // moment its first word starts in the episode. It throws when the
     // caption could not be removed, and the block comes back.
@@ -179,7 +179,7 @@
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way.
-    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[] } | null) => void;
+    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string } | null) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -396,6 +396,7 @@
   let shaped = $state<null | {
     pieces: { start: number; end: number }[];
     cues: CaptionCue[];
+    track?: string;
     held: CaptionCue[];
   }>(null);
   let nextGesture: Gesture | null = null;
@@ -426,7 +427,7 @@
     try {
       const answer = await api.shape(path, asked.plan, asked.id, g);
       if (mine === shapeFor && clip?.key === asked.key && answer) {
-        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
+        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], track: answer.captions?.track, held };
         // The playhead goes with the edge being dragged, so it is on the
         // clip, even a hair outside the pieces drawn so far. Not while the
         // episode plays: only the space bar and a click on the clip
@@ -1160,7 +1161,7 @@
       const answer = await api.shapeCaptionTime(path, asked.plan, asked.id, q.word, q.edge, q.at);
       if (mine === capFor && clip?.key === asked.key && capDraft && answer) {
         capShaped = answer.captions ?? [];
-        oncaptionshape?.(capShaped);
+        oncaptionshape?.({ cues: capShaped, track: answer.track });
       }
     } catch {
       // An edge the engine says no to shows the last answer it gave.
@@ -1183,7 +1184,7 @@
   // The clip as a gesture shapes it goes to the video preview too, so it
   // shows the same clip as the timeline while the hand moves.
   $effect(() => {
-    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
+    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track } : null);
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   const cuePieces = $derived(shapedShown && shaped ? shaped.pieces : segments);

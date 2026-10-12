@@ -302,6 +302,10 @@ export type CaptionSwitch = "text" | "box" | "highlight";
 export interface CaptionsView {
   captions: CaptionCue[] | null;
   style: CaptionStyle;
+  // What the captions were made from, by name: the video preview asks the
+  // Go side to draw them by it, the way the render burns them in, see
+  // lib/frames/captions.ts.
+  track?: string;
 }
 
 // The window as it was left on the range picker, see chosenWindow.

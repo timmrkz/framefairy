@@ -16,14 +16,17 @@
   // the playhead on the selected clip it jumps the clip's cuts and stops
   // where the clip ends, and on the video it plays the episode straight on.
   // While the playhead is on the clip and inside it, its captions are drawn
-  // inside the crop the way the render will burn them in. On the video the
-  // video preview shows the video and nothing else.
+  // inside the crop the way the render will burn them in: by libass, from
+  // the short's own caption file, laid over each frame before it is shown,
+  // see lib/frames/captions.ts. On the video the video preview shows the
+  // video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
   import { insideClip, litWord, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
+  import { CaptionLayers, quarters, type CaptionAsk, type Over } from "../lib/frames/captions";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -43,6 +46,7 @@
     source,
     clip,
     captions = null,
+    drafts = {},
     time = $bindable(0),
     onplayclip,
     oncaptionmoved,
@@ -67,6 +71,10 @@
     clip: ClipEntry | null;
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
+    // What the hand is changing of their colours and switches on the way,
+    // as /frames/captions takes it, see cmd/framefairy-app/captions.go.
+    // Only what is being changed: the rest is the captions' own.
+    drafts?: Record<string, string>;
     time?: number;
     // While the workspace has not yet decided where the playhead opens,
     // on the clip it opens on, nothing is drawn: the episode's first
@@ -215,6 +223,7 @@
     const woken = slept;
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
+    q.over = { at: overAt, coming: comingAt };
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
@@ -540,12 +549,23 @@
   // 3.26.
   const cropLeft = $derived.by(() => {
     if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
-    const gliding =
-      place !== "video"
-        ? glidingLeft(clip.segments[cropped]?.marks, frameAt, source.fps, source.videoStart ?? 0, picture.cropWidth, picture.width)
-        : null;
-    return gliding ?? clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+    return leftOn(clip, cropped, frameAt, picture, place !== "video");
   });
+
+  // The left edge of the crop of a piece on the frame that starts at a
+  // moment, in pixels of the picture, gliding or standing still.
+  function leftOn(
+    c: ClipEntry,
+    at: number,
+    frame: number,
+    pic: { width: number; cropWidth: number },
+    glides: boolean,
+  ): number {
+    const gliding = glides
+      ? glidingLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
+      : null;
+    return gliding ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
+  }
 
   // The crop's left edge as the video preview shows it now, which a crop
   // mark put on this frame keeps.
@@ -1003,6 +1023,78 @@
   // is none to place them in.
   const box = $derived(crop ?? { left: 0, width: 100 });
 
+  // The captions in the picture are the short's: libass draws them on the
+  // Go side from the caption file the render burns in, for each frame at
+  // the moment the short shows it, and the screen lays them over the frame
+  // before it gives it its look, see lib/frames/captions.ts. The caption
+  // box above is what the hand takes hold of, and draws nothing of the
+  // captions itself, except while a word is being corrected: what is typed
+  // is not captions yet, so the caption box draws it, and the picture's
+  // captions wait until it is saved.
+  const layers = new CaptionLayers(() => queue?.repaint());
+  // For the walks, which wait until the captions over the frame are drawn.
+  (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
+  const captionAsk = $derived.by((): CaptionAsk | null => {
+    if (!clip || !captions?.track || !captions.captions?.length || captions.style.text === false || fixing) return null;
+    const asked: Record<string, string> = { ...drafts };
+    if (dragCaptions !== null) asked.y = String(dragCaptions);
+    return { path, track: captions.track, drafts: asked };
+  });
+  // Everything the captions over a frame are worked out from, so a change
+  // to any of them draws the frame on screen again.
+  $effect(() => {
+    layers.set(captionAsk);
+    void [place, dragLeft, clip, source];
+    untrack(() => queue?.repaint());
+  });
+
+  // The crop of the frame that starts at a moment: how far it is turned,
+  // and where the crop stands and how wide it is, as shares of the picture
+  // as shown. The same rule as the crop frame's, worked out for the frame
+  // itself, since it is asked for as the frame is drawn, before the
+  // workspace hears which frame that is.
+  function framingOf(frame: number): { turn: number; left: number; width: number } | null {
+    if (!clip) return null;
+    const turn = rotationAt(clip.rotations, frame);
+    const held = pieceHolding(clip.segments, frame);
+    const at = held >= 0 ? held : piece;
+    const pic = pictureOf(source, turn);
+    if (at < 0 || !pic.width || !pic.cropWidth) return null;
+    const left = dragLeft ?? leftOn(clip, at, frame, pic, true);
+    return { turn, left: left / pic.width, width: pic.cropWidth / pic.width };
+  }
+
+  // The size the captions of a frame are drawn at: the crop as the screen
+  // shows it, in device pixels.
+  function layerSize(f: { turn: number; width: number }): [number, number] | null {
+    const [cw, ch] = pixels;
+    const [w, h] = quarters(f.turn) % 2 ? [ch, cw] : [cw, ch];
+    const size: [number, number] = [Math.round(f.width * w), h];
+    return size[0] >= 1 && size[1] >= 1 ? size : null;
+  }
+
+  // Whether the frame that starts at a moment is a frame of the short:
+  // the playhead is on the clip, and the frame holds a moment of it.
+  function framesClip(frame: number): boolean {
+    return !!clip && place !== "video" && frame + oneFrame > clipStart + 1e-6 && frame < clipEnd - 1e-6;
+  }
+
+  function overAt(frame: number): Over | null {
+    if (!captionAsk || !framesClip(frame)) return null;
+    const f = framingOf(frame);
+    const size = f && layerSize(f);
+    if (!f || !size) return null;
+    const layer = layers.at(frame, size);
+    return layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+  }
+
+  function comingAt(frame: number) {
+    if (!captionAsk || !framesClip(frame)) return;
+    const f = framingOf(frame);
+    const size = f && layerSize(f);
+    if (size) layers.coming(frame, size);
+  }
+
   // A share of the height of the video preview, as the stylesheet works it
   // out: .screen is a container, and 100cqh is its height in the same pass
   // as the layout. It was the height a ResizeObserver read, which comes a
@@ -1320,6 +1412,7 @@
     {#if caption && captions && captions.style.text !== false}
       <div
         class="captions"
+        class:typing={!!fixing}
         style="left: {box.left}%; width: {box.width}%;
                bottom: max({px(captionY / 1920 - captions.style.padY)}, 0px);
                padding: 0 {px(captions.style.marginH)};
@@ -1327,7 +1420,7 @@
                font-weight: {captions.style.bold ? 800 : 500};
                font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
-               color: {captions.style.primary}"
+               color: {fixing ? captions.style.primary : 'transparent'}"
       >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -1335,7 +1428,7 @@
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
-          style="background: {captions.style.boxOn === false ? 'transparent' : captions.style.box};
+          style="background: {captions.style.boxOn === false || !fixing ? 'transparent' : captions.style.box};
                  border-radius: {px(captions.style.radius)};
                  padding: {px(captions.style.padY)} {px(captions.style.padX)}"
           title="Drag the handle up or down to place the captions"
@@ -1620,7 +1713,11 @@
     bottom: 0;
   }
 
-  /* The captions, drawn where the render burns them into the crop. */
+  /* The caption box, where the render burns the captions into the crop.
+     The captions themselves are in the picture, drawn by libass, so the box
+     is see-through and draws only what is the interface's: the frame round
+     a word and the handle. While a word is being corrected it draws the
+     words itself, see typing. */
   .captions {
     position: absolute;
     z-index: 3;
@@ -1738,13 +1835,13 @@
 
   /* The pop is in app.css, because the caption block on the clip timeline
      makes the same one. */
-  .line span.now {
+  .typing .line span.now {
     background: var(--pill);
     animation: pop 0.22s ease-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .line span.now {
+    .typing .line span.now {
       animation: none;
     }
   }

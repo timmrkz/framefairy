@@ -72,32 +72,31 @@ func (l *layer) fail(why string) {
 	l.d.answer(framewire.Record{Cursor: l.id, Kind: framewire.Failed, Body: []byte(why)})
 }
 
-// open holds a caption file open, drawn at width by height. A cursor
-// that held one lets it go first, so a caption file written again is read
-// again.
-func (l *layer) open(width, height int, file, fonts string) {
+// open holds a caption file open, drawn at a size. A cursor that held one
+// lets it go first, so a caption file written again is read again.
+func (l *layer) open(c framewire.Captions) {
 	l.free()
-	l.width, l.height = width, height
-	head, err := os.ReadFile(file)
+	l.width, l.height = c.Width, c.Height
+	head, err := os.ReadFile(c.File)
 	if err != nil {
 		l.fail(fmt.Sprintf("the captions could not be read: %v", err))
 		return
 	}
 	l.video = videoRange(head)
-	if err := l.build(file, fonts); err != nil {
+	if err := l.build(c); err != nil {
 		l.free()
 		l.fail(err.Error())
 		return
 	}
 	l.in, l.out = astiav.AllocFrame(), astiav.AllocFrame()
-	info("captions %d: %dx%d from %s", l.id, width, height, file)
+	info("captions %d: %dx%d of %dx%d from %s", l.id, c.Width, c.Height, c.ShortW, c.ShortH, c.File)
 	l.d.answer(framewire.Record{Cursor: l.id, Kind: framewire.Opened})
 }
 
-// build makes the chain: a clear picture of red, green, blue and alpha,
-// on a clock of milliseconds, through the ass filter with its alpha
-// written, the way the render's chain names it, see engine.subtitleCandidates.
-func (l *layer) build(file, fonts string) error {
+// build makes the chain: a picture of red, green and blue, on a clock of
+// milliseconds, through the ass filter, the way the render's chain names
+// it, see engine.subtitleCandidates.
+func (l *layer) build(c framewire.Captions) error {
 	g := astiav.AllocFilterGraph()
 	if g == nil {
 		return errors.New("the captions could not be drawn, no memory")
@@ -137,7 +136,7 @@ func (l *layer) build(file, fonts string) error {
 	inputs.SetFilterContext(sink.FilterContext())
 	inputs.SetPadIdx(0)
 	inputs.SetNext(nil)
-	if err := g.Parse(captionChain(file, fonts), inputs, outputs); err != nil {
+	if err := g.Parse(captionChain(c), inputs, outputs); err != nil {
 		return fmt.Errorf("the captions could not be drawn, its chain: %w", err)
 	}
 	if err := g.Configure(); err != nil {
@@ -148,9 +147,13 @@ func (l *layer) build(file, fonts string) error {
 }
 
 // captionChain is the chain that draws a caption file with the faces in
-// fonts: the render's filter, on a picture of red, green and blue.
-func captionChain(file, fonts string) string {
-	return "ass=filename=" + filterValue(file) + ":fontsdir=" + filterValue(fonts) + ",format=rgb24"
+// its folder of fonts: the render's filter, on a picture of red, green and
+// blue, told the size of the short's frames, original_size, so it draws
+// the captions as the short's frames would show them made the size of
+// the picture.
+func captionChain(c framewire.Captions) string {
+	return "ass=filename=" + filterValue(c.File) + ":fontsdir=" + filterValue(c.Fonts) +
+		fmt.Sprintf(":original_size=%dx%d", c.ShortW, c.ShortH) + ",format=rgb24"
 }
 
 // videoRange says whether the ass filter draws a caption file's colours

@@ -13,9 +13,10 @@ import (
 // captions holds a caption file open in the subtitle filter at a size,
 // and draws it at a moment:
 //
-//	captions <cursor> <width> <height> <file> <fonts>
+//	captions <cursor> <width> <height> <short width> <short height> <file> <fonts>
 //	                                        the cursor holds the caption file
-//	                                        open, drawn at width by height,
+//	                                        open, drawn at width by height as
+//	                                        a picture of a frame of the short,
 //	                                        the faces in the folder fonts
 //	draw <cursor> <ms>                      the captions at ms milliseconds of
 //	                                        the short, as libass reads the
@@ -25,27 +26,45 @@ import (
 // is no word of its own. A captions is answered with Opened or Failed, a
 // draw with one Frame record whose body is a Layer, or Failed.
 
+// Captions is what a cursor of captions holds open: a caption file, the
+// faces it names in the folder Fonts, drawn at Width by Height as a
+// picture of a frame of the short, which is ShortW by ShortH. The two
+// sizes differ where the video preview shows the short smaller, and in
+// shape too where the render stretches the crop a little to the short's
+// size, so libass draws the captions the way the short's would look made
+// that size, not laid out again for it.
+type Captions struct {
+	Width, Height  int
+	ShortW, ShortH int
+	File, Fonts    string
+}
+
 // CaptionsRequest is the request that opens a cursor of captions.
-func CaptionsRequest(cursor uint32, width, height int, file, fonts string) string {
-	return fmt.Sprintf("captions %d %d %d %s %s", cursor, width, height,
-		hex.EncodeToString([]byte(file)), hex.EncodeToString([]byte(fonts)))
+func CaptionsRequest(cursor uint32, c Captions) string {
+	return fmt.Sprintf("captions %d %d %d %d %d %s %s", cursor, c.Width, c.Height, c.ShortW, c.ShortH,
+		hex.EncodeToString([]byte(c.File)), hex.EncodeToString([]byte(c.Fonts)))
 }
 
 // ReadCaptions reads a captions request, split into words.
-func ReadCaptions(f []string) (cursor uint32, width, height int, file, fonts string, ok bool) {
-	if len(f) != 6 || f[0] != "captions" {
-		return 0, 0, 0, "", "", false
+func ReadCaptions(f []string) (cursor uint32, c Captions, ok bool) {
+	if len(f) != 8 || f[0] != "captions" {
+		return 0, Captions{}, false
 	}
-	id, err1 := strconv.ParseUint(f[1], 10, 32)
-	w, err2 := strconv.Atoi(f[2])
-	h, err3 := strconv.Atoi(f[3])
-	name, err4 := hex.DecodeString(f[4])
-	dir, err5 := hex.DecodeString(f[5])
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil ||
-		len(name) == 0 || len(dir) == 0 || !LayerFits(w, h) {
-		return 0, 0, 0, "", "", false
+	id, err := strconv.ParseUint(f[1], 10, 32)
+	var size [4]int
+	for i := range size {
+		if err == nil {
+			size[i], err = strconv.Atoi(f[2+i])
+		}
 	}
-	return uint32(id), w, h, string(name), string(dir), true
+	name, err1 := hex.DecodeString(f[6])
+	dir, err2 := hex.DecodeString(f[7])
+	c = Captions{Width: size[0], Height: size[1], ShortW: size[2], ShortH: size[3], File: string(name), Fonts: string(dir)}
+	if err != nil || err1 != nil || err2 != nil || len(name) == 0 || len(dir) == 0 ||
+		!LayerFits(c.Width, c.Height) || !LayerFits(c.ShortW, c.ShortH) {
+		return 0, Captions{}, false
+	}
+	return uint32(id), c, true
 }
 
 // LayerFits says whether captions can be drawn at width by height: at

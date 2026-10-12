@@ -1620,7 +1620,7 @@
   // The captions as the engine has them while a caption edge is dragged on
   // the clip timeline. The caption box in the video preview follows it on
   // the way, so what is seen while dragging is what will be saved.
-  let captionShape = $state<NonNullable<CaptionsView["captions"]> | null>(null);
+  let captionShape = $state<{ cues: NonNullable<CaptionsView["captions"]>; track?: string } | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
   let colourDraft = $state<{
@@ -1652,6 +1652,7 @@
   let reshaped = $state<{
     cues: NonNullable<CaptionsView["captions"]>;
     pieces: { start: number; end: number }[];
+    track?: string;
   } | null>(null);
   // Each piece keeps the framing of the piece it came from, the way the
   // engine keeps it when the edit lands.
@@ -1677,8 +1678,8 @@
   const shownCaptions = $derived.by(() => {
     if (!captions) return captions;
     let view = captions;
-    if (reshaped) view = { ...view, captions: reshaped.cues };
-    if (captionShape) view = { ...view, captions: captionShape };
+    if (reshaped) view = { ...view, captions: reshaped.cues, track: reshaped.track };
+    if (captionShape) view = { ...view, captions: captionShape.cues, track: captionShape.track };
     if (colourDraft) {
       view = {
         ...view,
@@ -1694,6 +1695,32 @@
       };
     }
     return view;
+  });
+  // The colours and switches being drafted, as the video preview asks the
+  // Go side to draw them, see lib/frames/captions.ts. Only what is being
+  // changed: the rest is drawn as it is saved.
+  const captionDrafts = $derived.by(() => {
+    const d = colourDraft;
+    const out: Record<string, string> = {};
+    if (!d) return out;
+    for (const [name, css] of [
+      ["text", d.primary],
+      ["box", d.box],
+      ["highlight", d.highlight],
+    ] as const) {
+      if (css === undefined) continue;
+      const c = splitColour(css);
+      out[name] = c.hex;
+      out[`${name}Opacity`] = String(c.alpha);
+    }
+    for (const [name, on] of [
+      ["textOn", d.textOn],
+      ["boxOn", d.boxOn],
+      ["highlightOn", d.highlightOn],
+    ] as const) {
+      if (on !== undefined) out[name] = on ? "1" : "0";
+    }
+    return out;
   });
   // The colours as the controls show them.
   const textSplit = $derived(splitColour(shownCaptions?.style.primary ?? ""));
@@ -2914,6 +2941,7 @@
           sleeping={away}
           bind:time
           captions={shownCaptions}
+          drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
@@ -3043,7 +3071,7 @@
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
-        oncaptionshape={(cues) => (captionShape = cues)}
+        oncaptionshape={(shape) => (captionShape = shape)}
         onshape={(next) => (reshaped = next)}
       />
       <!-- One row under the clip up close, so the range picker and the

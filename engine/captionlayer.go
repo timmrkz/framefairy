@@ -35,13 +35,13 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 
 // PreviewCaptions draws the captions of d over the frame of the episode
 // that starts at at, at width by height, as the short shows them on that
-// frame: drafts on top of their style, at the size of the short, outW by
-// outH, with the light of the episode, in its decoder dec. The caption
-// file is written once into dir, named by what is in it, with the faces it
-// needs beside it. A style with the captions off draws nothing, as the
-// render burns nothing in.
+// frame made that size: drafts on top of their style, laid out the way
+// the render rs lays them out, with the light of the episode, in its
+// decoder dec. The caption file is written once into dir, named by what
+// is in it, with the faces it needs beside it. A style with the captions
+// off draws nothing, as the render burns nothing in.
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir string, d *CaptionDrawing,
-	drafts map[string]any, source SourceInfo, at float64, outW, outH, width, height int) (framewire.Layer, error) {
+	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
 	style := map[string]any{}
 	for k, v := range d.Style {
 		style[k] = v
@@ -55,11 +55,16 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 	if len(d.Laid) == 0 || !resolved.Text {
 		return framewire.Layer{}, nil
 	}
-	file, err := e.previewTrack(ctx, dir, d, style, resolved.Font, source.Light(), outW, outH)
+	file, err := e.previewTrack(ctx, dir, d, style, resolved.Font, source.Light(), rs.OutW, rs.OutH)
 	if err != nil {
 		return framewire.Layer{}, err
 	}
-	return dec.Captions(ctx, file, filepath.Join(dir, FontsFolder), width, height, source.CaptionMoment(d.Clip, at))
+	shortW, shortH := rs.OutW, rs.OutH
+	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
+		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
+	}
+	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
+		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
 }
 
 // previewTrack is the caption file of captions in a style, written into
