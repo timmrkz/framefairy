@@ -209,7 +209,15 @@ jobs:
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
   # what the Go tests need, the interface's Node, and the Chromium
   # Playwright drives, which only this job installs.
+  #
+  # On two machines, each with every other run, walks and sequences alike:
+  # on one the runs took five and a half minutes after two of setting up.
   walks:
+    name: walks (${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -273,7 +281,7 @@ jobs:
       - name: Sequences and walks
         if: steps.needs.outputs.run == 'true'
         run: |
-          make walks 2>&1 | tee walks.log
+          make walks WALKSHARD=${{ matrix.shard }}/2 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"

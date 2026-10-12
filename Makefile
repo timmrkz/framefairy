@@ -439,9 +439,12 @@ fuzz: toolchain modules
 WALKS ?= 3
 STEPS ?=
 WALKERS ?=
+# One share of the runs, like 1/2, which is how CI spreads them over two
+# machines.
+WALKSHARD ?=
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running
