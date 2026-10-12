@@ -773,16 +773,27 @@ until the next word starts.
 The bounce reaches out by the same few pixels for every word, never by a
 share of the word, so the space between two words stays on every frame.
 At rest the pill already takes nearly the whole space, 0.14 of the size at
-each side against a space of 0.165 in Inter Black. So the pill starts 0.08
-of the size inside its rest on every side, opens to its rest across and
-reaches 0.08 past it above and below at the peak, and never gets wider than
-it rests. The word grows by up to 0.07 of the size at each side, which is
-inside its pill, and no more than 15 %, so a short word grows by the
-whole 15 % and a long one by less. Growing by 15 % of the word took
-"respektvoll" 34 pixels a side and its pill over "ist", which Tim saw on a
-thumbnail, plan row 2.211. Where the bounce stands at any moment is
-`BounceAt` in `engine/highlight.go`, and the subtitle file is written from
-it, `TestTheBounceKeepsTheSpaceBetweenWords` reads it back from a short.
+each side against a space of 0.165 in Inter Black. So its sides never
+move: the pill reaches 0.08 of the size past its rest above and below at
+the peak and settles back, and it is never smaller than at rest. The word
+grows by up to 0.03 of the size at each side, which keeps room in its
+pill, and no more than 15 %, so a short word grows by the whole 15 % and a
+long one by less. Growing by 15 % of the word took "respektvoll" 34 pixels
+a side and its pill over "ist", which Tim saw on a thumbnail, plan row
+2.211. Where the bounce stands at any moment is `BounceAt` in
+`engine/highlight.go`, and the subtitle file is written from it.
+
+At rest the pill is as tall as its line, from the top of the tallest
+letter the face draws to the bottom of the deepest, with 0.10 of the size
+over that above and below, the same for every word on the line. The line
+is measured by drawing `ÉÅÁgjpqy` on it, `pillLines`, since libass gives
+every line of a face the same height. The pill used to open from 0.08
+inside its rest on every side and to reach only 0.10 past the tallest
+letter of the words themselves, so the first frame of a word, where a
+click on the word puts the playhead, showed it hugging the letters, which
+Tim saw on #201. `TestTheBounceKeepsTheSpaceBetweenWords` reads the bounce
+back from a short, and holds the pill to at least 0.10 of the size of room
+round its word on every frame and to never less than at rest.
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished

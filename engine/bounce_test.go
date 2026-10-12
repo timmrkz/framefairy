@@ -20,6 +20,10 @@ import (
 
 const bounceFPS = 50
 
+// roomAround is the least room the pill leaves around its word on any
+// frame, as a share of the caption size.
+const roomAround = 0.10
+
 // bounceBand is the rows of a 1080x1920 short the caption line is read
 // from: the line sits 300 pixels over the bottom.
 const bounceTop, bounceRows = 1400, 400
@@ -130,12 +134,68 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	}
 	grow := bounceGrow * float64(pyround(style.Size))
 
+	// The room the pill leaves around its word, on every frame the word is
+	// lit: at least roomAround of the caption size above, below and at both
+	// sides of the word's ink, at its first frame, at the top of its
+	// bounce and at rest. The pill never comes in tighter than at rest.
+	// Tim saw the pill hug the word on #201: it opened from inside its rest
+	// on every side, so the frame a click on a word lands on, its first,
+	// showed it with no room at all, and at rest it reached only a tenth
+	// of the size past the tallest letter of the line.
+	room := func(name string, from, to int) {
+		t.Helper()
+		_, _, restT, restB := pillBox(frames[to])
+		restLeft, restRight, _, _ := pillBox(frames[to])
+		least := w
+		defer func() {
+			t.Logf("%s: the pill is %dx%d at rest and leaves at least %d pixels round the word", name,
+				restRight-restLeft+1, restB-restT+1, least)
+		}()
+		for k := from; k <= to; k++ {
+			f := frames[k]
+			l, r, top, bottom := pillBox(f)
+			if r < 0 {
+				t.Errorf("%s: no pill on frame %d", name, k)
+				continue
+			}
+			il, ir, it, ib := w, -1, bounceRows, -1
+			for y := top; y <= bottom; y++ {
+				for x := l; x <= r; x++ {
+					if isInk(f, x, y) {
+						il, ir = min(il, x), max(ir, x)
+						it, ib = min(it, y), max(ib, y)
+					}
+				}
+			}
+			if ir < 0 {
+				t.Errorf("%s: no word inside the pill on frame %d", name, k)
+				continue
+			}
+			want := roomAround*float64(pyround(style.Size)) - 1
+			sides := map[string]int{"left of": il - l, "right of": r - ir, "above": it - top, "below": bottom - ib}
+			for side, px := range sides {
+				least = min(least, px)
+				if float64(px) < want {
+					t.Errorf("%s, %3d ms after it lit: the pill leaves %d pixels %s the word, less than %.0f",
+						name, (k-from)*1000/bounceFPS, px, side, want)
+				}
+			}
+			if r-l < restRight-restLeft-1 || bottom-top < restB-restT-1 {
+				t.Errorf("%s, %3d ms after it lit: the pill is %dx%d, smaller than at rest, %dx%d",
+					name, (k-from)*1000/bounceFPS, r-l+1, bottom-top+1, restRight-restLeft+1, restB-restT+1)
+			}
+		}
+	}
+	// "Das" lights at 0.20 s, frame 10, "respektvoll" at 0.50 s, frame 25.
+	room("Das", 10, 24)
+	room("respektvoll", lit, 40)
+
 	for k := lit; k <= lit+10; k++ {
 		since := float64(k-lit) / bounceFPS
 		b := BounceAt(since, span)
 		l, r, top, bottom := pillBox(frames[k])
 		pw, ph := r-l+1, bottom-top+1
-		wantW := float64(restW) + 2*grow*b.Wide
+		wantW := float64(restW)
 		wantH := float64(restH) + 2*grow*b.Tall
 		if math.Abs(float64(pw)-wantW) > 3 || math.Abs(float64(ph)-wantH) > 3 {
 			t.Errorf("%3.0f ms after the word lit the pill is %dx%d, BounceAt says %.0fx%.0f", since*1000, pw, ph, wantW, wantH)

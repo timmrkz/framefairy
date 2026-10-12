@@ -346,9 +346,12 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 		}
 	}
 	// The measure tells a frame apart: in the bounce, 20 ms further on, a
-	// frame of a short at 50 frames a second, is beyond the limit.
-	if off := alphaDiff(draw(W/by, H/by, W, H, 580), shrunk(draw(W, H, W, H, 560), W, H, by), W/by, H/by); off < 2*limit {
-		t.Errorf("a frame off in the bounce differs by only %.1f, so the limit of %.1f proves little", off, limit)
+	// frame of a short at 50 frames a second, is more than twice as far off
+	// as the right frame.
+	want := shrunk(draw(W, H, W, H, 560), W, H, by)
+	right := alphaDiff(draw(W/by, H/by, W, H, 560), want, W/by, H/by)
+	if off := alphaDiff(draw(W/by, H/by, W, H, 580), want, W/by, H/by); off < 2*right {
+		t.Errorf("a frame off in the bounce differs by %.1f and the right frame by %.1f, so the measure proves little", off, right)
 	}
 }
 

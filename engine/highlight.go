@@ -60,30 +60,44 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // and the word grows inside its pill. A share of the word carried a long
 // word into the next: "respektvoll" grew 34 pixels a side and its pill
 // covered "ist", which Tim saw on a thumbnail.
+//
+// The pill is never smaller than at rest, and at rest it leaves room all
+// round its word: as tall as the line, from the top of the tallest letter
+// the face draws to the bottom of the deepest, with pillPadY over that,
+// the same for every word of the line whatever its letters. It once
+// opened from inside its rest on every side, so the first frame of a word,
+// which is where a click on the word puts the playhead, showed the pill
+// hugging the letters, and at rest it reached only pillPadY past the
+// tallest letter of the words themselves. Tim saw both on #201.
 // ---------------------------------------------------------------------------
 
 const (
 	bounceUp   = 80  // ms to grow to the peak
 	bounceDown = 100 // ms to settle back
 	// bounceGrow is how far the pill reaches above and below where it
-	// rests at the peak, and how far inside it starts on every side, as a
-	// share of the caption size.
+	// rests at the peak, as a share of the caption size.
 	bounceGrow = 0.08
 	// wordRoom is how far the word may grow out on either side, as a share
-	// of the caption size: half the pill's padding at the sides, so a word
-	// stays inside its pill. A short word stops at wordPeak.
-	wordRoom = 0.07
+	// of the caption size: a little of the pill's room at its sides, so the
+	// word keeps room in its pill at the top of the bounce too. A short
+	// word stops at wordPeak.
+	wordRoom = 0.03
 	wordPeak = 1.15
+	// pillPadX is the room the pill leaves at the sides of its word, and
+	// pillPadY above and below its line, as shares of the caption size.
+	pillPadX = 0.14
+	pillPadY = 0.10
+	// lineReach is the tallest and the deepest letters a line can hold,
+	// whose ink says how tall the line is, see pillLines.
+	lineReach = "ÉÅÁgjpqy"
 )
 
 // Bounce is where the bounce of the word being spoken stands. Word runs
 // from 0 to 1 and back to 0, the word's share of its growth. Tall runs
-// from -1 to 1 and back to 0, how far the pill reaches above and below its
-// rest, in bounceGrow. Wide runs from -1 to 0 and stays there, the same at
-// its sides, so the pill opens to its rest and goes no further.
+// from 0 to 1 and back to 0, how far the pill reaches above and below its
+// rest, in bounceGrow. Its sides never move.
 type Bounce struct {
 	Word float64 `json:"word"`
-	Wide float64 `json:"wide"`
 	Tall float64 `json:"tall"`
 }
 
@@ -110,7 +124,7 @@ func BounceAt(since float64, span int) Bounce {
 	switch {
 	case ms < upMS:
 		f := ms / upMS
-		return Bounce{Word: f, Wide: f - 1, Tall: 2*f - 1}
+		return Bounce{Word: f, Tall: f}
 	case ms < upMS+downMS:
 		f := (ms - upMS) / downMS
 		return Bounce{Word: 1 - f, Tall: 1 - f}
@@ -127,6 +141,26 @@ func WordPeak(s Style, text string) float64 {
 		return wordPeak
 	}
 	return math.Min(wordPeak, 1+2*wordRoom*s.Size/width)
+}
+
+// pillLines are the blocks that measure how tall each line of a caption of
+// so many lines is: the tallest and the deepest letters the face draws,
+// lineReach, on that line alone. libass gives every line of a face the
+// same height, whatever its letters, so a line's pill is the same height
+// for every word on it, a word of small letters as much as a word with an
+// accent or a tail.
+func pillLines(rows int) []string {
+	words := make([]string, rows)
+	lines := make([][]int, rows)
+	for r := range rows {
+		words[r] = lineReach
+		lines[r] = []int{r}
+	}
+	out := make([]string, rows)
+	for r := range rows {
+		out[r] = taggedText(words, lines, func(j int) bool { return j == r }, shownTag(""))
+	}
+	return out
 }
 
 // lineIndices turns laid out lines back into the word numbers they hold,
@@ -235,6 +269,8 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		words []string
 		lines [][]int
 		boxes []*inkBox
+		// reach is each line's height, see pillLines.
+		reach []*inkBox
 	}
 	layouts := make([]laid, len(captions))
 	var blocks []string
@@ -255,6 +291,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// its ink, and a see-through one would leave little to find.
 			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
 		}
+		blocks = append(blocks, pillLines(len(lines))...)
 	}
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
 	if !ok {
@@ -263,10 +300,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	}
 	at := 0
 	for i := range layouts {
-		n := len(layouts[i].words)
+		n, rows := len(layouts[i].words), len(layouts[i].lines)
 		layouts[i].boxes = boxes[at : at+n]
-		at += n
-		for _, b := range layouts[i].boxes {
+		layouts[i].reach = boxes[at+n : at+n+rows]
+		at += n + rows
+		for _, b := range append(layouts[i].boxes[:n:n], layouts[i].reach...) {
 			if b == nil {
 				e.Log.Detail("a caption word could not be measured, the highlight is off for this clip")
 				return nil, nil
@@ -286,8 +324,8 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	padX := float64(pyround(s.BoxPadX * scale))
 	padY := float64(pyround(s.BoxPadY * scale))
 	radius := float64(pyround(s.Radius * scale))
-	pillPadX := math.Round(float64(size) * 0.14)
-	pillPadY := math.Round(float64(size) * 0.10)
+	padPillX := math.Round(float64(size) * pillPadX)
+	padPillY := math.Round(float64(size) * pillPadY)
 	anchor := fmt.Sprintf(`\an2\pos(%s,%s)`, num(ax), num(ay))
 
 	var events []string
@@ -310,12 +348,10 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		lineOf := make([]int, len(L.words))
 		full := inkBox{math.MaxInt32, math.MaxInt32, math.MinInt32, math.MinInt32}
 		for r, line := range L.lines {
-			lineTop[r], lineBottom[r] = math.MaxInt32, math.MinInt32
+			lineTop[r], lineBottom[r] = L.reach[r].top, L.reach[r].bottom
 			for _, k := range line {
 				b := L.boxes[k]
 				lineOf[k] = r
-				lineTop[r] = min(lineTop[r], b.top)
-				lineBottom[r] = max(lineBottom[r], b.bottom)
 				full.left, full.right = min(full.left, b.left), max(full.right, b.right)
 				full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
 			}
@@ -363,11 +399,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// The pill behind the word, bouncing around its own centre: each
 			// phase from where BounceAt has it at the phase's start to where
 			// it has it at its end.
-			w := float64(b.right-b.left) + 2*pillPadX
-			h := float64(lineBottom[r]-lineTop[r]) + 2*pillPadY
+			w := float64(b.right-b.left) + 2*padPillX
+			h := float64(lineBottom[r]-lineTop[r]) + 2*padPillY
 			pill := roundedRect(0, 0, w, h, math.Min(h*0.3, radius+2))
 			pillScale := func(at Bounce) (string, string) {
-				return num((w + 2*grow*at.Wide) / w * 100), num((h + 2*grow*at.Tall) / h * 100)
+				return "100", num((h + 2*grow*at.Tall) / h * 100)
 			}
 			pillEvent := func(from, to int, a, z Bounce) {
 				fromX, fromY := pillScale(a)
@@ -377,7 +413,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), fromX, fromY,
 					(to-from)*10, toX, toY, pill))
 			}
-			opening, peak, rest := BounceAt(0, to-from), Bounce{Word: 1, Tall: 1}, Bounce{}
+			opening, peak, rest := Bounce{}, Bounce{Word: 1, Tall: 1}, Bounce{}
 			if upCS > 0 {
 				pillEvent(from, from+upCS, opening, peak)
 			}
