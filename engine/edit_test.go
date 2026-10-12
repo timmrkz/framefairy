@@ -1143,3 +1143,71 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 		})
 	}
 }
+
+// A cut's edge takes the playhead with it the way the clip's edges do, so
+// the video preview shows the frame the edge leaves on screen while it is
+// dragged. The cut's left edge ends the piece before it, the way the clip's
+// end ends the clip, so the playhead stands a frame before it, in the last
+// frame that piece shows. The right edge starts the piece after it, the
+// way the clip's start does, so the playhead stands on it. On words it is
+// inside the word the edge landed on, so that word is the one lit. Tim saw
+// the playhead stay where it was while a cut's edge was dragged, and move
+// with the clip's own edges.
+func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
+	t.Parallel()
+	tr := cutsTranscript()
+	frame := 1.0 / 25
+	// Clip 02 is 20 to 21 and 24 to 26, with "fünf" 20.1 to 20.6, "sechs"
+	// 20.7 to 21, "sieben" 24.1 to 24.6 and "acht" 25 to 25.6.
+	cases := []struct {
+		name string
+		g    Gesture
+		// The playhead, from the pieces the gesture leaves, and the word it
+		// has to be in on words.
+		want func(p []PieceView) float64
+		word *Cue
+	}{
+		{"the left edge on frames", Gesture{Kind: "move", Edge: "from", From: 20.61, To: 24},
+			func(p []PieceView) float64 { return p[0].End - frame }, nil},
+		{"the right edge on frames", Gesture{Kind: "move", Edge: "to", From: 21, To: 24.41},
+			func(p []PieceView) float64 { return p[1].Start }, nil},
+		{"the left edge on words", Gesture{Kind: "move", Edge: "from", From: 21.05, To: 24, ToWords: true},
+			nil, &Cue{20.7, 21, "sechs"}},
+		{"the right edge on words", Gesture{Kind: "move", Edge: "to", From: 21, To: 24.05, ToWords: true},
+			nil, &Cue{24.1, 24.6, "sieben"}},
+		// The clip's own edges, for the same rules.
+		{"the clip's end on frames", Gesture{Kind: "trim", Edge: "end", From: 25.41},
+			func(p []PieceView) float64 { return p[1].End - frame }, nil},
+		{"the clip's start on frames", Gesture{Kind: "trim", Edge: "start", From: 20.21},
+			func(p []PieceView) float64 { return p[0].Start }, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			fsys, path := cutsPlanPath(t)
+			c.g.Frames = at25
+			shaped, err := ShapeClip(fsys, path, "02", c.g, tr, 0.1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.want != nil {
+				if want := roundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
+					t.Errorf("the playhead is at %v, want %v, the pieces %+v", shaped.Playhead, want, shaped.Pieces)
+				}
+			}
+			if c.word != nil && (shaped.Playhead < c.word.Start || shaped.Playhead >= c.word.End) {
+				t.Errorf("the playhead is at %v, outside %+v, the pieces %+v", shaped.Playhead, *c.word, shaped.Pieces)
+			}
+		})
+	}
+	// Both edges of a cut moved at once, the way a clip moved whole is,
+	// leave the playhead where it is.
+	fsys, path := cutsPlanPath(t)
+	shaped, err := ShapeClip(fsys, path, "02", Gesture{Kind: "move", From: 20.5, To: 24.5, Frames: at25}, tr, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shaped.Playhead >= 0 {
+		t.Errorf("both edges moved put the playhead at %v", shaped.Playhead)
+	}
+}

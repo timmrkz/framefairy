@@ -1483,10 +1483,18 @@ bubble scrolled by those eight pixels.
       24.72. A shot the trim had taken away comes back with its own crop,
       from the camera switch, the same as a cut put back, see
       [ENGINE.md](ENGINE.md).
-    - **The playhead goes with the edge.** While either edge of a clip is
-      dragged, the playhead stands on it and the video preview shows that
-      frame, the clip as it is being dragged, with its captions. On frames
-      it is the clip's first frame, or its last, a frame before the end.
+    - **The playhead goes with the edge.** While either edge of a clip or
+      of a cut is dragged, the playhead stands on it and the video preview
+      shows that frame, the clip as it is being dragged, with its captions.
+      On frames it is the clip's first frame, or its last, a frame before
+      the end. A cut's left edge ends the piece before it, the way the
+      clip's end ends the clip, so the playhead stands in that piece's last
+      frame, and a cut's right edge starts the piece after it, the way the
+      clip's start does, so it stands on that piece's first frame. One rule
+      in the engine answers for all four, `edgePlayhead` in
+      `engine/shape.go`. A cut's edges used to leave the playhead where it
+      was, found by Tim, so the frame beside a cut could not be seen while
+      it was placed.
       With shift it is inside the word the edge snapped to, a frame into
       the first word or a frame before the end of the last, so that word is
       always the one lit. The edge itself stands a pause away from the

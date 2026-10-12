@@ -184,7 +184,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
 		playhead := -1.0
 		if g.Edge != "both" {
-			playhead = g.edgePlayhead(words, start, end)
+			playhead = g.edgePlayhead(words, start, end, g.Edge == "start")
 		}
 		return func(pieces []*object, found []foundPiece) ([]*object, error) {
 			return trimPieces(pieces, found, clip.Rotations, start, end)
@@ -223,14 +223,16 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			return nil, -1, renderErr("this clip has no cut number %d", i+1)
 		}
 		from, to := g.From, g.To
+		var words []Cue
 		if g.ToWords {
+			words = stops(from, to)
 			// Where the captions go is read with this cut left out, the
 			// way they go when the edge is dragged back over them.
 			joined := clip
 			joined.Segments = append(append([]Segment{}, clip.Segments[:i]...),
 				Segment{Start: clip.Segments[i].Start, End: clip.Segments[i+1].End})
 			joined.Segments = append(joined.Segments, clip.Segments[i+2:]...)
-			from, to = snapCut(stops(from, to), captionsGo(plan, joined, t), from, to, keepPause)
+			from, to = snapCut(words, captionsGo(plan, joined, t), from, to, keepPause)
 		} else {
 			from, to = g.onFrame(from), g.onFrame(to)
 		}
@@ -260,6 +262,18 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			return nil, -1, renderErr("a cut has a from and a to edge, not %s", Scrub(g.Edge, 20))
 		}
 		from, to = roundTo(from, 3), roundTo(to, 3)
+		// The playhead goes with the edge moved, the way it goes with an
+		// edge of the clip: the left edge of a cut ends the piece before
+		// it, as the clip's end ends the clip, and the right edge starts
+		// the piece after it, as the clip's start does. Both edges moved
+		// at once leave it where it is, as a clip moved whole does.
+		playhead := -1.0
+		switch g.Edge {
+		case "from":
+			playhead = g.edgePlayhead(words, clip.Segments[i].Start, from, false)
+		case "to":
+			playhead = g.edgePlayhead(words, to, clip.Segments[i+1].End, true)
+		}
 		return func(pieces []*object, _ []foundPiece) ([]*object, error) {
 			if i+1 >= len(pieces) || number(pieces[i+1].values[keyStart]) <= number(pieces[i].values[keyEnd]) {
 				return nil, renderErr("this clip has no cut number %d", i+1)
@@ -270,7 +284,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 			out[i+1] = copyObject(pieces[i+1])
 			out[i+1].set(keyStart, to)
 			return out, nil
-		}, -1, nil
+		}, playhead, nil
 
 	case "join":
 		// The part the cut left out comes back framed by the shots it
@@ -363,19 +377,23 @@ func runOn(clip Clip, at float64) Clip {
 	return clip
 }
 
-// edgePlayhead is where the playhead stands while an edge of a clip is
-// dragged. On frames it is the frame at the edge: the clip's first frame,
-// or its last, a frame before the end, because the end is where the clip is
-// already over. On words it is inside the word the edge landed on, a frame
-// into the first word or a frame before the end of the last, so that word
-// is the one lit. The edge itself stands a pause away from the word, and a
-// playhead put there lit the word only when the pause happened to be none.
-func (g Gesture) edgePlayhead(words []Cue, start, end float64) float64 {
+// edgePlayhead is where the playhead stands while an edge is dragged, an
+// edge of the clip or of a cut. start and end are the kept part the edge
+// bounds, the whole clip for a trim and the piece beside it for a cut, and
+// opens says the edge is the part's start, the clip's start or a cut's
+// right edge, rather than its end. On frames it is the frame at the edge:
+// the part's first frame, or its last, a frame before the end, because the
+// end is where the part is already over. On words it is inside the word the
+// edge landed on, a frame into the first word or a frame before the end of
+// the last, so that word is the one lit. The edge itself stands a pause
+// away from the word, and a playhead put there lit the word only when the
+// pause happened to be none.
+func (g Gesture) edgePlayhead(words []Cue, start, end float64, opens bool) float64 {
 	frame := g.frame()
 	if frame <= 0 {
 		frame = 1.0 / 30
 	}
-	if g.Edge == "start" {
+	if opens {
 		if g.ToWords {
 			for _, w := range words {
 				if w.Start >= start-0.0005 {
