@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -219,11 +218,11 @@ func csToASS(cs int) string {
 
 func num(v float64) string { return strconv.FormatFloat(roundTo(v, 2), 'f', -1, 64) }
 
-// writeHighlighted writes the caption track with the bouncing highlight. It
-// reports false, without an error, when the captions cannot be measured, and
-// the plain track is written instead.
-func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, path string,
-	width, height int, s Style) (bool, error) {
+// highlighted is the caption track with the bouncing highlight. It is
+// nothing, without an error, when the captions cannot be measured, and the
+// plain track is made instead.
+func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
+	width, height int, s Style) ([]byte, error) {
 	shown := shownTag(s.Primary)
 	scale := float64(height) / 1920.0
 	size := max(12, pyround(s.Size*scale))
@@ -242,7 +241,7 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 	for i, c := range captions {
 		if len(c.Words) == 0 {
 			e.Log.Detail("a caption has no word timings, so the highlight is off for this clip")
-			return false, nil
+			return nil, nil
 		}
 		words := make([]string, len(c.Words))
 		for k, w := range c.Words {
@@ -260,7 +259,7 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
 	if !ok {
 		e.Log.Detail("could not measure the caption words, the highlight is off for this clip")
-		return false, nil
+		return nil, nil
 	}
 	at := 0
 	for i := range layouts {
@@ -270,7 +269,7 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 		for _, b := range layouts[i].boxes {
 			if b == nil {
 				e.Log.Detail("a caption word could not be measured, the highlight is off for this clip")
-				return false, nil
+				return nil, nil
 			}
 		}
 	}
@@ -414,5 +413,5 @@ func (e *Engine) writeHighlighted(ctx context.Context, captions []LaidCaption, p
 	}
 
 	header := assHeader(s, width, height, size, 1, outline, shadow, marginH, marginV)
-	return true, os.WriteFile(path, []byte(header+strings.Join(events, "\n")+"\n"), 0o644)
+	return []byte(header + strings.Join(events, "\n") + "\n"), nil
 }

@@ -150,26 +150,8 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 	if err != nil {
 		return nil, err
 	}
-	abs, err := filepath.Abs(sourcePath)
-	if err != nil {
-		abs = sourcePath
-	}
-	cmd := []string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"}
-	for _, seg := range clip.Segments {
-		// -ss before -i seeks rather than decoding up to the point, and -t
-		// limits how much is read. Both are input options on purpose. The
-		// sound is read again from a little earlier, see soundLead.
-		cut := source.cutOf(seg)
-		if cut.fromKey {
-			cmd = append(cmd, "-noaccurate_seek", "-ss", cut.seek, "-an", "-i", abs)
-		} else {
-			cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs)
-		}
-		if cut.soundSeek != "" {
-			cmd = append(cmd, "-ss", cut.soundSeek)
-		}
-		cmd = append(cmd, "-t", cut.soundRead, "-vn", "-i", abs)
-	}
+	cmd := append([]string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"},
+		pieceInputs(clip, sourcePath, source)...)
 	light := source.Light()
 	video, err := e.videoArgs(ctx, rs, light)
 	if err != nil {
@@ -193,6 +175,32 @@ func (e *Engine) BuildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-"+tag[0], tag[1])
 	}
 	return append(cmd, outPath), nil
+}
+
+// pieceInputs are the inputs of BuildFilterGraph's graph, each piece's
+// picture and then its sound, read from the episode at sourcePath.
+func pieceInputs(clip Clip, sourcePath string, source SourceInfo) []string {
+	abs, err := filepath.Abs(sourcePath)
+	if err != nil {
+		abs = sourcePath
+	}
+	var args []string
+	for _, seg := range clip.Segments {
+		// -ss before -i seeks rather than decoding up to the point, and -t
+		// limits how much is read. Both are input options on purpose. The
+		// sound is read again from a little earlier, see soundLead.
+		cut := source.cutOf(seg)
+		if cut.fromKey {
+			args = append(args, "-noaccurate_seek", "-ss", cut.seek, "-an", "-i", abs)
+		} else {
+			args = append(args, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs)
+		}
+		if cut.soundSeek != "" {
+			args = append(args, "-ss", cut.soundSeek)
+		}
+		args = append(args, "-t", cut.soundRead, "-vn", "-i", abs)
+	}
+	return args
 }
 
 // pieceCut is how one piece of a clip is read from the episode: where the
@@ -620,6 +628,39 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		return "", err
 	}
 	return outPath, nil
+}
+
+// CaptionMoment is the moment libass draws the captions at on the frame
+// of a clip's short that shows the episode's moment at, in milliseconds,
+// as the render hands it over: the short's frames one after another, each
+// piece as many as it cuts, see pieceFrames, from nought on the grid of
+// the rate, and each frame's start in microseconds put on by half a
+// millisecond and cut down, see BuildFilterGraph. The video preview draws
+// a frame's captions at it, so they are the short's on every frame, the
+// bounce included. A clip is on frames, see OnFrames. Without a rate it
+// is the moment on the clip's clock.
+func (s SourceInfo) CaptionMoment(clip Clip, at float64) int64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return int64(math.Round(ClipTime(clip, at) * 1000))
+	}
+	holds := s.frameHolding(at)
+	var k int64
+	inside := false
+	for _, seg := range clip.Segments {
+		first, end := s.pieceFrames(seg.Start, seg.End)
+		if holds < end {
+			k += max(0, holds-first)
+			inside = true
+			break
+		}
+		k += end - first
+	}
+	if !inside {
+		// After the clip, its last frame.
+		k = max(0, k-1)
+	}
+	us := int64(math.Round(float64(k) * float64(s.FPSDen) * 1_000_000 / float64(s.FPSNum)))
+	return (us + 500) / 1000
 }
 
 // thumbnailSeek is where ffmpeg is sent for the frame of a short that

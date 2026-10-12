@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"framefairy/internal/framewire"
 )
@@ -532,28 +533,79 @@ func bandSlot(block string, size int) int {
 }
 
 // measureMany measures any number of blocks, a frame at a time, so a clip
-// with many words stays inside the height one frame can have.
+// with many words stays inside the height one frame can have. A block
+// measured before in the same face, size and width is not measured again,
+// see measured, so the caption file of a clip is made again in a moment
+// whenever the video preview needs it in another colour or place.
 func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
-	var out []*inkBox
-	for start := 0; start < len(blocks); {
+	out := make([]*inkBox, len(blocks))
+	var missing []int
+	for i, block := range blocks {
+		if box, ok := measured.get(measureKey(block, s, width, size)); ok {
+			out[i] = box
+		} else {
+			missing = append(missing, i)
+		}
+	}
+	for start := 0; start < len(missing); {
 		end, height := start, 0
-		for end < len(blocks) {
-			slot := bandSlot(blocks[end], size)
+		for end < len(missing) {
+			slot := bandSlot(blocks[missing[end]], size)
 			if end > start && height+slot > 15000 {
 				break
 			}
 			height += slot
 			end++
 		}
-		boxes, ok := e.measureASS(ctx, blocks[start:end], s, width, size)
+		batch := make([]string, 0, end-start)
+		for _, i := range missing[start:end] {
+			batch = append(batch, blocks[i])
+		}
+		boxes, ok := e.measureASS(ctx, batch, s, width, size)
 		if !ok {
 			return nil, false
 		}
-		out = append(out, boxes...)
+		for k, i := range missing[start:end] {
+			out[i] = boxes[k]
+			if boxes[k] != nil {
+				measured.put(measureKey(blocks[i], s, width, size), boxes[k])
+			}
+		}
 		start = end
 	}
 	return out, true
+}
+
+// measureKey is what a block's ink depends on.
+func measureKey(block string, s Style, width, size int) string {
+	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.Font, size, s.Bold, width, block)
+}
+
+// inkCache keeps the ink of blocks measured before, up to a few thousand,
+// and forgets them all when it is full: the blocks of the clips open now
+// are measured again at once.
+type inkCache struct {
+	mu    sync.Mutex
+	boxes map[string]inkBox
+}
+
+var measured = &inkCache{boxes: map[string]inkBox{}}
+
+func (c *inkCache) get(key string) (*inkBox, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	box, ok := c.boxes[key]
+	return &box, ok
+}
+
+func (c *inkCache) put(key string, box *inkBox) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.boxes) >= 4096 {
+		clear(c.boxes)
+	}
+	c.boxes[key] = *box
 }
 
 // roundedRect is an ASS drawing command for a rectangle with bezier corners.
@@ -589,11 +641,25 @@ func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 // captions are drawn at the reference white, see inLight.
 func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 	width, height int, overrides map[string]any, light framewire.Light) error {
+	track, err := e.CaptionTrack(ctx, laid, width, height, overrides, light)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, track, 0o644)
+}
+
+// CaptionTrack is the caption file of a short width by height, from its
+// captions laid out in lines and their style: what libass draws, in the
+// short, in its thumbnails and in the video preview alike. It is the only
+// place a caption's look is decided, so nothing that draws captions can
+// look different from the short. See docs/CAPTIONS.md.
+func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
+	overrides map[string]any, light framewire.Light) ([]byte, error) {
 	s := ResolveStyle(overrides).inLight(light)
 	if s.Highlight {
-		done, err := e.writeHighlighted(ctx, laid, path, width, height, s)
-		if done || err != nil {
-			return err
+		track, err := e.highlighted(ctx, laid, width, height, s)
+		if track != nil || err != nil {
+			return track, err
 		}
 	}
 	scale := float64(height) / 1920.0
@@ -672,7 +738,7 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 				start, end, blocks[i]))
 		}
 	}
-	return os.WriteFile(path, []byte(header+strings.Join(events, "\n")+"\n"), 0o644)
+	return []byte(header + strings.Join(events, "\n") + "\n"), nil
 }
 
 // matrix is how libass turns the colours into the short's: BT.709's for

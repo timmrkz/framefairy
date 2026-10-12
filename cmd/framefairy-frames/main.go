@@ -42,7 +42,7 @@ func main() {
 	}
 	astiav.SetLogLevel(astiav.LogLevelError)
 	astiav.SetLogCallback(logged)
-	d := &decoder{path: os.Args[1], out: bufio.NewWriterSize(os.Stdout, 1<<20), cursors: map[uint32]*cursor{}}
+	d := &decoder{path: os.Args[1], out: bufio.NewWriterSize(os.Stdout, 1<<20), cursors: map[uint32]*cursor{}, layers: map[uint32]*layer{}}
 	// The episode is opened once here, so a file that cannot be read says so
 	// before anything is asked of it.
 	probe, err := openVideo(d.path)
@@ -195,6 +195,7 @@ type decoder struct {
 	mu       sync.Mutex
 	out      *bufio.Writer
 	cursors  map[uint32]*cursor
+	layers   map[uint32]*layer
 }
 
 // answer writes a record and hands it on at once, under the lock, so the
@@ -257,10 +258,31 @@ func (d *decoder) request(f []string) {
 			return
 		}
 		c.work <- func() { c.next(min(n, 16), skip) }
+	case f[0] == "captions":
+		_, w, h, file, fonts, ok := framewire.ReadCaptions(f)
+		if !ok {
+			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("captions the decoder cannot take")})
+			return
+		}
+		if l := d.layer(id); l != nil {
+			l.work <- func() { l.open(w, h, file, fonts) }
+		}
+	case f[0] == "draw":
+		_, ms, ok := framewire.ReadDraw(f)
+		l := d.layers[id]
+		if !ok || l == nil {
+			d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("a draw for no open captions")})
+			return
+		}
+		l.work <- func() { l.draw(ms) }
 	case f[0] == "close":
 		if c := d.cursors[id]; c != nil {
 			delete(d.cursors, id)
 			close(c.work)
+		}
+		if l := d.layers[id]; l != nil {
+			delete(d.layers, id)
+			close(l.work)
 		}
 	}
 }
@@ -269,6 +291,10 @@ func (d *decoder) request(f []string) {
 // picture or of sound. A number is one kind for as long as it is open, and
 // an open of the other kind fails.
 func (d *decoder) cursor(id uint32, sound bool) *cursor {
+	if _, taken := d.layers[id]; taken {
+		d.answer(framewire.Record{Cursor: id, Kind: framewire.Failed, Body: []byte("a cursor of captions asked for picture or sound")})
+		return nil
+	}
 	c := d.cursors[id]
 	if c == nil {
 		c = &cursor{d: d, id: id, sound: sound, work: make(chan func(), 4)}
@@ -286,6 +312,10 @@ func (d *decoder) closeAll() {
 	for id, c := range d.cursors {
 		delete(d.cursors, id)
 		close(c.work)
+	}
+	for id, l := range d.layers {
+		delete(d.layers, id)
+		close(l.work)
 	}
 }
 
