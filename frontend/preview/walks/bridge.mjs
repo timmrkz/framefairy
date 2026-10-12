@@ -345,7 +345,8 @@ export async function recordFrames(page, frame) {
 
 // Puts the overlay reader on the page once: where the playhead is, whether
 // it plays, whether the clip timeline says it is on the video, by the
-// chosen clip dimmed there or no clip chosen at all, and what the video
+// chosen clip dimmed there or no clip chosen at all, which card of the
+// clip list is chosen, a clip on its way included, and what the video
 // preview lays over the picture: the crop frame, the shade beside it and
 // the caption box.
 async function overlayReader(page) {
@@ -358,6 +359,9 @@ async function overlayReader(page) {
         at: Number(screen?.dataset.playhead),
         playing: !!document.querySelector('button[aria-label="Pause"]'),
         video: !chosen || chosen.classList.contains("dim"),
+        card:
+          document.querySelector("aside ol li[data-key].current, aside ol li[data-key] button.pick.current")?.closest("li")
+            ?.dataset.key ?? "",
         crop: !!document.querySelector(".atop .frame"),
         shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),

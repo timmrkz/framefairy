@@ -88,6 +88,8 @@ func (s *sideBySide) Close() {}
 // Heard by four copies at once, an episode comes out word for word as one
 // copy hears it, and every save on the way reaches only as far as all of
 // it has been heard, never past a piece still being heard.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -95,7 +97,7 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	base.ASRModel = t.TempDir()
 
 	var calls int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
 	one := NewProject(e, source, base)
@@ -112,13 +114,13 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	before := calls
 
 	path := filepath.Join(WorkDir(source), "logs", "words.json")
-	stamp, _ := stampOf(source)
+	stamp, _ := stampOf(disk, source)
 	var mu sync.Mutex
 	var problems []string
 	last := 0.0
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4, pair: true}
 	copies.seen = func() {
-		file, words, _, ok := readTranscriptFile(path, stamp, filepath.Base(base.ASRModel))
+		file, words, _, ok := readTranscriptFile(disk, path, stamp, filepath.Base(base.ASRModel))
 		if !ok {
 			return
 		}
@@ -169,12 +171,14 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 
 // Side by side, a part is heard exactly, with nothing missed on the way
 // and no audio heard past what it reads around the part.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	heard := 0.0
 	copies := &sideBySide{inner: straddlingRecognizer{&heard}, copies: 3}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -183,14 +187,14 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 	if err := p.Hear(context.Background(), part); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if parts := HeardParts(source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{part.Start, part.End} {
+	if parts := HeardParts(disk, source, base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{part.Start, part.End} {
 		t.Fatalf("heard %v, asked for %v", parts, part)
 	}
 	if over := heard - (part.End - part.Start + 2*hearingPad); over > 0.02 {
 		t.Errorf("heard %.2f s more than the part and the audio around it", over)
 	}
-	stamp, _ := stampOf(source)
-	_, words, _, ok := readTranscriptFile(filepath.Join(p.LogsDir(), "words.json"), stamp,
+	stamp, _ := stampOf(disk, source)
+	_, words, _, ok := readTranscriptFile(disk, filepath.Join(p.LogsDir(), "words.json"), stamp,
 		filepath.Base(base.ASRModel))
 	if !ok {
 		t.Fatal("cannot read the transcript")
@@ -209,6 +213,8 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 
 // Stopped part way, side by side, what every copy heard before the stop is
 // written down, and nothing is left hearing after it has returned.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -231,7 +237,7 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	})
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4}
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.checkpointEvery = time.Hour
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
@@ -246,7 +252,7 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	mu.Lock()
 	want := heard
 	mu.Unlock()
-	covered, done := Coverage(source, base.ASRModel)
+	covered, done := Coverage(disk, source, base.ASRModel)
 	if done || want <= 20 || covered < want-0.001 {
 		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
 	}
@@ -254,12 +260,14 @@ func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 
 // A copy that panics does so where the transcription was called, the way
 // the one copy did, so the job around it fails and the app does not.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
 func TestACopyThatPanicsFailsTheTranscription(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 3, fail: 2}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

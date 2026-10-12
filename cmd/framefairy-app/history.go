@@ -93,15 +93,15 @@ func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() err
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	logs := engine.NewProject(nil, path, s.store.Settings().options()).LogsDir()
-	before := engine.TakeSnapshot(logs)
+	logs := s.project(path).LogsDir()
+	before := engine.TakeSnapshot(s.store.files, logs)
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
 	if err != nil {
 		theLog.line(zerolog.DebugLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("an edit of the clips was refused")
 	}
 	// A search can land a clip while the edit runs. It is not the edit's.
-	change := engine.ChangeBetween(before, engine.TakeSnapshot(logs)).LeaveOutNewClips()
+	change := engine.ChangeBetween(before, engine.TakeSnapshot(s.store.files, logs)).LeaveOutNewClips()
 	heightNow := s.store.Settings().CaptionY
 	st := step{change: change}
 	if heightWas != heightNow {
@@ -210,7 +210,7 @@ func (s *FrameFairy) step(path string, back bool) (Undone, error) {
 		}
 		if window != nil {
 			w := *window
-			if err := changeChosen(path, func(c *chosen) { c.Window = &w }); err != nil {
+			if err := changeChosen(s.store.files, path, func(c *chosen) { c.Window = &w }); err != nil {
 				return Undone{}, err
 			}
 		}

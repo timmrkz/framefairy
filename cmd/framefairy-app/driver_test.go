@@ -46,10 +46,15 @@ type desk struct {
 	// bus carries what the Go side tells the interface, when a browser
 	// is listening, see bridge_test.go.
 	bus *bus
+	// quiet is how long a recording nobody talks into goes on, in every
+	// opening of the app, 0 for as long as in the app.
+	quiet time.Duration
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
 // episode's decoder for its first frame, so the desk needs it.
+//
+// On the real disk: ffmpeg and the episode's decoder read the videos added to this library.
 func open(t *testing.T) *desk {
 	t.Helper()
 	ffmpegtest.Need(t)
@@ -83,8 +88,11 @@ func (d *desk) start(st *store) {
 	d.svc = &FrameFairy{store: st}
 	d.svc.jobs = newQueue(st, func(u JobUpdate) { d.bus.send("job", u) },
 		func(episode string) { d.bus.send("episode", episode) })
+	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
+	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
+	d.svc.listening.quiet = d.quiet
 	if d.bus != nil {
-		d.svc.levels = newMeasuring(func(episode string) { d.bus.send("levels", episode) })
+		d.svc.levels = newMeasuring(d.svc.store.files, func(episode string) { d.bus.send("levels", episode) })
 	}
 	svc := d.svc
 	// Whatever is still running when the test ends is stopped before its
@@ -96,6 +104,8 @@ func (d *desk) start(st *store) {
 // a tone for its sound. Each video is made once for all the tests and
 // copied, because making one takes seconds. Videos of different names have
 // different tones, so they are different episodes.
+//
+// On the real disk: ffmpeg and the episode's decoder read the video.
 func (d *desk) episode(name string, seconds string) string {
 	d.t.Helper()
 	made, err := videos.make(name, seconds)
@@ -124,6 +134,7 @@ type made struct {
 	tone  int
 }
 
+// On the real disk: ffmpeg makes the video.
 func (m *made) make(name, seconds string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -158,6 +169,7 @@ func (m *made) make(name, seconds string) (string, error) {
 // program it starts on a restart, see updating.Restart.
 const updaterHelper = "WAILS_UPDATER_HELPER"
 
+// On the real disk: it takes away the folder of the videos ffmpeg made.
 func TestMain(m *testing.M) {
 	// A restart hands over to a copy of the app's own program started as
 	// the updater's helper. The app answers that in application.New, but
@@ -326,8 +338,10 @@ func (d *desk) clips(path string) []ClipEntry {
 
 // heard is how far the episode's transcript reaches, and whether it is all
 // of it.
+//
+// On the real disk: the transcript lies beside an episode ffmpeg reads.
 func (d *desk) heard(path string) (float64, bool) {
-	return engine.Coverage(path, d.svc.store.Settings().ASRModel)
+	return engine.Coverage(disk, path, d.svc.store.Settings().ASRModel)
 }
 
 // shorts are the finished shorts of the library, each where its path

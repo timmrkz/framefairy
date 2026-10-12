@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/internal/framewire"
 )
 
@@ -45,6 +47,10 @@ type Engine struct {
 	Log     *Log
 	FFmpeg  string
 	FFprobe string
+
+	// Files is where the files of episodes are read and written, the real
+	// disk in the programs, see files.go.
+	Files afero.Fs
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
@@ -91,8 +97,9 @@ type Engine struct {
 // environment, or else the ones beside the program, checked. See FindTool
 // in tools.go. A tool that may not run is left empty, and Preflight says
 // why.
-func NewEngine(log *Log) *Engine {
+func NewEngine(log *Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
+		Files:   files,
 		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
 		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -28,27 +30,14 @@ func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 	was := stopWait
 	stopWait = 300 * time.Millisecond
 	t.Cleanup(func() { stopWait = was })
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	s, eps := memoryLibrary(t, "ep.mp4")
+	source := eps[0]
 	work := engine.WorkDir(source)
-	if err := os.MkdirAll(filepath.Join(work, "logs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(work, "logs", "clips.json"),
+	if err := afero.WriteFile(s.store.files, filepath.Join(work, "logs", "clips.json"),
 		[]byte(`{"source":"ep.mp4","clips":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
-	s := &FrameFairy{store: st}
-	s.jobs = newQueue(st, func(JobUpdate) {}, func(string) {})
+	s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
 	return s, source, work
 }
 
@@ -72,7 +61,7 @@ func TestAnEpisodeIsNotDeletedUnderARunningJob(t *testing.T) {
 	if err == nil {
 		t.Error("the episode was removed while a job was still running on it")
 	}
-	if _, statErr := os.Stat(work); os.IsNotExist(statErr) {
+	if _, statErr := s.store.files.Stat(work); os.IsNotExist(statErr) {
 		t.Error("the work folder was deleted while a job was still running on it")
 	}
 	if !s.store.Known(source) {
@@ -86,13 +75,13 @@ func TestAnEpisodeWithNothingRunningIsRemovedWithItsWork(t *testing.T) {
 	if err := s.RemoveEpisode(source, true); err != nil {
 		t.Fatalf("removing a quiet episode: %v", err)
 	}
-	if _, err := os.Stat(work); !os.IsNotExist(err) {
+	if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
 	}
 	if s.store.Known(source) {
 		t.Error("the episode is still in the library")
 	}
-	if _, err := os.Stat(source); err != nil {
+	if _, err := s.store.files.Stat(source); err != nil {
 		t.Error("the episode file itself was deleted, which never happens")
 	}
 }
@@ -110,7 +99,7 @@ func TestARunningJobThatStopsIsWaitedFor(t *testing.T) {
 	if err := s.RemoveEpisode(source, true); err != nil {
 		t.Fatalf("removing an episode whose job stops: %v", err)
 	}
-	if _, err := os.Stat(work); !os.IsNotExist(err) {
+	if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
 	}
 }
@@ -127,7 +116,7 @@ func TestAnEpisodeIsAlwaysRemovedWhenItsWorkIsKept(t *testing.T) {
 	if err := s.RemoveEpisode(source, false); err != nil {
 		t.Fatalf("removing an episode and keeping its work: %v", err)
 	}
-	if _, err := os.Stat(work); err != nil {
+	if _, err := s.store.files.Stat(work); err != nil {
 		t.Error("the work folder was deleted, and it was meant to be kept")
 	}
 	if s.store.Known(source) {
@@ -204,7 +193,7 @@ func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
 	if err := s.RemoveEpisode(source, true); err != nil {
 		t.Fatalf("removing the episode: %v", err)
 	}
-	if _, err := os.Stat(work); !os.IsNotExist(err) {
+	if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
 	}
 	waitForSettled(t, s, source)

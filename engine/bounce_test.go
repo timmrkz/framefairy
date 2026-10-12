@@ -26,7 +26,7 @@ const bounceTop, bounceRows = 1400, 400
 
 func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

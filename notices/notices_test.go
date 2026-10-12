@@ -105,6 +105,8 @@ func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
 
 // What ffmpeg and llama-server are built from is pinned in their build
 // scripts, and the notices are for exactly those versions.
+//
+// On the real disk: what is read is the repository's own build scripts and go.mod.
 func TestTheToolsNoticesAreForTheVersionsBuilt(t *testing.T) {
 	list := all(t)
 	// The scripts are named by their whole path, so make changed finds

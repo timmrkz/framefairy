@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -19,7 +21,16 @@ import (
 func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	ffmpegtest.Need(t)
 	needDecoder(t)
-	svc, mine, plan := anEpisodeWithAPlan(t)
+	// On the real disk: the decoder is a program of its own and reads the
+	// episode and the caption file from there.
+	svc, mine, _ := library(t)
+	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	if err := os.MkdirAll(filepath.Dir(plan), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan, []byte(historyPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
 		"-i", "testsrc2=s=320x180:r=25:d=24", "-c:v", "mpeg4", "-f", "mp4", mine).CombinedOutput(); err != nil {
 		t.Fatalf("making the episode: %s %s", err, out)

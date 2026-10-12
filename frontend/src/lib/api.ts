@@ -605,6 +605,16 @@ export const api = {
   // Writes a report of a problem to the Desktop and shows it in Finder,
   // and gives its path, see screens/Report.svelte.
   reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
+  // Starts recording what the person says for a report and gives the
+  // recording's number. What is said is written down while it is said,
+  // see onDictation, and stopping gives every piece of it. Cancelling
+  // drops it. See listen.go.
+  listen: () => call<number>("Listen"),
+  stopListening: () => call<Dictation>("StopListening"),
+  cancelListening: () => call<void>("CancelListening"),
+  // Settles the words shown as being heard, text, as the piece after the
+  // first pieces the window has, when the person clicks into them.
+  settleListening: (recording: number, pieces: number, text: string) => call<void>("SettleListening", recording, pieces, text),
   licences: () => call<Notice[]>("Licences"),
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
@@ -881,6 +891,37 @@ export function onQuit(fn: (what: "ask" | "going") => void): () => void {
 
 export function onAcknowledgements(fn: () => void): () => void {
   return Events.On("acknowledgements", () => fn());
+}
+
+// What is being written down while somebody dictates: every piece settled
+// so far, in order, and what follows them, still being heard. See
+// listen.go.
+export interface Dictation {
+  recording: number;
+  said: string[];
+  hearing: string;
+  error?: string;
+  // Why the recording stopped by itself, with said all of it.
+  ended?: string;
+  // Why the microphone hears nothing, while it goes on recording.
+  unheard?: string;
+  // How many settleListening calls said holds.
+  asked: number;
+}
+
+// How loud the microphone is while it records, from 0 for a quiet room to
+// 1 for a raised voice, ten times a second. See listen.go.
+export interface Loudness {
+  recording: number;
+  level: number;
+}
+
+export function onLoudness(fn: (n: Loudness) => void): () => void {
+  return Events.On("loudness", (ev) => fn(ev.data as Loudness));
+}
+
+export function onDictation(fn: (d: Dictation) => void): () => void {
+  return Events.On("dictation", (ev) => fn(ev.data as Dictation));
 }
 
 // Report a Problem… in the Help menu.

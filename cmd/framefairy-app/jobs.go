@@ -376,7 +376,7 @@ func jobLabel(kind string, preview bool) string {
 // where its work was. See engine/jobs.go.
 func (q *queue) restore(episodes []string) {
 	for _, episode := range episodes {
-		for _, rec := range engine.ReadJobs(episode) {
+		for _, rec := range engine.ReadJobs(q.store.files, episode) {
 			state := JobInterrupted
 			if !rec.Interrupted() {
 				state = JobFailed
@@ -780,7 +780,7 @@ func (q *queue) runJob(job *Job) {
 	})
 	started := time.Now()
 	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
-	e := engine.NewEngine(log)
+	e := engine.NewEngine(log, q.store.files)
 	project := engine.NewProject(e, job.Episode, jobOptions(q.store, e))
 
 	result, err := run(ctx, job, project, q.turn(job))
@@ -791,7 +791,7 @@ func (q *queue) runJob(job *Job) {
 	byHand := job.byHand
 	q.mu.Unlock()
 	if byHand && errors.Is(err, engine.ErrCancelled) {
-		if serr := engine.StopJob(job.Episode, job.Record); serr != nil {
+		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
 		}
 	}

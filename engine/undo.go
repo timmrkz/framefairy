@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -37,14 +39,15 @@ type fileState struct {
 
 // Snapshot is the files an edit of an episode can change, as they were.
 type Snapshot struct {
+	fsys    afero.Fs
 	logsDir string
 	files   map[string]fileState
 }
 
 // editableFiles are an episode's plans and its word corrections.
-func editableFiles(logsDir string) []string {
+func editableFiles(fsys afero.Fs, logsDir string) []string {
 	var paths []string
-	for _, p := range PlanSummaries(logsDir) {
+	for _, p := range PlanSummaries(fsys, logsDir) {
 		paths = append(paths, p.Path)
 	}
 	return append(paths, correctionsPath(logsDir))
@@ -52,16 +55,16 @@ func editableFiles(logsDir string) []string {
 
 // TakeSnapshot reads the files an edit of the episode in logsDir can
 // change.
-func TakeSnapshot(logsDir string) *Snapshot {
-	s := &Snapshot{logsDir: logsDir, files: map[string]fileState{}}
-	for _, path := range editableFiles(logsDir) {
-		s.files[path] = readState(path)
+func TakeSnapshot(fsys afero.Fs, logsDir string) *Snapshot {
+	s := &Snapshot{fsys: fsys, logsDir: logsDir, files: map[string]fileState{}}
+	for _, path := range editableFiles(fsys, logsDir) {
+		s.files[path] = readState(fsys, path)
 	}
 	return s
 }
 
-func readState(path string) fileState {
-	body, err := os.ReadFile(path)
+func readState(fsys afero.Fs, path string) fileState {
+	body, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		return fileState{}
 	}
@@ -70,6 +73,7 @@ func readState(path string) fileState {
 
 // Change is what one edit did to an episode.
 type Change struct {
+	fsys    afero.Fs
 	logsDir string
 	// paths are the files it changed, in a fixed order, with what each
 	// held before and after.
@@ -82,7 +86,7 @@ type Change struct {
 // Nothing changed is nil. A file in either is compared, so a plan an edit
 // removed and a plan that appeared are both part of it.
 func ChangeBetween(before, after *Snapshot) *Change {
-	c := &Change{logsDir: before.logsDir, before: map[string]fileState{}, after: map[string]fileState{}}
+	c := &Change{fsys: before.fsys, logsDir: before.logsDir, before: map[string]fileState{}, after: map[string]fileState{}}
 	seen := map[string]bool{}
 	for _, snap := range []*Snapshot{before, after} {
 		for path := range snap.files {
@@ -234,9 +238,9 @@ func (c *Change) apply(from, to map[string]fileState) (ClipRef, error) {
 
 func (c *Change) applyOne(path string, from, to fileState, dryRun bool) error {
 	if path == correctionsPath(c.logsDir) {
-		return applyCorrections(path, from, to, dryRun)
+		return applyCorrections(c.fsys, path, from, to, dryRun)
 	}
-	return applyPlan(path, from, to, dryRun)
+	return applyPlan(c.fsys, path, from, to, dryRun)
 }
 
 // equalJSON says whether two decoded values are the same, written out.
@@ -335,8 +339,8 @@ func fieldsOf(p *planParts) map[string]any {
 	return out
 }
 
-func applyPlan(path string, from, to fileState, dryRun bool) error {
-	defer lockFile(path)()
+func applyPlan(fsys afero.Fs, path string, from, to fileState, dryRun bool) error {
+	defer lockFile(fsys, path)()
 	src, err := splitPlan(from)
 	if err != nil {
 		return err
@@ -345,7 +349,7 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	cur, err := splitPlan(readState(path))
+	cur, err := splitPlan(readState(fsys, path))
 	if err != nil {
 		return err
 	}
@@ -363,12 +367,12 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 			return nil
 		}
 		if dst == nil {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			if err := fsys.Remove(path); err != nil && !os.IsNotExist(err) {
 				return err
 			}
 			return nil
 		}
-		if err := replacePlan(path, to.body); err != nil {
+		if err := replacePlan(fsys, path, to.body); err != nil {
 			return err
 		}
 		return nil
@@ -408,7 +412,7 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 		return nil
 	}
 
-	err = editPlanLocked(path, func(top *object, _ []*object) error {
+	err = editPlanLocked(fsys, path, func(top *object, _ []*object) error {
 		for _, k := range fields {
 			if v, ok := toFields[k]; ok {
 				top.set(k, v)
@@ -426,7 +430,7 @@ func applyPlan(path string, from, to fileState, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	recordRestored(path, ids, src, dst)
+	recordRestored(fsys, path, ids, src, dst)
 	return nil
 }
 
@@ -498,7 +502,7 @@ func putClip(list []any, id string, to *planParts) []any {
 // undoes was recorded, so the training records end on the clip as it is.
 // A clip taken out or put back is a decision, a clip trimmed or cut is an
 // edit, and anything else was never recorded to begin with.
-func recordRestored(planPath string, ids []string, from, to *planParts) {
+func recordRestored(fsys afero.Fs, planPath string, ids []string, from, to *planParts) {
 	for _, id := range ids {
 		was, now := from.clips[id], to.clips[id]
 		if now == nil {
@@ -524,16 +528,16 @@ func recordRestored(planPath string, ids []string, from, to *planParts) {
 			if rejected(now) {
 				event = DecisionRejected
 			}
-			_ = RecordDecision(planPath, id, event, nil)
+			_ = RecordDecision(fsys, planPath, id, event, nil)
 		case !equalJSON(segments(was), segments(now)):
-			_ = RecordDecision(planPath, id, DecisionEdited, nil)
+			_ = RecordDecision(fsys, planPath, id, DecisionEdited, nil)
 		}
 	}
 }
 
 // applyCorrections puts back the corrected words an edit changed, word by
 // word.
-func applyCorrections(path string, from, to fileState, dryRun bool) error {
+func applyCorrections(fsys afero.Fs, path string, from, to fileState, dryRun bool) error {
 	words := func(state fileState) (map[string]string, error) {
 		if !state.there {
 			return map[string]string{}, nil
@@ -557,7 +561,7 @@ func applyCorrections(path string, from, to fileState, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	cur, err := words(readState(path))
+	cur, err := words(readState(fsys, path))
 	if err != nil {
 		return err
 	}
@@ -592,5 +596,5 @@ func applyCorrections(path string, from, to fileState, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, append(body, '\n'))
+	return WriteAtomic(fsys, path, append(body, '\n'))
 }

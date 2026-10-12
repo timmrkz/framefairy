@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -28,6 +29,12 @@ var DecoderSaid func(video string, level slog.Level, line string)
 // lines, ffmpeg's errors, say why it failed.
 const DecoderInfo = "info: "
 
+// DecoderWarning starts a line the decoder writes for the log about
+// something that went wrong and that it got round, like the graphics chip
+// failing a frame that the processor then decoded. It is not why a
+// decoder failed, so it is kept with the warnings and not with the errors.
+const DecoderWarning = "warning: "
+
 func decoderSaid(video string, level slog.Level, line string) {
 	if DecoderSaid != nil {
 		DecoderSaid(video, level, line)
@@ -44,6 +51,10 @@ func decoderSaid(video string, level slog.Level, line string) {
 type EpisodeFrames struct {
 	program string
 	path    string
+	// What a test adds to the decoder's environment, and hears of all it
+	// says on its error stream, the way DecoderSaid does.
+	env   []string
+	heard func(level slog.Level, line string)
 
 	mu   sync.Mutex
 	cmd  *exec.Cmd
@@ -163,6 +174,9 @@ func (f *EpisodeFrames) start() error {
 		}
 	}
 	cmd := exec.Command(f.program, f.path)
+	if f.env != nil {
+		cmd.Env = append(os.Environ(), f.env...)
+	}
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -191,12 +205,18 @@ func (f *EpisodeFrames) start() error {
 		defer close(saidAll)
 		lines := bufio.NewScanner(errs)
 		for lines.Scan() {
-			if line, ok := strings.CutPrefix(lines.Text(), DecoderInfo); ok {
-				decoderSaid(f.path, slog.LevelDebug, line)
-				continue
+			level, line := slog.LevelError, lines.Text()
+			if rest, ok := strings.CutPrefix(line, DecoderInfo); ok {
+				level, line = slog.LevelDebug, rest
+			} else if rest, ok := strings.CutPrefix(line, DecoderWarning); ok {
+				level, line = slog.LevelWarn, rest
+			} else {
+				said.add(line)
 			}
-			said.add(lines.Text())
-			decoderSaid(f.path, slog.LevelError, lines.Text())
+			decoderSaid(f.path, level, line)
+			if f.heard != nil {
+				f.heard(level, line)
+			}
 		}
 	}()
 	go func() {

@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -45,13 +46,8 @@ func TestOnlyAKeyIsEverKept(t *testing.T) {
 // comes back as no clip rather than as an error the interface has to
 // handle.
 func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
-	s := &FrameFairy{store: st}
+	s, eps := memoryLibrary(t, "ep.mp4")
+	source := eps[0]
 
 	if got := s.ChosenClip(source); got != "" {
 		t.Errorf("an episode nobody has opened gave %q, wanted nothing", got)
@@ -79,7 +75,7 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	// A file written by hand, or by something else entirely.
 	file := filepath.Join(engine.WorkDir(source), chosenFile)
 	for _, junk := range []string{"", "not json at all", `{"clip":"../../etc/passwd"}`, `{"clip":123}`, `{}`} {
-		if err := os.WriteFile(file, []byte(junk), 0o644); err != nil {
+		if err := afero.WriteFile(s.store.files, file, []byte(junk), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if got := s.ChosenClip(source); got != "" {
@@ -88,7 +84,7 @@ func TestTheChosenClipSurvivesAndNothingElseDoes(t *testing.T) {
 	}
 
 	// An episode that is not in the library is not read and not written.
-	other := filepath.Join(dir, "other.mp4")
+	other := filepath.Join(filepath.Dir(source), "other.mp4")
 	if err := s.ChooseClip(other, "clips/abc"); err == nil {
 		t.Error("a file outside the library was written to")
 	}
@@ -143,7 +139,7 @@ func TestTheWindowIsKeptBesideTheClip(t *testing.T) {
 	}
 	// Whatever else is written into the file is not a window.
 	file := filepath.Join(engine.WorkDir(source), chosenFile)
-	if err := os.WriteFile(file, []byte(`{"clip":"clips/a","window":{"from":50,"to":10,"length":1}}`), 0o644); err != nil {
+	if err := afero.WriteFile(s.store.files, file, []byte(`{"clip":"clips/a","window":{"from":50,"to":10,"length":1}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ChosenWindow(source); got != nil {
@@ -183,13 +179,8 @@ func TestAClipAndAWindowChosenAtOnce(t *testing.T) {
 
 func chosenApp(t *testing.T) (*FrameFairy, string) {
 	t.Helper()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("not really a video"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: []string{source}}
-	return &FrameFairy{store: st}, source
+	s, eps := memoryLibrary(t, "ep.mp4")
+	return s, eps[0]
 }
 
 // A window moved by hand is a step: undo puts it back and redo moves it
@@ -236,17 +227,7 @@ func TestTheWindowMovedByHandIsUndone(t *testing.T) {
 // The episodes opened last come newest first, as many as were asked for,
 // and an episode never opened is not one of them.
 func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
-	dir := t.TempDir()
-	var eps []string
-	for _, name := range []string{"a.mp4", "b.mp4", "c.mp4", "never.mp4"} {
-		ep := filepath.Join(dir, name)
-		if err := os.WriteFile(ep, []byte("not really a video"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		eps = append(eps, ep)
-	}
-	st := &store{dir: t.TempDir(), settings: defaultSettings(), episodes: eps}
-	s := &FrameFairy{store: st}
+	s, eps := memoryLibrary(t, "a.mp4", "b.mp4", "c.mp4", "never.mp4")
 	if got := s.Opened(4); len(got) != 0 {
 		t.Fatalf("nothing opened yet gave %v", got)
 	}
@@ -257,7 +238,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 		at := base.Add(time.Duration(i) * time.Second)
-		if err := os.Chtimes(filepath.Join(engine.WorkDir(ep), chosenFile), at, at); err != nil {
+		if err := s.store.files.Chtimes(filepath.Join(engine.WorkDir(ep), chosenFile), at, at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -286,7 +267,7 @@ func TestTheEpisodesOpenedLastComeNewestFirst(t *testing.T) {
 	if got := s.Opened(1); fmt.Sprint(got) != fmt.Sprint([]string{eps[1]}) {
 		t.Errorf("a clip chosen on c without opening it put first %v", got)
 	}
-	if err := s.OpenEpisode(filepath.Join(dir, "elsewhere.mp4")); err == nil {
+	if err := s.OpenEpisode(filepath.Join(filepath.Dir(eps[0]), "elsewhere.mp4")); err == nil {
 		t.Error("an episode not in the library was noted as opened")
 	}
 }

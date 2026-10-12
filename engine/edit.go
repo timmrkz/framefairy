@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 // object is a JSON object that remembers its key order, so an edit made by
@@ -152,33 +154,51 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // not be the one that disappears.
 var fileLocks sync.Map
 
+// fileKey names a file for its lock: the file system it is in, nil for
+// the disk, and where it really is there.
+type fileKey struct {
+	fsys afero.Fs
+	path string
+}
+
 // lockFile holds the lock of the file at path until the function it
 // returns is called. Edits are one at a time inside the program, and one
 // program at a time as well, the command line and the app, see
 // lockAcrossProcesses. The lock inside the program is taken first, so two
 // edits in one program wait for each other without both waiting on the
 // system.
-func lockFile(path string) func() {
-	key := resolvePath(path)
+//
+// A file in memory has no other program to share it with, so its lock is
+// the one inside the program alone, and it is the lock of that memory's
+// file: two tests that each hold a plan at the same path in their own
+// memory do not wait for each other. Every OsFs is the one disk.
+func lockFile(fsys afero.Fs, path string) func() {
+	key := fileKey{path: ResolveIn(fsys, path)}
+	if !OnDisk(fsys) {
+		key.fsys = fsys
+	}
 	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()
-	release := lockAcrossProcesses(key)
+	release := func() {}
+	if OnDisk(fsys) {
+		release = lockAcrossProcesses(key.path)
+	}
 	return func() {
 		release()
 		mu.Unlock()
 	}
 }
 
-func editPlan(path string, change func(top *object, clips []*object) error) error {
-	defer lockFile(path)()
-	return editPlanLocked(path, change)
+func editPlan(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
+	defer lockFile(fsys, path)()
+	return editPlanLocked(fsys, path, change)
 }
 
 // editPlanLocked is editPlan for a caller that already holds the plan's
 // lock.
-func editPlanLocked(path string, change func(top *object, clips []*object) error) error {
-	data, err := os.ReadFile(path)
+func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
+	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		return err
 	}
@@ -212,7 +232,7 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 		return err
 	}
 	// The lock is already held, so this is the unlocked one.
-	return replacePlan(path, body)
+	return replacePlan(fsys, path, body)
 }
 
 // writePlanFile puts a whole new plan where a plan goes. A search that has
@@ -223,12 +243,12 @@ func editPlanLocked(path string, change func(top *object, clips []*object) error
 // writers: the search that makes a plan and the app that edits one.
 // Without the lock a search can land in the middle of an edit reading the
 // file, changing it and writing it back.
-func writePlanFile(path string, body []byte) error {
-	defer lockFile(path)()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+func writePlanFile(fsys afero.Fs, path string, body []byte) error {
+	defer lockFile(fsys, path)()
+	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return replacePlan(path, body)
+	return replacePlan(fsys, path, body)
 }
 
 // replacePlan puts new contents in a plan file in one step. The caller
@@ -245,9 +265,9 @@ func writePlanFile(path string, body []byte) error {
 // a plan. The temporary name starts with a dot, because what lists the
 // plans of an episode globs for clips*.json and a half written plan must
 // never be one of them.
-func replacePlan(path string, body []byte) error {
-	return replaceFile(path, ".clips-*.json", body, func(tmp string) error {
-		_, _, err := LoadClips(tmp)
+func replacePlan(fsys afero.Fs, path string, body []byte) error {
+	return replaceFile(fsys, path, ".clips-*.json", body, func(tmp string) error {
+		_, _, err := LoadClips(fsys, tmp)
 		return err
 	})
 }
@@ -260,13 +280,13 @@ var errNotAdded = errors.New("the clip is in the plan already")
 // through editPlan, so an edit the app makes at the same moment is kept,
 // and so is the plan's shape. A plan that is gone is reported as the
 // missing file it is.
-func appendClip(path string, clip PlanClip) error {
-	defer lockFile(path)()
-	return appendClipLocked(path, clip)
+func appendClip(fsys afero.Fs, path string, clip PlanClip) error {
+	defer lockFile(fsys, path)()
+	return appendClipLocked(fsys, path, clip)
 }
 
 // appendClipLocked is appendClip for a caller that holds the plan's lock.
-func appendClipLocked(path string, clip PlanClip) error {
+func appendClipLocked(fsys afero.Fs, path string, clip PlanClip) error {
 	body, err := MarshalPlan(clip)
 	if err != nil {
 		return err
@@ -280,7 +300,7 @@ func appendClipLocked(path string, clip PlanClip) error {
 		return renderErr("a clip must be a JSON object")
 	}
 	refused := false
-	err = editPlanLocked(path, func(top *object, clips []*object) error {
+	err = editPlanLocked(fsys, path, func(top *object, clips []*object) error {
 		for i, c := range clips {
 			fallback := twoDigits(i + 1)
 			text := fallback
@@ -309,21 +329,21 @@ func appendClipLocked(path string, clip PlanClip) error {
 // one clip in it, when it is not there yet. The number is taken under the
 // set's lock, so two clips made at the same moment never take the same
 // one. It answers with the clip as it went in.
-func addClip(path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
-	defer lockFile(path)()
-	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(path, prefix)+1)
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		return clip, appendClipLocked(path, clip)
+func addClip(fsys afero.Fs, path string, set PlanFile, clip PlanClip, prefix string) (PlanClip, error) {
+	defer lockFile(fsys, path)()
+	clip.ID = fmt.Sprintf("%s%02d", prefix, lastNumber(fsys, path, prefix)+1)
+	if _, err := fsys.Stat(path); !os.IsNotExist(err) {
+		return clip, appendClipLocked(fsys, path, clip)
 	}
 	set.Clips = []PlanClip{clip}
 	body, err := MarshalPlan(set)
 	if err != nil {
 		return clip, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return clip, err
 	}
-	return clip, replacePlan(path, body)
+	return clip, replacePlan(fsys, path, body)
 }
 
 func findClip(clips []*object, id string) (*object, error) {
@@ -343,13 +363,13 @@ func findClip(clips []*object, id string) (*object, error) {
 // SetRejected marks a clip as rejected or kept. A rejected clip stays in the
 // plan, and a render of the whole plan leaves it out. Reasons are recorded
 // with a rejection for training.
-func SetRejected(planPath, clipID string, rejected bool, reasons ...string) error {
+func SetRejected(fsys afero.Fs, planPath, clipID string, rejected bool, reasons ...string) error {
 	// Checked before the plan is touched. A reason the format does not know
 	// would throw the whole record away further down, without a word.
 	if _, err := CheckReasons(reasons); rejected && err != nil {
 		return err
 	}
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
+	err := editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -373,7 +393,7 @@ func SetRejected(planPath, clipID string, rejected bool, reasons ...string) erro
 	if !rejected {
 		reasons = nil
 	}
-	_ = RecordDecision(planPath, clipID, event, reasons)
+	_ = RecordDecision(fsys, planPath, clipID, event, reasons)
 	return nil
 }
 
@@ -381,8 +401,8 @@ func SetRejected(planPath, clipID string, rejected bool, reasons ...string) erro
 // clip of an episode shorter than a clip is ever taken out, once a search
 // has made it again: there is one moment, and the clip made again is it.
 // A clip that is not removed, or no longer there, is left as it is.
-func DropRemoved(planPath, clipID string) error {
-	return editPlan(planPath, func(top *object, clips []*object) error {
+func DropRemoved(fsys afero.Fs, planPath, clipID string) error {
+	return editPlan(fsys, planPath, func(top *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return nil
@@ -518,8 +538,8 @@ func autoCrop(seg *object) any {
 // a part rotated back has it again. The keyframes of the stretch are
 // removed, since they were placed on the picture as it stood. Framing is not a judgement of the
 // clip, so nothing is recorded for training.
-func RotatePart(planPath, clipID string, at float64, frames SourceInfo) error {
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames SourceInfo) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -679,8 +699,8 @@ func foundPieces(c *object) []foundPiece {
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
 // captions are built from the words, and the edit is recorded for training.
-func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) error {
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
+func editPieces(fsys afero.Fs, planPath, clipID string, change pieceChange, frames SourceInfo) error {
+	err := editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -722,7 +742,7 @@ func editPieces(planPath, clipID string, change pieceChange, frames SourceInfo) 
 	if err != nil {
 		return err
 	}
-	_ = RecordDecision(planPath, clipID, DecisionEdited, nil)
+	_ = RecordDecision(fsys, planPath, clipID, DecisionEdited, nil)
 	return nil
 }
 
@@ -868,12 +888,12 @@ func applyCut(pieces []*object, from, to float64) []*object {
 // is the video, for the frame a moment means, and cropW how wide the crop
 // is on the picture as the piece at the moment stands, for where a crop
 // that was never placed stands.
-func SetCrop(planPath, clipID string, at float64, left int, frames SourceInfo, cropW int) error {
+func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frames SourceInfo, cropW int) error {
 	if left < 0 {
 		return renderErr("the crop cannot start left of the picture")
 	}
 	left -= left % 2
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -938,7 +958,7 @@ func SetCrop(planPath, clipID string, at float64, left int, frames SourceInfo, c
 // the settings the workspace offers can be changed here, and a value the
 // render would quietly replace with its default is refused rather than
 // written to the plan.
-func SetCaptionStyle(planPath string, values map[string]any) error {
+func SetCaptionStyle(fsys afero.Fs, planPath string, values map[string]any) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -985,7 +1005,7 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 			return renderErr("the caption setting %s cannot be changed here", Scrub(key, 40))
 		}
 	}
-	return editPlan(planPath, func(top *object, _ []*object) error {
+	return editPlan(fsys, planPath, func(top *object, _ []*object) error {
 		style, _ := top.get(keyCaptionStyle)
 		into, ok := style.(*object)
 		if !ok {
@@ -1002,11 +1022,11 @@ func SetCaptionStyle(planPath string, values map[string]any) error {
 // SetCaptionY moves the caption line of a clip, as the distance from the
 // bottom of a 1080x1920 frame. It lands on the nearest step and stays
 // inside the frame, so captions across an episode line up.
-func SetCaptionY(planPath, clipID string, y float64) error {
+func SetCaptionY(fsys afero.Fs, planPath, clipID string, y float64) error {
 	if !isFinite(y) {
 		return renderErr("the captions cannot sit at %v", y)
 	}
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -1031,19 +1051,19 @@ type CaptionEdit struct {
 // captions are laid out in. It makes the change ShapeCaptionTime shows
 // while the hand moves, see moveCaptionEdge, and says what it did to the
 // words, for the app's log.
-func SetCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
+func SetCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, overrides map[string]any) (CaptionEdit, error) {
 	var moved captionEdge
-	err := changeWords(logsDir, t, func(corrections map[string]string, work *Transcript) error {
+	err := changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
 		var err error
-		moved, err = moveCaptionEdge(corrections, planPath, clipID, word, edge, at, work, overrides)
+		moved, err = moveCaptionEdge(fsys, corrections, planPath, clipID, word, edge, at, work, overrides)
 		return err
 	})
 	if err != nil {
 		return moved.done, err
 	}
 	key := wordKey(word)
-	err = editPlan(planPath, func(_ *object, clips []*object) error {
+	err = editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -1107,7 +1127,7 @@ type captionEdge struct {
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
-func moveCaptionEdge(corrections map[string]string, planPath, clipID string, word float64, edge string,
+func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, clipID string, word float64, edge string,
 	at float64, t *Transcript, overrides map[string]any) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
@@ -1116,7 +1136,7 @@ func moveCaptionEdge(corrections map[string]string, planPath, clipID string, wor
 	if !reset && (math.IsInf(at, 0) || at < 0 || at > MaxEpisodeSeconds) {
 		return captionEdge{}, renderErr("a caption cannot be moved to %s", fixed(at, 3))
 	}
-	plan, clip, err := planClip(planPath, clipID)
+	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return captionEdge{}, err
 	}
@@ -1187,7 +1207,7 @@ func moveCaptionEdge(corrections map[string]string, planPath, clipID string, wor
 // A from below nought adds one at to, and a to below nought removes the one
 // at from. A moment has to be inside a piece the clip keeps, because a
 // moment that was cut is not in the short.
-func SetThumbnail(planPath, clipID string, from, to float64) error {
+func SetThumbnail(fsys afero.Fs, planPath, clipID string, from, to float64) error {
 	adding, removing := from < 0, to < 0
 	if adding && removing {
 		return renderErr("a thumbnail has to be somewhere")
@@ -1198,7 +1218,7 @@ func SetThumbnail(planPath, clipID string, from, to float64) error {
 		}
 	}
 	ms := func(at float64) int64 { return int64(math.Round(at * 1000)) }
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -1252,8 +1272,8 @@ func SetThumbnail(planPath, clipID string, from, to float64) error {
 
 // ResetCaptionY puts the captions of a clip back where the caption style
 // puts them.
-func ResetCaptionY(planPath, clipID string) error {
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+func ResetCaptionY(fsys afero.Fs, planPath, clipID string) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
@@ -1266,9 +1286,9 @@ func ResetCaptionY(planPath, clipID string) error {
 // ClearCaptionY takes the hand-placed caption line off every clip of a
 // plan, so they all follow the one place the app keeps. It answers with
 // how many clips changed.
-func ClearCaptionY(planPath string) (int, error) {
+func ClearCaptionY(fsys afero.Fs, planPath string) (int, error) {
 	changed := 0
-	err := editPlan(planPath, func(_ *object, clips []*object) error {
+	err := editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		for _, c := range clips {
 			if _, ok := c.get(keyCaptionY); ok {
 				c.remove(keyCaptionY)
@@ -1286,8 +1306,8 @@ func ClearCaptionY(planPath string) (int, error) {
 // ResetCrop brings back the automatic crop for the shot at a moment of a
 // clip, for every piece with that camera angle, and removes every keyframe
 // of the angle.
-func ResetCrop(planPath, clipID string, at float64) error {
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err

@@ -15,6 +15,8 @@ import (
 
 // install checks the list and downloads the channel's build, the way the
 // app does, and says what the app it unpacked says.
+//
+// On the real disk: an update is unpacked as a program on the disk.
 func install(t *testing.T, src *Source, key ed25519.PrivateKey) string {
 	t.Helper()
 	u := newUpdater(t, src, "0.3.0-main.4", key)
@@ -33,6 +35,7 @@ func install(t *testing.T, src *Source, key ed25519.PrivateKey) string {
 	return string(got)
 }
 
+// On the real disk: the updater keeps its builds in a folder on the disk.
 func cachedSource(t *testing.T, srv string) *Source {
 	t.Helper()
 	return &Source{URL: srv + "/dev/channels.json", Own: "main", Cache: filepath.Join(t.TempDir(), "builds")}
@@ -40,6 +43,8 @@ func cachedSource(t *testing.T, srv string) *Source {
 
 // Going back to a channel whose build was downloaded before takes it from
 // the cache: no second download, and the same app arrives.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pull request 30")}
@@ -73,6 +78,8 @@ func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
 
 // A kept build that was changed on disk is never installed: it is thrown
 // away and the build downloaded again.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestAChangedKeptBuildIsDownloadedAgain(t *testing.T) {
 	key := testKey(t)
 	s := &served{zip: appZip(t, "the real one")}
@@ -104,6 +111,8 @@ func TestAChangedKeptBuildIsDownloadedAgain(t *testing.T) {
 // Whatever the list no longer names goes the next time it is read: a pull
 // request closed, or a build a newer push replaced. What it still names
 // stays.
+//
+// On the real disk: the updater keeps its builds in a folder on the disk.
 func TestKeptBuildsGoWhenTheListDropsThem(t *testing.T) {
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pr 30")}
@@ -148,6 +157,8 @@ func TestKeptBuildsGoWhenTheListDropsThem(t *testing.T) {
 // on to the end and is kept, so going back has the build at once. It used
 // to be stopped and thrown away, and a look at another channel cost the
 // whole download again.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestADownloadLetGoOfGoesOnAndIsKept(t *testing.T) {
 	key := testKey(t)
 	// Big enough to arrive in many reads, so the wait ends half way.
@@ -244,6 +255,8 @@ func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
 // folder went while it downloaded, and the download used to count as
 // arrived, so the wait for it found nothing and said the build went from
 // the cache as it arrived.
+//
+// On the real disk: the updater keeps its builds in a folder on the disk.
 func TestABuildThatCannotBeKeptSaysSo(t *testing.T) {
 	data := []byte("a build")
 	sum := sha256.Sum256(data)

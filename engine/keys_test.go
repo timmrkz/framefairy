@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // memKeys is a keychain in memory. It counts every time a secret is read,
@@ -320,7 +322,7 @@ func TestARefusedKeyIsSaidInWords(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_1"}`)
 	}
-	_, e := cloud(t, refuse, refuse)
+	_, e := cloud(t, afero.NewMemMapFs(), refuse, refuse)
 	_, err := e.CallAPI(context.Background(), "the transcript", "claude-sonnet-5", 4000, "", "plan", "", nil)
 	if err == nil || strings.Contains(err.Error(), "{") ||
 		!strings.Contains(err.Error(), "Anthropic did not accept the API key in ANTHROPIC_API_KEY") {

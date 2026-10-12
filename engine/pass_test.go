@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -60,11 +59,12 @@ func clipAnswer(lines ...int) string {
 	return b.String()
 }
 
+// On the real disk: ffmpeg reads the episode, and the project works beside it.
 func passProject(t *testing.T, url string) *Project {
 	t.Helper()
 	source := testEpisode(t, "40")
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = url
@@ -76,6 +76,8 @@ func passProject(t *testing.T, url string) *Project {
 // A window searched again is a second pass with a plan of its own: the
 // clips of the first stay as they are, the model is told which lines are
 // clips already, and a clip that keeps them all the same is left out.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	t.Parallel()
 	server, asked := answering(t, clipAnswer(1), clipAnswer(1, 2))
@@ -93,10 +95,10 @@ func TestAWindowSearchedAgainKeepsEveryClip(t *testing.T) {
 	if filepath.Base(first) != "clips-10-30.json" || filepath.Base(second) != "clips-10-30-2.json" {
 		t.Fatalf("the two passes wrote %s and %s", filepath.Base(first), filepath.Base(second))
 	}
-	if _, clips, err := LoadClips(first); err != nil || len(clips) != 1 || clips[0].ID != "t10-01" {
+	if _, clips, err := LoadClips(disk, first); err != nil || len(clips) != 1 || clips[0].ID != "t10-01" {
 		t.Errorf("the first pass after the second: %v, %+v", err, clips)
 	}
-	_, clips, err := LoadClips(second)
+	_, clips, err := LoadClips(disk, second)
 	if err != nil || len(clips) != 1 || clips[0].ID != "t10-2-01" {
 		t.Errorf("the second pass should hold only the new moment: %v, %+v", err, clips)
 	}
@@ -131,7 +133,7 @@ func TestASearchCarriedOnKeepsItsPass(t *testing.T) {
 	if filepath.Base(plan) != "clips-10-30.json" {
 		t.Errorf("a search carried on wrote %s", filepath.Base(plan))
 	}
-	if _, err := os.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
+	if _, err := p.Files.Stat(filepath.Join(p.LogsDir(), "clips-10-30-2.json")); err == nil {
 		t.Error("a search carried on made a second pass")
 	}
 }

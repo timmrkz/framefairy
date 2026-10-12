@@ -18,6 +18,8 @@ import (
 // between samples' worth of milliseconds, from the start, and from before
 // a late picture starts, where a seek alone finds the sound only from the
 // picture on.
+//
+// On the real disk: ffmpeg makes the episode and decodes its sound.
 func TestPreviewSoundIsTheEpisodesOwnFromAnyMoment(t *testing.T) {
 	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "late.mov")
@@ -32,7 +34,7 @@ func TestPreviewSoundIsTheEpisodesOwnFromAnyMoment(t *testing.T) {
 	if err != nil {
 		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
 	}
-	e := NewEngine(NewLog(nil, false, false))
+	e := NewEngine(NewLog(nil, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	const rate, channels = 48000, 2
 

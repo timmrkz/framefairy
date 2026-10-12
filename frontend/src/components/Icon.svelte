@@ -32,6 +32,7 @@
   import ArrowDownAZ from "@lucide/svelte/icons/arrow-down-a-z";
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import Pipette from "@lucide/svelte/icons/pipette";
+  import Mic from "@lucide/svelte/icons/mic";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -85,6 +86,8 @@
     "sort-name": ArrowDownAZ,
     sliders: SlidersHorizontal,
     pipette: Pipette,
+    // Dictate on Report a Problem.
+    mic: Mic,
   };
 
   // The marks that are solid wherever people see them, play and pause on

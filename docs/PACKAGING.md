@@ -698,6 +698,14 @@ siblings for Desktop, Downloads and removable volumes. Leave them out and
 somebody who has just paid for the app gets a blank-sounding prompt about
 it.
 
+The microphone is the one place a prompt does need an entitlement. Under
+the hardened runtime an app that opens the microphone needs
+`com.apple.security.device.audio-input` as well as
+`NSMicrophoneUsageDescription`, or macOS hands it silence without asking.
+Dictate on Report a Problem records, plan row 2.189, so the signing step
+adds it. Today's ad hoc signature has no hardened runtime and needs
+nothing.
+
 ## Still open
 
 - **Updates.** A paid desktop app needs a way to update itself, and that

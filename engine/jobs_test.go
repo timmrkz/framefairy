@@ -10,17 +10,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // searchProject makes a project of a forty second episode with the stand-in
 // speech model and the stand-in language model.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project, *int32) {
 	t.Helper()
 	source := testEpisode(t, "40")
 	var asked int32
 	server := fakeModel(t, &asked)
 	t.Cleanup(server.Close)
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	var heard int32
 	if rec == nil {
 		rec = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -34,6 +38,7 @@ func searchProject(t *testing.T, rec func(string) (Recognizer, error)) (*Project
 	return NewProject(e, source, base), &asked
 }
 
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
@@ -41,7 +46,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
 		turns = append(turns, step)
 		// While it waits for its turn, the record says so.
-		if rec := ReadSearch(p.Source); rec == nil || rec.Step != StepWaiting {
+		if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting {
 			t.Errorf("waiting for %s, the record says %+v", step, rec)
 		}
 		return ctx, func() {}, nil
@@ -57,13 +62,13 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 		t.Errorf("turns asked for: %v", turns)
 	}
 	// Heard the window and nothing else.
-	if parts := HeardParts(p.Source, p.Base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{5, 25} {
+	if parts := HeardParts(disk, p.Source, p.Base.ASRModel); len(parts) != 1 || parts[0] != [2]float64{5, 25} {
 		t.Errorf("heard %v", parts)
 	}
-	if rec := ReadSearch(p.Source); rec != nil {
+	if rec := ReadSearch(disk, p.Source); rec != nil {
 		t.Errorf("a search that found its clips keeps %+v", rec)
 	}
-	timings := ReadTimings(p.Source)
+	timings := ReadTimings(disk, p.Source)
 	if len(timings) != 1 {
 		t.Fatalf("%d timings", len(timings))
 	}
@@ -87,7 +92,7 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err, p.LastError())
 	}
-	if _, clips, err := LoadClips(again); err != nil || len(clips) != 0 {
+	if _, clips, err := LoadClips(disk, again); err != nil || len(clips) != 0 {
 		t.Errorf("a window with nothing new: %v, %d clip(s)", err, len(clips))
 	}
 	if strings.Join(turns, " ") != "finding" {
@@ -96,13 +101,15 @@ func TestASearchHearsItsWindowAndFindsItsClips(t *testing.T) {
 }
 
 // The whole episode is heard to its end, and the transcript is finished.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchOfTheWholeEpisodeFinishesTheTranscript(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
 	if _, err := p.Search(context.Background(), PlanRequest{Count: 1, Min: 5}, nil); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if _, done := Coverage(p.Source, p.Base.ASRModel); !done {
+	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
 		t.Error("the transcript was not finished")
 	}
 }
@@ -121,6 +128,8 @@ func (s stops) Recognize(samples []float32, rate int) []Token {
 
 // Stopped from outside while it hears, the record says it was hearing, so
 // an app that starts reads it as cut off. What was heard stays.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -131,22 +140,24 @@ func TestASearchStoppedWhileItHearsKeepsItsRecord(t *testing.T) {
 	if !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
 	}
-	rec := ReadSearch(p.Source)
+	rec := ReadSearch(disk, p.Source)
 	if rec == nil || rec.Step != StepHearing || !rec.Interrupted() || rec.To != 30 {
 		t.Fatalf("the record: %+v", rec)
 	}
 	if req := rec.Request(); req.To != 30 || req.Count != 1 || req.Min != 5 {
 		t.Errorf("carried on as %+v", req)
 	}
-	if covered, _ := Coverage(p.Source, p.Base.ASRModel); covered <= 0 {
+	if covered, _ := Coverage(disk, p.Source, p.Base.ASRModel); covered <= 0 {
 		t.Error("nothing heard was kept")
 	}
-	if len(ReadTimings(p.Source)) != 0 {
+	if len(ReadTimings(disk, p.Source)) != 0 {
 		t.Error("a search that did not finish was timed")
 	}
 }
 
 // Stopped while it waits for the model's lane, the record says waiting.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	p, asked := searchProject(t, nil)
@@ -161,7 +172,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	if _, err := p.Search(ctx, PlanRequest{To: 20, Count: 1, Min: 5}, turn); !errors.Is(err, ErrCancelled) {
 		t.Fatalf("stopped: %v", err)
 	}
-	if rec := ReadSearch(p.Source); rec == nil || rec.Step != StepWaiting || !rec.Interrupted() {
+	if rec := ReadSearch(disk, p.Source); rec == nil || rec.Step != StepWaiting || !rec.Interrupted() {
 		t.Errorf("the record: %+v", rec)
 	}
 	if *asked != 0 {
@@ -169,6 +180,7 @@ func TestASearchStoppedWhileItWaitsKeepsItsRecord(t *testing.T) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchThatFailsSaysWhy(t *testing.T) {
 	t.Parallel()
 	t.Run("while it hears", func(t *testing.T) {
@@ -178,7 +190,7 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
 			t.Fatal("no error")
 		}
-		rec := ReadSearch(p.Source)
+		rec := ReadSearch(disk, p.Source)
 		if rec == nil || rec.Step != StepFailed || rec.Interrupted() ||
 			!strings.Contains(rec.Error, "the speech model is not there") {
 			t.Errorf("the record: %+v", rec)
@@ -197,12 +209,12 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 		if _, err := p.Search(context.Background(), PlanRequest{To: 20, Count: 1, Min: 5}, nil); err == nil {
 			t.Fatal("no error")
 		}
-		rec := ReadSearch(p.Source)
+		rec := ReadSearch(disk, p.Source)
 		if rec == nil || rec.Step != StepFailed || !strings.Contains(rec.Error, "out of memory") {
 			t.Errorf("the record: %+v", rec)
 		}
 		// What was heard stays.
-		if covered, _ := Coverage(p.Source, p.Base.ASRModel); covered < 19.9 {
+		if covered, _ := Coverage(disk, p.Source, p.Base.ASRModel); covered < 19.9 {
 			t.Errorf("heard to %.1f", covered)
 		}
 	})
@@ -210,6 +222,8 @@ func TestASearchThatFailsSaysWhy(t *testing.T) {
 
 // A render renders its clips one at a time and keeps a record of the ones
 // it finished, so one that was cut off carries on with the rest.
+//
+// On the real disk: ffmpeg renders the shorts.
 func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -217,7 +231,7 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := ReadPlan(plan)
+	view, err := ReadPlan(disk, plan)
 	if err != nil || len(view.Clips) == 0 {
 		t.Fatalf("plan: %v", err)
 	}
@@ -243,10 +257,10 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	if strings.Join(turns, " ") != StepRendering {
 		t.Errorf("turns %v", turns)
 	}
-	if len(ReadJobs(p.Source)) != 0 {
+	if len(ReadJobs(disk, p.Source)) != 0 {
 		t.Error("a finished render keeps its record")
 	}
-	timings := ReadTimings(p.Source)
+	timings := ReadTimings(disk, p.Source)
 	if len(timings) != 2 || timings[1].Kind != JobRender {
 		t.Errorf("timings %+v", timings)
 	}
@@ -255,20 +269,20 @@ func TestARenderCarriesOnWithTheClipsItHasNotFinished(t *testing.T) {
 	if err := p.RenderJob(context.Background(), NewRenderID(), RenderRequest{Plan: plan}, nil, nil); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if n := ReadTimings(p.Source)[2].Clips; n != len(view.Clips) || shorts() != len(view.Clips) {
+	if n := ReadTimings(disk, p.Source)[2].Clips; n != len(view.Clips) || shorts() != len(view.Clips) {
 		t.Errorf("rendered %d of %d clips, %d shorts", n, len(view.Clips), shorts())
 	}
 }
 
 func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "ep.mp4")
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
 	logs := filepath.Join(WorkDir(source), "logs")
 	good := []JobRecord{
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
 	}
 	for _, r := range good {
-		if err := WriteJob(source, r); err != nil {
+		if err := WriteJob(fsys, source, r); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -288,19 +302,19 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		"render-10.json": `{"id": "render-10", "kind": "render", "step": "rendering", "plan": "` + filepath.Join(logs, "clips.json") + `", "clips": ["` + strings.Repeat(`a", "`, 1001) + `"]}`,
 	}
 	for name, body := range bad {
-		if err := os.WriteFile(filepath.Join(JobsDir(source), name), []byte(body), 0o644); err != nil {
+		if err := afero.WriteFile(fsys, filepath.Join(JobsDir(source), name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := ReadJobs(source)
+	got := ReadJobs(fsys, source)
 	if len(got) != 2 || got[0].ID != SearchID || got[1].ID != "render-1" {
 		t.Errorf("read %+v", got)
 	}
-	if err := WriteJob(source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
+	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(source, "render-1"); err != nil || len(ReadJobs(source)) != 1 {
-		t.Errorf("removed: %v, %d left", err, len(ReadJobs(source)))
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 1 {
+		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
 	}
 }
 
@@ -310,14 +324,14 @@ func FuzzReadJob(f *testing.F) {
 	f.Add([]byte(`{"id": "search", "kind": "search", "to": 60, "count": 12, "step": "hearing"}`))
 	f.Add([]byte(`{"id": "render-1", "kind": "render", "plan": "x", "step": "failed", "error": "` + strings.Repeat("é", 600) + `"}`))
 	f.Add([]byte(`{"id": "search", "kind": "search", "from": 1e400, "step": "finding"}`))
-	dir := f.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
+	fsys := afero.NewMemMapFs()
+	source := "/ep.mp4"
 	f.Fuzz(func(t *testing.T, body []byte) {
-		path := filepath.Join(dir, "record.json")
-		if err := os.WriteFile(path, body, 0o644); err != nil {
+		path := "/record.json"
+		if err := afero.WriteFile(fsys, path, body, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		rec, ok := readJob(source, path)
+		rec, ok := readJob(fsys, source, path)
 		if !ok {
 			return
 		}
@@ -348,6 +362,8 @@ func (s takenBack) Recognize(samples []float32, rate int) []Token {
 
 // A search whose hearing lane is taken back waits for its turn again and
 // carries on from what it heard.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 	t.Parallel()
 	var take context.CancelFunc
@@ -375,7 +391,7 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 	if *asked != 1 {
 		t.Errorf("the model asked %d times", *asked)
 	}
-	if _, done := Coverage(p.Source, p.Base.ASRModel); !done {
+	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
 		t.Error("the transcript was not finished")
 	}
 }
@@ -383,22 +399,22 @@ func TestASearchCarriesOnHearingWhenItGetsTheLaneBack(t *testing.T) {
 // Called off by hand, a job's record says so, and keeps the window and the
 // numbers it was asked for, so it can be carried on.
 func TestAJobCalledOffByHandSaysSo(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "ep.mp4")
-	if err := WriteJob(source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, To: 1800, Count: 12, Min: 20,
 		Step: StepHearing, Steps: []StepTime{{Step: StepHearing}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := StopJob(source, SearchID); err != nil {
+	if err := StopJob(fsys, source, SearchID); err != nil {
 		t.Fatal(err)
 	}
-	rec := ReadSearch(source)
+	rec := ReadSearch(fsys, source)
 	if rec == nil || rec.Step != StepStopped || !rec.Interrupted() || rec.To != 1800 || rec.Count != 12 {
 		t.Fatalf("the record: %+v", rec)
 	}
 	if rec.Steps[0].To == nil {
 		t.Error("the step it was in did not end")
 	}
-	if err := StopJob(source, "render-9"); err != nil {
+	if err := StopJob(fsys, source, "render-9"); err != nil {
 		t.Errorf("a job with no record: %v", err)
 	}
 }
@@ -419,6 +435,8 @@ func (c counting) Recognize(samples []float32, rate int) []Token {
 // the end of what it hears, not until the end of the episode. Tim saw a
 // search of the half hour after a half hour already heard say almost six
 // minutes left.
+//
+// On the real disk: ffmpeg reads the episode the search hears.
 func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	t.Parallel()
 	var heard int32
@@ -446,7 +464,7 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 	if seconds > 10+2*hearingPad+0.1 {
 		t.Errorf("a window from 20 to 30 heard %.1f s", seconds)
 	}
-	if gaps := Unheard(p.Source, p.Base.ASRModel, Window{0, 30}); len(gaps) != 1 || gaps[0] != (Window{15, 20}) {
+	if gaps := Unheard(disk, p.Source, p.Base.ASRModel, Window{0, 30}); len(gaps) != 1 || gaps[0] != (Window{15, 20}) {
 		t.Errorf("unheard %v, want only what no search asked for", gaps)
 	}
 	t.Logf("heard %.1f s, then %.1f s, time left said %v", first, seconds, lefts)
@@ -454,6 +472,8 @@ func TestASearchOfALaterWindowHearsOnlyWhatIsNew(t *testing.T) {
 
 // Captions switched off in the captions column render a short without any:
 // no caption file is made for it, and the short is there.
+//
+// On the real disk: ffmpeg renders the short.
 func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -461,7 +481,7 @@ func TestAShortRendersWithoutCaptionsWhenTheyAreOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := SetCaptionStyle(plan, map[string]any{"text": false}); err != nil {
+	if err := SetCaptionStyle(disk, plan, map[string]any{"text": false}); err != nil {
 		t.Fatal(err)
 	}
 	p.Base.Out = t.TempDir()
@@ -502,6 +522,8 @@ func TestAPanicWhileHearingGivesTheLaneBack(t *testing.T) {
 // A render that fails leaves the short there was before it, and no half of
 // the new one. ffmpeg here writes a few bytes where it was told to and
 // fails, the way a render cut off halfway leaves a file behind.
+//
+// On the real disk: ffmpeg renders the short, and a script in its place is run.
 func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 	t.Parallel()
 	p, _ := searchProject(t, nil)
@@ -560,8 +582,8 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if !isFile(plan) {
-		made, _ := filepath.Glob(filepath.Join(p.LogsDir(), "clips-*.json"))
+	if !isFile(p.Files, plan) {
+		made, _ := afero.Glob(p.Files, filepath.Join(p.LogsDir(), "clips-*.json"))
 		t.Fatalf("the search answered %s, and wrote %v", filepath.Base(plan), made)
 	}
 }
@@ -572,6 +594,8 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 // the episode's end asks ffmpeg for its length, and a search the closing
 // cancelled there left no record, and nothing to say it had been asked
 // for. The walk searching.mjs found it, New pressed and the app closed.
+//
+// On the real disk: ffmpeg is asked how long the episode is.
 func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 	t.Parallel()
 	for _, req := range []PlanRequest{
@@ -586,7 +610,7 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 		if !errors.Is(err, ErrCancelled) {
 			t.Errorf("%+v: a search cut off says %v", req, err)
 		}
-		rec := ReadSearch(p.Source)
+		rec := ReadSearch(disk, p.Source)
 		if rec == nil {
 			t.Errorf("%+v: a search cut off before it began left no record", req)
 			continue

@@ -412,7 +412,24 @@ language model or of the speech model, and `speech` slows the speech
 model down. Then `refused`, the card shook and no list and no box opened
 and the settings name the models they named, `asks`, the box asking
 whether to remove opened, `changed`, the settings name another model,
-and `hearing`, a search still hears. For a clip of two shots: `add cameras`, a video filmed by two cameras,
+and `hearing`, a search still hears. For Report a Problem: `menu`
+`report` picks it in the menu bar, `write` types into its field and
+puts the cursor so many characters in, `dictate` presses Dictate, sees
+it say Stop in the same frame, the words appear grey while it
+listens and the microphone move with the hum, then ends it with Stop,
+Enter or Escape, or with `ends` lets it stop by itself and say why, or
+with `start` only starts it, with `hearing` waits for more to be heard
+and with `settled` waits for the words before the pause, `click heard`
+clicks into the first word still being heard and sees it settled with
+the cursor in it,
+`report reads`, the field reads so, with `*` for whatever the speech
+model heard, and `report as before`, it reads what it did then. The
+bridge's microphone plays two seconds of a hum, then a pause and a
+second and a half more, four times over, as fast as they would be said,
+so pieces are settled while it listens and there is more to hear for
+12 s, and then nothing, and a recording there stops by itself after 8 s
+without a word. `field` clicks a field by its selector and
+types, and `field reads` says what it holds. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
 which puts the playhead in its middle with a click on the clip timeline
@@ -499,6 +516,18 @@ the clip's words and stay on the clip, its crop frame and its captions
 shown. Before the fix it fails at `only the video`, the playhead on the
 clip at 7.96 s.
 
+`a clip made with I while the episode plays is not dimmed` is Tim's test
+of 2.212. With the clip's start trimmed, it plays from before the clip,
+presses I a second and a half in, and reads the clip timeline on every
+animation frame until the clip made is written and chosen, two seconds
+more, and a pause. From the frame the new card is chosen on, on its way
+and written, playing and paused, the clip may not be dimmed. The same
+with O, and with I while the video is paused, where the playhead is put
+on the clip's start. Against main all three fail at the first frame of
+the clip on its way. A first fix still left one frame dimmed with O, as
+the card on its way became the written one, which is why every frame is
+read.
+
 `a cut or an edge put back keeps the camera switch` is Tim's test of
 #116 done the way he would do it. It adds a video of 30 seconds whose
 camera switches at 12, and its search finds one clip in two pieces that
@@ -574,6 +603,12 @@ part of the time. Six took five and a half minutes, the cores busy four
 fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
 so however many bridges run, the set takes at least that.
+
+CI splits the set over three machines, `make walks WALKSHARD=1/3` to
+`3/3`, each with every third run, walks and sequences alike. Five and a
+half minutes on one machine, after two of setting up, made a job of seven
+and a half, and on two machines each job still took six with a cold build
+cache. No job may take over five.
 
 Where a walk's time goes, measured: a walk of 60 steps takes about 30
 seconds, and more than half of that is waiting after each step until no call

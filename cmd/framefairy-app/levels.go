@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -22,6 +23,8 @@ import (
 // start a decoder for every episode at once, and one goes on while the
 // transcription has the speech model.
 type measuring struct {
+	// files is where the levels are kept, the store's.
+	files  afero.Fs
 	notify func(episode string)
 
 	mu      sync.Mutex
@@ -42,8 +45,8 @@ type measure struct {
 	done chan struct{}
 }
 
-func newMeasuring(notify func(string)) *measuring {
-	return &measuring{notify: notify,
+func newMeasuring(files afero.Fs, notify func(string)) *measuring {
+	return &measuring{files: files, notify: notify,
 		running: map[string]*measure{}, looking: map[string][2]float64{}, slots: make(chan struct{}, 2)}
 }
 
@@ -61,7 +64,7 @@ func (m *measuring) start(path string) {
 		return
 	}
 	m.mu.Unlock()
-	if _, done := engine.LevelsReach(path); done {
+	if _, done := engine.LevelsReach(m.files, path); done {
 		return
 	}
 	m.mu.Lock()
@@ -96,7 +99,7 @@ func (m *measuring) run(ctx context.Context, path string, run *measure) {
 	case <-ctx.Done():
 		return
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), m.files)
 	// The interface is told twice a second at most, which is as often as
 	// the engine writes what it has.
 	var told time.Time
@@ -168,14 +171,11 @@ func (m *measuring) shutDown() {
 // read is the loudness measured so far, from the files, kept while they
 // stay as they were.
 func (m *measuring) read(path string) engine.Levels {
-	if m == nil {
-		return engine.ReadLevels(path)
-	}
 	// The episode's own file is in the stamp: when it changes, what was
 	// measured of it before is no longer its loudness.
 	stamp := path
 	for _, file := range append([]string{path}, engine.LevelsFiles(path)...) {
-		info, err := os.Stat(file)
+		info, err := m.files.Stat(file)
 		if err != nil {
 			stamp += "|-"
 			continue
@@ -189,7 +189,7 @@ func (m *measuring) read(path string) engine.Levels {
 		return kept
 	}
 	m.mu.Unlock()
-	l := engine.ReadLevels(path)
+	l := engine.ReadLevels(m.files, path)
 	m.mu.Lock()
 	m.kept, m.keptBy = l, stamp
 	m.mu.Unlock()

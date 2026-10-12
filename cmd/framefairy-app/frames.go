@@ -169,7 +169,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	if err != nil || math.IsNaN(from) || math.IsInf(from, 0) || from < 0 {
 		from = 0
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
 	var times *engine.PreviewTimes
 	var light func() framewire.Light

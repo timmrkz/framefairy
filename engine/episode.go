@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // VideoExtensions are the files the app takes as videos: what Add's box
@@ -108,9 +110,9 @@ type EpisodeStatus struct {
 }
 
 // Status reads an episode's state from disk.
-func Status(source, asrModelDir string) EpisodeStatus {
+func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
-	info, err := os.Stat(source)
+	info, err := fsys.Stat(source)
 	if err != nil {
 		st.Missing = true
 		return st
@@ -124,22 +126,22 @@ func Status(source, asrModelDir string) EpisodeStatus {
 	}
 	model := filepath.Base(filepath.Clean(asrModelDir))
 	whole := filepath.Join(logs, TranscriptName(nil))
-	if stamp, err := stampOf(source); err == nil {
-		if file, _, _, ok := readTranscriptFile(whole, stamp, model); ok {
+	if stamp, err := stampOf(fsys, source); err == nil {
+		if file, _, _, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
 			st.Transcribed = file.done()
 			st.Heard = file.heard()
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}
-		} else if exists(whole) {
+		} else if exists(fsys, whole) {
 			st.TranscriptStale = true
 		}
 	}
-	st.MeasuredParts, st.MeasuredAll = LevelsReach(source)
+	st.MeasuredParts, st.MeasuredAll = LevelsReach(fsys, source)
 	for _, p := range st.MeasuredParts {
 		st.Measured += p[1] - p[0]
 	}
-	st.Plans = PlanSummaries(logs)
+	st.Plans = PlanSummaries(fsys, logs)
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
 			if shortOf(plan.plan, c) != "" {
@@ -148,8 +150,8 @@ func Status(source, asrModelDir string) EpisodeStatus {
 		}
 	}
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
-	st.Work = exists(work)
-	st.EverSearched = EverSearched(source)
+	st.Work = exists(fsys, work)
+	st.EverSearched = EverSearched(fsys, source)
 	return st
 }
 
@@ -159,16 +161,16 @@ func Status(source, asrModelDir string) EpisodeStatus {
 // removed again, because the timings stay, and the app searches by itself
 // only for an episode nobody has searched. Clips made by hand search
 // nothing. Deleting the work folder makes the episode new.
-func EverSearched(source string) bool {
-	for _, plan := range PlanSummaries(filepath.Join(WorkDir(source), "logs")) {
+func EverSearched(fsys afero.Fs, source string) bool {
+	for _, plan := range PlanSummaries(fsys, filepath.Join(WorkDir(source), "logs")) {
 		if w := plan.Over(0); w.End > w.Start {
 			return true
 		}
 	}
-	if ReadSearch(source) != nil {
+	if ReadSearch(fsys, source) != nil {
 		return true
 	}
-	for _, t := range ReadTimings(source) {
+	for _, t := range ReadTimings(fsys, source) {
 		if t.Kind == JobSearch {
 			return true
 		}
@@ -178,11 +180,11 @@ func EverSearched(source string) bool {
 
 // PlanSummaries lists the plan files in a logs folder, newest first. Files
 // that do not parse are left out.
-func PlanSummaries(logs string) []PlanSummary {
-	matches, _ := filepath.Glob(filepath.Join(logs, "clips*.json"))
+func PlanSummaries(fsys afero.Fs, logs string) []PlanSummary {
+	matches, _ := afero.Glob(fsys, filepath.Join(logs, "clips*.json"))
 	var out []PlanSummary
 	for _, m := range matches {
-		if s, err := summaryOf(m); err == nil {
+		if s, err := summaryOf(fsys, m); err == nil {
 			out = append(out, s)
 		}
 	}
@@ -193,15 +195,15 @@ func PlanSummaries(logs string) []PlanSummary {
 // summaryOf reads one plan file into its summary, with the plan and its
 // clips kept, so whoever lists the plans can show them without reading
 // any of them again.
-func summaryOf(m string) (PlanSummary, error) {
-	info, err := os.Stat(m)
+func summaryOf(fsys afero.Fs, m string) (PlanSummary, error) {
+	info, err := fsys.Stat(m)
 	if err != nil {
 		return PlanSummary{}, err
 	}
 	if !info.Mode().IsRegular() {
 		return PlanSummary{}, fmt.Errorf("%s is not a file", filepath.Base(m))
 	}
-	plan, clips, err := LoadClips(m)
+	plan, clips, err := LoadClips(fsys, m)
 	if err != nil {
 		return PlanSummary{}, err
 	}
@@ -240,18 +242,18 @@ func countFiles(dir, ext string) int {
 }
 
 // ScanFolder lists the episodes in a folder, not its subfolders.
-func ScanFolder(dir, asrModelDir string) ([]EpisodeStatus, error) {
-	entries, err := os.ReadDir(dir)
+func ScanFolder(fsys afero.Fs, dir, asrModelDir string) ([]EpisodeStatus, error) {
+	entries, err := afero.ReadDir(fsys, dir)
 	if err != nil {
 		return nil, err
 	}
 	var out []EpisodeStatus
 	for _, entry := range entries {
 		name := entry.Name()
-		if !entry.Type().IsRegular() || strings.HasPrefix(name, ".") || !IsVideo(name) {
+		if !entry.Mode().IsRegular() || strings.HasPrefix(name, ".") || !IsVideo(name) {
 			continue
 		}
-		out = append(out, Status(filepath.Join(dir, name), asrModelDir))
+		out = append(out, Status(fsys, filepath.Join(dir, name), asrModelDir))
 	}
 	return out, nil
 }
@@ -280,28 +282,28 @@ var ErrNoTranscript = errors.New("this video has no current transcript yet")
 // Transcript returns the whole-episode transcript from the cache. It never
 // transcribes, so it returns ErrNoTranscript if Transcribe has not run.
 func (p *Project) Transcript() (*Transcript, error) {
-	return SavedTranscript(p.Source, p.LogsDir(), p.Base.ASRModel, p.Base.SilenceDB)
+	return SavedTranscript(p.Files, p.Source, p.LogsDir(), p.Base.ASRModel, p.Base.SilenceDB)
 }
 
 // SavedTranscript reads the words already heard of an episode, as far as
 // hearing it has got, with its corrections. It never transcribes, and
 // returns ErrNoTranscript when there is nothing heard yet.
-func SavedTranscript(source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
-	stamp, err := stampOf(source)
+func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
+	stamp, err := stampOf(fsys, source)
 	if err != nil {
 		return nil, err
 	}
 	if modelDir == "" {
 		modelDir = DefaultModelDir()
 	}
-	file, words, frames, ok := readTranscriptFile(filepath.Join(logsDir, TranscriptName(nil)),
+	file, words, frames, ok := readTranscriptFile(fsys, filepath.Join(logsDir, TranscriptName(nil)),
 		stamp, filepath.Base(filepath.Clean(modelDir)))
 	if !ok {
 		return nil, ErrNoTranscript
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
 	t.Heard = file.heard()
-	t.Correct(LoadCorrections(logsDir))
+	t.Correct(LoadCorrections(fsys, logsDir))
 	return t, nil
 }
 
@@ -467,8 +469,8 @@ type PlanView struct {
 }
 
 // ReadPlan loads a plan for display.
-func ReadPlan(path string) (*PlanView, error) {
-	s, err := summaryOf(path)
+func ReadPlan(fsys afero.Fs, path string) (*PlanView, error) {
+	s, err := summaryOf(fsys, path)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +535,7 @@ func (s PlanSummary) View() *PlanView {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks)})
 		}
 		v.Rendered = shortOf(plan, c)
-		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(prev) {
+		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(disk, prev) {
 			v.Preview = prev
 		}
 		view.Clips = append(view.Clips, v)
@@ -626,9 +628,11 @@ func ownName(c Clip, name string) bool {
 // short in the folder the settings name for shorts belongs to its episode
 // as much as one in the work folder does, and nothing else in that folder
 // does, not even a file of the same name another episode wrote.
-func IsShort(source, path string) bool {
+func IsShort(fsys afero.Fs, source, path string) bool {
+	// A short is what ffmpeg wrote, so it is on the disk and its path is
+	// resolved there, whatever fsys the plans are read from, see files.go.
 	real := ResolvePath(path)
-	for _, plan := range PlanSummaries(LogsDir(source)) {
+	for _, plan := range PlanSummaries(fsys, LogsDir(source)) {
 		for _, c := range plan.clips {
 			if short := shortOf(plan.plan, c); short != "" && short == real {
 				return true
@@ -666,13 +670,14 @@ func shortStem(dir string, plan Plan, c Clip) string {
 // recordShort writes in a plan where a clip's short was rendered, see
 // shortOf: the folder and the name its path really leads to, and the
 // size and the modification time it was written with.
-func recordShort(planPath, clipID, short string) error {
+func recordShort(fsys afero.Fs, planPath, clipID, short string) error {
+	// The short is what ffmpeg wrote, so it is on the disk, see files.go.
 	real := ResolvePath(short)
 	info, err := os.Stat(real)
 	if err != nil {
 		return err
 	}
-	return editPlan(planPath, func(top *object, _ []*object) error {
+	return editPlan(fsys, planPath, func(top *object, _ []*object) error {
 		shorts, ok := top.values[keyShorts].(*object)
 		if !ok {
 			shorts = newObject()
@@ -772,8 +777,8 @@ func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
 // own clock, in the lines and the look the render uses. It is what the app
 // draws over the picture, made by ClipCaptions like the render's, so that
 // nothing about captions is decided twice.
-func ClipCaptionsView(planPath, clipID string, t *Transcript, overrides map[string]any) (*CaptionsView, error) {
-	plan, clip, err := planClip(planPath, clipID)
+func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return nil, err
 	}
@@ -790,13 +795,13 @@ type ShapedView struct {
 
 // ShapeClipView works out what a gesture makes of a clip and its captions,
 // see ShapeClip.
-func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
+func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
 	overrides map[string]any) (*ShapedView, error) {
-	shaped, err := ShapeClip(planPath, clipID, g, t, keepPause)
+	shaped, err := ShapeClip(fsys, planPath, clipID, g, t, keepPause)
 	if err != nil {
 		return nil, err
 	}
-	plan, _, err := planClip(planPath, clipID)
+	plan, _, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return nil, err
 	}
@@ -807,10 +812,10 @@ func ShapeClipView(planPath, clipID string, g Gesture, t *Transcript, keepPause 
 // where the hand has it, the words it crosses taken out or put back, and
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
-func ShapeCaptionTime(logsDir, planPath, clipID string, word float64, edge string, at float64,
+func ShapeCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
 	work := *t
-	moved, err := moveCaptionEdge(LoadCorrections(logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	moved, err := moveCaptionEdge(fsys, LoadCorrections(fsys, logsDir), planPath, clipID, word, edge, at, &work, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -818,8 +823,8 @@ func ShapeCaptionTime(logsDir, planPath, clipID string, word float64, edge strin
 }
 
 // planClip finds one clip of a plan.
-func planClip(planPath, clipID string) (Plan, Clip, error) {
-	plan, clips, err := LoadClips(planPath)
+func planClip(fsys afero.Fs, planPath, clipID string) (Plan, Clip, error) {
+	plan, clips, err := LoadClips(fsys, planPath)
 	if err != nil {
 		return Plan{}, Clip{}, err
 	}
@@ -848,7 +853,7 @@ func captionStyle(plan Plan, clip Clip, overrides map[string]any) map[string]any
 // pieces the plan builder says it keeps and the words said in them, laid
 // out the way a written clip's are, in the style of the clip set it goes
 // into. It is nil until the builder has them.
-func ArrivingCaptionsView(planPath string, u Underway, t *Transcript,
+func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcript,
 	overrides map[string]any) *CaptionsView {
 	if len(u.Pieces) == 0 {
 		return nil
@@ -860,7 +865,7 @@ func ArrivingCaptionsView(planPath string, u Underway, t *Transcript,
 	if len(Said(clip, t.Words)) == 0 {
 		return nil
 	}
-	plan, _, _ := LoadClips(planPath)
+	plan, _, _ := LoadClips(fsys, planPath)
 	return captionsView(plan, clip, t, overrides)
 }
 

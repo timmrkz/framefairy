@@ -108,7 +108,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.
-			e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+			e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
 			o := jobOptions(st, e)
 			dir := filepath.Join(engine.WorkDir(path), "captions", "preview")
 			var l framewire.Layer

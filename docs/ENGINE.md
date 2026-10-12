@@ -1461,6 +1461,9 @@ Everything else is in `engine/`:
   render.go     filter graph and ffmpeg command per clip
   encode.go     which encoder writes the H.264 in a finished short
   ffmpeg.go     running ffmpeg, preflight checks, probing
+  files.go      the file system the files of an episode are read and
+                written through, the real disk in the programs and memory
+                in the tests, and what stays on the disk whatever it is
   tools.go      where a bundled ffmpeg or llama-server is looked for first
   api.go        the APIs in the cloud, costs and usage
   provider.go   the companies in the cloud, Anthropic and OpenAI, their

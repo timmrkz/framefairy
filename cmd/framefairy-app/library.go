@@ -19,7 +19,7 @@ func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	asrDir := s.store.Settings().ASRModel
 	out := []engine.EpisodeStatus{}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, engine.Status(ep, asrDir))
+		out = append(out, engine.Status(s.store.files, ep, asrDir))
 	}
 	return out
 }
@@ -29,7 +29,7 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}
 	}
-	return engine.Status(path, s.store.Settings().ASRModel)
+	return engine.Status(s.store.files, path, s.store.Settings().ASRModel)
 }
 
 // ChooseFolder asks for a folder, the way a Mac app asks where to save
@@ -179,7 +179,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 			return errors.New("something is still running on this video and would not stop, " +
 				"so nothing was deleted. Remove the video again in a moment")
 		}
-		if err := engine.DeleteWork(path); err != nil {
+		if err := engine.DeleteWork(s.store.files, path); err != nil {
 			return err
 		}
 	}

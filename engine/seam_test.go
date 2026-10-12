@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -23,7 +25,7 @@ import (
 // at the clip's two ends and at every gap between pieces, never where one
 // piece runs straight into the next.
 func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
 	clip := Clip{Segments: []Segment{{Start: 1, End: 2.6}, {Start: 2.6, End: 4}, {Start: 5, End: 6}}}
 	graph, _, _, err := e.BuildFilterGraph(context.Background(), clip,
 		SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1},
@@ -51,8 +53,10 @@ func TestTheRenderFadesOnlyWhereSomethingIsCut(t *testing.T) {
 // through the switch. The episode is a steady tone, and a picture that
 // gets a step brighter on every frame, so a dip or a jump in the sound,
 // or a frame lost or shown twice at the switch, would show.
+//
+// On the real disk: ffmpeg reads the episode and writes the short.
 func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -61,6 +65,8 @@ func TestTwoShotsThatMeetRenderWithoutASeam(t *testing.T) {
 
 // seamless renders a clip of two shots that meet from an episode at a frame
 // rate, and checks the switch is neither seen nor heard.
+//
+// On the real disk: ffmpeg makes the episode and renders the short.
 func seamless(t *testing.T, e *Engine, rate string) {
 	ctx := context.Background()
 	dir := t.TempDir()

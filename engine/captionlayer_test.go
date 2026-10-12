@@ -36,7 +36,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 		ffmpegtest.Unusable(t, "the ffmpeg built beside the decoder is not at %s", ffmpeg)
 	}
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = ffmpeg, filepath.Join(filepath.Dir(ffmpeg), "ffprobe")
 	if _, err := e.SubtitleFilter(ctx); err != nil {
 		t.Fatalf("the built ffmpeg cannot burn captions in: %v", err)

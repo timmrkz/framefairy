@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/spf13/afero"
 )
 
 // Word corrections are kept per episode in logs/corrections.json, keyed by
@@ -32,9 +33,9 @@ func wordKey(start float64) string {
 }
 
 // LoadCorrections reads an episode's word corrections.
-func LoadCorrections(logsDir string) map[string]string {
+func LoadCorrections(fsys afero.Fs, logsDir string) map[string]string {
 	var file correctionsFile
-	data, err := os.ReadFile(correctionsPath(logsDir))
+	data, err := afero.ReadFile(fsys, correctionsPath(logsDir))
 	if err != nil || json.Unmarshal(data, &file) != nil || file.Words == nil {
 		return map[string]string{}
 	}
@@ -63,8 +64,8 @@ func CleanWordText(text string) (string, error) {
 // correction, so the word heard is still there to correct again and an
 // undo puts it back, and the words leave it out. Removing a word was
 // lost when the words became one list, because an empty word was refused.
-func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
-	return changeWords(logsDir, t, func(corrections map[string]string, work *Transcript) error {
+func SetWordText(fsys afero.Fs, logsDir string, at float64, text string, t *Transcript) error {
+	return changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
 		return correctWord(corrections, at, text, work)
 	})
 }
@@ -72,10 +73,10 @@ func SetWordText(logsDir string, at float64, text string, t *Transcript) error {
 // changeWords makes a change to the corrections of an episode, worked out
 // against a copy of its words, writes them, and then corrects t. Nothing is
 // written when the change fails or changes nothing.
-func changeWords(logsDir string, t *Transcript,
+func changeWords(fsys afero.Fs, logsDir string, t *Transcript,
 	change func(corrections map[string]string, work *Transcript) error) error {
 	trainingMu.Lock()
-	corrections := LoadCorrections(logsDir)
+	corrections := LoadCorrections(fsys, logsDir)
 	was := maps.Clone(corrections)
 	work := *t
 	err := change(corrections, &work)
@@ -83,7 +84,7 @@ func changeWords(logsDir string, t *Transcript,
 		var body []byte
 		body, err = marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
 		if err == nil {
-			err = writeAtomic(correctionsPath(logsDir), append(body, '\n'))
+			err = WriteAtomic(fsys, correctionsPath(logsDir), append(body, '\n'))
 		}
 	}
 	trainingMu.Unlock()
@@ -194,8 +195,8 @@ func putBack(heard []Cue, i int, text string) map[int]string {
 // only where it is in this caption. What is left is laid out as it was:
 // the caption goes and leaves its time empty, and the one before it goes
 // when it did, see Captions.
-func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
-	view, err := ClipCaptionsView(planPath, clipID, t, overrides)
+func RemoveCaption(fsys afero.Fs, logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
+	view, err := ClipCaptionsView(fsys, planPath, clipID, t, overrides)
 	if err != nil {
 		return err
 	}
@@ -236,7 +237,7 @@ func RemoveCaption(logsDir, planPath, clipID string, first float64, t *Transcrip
 	if len(order) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
-	return changeWords(logsDir, t, func(corrections map[string]string, work *Transcript) error {
+	return changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
 		return removeParts(corrections, work, order, whole, parts)
 	})
 }

@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -136,7 +138,7 @@ func LocalModelPath(named string) string {
 	if _, err := os.Stat(named); err == nil {
 		return named
 	}
-	if inModels := filepath.Join(ModelsDir(), named); isFile(inModels) {
+	if inModels := filepath.Join(ModelsDir(), named); isFile(disk, inModels) {
 		return inModels
 	}
 	return named
@@ -317,7 +319,8 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// The model can be loaded ahead of a search, before anything else
 		// of the episode has made its logs folder. Without the folder the
 		// log was lost, and with it the only record of what the model
-		// took from memory.
+		// took from memory. llama-server writes the log itself, so it is
+		// on the disk, see files.go.
 		if err = os.MkdirAll(logDir, 0o755); err == nil {
 			logFile, err = os.Create(filepath.Join(logDir, "llm-server.log"))
 		}
@@ -608,7 +611,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		for i, message := range messages {
 			turns[i] = "=== " + message.Role + " ===\n" + message.Content
 		}
-		_ = os.WriteFile(filepath.Join(logDir, promptFile), []byte(strings.Join(turns, "\n\n")), 0o644)
+		_ = afero.WriteFile(e.Files, filepath.Join(logDir, promptFile), []byte(strings.Join(turns, "\n\n")), 0o644)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -633,7 +636,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		// A refusal is kept to read. An answer is kept in the saved reply,
 		// with how the model got to it, so there is one file per answer.
 		if logDir != "" {
-			writeJSONText(filepath.Join(logDir, "plan-error.json"), raw)
+			writeJSONText(e.Files, filepath.Join(logDir, "plan-error.json"), raw)
 		}
 		message := fmt.Sprintf("status %d", response.StatusCode)
 		var refused chatError

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -29,7 +31,7 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 		return nil, err
 	}
 	out := []ClipEntry{}
-	for _, summary := range plansOf(path) {
+	for _, summary := range plansOf(s.store.files, path) {
 		for _, c := range summary.View().Clips {
 			out = append(out, s.entryOf(summary.Path, c, info))
 		}
@@ -42,8 +44,8 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 // clip list, the coverage and the edits over every plan need, and all
 // they need: they used to ask engine.Status, which also parses the whole
 // transcript, 71 ms on an episode of four hours, for every click.
-func plansOf(path string) []engine.PlanSummary {
-	return engine.PlanSummaries(engine.LogsDir(path))
+func plansOf(fsys afero.Fs, path string) []engine.PlanSummary {
+	return engine.PlanSummaries(fsys, engine.LogsDir(path))
 }
 
 // cropWidth is how wide the crop of a short is in the episode's pixels,
@@ -94,7 +96,7 @@ func (s *FrameFairy) Coverage(ctx context.Context, path string) (CoverageView, e
 		return CoverageView{}, err
 	}
 	out := CoverageView{Passes: []PassView{}}
-	for _, p := range engine.SearchPasses(plansOf(path), info.Duration) {
+	for _, p := range engine.SearchPasses(plansOf(s.store.files, path), info.Duration) {
 		out.Passes = append(out.Passes, PassView{From: p.Start, To: p.End, Times: p.Times})
 	}
 	return out, nil
@@ -111,7 +113,7 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ClipCaptionsView(planPath, clipID, t, s.captionOverrides(planPath))
+	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionOverrides(planPath))
 	captionTracks.keep(path, view)
 	return view, err
 }
@@ -123,7 +125,7 @@ func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
 	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
 	// The highlight colour of the settings is for a plan that was not given
 	// one of its own in the captions column, the same as the render has it.
-	plan, _, err := engine.LoadClips(planPath)
+	plan, _, err := engine.LoadClips(s.store.files, planPath)
 	if err != nil {
 		overrides["highlight_colour"] = set.HighlightColour
 	} else if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
@@ -150,7 +152,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 			// The search's own record says which pass of its window it
 			// is, and so which plan it writes.
 			rec := engine.JobRecord{From: j.From, To: j.To}
-			if r := engine.ReadSearch(j.Episode); r != nil {
+			if r := engine.ReadSearch(s.store.files, j.Episode); r != nil {
 				rec = *r
 			}
 			duration := rec.To
@@ -165,7 +167,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				view := engine.ArrivingCaptionsView(plan, u, t, s.captionOverrides(plan))
+				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionOverrides(plan))
 				captionTracks.keep(j.Episode, view)
 				return view, nil
 			}
@@ -190,7 +192,7 @@ func (s *FrameFairy) clipEntry(ctx context.Context, path, plan, clipID string) (
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	view, err := engine.ReadPlan(plan)
+	view, err := engine.ReadPlan(s.store.files, plan)
 	if err != nil {
 		return ClipEntry{}, err
 	}

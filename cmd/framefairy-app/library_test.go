@@ -15,6 +15,8 @@ import (
 // left out with the reason, and a video beside them is added. The video
 // preview would have nothing to show of them and the render nothing to
 // cut. Step 3 of docs/VIDEO-PREVIEW.md.
+//
+// On the real disk: the episode's decoder reads what is added.
 func TestAddLeavesOutWhatItsDecoderCannotDecode(t *testing.T) {
 	d := open(t)
 	good := d.episode("gut", "12")

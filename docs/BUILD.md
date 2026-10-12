@@ -83,8 +83,8 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface` and `walks` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included |
-| `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `GOSHARD=1/2` runs every other test, see `scripts/go-shard.sh`, `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does |
+| `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface and its own tests. Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
 | `make check` | what this machine has and what it still needs, with the command for each |
@@ -170,20 +170,38 @@ suite still passes on a machine without it, and fail in CI instead, see
 
 The parts that read what a model, a plan file or a caption file contains
 also have fuzz targets, named `Fuzz...` next to the ordinary tests. `make
-test` fuzzes every one of the 19 of them, because a fuzz target that only
-ever sees its seeds is not fuzzing.
+test` fuzzes every one of the 30 of them, because a fuzz target that only
+ever sees its seeds is not fuzzing. `scripts/fuzz.sh` finds them in the
+source, `sh scripts/fuzz.sh --list` says which there are. Asking go test
+for them compiled the tests of every package first, two minutes of CI's
+fuzz job before anything was fuzzed.
 
 The work is a number of executions, `FUZZTIME`, 10000 per target, and not a
 number of seconds. A count means the same thing on a fast machine and a slow
 one, so a run here and a run in CI do the same work. Go fuzzes one target per
 process, so `scripts/fuzz.sh` runs as many targets side by side as the
-machine has cores, with one worker each. That is around 50 seconds on a small
-four core machine and less on a laptop with more.
+machine has cores, with one worker each. Fuzzing builds each package again
+with coverage counters, and that build is most of a run that starts with an
+empty cache: 3 min 37 s on a small four core machine, against 1 min 42 s
+with the builds there, most of it `FuzzPlanEdits`.
 
 One target is the exception. `FuzzSimulation`, the licence dispenser's
 simulation, plays a whole history of 400 steps in one execution, a fifth
 of a second, so it does `SIMTIME` executions, 300 by default, instead of
-10000, which would be half an hour.
+10000, which would be half an hour. Its input is only the seed of a random
+generator, and one bit more is a history that has nothing to do with the
+last, so coverage cannot steer it and fuzzing it is no better than playing
+new seeds. CI leaves it to the nightly run with `SIMTIME=0`. Its known
+seeds play in every go test.
+
+An input that reaches new code is shrunk before it is kept, and Go shrinks
+for up to a minute by the clock, in executions `FUZZTIME` does not count.
+Its search tries every pair of places in the input, so a target whose
+execution takes milliseconds would shrink for the whole minute every time.
+`scripts/fuzz.sh` gives the shrinking a count too, `SHRINKTIME`, 100
+executions by default. `FuzzPlanEdits` also reads at most 32 edits of an
+input, because every edit is a plan flushed to the disk. Without the two,
+it stood still for minutes at a time in a cloud session.
 
 An input that reaches new code is shrunk before it is kept, and Go shrinks
 for up to a minute by the clock, in executions `FUZZTIME` does not count.
@@ -202,6 +220,7 @@ make test FUZZTIME=2000x        # quicker, while working on something else
 make fuzz FUZZTIME=2m           # two minutes per target, on its own
 FUZZJOBS=2 make fuzz            # leave some cores alone
 make fuzz FUZZTARGETS='FuzzSafeChild FuzzPlanEdits'   # only these
+make fuzz FUZZSHARD=2/3         # the second third of the targets
 ```
 
 Every run keeps the inputs it found interesting, in Go's build cache, and
@@ -209,6 +228,22 @@ replays them before it starts fuzzing. That is the point, they are a growing
 regression suite, but after a few days of fuzzing the replay is what a run
 mostly spends its time on. `go clean -fuzzcache`, which `make clean` also
 does, puts it back to the seeds.
+
+CI keeps that cache too, in the Actions cache under `fuzz-v1-`, with the
+packages built for fuzzing. A push to main and the nightly run save it, and
+every pull request starts from the newest. So a run goes on from where the
+last one stopped, rather than spending its 10000 executions finding the same
+easy inputs as every run before it. Should the replay ever take longer than
+the fuzzing, raise the `v1` in `ci.yml` and `fuzz-nightly.yml`, which starts
+the cache over from the seeds.
+
+`.github/workflows/fuzz-nightly.yml` is the long fuzzing, at night on main
+and by hand from the Actions tab: half a minute on every target, 600 new
+histories for the simulation, and two minutes each on a Mac for the two
+targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`,
+since the Mac's disk takes names in either case and `/var` is a link there.
+A crash fails the run and leaves the input as an artifact called
+`crashers`.
 
 A failing input is written to `engine/testdata/fuzz/`. Keep it, it is the
 test case for the bug, and it becomes a seed for every later run.
@@ -222,19 +257,25 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is eight jobs on eight machines, all at once, because none of them
+main. It is eleven jobs on eleven machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
-| `linux` | Linux | `make unit` |
-| `walks` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks` |
-| `fuzz` | Linux | `make fuzz` |
-| `macos` | macOS | the ffmpeg and the llama-server we ship, built by their scripts and kept until a script changes, then `make` with no warnings allowed, then `make unit` against that ffmpeg |
-| `outside` | macOS | `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
-| `macos-fuzz` | macOS | `make fuzz` for the two targets about paths, `FuzzSafeChild` and `FuzzKnownStaysInTheLibrary`, since the Mac's disk takes names in either case and `/var` is a link there. The rest read text and numbers, the same on both systems, and are fuzzed on Linux only |
+| `linux (1/3)` to `linux (3/3)` | Linux | `make unit GOSHARD=1/3`, `2/3` and `3/3`, every third test each, under the race detector. On one machine they took six minutes, on two one still took 5:35 |
+| `walks (1/3)` to `walks (3/3)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/3` to `3/3`, every third run each |
+| `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
+| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
+| `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+
+`linux`, `walks` and `macos` start from Go's build cache as main left it
+after its last push, one cache for each job, saved by main. A pull
+request saves its own only when it found none, for its next push. setup-go keeps the cache by `go.sum` alone and saves
+it only when `go.sum` changes, so with it a job started from a cache
+weeks old and compiled nearly everything again: a minute on Linux and
+close to two on a Mac, the episode's decoder included.
 
 When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,
@@ -243,7 +284,7 @@ log.
 
 The Go tests in `linux` and `macos` stop after 15 minutes. go test ends a
 package that runs over ten minutes by itself, and the tests take about
-five, so the limit only ever ends a run that even go test could not end.
+three, so the limit only ever ends a run that even go test could not end.
 After them, whichever way they ended, `scripts/leftovers.sh` looks for
 what they left running, ffmpeg, ffprobe, the episode's decoder,
 llama-server, a test binary or go itself. It prints each one with its
@@ -258,17 +299,18 @@ whatever changed, because a mistake in them is silent: CI would go green
 having run less than it should. Run it by hand with
 `sh scripts/ci-needs-test.sh`.
 
-Run one after another this is about six minutes. Run together the answer
-comes when the slowest one does, which is the macOS build and tests.
+Run together the answer comes when the slowest one does, and no job may
+take over five minutes, see Keeping the tests quick in CLAUDE.md. A job
+that grows past it is split over machines, the way `linux` is.
 
-Nothing is left out to make it quick. Every test that ran before still runs,
-on the same platforms, under the race detector, with the same `FUZZTIME`.
-The two fuzz targets about paths are fuzzed on both platforms, because a
-case-insensitive filesystem is a different thing to explore. The others
-are fuzzed on Linux only: they read text and numbers, which Go reads the
-same on both, and macOS machines are the few GitHub has, so the build of
-the app waited behind fuzzing that could find nothing new there. Their
-known inputs still run on macOS, in `make unit`.
+Nothing is left out to make it quick. Every test runs on Linux under the
+race detector, with the same `FUZZTIME`, and every test of what runs on a
+Mac runs on a Mac too. The account runs five Mac jobs at once for every
+branch together, so a push takes two, `macos` and `outside`, and the app is
+built once there. The two fuzz targets about paths are fuzzed on a Mac at
+night, because a case-insensitive filesystem is a different thing to
+explore. The others read text and numbers, which Go reads the same on
+both. The known inputs of every target run on a Mac in `make unit`.
 
 ### What runs for a change
 
@@ -318,6 +360,19 @@ path before did not. `TestNoTestSkipsForFFmpegByItself` reads every test
 file and fails on a skip whose reason or condition is about ffmpeg,
 ffprobe, `Preflight`, `SubtitleFilter` or `VideoEncoder` that does not go
 through the package, so a new test cannot skip silently again.
+
+**A test goes to the real disk only when it says why.** Our own files,
+plans, transcripts, job records, the library and the training records,
+are read and written through an `afero.Fs`, see `engine/files.go`, and a
+test hands it memory. A test that cannot, because ffmpeg or another
+program reads its files, or because a link or a lock on the disk is what
+it tests, says so in a comment that starts with "On the real disk", on
+the function itself. A reason at the top of a file does not count, since
+it would also cover the tests added to the file later. `TestTestsStayOffTheDisk` in
+`internal/offdisk` reads every test file and fails on a function that
+calls `t.TempDir`, a file function of `os`, `afero.NewOsFs` or the
+engine's `disk` without one. It imports none of the files it reads, so
+`make changed` runs it whenever a test file changed.
 
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a
@@ -462,8 +517,9 @@ through Apple's CoreML, with more or fewer threads, in pieces of different
 lengths, one or two pieces at a time, and prints how fast each was and how
 many words came out unlike the processor's. It uses the speech model in
 `~/.framefairy/models`. The workflow `.github/workflows/speechbench.yml`
-runs the same on the macOS runner with a recorded talk, when the speech
-code changes or by hand.
+runs the same on the macOS runner with a recorded talk, only when it is
+started by hand, from the Actions tab or through the GitHub API, so a
+session in the cloud can measure a Mac without one.
 
 A second table hears the same speech with several copies of the model at
 once, each taking the next piece as it finishes one, which is how an

@@ -520,6 +520,8 @@ type bridge struct {
 // use, so nothing reaches the network. Every channel has a build newer
 // than the one running, which downloads in a moment. The app opened again
 // has none, the way the bridge started.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 	for _, ch := range append(append([]string{from, stored}, list...), conflict...) {
 		if ch != "" && !updates.ValidChannel(ch) {
@@ -578,6 +580,8 @@ func (b *bridge) held(name string) time.Duration {
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
 // one episode in it, heard and searched, so the workspace has a clip.
+//
+// On the real disk: ffmpeg makes the episode, and ffmpeg and the episode's decoder read it.
 func openBridge(t *testing.T) *bridge {
 	t.Helper()
 	d := open(t)
@@ -589,9 +593,26 @@ func openBridge(t *testing.T) *bridge {
 		o.Preset = "ultrafast"
 	}
 	standIns.Store(&fakes)
+	// Dictate on Report a Problem records two seconds of a hum, then a
+	// pause and a second and a half more, four times over, as fast as it
+	// would be said, which the stand-in hears as words: what came before a
+	// pause is settled while the recording runs, and there is more to be
+	// heard for 12 s. A busy runner reached a click into the words being
+	// heard only once the last of a shorter one was heard, and then
+	// nothing more came.
+	openMicrophone = func() microphone {
+		talk := tone(2)
+		for range 4 {
+			talk = slices.Concat(talk, hush(1), tone(1.5))
+		}
+		return &playingMicrophone{samples: talk, live: true}
+	}
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
 	d.bus = newBus()
+	// A recording nobody talks into stops by itself after 8 s rather than
+	// 2 minutes, long after every sequence that stops it by hand.
+	d.quiet = 8 * time.Second
 	d.start(d.svc.store)
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		holds: map[string]time.Duration{}}
@@ -769,6 +790,8 @@ func makeFilmedEpisode(path string, seconds int, rate, timing string) error {
 // the frame number's bands run down its right side, and rotated a quarter
 // to the left in the app they run across its top again, where a short of
 // it is read. Plan row 3.25.
+//
+// On the real disk: ffmpeg makes the episode and turns it.
 func makeTurnedEpisode(path string, seconds int, rate string) error {
 	lying := path + ".lying.mp4"
 	defer os.Remove(lying)
@@ -786,6 +809,8 @@ func makeTurnedEpisode(path string, seconds int, rate string) error {
 // intoMatroska copies a video's streams into Matroska beside it, under
 // the same name ending in .mkv, and removes the MP4. A picture that starts
 // late by an edit list starts late by its first timestamp there.
+//
+// On the real disk: ffmpeg copies the video into Matroska.
 func intoMatroska(path string) (string, error) {
 	mkv := strings.TrimSuffix(path, filepath.Ext(path)) + ".mkv"
 	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-i", path, "-map", "0", "-c", "copy", mkv).CombinedOutput()
@@ -807,6 +832,8 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // own kind is filmed by two cameras that switch then, see twoCameras, and
 // with hevc it is HEVC with 10-bit colour. With mkv it is the same video
 // in Matroska, the way OBS records, its streams copied as they are.
+//
+// On the real disk: ffmpeg makes the video the app adds.
 func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
@@ -898,6 +925,8 @@ func (b *bridge) reopen() ([]Job, error) {
 // Every walk starts from the same place, and a seed walks the same way
 // every time: a video it adds is heard with the same words, however many
 // words the walks before it had heard.
+//
+// On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)
@@ -934,6 +963,8 @@ func (b *bridge) reset() error {
 }
 
 // bridgeDist is where the interface built for the bridge is.
+//
+// On the real disk: the interface for the bridge is a folder the build wrote.
 func bridgeDist(t *testing.T) string {
 	t.Helper()
 	dist, err := filepath.Abs("../../frontend/preview/dist-bridge")
@@ -977,6 +1008,8 @@ func bridgeDist(t *testing.T) string {
 // walks go first, since each takes most of a minute, and the sequences,
 // most of them a few seconds long, fill in behind them, so no bridge is
 // left with a long run once the others are done.
+//
+// On the real disk: Node runs the walks against the interface the build wrote.
 func TestWalks(t *testing.T) {
 	if os.Getenv("FRAMEFAIRY_WALKS") == "" {
 		t.Skip("make walks runs these")
@@ -1022,6 +1055,15 @@ func TestWalks(t *testing.T) {
 	}
 	for _, name := range sequenceNames(t, node, walks) {
 		runs = append(runs, walkRun{"sequences.mjs", []string{"SEQUENCE=" + name}})
+	}
+
+	// One share of the runs when CI spreads them over machines,
+	// WALKSHARD=1/2: every nth run from the ith on. The walks come first,
+	// so each share gets as many walks as the others, and the sequences
+	// behind them.
+	runs = shareOf(t, runs, os.Getenv("WALKSHARD"))
+	if len(runs) == 0 {
+		t.Skip("this share has no runs")
 	}
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
@@ -1103,6 +1145,8 @@ func startBridge(t *testing.T) (string, error) {
 
 // walkScripts are the walks in the folder: every script that walks with
 // walk.mjs, so a new walk runs without being named anywhere else.
+//
+// On the real disk: the walks are the scripts in frontend/preview/walks.
 func walkScripts(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -1145,9 +1189,50 @@ func sequenceNames(t *testing.T, node, dir string) []string {
 	return names
 }
 
+// shareOf gives share i of n of all, "i/n", every nth from the ith on, or
+// all of them when share is empty.
+func shareOf[T any](t *testing.T, all []T, share string) []T {
+	t.Helper()
+	if share == "" {
+		return all
+	}
+	var i, n int
+	if _, err := fmt.Sscanf(share, "%d/%d", &i, &n); err != nil || n < 1 || i < 1 || i > n {
+		t.Fatalf("WALKSHARD is i/n, like 1/2, not %q", share)
+	}
+	var mine []T
+	for k, x := range all {
+		if k%n == i-1 {
+			mine = append(mine, x)
+		}
+	}
+	return mine
+}
+
 func envNumber(name string, otherwise int) int {
 	if n, err := strconv.Atoi(os.Getenv(name)); err == nil && n > 0 {
 		return n
 	}
 	return otherwise
+}
+
+// Split two ways or three, the shares of the walks hold every run once.
+func TestTheSharesOfTheWalksHoldEveryRunOnce(t *testing.T) {
+	all := []int{0, 1, 2, 3, 4, 5, 6}
+	for _, n := range []int{1, 2, 3} {
+		seen := map[int]int{}
+		for i := 1; i <= n; i++ {
+			for _, x := range shareOf(t, all, fmt.Sprintf("%d/%d", i, n)) {
+				seen[x]++
+			}
+		}
+		for _, x := range all {
+			if seen[x] != 1 {
+				t.Errorf("split %d ways, run %d is in %d shares", n, x, seen[x])
+			}
+		}
+	}
+	if got := shareOf(t, all, ""); len(got) != len(all) {
+		t.Errorf("with no share, %d runs of %d", len(got), len(all))
+	}
 }

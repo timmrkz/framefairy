@@ -5,8 +5,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"log/slog"
 	"math"
 	"os"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -25,100 +29,174 @@ import (
 // counts on the same grid and reads nothing of the file itself, so a
 // Matroska file plays as an MP4 does. Plan row 2.198,
 // docs/VIDEO-PREVIEW.md step 5.
+//
+// On the real disk: the frames decoder reads the episode.
 func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, c := range timesCases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			source := timesEpisode(t, c)
-			info, err := e.Probe(context.Background(), source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			grid := info.Grid()
-			if got := info.FPSString(); c.rate != "" && got != c.rate {
-				t.Errorf("the grid has %s frames a second, the short %s", got, c.rate)
-			}
-			if info.SoundRate != 48000 || info.SoundChannels != 1 {
-				t.Errorf("the sound is %d Hz in %d channels, want 48000 in 1", info.SoundRate, info.SoundChannels)
-			}
-			// The grid starts inside the file, at most a frame before the
-			// picture, and reaches its end.
-			frame := float64(grid.Den) / float64(grid.Num)
-			if k := (info.VideoStart - grid.Start) / frame; grid.Start < 0 || grid.Start >= frame || math.Abs(k-math.Round(k)) > 1e-6 {
-				t.Errorf("the grid starts at %.4f, the picture at %.4f", grid.Start, info.VideoStart)
-			}
-			if end := grid.At(grid.Count); end < info.Duration-1e-6 || end-frame >= info.Duration {
-				t.Errorf("the grid ends at %.4f, the file at %.4f", end, info.Duration)
-			}
-			// The file is as long as it was made, one that does not say
-			// how long it is too.
-			if made := float64(max(c.seconds, 7)); info.Duration < made-0.1 || info.Duration > made+0.3 {
-				t.Errorf("the file is %.3f s long, it was made %.0f s long", info.Duration, made)
-			}
-			holds := frameHolding(t, source)
-			dec := NewEpisodeFrames(program, source)
-			defer dec.Close()
-			const w, h = 64, 36
-			// The whole grid, from the start.
-			var got []int
-			err = dec.Stream(context.Background(), grid, 0, w, h, func(at float64, data []byte) error {
-				r := len(got)
-				if math.Abs(at-grid.At(r)) > 1e-9 {
-					t.Fatalf("frame %d of the grid came at %.6f, its moment is %.6f", r, at, grid.At(r))
-				}
-				got = append(got, previewBars(data, w, h))
-				return nil
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(got) != grid.Count {
-				t.Fatalf("the decoder gave %d frames, the grid has %d", len(got), grid.Count)
-			}
-			wrong := 0
-			for r, n := range got {
-				if want := holds(grid.At(r)); n != want {
-					if wrong++; wrong <= 6 {
-						t.Errorf("frame %d of the grid, %.4f s, shows frame %d of the episode, the one that holds it is %d",
-							r, grid.At(r), n, want)
-					}
-				}
-			}
-			if wrong > 6 {
-				t.Errorf("and %d more frames are the wrong frame", wrong-6)
-			}
-			// From a jump to the edges of pieces, and inside a frame: the
-			// frame that holds the moment and the ones after it.
-			for _, from := range []float64{0.2, 1.25, 3.05, 3.3, 5.3, 2.0021} {
-				first := grid.Holding(from)
-				var near []int
-				err := dec.Stream(context.Background(), grid, from, w, h, func(at float64, data []byte) error {
-					if r := first + len(near); math.Abs(at-grid.At(r)) > 1e-9 {
-						t.Fatalf("from %.4f frame %d came at %.6f, want %.6f", from, len(near), at, grid.At(r))
-					}
-					near = append(near, previewBars(data, w, h))
-					if len(near) == 5 {
-						return errStop
-					}
-					return nil
-				})
-				if err != nil && !errors.Is(err, errStop) {
-					t.Fatalf("from %.4f: %v", from, err)
-				}
-				for i, n := range near {
-					if want := holds(grid.At(first + i)); n != want {
-						t.Errorf("from %.4f, frame %d of the grid shows %d, the one that holds it is %d", from, first+i, n, want)
-					}
-				}
-			}
+			previewShowsTheShort(t, e, program, c, false)
 		})
+	}
+}
+
+// The video preview goes on when the graphics chip fails to decode a
+// frame, which VideoToolbox does now and then on a virtual Mac: CI's
+// failed one run in four, "hardware accelerator failed to decode
+// picture", on what OBS records and on MPEG-TS, and the cursor failed with
+// it. The episode's decoder is made to fail on the third packet of every
+// open, the first stream and every jump, whatever it decodes on, and has
+// to say so and go on with the processor from the frame it is at. On
+// Linux that proves the reopen under the race detector, and on a Mac the
+// way from the chip's failure to it as well. Plan row 2.215.
+//
+// On the real disk: the frames decoder reads the episode.
+func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	for _, c := range timesCases {
+		if c.name == "obs_mkv" || c.name == "mpegts" {
+			t.Run(c.name, func(t *testing.T) {
+				t.Parallel()
+				previewShowsTheShort(t, e, program, c, true)
+			})
+		}
+	}
+}
+
+// previewShowsTheShort is TestTheVideoPreviewShowsTheFramesOfTheShort on
+// the episode of one case, with the decoder made to fail in every open
+// where failing says so.
+func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, failing bool) {
+	t.Helper()
+	source := timesEpisode(t, c)
+	info, err := e.Probe(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grid := info.Grid()
+	if got := info.FPSString(); c.rate != "" && got != c.rate {
+		t.Errorf("the grid has %s frames a second, the short %s", got, c.rate)
+	}
+	if info.SoundRate != 48000 || info.SoundChannels != 1 {
+		t.Errorf("the sound is %d Hz in %d channels, want 48000 in 1", info.SoundRate, info.SoundChannels)
+	}
+	// The grid starts inside the file, at most a frame before the
+	// picture, and reaches its end.
+	frame := float64(grid.Den) / float64(grid.Num)
+	if k := (info.VideoStart - grid.Start) / frame; grid.Start < 0 || grid.Start >= frame || math.Abs(k-math.Round(k)) > 1e-6 {
+		t.Errorf("the grid starts at %.4f, the picture at %.4f", grid.Start, info.VideoStart)
+	}
+	if end := grid.At(grid.Count); end < info.Duration-1e-6 || end-frame >= info.Duration {
+		t.Errorf("the grid ends at %.4f, the file at %.4f", end, info.Duration)
+	}
+	// The file is as long as it was made, one that does not say
+	// how long it is too.
+	if made := float64(max(c.seconds, 7)); info.Duration < made-0.1 || info.Duration > made+0.3 {
+		t.Errorf("the file is %.3f s long, it was made %.0f s long", info.Duration, made)
+	}
+	holds := frameHolding(t, source)
+	dec := NewEpisodeFrames(program, source)
+	defer dec.Close()
+	var heardMu sync.Mutex
+	var heard []string
+	dec.heard = func(_ slog.Level, line string) {
+		heardMu.Lock()
+		heard = append(heard, line)
+		heardMu.Unlock()
+	}
+	if failing {
+		dec.env = []string{"FRAMEFAIRY_FRAMES_FAIL_AFTER=3"}
+	}
+	streams := 0
+	const w, h = 64, 36
+	// The whole grid, from the start.
+	var got []int
+	streams++
+	err = dec.Stream(context.Background(), grid, 0, w, h, func(at float64, data []byte) error {
+		r := len(got)
+		if math.Abs(at-grid.At(r)) > 1e-9 {
+			t.Fatalf("frame %d of the grid came at %.6f, its moment is %.6f", r, at, grid.At(r))
+		}
+		got = append(got, previewBars(data, w, h))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != grid.Count {
+		t.Fatalf("the decoder gave %d frames, the grid has %d", len(got), grid.Count)
+	}
+	wrong := 0
+	for r, n := range got {
+		if want := holds(grid.At(r)); n != want {
+			if wrong++; wrong <= 6 {
+				t.Errorf("frame %d of the grid, %.4f s, shows frame %d of the episode, the one that holds it is %d",
+					r, grid.At(r), n, want)
+			}
+		}
+	}
+	if wrong > 6 {
+		t.Errorf("and %d more frames are the wrong frame", wrong-6)
+	}
+	// From a jump to the edges of pieces, and inside a frame: the
+	// frame that holds the moment and the ones after it.
+	for _, from := range []float64{0.2, 1.25, 3.05, 3.3, 5.3, 2.0021} {
+		first := grid.Holding(from)
+		var near []int
+		streams++
+		err := dec.Stream(context.Background(), grid, from, w, h, func(at float64, data []byte) error {
+			if r := first + len(near); math.Abs(at-grid.At(r)) > 1e-9 {
+				t.Fatalf("from %.4f frame %d came at %.6f, want %.6f", from, len(near), at, grid.At(r))
+			}
+			near = append(near, previewBars(data, w, h))
+			if len(near) == 5 {
+				return errStop
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatalf("from %.4f: %v", from, err)
+		}
+		for i, n := range near {
+			if want := holds(grid.At(first + i)); n != want {
+				t.Errorf("from %.4f, frame %d of the grid shows %d, the one that holds it is %d", from, first+i, n, want)
+			}
+		}
+	}
+	// What the decoder said, all of it in once it stopped. Every time the
+	// chip failed is in the test's log with ffmpeg's reason, and the
+	// frames above say whether the processor read the file right.
+	dec.Close()
+	heardMu.Lock()
+	defer heardMu.Unlock()
+	fellBack, onChip := 0, false
+	for _, line := range heard {
+		if strings.Contains(line, "decodes on the processor for the rest of this open") {
+			fellBack++
+			t.Logf("%s", line)
+		}
+		onChip = onChip || strings.Contains(line, "decodes on the graphics chip")
+	}
+	if failing && fellBack < streams {
+		t.Errorf("the decoder went on with the processor %d times in %d streams, made to fail in each", fellBack, streams)
+	}
+	// A fallback must not hide a chip that never decodes: on a Mac the
+	// chip decodes H.264.
+	if runtime.GOOS == "darwin" && c.gop > 0 && !onChip {
+		t.Errorf("the graphics chip decoded none of this H.264, the decoder said:\n%s", strings.Join(heard, "\n"))
 	}
 }
 

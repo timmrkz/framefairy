@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/spf13/afero"
 )
 
 // ---------------------------------------------------------------------------
@@ -161,7 +163,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 	}
 	// A set that grows numbers on from the clips it has.
 	if opts.Grows && opts.PlanPath != "" {
-		b.base = lastNumber(opts.PlanPath, b.prefix)
+		b.base = lastNumber(e.Files, opts.PlanPath, b.prefix)
 	}
 	for range framers {
 		b.done.Add(1)
@@ -857,7 +859,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 	if path := b.opts.PlanPath; path != "" {
 		if b.opts.Grows {
 			set := PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID, PlannedWith: b.stamp}
-			added, err := addClip(path, set, clip, b.prefix)
+			added, err := addClip(b.e.Files, path, set, clip, b.prefix)
 			if err != nil {
 				return err
 			}
@@ -886,11 +888,11 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 			if err != nil {
 				return err
 			}
-			if err := writePlanFile(path, body); err != nil {
+			if err := writePlanFile(b.e.Files, path, body); err != nil {
 				return err
 			}
 			b.written = true
-		} else if err := appendClip(path, clip); err != nil {
+		} else if err := appendClip(b.e.Files, path, clip); err != nil {
 			switch {
 			case os.IsNotExist(err):
 				// The plan was removed while the search ran. Nothing more
@@ -933,7 +935,7 @@ func (b *planBuilder) none() error {
 	if err != nil {
 		return err
 	}
-	if err := writePlanFile(path, body); err != nil {
+	if err := writePlanFile(b.e.Files, path, body); err != nil {
 		return err
 	}
 	b.written = true
@@ -949,7 +951,7 @@ func (b *planBuilder) settle(planID string) error {
 	if planID == "" || planID == b.planID || !b.written || b.gone || b.opts.PlanPath == "" {
 		return nil
 	}
-	err := editPlan(b.opts.PlanPath, func(top *object, _ []*object) error {
+	err := editPlan(b.e.Files, b.opts.PlanPath, func(top *object, _ []*object) error {
 		top.set(keyPlanID, planID)
 		return nil
 	})
@@ -962,8 +964,8 @@ func (b *planBuilder) settle(planID string) error {
 // lastNumber is the highest number among the ids in a clip set that begin
 // with prefix, or 0 for a set that is not there yet. A set that grows gives
 // its next clip the number after it.
-func lastNumber(path, prefix string) int {
-	_, clips, err := LoadClips(path)
+func lastNumber(fsys afero.Fs, path, prefix string) int {
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		return 0
 	}

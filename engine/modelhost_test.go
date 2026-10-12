@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // standIn replaces llama-server for a test: it counts the servers started
@@ -69,7 +71,9 @@ func useStandIn(t *testing.T, loading time.Duration) *standIn {
 	return s
 }
 
-func quietEngine() *Engine { return NewEngine(NewLog(io.Discard, false, false)) }
+func quietEngine() *Engine {
+	return NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+}
 
 var gemma = LocalModel{Model: "gemma"}
 

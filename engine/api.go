@@ -9,12 +9,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // The addresses this tool contacts are the providers' in provider.go,
@@ -145,12 +146,12 @@ func keychain(ctx context.Context, args ...string) (result, bool) {
 
 // writeJSONText writes a JSON string indented, so a log file can be read by
 // a person.
-func writeJSONText(path string, body []byte) {
+func writeJSONText(fsys afero.Fs, path string, body []byte) {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, body, "", "  "); err == nil {
 		body = pretty.Bytes()
 	}
-	_ = os.WriteFile(path, body, 0o644)
+	_ = afero.WriteFile(fsys, path, body, 0o644)
 }
 
 // httpClient never follows redirects. A redirect would resend the key header
@@ -268,7 +269,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			if err == nil {
 				body, _ := json.Marshal(data)
 				if logDir != "" {
-					writeJSONText(filepath.Join(logDir, tag+"-response.json"), body)
+					writeJSONText(e.Files, filepath.Join(logDir, tag+"-response.json"), body)
 				}
 				if attempt > 1 {
 					e.Log.OK("the API answered on attempt %d", attempt)
@@ -319,7 +320,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		if response.StatusCode < 200 || response.StatusCode > 299 {
 			detail := strings.ToValidUTF8(string(body), "\uFFFD")
 			if logDir != "" {
-				writeJSONText(filepath.Join(logDir, fmt.Sprintf("%s-error-%d.json", tag, attempt)), body)
+				writeJSONText(e.Files, filepath.Join(logDir, fmt.Sprintf("%s-error-%d.json", tag, attempt)), body)
 			}
 			if strings.Contains(detail, prefillRejected) && e.Prefill {
 				e.Prefill = false
@@ -358,7 +359,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 		}
 
 		if logDir != "" {
-			writeJSONText(filepath.Join(logDir, tag+"-response.json"), body)
+			writeJSONText(e.Files, filepath.Join(logDir, tag+"-response.json"), body)
 		}
 		if attempt > 1 {
 			e.Log.OK("the API answered on attempt %d", attempt)
@@ -411,8 +412,8 @@ type usageRecord struct {
 	Output int    `json:"output"`
 }
 
-func loadUsage(logDir string) ([]json.RawMessage, bool) {
-	data, err := os.ReadFile(filepath.Join(logDir, "usage.json"))
+func loadUsage(fsys afero.Fs, logDir string) ([]json.RawMessage, bool) {
+	data, err := afero.ReadFile(fsys, filepath.Join(logDir, "usage.json"))
 	if err != nil {
 		return nil, false
 	}
@@ -426,11 +427,11 @@ func loadUsage(logDir string) ([]json.RawMessage, bool) {
 // recordUsage remembers what a call actually cost, so the next estimate is
 // not a guess. Entries are tagged by which call it was, because planning and
 // other calls can have output sizes an order of magnitude apart.
-func recordUsage(logDir string, chars int, data *apiReply, tag string) {
+func recordUsage(fsys afero.Fs, logDir string, chars int, data *apiReply, tag string) {
 	if logDir == "" || data.Usage.InputTokens <= 0 {
 		return
 	}
-	history, _ := loadUsage(logDir)
+	history, _ := loadUsage(fsys, logDir)
 	entry, _ := json.Marshal(usageRecord{tag, chars, data.Usage.InputTokens, data.Usage.OutputTokens})
 	history = append(history, entry)
 	if len(history) > 40 {
@@ -440,17 +441,17 @@ func recordUsage(logDir string, chars int, data *apiReply, tag string) {
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(logDir, 0o755)
-	_ = os.WriteFile(filepath.Join(logDir, "usage.json"), body, 0o644)
+	_ = fsys.MkdirAll(logDir, 0o755)
+	_ = afero.WriteFile(fsys, filepath.Join(logDir, "usage.json"), body, 0o644)
 }
 
 // estimateUsage gives expected input and output tokens for this kind of call,
 // measured where possible. Only past calls of the same kind count.
-func estimateUsage(logDir string, chars int, tag string) (int, int, bool) {
+func estimateUsage(fsys afero.Fs, logDir string, chars int, tag string) (int, int, bool) {
 	var ratios, outputs []float64
 	count := 0
 	if logDir != "" {
-		history, _ := loadUsage(logDir)
+		history, _ := loadUsage(fsys, logDir)
 		for _, raw := range history {
 			var h usageEntry
 			if err := json.Unmarshal(raw, &h); err != nil {
@@ -640,12 +641,12 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		heard = &copied
 	}
 	if logDir != "" {
-		if err := os.MkdirAll(logDir, 0o755); err != nil {
+		if err := e.Files.MkdirAll(logDir, 0o755); err != nil {
 			return "", err
 		}
 		// The whole request, not half of it, so the log shows what the model
 		// was actually asked.
-		_ = os.WriteFile(filepath.Join(logDir, tag+"-prompt.txt"),
+		_ = afero.WriteFile(e.Files, filepath.Join(logDir, tag+"-prompt.txt"),
 			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644)
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
@@ -657,7 +658,7 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		return "", err
 	}
 	e.reportUsage(data, time.Since(started).Seconds(), model)
-	recordUsage(logDir, runeLen(prompt), data, tag)
+	recordUsage(e.Files, logDir, runeLen(prompt), data, tag)
 
 	text := replyText(data)
 	if strip(text) == "" {

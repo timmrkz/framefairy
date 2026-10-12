@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -20,6 +22,7 @@ import (
 // to them. Every call that takes a path is a way in, so every one of them
 // is tried here with a path that is not the library's.
 
+// On the real disk: the tests of links in the library need a library on the disk.
 func library(t *testing.T) (*FrameFairy, string, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -38,6 +41,7 @@ func library(t *testing.T) (*FrameFairy, string, string) {
 	return svc, mine, home
 }
 
+// On the real disk: what is tested is that nothing is written on the disk beside a file outside the library.
 func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	svc, _, home := library(t)
 	ctx := context.Background()
@@ -111,6 +115,8 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 
 // A link inside a work folder points wherever it likes. What is served has
 // to be what it says it is, so the link is followed before it is judged.
+//
+// On the real disk: what is tested is a link on the disk.
 func TestTheFramesRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 	svc, mine, home := library(t)
 	secret := filepath.Join(home, "secret.txt")
@@ -142,6 +148,8 @@ func TestTheFramesRouteDoesNotFollowLinksOutOfTheLibrary(t *testing.T) {
 // can carry episode.mp4 with an episode.framefairy that leads to the
 // home folder, and every file there was the episode's: Known said yes to
 // a key in ~/.ssh and the route that served files then served it.
+//
+// On the real disk: what is tested is a link on the disk.
 func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 	svc, mine, home := library(t)
 	secret := filepath.Join(home, "secret.txt")
@@ -194,6 +202,8 @@ func TestALinkedWorkFolderOrVideoIsNoEpisode(t *testing.T) {
 }
 
 // The frames route is for files. A folder of an episode is no video.
+//
+// On the real disk: the frames route looks at the file on the disk, where the frames decoder reads it.
 func TestTheFramesRouteTakesFilesOnly(t *testing.T) {
 	svc, mine, _ := library(t)
 	work := engine.WorkDir(mine)
@@ -212,6 +222,8 @@ func TestTheFramesRouteTakesFilesOnly(t *testing.T) {
 
 // The frames route decodes only a file of an episode in the library, and
 // only to a size it can make.
+//
+// On the real disk: the frames decoder reads the episode.
 func TestTheFramesRouteServesKnownEpisodesOnly(t *testing.T) {
 	svc, mine, _ := library(t)
 	work := engine.WorkDir(mine)
@@ -280,9 +292,10 @@ func TestAJobThatPanicsOnlyFailsItself(t *testing.T) {
 // extension. Two files that would share one cannot both be in the library,
 // or they would share a transcript, clip sets and rendered names.
 func TestTwoEpisodesCannotShareAWorkFolder(t *testing.T) {
-	svc, mine, home := library(t)
-	twin := filepath.Join(home, "ep.mov")
-	if err := os.WriteFile(twin, []byte("the same episode, another wrapper"), 0o644); err != nil {
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	mine := eps[0]
+	twin := filepath.Join(filepath.Dir(mine), "ep.mov")
+	if err := afero.WriteFile(svc.store.files, twin, []byte("the same episode, another wrapper"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if engine.WorkDir(twin) != engine.WorkDir(mine) {
@@ -307,20 +320,17 @@ func TestTwoEpisodesCannotShareAWorkFolder(t *testing.T) {
 // words and the wrong history. A file of the episode's own that is not in
 // its logs folder is no plan of it either.
 func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
-	svc, mine, home := library(t)
+	svc, eps := memoryLibrary(t, "ep.mp4", "theirs.mp4")
+	svc.jobs = newQueue(svc.store, func(JobUpdate) {}, func(string) {})
+	t.Cleanup(func() { svc.jobs.shutDown() })
+	files := svc.store.files
 	ctx := context.Background()
-	theirs := filepath.Join(home, "theirs.mp4")
-	if err := os.WriteFile(theirs, []byte("video"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.store.AddEpisodes([]string{theirs}); err != nil {
-		t.Fatal(err)
-	}
+	mine, theirs := eps[0], eps[1]
 	plan := `{"clips": [{"id": "01", "start": 0, "end": 20, "title": "t"}]}`
 	logs := filepath.Join(engine.WorkDir(theirs), "logs")
 	notLogs := filepath.Join(engine.WorkDir(mine), "captions")
 	for _, dir := range []string{logs, notLogs} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := files.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -328,7 +338,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		filepath.Join(logs, "clips-0-600.json"),
 		filepath.Join(notLogs, "clips-0-600.json"),
 	} {
-		if err := os.WriteFile(wrong, []byte(plan), 0o644); err != nil {
+		if err := afero.WriteFile(files, wrong, []byte(plan), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		g := engine.Gesture{Kind: "trim", Edge: "start", From: 1}
@@ -357,7 +367,7 @@ func TestAPlanIsOnlyEditedWithItsOwnEpisode(t *testing.T) {
 		if job := svc.Render(mine, engine.RenderRequest{Plan: wrong}); job.State != JobFailed {
 			t.Errorf("Render took %s for a plan of %s: %s", wrong, mine, job.State)
 		}
-		if got, _ := os.ReadFile(wrong); string(got) != plan {
+		if got, _ := afero.ReadFile(files, wrong); string(got) != plan {
 			t.Errorf("%s was written to: %s", wrong, got)
 		}
 	}
