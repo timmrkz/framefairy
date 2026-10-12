@@ -154,6 +154,13 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // not be the one that disappears.
 var fileLocks sync.Map
 
+// fileKey names a file for its lock: the file system it is in, nil for
+// the disk, and where it really is there.
+type fileKey struct {
+	fsys afero.Fs
+	path string
+}
+
 // lockFile holds the lock of the file at path until the function it
 // returns is called. Edits are one at a time inside the program, and one
 // program at a time as well, the command line and the app, see
@@ -162,15 +169,20 @@ var fileLocks sync.Map
 // system.
 //
 // A file in memory has no other program to share it with, so its lock is
-// the one inside the program alone.
+// the one inside the program alone, and it is the lock of that memory's
+// file: two tests that each hold a plan at the same path in their own
+// memory do not wait for each other. Every OsFs is the one disk.
 func lockFile(fsys afero.Fs, path string) func() {
-	key := ResolveIn(fsys, path)
+	key := fileKey{path: ResolveIn(fsys, path)}
+	if !OnDisk(fsys) {
+		key.fsys = fsys
+	}
 	held, _ := fileLocks.LoadOrStore(key, &sync.Mutex{})
 	mu := held.(*sync.Mutex)
 	mu.Lock()
 	release := func() {}
 	if OnDisk(fsys) {
-		release = lockAcrossProcesses(key)
+		release = lockAcrossProcesses(key.path)
 	}
 	return func() {
 		release()

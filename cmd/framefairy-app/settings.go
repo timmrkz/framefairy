@@ -160,6 +160,8 @@ func (s *store) load(name string, into any) {
 	}
 }
 
+// save writes a file of the store whole and flushed, the way the engine
+// writes its own, so a crash never leaves the library half written.
 func (s *store) save(name string, value any) error {
 	if err := s.files.MkdirAll(s.dir, 0o755); err != nil {
 		return err
@@ -168,12 +170,7 @@ func (s *store) save(name string, value any) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(s.dir, name)
-	tmp := path + ".tmp"
-	if err := afero.WriteFile(s.files, tmp, body, 0o644); err != nil {
-		return err
-	}
-	return s.files.Rename(tmp, path)
+	return engine.WriteAtomic(s.files, filepath.Join(s.dir, name), body)
 }
 
 func (s *store) Settings() Settings {

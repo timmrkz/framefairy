@@ -363,7 +363,8 @@ it tests, says so in a comment that starts with "On the real disk", on
 the function or at the top of its file. `TestTestsStayOffTheDisk` in
 `internal/offdisk` reads every test file and fails on a function that
 calls `t.TempDir`, a file function of `os`, `afero.NewOsFs` or the
-engine's `disk` without one.
+engine's `disk` without one. It imports none of the files it reads, so
+`make changed` runs it whenever a test file changed.
 
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a

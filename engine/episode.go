@@ -629,6 +629,8 @@ func ownName(c Clip, name string) bool {
 // as much as one in the work folder does, and nothing else in that folder
 // does, not even a file of the same name another episode wrote.
 func IsShort(fsys afero.Fs, source, path string) bool {
+	// A short is what ffmpeg wrote, so it is on the disk and its path is
+	// resolved there, whatever fsys the plans are read from, see files.go.
 	real := ResolvePath(path)
 	for _, plan := range PlanSummaries(fsys, LogsDir(source)) {
 		for _, c := range plan.clips {

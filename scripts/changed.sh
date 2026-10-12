@@ -16,7 +16,8 @@
 #                   package that imports them, and of their fuzz targets
 #                   those that go through a changed file, see
 #                   fuzz_what_changed. go.mod or go.sum is every package
-#                   and every target.
+#                   and every target. A changed test also runs
+#                   internal/offdisk, which reads every test file.
 #   frontend/       make interface
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
@@ -175,6 +176,9 @@ for file in $changed; do
 		if [ -n "$pkg" ]; then
 			gopkgs="$gopkgs $pkg"
 			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
+			# internal/offdisk reads every test file and imports none, so
+			# a changed test is what reaches it.
+			case $file in *_test.go) gopkgs="$gopkgs $module/internal/offdisk" ;; esac
 		else
 			build=1
 		fi
