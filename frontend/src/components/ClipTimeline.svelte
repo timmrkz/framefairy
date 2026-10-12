@@ -34,6 +34,7 @@
     endInEpisode,
     frameAt,
     frameMiddle,
+    frameBegins,
     insideClip,
     litWord,
     type CaptionDraft,
@@ -1464,10 +1465,13 @@
   // one on screen. A state, never a distance.
   const playFrame = $derived(frameAt(Number.isFinite(shown) ? shown : time, frame, frameStart));
 
-  // The middle of the frame a moment falls in, inside a piece the clip
-  // keeps: a moment that was cut out is not in the short, so a mark held
-  // over a cut stays at the edge of the piece nearest the hand.
-  function thumbFrame(t: number): number {
+  // The frame a moment falls in, inside a piece the clip keeps: a moment
+  // that was cut out is not in the short, so a mark held over a cut stays
+  // at the edge of the piece nearest the hand. Where on the frame is where
+  // the engine keeps the mark, the middle for a thumbnail and the start
+  // for a keyframe, so a mark held is drawn where it stays once let go,
+  // and never past the clip's edge.
+  function markFrame(kind: MarkKind, t: number): number {
     const mid = (u: number) => frameMiddle(frameAt(u, frame, frameStart), frame, frameStart);
     let best = mid(t);
     let gap = Infinity;
@@ -1481,7 +1485,7 @@
         best = at;
       }
     }
-    return best;
+    return kind === "crop" ? frameBegins(frameAt(best, frame, frameStart), frame, frameStart) : best;
   }
 
   function grabMark(kind: MarkKind, at: number, event: PointerEvent) {
@@ -1496,7 +1500,7 @@
       if (locked || !markChange(kind)) return;
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      const to = thumbFrame(timeAt(e.clientX));
+      const to = markFrame(kind, timeAt(e.clientX));
       markDrag = { kind, from: at, to };
       seekSoon(to);
     };
@@ -2266,11 +2270,11 @@
     position: absolute;
     /* Its middle on the middle of the clip's bottom rule, which lies on
        the track's border and a pixel in from it. */
-    bottom: calc(var(--frame-line) / 2 - 6px);
+    bottom: calc(var(--frame-line) / 2 - 8px);
     pointer-events: auto;
-    width: 12px;
-    height: 12px;
-    margin-left: -6px;
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;
     display: grid;
     place-items: center;
     cursor: ew-resize;
@@ -2290,22 +2294,22 @@
   }
 
   .cropdot::before {
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     background: var(--well);
   }
 
   .cropdot::after {
-    width: 10px;
-    height: 10px;
+    width: 14px;
+    height: 14px;
     background: var(--accent-hi);
   }
 
   .cropdot:hover::before,
   .cropdot.here::before,
   .cropdot.active::before {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
     background: var(--accent);
   }
 

@@ -435,11 +435,17 @@
 //                      on and three back with the arrow keys, which leave
 //                      the playhead a hair off the first frame's start
 //                      with that frame on the video preview, then the same
+//   ["keyframe past", edge]
+//                      drags the first keyframe's diamond well past the
+//                      clip's "end" or "start" edge and lets go: the engine
+//                      has it on the clip's last or first frame, and the
+//                      diamond never stood further out while it was held
+//                      than where it stays once it is let go
 //   ["drag crop", px]  drags the crop frame in the video preview sideways
 //                      by px, in ten steps, and lets go
 //   ["keyframes", n]  the engine has n keyframes on the clip, at as many
 //                      left edges, and the clip timeline draws n
-//                      diamonds
+//                      diamonds, each 16 px wide
 //   ["glides"]         with the playhead put by a click on the clip
 //                      timeline on the first keyframe, a quarter, half
 //                      and three quarters of the way to the next and on
@@ -1046,6 +1052,21 @@ export const sequences = [
       ["button", "Put the crop back"],
       ["keyframes", 2],
       ["glides"],
+    ],
+  },
+  {
+    // Found by Tim on #192: a keyframe dragged past the clip's end went a
+    // pixel past the clip edge while held and jumped back to the last
+    // frame when let go. It was drawn on the middle of the frame under the
+    // hand while held and on the start of the frame once saved.
+    name: "a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["keyframe at", 0.5],
+      ["keyframe past", "end"],
+      ["keyframe past", "start"],
     ],
   },
   {
@@ -3836,6 +3857,49 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         else if (now.segments.length !== was.segments.length) wrong = `a double-click on the ${arg} mark cut the clip`;
         break;
       }
+      case "keyframe past": {
+        const on = await chosen(page);
+        const entry = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const pieces = (await entry()).segments;
+        const want = arg === "end" ? pieces[pieces.length - 1].end - 1 / src.fps : pieces[0].start;
+        const centre = () =>
+          page.evaluate(() => {
+            const b = document.querySelector(".clip-timeline .cropdot").getBoundingClientRect();
+            return b.left + b.width / 2;
+          });
+        const dot = await page.locator(".clip-timeline .cropdot").first().boundingBox();
+        const g = await handles(page);
+        const y = dot.y + dot.height / 2;
+        const x = dot.x + dot.width / 2;
+        const to = arg === "end" ? g.end.x + g.end.w + 60 : g.start.x - 60;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        const held = [];
+        for (let i = 1; i <= 12; i++) {
+          await page.mouse.move(x + ((to - x) * i) / 12, y);
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          held.push(await centre());
+        }
+        await page.mouse.up();
+        let got = [];
+        for (let i = 0; i < 30; i++) {
+          got = (await entry()).cropMarks ?? [];
+          if (got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps)) break;
+          await page.waitForTimeout(100);
+        }
+        await settle(page);
+        const left = await centre();
+        const out = arg === "end" ? Math.max(...held) - left : left - Math.min(...held);
+        if (!got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps))
+          wrong = `the keyframe dragged past the clip's ${arg} is at ${got.map((m) => m.at).join(", ")}, not on its ${arg === "end" ? "last" : "first"} frame at ${want.toFixed(3)} s`;
+        else if (out > 0.25)
+          wrong = `the keyframe stood ${out.toFixed(2)} px past where it stays while it was held past the clip's ${arg}, and jumped back when let go`;
+        else if (Math.abs(held[held.length - 1] - left) > 0.25)
+          wrong = `the keyframe was held at ${held[held.length - 1].toFixed(2)} px and stays at ${left.toFixed(2)} px once let go`;
+        await watch.step("drag", s);
+        break;
+      }
       case "drag crop": {
         const box = await page.locator(".screen .crop").boundingBox();
         if (!box) {
@@ -3867,11 +3931,13 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
         const shapes = await page.evaluate(() =>
           [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").maskImage),
         );
+        const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
         if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
         else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
         else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
         else if (shapes.some((c) => !c.includes("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
           wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
+        else if (sizes.some((w) => w !== 16)) wrong = `a keyframe's diamond is ${sizes.join(", ")} px wide, not 16 px, found too small by Tim on #192`;
         break;
       }
       case "glides":

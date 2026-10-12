@@ -1903,9 +1903,12 @@ or walks across the picture. Plan row 3.26, the design is in
 - **Each keyframe is a diamond** on the clip's bottom rule on the clip
   timeline, under the thumbnails, in the app's colour, filled white while
   the playhead is on its frame, the clip's first and last frame included.
-  It is the thumbnail's kind of mark: a click puts the
+  It is 16 px wide, larger than it was at first, after Tim found it too
+  small. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
-  double-click removes it.
+  double-click removes it. While it is dragged it stands on the start of
+  the frame under the hand, where it stays once let go, so dragged past
+  the clip's edge it stops on the first or last frame and does not jump.
 - **Automatic crop** removes every keyframe of the shot and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing the first of two keyframes leaves the
