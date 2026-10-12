@@ -2524,13 +2524,21 @@ for (const seq of toWalk) {
         await watch.step("type", s);
         break;
       case "click heard": {
-        // Inside the first word still being heard, a third of the way in.
+        // Inside the first word still being heard that has three letters
+        // or more, just after its second letter, so the X typed there has
+        // letters of the word on either side. A click a fixed 12 px in
+        // landed after a short word like "er" on CI, not in it.
         const at = await page.evaluate(() => {
           const mark = document.querySelector(".telling .hearing");
-          const words = document.createRange();
-          words.selectNodeContents(mark);
-          const first = words.getClientRects()[0];
-          return first && { x: first.left + 12, y: first.top + first.height / 2 };
+          const text = mark?.firstChild;
+          if (!text) return null;
+          const word = /\p{L}{3,}/u.exec(text.textContent);
+          if (!word) return null;
+          const third = document.createRange();
+          third.setStart(text, word.index + 2);
+          third.setEnd(text, word.index + 3);
+          const r = third.getClientRects()[0];
+          return r && { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
         });
         if (!at) {
           wrong = "nothing was being heard to click into";
