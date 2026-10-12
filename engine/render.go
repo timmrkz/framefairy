@@ -622,6 +622,31 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	return outPath, nil
 }
 
+// thumbnailSeek is where ffmpeg is sent for the frame of a short that
+// holds a moment of it, see frameHolding, the frame the video preview
+// shows there. ffmpeg keeps the first frame that starts at or after where
+// it was sent, and a moment is marked in the middle of its frame, so sent
+// to the moment it took the frame after. Sent half a frame before the
+// frame starts, it takes that frame and no rounding moves it. A moment on
+// or after the last frame takes the last frame, because a seek past the
+// end of a file finds nothing to show.
+func (s SourceInfo) thumbnailSeek(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return math.Max(0, math.Min(at, s.Duration-0.05))
+	}
+	k := min(s.frameHolding(at), int64(s.Grid().Count)-1)
+	return math.Max(0, s.frameBegins(k)-0.5/s.FPS())
+}
+
+// thumbnailColours turns a frame of a short into the colours of a JPEG.
+// A short keeps its colours the way its episode does, BT.709 for HD video,
+// and a JPEG is read by JFIF, full range and BT.601, by every reader there
+// is. Only the range turned, the picture came out darker than the short,
+// the caption purple most of all. ffmpeg reads the frame's own matrix from
+// its tags, and its default where the short has none, the same default
+// the video preview's decoder takes, see makeGraph.
+const thumbnailColours = "scale=out_color_matrix=bt601:out_range=full,format=yuvj420p"
+
 // thumbnailName is how the pictures of a short are called, beside it:
 // <name>-1.jpg, <name>-2.jpg and on, in time order.
 func thumbnailName(basename string, n int) string {
@@ -631,9 +656,12 @@ func thumbnailName(basename string, n int) string {
 // WriteThumbnails takes a picture of a short that was just written at each
 // of its clip's thumbnails and puts them beside it, as <name>-1.jpg and on.
 // A picture is a frame of the short itself, so it is exactly what the short
-// shows at that moment, crop and captions included. Pictures of an earlier
-// render that are no longer asked for are removed, so the folder holds what
-// the plan asks for and nothing else.
+// shows at that moment, crop and captions included: the frame that holds
+// the moment, the one the video preview showed where it was marked, see
+// thumbnailSeek, in the colours a player shows the short in, see
+// thumbnailColours. Pictures of an earlier render that are no longer asked
+// for are removed, so the folder holds what the plan asks for and nothing
+// else.
 func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) error {
 	dir := filepath.Dir(short)
 	// Named after the short, not the clip, so a short with a number in a
@@ -652,6 +680,13 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 			}
 		}
 	}
+	if len(clip.Thumbnails) == 0 {
+		return nil
+	}
+	frames, err := e.Probe(ctx, short)
+	if err != nil {
+		return err
+	}
 	for i, at := range clip.Thumbnails {
 		path, err := SafeChild(dir, thumbnailName(stem, i+1))
 		if err != nil {
@@ -659,13 +694,11 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		}
 		// Where the moment falls in the short, which is a different clock
 		// from the episode's once anything was cut out before it.
-		// A moment on the very last frame is held a little inside, because
-		// a seek to the end of a file finds nothing after it to show.
-		t := math.Max(0, math.Min(ClipTime(clip, at), clip.Duration()-0.05))
+		t := frames.thumbnailSeek(ClipTime(clip, at))
 		tmp := path + partial + ".jpg"
 		res := run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
-			"-ss", fixed(t, 3), "-i", short, "-frames:v", "1", "-update", "1",
-			"-vf", "scale=out_range=full,format=yuvj420p", "-q:v", "2", tmp)
+			"-ss", fixed(t, 6), "-i", short, "-frames:v", "1", "-update", "1",
+			"-vf", thumbnailColours, "-q:v", "2", tmp)
 		if ctx.Err() != nil {
 			os.Remove(tmp)
 			return ctx.Err()
