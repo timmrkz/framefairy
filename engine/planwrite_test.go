@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // A plan of the size the app really makes: twelve clips, each with its
@@ -89,21 +91,21 @@ func TestAPlanIsReplacedRatherThanOverwritten(t *testing.T) {
 // What lists the plans of an episode globs for clips*.json, so a plan
 // being written must not be named like one until it is whole.
 func TestAPlanBeingWrittenIsNotOneOfThePlans(t *testing.T) {
-	logs := t.TempDir()
+	fsys, logs := afero.NewMemMapFs(), "/home/tim/ep.framefairy/logs"
 	real := filepath.Join(logs, "clips-0-1800.json")
-	if err := os.WriteFile(real, []byte(aRealisticPlan(3)), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, real, []byte(aRealisticPlan(3)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// A temporary file left behind by a write that never finished, named
 	// the way writePlanFile names one.
-	tmp, err := os.CreateTemp(logs, ".clips-*.json")
+	tmp, err := afero.TempFile(fsys, logs, ".clips-*.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmp.WriteString(`{"source":"ep.mp4","clips":[`)
 	tmp.Close()
 
-	if got := PlanSummaries(disk, logs); len(got) != 1 {
+	if got := PlanSummaries(fsys, logs); len(got) != 1 {
 		names := []string{}
 		for _, s := range got {
 			names = append(names, s.Name)

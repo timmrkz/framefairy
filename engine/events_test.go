@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -237,37 +236,33 @@ func TestLinesForSegments(t *testing.T) {
 // records are not in there: they live in one folder of their own, so they
 // are not touched by this and outlive every episode.
 func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
-	ownTrainingDir(t)
-	dir := t.TempDir()
-	source := filepath.Join(dir, "ep.mp4")
-	if err := os.WriteFile(source, []byte("video"), 0o644); err != nil {
+	dir := ownTrainingDir(t)
+	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	work := WorkDir(source)
 	for _, name := range []string{"logs/words.json", "out/01.mp4", "cache/stills/1-000000.jpg"} {
-		path := filepath.Join(work, name)
-		_ = os.MkdirAll(filepath.Dir(path), 0o755)
-		_ = os.WriteFile(path, []byte("x"), 0o644)
+		_ = afero.WriteFile(fsys, filepath.Join(work, name), []byte("x"), 0o644)
 	}
-	records := filepath.Join(TrainingDir(), "plans.jsonl")
-	_ = os.MkdirAll(filepath.Dir(records), 0o755)
-	if err := os.WriteFile(records, []byte("{}\n"), 0o644); err != nil {
+	records := filepath.Join(dir, "plans.jsonl")
+	if err := afero.WriteFile(TrainingFiles(), records, []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := DeleteWork(disk, source); err != nil {
+	if err := DeleteWork(fsys, source); err != nil {
 		t.Fatal(err)
 	}
-	if exists(disk, work) {
+	if exists(fsys, work) {
 		t.Errorf("the work folder is still there")
 	}
-	if !exists(disk, source) {
+	if !exists(fsys, source) {
 		t.Errorf("the episode itself was deleted")
 	}
-	if !exists(disk, records) {
+	if !exists(TrainingFiles(), records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
-	if err := DeleteWork(disk, filepath.Join(dir, "missing.mp4")); err != nil {
+	if err := DeleteWork(fsys, "/home/tim/missing.mp4"); err != nil {
 		t.Errorf("missing work folder: %v", err)
 	}
 }
