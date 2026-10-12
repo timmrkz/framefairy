@@ -2049,7 +2049,29 @@ const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
 const only = process.argv[2] ?? "";
 let failures = 0;
 
-for (const seq of sequences.filter((q) => q.name.includes(only))) {
+// --names lists the sequences, one name a line, for make walks to hand
+// out one at a time to as many bridges as it runs, see TestWalks. SEQUENCE
+// walks the one of that name and no other, where a part of a name could
+// be a part of two.
+if (only === "--names") {
+  const names = sequences.map((q) => q.name);
+  const twice = names.filter((n, i) => names.indexOf(n) !== i);
+  if (twice.length) {
+    console.log(`two sequences are called ${JSON.stringify(twice[0])}`);
+    process.exit(1);
+  }
+  console.log(names.join("\n"));
+  process.exit(0);
+}
+const exact = process.env.SEQUENCE;
+const toWalk = sequences.filter((q) => (exact ? q.name === exact : q.name.includes(only)));
+if (exact && !toWalk.length) {
+  console.log(`no sequence is called ${JSON.stringify(exact)}`);
+  process.exit(1);
+}
+
+for (const seq of toWalk) {
+  const began = performance.now();
   const { browser, page, errors } = await open(url);
   const at = await chosen(page);
   const watch = new Watch(page, at, errors);
@@ -4354,7 +4376,8 @@ for (const seq of sequences.filter((q) => q.name.includes(only))) {
     }
   }
   const failed = wrong ?? (watch.failed && `broke: ${watch.failed.rule}\n${watch.failed.detail}`);
-  console.log(`${failed ? "FAIL" : "ok  "}  ${seq.name}`);
+  const took = ((performance.now() - began) / 1000).toFixed(1).padStart(5);
+  console.log(`${failed ? "FAIL" : "ok  "}  ${took} s  ${seq.name}`);
   if (failed) {
     failures++;
     console.log(`      after ${done.join(", ")}\n      ${failed.replaceAll("\n", "\n      ")}`);
