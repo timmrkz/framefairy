@@ -42,8 +42,10 @@ import (
 // whose frames do not has the episode's average rate rounded to the
 // nearest of 24, 25, 30, 50 and 60, which is Tim's choice: the rate ffmpeg
 // reports for the phone's frames is 50, and a short came out at 50.
+//
+// On the real disk: ffmpeg reads the episode and renders the short.
 func TestARenderShowsTheFrameThatHoldsEachMoment(t *testing.T) {
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -136,6 +138,8 @@ var timesCases = []timesCase{
 
 // timesEpisode makes the episode of a case: its frames carry their
 // numbers in bars, and its sound says which moment of a second it is.
+//
+// On the real disk: ffmpeg makes the episode.
 func timesEpisode(t *testing.T, c timesCase) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -209,6 +213,7 @@ var encodersHere = sync.OnceValue(func() string {
 	return string(out)
 })
 
+// On the real disk: ffmpeg renders the short.
 func showsWhatItSays(t *testing.T, e *Engine, source, rate string) {
 	ctx := context.Background()
 	info, err := e.Probe(ctx, source)

@@ -78,7 +78,7 @@ func noteServer(n serverNote) {
 		return
 	}
 	_ = os.MkdirAll(dir, 0o755)
-	_ = writeAtomic(noteFile(dir, n.PID), body)
+	_ = WriteAtomic(disk, noteFile(dir, n.PID), body)
 }
 
 // forgetServer takes the note away once that server has stopped.

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 	"framefairy/train"
 )
@@ -82,6 +84,7 @@ func splitArgs(args []string) (string, []string) {
 
 func mark(args []string) error {
 	episode, rest := splitArgs(args)
+	disk := afero.NewOsFs()
 	fs := flag.NewFlagSet("mark", flag.ContinueOnError)
 	plan := fs.String("plan", "", "plan file, defaults to the episode's only plan")
 	keep := fs.String("keep", "", "clip ids to keep")
@@ -97,7 +100,7 @@ func mark(args []string) error {
 	}
 	planPath := *plan
 	if planPath == "" {
-		plans := engine.PlanSummaries(filepath.Join(engine.WorkDir(episode), "logs"))
+		plans := engine.PlanSummaries(disk, filepath.Join(engine.WorkDir(episode), "logs"))
 		if len(plans) != 1 {
 			return fmt.Errorf("%d plans found for %s, choose one with --plan", len(plans), episode)
 		}
@@ -112,22 +115,22 @@ func mark(args []string) error {
 		reasons[id] = append(reasons[id], why)
 	}
 	for _, id := range ids(*keep) {
-		if err := engine.SetRejected(planPath, id, false); err != nil {
+		if err := engine.SetRejected(disk, planPath, id, false); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*reject) {
-		if err := engine.SetRejected(planPath, id, true, reasons[id]...); err != nil {
+		if err := engine.SetRejected(disk, planPath, id, true, reasons[id]...); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*published) {
-		if err := engine.RecordDecision(planPath, id, engine.DecisionPublished, nil); err != nil {
+		if err := engine.RecordDecision(disk, planPath, id, engine.DecisionPublished, nil); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*unpublished) {
-		if err := engine.RecordDecision(planPath, id, engine.DecisionUnpublished, nil); err != nil {
+		if err := engine.RecordDecision(disk, planPath, id, engine.DecisionUnpublished, nil); err != nil {
 			return err
 		}
 	}
@@ -150,14 +153,15 @@ func export(args []string) error {
 	if from == "" {
 		from = engine.TrainingDir()
 	}
-	episodes, err := train.FindEpisodes(from)
+	disk := afero.NewOsFs()
+	episodes, err := train.FindEpisodes(disk, from)
 	if err != nil {
 		return err
 	}
 	if len(episodes) == 0 {
 		return fmt.Errorf("no training records in %s", from)
 	}
-	m, err := train.Export(episodes, *out, *share)
+	m, err := train.Export(disk, episodes, *out, *share)
 	if err != nil {
 		return err
 	}

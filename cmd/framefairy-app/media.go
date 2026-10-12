@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -72,7 +74,9 @@ func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, err
 	if ok {
 		return cached, nil
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false))
+	// ffprobe reads the episode, and the stamp above is taken from the
+	// same disk.
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), afero.NewOsFs())
 	info, err := e.Probe(ctx, path)
 	if err == nil && stamp != "" {
 		p.mu.Lock()
@@ -133,7 +137,7 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	// measuring goes there first.
 	s.levels.look(path, from, to)
 	s.levels.start(path)
-	p := engine.NewProject(nil, path, s.store.Settings().options())
+	p := s.project(path)
 	t, err := s.transcript(p)
 	if err != nil && !errors.Is(err, engine.ErrNoTranscript) {
 		return nil, err
@@ -142,7 +146,13 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	// same frames from the same samples, so the waveform has whatever
 	// either has measured. The measuring runs ahead of the transcription,
 	// and a transcript made before it existed is there before it has run.
-	t = s.levels.read(path).Over(t)
+	var levels engine.Levels
+	if s.levels != nil {
+		levels = s.levels.read(path)
+	} else {
+		levels = engine.ReadLevels(p.Files, path)
+	}
+	t = levels.Over(t)
 	if t == nil {
 		return []float32{}, nil
 	}

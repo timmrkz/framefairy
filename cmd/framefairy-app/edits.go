@@ -49,7 +49,7 @@ func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at 
 	}
 	cw := s.cropWidth(upright)
 	left = max(0, min(left, upright.Width-cw))
-	if err := s.edit(path, func() error { return engine.SetCrop(plan, clipID, at, left, info, cw) }); err != nil {
+	if err := s.edit(path, func() error { return engine.SetCrop(s.store.files, plan, clipID, at, left, info, cw) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -65,7 +65,7 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	if err != nil {
 		return ClipEntry{}, err
 	}
-	if err := s.edit(path, func() error { return engine.RotatePart(plan, clipID, at, info) }); err != nil {
+	if err := s.edit(path, func() error { return engine.RotatePart(s.store.files, plan, clipID, at, info) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -102,7 +102,7 @@ func (s *FrameFairy) SetCaptionStyle(ctx context.Context, path, plan, font strin
 	if size > 0 {
 		values["size"] = size
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
 }
 
 // SetCaptionColours changes the colour of the caption text, of the box
@@ -137,7 +137,7 @@ func (s *FrameFairy) SetCaptionColours(ctx context.Context, path, plan, text str
 		}
 		values["highlight_colour"] = colour
 	}
-	return s.edit(path, func() error { return engine.SetCaptionStyle(plan, values) })
+	return s.edit(path, func() error { return engine.SetCaptionStyle(s.store.files, plan, values) })
 }
 
 // SetCaptionSwitch turns one of the switches of the captions column on or
@@ -154,7 +154,7 @@ func (s *FrameFairy) SetCaptionSwitch(ctx context.Context, path, plan, which str
 		return fmt.Errorf("%q is no switch of the captions", which)
 	}
 	return s.edit(path, func() error {
-		return engine.SetCaptionStyle(plan, map[string]any{which: on})
+		return engine.SetCaptionStyle(s.store.files, plan, map[string]any{which: on})
 	})
 }
 
@@ -226,11 +226,11 @@ func hold(n, low, high float64) float64 {
 // followTheHeight takes the hand-placed caption line off the clips of an
 // episode, so every one of them sits where the setting says.
 func (s *FrameFairy) followTheHeight(path string) error {
-	for _, plan := range plansOf(path) {
+	for _, plan := range plansOf(s.store.files, path) {
 		if !s.store.PlanOf(path, plan.Path) {
 			continue
 		}
-		if _, err := engine.ClearCaptionY(plan.Path); err != nil {
+		if _, err := engine.ClearCaptionY(s.store.files, plan.Path); err != nil {
 			return err
 		}
 	}
@@ -246,7 +246,7 @@ func (s *FrameFairy) SetThumbnail(ctx context.Context, path, plan, clipID string
 		return ClipEntry{}, errNotInLibrary
 	}
 	if err := s.edit(path, func() error {
-		return engine.SetThumbnail(plan, clipID, from, to)
+		return engine.SetThumbnail(s.store.files, plan, clipID, from, to)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
@@ -267,7 +267,7 @@ func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string,
 		return ClipEntry{}, err
 	}
 	if err := s.edit(path, func() error {
-		return engine.SetCropMark(plan, clipID, from, to, x, info)
+		return engine.SetCropMark(s.store.files, plan, clipID, from, to, x, info)
 	}); err != nil {
 		return ClipEntry{}, err
 	}
@@ -286,7 +286,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
-	p := engine.NewProject(nil, path, s.store.Settings().options())
+	p := s.project(path)
 	// Read fresh, as SetWord does: an edit works on the words themselves.
 	t, err := p.Transcript()
 	if err != nil {
@@ -296,7 +296,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		done, err = engine.SetCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
@@ -333,8 +333,8 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	p := engine.NewProject(nil, path, s.store.Settings().options())
-	return engine.ShapeCaptionTime(p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	p := s.project(path)
+	return engine.ShapeCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a
@@ -343,7 +343,7 @@ func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, a
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	if err := s.edit(path, func() error { return engine.ResetCrop(plan, clipID, at) }); err != nil {
+	if err := s.edit(path, func() error { return engine.ResetCrop(s.store.files, plan, clipID, at) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -356,7 +356,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	if err := s.edit(path, func() error { return engine.SetRejected(plan, clipID, removed) }); err != nil {
+	if err := s.edit(path, func() error { return engine.SetRejected(s.store.files, plan, clipID, removed) }); err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)
@@ -374,7 +374,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 		return nil, err
 	}
 	g.Frames = s.frames(context.Background(), path)
-	return engine.ShapeClipView(plan, clipID, g, t, s.store.Settings().options().KeepPause,
+	return engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
 		s.captionOverrides(plan))
 }
 
@@ -392,7 +392,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	}
 	g.Frames = s.frames(ctx, path)
 	if err := s.editMoving(path, &playhead, func() error {
-		return engine.Reshape(plan, clipID, g, t, s.store.Settings().options().KeepPause)
+		return engine.Reshape(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

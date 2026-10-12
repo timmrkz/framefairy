@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestProviderFor(t *testing.T) {
@@ -145,8 +147,8 @@ func (f *fakeCloud) seen() []seenRequest {
 }
 
 // cloud points both providers at one fake server for the length of a test,
-// with a key for each in the environment.
-func cloud(t *testing.T, answers ...func(w http.ResponseWriter)) (*fakeCloud, *Engine) {
+// with a key for each in the environment, and gives an engine on files.
+func cloud(t *testing.T, files afero.Fs, answers ...func(w http.ResponseWriter)) (*fakeCloud, *Engine) {
 	t.Helper()
 	fake := &fakeCloud{answers: answers}
 	server := httptest.NewServer(fake)
@@ -161,7 +163,7 @@ func cloud(t *testing.T, answers ...func(w http.ResponseWriter)) (*fakeCloud, *E
 	t.Cleanup(func() { providers = saved })
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 	t.Setenv("OPENAI_API_KEY", "sk-proj-test")
-	return fake, NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	return fake, NewEngine(NewLog(&bytes.Buffer{}, false, false), files)
 }
 
 func openAIStream(pieces []string, finish string, usage string) func(w http.ResponseWriter) {
@@ -195,7 +197,7 @@ func claudeStream(text string) func(w http.ResponseWriter) {
 // way, heard as it is written.
 func TestCallAPIAsksEachProviderItsOwnWay(t *testing.T) {
 	const answer = `{"clips": []}`
-	fake, e := cloud(t,
+	fake, e := cloud(t, afero.NewMemMapFs(),
 		openAIStream([]string{`{"clips": `, `[]}`}, "stop", `{"prompt_tokens":100,"completion_tokens":20}`),
 		claudeStream(answer),
 	)
@@ -259,7 +261,7 @@ func TestCallAPIOpenAIRetriesRefusalsAndHeadroom(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		fmt.Fprint(w, `{"error":{"message":"slow down","type":"requests"}}`)
 	}
-	fake, e := cloud(t, busy, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":1}`))
+	fake, e := cloud(t, afero.NewMemMapFs(), busy, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":1}`))
 	if text, err := e.CallAPI(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil); err != nil || text != `{"clips": []}` {
 		t.Errorf("after a 429: %q, %v", text, err)
 	}
@@ -271,14 +273,14 @@ func TestCallAPIOpenAIRetriesRefusalsAndHeadroom(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error"}}`)
 	}
-	_, e = cloud(t, refused)
+	_, e = cloud(t, afero.NewMemMapFs(), refused)
 	_, err := e.CallAPI(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "platform.openai.com") {
 		t.Errorf("a refused key: %v", err)
 	}
 
 	spent := openAIStream(nil, "length", `{"prompt_tokens":1,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":100}}`)
-	fake, e = cloud(t, spent, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":150}`))
+	fake, e = cloud(t, afero.NewMemMapFs(), spent, openAIStream([]string{`{"clips": []}`}, "stop", `{"prompt_tokens":1,"completion_tokens":150}`))
 	text, err := e.CallAPIWithHeadroom(context.Background(), "p", "gpt-6-sol", 100, "", "plan", "", nil)
 	if err != nil || text != `{"clips": []}` {
 		t.Fatalf("after thinking the ceiling away: %q, %v", text, err)
@@ -295,7 +297,7 @@ func TestRepairJSONAsksOpenAIPlainly(t *testing.T) {
 	plain := func(w http.ResponseWriter) {
 		fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"{\"clips\": []}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}`)
 	}
-	fake, e := cloud(t, plain)
+	fake, e := cloud(t, afero.NewMemMapFs(), plain)
 	text, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-6-sol", "")
 	if err != nil || text != `{"clips": []}` {
 		t.Fatalf("repair: %q, %v", text, err)
@@ -308,7 +310,7 @@ func TestRepairJSONAsksOpenAIPlainly(t *testing.T) {
 // A search on a model in the cloud reports that model's company's key as
 // missing, in that company's words, before anything is sent.
 func TestReadAPIKeyNamesTheProvider(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+	t.Setenv("PATH", "/no/tools/here")
 	t.Setenv("OPENAI_API_KEY", "")
 	p, _ := ProviderNamed("openai")
 	_, err := ReadAPIKey(context.Background(), p)
@@ -326,11 +328,13 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 // arrives as it is written, and the plan it makes is written like any other.
 // This is the journey somebody with an OpenAI key takes, end to end, with
 // the only thing that is not real being the far end of the call.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestProjectPlansWithOpenAI(t *testing.T) {
 	source := testEpisode(t, "40")
 	ownTrainingDir(t)
 	// One story, the first line, as middle answers, in two pieces.
-	fake, e := cloud(t, openAIStream([]string{"1 1", " 1\n"}, "stop",
+	fake, e := cloud(t, disk, openAIStream([]string{"1 1", " 1\n"}, "stop",
 		`{"prompt_tokens":900,"completion_tokens":60}`))
 	var heard int32
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
@@ -350,7 +354,7 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 || !strings.HasPrefix(clips[0].Title, "wort") {
 		t.Fatalf("the plan from OpenAI's answer: %+v, %v", clips, err)
 	}
@@ -367,10 +371,12 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 
 // A search on Claude with --prefill still gets middle's answer whole. A
 // prefilled brace starts a JSON answer, and middle answers without one.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
 	source := testEpisode(t, "40")
 	ownTrainingDir(t)
-	fake, e := cloud(t, claudeStream("1 1 1\n"))
+	fake, e := cloud(t, disk, claudeStream("1 1 1\n"))
 	var heard int32
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
@@ -384,7 +390,7 @@ func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 {
 		t.Fatalf("the plan from Claude's answer: %+v, %v", clips, err)
 	}
 	seen := fake.seen()
@@ -475,7 +481,7 @@ func claudeThinkingOnly(kinds ...string) func(w http.ResponseWriter) {
 // view beside thinking it shows was not asked again.
 func TestAReplyOfThinkingAloneIsAskedAgain(t *testing.T) {
 	for _, kinds := range [][]string{{"thinking"}, {"redacted_thinking", "thinking"}, {"redacted_thinking"}} {
-		fake, e := cloud(t, claudeThinkingOnly(kinds...), claudeStream(`{"clips": []}`))
+		fake, e := cloud(t, afero.NewMemMapFs(), claudeThinkingOnly(kinds...), claudeStream(`{"clips": []}`))
 		text, err := e.CallAPIWithHeadroom(context.Background(), "p", "claude-sonnet-5", 100, "", "plan", "", nil)
 		if err != nil || text != `{"clips": []}` {
 			t.Errorf("%v: %q, %v", kinds, text, err)
@@ -486,7 +492,7 @@ func TestAReplyOfThinkingAloneIsAskedAgain(t *testing.T) {
 		}
 	}
 	// A reply with no text for another reason is not asked again.
-	fake, e := cloud(t, claudeThinkingOnly("tool_use"), claudeStream(`{"clips": []}`))
+	fake, e := cloud(t, afero.NewMemMapFs(), claudeThinkingOnly("tool_use"), claudeStream(`{"clips": []}`))
 	if _, err := e.CallAPIWithHeadroom(context.Background(), "p", "claude-sonnet-5", 100, "", "plan", "", nil); err == nil {
 		t.Error("a reply of a tool call alone was taken for an answer")
 	}
@@ -501,7 +507,7 @@ func TestAnAnswerPastTheLimitIsRefused(t *testing.T) {
 	huge := func(w http.ResponseWriter) {
 		w.Write(bytes.Repeat([]byte(" "), maxReplyBytes+1024))
 	}
-	_, e := cloud(t, huge)
+	_, e := cloud(t, afero.NewMemMapFs(), huge)
 	_, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-6-sol", "")
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("an answer past the limit: %v", err)

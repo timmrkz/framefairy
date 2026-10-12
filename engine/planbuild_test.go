@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // pausedModel answers like llama-server with two stories, as middle
@@ -44,13 +46,15 @@ func pausedModel(t *testing.T, letGo <-chan struct{}) *httptest.Server {
 
 // searching is an episode transcribed and ready to be searched against the
 // paused model.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 	t.Helper()
 	source := testEpisode(t, "40")
 	server := pausedModel(t, letGo)
 	t.Cleanup(server.Close)
 	var heard int32
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -64,11 +68,13 @@ func searching(t *testing.T, letGo <-chan struct{}) (*Project, string) {
 }
 
 // landed waits for the plan to hold n clips and gives them.
+//
+// On the real disk: the plan is written by a search that runs ffmpeg on the episode.
 func landed(t *testing.T, path string, n int) []Clip {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, clips, err := LoadClips(path); err == nil && len(clips) >= n {
+		if _, clips, err := LoadClips(disk, path); err == nil && len(clips) >= n {
 			return clips
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -77,6 +83,7 @@ func landed(t *testing.T, path string, n int) []Clip {
 	return nil
 }
 
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	ownTrainingDir(t)
 	letGo := make(chan struct{})
@@ -98,7 +105,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	if len(clips) != 1 || clips[0].ID != "t10-01" {
 		t.Fatalf("clips %+v", clips)
 	}
-	plan, _, _ := LoadClips(path)
+	plan, _, _ := LoadClips(disk, path)
 	early, _ := plan.Raw["plan_id"].(string)
 	if early == "" {
 		t.Fatal("the first clip landed without the plan's id")
@@ -119,19 +126,19 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 			defer wg.Done()
 			switch i % 4 {
 			case 0:
-				if err := SetCaptionY(path, "t10-01", 0.3); err != nil {
+				if err := SetCaptionY(disk, path, "t10-01", 0.3); err != nil {
 					t.Errorf("caption height: %v", err)
 				}
 			case 1:
-				if err := SetRejected(path, "t10-01", false); err != nil {
+				if err := SetRejected(disk, path, "t10-01", false); err != nil {
 					t.Errorf("keep: %v", err)
 				}
 			case 2:
-				if err := RecordDecision(path, "t10-01", DecisionKept, nil); err != nil {
+				if err := RecordDecision(disk, path, "t10-01", DecisionKept, nil); err != nil {
 					t.Errorf("decision: %v", err)
 				}
 			case 3:
-				if _, _, err := LoadClips(path); err != nil {
+				if _, _, err := LoadClips(disk, path); err != nil {
 					t.Errorf("a plan read while it was written: %v", err)
 				}
 			}
@@ -144,7 +151,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	if r.err != nil {
 		t.Fatalf("plan: %v %s", r.err, p.LastError())
 	}
-	final, clips, err := LoadClips(r.plan)
+	final, clips, err := LoadClips(disk, r.plan)
 	if err != nil || len(clips) != 2 {
 		t.Fatalf("final plan: %v, %d clip(s)", err, len(clips))
 	}
@@ -157,7 +164,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 	// The decision made while the model was still writing counts, against
 	// the plan it was made about.
-	decisions, _ := os.ReadFile(filepath.Join(TrainingDir(), "decisions.jsonl"))
+	decisions, _ := afero.ReadFile(TrainingFiles(), filepath.Join(TrainingDir(), "decisions.jsonl"))
 	if !strings.Contains(string(decisions), `"plan_id":"`+id+`"`) {
 		t.Errorf("the decision made during the search was not recorded: %s", decisions)
 	}
@@ -166,6 +173,7 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 }
 
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	t.Parallel()
 	letGo := make(chan struct{})
@@ -182,7 +190,7 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 	if err := <-finished; err == nil {
 		t.Fatal("a stopped search said it finished")
 	}
-	if _, clips, err := LoadClips(path); err != nil || len(clips) != 1 {
+	if _, clips, err := LoadClips(disk, path); err != nil || len(clips) != 1 {
 		t.Errorf("what arrived before the stop: %v, %d clip(s)", err, len(clips))
 	}
 }
@@ -190,6 +198,8 @@ func TestAStoppedSearchKeepsWhatArrived(t *testing.T) {
 // A clip that panics while it is framed is left out, and the search goes on
 // with the rest. A framer is a goroutine of its own, out of reach of the
 // recover that guards a job, so a panic in one ended the whole app.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 	letGo := make(chan struct{})
 	close(letGo)
@@ -207,7 +217,7 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatalf("a search with one clip that panicked: %v", err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) != 1 || clips[0].ID != "t10-02" {
 		t.Errorf("the clip that did not panic should be in the plan: %v, %+v", err, clips)
 	}
@@ -245,6 +255,8 @@ func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 // Two clips that keep mostly the same lines are one moment given twice.
 // The second is left out, said once, and the clips after it keep their
 // places, both when the answer streams in and when it is read whole.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	t.Parallel()
 	entry := func(title string, keep ...[2]int) PlanEntry { return PlanEntry{Title: title, Keep: keep} }
@@ -274,7 +286,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	defer server.Close()
 	var heard int32
 	var said bytes.Buffer
-	e := NewEngine(NewLog(&said, false, false))
+	e := NewEngine(NewLog(&said, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -285,7 +297,7 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v %s", err, p.LastError())
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,6 +316,8 @@ func TestAMomentGivenTwiceIsKeptOnce(t *testing.T) {
 // two up to know how many rows are left, and when the count came first the
 // list read the clip while its card was still on the way, a row more than
 // the search was asked for.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	t.Parallel()
 	letGo := make(chan struct{})
@@ -339,7 +353,7 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 	defer mu.Unlock()
 	// Every card said which clip it would be, so the list keeps one row
 	// from the card to the clip.
-	_, clips, err := LoadClips(plan)
+	_, clips, err := LoadClips(disk, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,6 +377,8 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 // move onto a frame is not a person trimming it. Trimmed edges become
 // correction pairs, see docs/TRAINING.md, and a snap counted as a trim
 // would teach the model a correction nobody made.
+//
+// On the real disk: a search runs ffmpeg on the episode.
 func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 	dir := ownTrainingDir(t)
 	letGo := make(chan struct{})
@@ -371,7 +387,7 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(disk, path)
 	if err != nil || len(clips) == 0 {
 		t.Fatalf("clips %+v, %v", clips, err)
 	}
@@ -434,7 +450,7 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 		if fmt.Sprint(proposed) != fmt.Sprint(kept) {
 			t.Errorf("%s was proposed as %v and entered the plan as %v", c.ID, proposed, kept)
 		}
-		if err := RecordDecision(path, c.ID, DecisionRendered, nil); err != nil {
+		if err := RecordDecision(disk, path, c.ID, DecisionRendered, nil); err != nil {
 			t.Fatal(err)
 		}
 		d := lastDecision(t, dir)

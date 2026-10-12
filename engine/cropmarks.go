@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // A crop that follows, plan row 3.26. A person puts keyframes on frames
@@ -410,7 +412,7 @@ func pieceNearest(pieces []*object, at float64) int {
 // keeps, because a moment that was cut is not in the short.
 // Framing is not a judgement of the clip, so nothing is recorded for
 // training.
-func SetCropMark(planPath, clipID string, from, to float64, x int, frames SourceInfo) error {
+func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int, frames SourceInfo) error {
 	adding, removing := from < 0, to < 0
 	if adding && removing {
 		return renderErr("a keyframe has to be somewhere")
@@ -423,7 +425,7 @@ func SetCropMark(planPath, clipID string, from, to float64, x int, frames Source
 	if adding && (x < 0 || x >= 1_000_000) {
 		return renderErr("the crop cannot start left of the picture")
 	}
-	return editPlan(planPath, func(_ *object, clips []*object) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err

@@ -110,6 +110,8 @@ func isContext(e ast.Expr) bool {
 // Every call in api.ts. They all go through one helper and they are all
 // flat, so finding the closing bracket is enough: call<Clip>("CutClip",
 // path, plan, clip, from, to).
+//
+// On the real disk: what is read is the interface's own source.
 func apiCalls(t *testing.T) []aCall {
 	t.Helper()
 	const path = "../../frontend/src/lib/api.ts"

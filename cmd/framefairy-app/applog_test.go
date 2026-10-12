@@ -14,14 +14,17 @@ import (
 	"testing"
 	"time"
 
-	"framefairy/engine"
-
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
+
+	"framefairy/engine"
 )
 
 // testLog opens the app's log in a folder of the test's own and gives
 // what it holds, a line each, read as JSON. A line that is not whole JSON
 // fails the test.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
 func testLog(t *testing.T) (path string, read func() []map[string]any) {
 	t.Helper()
 	path = filepath.Join(t.TempDir(), "logs", "app.log")
@@ -195,6 +198,8 @@ func TestWailsWritesTheAppLog(t *testing.T) {
 // The log keeps to its size: past 10 MB it starts a new file and keeps
 // the one before beside it, so it never fills the disk. Lines written
 // from many places at once while it does stay whole. Plan row 2.188.
+//
+// On the real disk: lumberjack starts a new file of the log on the disk.
 func TestTheLogKeepsToItsSize(t *testing.T) {
 	path, read := testLog(t)
 	text := strings.Repeat("y", 1000)
@@ -321,8 +326,8 @@ func TestEditsAreLogged(t *testing.T) {
 // words, as far as seconds, the way a transcription leaves it.
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {
 	t.Helper()
-	p := engine.NewProject(nil, path, svc.store.Settings().options())
-	info, err := os.Stat(path)
+	p := svc.project(path)
+	info, err := p.Files.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,14 +346,14 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(p.LogsDir(), 0o755); err != nil {
+	if err := p.Files.MkdirAll(p.LogsDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
+	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), engine.TranscriptName(nil)), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	frames := make([]byte, 4*int(seconds/engine.FrameSeconds))
-	if err := os.WriteFile(filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
+	if err := afero.WriteFile(p.Files, filepath.Join(p.LogsDir(), "words.frames"), frames, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.Transcript(); err != nil {

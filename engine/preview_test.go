@@ -30,9 +30,11 @@ func TestShowinfoTime(t *testing.T) {
 
 // Every frame from the moment asked for on, in the order they are shown,
 // each the size asked for and saying where it starts.
+//
+// On the real disk: ffmpeg reads the episode.
 func TestPreviewFramesFromAMoment(t *testing.T) {
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false))
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	info, err := e.Probe(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +70,11 @@ func TestPreviewFramesFromAMoment(t *testing.T) {
 }
 
 // A reader that has enough stops ffmpeg, and hears its own reason back.
+//
+// On the real disk: ffmpeg reads the episode.
 func TestPreviewFramesStopsWhenTheReaderDoes(t *testing.T) {
 	path := testEpisode(t, "6")
-	e := NewEngine(NewLog(io.Discard, false, false))
+	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	enough := errors.New("enough")
 	n := 0
 	began := time.Now()

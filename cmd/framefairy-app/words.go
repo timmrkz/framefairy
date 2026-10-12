@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +16,19 @@ import (
 // transcript is megabytes of words and levels, and reading it for every
 // swipe made the timeline crawl and the waveform arrive in steps.
 //
+// project is the episode at path with the settings as they are now, for
+// what reads or edits its files without running a step.
+func (s *FrameFairy) project(path string) *engine.Project {
+	return s.projectWith(path, s.store.Settings().options())
+}
+
+// projectWith is project with the settings given.
+func (s *FrameFairy) projectWith(path string, opts engine.Options) *engine.Project {
+	p := engine.NewProject(nil, path, opts)
+	p.Files = s.store.files
+	return p
+}
+
 // The transcripts of the last keptTranscripts episodes are kept, as many as
 // the app keeps workspaces of, so going back to one reads nothing. One was
 // kept, so every episode picked read its transcript again. And it is read
@@ -28,7 +40,7 @@ import (
 func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 	stamp := ""
 	for _, file := range engine.TranscriptFiles(p.LogsDir()) {
-		info, err := os.Stat(file)
+		info, err := p.Files.Stat(file)
 		if err != nil {
 			stamp += "|-"
 			continue
@@ -109,7 +121,7 @@ func (k *keptReads[T]) get(key, stamp string, read func() (T, error)) (T, error)
 // read once and kept. An episode not transcribed yet says nothing, which
 // is an empty answer and not a failure.
 func (s *FrameFairy) words(path string) (*engine.Transcript, error) {
-	t, err := s.transcript(engine.NewProject(nil, path, s.store.Settings().options()))
+	t, err := s.transcript(s.project(path))
 	if errors.Is(err, engine.ErrNoTranscript) {
 		return &engine.Transcript{}, nil
 	}
@@ -139,7 +151,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	p := engine.NewProject(nil, path, s.store.Settings().options())
+	p := s.project(path)
 	// Read fresh, not from what Waveform and Words keep: an edit works on
 	// the words themselves, and nothing else may be holding them.
 	t, err := p.Transcript()
@@ -148,7 +160,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.SetWordText(p.LogsDir(), start, text, t)
+		return engine.SetWordText(s.store.files, p.LogsDir(), start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
@@ -165,7 +177,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	p := engine.NewProject(nil, path, s.store.Settings().options())
+	p := s.project(path)
 	// Read fresh, as SetWord does: an edit works on the words themselves.
 	t, err := p.Transcript()
 	if err != nil {
@@ -173,7 +185,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.RemoveCaption(p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
+		return engine.RemoveCaption(s.store.files, p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
 	})
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
 	line.Float64("word", first).Msg("a caption was removed")

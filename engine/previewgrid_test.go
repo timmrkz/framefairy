@@ -29,13 +29,15 @@ import (
 // counts on the same grid and reads nothing of the file itself, so a
 // Matroska file plays as an MP4 does. Plan row 2.198,
 // docs/VIDEO-PREVIEW.md step 5.
+//
+// On the real disk: the frames decoder reads the episode.
 func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, c := range timesCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -54,13 +56,15 @@ func TestTheVideoPreviewShowsTheFramesOfTheShort(t *testing.T) {
 // to say so and go on with the processor from the frame it is at. On
 // Linux that proves the reopen under the race detector, and on a Mac the
 // way from the chip's failure to it as well. Plan row 2.215.
+//
+// On the real disk: the frames decoder reads the episode.
 func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 	ffmpegtest.Need(t)
 	program := os.Getenv("FRAMEFAIRY_FRAMES")
 	if program == "" {
 		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
 	for _, c := range timesCases {
 		if c.name == "obs_mkv" || c.name == "mpegts" {

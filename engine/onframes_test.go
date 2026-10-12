@@ -32,13 +32,13 @@ func TestAnEdgeOnFramesLandsOnThePicturesOwnFrames(t *testing.T) {
 // two pieces that meet, which is a camera switch. The timeline walk found
 // it.
 func TestACutMovedOnFramesStaysOpen(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
 	for _, g := range []Gesture{
 		{Kind: "move", Edge: "to", From: 11.1, To: 11.12, Frames: at5},
 		{Kind: "move", Edge: "from", From: 11.88, To: 11.9, Frames: at5},
 	} {
-		shaped, err := ShapeClip(path, "01", g, tr, 0.1)
+		shaped, err := ShapeClip(fsys, path, "01", g, tr, 0.1)
 		if err != nil {
 			t.Fatal(err)
 		}

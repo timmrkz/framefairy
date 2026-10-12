@@ -273,6 +273,8 @@ func newUpdater(t *testing.T, src *Source, current string, key ed25519.PrivateKe
 
 // The whole way, as the app goes it: read the list, pick the channel,
 // download, check the signature, unpack the app.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
 func TestAnUpdateArrivesUnpacked(t *testing.T) {
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pull request 20")}

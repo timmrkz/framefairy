@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // Training data is recorded in one folder for every episode, so the clip
@@ -103,21 +105,23 @@ func DefaultTrainingDir() string {
 // settings are saved: everything that records reads it, so there is one
 // place and no path travels through the engine. Jobs record from their own
 // goroutines while the app saves settings on another, so it is read and
-// written behind a lock.
+// written behind a lock. The folder is on the files it was set with, the
+// disk in the programs and memory in a test.
 var (
-	dirMu       sync.RWMutex
-	trainingDir = DefaultTrainingDir()
+	dirMu         sync.RWMutex
+	trainingDir   = DefaultTrainingDir()
+	trainingFiles = disk
 )
 
-// SetTrainingDir points the records at another folder. An empty path means
-// the default one.
-func SetTrainingDir(dir string) {
+// SetTrainingDir points the records at another folder, on fsys. An empty
+// path means the default one.
+func SetTrainingDir(fsys afero.Fs, dir string) {
 	if dir == "" {
 		dir = DefaultTrainingDir()
 	}
 	dirMu.Lock()
 	defer dirMu.Unlock()
-	trainingDir = dir
+	trainingDir, trainingFiles = dir, fsys
 }
 
 // TrainingDir is the folder the records are written to and read from.
@@ -125,6 +129,13 @@ func TrainingDir() string {
 	dirMu.RLock()
 	defer dirMu.RUnlock()
 	return trainingDir
+}
+
+// TrainingFiles is what the training folder is on.
+func TrainingFiles() afero.Fs {
+	dirMu.RLock()
+	defer dirMu.RUnlock()
+	return trainingFiles
 }
 
 // PlanRecord is one line of plans.jsonl.
@@ -237,10 +248,11 @@ func appendRecord(path string, record any) error {
 	}
 	trainingMu.Lock()
 	defer trainingMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	fsys := TrainingFiles()
+	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -251,10 +263,11 @@ func appendRecord(path string, record any) error {
 	return err
 }
 
-// readRecords calls fn with every line of a JSON Lines file. Broken lines,
-// for example from a crash mid-write, are skipped.
+// readRecords calls fn with every line of a JSON Lines file in the
+// training folder. Broken lines, for example from a crash mid-write, are
+// skipped.
 func readRecords(path string, fn func(line []byte)) error {
-	f, err := os.Open(path)
+	f, err := TrainingFiles().Open(path)
 	if err != nil {
 		return err
 	}
@@ -286,8 +299,8 @@ func ExampleKeyOf(prompt string) string {
 
 // EpisodeKey fingerprints a video by its size and its first and last
 // megabyte. It is fast on a file of many gigabytes and survives renaming.
-func EpisodeKey(source string) string {
-	f, err := os.Open(source)
+func EpisodeKey(fsys afero.Fs, source string) string {
+	f, err := fsys.Open(source)
 	if err != nil {
 		return ""
 	}
@@ -571,8 +584,8 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 // RecordDecision appends a decision about a clip of a plan. Plans made
 // before recording existed have no plan id, and nothing is recorded for
 // them.
-func RecordDecision(planPath, clipID, event string, reasons []string) error {
-	plan, clips, err := LoadClips(planPath)
+func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []string) error {
+	plan, clips, err := LoadClips(fsys, planPath)
 	if err != nil {
 		return err
 	}
@@ -673,7 +686,7 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	record := PlanRecord{
 		Schema: TrainingSchema, PlanID: planned, Created: now.UTC().Format(time.RFC3339),
 		Engine: Version, PromptVersion: recipe.Version,
-		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(sourcePath),
+		Episode: RecordEpisode{File: filepath.Base(sourcePath), Key: EpisodeKey(e.Files, sourcePath),
 			Transcript: wordsHash(lines),
 			Window:     [2]float64{roundTo(window.Start, 3), roundTo(window.End, 3)}},
 		Planner:  RecordPlanner{Kind: kind, Model: model},

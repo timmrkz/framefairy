@@ -19,10 +19,8 @@ import (
 // make test runs this with the race detector, which is the point of it: a
 // queue that only works when nobody is looking is not a queue.
 func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	st := openStore()
+	home := "/home/tim"
+	st := memoryStore()
 
 	var events, broken atomic.Int64
 	q := newQueue(st, func(u JobUpdate) {
@@ -109,10 +107,8 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 // once, because the interface does not wait for one removal before the
 // next.
 func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	st := openStore()
+	home := "/home/tim"
+	st := memoryStore()
 	q := newQueue(st, func(JobUpdate) {}, func(string) {})
 
 	episode := filepath.Join(home, "ep.mp4")
@@ -159,10 +155,7 @@ func TestStoppingAnEpisodeWaitsForItsJobs(t *testing.T) {
 // button twice. A test that makes one call at a time proves nothing about
 // it.
 func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	st := openStore()
+	st := memoryStore()
 	q := newQueue(st, func(JobUpdate) {}, func(string) {})
 
 	held := func(ctx context.Context, p *engine.Project) (string, error) {
@@ -217,10 +210,7 @@ func TestAskingForTheSameWorkTwiceAtOnceQueuesItOnce(t *testing.T) {
 // goroutine that is the lane died with it: every job queued after it waited
 // for ever and the app looked frozen with nothing to say why.
 func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	st := openStore()
+	st := memoryStore()
 
 	var mu sync.Mutex
 	finished := map[string]string{}
@@ -266,10 +256,7 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 
 // Quitting stops every job, running and queued, and nothing new starts.
 func TestQuittingStopsEveryJob(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	q := newQueue(openStore(), func(JobUpdate) {}, func(string) {})
+	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
 	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
 		<-ctx.Done()
 		return "", engine.ErrCancelled
@@ -319,12 +306,9 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 // other way round, and a window that kept the last one it heard showed a
 // finished job as waiting, for good.
 func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	var mu sync.Mutex
 	newest := map[string]Job{}
-	q := newQueue(openStore(), func(u JobUpdate) {
+	q := newQueue(memoryStore(), func(u JobUpdate) {
 		mu.Lock()
 		defer mu.Unlock()
 		if u.Job.Seq == 0 {
@@ -401,6 +385,9 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 // What a job says is kept in a file in its episode's work folder, detail
 // lines too, since the app has no page for it: that file is where a
 // failure is looked into.
+//
+// On the real disk: a job log is opened inside the work folder through
+// os.Root, which no link leads out of.
 func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

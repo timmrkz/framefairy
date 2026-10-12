@@ -361,6 +361,19 @@ file and fails on a skip whose reason or condition is about ffmpeg,
 ffprobe, `Preflight`, `SubtitleFilter` or `VideoEncoder` that does not go
 through the package, so a new test cannot skip silently again.
 
+**A test goes to the real disk only when it says why.** Our own files,
+plans, transcripts, job records, the library and the training records,
+are read and written through an `afero.Fs`, see `engine/files.go`, and a
+test hands it memory. A test that cannot, because ffmpeg or another
+program reads its files, or because a link or a lock on the disk is what
+it tests, says so in a comment that starts with "On the real disk", on
+the function itself. A reason at the top of a file does not count, since
+it would also cover the tests added to the file later. `TestTestsStayOffTheDisk` in
+`internal/offdisk` reads every test file and fails on a function that
+calls `t.TempDir`, a file function of `os`, `afero.NewOsFs` or the
+engine's `disk` without one. It imports none of the files it reads, so
+`make changed` runs it whenever a test file changed.
+
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a
 test finds the ffmpeg and llama-server `make` built before any other. Not

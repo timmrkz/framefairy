@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // Every edit the app makes goes through editPlan, and the app has no save
@@ -43,46 +45,45 @@ func editableTranscript() *Transcript {
 	}, nil, 0, 0, nil)
 }
 
-func editablePlanPath(t *testing.T) string {
+// editablePlanPath is editablePlan in a plan file in memory, and the
+// memory it is in.
+func editablePlanPath(t testing.TB) (afero.Fs, string) {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	if err := afero.WriteFile(fsys, path, []byte(editablePlan), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "clips.json")
-	if err := os.WriteFile(path, []byte(editablePlan), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return fsys, path
 }
 
 func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
 
 	failures := []struct {
 		name string
 		run  func() error
 	}{
-		{"a clip that is not there", func() error { return SetRejected(path, "99", true) }},
-		{"a reason nobody knows", func() error { return SetRejected(path, "01", true, "langweilig") }},
-		{"a clip under a second", func() error { return TrimClip(path, "01", 12, 12.2, tr, 0.1, ToWords) }},
-		{"a crop to the left of the frame", func() error { return SetCrop(path, "01", 10.5, -4, SourceInfo{}, 0) }},
+		{"a clip that is not there", func() error { return SetRejected(fsys, path, "99", true) }},
+		{"a reason nobody knows", func() error { return SetRejected(fsys, path, "01", true, "langweilig") }},
+		{"a clip under a second", func() error { return TrimClip(fsys, path, "01", 12, 12.2, tr, 0.1, ToWords) }},
+		{"a crop to the left of the frame", func() error { return SetCrop(fsys, path, "01", 10.5, -4, SourceInfo{}, 0) }},
 	}
 	for _, c := range failures {
 		t.Run(c.name, func(t *testing.T) {
-			before, _ := os.ReadFile(path)
+			before, _ := afero.ReadFile(fsys, path)
 			if err := c.run(); err == nil {
 				t.Fatalf("the edit was accepted")
 			}
-			after, err := os.ReadFile(path)
+			after, err := afero.ReadFile(fsys, path)
 			if err != nil || string(after) != string(before) {
 				t.Errorf("the plan changed:\n%s", after)
 			}
 		})
 	}
 	// A half-written plan is never left behind either.
-	entries, _ := os.ReadDir(filepath.Dir(path))
+	entries, _ := afero.ReadDir(fsys, filepath.Dir(path))
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".clips-") {
 			t.Errorf("a temporary plan was left behind: %s", entry.Name())
@@ -91,10 +92,10 @@ func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
 }
 
 func TestEveryEditRaisesTheRevision(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
 	revision := func() int {
-		plan, _, err := LoadClips(path)
+		plan, _, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,10 +106,10 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		t.Fatalf("a fresh plan starts at %d", revision())
 	}
 	steps := []func() error{
-		func() error { return SetRejected(path, "02", true) },
-		func() error { return TrimClip(path, "01", 10, 12.4, tr, 0.1, ToWords) },
-		func() error { return SetCrop(path, "01", 10.5, 200, SourceInfo{}, 0) },
-		func() error { return ResetCrop(path, "01", 10.5) },
+		func() error { return SetRejected(fsys, path, "02", true) },
+		func() error { return TrimClip(fsys, path, "01", 10, 12.4, tr, 0.1, ToWords) },
+		func() error { return SetCrop(fsys, path, "01", 10.5, 200, SourceInfo{}, 0) },
+		func() error { return ResetCrop(fsys, path, "01", 10.5) },
 	}
 	for i, step := range steps {
 		if err := step(); err != nil {
@@ -119,7 +120,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		}
 	}
 	// The fields the loader knows nothing about are still there at the end.
-	body, _ := os.ReadFile(path)
+	body, _ := afero.ReadFile(fsys, path)
 	for _, want := range []string{`"custom"`, `"note": "mine"`, `"source": "ep.mp4"`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("%s was lost:\n%s", want, body)
@@ -147,19 +148,19 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		{"a cut put back", Gesture{Kind: "join", From: 11.5}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			path := editablePlanPath(t)
-			before, _ := os.ReadFile(path)
-			shown, err := ShapeClipView(path, "01", c.g, tr, 0.1, nil)
+			fsys, path := editablePlanPath(t)
+			before, _ := afero.ReadFile(fsys, path)
+			shown, err := ShapeClipView(fsys, path, "01", c.g, tr, 0.1, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if after, _ := os.ReadFile(path); string(after) != string(before) {
+			if after, _ := afero.ReadFile(fsys, path); string(after) != string(before) {
 				t.Fatal("showing a gesture changed the plan")
 			}
-			if err := Reshape(path, "01", c.g, tr, 0.1); err != nil {
+			if err := Reshape(fsys, path, "01", c.g, tr, 0.1); err != nil {
 				t.Fatal(err)
 			}
-			_, clips, err := LoadClips(path)
+			_, clips, err := LoadClips(fsys, path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +171,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 			if fmt.Sprint(shown.Pieces) != fmt.Sprint(saved) {
 				t.Errorf("shown %v, saved %v", shown.Pieces, saved)
 			}
-			landed, err := ClipCaptionsView(path, "01", tr, nil)
+			landed, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -184,8 +185,8 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		})
 	}
 	// A gesture that is not one is refused, and nothing is written.
-	path := editablePlanPath(t)
-	before, _ := os.ReadFile(path)
+	fsys, path := editablePlanPath(t)
+	before, _ := afero.ReadFile(fsys, path)
 	for _, g := range []Gesture{
 		{Kind: "trim", Edge: "start", From: math.NaN()},
 		{Kind: "trim", Edge: "middle", From: 10},
@@ -193,14 +194,14 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		{Kind: "move", Index: 5, From: 10, To: 11},
 		{Kind: "join", From: 20},
 	} {
-		if _, err := ShapeClip(path, "01", g, tr, 0.1); err == nil {
+		if _, err := ShapeClip(fsys, path, "01", g, tr, 0.1); err == nil {
 			t.Errorf("%+v was shown", g)
 		}
-		if err := Reshape(path, "01", g, tr, 0.1); err == nil {
+		if err := Reshape(fsys, path, "01", g, tr, 0.1); err == nil {
 			t.Errorf("%+v was saved", g)
 		}
 	}
-	if after, _ := os.ReadFile(path); string(after) != string(before) {
+	if after, _ := afero.ReadFile(fsys, path); string(after) != string(before) {
 		t.Error("a refused gesture changed the plan")
 	}
 }
@@ -222,11 +223,11 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 		{"edge past it", 10.49, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			path := editablePlanPath(t)
-			if err := TrimClip(path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
+			fsys, path := editablePlanPath(t)
+			if err := TrimClip(fsys, path, "01", c.start, 13.1, tr, 0.1, ToFrames); err != nil {
 				t.Fatal(err)
 			}
-			view, err := ClipCaptionsView(path, "01", tr, nil)
+			view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -250,9 +251,9 @@ func TestAWordAnEdgeCutsIntoIsCaptionedWhileItIsSaid(t *testing.T) {
 }
 
 func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
-	view, err := ClipCaptionsView(path, "01", tr, nil)
+	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +298,7 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 		t.Errorf("colours %+v", s)
 	}
 
-	if _, err := ClipCaptionsView(path, "99", tr, nil); err == nil {
+	if _, err := ClipCaptionsView(fsys, path, "99", tr, nil); err == nil {
 		t.Error("a clip that is not in the plan was accepted")
 	}
 }
@@ -305,11 +306,11 @@ func TestClipCaptionsComeBackOnTheClipClock(t *testing.T) {
 // The face and the size of the captions belong to a whole clip set, and
 // they are changed where the work happens, in the workspace.
 func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
-	path := editablePlanPath(t)
-	if err := SetCaptionStyle(path, map[string]any{"font": "Anton", "size": 72.0}); err != nil {
+	fsys, path := editablePlanPath(t)
+	if err := SetCaptionStyle(fsys, path, map[string]any{"font": "Anton", "size": 72.0}); err != nil {
 		t.Fatal(err)
 	}
-	plan, _, err := LoadClips(path)
+	plan, _, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,15 +318,15 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		t.Errorf("the style came back as %+v", s)
 	}
 	// The switches of the captions column, text and box, are on or off.
-	if err := SetCaptionStyle(path, map[string]any{"text": false, "box": false}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"text": false, "box": false}); err != nil {
 		t.Fatal(err)
 	}
-	if plan, _, err := LoadClips(path); err != nil {
+	if plan, _, err := LoadClips(fsys, path); err != nil {
 		t.Fatal(err)
 	} else if s := ResolveStyle(plan.CaptionStyle()); s.Text || s.Box {
 		t.Errorf("switched off, the style came back as %+v", s)
 	}
-	if err := SetCaptionStyle(path, map[string]any{"text": true, "box": true}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"text": true, "box": true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -348,13 +349,13 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		{"text": 0.0},
 		{"box": "off"},
 	} {
-		if err := SetCaptionStyle(path, bad); err == nil {
+		if err := SetCaptionStyle(fsys, path, bad); err == nil {
 			t.Errorf("%v was accepted", bad)
 		}
 	}
 
 	// Nothing of the refused edits reached the file, and what was set stays.
-	plan, _, err = LoadClips(path)
+	plan, _, err = LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +363,7 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 		t.Errorf("the style came back as %+v", s)
 	}
 	// And the clips are still there, with the fields nobody knows.
-	body, _ := os.ReadFile(path)
+	body, _ := afero.ReadFile(fsys, path)
 	for _, want := range []string{`"custom"`, `"note": "mine"`, `"caption_style"`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("%s is missing:\n%s", want, body)
@@ -373,10 +374,10 @@ func TestSetCaptionStyleTakesOnlyValuesTheRenderWouldKeep(t *testing.T) {
 // The caption line of a clip is moved by hand in the app, in steps, and put
 // back with one click. What the render draws has to follow.
 func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
-	editedPlan := editablePlanPath(t)
+	fsys, editedPlan := editablePlanPath(t)
 	captionY := func() *float64 {
 		t.Helper()
-		_, clips, err := LoadClips(editedPlan)
+		_, clips, err := LoadClips(fsys, editedPlan)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -393,7 +394,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 		t.Fatalf("a fresh clip sits at %v", *got)
 	}
 	// Anywhere between two steps lands on the nearer one.
-	if err := SetCaptionY(editedPlan, "01", 437); err != nil {
+	if err := SetCaptionY(fsys, editedPlan, "01", 437); err != nil {
 		t.Fatal(err)
 	}
 	if got := captionY(); got == nil || *got != 440 {
@@ -405,7 +406,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 		{9000, CaptionYMax},
 		{-400, CaptionYMin},
 	} {
-		if err := SetCaptionY(editedPlan, "01", c.value); err != nil {
+		if err := SetCaptionY(fsys, editedPlan, "01", c.value); err != nil {
 			t.Fatal(err)
 		}
 		if got := captionY(); got == nil || *got != c.want {
@@ -415,7 +416,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 
 	// The look the render uses for that clip carries the new line, and the
 	// plan's own look is left alone for every other clip.
-	_, clips, err := LoadClips(editedPlan)
+	_, clips, err := LoadClips(fsys, editedPlan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +436,7 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 	}
 
 	// What the app draws sits in the same place.
-	view, err := ClipCaptionsView(editedPlan, "01", editableTranscript(), nil)
+	view, err := ClipCaptionsView(fsys, editedPlan, "01", editableTranscript(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,17 +444,17 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 		t.Errorf("the app draws at %v", view.Style.MarginV*1920)
 	}
 
-	if err := ResetCaptionY(editedPlan, "01"); err != nil {
+	if err := ResetCaptionY(fsys, editedPlan, "01"); err != nil {
 		t.Fatal(err)
 	}
 	if got := captionY(); got != nil {
 		t.Errorf("after putting it back the clip sits at %v", *got)
 	}
 
-	if err := SetCaptionY(editedPlan, "99", 300); err == nil {
+	if err := SetCaptionY(fsys, editedPlan, "99", 300); err == nil {
 		t.Error("a clip that is not in the plan was moved")
 	}
-	if err := SetCaptionY(editedPlan, "01", math.Inf(1)); err == nil {
+	if err := SetCaptionY(fsys, editedPlan, "01", math.Inf(1)); err == nil {
 		t.Error("a caption line at infinity was accepted")
 	}
 }
@@ -464,7 +465,8 @@ const planEditsRead = 32
 
 // FuzzPlanEdits runs whatever sequence of edits the fuzzer comes up with,
 // the way a person clicking around the workspace would. Whatever happens,
-// the plan on disk stays a plan that renders.
+// the plan stays a plan that renders. It is in memory: what is under test
+// is the edits, and the disk only made each run wait for its flushes.
 func FuzzPlanEdits(f *testing.F) {
 	f.Add([]byte{0, 100, 130, 1, 60, 110, 2, 115, 0, 3, 105, 0})
 	f.Add([]byte{1, 120, 124, 1, 120, 124})
@@ -481,10 +483,10 @@ func FuzzPlanEdits(f *testing.F) {
 	// across the switch and put the cut back.
 	f.Add([]byte{0, 201, 205, 0, 201, 220, 6, 205, 215, 7, 211, 0})
 	f.Fuzz(func(t *testing.T, script []byte) {
-		path := editablePlanPath(t)
+		fsys, path := editablePlanPath(t)
 		// Clip 02 is two shots that meet at a camera switch at 21, the way
 		// a search parts a clip, and no edit may make one piece of them.
-		if err := os.WriteFile(path, []byte(strings.Replace(editablePlan,
+		if err := afero.WriteFile(fsys, path, []byte(strings.Replace(editablePlan,
 			`"segments": [{"start": 20.0, "end": 22.0}]`,
 			`"segments": [{"start": 20.0, "end": 21.0, "crop_x": 100}, {"start": 21.0, "end": 22.0, "crop_x": 500}]`,
 			1)), 0o644); err != nil {
@@ -496,11 +498,11 @@ func FuzzPlanEdits(f *testing.F) {
 		at := func(b byte) float64 { return float64(b) / 10 }
 		lastRevision := 0
 		// Only the first planEditsRead edits are made. Every edit is a plan
-		// written and flushed to the disk, so a run costs as much as its
-		// script is long, and the fuzzer grows scripts without end. On a
-		// disk slow to flush, a script of hundreds of edits took most of a
-		// second, and shrinking one that reached new code took a minute, so
-		// the fuzzing seemed to hang, see scripts/fuzz.sh.
+		// written whole, so a run costs as much as its script is long, and
+		// the fuzzer grows scripts without end. When the plan was flushed to
+		// the disk, a script of hundreds of edits took most of a second, and
+		// shrinking one that reached new code took a minute, so the fuzzing
+		// seemed to hang, see scripts/fuzz.sh.
 		if len(script) > 3*planEditsRead {
 			script = script[:3*planEditsRead]
 		}
@@ -519,35 +521,35 @@ func FuzzPlanEdits(f *testing.F) {
 				} else if script[i+1]%3 == 0 {
 					to = -1
 				}
-				_ = SetThumbnail(path, clip, from, to)
+				_ = SetThumbnail(fsys, path, clip, from, to)
 			case 6:
 				// A cut takes a part out of the middle, so this is the
 				// one edit that makes pieces rather than only moving them.
-				_ = CutClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
+				_ = CutClip(fsys, path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 7:
-				_ = JoinCut(path, clip, at(script[i+1]), tr)
+				_ = JoinCut(fsys, path, clip, at(script[i+1]), tr)
 			case 8:
-				_ = MoveCut(path, clip, int(script[i+1])%4,
+				_ = MoveCut(fsys, path, clip, int(script[i+1])%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
-				_ = TrimClip(path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
+				_ = TrimClip(fsys, path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
 			case 1:
-				_ = SetCaptionStyle(path, map[string]any{"size": float64(24 + int(script[i+2])%176)})
+				_ = SetCaptionStyle(fsys, path, map[string]any{"size": float64(24 + int(script[i+2])%176)})
 			case 2:
-				_ = SetCrop(path, clip, at(script[i+1]), int(script[i+2])*4, SourceInfo{}, 0)
+				_ = SetCrop(fsys, path, clip, at(script[i+1]), int(script[i+2])*4, SourceInfo{}, 0)
 			case 3:
-				_ = ResetCrop(path, clip, at(script[i+1]))
+				_ = ResetCrop(fsys, path, clip, at(script[i+1]))
 			case 4:
-				_ = SetRejected(path, clip, script[i+2]%2 == 0)
+				_ = SetRejected(fsys, path, clip, script[i+2]%2 == 0)
 			case 5:
 				if script[i+2]%4 == 0 {
-					_ = ResetCaptionY(path, clip)
+					_ = ResetCaptionY(fsys, path, clip)
 				} else {
-					_ = SetCaptionY(path, clip, float64(script[i+2])*8)
+					_ = SetCaptionY(fsys, path, clip, float64(script[i+2])*8)
 				}
 			}
 
-			plan, clips, err := LoadClips(path)
+			plan, clips, err := LoadClips(fsys, path)
 			if err != nil {
 				t.Fatalf("step %d left a plan that does not load: %v", i/3, err)
 			}
@@ -590,7 +592,7 @@ func FuzzPlanEdits(f *testing.F) {
 				}
 			}
 		}
-		entries, _ := os.ReadDir(filepath.Dir(path))
+		entries, _ := afero.ReadDir(fsys, filepath.Dir(path))
 		for _, entry := range entries {
 			if strings.HasPrefix(entry.Name(), ".clips-") {
 				t.Fatalf("a temporary plan was left behind: %s", entry.Name())
@@ -603,7 +605,7 @@ func FuzzPlanEdits(f *testing.F) {
 // is still being written. Every edit has to survive that, because there is
 // no save button to put a lost one back.
 func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	const rounds = 12
 	var wg sync.WaitGroup
 	errs := make(chan error, rounds*2)
@@ -612,7 +614,7 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 			wg.Add(1)
 			go func(id string, y float64) {
 				defer wg.Done()
-				if err := SetCaptionY(path, id, y); err != nil {
+				if err := SetCaptionY(fsys, path, id, y); err != nil {
 					errs <- err
 				}
 			}(id, 200+float64(i))
@@ -623,7 +625,7 @@ func TestEditsAtTheSameTimeDoNotLoseEachOther(t *testing.T) {
 	for err := range errs {
 		t.Fatalf("an edit failed: %s", err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,38 +673,38 @@ func TestCaptionColoursReachTheRenderAndThePreview(t *testing.T) {
 		t.Error("an opacity that is not a number was taken")
 	}
 
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
-	if err := SetCaptionStyle(path, map[string]any{"primary": text, "back_colour": box}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"primary": text, "back_colour": box}); err != nil {
 		t.Fatal(err)
 	}
-	plan, _, err := LoadClips(path)
+	plan, _, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s := ResolveStyle(plan.CaptionStyle()); s.Primary != text || s.BackColour != box {
 		t.Errorf("the render would draw %s on %s", s.Primary, s.BackColour)
 	}
-	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"highlight_colour": "#00aa00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
+	if view, _ := ClipCaptionsView(fsys, path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 1)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
 	// A highlight with an opacity is kept whole, and the pill is as clear
 	// in the short as in the video preview.
-	if err := SetCaptionStyle(path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"highlight_colour": "&H6600AA00"}); err != nil {
 		t.Fatal(err)
 	}
-	if view, _ := ClipCaptionsView(path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
+	if view, _ := ClipCaptionsView(fsys, path, "01", tr, nil); view.Style.HighlightColour != "rgba(0, 170, 0, 0.6)" {
 		t.Errorf("the pill is %s", view.Style.HighlightColour)
 	}
-	if plan, _, err := LoadClips(path); err != nil {
+	if plan, _, err := LoadClips(fsys, path); err != nil {
 		t.Fatal(err)
 	} else if s := ResolveStyle(plan.CaptionStyle()); s.HighlightColour != "&H00AA00&" || s.HighlightAlpha != "66" {
 		t.Errorf("the render would draw the pill %s at %s", s.HighlightColour, s.HighlightAlpha)
 	}
-	view, err := ClipCaptionsView(path, "01", tr, nil)
+	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -743,16 +745,16 @@ func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
 // The highlight is on or off and nothing else, because the render reads a
 // number and a string would quietly count as on.
 func TestCaptionHighlightTakesOnlyOnOrOff(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	for _, bad := range []any{"off", 0.0, nil} {
-		if err := SetCaptionStyle(path, map[string]any{"highlight": bad}); err == nil {
+		if err := SetCaptionStyle(fsys, path, map[string]any{"highlight": bad}); err == nil {
 			t.Errorf("%v was taken for on or off", bad)
 		}
 	}
-	if err := SetCaptionStyle(path, map[string]any{"highlight": false}); err != nil {
+	if err := SetCaptionStyle(fsys, path, map[string]any{"highlight": false}); err != nil {
 		t.Fatal(err)
 	}
-	plan, _, err := LoadClips(path)
+	plan, _, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,11 +767,11 @@ func TestCaptionHighlightTakesOnlyOnOrOff(t *testing.T) {
 // by the moment it stands at, refused where the short has nothing to show,
 // and a trim that leaves it outside hides it without losing it.
 func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
 	thumbs := func() []float64 {
 		t.Helper()
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -781,59 +783,59 @@ func TestThumbnailsAreAddedMovedAndRemoved(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(SetThumbnail(path, "01", -1, 12.5))
-	must(SetThumbnail(path, "01", -1, 10.25))
+	must(SetThumbnail(fsys, path, "01", -1, 12.5))
+	must(SetThumbnail(fsys, path, "01", -1, 10.25))
 	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 12.5 {
 		t.Fatalf("the thumbnails are %v", got)
 	}
 	// Nothing where the short has no picture: in the cut between the two
 	// pieces, before the clip and after it. Nor twice in one place.
-	before, _ := os.ReadFile(path)
+	before, _ := afero.ReadFile(fsys, path)
 	for _, at := range []float64{11.5, 9, 13.5} {
-		if err := SetThumbnail(path, "01", -1, at); err == nil {
+		if err := SetThumbnail(fsys, path, "01", -1, at); err == nil {
 			t.Errorf("a thumbnail was put at %v, which is not in the clip", at)
 		}
 	}
-	if err := SetThumbnail(path, "01", -1, 12.5); err == nil {
+	if err := SetThumbnail(fsys, path, "01", -1, 12.5); err == nil {
 		t.Error("a second thumbnail was put on the same moment")
 	}
-	if err := SetThumbnail(path, "01", 10.7, -1); err == nil {
+	if err := SetThumbnail(fsys, path, "01", 10.7, -1); err == nil {
 		t.Error("a thumbnail that is not there was removed")
 	}
-	if err := SetThumbnail(path, "01", math.NaN(), 12); err == nil {
+	if err := SetThumbnail(fsys, path, "01", math.NaN(), 12); err == nil {
 		t.Error("a thumbnail was moved from nowhere")
 	}
-	after, _ := os.ReadFile(path)
+	after, _ := afero.ReadFile(fsys, path)
 	if string(before) != string(after) {
 		t.Fatal("a refused thumbnail changed the plan")
 	}
-	must(SetThumbnail(path, "01", 12.5, 10.75))
+	must(SetThumbnail(fsys, path, "01", 12.5, 10.75))
 	if got := thumbs(); len(got) != 2 || got[0] != 10.25 || got[1] != 10.75 {
 		t.Fatalf("after the move the thumbnails are %v", got)
 	}
 	// A trim that leaves one outside hides it, and it comes back with the
 	// piece it was in.
-	must(TrimClip(path, "01", 10.5, 13.1, tr, 0.1, ToWords))
+	must(TrimClip(fsys, path, "01", 10.5, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 1 || got[0] != 10.75 {
 		t.Fatalf("after the trim the thumbnails are %v", got)
 	}
-	must(TrimClip(path, "01", 10.0, 13.1, tr, 0.1, ToWords))
+	must(TrimClip(fsys, path, "01", 10.0, 13.1, tr, 0.1, ToWords))
 	if got := thumbs(); len(got) != 2 {
 		t.Fatalf("after the trim back the thumbnails are %v", got)
 	}
-	must(SetThumbnail(path, "01", 10.25, -1))
-	must(SetThumbnail(path, "01", 10.75, -1))
+	must(SetThumbnail(fsys, path, "01", 10.25, -1))
+	must(SetThumbnail(fsys, path, "01", 10.75, -1))
 	if got := thumbs(); len(got) != 0 {
 		t.Fatalf("after removing both the thumbnails are %v", got)
 	}
-	if strings.Contains(string(mustRead(t, path)), "thumbnails") {
+	if strings.Contains(string(mustRead(t, fsys, path)), "thumbnails") {
 		t.Error("an empty list was left in the plan")
 	}
 }
 
-func mustRead(t *testing.T, path string) []byte {
+func mustRead(t *testing.T, fsys afero.Fs, path string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -865,25 +867,17 @@ func TestThumbnailsInAPlanAreChecked(t *testing.T) {
 // halves in the captions, and a correction that reads as two words is two.
 func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
-	dir := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "clips.json")
-	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
+	fsys, path := writePlanAt(t, `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
 	  "segments": [{"start": 10.0, "end": 14.0}],
-	  "words": [[10.2, 12.2, "` + long + `"], [12.5, 13.0, "Und da"]]}]}`
-	if err := os.WriteFile(path, []byte(plan), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	  "words": [[10.2, 12.2, "`+long+`"], [12.5, 13.0, "Und da"]]}]}`)
 	tr := fromStored([]Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und"}}, nil, 0, 0, nil)
 	tr.Correct(map[string]string{wordKey(12.5): "Und da"})
-	loaded, clip, err := planClip(path, "01")
+	loaded, clip, err := planClip(fsys, path, "01")
 	if err != nil {
 		t.Fatal(err)
 	}
 	stops := ShowWords(tr.WordsBetween(10, 14), ResolveStyle(captionStyle(loaded, clip, nil)), tr.Language)
-	view, err := ClipCaptionsView(path, "01", tr, nil)
+	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -908,7 +902,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	// clip dragged onto the second half of the long word starts the clip
 	// there, and the playhead is in that half, so it is the one lit.
 	half := stops[1]
-	shaped, err := ShapeClip(path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
+	shaped, err := ShapeClip(fsys, path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
 		ToWords: true, Frames: at25}, tr, 0.1)
 	if err != nil {
 		t.Fatal(err)
@@ -924,6 +918,8 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 
 // An edit waits for another program editing the same file, the command
 // line or a second copy of the app, and goes ahead once it is done.
+//
+// On the real disk, because the lock between two programs is the system's.
 func TestAnEditWaitsForAnotherProgram(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -951,7 +947,7 @@ func TestAnEditWaitsForAnotherProgram(t *testing.T) {
 
 	got := make(chan struct{})
 	go func() {
-		release := lockFile(path)
+		release := lockFile(disk, path)
 		release()
 		close(got)
 	}()
@@ -983,9 +979,9 @@ func captionWords(c CaptionView) []string {
 // the clip keeps where its edges were the first time anything changes them,
 // and never after. A clip never changed is where it was found.
 func TestAClipKeepsWhereItWasFound(t *testing.T) {
-	path := editablePlanPath(t)
+	fsys, path := editablePlanPath(t)
 	tr := editableTranscript()
-	view, err := ReadPlan(path)
+	view, err := ReadPlan(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -995,13 +991,13 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 
 	trim := func(edge string, at float64) {
 		t.Helper()
-		if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: edge, From: at}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, path, "01", Gesture{Kind: "trim", Edge: edge, From: at}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 	}
 	trim("start", 10.55)
 	trim("end", 12.6)
-	_, clips, err := LoadClips(path)
+	_, clips, err := LoadClips(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1014,16 +1010,16 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 
 	// Putting the start back is a trim to where it was found.
 	trim("start", 10)
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(fsys, path)
 	if clips[0].Segments[0].Start != 10 || *clips[0].Found != [2]float64{10, 13.1} {
 		t.Errorf("start %v, found %v", clips[0].Segments[0].Start, clips[0].Found)
 	}
 
 	// A drag on frames lands on a frame.
-	if err := Reshape(path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frames: at5}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frames: at5}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
-	_, clips, _ = LoadClips(path)
+	_, clips, _ = LoadClips(fsys, path)
 	if got := clips[0].Segments[len(clips[0].Segments)-1].End; got != 12.8 {
 		t.Errorf("a drag to 12.73 lands at %v, want the frame at 12.8", got)
 	}
@@ -1042,9 +1038,11 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	tr := editableTranscript()
 	// Each case starts from the clip with its cut's left edge moved into
 	// zwei on a frame, where no word ends, so a word would move it.
+	var fsys afero.Fs
 	fresh := func() string {
-		path := editablePlanPath(t)
-		if err := Reshape(path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frames: at25}, tr, 0.1); err != nil {
+		var path string
+		fsys, path = editablePlanPath(t)
+		if err := Reshape(fsys, path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frames: at25}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		return path
@@ -1052,10 +1050,10 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	move := func(path string, g Gesture) []Segment {
 		t.Helper()
 		g.Kind, g.Index, g.Frames = "move", 0, at25
-		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1088,7 +1086,7 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	}
 
 	// An edge a cut does not have is refused.
-	if err := Reshape(fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
+	if err := Reshape(fsys, fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
 		t.Error("a move of an edge called middle was taken")
 	}
 }
@@ -1101,13 +1099,13 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	tr := editableTranscript()
 	// zwei ends at 11.0 and drei begins at 12.0, so "eins zwei" stays up
 	// until 11.4. The clip's cut takes 11.1 to 11.9 and with it that hold.
-	segments := func(path string, g Gesture) []Segment {
+	segments := func(fsys afero.Fs, path string, g Gesture) []Segment {
 		t.Helper()
 		g.Frames, g.ToWords = at25, true
-		if err := Reshape(path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
-		_, clips, err := LoadClips(path)
+		_, clips, err := LoadClips(fsys, path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1134,7 +1132,8 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := segments(editablePlanPath(t), c.g)
+			fsys, path := editablePlanPath(t)
+			got := segments(fsys, path, c.g)
 			if got[0].End != c.end {
 				t.Errorf("the edge landed at %v, want %v: %+v", got[0].End, c.end, got)
 			}

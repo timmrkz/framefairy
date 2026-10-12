@@ -18,6 +18,7 @@ type standingServer struct {
 	done chan struct{}
 }
 
+// On the real disk: the stand-in llama-server is a program that is run.
 func leftover(t *testing.T, args ...string) *standingServer {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -46,6 +47,7 @@ func leftover(t *testing.T, args ...string) *standingServer {
 	return s
 }
 
+// On the real disk: the note is read by the next program to start.
 func noteIn(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "llama-servers")
@@ -77,6 +79,8 @@ func exited(s *standingServer, within time.Duration) bool {
 
 // A server a run that has gone left running is stopped when the app
 // starts, and its note goes.
+//
+// On the real disk: the note is read by the next program to start.
 func TestALeftoverServerIsStopped(t *testing.T) {
 	dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--host", "127.0.0.1", "--port", "41234")
@@ -97,6 +101,8 @@ func TestALeftoverServerIsStopped(t *testing.T) {
 
 // A server whose program is still running is in use, by the command line
 // or by another copy of the app, and is left alone with its note.
+//
+// On the real disk: the note is read by the next program to start.
 func TestAServerInUseIsLeftAlone(t *testing.T) {
 	dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--port", "41234")
@@ -149,6 +155,8 @@ func TestAModelPathWithASpaceIsFound(t *testing.T) {
 
 // The one note of the versions before a note had an owner is still read,
 // so a server one of them left behind is found after an update.
+//
+// On the real disk: the note is read by the next program to start.
 func TestTheNoteOfAnOlderVersionIsRead(t *testing.T) {
 	dir := noteIn(t)
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--port", "41234")
@@ -186,6 +194,8 @@ func TestSomebodyElsesProcessIsLeftAlone(t *testing.T) {
 
 // A server stopped the normal way takes its note with it, so the next
 // start has nothing to stop, and only its own note.
+//
+// On the real disk: the note is read by the next program to start.
 func TestAServerStoppedTheNormalWayLeavesNoNote(t *testing.T) {
 	dir := noteIn(t)
 	noteServer(serverNote{PID: 123456, Port: 1, Model: "m"})

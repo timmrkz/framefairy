@@ -2,10 +2,11 @@ package engine
 
 import (
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 const captionPlan = `{
@@ -25,17 +26,9 @@ func captionHeard() []Cue {
 		{64.2, 64.6, "Und"}, {64.65, 65.1, "dann"}, {65.15, 65.6, "kam"}}
 }
 
-func captionPlanPath(t *testing.T) string {
+func captionPlanPath(t *testing.T) (afero.Fs, string) {
 	t.Helper()
-	logs := filepath.Join(t.TempDir(), "ep.framefairy", "logs")
-	if err := os.MkdirAll(logs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(logs, "clips.json")
-	if err := os.WriteFile(path, []byte(captionPlan), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writePlanAt(t, captionPlan)
 }
 
 func cueWords(c CaptionView) string {
@@ -52,10 +45,10 @@ func cueWords(c CaptionView) string {
 // them would, and leaves every other caption as it was. Asked for by Tim:
 // a caption block clicked on the clip timeline and taken out with delete.
 func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
-	path := captionPlanPath(t)
+	fsys, path := captionPlanPath(t)
 	logs := filepath.Dir(path)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
-	before, err := ClipCaptionsView(path, "01", tr, nil)
+	before, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +56,10 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 		t.Fatalf("the test needs two captions, the clip has %d", len(before.Captions))
 	}
 	gone := before.Captions[0]
-	if err := RemoveCaption(logs, path, "01", gone.First, tr, nil); err != nil {
+	if err := RemoveCaption(fsys, logs, path, "01", gone.First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	after, err := ClipCaptionsView(path, "01", tr, nil)
+	after, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,10 +75,10 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	// Each word is removed as it would be on its own, so each comes back
 	// on its own too: corrected again, it reads what it is given.
 	first := gone.Lines[0].Words[0]
-	if err := SetWordText(logs, *first.Said, "Hier", tr); err != nil {
+	if err := SetWordText(fsys, logs, *first.Said, "Hier", tr); err != nil {
 		t.Fatal(err)
 	}
-	again, _ := ClipCaptionsView(path, "01", tr, nil)
+	again, _ := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if !strings.HasPrefix(cueWords(again.Captions[0]), "Hier") {
 		t.Errorf("the word put back reads %q", cueWords(again.Captions[0]))
 	}
@@ -93,13 +86,14 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 
 // A caption that is not there is refused, and nothing is written.
 func TestRemovingACaptionThatIsNotThereIsRefused(t *testing.T) {
-	path := captionPlanPath(t)
+	fsys := afero.NewMemMapFs()
+	fsys, path := captionPlanPath(t)
 	logs := filepath.Dir(path)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
-	if err := RemoveCaption(logs, path, "01", 63.5, tr, nil); err == nil {
+	if err := RemoveCaption(fsys, logs, path, "01", 63.5, tr, nil); err == nil {
 		t.Error("a caption beginning where no word is was removed")
 	}
-	if _, err := os.Stat(correctionsPath(logs)); err == nil {
+	if _, err := fsys.Stat(correctionsPath(logs)); err == nil {
 		t.Error("a refused removal wrote corrections")
 	}
 }
@@ -117,7 +111,8 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 		at += 0.35
 	}
 	tr := fromStored(heard, nil, 0, 0, nil)
-	before, err := ClipCaptionsView(captionPlanPath(t), "01", tr, nil)
+	firstFS, firstPath := captionPlanPath(t)
+	before, err := ClipCaptionsView(firstFS, firstPath, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,11 +120,11 @@ func TestRemovingAnyCaptionLeavesTheOthersAsTheyWere(t *testing.T) {
 		t.Fatalf("the test needs three captions, the clip has %d", len(before.Captions))
 	}
 	for k := range before.Captions {
-		path := captionPlanPath(t)
-		if err := RemoveCaption(filepath.Dir(path), path, "01", before.Captions[k].First, tr, nil); err != nil {
+		fsys, path := captionPlanPath(t)
+		if err := RemoveCaption(fsys, filepath.Dir(path), path, "01", before.Captions[k].First, tr, nil); err != nil {
 			t.Fatal(err)
 		}
-		after, err := ClipCaptionsView(path, "01", tr, nil)
+		after, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

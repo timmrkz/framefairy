@@ -23,6 +23,8 @@ import (
 // release is a folder shaped like the repository, as far as this program
 // reads it, with a key in it, and FRAMEFAIRY_UPDATE_KEY set to its private
 // half. It returns the key.
+//
+// On the real disk: the release tool reads the public key from its file in the repository.
 func release(t *testing.T) ed25519.PrivateKey {
 	t.Helper()
 	root := t.TempDir()
@@ -43,6 +45,8 @@ func release(t *testing.T) ed25519.PrivateKey {
 }
 
 // signed signs a zip for a channel and returns where its entry was written.
+//
+// On the real disk: the release tool reads the zip and writes the entry as files.
 func signed(t *testing.T, channel, name string) string {
 	t.Helper()
 	zip := filepath.Join(t.TempDir(), "app.zip")
@@ -58,6 +62,7 @@ func signed(t *testing.T, channel, name string) string {
 	return out
 }
 
+// On the real disk: the entry is a file the release tool wrote.
 func readBuild(t *testing.T, path string) updates.Build {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -107,6 +112,7 @@ func TestAKeyThatIsNotThePairIsRefused(t *testing.T) {
 	}
 }
 
+// On the real disk: the release tool reads the public key from its file.
 func TestAnEmptyPublicKeyIsRefused(t *testing.T) {
 	release(t)
 	if err := os.WriteFile(publicKeyFile, nil, 0o644); err != nil {
@@ -117,6 +123,7 @@ func TestAnEmptyPublicKeyIsRefused(t *testing.T) {
 	}
 }
 
+// On the real disk: the public key the release tool keeps is a file.
 func TestANewKeyIsNotMadeOverAnOldOne(t *testing.T) {
 	release(t)
 	before, _ := os.ReadFile(publicKeyFile)
@@ -128,6 +135,7 @@ func TestANewKeyIsNotMadeOverAnOldOne(t *testing.T) {
 	}
 }
 
+// On the real disk: the release tool reads the entries and writes the list as files.
 func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	release(t)
 	good := signed(t, "main", "main")

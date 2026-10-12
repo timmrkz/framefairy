@@ -19,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/spf13/afero"
+
 	"framefairy/asr"
 	"framefairy/engine"
 )
@@ -429,13 +431,13 @@ func main() {
 	// The one folder the records go in, set once for the whole program, the
 	// way the app sets it from its settings. Run once set it itself, which
 	// made it state that changed under anything else running.
-	engine.SetTrainingDir(p.opts.TrainingDir)
+	engine.SetTrainingDir(afero.NewOsFs(), p.opts.TrainingDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	log := engine.NewLog(os.Stdout, !p.plain, p.verbose)
-	e := engine.NewEngine(log)
+	e := engine.NewEngine(log, afero.NewOsFs())
 	e.OpenRecognizer = asr.Open
 	var events *os.File
 	if p.events != "" {

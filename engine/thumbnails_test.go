@@ -14,6 +14,8 @@ import (
 // own clock: a moment after a cut is further back in the short than in the
 // episode. Pictures no longer asked for are removed, and nothing that
 // belongs to another clip is touched.
+//
+// On the real disk: ffmpeg reads the short and writes its thumbnails.
 func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
@@ -37,7 +39,7 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	e := NewEngine(nil)
+	e := NewEngine(nil, disk)
 	if err := e.WriteThumbnails(context.Background(), clip, short); err != nil {
 		t.Fatal(err)
 	}

@@ -14,9 +14,11 @@ import (
 // An HDR episode makes an HDR short and a standard one a standard short,
 // each with the episode's own colour tags, see HDR in
 // docs/VIDEO-PREVIEW.md. Plan row 2.156, step 4.
+//
+// On the real disk: ffmpeg makes the episode and renders the short.
 func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false))
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}

@@ -53,6 +53,7 @@ func checkout(client *http.Client, base, email string, seats int) (*http.Respons
 	return resp, ref, n, nil
 }
 
+// On the real disk: the signer's record is flushed and locked by the system.
 func newWorld(t *testing.T, batch int) *world {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(nil)

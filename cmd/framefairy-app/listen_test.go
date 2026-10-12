@@ -119,6 +119,8 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 // that is said, rather than an empty report. Without a speech model the
 // microphone does not start at all, so nobody talks for a minute to be
 // told so at the end. Plan row 2.189.
+//
+// On the real disk: a speech model is a folder the speech library loads.
 func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 	f, _ := listenWith(t, make([]float32, 2*engine.SampleRate))
 	if _, err := f.Listen(); err != nil {
@@ -131,7 +133,7 @@ func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 	standIns.Store(nil)
 	started := false
 	openMicrophone = func() microphone { started = true; return &playingMicrophone{} }
-	f = &FrameFairy{store: &store{dir: t.TempDir(), settings: defaultSettings()}}
+	f = &FrameFairy{store: memoryStore()}
 	f.store.settings.ASRModel = t.TempDir()
 	if _, err := f.Listen(); err != errNoSpeechModel || started {
 		t.Errorf("without a speech model Listen gives %v and the microphone started %v", err, started)
@@ -142,6 +144,8 @@ func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
 // and the installed model is then the one in its usual place, as for a
 // search. Tim pressed Dictate with Parakeet installed and was told it was
 // not. Plan row 2.189.
+//
+// On the real disk: a speech model is a folder the speech library loads.
 func TestListeningFindsTheInstalledSpeechModel(t *testing.T) {
 	listenWith(t, nil)
 	standIns.Store(nil)
@@ -158,7 +162,7 @@ func TestListeningFindsTheInstalledSpeechModel(t *testing.T) {
 	}
 	// The microphone does not start, so nothing tries to load the files.
 	openMicrophone = func() microphone { return brokenMicrophone{} }
-	f := &FrameFairy{store: &store{dir: t.TempDir(), settings: defaultSettings()}}
+	f := &FrameFairy{store: memoryStore()}
 	f.store.settings.ASRModel = ""
 	if _, err := f.Listen(); err == nil || err == errNoSpeechModel {
 		t.Errorf("with the speech model in its usual place Listen gives %v, want it to reach the microphone", err)

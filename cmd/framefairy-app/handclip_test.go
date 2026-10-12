@@ -96,6 +96,8 @@ func TestPathClipsMadeByHandWhileASearchFinds(t *testing.T) {
 // The app closed on a clip made by hand while its part of the episode is
 // being heard says so where the clip would have been, after it opens
 // again, and Continue makes the clip, hearing nothing twice.
+//
+// On the real disk: ffmpeg and the episode's decoder read the episode.
 func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	d := open(t)
 	ep := d.episode("late", minutes5)
@@ -130,7 +132,7 @@ func TestPathClosedWhileAClipIsHeard(t *testing.T) {
 	if heard := d.speech.seconds(); heard > 300+30 {
 		t.Errorf("%.0f s heard for a 300 s episode, %.0f s of them before the app closed", heard, given)
 	}
-	if left := engine.ReadJobs(ep); len(left) != 0 {
+	if left := engine.ReadJobs(disk, ep); len(left) != 0 {
 		t.Errorf("records left: %+v", left)
 	}
 }

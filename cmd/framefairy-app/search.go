@@ -50,10 +50,10 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		case ctx.Err() != nil:
 			// Called off before it started, it loads nothing.
 		case req.To <= 0:
-			_, done := engine.Coverage(p.Source, model)
+			_, done := engine.Coverage(s.store.files, p.Source, model)
 			unheard = !done
 		default:
-			unheard = len(engine.Unheard(p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
+			unheard = len(engine.Unheard(s.store.files, p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
 		}
 		if unheard {
 			go func() {
@@ -87,7 +87,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		req := engine.PlanRequest{From: stopped.From, To: stopped.To}
 		// A search that was refused wrote no record, and the one on disk
 		// is an older search's, about another window.
-		if rec := engine.ReadSearch(path); rec != nil && stopped.Record != "" {
+		if rec := engine.ReadSearch(s.store.files, path); rec != nil && stopped.Record != "" {
 			req = rec.Request()
 		}
 		if req.Count == 0 {
@@ -104,7 +104,7 @@ func (s *FrameFairy) Continue(id, click string) Job {
 		return s.Search(path, req, click)
 	}
 	var carry *engine.JobRecord
-	for _, rec := range engine.ReadJobs(path) {
+	for _, rec := range engine.ReadJobs(s.store.files, path) {
 		if rec.ID == stopped.Record {
 			carry = &rec
 		}
@@ -142,7 +142,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 			// it is recorded with the clip as it was rendered.
 			ids := req.Clips
 			if len(ids) == 0 {
-				if view, err := engine.ReadPlan(req.Plan); err == nil {
+				if view, err := engine.ReadPlan(s.store.files, req.Plan); err == nil {
 					for _, c := range view.Clips {
 						if !c.Rejected {
 							ids = append(ids, c.ID)
@@ -151,7 +151,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 				}
 			}
 			for _, id := range ids {
-				_ = engine.RecordDecision(req.Plan, id, engine.DecisionRendered, nil)
+				_ = engine.RecordDecision(s.store.files, req.Plan, id, engine.DecisionRendered, nil)
 			}
 		}
 		return req.Plan, nil
@@ -197,7 +197,7 @@ func (s *FrameFairy) makeClip(path string, req engine.ClipRequest, carry, click 
 // engine.SuggestedWindow, and no more than the model can read at once. It
 // looks for the clips its window suggests, or for the target typed.
 func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
-	if engine.EverSearched(path) {
+	if engine.EverSearched(s.store.files, path) {
 		return
 	}
 	info, err := s.probe(ctx, path)
@@ -206,7 +206,7 @@ func (s *FrameFairy) firstSearch(ctx context.Context, path string) {
 	}
 	set := s.store.Settings()
 	opts := set.options()
-	room := engine.SearchRoom(opts, filepath.Join(engine.WorkDir(path), "logs"))
+	room := engine.SearchRoom(s.store.files, opts, filepath.Join(engine.WorkDir(path), "logs"))
 	req := engine.PlanRequest{Min: opts.Min, Max: opts.Max}
 	req.To = firstWindowEnd(info.Duration, room, req)
 	end := req.To
@@ -273,7 +273,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 }
 
 func (s *FrameFairy) forgetRecord(path, record string) {
-	if err := engine.RemoveJob(path, record); err != nil {
+	if err := engine.RemoveJob(s.store.files, path, record); err != nil {
 		log.Printf("could not clear the record of %s: %v", path, err)
 	}
 }

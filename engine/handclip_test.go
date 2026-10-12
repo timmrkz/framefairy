@@ -31,10 +31,11 @@ func underwayLog() (*Log, func() [][]Underway) {
 	}
 }
 
+// On the real disk: ffmpeg reads the episode, and the project works beside it.
 func handProject(t *testing.T, source string, log *Log) *Project {
 	t.Helper()
 	var heard int32
-	e := NewEngine(log)
+	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
@@ -49,6 +50,8 @@ func handProject(t *testing.T, source string, log *Log) *Project {
 // with each one and searched nothing. It is on the way from the moment it
 // is asked for, at the playhead, and then where its sentences are, until
 // it is written.
+//
+// On the real disk: ffmpeg reads the episode the clip is heard and framed from.
 func TestAClipMadeByHand(t *testing.T) {
 	source := testEpisode(t, "70")
 	log, told := underwayLog()
@@ -64,13 +67,13 @@ func TestAClipMadeByHand(t *testing.T) {
 	}
 	// Heard where the clip can reach, and not from the start.
 	reach := ClipRequest{At: 20}.reach(30, 70)
-	if gaps := Unheard(source, p.Base.ASRModel, reach); len(gaps) != 0 {
+	if gaps := Unheard(disk, source, p.Base.ASRModel, reach); len(gaps) != 0 {
 		t.Errorf("%v not heard, of the %v the clip can reach", gaps, reach)
 	}
-	if covered, _ := Coverage(source, p.Base.ASRModel); covered != 0 {
+	if covered, _ := Coverage(disk, source, p.Base.ASRModel); covered != 0 {
 		t.Errorf("heard from the start to %.1f s", covered)
 	}
-	view, err := ReadPlan(p.HandPlanPath())
+	view, err := ReadPlan(disk, p.HandPlanPath())
 	if err != nil || len(view.Clips) != 1 {
 		t.Fatalf("%v %+v", err, view)
 	}
@@ -83,14 +86,14 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	summaries := Status(source, p.Base.ASRModel).Plans
+	summaries := Status(disk, source, p.Base.ASRModel).Plans
 	if len(summaries) != 1 || summaries[0].By != ByHand {
 		t.Fatalf("clip sets %+v", summaries)
 	}
 	if passes := fmt.Sprint(SearchPasses(summaries, 70)); passes != "[{{0 70} 0}]" {
 		t.Errorf("clips made by hand searched %s", passes)
 	}
-	if left := ReadJobs(source); len(left) != 0 {
+	if left := ReadJobs(disk, source); len(left) != 0 {
 		t.Errorf("records left behind: %+v", left)
 	}
 
@@ -134,8 +137,8 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	arriving := ArrivingCaptionsView(p.HandPlanPath(), *cut, heard, nil)
-	written, err := ClipCaptionsView(p.HandPlanPath(), c.ID, heard, nil)
+	arriving := ArrivingCaptionsView(disk, p.HandPlanPath(), *cut, heard, nil)
+	written, err := ClipCaptionsView(disk, p.HandPlanPath(), c.ID, heard, nil)
 	if arriving == nil || err != nil || len(arriving.Captions) == 0 || len(arriving.Captions) != len(written.Captions) {
 		t.Errorf("captions on the way %v, written %v %v", arriving, written, err)
 	}
@@ -145,7 +148,7 @@ func TestAClipMadeByHand(t *testing.T) {
 	if err != nil || key != HandPlanName+"/h02" {
 		t.Fatalf("%q %v", key, err)
 	}
-	view, _ = ReadPlan(p.HandPlanPath())
+	view, _ = ReadPlan(disk, p.HandPlanPath())
 	if len(view.Clips) != 2 {
 		t.Fatalf("%d clips", len(view.Clips))
 	}
@@ -162,6 +165,8 @@ func TestAClipMadeByHand(t *testing.T) {
 
 // Clips made by hand at the same moment each go in, each with a number of
 // its own, taken where the set is written.
+//
+// On the real disk: ffmpeg reads the episode the clips are heard and framed from.
 func TestClipsMadeByHandAtOnce(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -178,7 +183,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// A project each, the way the app runs every job with its own.
-			q := NewProject(NewEngine(log), source, p.Base)
+			q := NewProject(NewEngine(log, disk), source, p.Base)
 			keys[i], errs[i] = q.MakeClip(context.Background(), fmt.Sprintf("clip-%d", i),
 				ClipRequest{At: float64(5 + i*12)}, nil)
 		}()
@@ -194,7 +199,7 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 		}
 		seen[key] = true
 	}
-	view, err := ReadPlan(p.HandPlanPath())
+	view, err := ReadPlan(disk, p.HandPlanPath())
 	if err != nil || len(view.Clips) != 4 {
 		t.Fatalf("%v, %d clips", err, len(view.Clips))
 	}
@@ -203,6 +208,8 @@ func TestClipsMadeByHandAtOnce(t *testing.T) {
 // A clip made by hand called off leaves no clip, keeps its card where the
 // clip would have appeared, saying it stopped, and keeps its record, to be
 // carried on like any job.
+//
+// On the real disk: the project works beside an episode ffmpeg made.
 func TestAClipMadeByHandCalledOff(t *testing.T) {
 	t.Parallel()
 	source := testEpisode(t, "70")
@@ -213,7 +220,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 	if _, err := p.MakeClip(ctx, "clip-9", ClipRequest{At: 30}, nil); err == nil {
 		t.Fatal("a clip called off was made")
 	}
-	if _, clips, err := LoadClips(p.HandPlanPath()); err == nil && len(clips) > 0 {
+	if _, clips, err := LoadClips(disk, p.HandPlanPath()); err == nil && len(clips) > 0 {
 		t.Errorf("%d clips made", len(clips))
 	}
 	lists := told()
@@ -223,7 +230,7 @@ func TestAClipMadeByHandCalledOff(t *testing.T) {
 	if last := lists[len(lists)-1]; len(last) != 1 || last[0].Step != StepStopped || last[0].Start != 30 {
 		t.Errorf("last on the way %+v, want it stopped at the playhead", last)
 	}
-	recs := ReadJobs(source)
+	recs := ReadJobs(disk, source)
 	if len(recs) != 1 || recs[0].Kind != JobClip || recs[0].Clip() != (ClipRequest{At: 30}) || !recs[0].Interrupted() {
 		t.Errorf("records %+v", recs)
 	}
