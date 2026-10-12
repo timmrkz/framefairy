@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/afero"
 	"io"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -172,14 +171,11 @@ func (m *measuring) shutDown() {
 // read is the loudness measured so far, from the files, kept while they
 // stay as they were.
 func (m *measuring) read(path string) engine.Levels {
-	if m == nil {
-		return engine.ReadLevels(m.files, path)
-	}
 	// The episode's own file is in the stamp: when it changes, what was
 	// measured of it before is no longer its loudness.
 	stamp := path
 	for _, file := range append([]string{path}, engine.LevelsFiles(path)...) {
-		info, err := os.Stat(file)
+		info, err := m.files.Stat(file)
 		if err != nil {
 			stamp += "|-"
 			continue

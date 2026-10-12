@@ -142,7 +142,13 @@ func (s *FrameFairy) Waveform(path string, from, to float64, buckets int) ([]flo
 	// same frames from the same samples, so the waveform has whatever
 	// either has measured. The measuring runs ahead of the transcription,
 	// and a transcript made before it existed is there before it has run.
-	t = s.levels.read(path).Over(t)
+	var levels engine.Levels
+	if s.levels != nil {
+		levels = s.levels.read(path)
+	} else {
+		levels = engine.ReadLevels(p.Files, path)
+	}
+	t = levels.Over(t)
 	if t == nil {
 		return []float32{}, nil
 	}
