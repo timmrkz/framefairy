@@ -435,17 +435,17 @@ type model struct {
 	mu     sync.Mutex
 	hang   bool
 	fail   bool
-	// held is closed when the model answers again, and lets go of every
-	// answer it held, the way a slow model answers what it was asked.
-	held  chan struct{}
-	asked chan struct{}
-	calls atomic.Int32
+	asked  chan struct{}
+	calls  atomic.Int32
+	// let is closed when the model stops holding its answers, and gives
+	// every answer it held, see hangs.
+	let chan struct{}
 	// done lets go of every answer held, when the test ends.
 	done chan struct{}
 }
 
 func newModel(t *testing.T) *model {
-	m := &model{done: make(chan struct{})}
+	m := &model{let: make(chan struct{}), done: make(chan struct{})}
 	m.server = httptest.NewServer(http.HandlerFunc(m.answer))
 	t.Cleanup(m.server.Close)
 	t.Cleanup(func() { close(m.done) })
@@ -453,20 +453,18 @@ func newModel(t *testing.T) *model {
 }
 
 // hangs makes the model hold every answer until the search is stopped or
-// the model answers again. Let go of, it answers what it held: a model
-// that was slow answers the questions it was asked, so a search that was
-// finding while it held finds its clips and lets the lane go.
+// the model is told to answer again. Told to answer, it answers what it
+// held too, the way a model that was slow answers in the end: a search
+// asked while it held went on finding for good, and a video added after
+// it never got its turn to be heard, plan row 2.222.
 func (m *model) hangs(on bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.hang = on
-	switch {
-	case on && m.held == nil:
-		m.held = make(chan struct{})
-	case !on && m.held != nil:
-		close(m.held)
-		m.held = nil
+	if m.hang && !on {
+		close(m.let)
+		m.let = make(chan struct{})
 	}
+	m.hang = on
+	m.mu.Unlock()
 }
 
 // fails makes the model answer with an error.
@@ -491,7 +489,7 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	m.calls.Add(1)
 	m.mu.Lock()
-	hang, fail, held := m.hang, m.fail, m.held
+	hang, fail, let := m.hang, m.fail, m.let
 	if m.asked != nil {
 		close(m.asked)
 		m.asked = nil
@@ -503,9 +501,9 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-m.done:
 			return
-		case <-held:
+		case <-let:
 		}
-		// Let go of, it answers as it does now.
+		// Let go of, it answers the way it is set now.
 		m.mu.Lock()
 		fail = m.fail
 		m.mu.Unlock()

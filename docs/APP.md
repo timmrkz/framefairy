@@ -1679,7 +1679,9 @@ bubble scrolled by those eight pixels.
     - **Two fingers move along the episode**, the way an editing timeline
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
-      to the whole episode. **Both ends are walls.** A pinch that can go no
+      to the whole episode. Both are heard anywhere over the clip timeline,
+      the playhead and its head included: a click puts the playhead under
+      the hand, and a swipe from there goes on, 2.230. **Both ends are walls.** A pinch that can go no
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
       wherever the paused playhead goes. **While it plays, the view keeps
@@ -2683,7 +2685,8 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
   - `window`: the window's warnings and errors and anything thrown and
     not caught, every time the window stood still for more than
     400 ms, the space bar with where the keyboard was and which
-    workspace could hear it, calls to the Go side that failed, took
+    workspace could hear it, where a swipe or a pinch on the clip
+    timeline took the view, calls to the Go side that failed, took
     longer than half a second or came more than 60 in a second, which
     workspace is asked for and in front, each step of a workspace
     opening and what it still waits for when it is slow, and each step

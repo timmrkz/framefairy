@@ -84,6 +84,10 @@ type Engine struct {
 	// where a package variable made every test that changed it wait.
 	checkpointEvery time.Duration
 	levelsEvery     time.Duration
+	// system is the system whose encoders a render reaches for, see
+	// encoderOrderFor, this one unless a test says otherwise, so the order
+	// of a Mac can be run on any machine.
+	system string
 
 	mu               sync.Mutex
 	encoder          Encoder

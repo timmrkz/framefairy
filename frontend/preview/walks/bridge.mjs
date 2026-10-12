@@ -267,7 +267,7 @@ export async function ask(page, name, ...args) {
 // back from the video preview's canvas the frame that is on screen, as
 // the probes of the frame queue do, rather than taking anybody's word for
 // it.
-const BITS = 10;
+export const BITS = 10;
 const STRIP = 12 / 180;
 
 // Puts the reader on the page once: the number of the frame on the

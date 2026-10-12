@@ -113,7 +113,10 @@ same memory and the same graphics chip, and each is slower for sharing
 them. A search that comes to finding takes the lane of hearing back from a
 search that hears, which saves what it heard, waits its turn and carries
 on after. Work that is not a step of a search, a model being installed, is
-neither taken back nor held up.
+neither taken back nor held up. Nor is a search whose language model is in
+the cloud: it shares nothing with the speech model, so hearing goes on
+beside it, and a video added while it waits for its answer is heard at
+once.
 
 And a clip made by hand hears first. Somebody pressed I or O and is
 looking at its card, and it hears the minute around the playhead where a

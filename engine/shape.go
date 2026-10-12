@@ -159,9 +159,18 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		case "end":
 			end = g.landEnd(words, goes, g.From, keepPause)
 			end = math.Max(end, start+MinClip)
+			// Not past the end of the video, which is where the hand
+			// goes when it pulls the last clip of a video out to the end.
+			// A word or a second more than the clip has left there.
+			if over := g.Frames.End(); over > 0 {
+				end = math.Min(end, over)
+			}
 			end = math.Min(end, start+MaxClipSpan)
 		case "both":
 			start, end = g.landStart(words, g.From, keepPause), g.landEnd(words, nil, g.To, keepPause)
+			if over := g.Frames.End(); over > 0 {
+				end = math.Min(end, over)
+			}
 			if end-start < MinClip {
 				return nil, -1, renderErr("a clip needs at least one second")
 			}
@@ -289,8 +298,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 // onFrame puts a moment on the start of the frame it means, the only place
 // a video is cut, see PieceOnFrames.
 func (g Gesture) onFrame(at float64) float64 {
-	at, _ = g.Frames.PieceOnFrames(at, at)
-	return at
+	return g.Frames.FrameAt(at)
 }
 
 // frame is one frame of the episode in seconds, or nought where its rate

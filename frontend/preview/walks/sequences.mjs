@@ -31,7 +31,7 @@
 //                      which puts the part back
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
 //   ["drag while playing", edge, px]
-//                      plays the clip if it does not play, and drags its
+//                      plays the clip from a moment into it, and drags its
 //                      "end" edge, or the first edge of its first "cut", by
 //                      px in twenty steps while it plays, reading the
 //                      playhead and the frame on screen on every animation
@@ -79,6 +79,14 @@
 //                      the same with the video paused, and no play
 //   ["reset", edge]    double-clicks the clip's edge, which puts it back
 //                      where the clip was found
+//   ["swipe after click", share, px]
+//                      clicks the clip timeline this share of the way
+//                      along the clip, which puts the playhead under the
+//                      hand, and then swipes with two fingers from there
+//                      three times by px without moving the hand, later in
+//                      the episode for more than nought. The clip has to
+//                      move along the clip timeline the other way on every
+//                      swipe
 //   ["cut switch", n]  double-clicks on the clip timeline where the clip's
 //                      nth shot meets the next, from 1, which cuts a part
 //                      out across the camera switch
@@ -181,6 +189,11 @@
 //                      click on the clip timeline and plays until the play
 //                      stops there, so the episode's decoder reads to the
 //                      end of the file
+//   ["past the end"]
+//                      drags the clip's end far to the right three times,
+//                      each from where the end is drawn then, and checks
+//                      after each that the clip ends where the video does
+//                      at the latest, in the engine's plan
 //   ["no browser decoder"]
 //                      takes the browser's picture and sound decoders away,
 //                      every one, and opens the episode again
@@ -270,9 +283,10 @@
 //                      start played again
 //   ["nailed"]         since "press while playing", the playhead stood
 //                      still under the hand while it held still, on the
-//                      press and again where the hand moved to, the button
-//                      said Pause the whole time, and the play went on
-//                      from where the hand let go
+//                      press and again where the hand moved to, the frame
+//                      that holds it came and nothing was drawn after it,
+//                      the button said Pause the whole time, and the play
+//                      went on from where the hand let go
 //   ["only the video", "across cuts"], ["the clip shown", "across cuts"]
 //                      the same, and the play crossed a cut: it stood in
 //                      two pieces of the clip or more, and on the video
@@ -550,10 +564,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
-import { open, chosen, shown, engineState, handles, timeline, middle, high, drag } from "./bridge.mjs";
+import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFrame } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFrame, BITS } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -792,6 +806,17 @@ export const sequences = [
       ["join", 1],
       ["cuts", 0],
       ["same", "start"],
+    ],
+  },
+  {
+    // Tim swiped along the clip timeline with two fingers, clicked to put
+    // the playhead where he was, and could not swipe on from there. The
+    // playhead was then under the hand, and it was the one thing the
+    // swipe did not go through.
+    name: "a swipe goes on after a click put the playhead under the hand",
+    steps: [
+      ["swipe after click", 0.3, 60],
+      ["swipe after click", 0.5, -60],
     ],
   },
   {
@@ -1723,6 +1748,14 @@ export const sequences = [
     // at once. Plan row 2.166.
     name: "the picture comes back after the playhead reached the end of the episode",
     steps: [["play to the end"], ["from the app", 4]],
+  },
+  {
+    // A clip's end dragged past the end of the video was saved there, and
+    // its short then came out shorter than the clip and failed its check.
+    // On the bridge's video of 120 s the second drag saved 456.4 s. Plan
+    // row 2.170.
+    name: "a clip's end dragged past the end of the video stops where the video ends",
+    steps: [["past the end"], ["from the app", 4]],
   },
   {
     // Tim saw the first frame of a workspace blurred until he played, and
@@ -2773,6 +2806,18 @@ for (const seq of toWalk) {
       }
       case "drag while playing": {
         const [edge, px] = arg;
+        // The play starts a moment into the clip, so however slowly a busy
+        // machine moves the hand, the edge it drags stays far ahead of the
+        // playhead. Played on from wherever the step before left it, the
+        // play came within a frame of the clip's end while the hand was
+        // still on its way, the end was dragged back over the playhead, and
+        // the playhead went back with it, which is right and not what this
+        // step is about.
+        const g0 = await handles(page);
+        const into = g0.start.x + g0.start.w;
+        await page.mouse.click(into + 0.05 * (g0.end.x - into), high(g0.track));
+        await settle(page);
+        await page.evaluate(() => document.body.focus());
         await preview(page, 0.2);
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
@@ -2962,7 +3007,25 @@ for (const seq of toWalk) {
             await page.waitForTimeout(400);
             await page.keyboard.press(key);
           }
-        } else await page.waitForTimeout(seconds * 1000);
+        } else {
+          // So many seconds of the play, read off the playhead, not off the
+          // wall: a busy machine takes a moment longer to start the play,
+          // and a play timed by the wall then stood inside the clip for
+          // 1.83 s where the rules ask 2. The play may end sooner, at the
+          // clip's end.
+          await page
+            .waitForFunction(
+              (to) => {
+                const playing = !!document.querySelector('button[aria-label="Pause"]');
+                window.__wasPlaying ||= playing;
+                return (window.__wasPlaying && !playing) || Number(document.querySelector(".screen").dataset.playhead) >= to;
+              },
+              began + seconds,
+              { timeout: seconds * 1000 + 30000, polling: "raf" },
+            )
+            .catch(() => (wrong = `the play from ${began.toFixed(3)} neither went on ${seconds} s nor ended`));
+          await page.evaluate(() => delete window.__wasPlaying);
+        }
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -3022,6 +3085,32 @@ for (const seq of toWalk) {
         const g = await handles(page);
         await page.mouse.dblclick(middle(g[arg]), high(g.track));
         await watch.step("reset", s);
+        break;
+      }
+      case "swipe after click": {
+        const [share, px] = arg;
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        const x = from + share * (g.end.x - from);
+        if (!inside(g.track, x)) {
+          wrong = `${share} of the way along the clip is not on the clip timeline`;
+          break;
+        }
+        await page.mouse.click(x, high(g.track));
+        await settle(page);
+        // The hand stays where it clicked, on the playhead now, and swipes
+        // from there, the way a hand on a trackpad does after it clicks.
+        for (let i = 1; i <= 3 && !wrong; i++) {
+          const was = (await handles(page)).start.x;
+          await page.mouse.wheel(px, 0);
+          await page.waitForTimeout(100);
+          const moved = (await handles(page)).start.x - was;
+          if (!(-moved * Math.sign(px) > Math.abs(px) / 3)) {
+            wrong = `swipe ${i} by ${px} px after the click moved the clip ${moved.toFixed(1)} px`;
+          }
+        }
+        await settle(page);
+        await watch.step("swipe", s);
         break;
       }
       case "cut switch": {
@@ -3698,6 +3787,23 @@ for (const seq of toWalk) {
         if (problems.length) wrong = problems.join("\n");
         break;
       }
+      case "past the end": {
+        const { duration, fps } = await ask(page, "Source", await episodeOn(page));
+        // The end of the video is the frame after its last, which a length
+        // that falls inside a frame puts up to a frame later.
+        const last = duration + 1 / fps + 0.001;
+        for (let i = 1; i <= 3 && !wrong; i++) {
+          const g = await handles(page);
+          await drag(page, middle(g.end), high(g.track), 4000, false);
+          await watch.step("trim", s);
+          const { segments } = await engineState(page, watch.at);
+          const end = segments[segments.length - 1].end;
+          if (end > last) {
+            wrong = `dragged past the end ${i} times, the clip ends at ${end.toFixed(2)}, after the video, which ends at ${duration.toFixed(2)}`;
+          }
+        }
+        break;
+      }
       case "play to the end": {
         // Far to the right first, which the clip timeline takes as far as
         // it shows, and then onto the end of the episode where the clip
@@ -4233,9 +4339,20 @@ for (const seq of toWalk) {
       }
       case "nailed": {
         const { played, hand } = await page.evaluate(() => ({ played: window.__played ?? [], hand: window.__hand ?? {} }));
-        // A seek lands within a few frames of the hand, so each still
-        // stretch is read from 200 ms after it starts.
+        const fps = await rate(page);
         const during = (from, to) => played.filter(([t]) => t >= from && t < to);
+        // The frame that holds the playhead, a frame that begins a
+        // millisecond or less after it included, see frameAt in
+        // lib/flow.ts, as the bars carry it, its number modulo 2 ** BITS.
+        const holds = (at) => Math.floor((at + 0.001) * fps) % 2 ** BITS;
+        // Each still stretch is read from 200 ms after the hand stopped:
+        // the press puts the playhead under the hand at once, and from
+        // there it stands. The picture takes as long as the machine needs
+        // to decode the frame under the hand, and the frames passing on
+        // the way are drawn, so on a busy machine a frame was still on its
+        // way 200 ms in. So the picture is read from where its frame
+        // landed, which has to be within the stretch, and from there
+        // nothing else is drawn.
         const stood = (from, to, what) => {
           const got = during(from + 200, to);
           if (got.length < 10) return `only ${got.length} animation frames were read ${what}`;
@@ -4244,9 +4361,14 @@ for (const seq of toWalk) {
             const all = got.map(([, at]) => at);
             return `the playhead moved from ${Math.min(...all).toFixed(3)} to ${Math.max(...all).toFixed(3)} ${what}`;
           }
-          const frames = new Set(got.map(([, , n]) => n));
-          if (frames.size > 1) return `${frames.size} different frames were drawn ${what}`;
-          return got[0][1];
+          const at = got[0][1];
+          const landed = got.findIndex(([, , n]) => n === holds(at));
+          if (landed < 0 || got.length - landed < 3) {
+            return `frame ${holds(at)}, which holds the playhead at ${at.toFixed(3)}, was not drawn ${what}, frames ${[...new Set(got.map(([, , n]) => n))].join(", ")} were`;
+          }
+          const other = got.slice(landed).find(([, , n]) => n !== holds(at));
+          if (other) return `frame ${other[2]} was drawn after frame ${holds(at)} had landed ${what}`;
+          return at;
         };
         const first = stood(hand.down, hand.moves, "while the hand held still on the press");
         if (typeof first === "string") {

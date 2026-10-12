@@ -133,6 +133,10 @@ func (ws writerSink) write(b []byte) error {
 
 // stream downloads a build to dst, and refuses more bytes than the list
 // said there would be, so a server that never stops sending fills nothing.
+// It asks the context after every part, because a cancel only reaches the
+// transport on its way, and the parts the socket already holds still read:
+// a fast machine read the whole build over the loopback before it noticed
+// the download had been called off, and called it arrived.
 func (s *Source) stream(ctx context.Context, where string, total int64, dst sink, progress func(written int64)) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
 	if err != nil {
@@ -160,6 +164,9 @@ func (s *Source) stream(ctx context.Context, where string, total int64, dst sink
 			}
 			written += int64(n)
 			progress(written)
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("the download stopped: %w", err)
 		}
 		if rerr == io.EOF {
 			break

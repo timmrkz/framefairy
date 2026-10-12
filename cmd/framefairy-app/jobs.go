@@ -337,9 +337,12 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // which lane it waits for, so the interface can say what it waits to do,
 // and which step it is in once it has its turn. How far the step before
 // came is not how far this one is, so the progress starts again with it.
-func (q *queue) turn(job *Job) engine.Turn {
+// opts are the settings the job runs with, which say where its language
+// model is.
+func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
+	onThisMachine := opts.Planner != "api"
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
-		lane, kind := laneOfStep(job.Kind, step)
+		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
 		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {
@@ -781,9 +784,10 @@ func (q *queue) runJob(job *Job) {
 	started := time.Now()
 	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
 	e := engine.NewEngine(log, q.store.files)
-	project := engine.NewProject(e, job.Episode, jobOptions(q.store, e))
+	opts := jobOptions(q.store, e)
+	project := engine.NewProject(e, job.Episode, opts)
 
-	result, err := run(ctx, job, project, q.turn(job))
+	result, err := run(ctx, job, project, q.turn(job, opts))
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
 	// quit a moment later included.
