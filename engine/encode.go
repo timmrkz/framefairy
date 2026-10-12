@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"math"
 	"runtime"
 	"slices"
 	"sort"
@@ -107,9 +108,32 @@ func toolboxQuality(rs RenderSettings) []string {
 // kVTVideoEncoderMalfunctionErr, now and then, and a real Mac after sleep
 // could do the same. The next short tries the media engine again. Plan
 // row 2.223.
+//
+// Apple's encoder on the processor knows no quality, only a bit rate:
+// asked for -q:v it refuses to start, "Error setting bitrate property:
+// -12900", kVTPropertyNotSupportedErr, as CI's Mac showed. So it is asked
+// for a bit rate, see processorBitRate.
 func onProcessor(c Encoder) Encoder {
+	c.Quality = processorBitRate
 	c.Options = append(slices.Clip(c.Options), "-require_sw", "1")
 	return c
+}
+
+// processorBitRate is the bit rate asked of an encoder that takes no
+// quality, from the size and the rate of the short and the wanted
+// quality. It is as generous as the quality of the media engine, see
+// videoToolbox: at the default CRF 18 a fifth of a bit for every pixel of
+// every frame, about 12 Mb/s for a short of 1080 by 1920 at 30 frames a
+// second, half again what YouTube asks for its uploads of that size. Six
+// steps of CRF halve it, the way they halve what x264 writes.
+func processorBitRate(rs RenderSettings) []string {
+	crf := min(max(rs.CRF, 0), 51)
+	rate := rs.Rate
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		rate = 30
+	}
+	bits := 0.2 * math.Exp2(float64(18-crf)/6) * float64(max(rs.OutW, 2)*max(rs.OutH, 2)) * rate
+	return []string{"-b:v", strconv.Itoa(int(min(bits, 400e6)))}
 }
 
 // An HDR episode makes an HDR short, see HDR in docs/VIDEO-PREVIEW.md:

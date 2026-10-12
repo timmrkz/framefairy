@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -202,4 +203,48 @@ exit $code
 		t.Fatal(err)
 	}
 	return path
+}
+
+// Apple's encoder on the processor knows no quality, and asked for -q:v it
+// refused to start on CI's Mac, "Error setting bitrate property: -12900".
+// It is asked for a bit rate as generous as the media engine's quality,
+// and less for a worse quality.
+func TestTheProcessorIsAskedForABitRate(t *testing.T) {
+	args := func(crf int) []string {
+		return onProcessor(videoToolbox).args(RenderSettings{OutW: 1080, OutH: 1920, CRF: crf, Rate: 30})
+	}
+	rate := func(args []string) int {
+		t.Helper()
+		line := strings.Join(args, " ")
+		if strings.Contains(line, "-q:v") {
+			t.Fatalf("Apple's encoder on the processor was asked for a quality: %v", args)
+		}
+		for i, a := range args {
+			if a == "-b:v" && i+1 < len(args) {
+				n, err := strconv.Atoi(args[i+1])
+				if err != nil {
+					t.Fatalf("-b:v is %q", args[i+1])
+				}
+				return n
+			}
+		}
+		t.Fatalf("no bit rate in %v", args)
+		return 0
+	}
+	def := rate(args(DefaultOptions().CRF))
+	if def < 8_000_000 || def > 20_000_000 {
+		t.Errorf("a short of 1080 by 1920 at 30 frames a second gets %d b/s, not about 12 Mb/s", def)
+	}
+	if worse := rate(args(30)); worse >= def {
+		t.Errorf("crf 30 gets %d b/s and crf 18 %d, which is upside down", worse, def)
+	}
+	for _, crf := range []int{-5, 0, 51, 200} {
+		if n := rate(args(crf)); n <= 0 {
+			t.Errorf("crf %d gets %d b/s", crf, n)
+		}
+	}
+	if got := strings.Join(args(18), " "); !strings.HasSuffix(got, "-require_sw 1") ||
+		!strings.HasPrefix(got, "-c:v h264_videotoolbox") {
+		t.Errorf("the processor is asked %q", got)
+	}
 }

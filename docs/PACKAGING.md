@@ -261,7 +261,10 @@ could do the same. A render whose encoder fails in its own words, a line
 ffmpeg starts with the encoder's name, is rendered again from the start
 with the next encoder in the order that this ffmpeg has. On the Mac that
 is the same encoder on the processor, `-require_sw 1`, Apple's own
-encoder in macOS, which is slower and just as free of x264, and then
+encoder in macOS, which is slower and just as free of x264, and knows
+no quality, so it is asked for a bit rate as generous as the media
+engine's quality, about 12 Mb/s for 1080 by 1920 at 30 frames a second,
+and then
 `libx264` where the ffmpeg has it. The next short tries the media engine
 again, and the log keeps a warning with all ffmpeg said. HEVC for HDR
 goes the same way. `nextEncoder` in `engine/encode.go`.

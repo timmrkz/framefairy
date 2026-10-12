@@ -41,6 +41,10 @@ type RenderSettings struct {
 	AudioBitrate string
 	ScaleUp      bool
 	ScaleFlags   string
+	// Rate is the frames a second of the short, which the render sets
+	// from the video, for an encoder asked for a bit rate rather than a
+	// quality, see onProcessor.
+	Rate float64
 }
 
 // BuildFilterGraph makes one filter chain per segment, each reading its own
@@ -186,6 +190,7 @@ func (e *Engine) buildCommand(ctx context.Context, clip Clip, sourcePath string,
 		"-filter_complex", graph,
 		"-map", videoLabel, "-map", audioLabel,
 	)
+	rs.Rate = source.FPS()
 	cmd = append(cmd, encoder.args(rs)...)
 	if light == framewire.SDR {
 		cmd = append(cmd, "-profile:v", "high", "-pix_fmt", "yuv420p")
