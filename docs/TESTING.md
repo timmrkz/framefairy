@@ -495,6 +495,18 @@ the clip's words and stay on the clip, its crop frame and its captions
 shown. Before the fix it fails at `only the video`, the playhead on the
 clip at 7.96 s.
 
+`a clip made with I while the episode plays is not dimmed` is Tim's test
+of 2.212. With the clip's start trimmed, it plays from before the clip,
+presses I a second and a half in, and reads the clip timeline on every
+animation frame until the clip made is written and chosen, two seconds
+more, and a pause. From the frame the new card is chosen on, on its way
+and written, playing and paused, the clip may not be dimmed. The same
+with O, and with I while the video is paused, where the playhead is put
+on the clip's start. Against main all three fail at the first frame of
+the clip on its way. A first fix still left one frame dimmed with O, as
+the card on its way became the written one, which is why every frame is
+read.
+
 `a cut or an edge put back keeps the camera switch` is Tim's test of
 #116 done the way he would do it. It adds a video of 30 seconds whose
 camera switches at 12, and its search finds one clip in two pieces that

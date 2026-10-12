@@ -642,6 +642,7 @@ the queue says it is, not a rounding. The rules are
 | the gesture | leaves the playhead |
 | --- | --- |
 | picking a clip, from the list, a mark, the keys, a search, a clip made or put back | on the clip, at its start |
+| I or O while the video plays, which makes a clip around the playhead | on that clip, where it is, on its way and once written |
 | a click on the clip's start edge, a trim, a click on a caption | on the clip |
 | a click on the clip's end edge, the clip playing to its end | on the clip, at its end |
 | a click, a drag, a step or a seek into the frame that holds the moment a frame before the clip's end | on the clip, at its end |
@@ -763,7 +764,11 @@ Two choices the words left open, made this way. Loop is about the clip
 and changes no state: with the playhead on the video, loop on, the space
 bar still plays straight on. And a clip chosen while the video plays,
 which does not move the playhead, leaves it on the video, because no
-gesture put it on that clip.
+gesture put it on that clip. A clip made there with I or O is the
+exception, because it is made around the playhead: making it is the
+gesture on it, `claim` in `Player.svelte`. Tim saw such a clip come up
+dimmed over the very moment he made it from, 2.212. The play goes on as
+it began, rule 6, and the next one plays the clip.
 
 **Where a gesture lands is a frame, not a second.** What is on screen is
 a frame. With the video element the playhead the next gesture started
