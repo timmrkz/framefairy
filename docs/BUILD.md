@@ -257,18 +257,25 @@ out.
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-main. It is nine jobs on nine machines, all at once, because none of them
+main. It is ten jobs on ten machines, all at once, because none of them
 needs any of the rest:
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet |
-| `linux (1/2)`, `linux (2/2)` | Linux | `make unit GOSHARD=1/2` and `2/2`, every other test each, under the race detector. On one machine they took six minutes |
+| `linux (1/3)` to `linux (3/3)` | Linux | `make unit GOSHARD=1/3`, `2/3` and `3/3`, every third test each, under the race detector. On one machine they took six minutes, on two one still took 5:35 |
 | `walks (1/2)`, `walks (2/2)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/2` and `2/2`, every other run each |
 | `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
+
+`linux`, `walks` and `macos` start from Go's build cache as main left it
+after its last push, one cache for each job, saved by main and only read
+by a pull request. setup-go keeps the cache by `go.sum` alone and saves
+it only when `go.sum` changes, so with it a job started from a cache
+weeks old and compiled nearly everything again: a minute on Linux and
+close to two on a Mac, the episode's decoder included.
 
 When a Go test fails in `linux` or `macos`, or a walk in `walks`,
 `scripts/test-failures.sh` names it on the check, with what it printed,

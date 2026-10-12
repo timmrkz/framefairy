@@ -108,8 +108,8 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh patchelf
-      # And the split of the Go tests over two machines, which would go
-      # green having run half of them when it is wrong. It needs Go to
+      # And the split of the Go tests over machines, which would go green
+      # having run a part of them when it is wrong. It needs Go to
       # list the tests, so it runs after Go is set up.
       - name: Check the split of the Go tests
         if: steps.needs.outputs.run == 'true'
@@ -131,14 +131,24 @@ jobs:
   # of every fuzz target. ffmpeg is here because the tests that render skip
   # without it, and they are worth having.
   #
-  # On two machines, each with every other test, see scripts/go-shard.sh:
-  # on one they took six minutes, and no job takes over five.
+  # On three machines, each with every third test, see scripts/go-shard.sh:
+  # on one they took six minutes, on two one of them still took 5:35, and
+  # no job takes over five.
+  #
+  # Go's build cache: setup-go keeps it by go.sum alone and saves it only
+  # when go.sum changes, so a job started from one that was weeks old and
+  # compiled nearly everything again, a minute here and close to two on a
+  # Mac. The jobs that compile most, linux, walks and macos, take theirs
+  # from the cache main saved last, one for each job, because each
+  # compiles with other flags. Main saves it after every push. A pull
+  # request saves nothing, because a cache it writes is its own and only
+  # costs it the upload.
   linux:
-    name: linux (${{ matrix.shard }}/2)
+    name: linux (${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,7 +160,20 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      # Go's build cache, kept by main after every push, see above the job
+      # linux. The cache setup-go kept is the fallback
+      # until main has saved one.
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-linux-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-v1-linux-${{ runner.os }}-
+            setup-go-${{ runner.os }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -195,7 +218,7 @@ jobs:
         if: steps.needs.outputs.run == 'true'
         timeout-minutes: 15
         run: |
-          make unit GOSHARD=${{ matrix.shard }}/2 2>&1 | tee unit.log
+          make unit GOSHARD=${{ matrix.shard }}/3 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -204,6 +227,13 @@ jobs:
       - name: Nothing left running
         if: always() && steps.needs.outputs.run == 'true'
         run: sh scripts/leftovers.sh
+      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main' && matrix.shard == 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-linux-${{ runner.os }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -229,7 +259,20 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      # Go's build cache, kept by main after every push, see above the job
+      # linux. The cache setup-go kept is the fallback
+      # until main has saved one.
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-v1-walks-${{ runner.os }}-
+            setup-go-${{ runner.os }}-
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -285,6 +328,13 @@ jobs:
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
+      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main' && matrix.shard == 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.
@@ -369,7 +419,20 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      # Go's build cache, kept by main after every push, see above the job
+      # linux. The cache setup-go kept is the fallback
+      # until main has saved one.
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-v1-macos-${{ runner.os }}-
+            setup-go-${{ runner.os }}-
       - id: ffmpeg
         if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -405,6 +468,13 @@ jobs:
       - name: Nothing left running
         if: always() && steps.needs.outputs.run == 'true'
         run: sh scripts/leftovers.sh
+      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/Library/Caches/go-build
+          key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
 
   # The app on a Mac, opened from outside it: a link in the letter a buyer
   # gets, handed to macOS with the app closed and with it open, with the
