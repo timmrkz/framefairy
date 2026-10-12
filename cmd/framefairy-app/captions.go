@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -27,6 +28,12 @@ import (
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
 //	                                 framewire.Layer
+//
+//	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
+//	                                 where the words of a view stand in the
+//	                                 short, as JSON, see engine.WordFrame:
+//	                                 for each caption its words in order,
+//	                                 each the box its pill takes at rest
 //
 // The drafts are what the hand changes while it moves and the video
 // preview shows on the way: text, box and highlight, each a colour #RRGGBB
@@ -147,6 +154,47 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the captions could not be drawn")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// serveWordFrames answers /frames/captions/words: where libass puts the
+// words of a view, so the caption box frames the word libass drew. Like
+// the captions, it runs outside a job, so a panic fails the request.
+func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Msg("placing the caption words failed")
+			http.Error(w, "the caption words could not be placed", http.StatusInternalServerError)
+		}
+	}()
+	q := r.URL.Query()
+	path := q.Get("path")
+	kept, ok := captionTracks.get(q.Get("track"))
+	if !ok || kept.episode != path || !episodeFile(st, path) {
+		http.NotFound(w, r)
+		return
+	}
+	drafts, err := captionDrafts(q.Get)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	source, err := sources.probe(ctx, path)
+	if err != nil {
+		if r.Context().Err() == nil {
+			theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the caption words could not be placed")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
+	frames := e.PreviewWordFrames(ctx, kept.drawing, drafts, source, jobOptions(st, e).RenderSettings())
+	if frames == nil {
+		frames = [][]engine.WordFrame{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(frames)
 }
 
 // captionDrafts are the drafts of a request for captions as the engine

@@ -1,0 +1,125 @@
+package engine
+
+import (
+	"context"
+	"math"
+
+	"framefairy/internal/framewire"
+)
+
+// Where the words of a caption stand, as libass draws them. The pill of
+// the word being spoken is placed from it, and so is the frame the caption
+// box puts round a word under the hand or the keyboard, so the frame is
+// where the pill is and round the word libass drew, not round a word the
+// browser laid out on its own. Tim saw the frame stand off its word on
+// #201, once the words in the video preview were libass's. See
+// docs/CAPTIONS.md.
+
+// wordsLaid is where libass puts the words of one caption: each word's
+// ink, and each line's reach, see pillLines, both from the caption's
+// anchor, the middle of its bottom edge.
+type wordsLaid struct {
+	words  []string
+	lines  [][]int
+	lineOf []int
+	boxes  []*inkBox
+	reach  []*inkBox
+}
+
+// layWords measures where libass puts every word of the captions, drawn
+// in s at size in a short width wide. It is false when a caption has no
+// word timings, or a word or a line could not be measured.
+func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, width, size int) ([]wordsLaid, bool) {
+	layouts := make([]wordsLaid, len(captions))
+	var blocks []string
+	for i, c := range captions {
+		if len(c.Words) == 0 {
+			e.Log.Detail("a caption has no word timings, so the highlight is off for this clip")
+			return nil, false
+		}
+		words := make([]string, len(c.Words))
+		for k, w := range c.Words {
+			words[k] = EscapeASSText(w.Text)
+		}
+		lines := lineIndices(c.Lines)
+		lineOf := make([]int, len(words))
+		for r, line := range lines {
+			for _, k := range line {
+				lineOf[k] = r
+			}
+		}
+		layouts[i] = wordsLaid{words: words, lines: lines, lineOf: lineOf}
+		for k := range words {
+			k := k
+			// Measured opaque, whatever the text colour: a word is found by
+			// its ink, and a see-through one would leave little to find.
+			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
+		}
+		blocks = append(blocks, pillLines(len(lines))...)
+	}
+	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
+	if !ok {
+		e.Log.Detail("could not measure the caption words, the highlight is off for this clip")
+		return nil, false
+	}
+	at := 0
+	for i := range layouts {
+		n, rows := len(layouts[i].words), len(layouts[i].lines)
+		layouts[i].boxes = boxes[at : at+n]
+		layouts[i].reach = boxes[at+n : at+n+rows]
+		at += n + rows
+		for _, b := range boxes[at-n-rows : at] {
+			if b == nil {
+				e.Log.Detail("a caption word could not be measured, the highlight is off for this clip")
+				return nil, false
+			}
+		}
+	}
+	return layouts, true
+}
+
+// pill is the box the pill of word k takes at rest, from the caption's
+// anchor, at size: the word's ink across with pillPadX at each side, and
+// its line down with pillPadY above and below.
+func (l wordsLaid) pill(k, size int) (left, top, right, bottom float64) {
+	padX := math.Round(float64(size) * pillPadX)
+	padY := math.Round(float64(size) * pillPadY)
+	b, line := l.boxes[k], l.reach[l.lineOf[k]]
+	return float64(b.left) - padX, float64(line.top) - padY, float64(b.right) + padX, float64(line.bottom) + padY
+}
+
+// WordFrame is where a word of a caption stands in the short: the box its
+// pill takes at rest, as shares of the short's width and height from its
+// top left corner.
+type WordFrame struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+}
+
+// WordFrames is where the words of the captions stand in a short width by
+// height, each caption's words in their order, as CaptionTrack lays them
+// out in the style overrides make. Nothing when they cannot be measured.
+func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, height int,
+	overrides map[string]any, light framewire.Light) [][]WordFrame {
+	s := ResolveStyle(overrides).inLight(light)
+	scale := float64(height) / 1920.0
+	size := max(12, pyround(s.Size*scale))
+	layouts, ok := e.layWords(ctx, laid, s, width, size)
+	if !ok {
+		return nil
+	}
+	ax := float64(width) / 2
+	ay := float64(height - pyround(s.MarginV*scale))
+	out := make([][]WordFrame, len(layouts))
+	for i, l := range layouts {
+		out[i] = make([]WordFrame, len(l.words))
+		for k := range l.words {
+			left, top, right, bottom := l.pill(k, size)
+			out[i][k] = WordFrame{X: (ax + left) / float64(width), Y: (ay + top) / float64(height),
+				W: (right - left) / float64(width), H: (bottom - top) / float64(height)}
+		}
+	}
+	return out
+}

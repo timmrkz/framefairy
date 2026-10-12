@@ -55,15 +55,7 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 // off draws nothing, as the render burns nothing in.
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir string, d *CaptionDrawing,
 	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
-	style := map[string]any{}
-	for k, v := range d.Style {
-		style[k] = v
-	}
-	for _, k := range CaptionDrafts {
-		if v, ok := drafts[k]; ok {
-			style[k] = v
-		}
-	}
+	style := d.drafted(drafts)
 	resolved := ResolveStyle(style)
 	if len(d.Laid) == 0 || !resolved.Text {
 		return framewire.Layer{}, nil
@@ -78,6 +70,34 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 	}
 	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
 		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
+}
+
+// PreviewWordFrames is where the words of d stand in the short the render
+// rs makes, with drafts on top of their style, the same captions
+// PreviewCaptions draws: the frame the caption box puts round a word is
+// placed from it. Nothing when the captions are off or cannot be measured.
+func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, drafts map[string]any,
+	source SourceInfo, rs RenderSettings) [][]WordFrame {
+	style := d.drafted(drafts)
+	if len(d.Laid) == 0 || !ResolveStyle(style).Text {
+		return nil
+	}
+	return e.WordFrames(ctx, d.Laid, rs.OutW, rs.OutH, style, source.Light())
+}
+
+// drafted is the style of d with drafts on top, only those of
+// CaptionDrafts.
+func (d *CaptionDrawing) drafted(drafts map[string]any) map[string]any {
+	style := map[string]any{}
+	for k, v := range d.Style {
+		style[k] = v
+	}
+	for _, k := range CaptionDrafts {
+		if v, ok := drafts[k]; ok {
+			style[k] = v
+		}
+	}
+	return style
 }
 
 // previewTrack is the caption file of captions in a style, written into

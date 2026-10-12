@@ -155,6 +155,11 @@ export function laidPart(
   return { x: x0, y: y0, w: pw, h: y1 - y0, data: new Uint8Array(out.buffer) };
 }
 
+// Where libass put a word of the captions: the box its pill takes at
+// rest, as shares of the short's width and height from its top left
+// corner, see engine.WordFrame and /frames/captions/words.
+export type WordFrame = { x: number; y: number; w: number; h: number };
+
 // What the video preview asks the captions of: the episode, the captions
 // by their track, see engine.CaptionsView, and the drafts the hand is
 // changing on the way, as /frames/captions takes them.

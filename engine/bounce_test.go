@@ -190,6 +190,27 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	room("Das", 10, 24)
 	room("respektvoll", lit, 40)
 
+	// The frame the caption box puts round a word is where its pill rests,
+	// so it stands round the word libass drew. Tim saw it stand off its
+	// word on #201, laid out by the browser's own font.
+	frames0 := e.WordFrames(ctx, laid, w, h, nil, info.Light())
+	if len(frames0) != 1 || len(frames0[0]) != len(words) {
+		t.Fatalf("word frames %+v, want one caption of %d words", frames0, len(words))
+	}
+	// "Das" rests on frame 24, "respektvoll" on frame 40.
+	for i, at := range []int{24, 40} {
+		l, r, top, bottom := pillBox(frames[at])
+		fr := frames0[0][i]
+		got := [4]float64{fr.X * w, fr.Y*h - bounceTop, (fr.X + fr.W) * w, (fr.Y+fr.H)*h - bounceTop}
+		drawn := [4]float64{float64(l), float64(top), float64(r + 1), float64(bottom + 1)}
+		for side, name := range []string{"left", "top", "right", "bottom"} {
+			if math.Abs(got[side]-drawn[side]) > 2 {
+				t.Errorf("%s: the word frame's %s edge is at %.1f, the pill libass drew at %.0f",
+					words[i].Text, name, got[side], drawn[side])
+			}
+		}
+	}
+
 	for k := lit; k <= lit+10; k++ {
 		since := float64(k-lit) / bounceFPS
 		b := BounceAt(since, span)

@@ -26,7 +26,7 @@
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
-  import { CaptionLayers, quarters, type CaptionAsk, type Over } from "../lib/frames/captions";
+  import { CaptionLayers, quarters, type CaptionAsk, type Over, type WordFrame } from "../lib/frames/captions";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -1079,6 +1079,65 @@
     if (dragCaptions !== null) asked.y = String(dragCaptions);
     return { path, track: captions.track, drafts: asked };
   });
+  // Where libass puts each word of the captions, as the engine measured it,
+  // see /frames/captions/words in cmd/framefairy-app/captions.go: the box
+  // each word's pill takes at rest, as shares of the short. The caption box
+  // puts its words there, so the frame round a word is round the word
+  // libass drew and its pill, not round a word the browser laid out in its
+  // own font. Tim saw the frame stand off its word on #201. They are asked
+  // for by the track alone: what the hand drafts moves no word but for
+  // the height, and the height is the caption box's own, see laidWords.
+  let wordFrames = $state<{ key: string; frames: WordFrame[][] } | null>(null);
+  $effect(() => {
+    const key = captions?.track ? `${path}\n${captions.track}` : "";
+    if (!key || wordFrames?.key === key) return;
+    const q = new URLSearchParams({ path, track: captions!.track! });
+    void fetch(`/frames/captions/words?${q}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((frames: WordFrame[][] | null) => {
+        const now = captions?.track ? `${path}\n${captions.track}` : "";
+        if (frames && key === now) wordFrames = { key, frames };
+      })
+      .catch(() => {});
+  });
+
+  // The words of the caption shown where libass put them, each as a box in
+  // the caption box, from the line the captions stand on, as shares of
+  // the short: x and w of its width, top and h of its height, top down
+  // from the line. Nothing while a word is typed, which the caption box
+  // then draws itself in the browser's font, or while the words of this
+  // caption are not known yet.
+  type LaidWord = { x: number; w: number; top: number; h: number };
+  const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
+    if (fixing || !caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}`) return null;
+    const frames = wordFrames.frames[(captions.captions ?? []).indexOf(caption)];
+    const count = (caption.lines ?? []).reduce((n, line) => n + line.words.length, 0);
+    if (!frames || frames.length !== count || !count) return null;
+    // The line the captions were measured standing on, which the caption
+    // box stands on wherever it is dragged.
+    const line = 1 - captions.style.marginV;
+    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h }));
+    const x = Math.min(...words.map((f) => f.x));
+    const top = Math.min(...words.map((f) => f.top));
+    const w = Math.max(...words.map((f) => f.x + f.w)) - x;
+    const h = Math.max(...words.map((f) => f.top + f.h)) - top;
+    return { words, x, w, top, h };
+  });
+
+  // Where a word stands in the caption box laid out by libass, and the
+  // corners of its pill, which are a third of its height or the box's
+  // corners and two pixels of the short, whichever is rounder less, see
+  // engine.highlighted.
+  function wordPlace(
+    laid: { x: number; w: number; top: number },
+    f: LaidWord,
+    radius: number,
+  ): string {
+    return `left: ${((f.x - laid.x) / laid.w) * 100}%; width: ${(f.w / laid.w) * 100}%;
+      top: ${px(f.top - laid.top)}; height: ${px(f.h)}; line-height: ${px(f.h)};
+      border-radius: min(${px(f.h * 0.3)}, ${px(radius + 2 / 1920)});`;
+  }
+
   // Everything the captions over a frame are worked out from, so a change
   // to any of them draws the frame on screen again.
   $effect(() => {
@@ -1452,9 +1511,14 @@
       <div
         class="captions"
         class:typing={!!fixing}
-        style="left: {box.left}%; width: {box.width}%;
-               bottom: max({px(captionY / 1920 - captions.style.padY)}, 0px);
-               padding: 0 {px(captions.style.marginH)};
+        class:laid={!!laidWords}
+        style="{laidWords
+          ? `left: calc(${box.left}% + ${laidWords.x * box.width}%); width: ${laidWords.w * box.width}%;
+             bottom: ${px(captionY / 1920 - laidWords.top - laidWords.h)}; height: ${px(laidWords.h)};`
+          : `left: ${box.left}%; width: ${box.width}%;
+             bottom: max(${px(captionY / 1920 - captions.style.padY)}, 0px);
+             padding: 0 ${px(captions.style.marginH)};`}
+               --size: {px(captions.style.size)};
                font-family: '{captions.style.font}', system-ui, sans-serif;
                font-weight: {captions.style.bold ? 800 : 500};
                font-size: {px(captions.style.size)};
@@ -1523,7 +1587,9 @@
                     title={said
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
-                    style="--pill: {captions.style.highlightColour}"
+                    style="--pill: {captions.style.highlightColour};{laidWords?.words[firstOfRow[row] + i]
+                      ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i], captions.style.radius)
+                      : ''}"
                     use:says={[word.text, captions]}
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}
                     onfocusout={(e) => dropWord(e.currentTarget, word, said)}
@@ -1842,6 +1908,32 @@
   .word.fixing {
     outline-width: 2px;
     outline-color: var(--accent-hi);
+  }
+
+  /* The words where libass put them, see laidWords: the caption box is
+     the box round all of them, and each word is placed in it on the pill
+     libass draws behind it at rest, so the frame round a word is the
+     pill's edge and the word stands in its middle. The spaces between the
+     words take no room, since the words are placed and not laid out. */
+  .captions.laid {
+    display: block;
+  }
+
+  .laid .box {
+    width: 100%;
+    height: 100%;
+    font-size: 0;
+  }
+
+  .laid .line {
+    display: contents;
+  }
+
+  .laid .line span {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    font-size: var(--size);
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */

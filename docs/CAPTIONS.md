@@ -110,6 +110,19 @@ nothing while the captions are only shown. While a word is typed it shows
 the words itself, since the letters being typed are not in any caption
 file yet, and the layer steps aside until the word is saved.
 
+Its words stand where libass put them. `/frames/captions/words` in
+`cmd/framefairy-app/captions.go` answers with where each word of a view
+stands in the short, `engine.WordFrame`, the box its pill takes at rest:
+the word's ink across and its line's reach down, with the pill's room
+round both, measured by libass the way the highlight measures them,
+see `layWords` and `WordFrames` in `engine/wordframes.go`. The caption
+box places each word on that box, from the line the captions stand on,
+so the frame round a word under the hand is the edge of its pill and the
+word stands in its middle, wherever the captions are dragged. The
+browser laid the words out in its own font before, and Tim saw the frame
+stand off its word on #201. While a word is typed the browser lays the
+words out again, since it draws them itself then.
+
 ## The tests
 
 - `TestTheVideoPreviewDrawsTheShortsCaptions` in
@@ -130,6 +143,16 @@ file yet, and the layer steps aside until the word is saved.
 - `TestTheLayerOfTheBoxIsTheLayerOfTheFrame` in
   `cmd/framefairy-frames/ink_test.go`: the layer worked out in its box is
   the layer of the whole frame, pixel for pixel.
+- `TestTheBounceKeepsTheSpaceBetweenWords` in `engine/bounce_test.go`
+  reads the pill of every frame back from a rendered short: it leaves at
+  least a tenth of the caption size round its word on every frame, and
+  `WordFrames` puts each word where its pill rests, within 2 pixels.
+  `TestTheWordFramesRouteSaysWhereLibassPutTheWords` in
+  `cmd/framefairy-app/captions_test.go` asks the route for them.
+- The walk "the frame round a word in the caption box is the pill libass
+  draws" puts the playhead in five words and reads the pill off the
+  canvas: the frame round the lit word stands on it within 1.5 pixels.
+  The browser's own layout stood 5.5 pixels off.
 - The walk "the video preview shows the short's captions, frame for
   frame" in `frontend/preview/walks/sequences.mjs`, against the real Go
   side: it renders a short, makes the video preview as large as the short,

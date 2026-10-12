@@ -265,51 +265,9 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	marginH := pyround(s.MarginH * scale)
 	marginV := pyround(s.MarginV * scale)
 
-	type laid struct {
-		words []string
-		lines [][]int
-		boxes []*inkBox
-		// reach is each line's height, see pillLines.
-		reach []*inkBox
-	}
-	layouts := make([]laid, len(captions))
-	var blocks []string
-	for i, c := range captions {
-		if len(c.Words) == 0 {
-			e.Log.Detail("a caption has no word timings, so the highlight is off for this clip")
-			return nil, nil
-		}
-		words := make([]string, len(c.Words))
-		for k, w := range c.Words {
-			words[k] = EscapeASSText(w.Text)
-		}
-		lines := lineIndices(c.Lines)
-		layouts[i] = laid{words: words, lines: lines}
-		for k := range words {
-			k := k
-			// Measured opaque, whatever the text colour: a word is found by
-			// its ink, and a see-through one would leave little to find.
-			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
-		}
-		blocks = append(blocks, pillLines(len(lines))...)
-	}
-	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
+	layouts, ok := e.layWords(ctx, captions, s, width, size)
 	if !ok {
-		e.Log.Detail("could not measure the caption words, the highlight is off for this clip")
 		return nil, nil
-	}
-	at := 0
-	for i := range layouts {
-		n, rows := len(layouts[i].words), len(layouts[i].lines)
-		layouts[i].boxes = boxes[at : at+n]
-		layouts[i].reach = boxes[at+n : at+n+rows]
-		at += n + rows
-		for _, b := range append(layouts[i].boxes[:n:n], layouts[i].reach...) {
-			if b == nil {
-				e.Log.Detail("a caption word could not be measured, the highlight is off for this clip")
-				return nil, nil
-			}
-		}
 	}
 
 	ax := float64(width) / 2
@@ -324,8 +282,6 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 	padX := float64(pyround(s.BoxPadX * scale))
 	padY := float64(pyround(s.BoxPadY * scale))
 	radius := float64(pyround(s.Radius * scale))
-	padPillX := math.Round(float64(size) * pillPadX)
-	padPillY := math.Round(float64(size) * pillPadY)
 	anchor := fmt.Sprintf(`\an2\pos(%s,%s)`, num(ax), num(ay))
 
 	var events []string
@@ -342,19 +298,11 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		if end <= start {
 			continue
 		}
-		// Extent of each line, and of the whole caption.
-		lineTop := make([]int, len(L.lines))
-		lineBottom := make([]int, len(L.lines))
-		lineOf := make([]int, len(L.words))
+		// Extent of the whole caption.
 		full := inkBox{math.MaxInt32, math.MaxInt32, math.MinInt32, math.MinInt32}
-		for r, line := range L.lines {
-			lineTop[r], lineBottom[r] = L.reach[r].top, L.reach[r].bottom
-			for _, k := range line {
-				b := L.boxes[k]
-				lineOf[k] = r
-				full.left, full.right = min(full.left, b.left), max(full.right, b.right)
-				full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
-			}
+		for _, b := range L.boxes {
+			full.left, full.right = min(full.left, b.left), max(full.right, b.right)
+			full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
 		}
 		if drawBox {
 			shape := roundedRect(ax+float64(full.left)-padX, ay+float64(full.top)-padY,
@@ -385,12 +333,12 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 				continue
 			}
 			k := k
-			b := L.boxes[k]
-			r := lineOf[k]
-			// The word's centre: the middle of its ink across, the middle of
-			// its line down, so every word on a line bounces from one height.
-			cx := ax + float64(b.left+b.right)/2
-			cy := ay + float64(lineTop[r]+lineBottom[r])/2
+			// The pill at rest, and the word's centre, which is the pill's:
+			// the middle of its ink across, the middle of its line down, so
+			// every word on a line bounces from one height.
+			pl, pt, pr, pb := L.pill(k, size)
+			cx := ax + (pl+pr)/2
+			cy := ay + (pt+pb)/2
 
 			upCS, downCS := bouncePhases(to - from)
 			grow := bounceGrow * float64(size)
@@ -399,8 +347,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// The pill behind the word, bouncing around its own centre: each
 			// phase from where BounceAt has it at the phase's start to where
 			// it has it at its end.
-			w := float64(b.right-b.left) + 2*padPillX
-			h := float64(lineBottom[r]-lineTop[r]) + 2*padPillY
+			w, h := pr-pl, pb-pt
 			pill := roundedRect(0, 0, w, h, math.Min(h*0.3, radius+2))
 			pillScale := func(at Bounce) (string, string) {
 				return "100", num((h + 2*grow*at.Tall) / h * 100)

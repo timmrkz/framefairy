@@ -903,7 +903,9 @@ bubble scrolled by those eight pixels.
   from the short's own caption file, see [CAPTIONS.md](CAPTIONS.md), and
   the caption box over them draws nothing until a word is opened. Then it
   shows the words itself, the letters typed included, until the word is
-  saved.
+  saved. Until then each word of the caption box stands where libass drew
+  it, on the pill it draws behind the word at rest, so the frame round a
+  word is the edge of its pill.
   - **From the keyboard:** Shift and the arrows walk the playhead from
     word to word, and the word walked to wears the same frame the pointer
     puts on a word. Enter opens that word with the whole of it selected,

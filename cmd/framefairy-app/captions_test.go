@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -72,6 +73,75 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		"no colour":    {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"red"}},
 	} {
 		if rec, _ := draw(q); rec.Code == http.StatusOK {
+			t.Errorf("%s was answered", name)
+		}
+	}
+}
+
+// The caption box frames each word where libass put it, and asks where
+// that is by the view's track: for every caption its words in order, each
+// inside the short, lower when the captions are drafted lower, none when
+// they are off, and nothing for a track of another episode.
+func TestTheWordFramesRouteSaysWhereLibassPutTheWords(t *testing.T) {
+	// On the real disk: the words are measured by ffmpeg, which reads the
+	// caption file from there.
+	svc, mine, view := captionsEpisode(t)
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	ask := func(q url.Values) (int, [][]engine.WordFrame) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions/words?"+q.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			return rec.Code, nil
+		}
+		var frames [][]engine.WordFrame
+		if err := json.Unmarshal(rec.Body.Bytes(), &frames); err != nil {
+			t.Fatalf("%v in %q", err, rec.Body.String())
+		}
+		return rec.Code, frames
+	}
+	base := url.Values{"path": {mine}, "track": {view.Track}}
+	with := func(k, v string) url.Values {
+		q := url.Values{}
+		for key, vs := range base {
+			q[key] = vs
+		}
+		q.Set(k, v)
+		return q
+	}
+	code, frames := ask(base)
+	if code != http.StatusOK || len(frames) != len(view.Captions) {
+		t.Fatalf("answered %d with %d captions of frames, the view has %d", code, len(frames), len(view.Captions))
+	}
+	for i, c := range view.Captions {
+		n := 0
+		for _, line := range c.Lines {
+			n += len(line.Words)
+		}
+		if len(frames[i]) != n {
+			t.Fatalf("caption %d has %d words and %d frames", i, n, len(frames[i]))
+		}
+		for k, f := range frames[i] {
+			if f.X < 0 || f.Y < 0 || f.W <= 0 || f.H <= 0 || f.X+f.W > 1 || f.Y+f.H > 1 {
+				t.Errorf("caption %d, word %d stands at %+v, not inside the short", i, k, f)
+			}
+			if k > 0 && frames[i][k-1].Y == f.Y && frames[i][k-1].X+frames[i][k-1].W > f.X+f.W/2 {
+				t.Errorf("caption %d, word %d at %+v overlaps the word before it at %+v", i, k, f, frames[i][k-1])
+			}
+		}
+	}
+	if _, low := ask(with("y", "100")); len(low) == 0 || low[0][0].Y <= frames[0][0].Y {
+		t.Errorf("drafted lower, the first word stands at %+v, not under %+v", low, frames[0][0])
+	}
+	if code, off := ask(with("textOn", "0")); code != http.StatusOK || len(off) != 0 {
+		t.Errorf("switched off, the words still stand at %+v", off)
+	}
+	for name, q := range map[string]url.Values{
+		"no track":     {"path": {mine}, "track": {"0123"}},
+		"another path": {"path": {"/not/mine.mp4"}, "track": {view.Track}},
+		"no colour":    with("text", "red"),
+	} {
+		if code, _ := ask(q); code == http.StatusOK {
 			t.Errorf("%s was answered", name)
 		}
 	}

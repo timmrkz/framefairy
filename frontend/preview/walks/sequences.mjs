@@ -490,6 +490,14 @@
 //                      no word is open, and the caption box holds the
 //                      caption on the mark again, not the one the word was
 //                      opened in
+//   ["frames on the pills", n]
+//                      puts the playhead in the middle of each of the first
+//                      n words with a click on the clip timeline, and reads
+//                      the pill libass drew behind the lit word off the
+//                      canvas: the frame the caption box puts round that
+//                      word stands on it, its middle within 1.5 px of the
+//                      pill's and as wide within 2 px, and the pill is no
+//                      lower than the frame
 //   ["remove mark", kind]
 //                      double-clicks the first "thumbnail" or "crop" mark
 //                      on the clip timeline, and the engine has one fewer,
@@ -1368,6 +1376,13 @@ export const sequences = [
       ["open a word, then the mark", "thumbnail"],
       ["open a word, then the mark", "crop"],
     ],
+  },
+  {
+    // Found by Tim on #201: the frame round a word in the caption box
+    // stood off the word, since the browser laid the words out in its own
+    // font over the words libass drew.
+    name: "the frame round a word in the caption box is the pill libass draws",
+    steps: [["frames on the pills", 5]],
   },
   {
     // Plan row 2.130: a picture that starts after its sound, by an edit
@@ -4658,6 +4673,93 @@ for (const seq of toWalk) {
         if (!got.top) wrong = `something else lies over the ${arg} mark, so the pointer never reaches it`;
         else if (!got.hover) wrong = `the ${arg} mark does not take the hover`;
         else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
+        break;
+      }
+      case "frames on the pills": {
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        const pieces = state.segments;
+        // A moment of the clip's clock in the episode.
+        const into = (t) => {
+          let sum = 0;
+          for (const p of pieces) {
+            if (t < sum + p.end - p.start) return p.start + t - sum;
+            sum += p.end - p.start;
+          }
+          return null;
+        };
+        // Away from the clip's edges, where a click takes the edge.
+        const length = pieces.reduce((n, p) => n + p.end - p.start, 0);
+        const words = (state.captions ?? [])
+          .flatMap((c) => c.lines.flatMap((l) => l.words))
+          .filter((w) => (w.start + w.end) / 2 > 0.6 && (w.start + w.end) / 2 < length - 0.6)
+          .slice(0, arg);
+        const report = [];
+        for (const w of words) {
+          const at = into((w.start + w.end) / 2);
+          if (at === null) continue;
+          if (!(await seekTo(page, at, fps))) {
+            wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+            break;
+          }
+          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const got = await page.evaluate(() => {
+            const word = document.querySelector(".captions .word.now");
+            const canvas = document.querySelector(".screen canvas");
+            if (!word || !canvas?.width) return { none: !word ? "no word is lit" : "there is no canvas" };
+            const c = canvas.getBoundingClientRect();
+            const f = word.getBoundingClientRect();
+            const sx = canvas.width / c.width;
+            const sy = canvas.height / c.height;
+            const pill = getComputedStyle(word).getPropertyValue("--pill").match(/[\d.]+/g).map(Number);
+            // Round the frame by its own height, so a pill beside it is
+            // found too, but no other word's.
+            const x0 = Math.max(0, Math.floor((f.left - c.left - f.height / 2) * sx));
+            const x1 = Math.min(canvas.width, Math.ceil((f.right - c.left + f.height / 2) * sx));
+            const y0 = Math.max(0, Math.floor((f.top - c.top - f.height) * sy));
+            const y1 = Math.min(canvas.height, Math.ceil((f.bottom - c.top + f.height) * sy));
+            const s = document.createElement("canvas");
+            s.width = x1 - x0;
+            s.height = y1 - y0;
+            const g = s.getContext("2d", { willReadFrequently: true });
+            g.drawImage(canvas, x0, y0, s.width, s.height, 0, 0, s.width, s.height);
+            const d = g.getImageData(0, 0, s.width, s.height).data;
+            let [l, r, t, b] = [Infinity, -Infinity, Infinity, -Infinity];
+            for (let y = 0; y < s.height; y++) {
+              for (let x = 0; x < s.width; x++) {
+                const i = (y * s.width + x) * 4;
+                if ([0, 1, 2].every((k) => Math.abs(d[i + k] - pill[k]) < 40)) {
+                  [l, r, t, b] = [Math.min(l, x), Math.max(r, x + 1), Math.min(t, y), Math.max(b, y + 1)];
+                }
+              }
+            }
+            if (l === Infinity) return { none: "no pill is drawn round the lit word" };
+            // Both in CSS pixels from the canvas's corner.
+            return {
+              text: word.textContent,
+              frame: { l: f.left - c.left, r: f.right - c.left, t: f.top - c.top, b: f.bottom - c.top },
+              pill: { l: (x0 + l) / sx, r: (x0 + r) / sx, t: (y0 + t) / sy, b: (y0 + b) / sy },
+            };
+          });
+          if (got.none) {
+            wrong = `at ${at.toFixed(2)} s ${got.none}`;
+            break;
+          }
+          const { frame, pill, text } = got;
+          const mid = (a, b) => (a + b) / 2;
+          const across = mid(frame.l, frame.r) - mid(pill.l, pill.r);
+          const down = mid(frame.t, frame.b) - mid(pill.t, pill.b);
+          const wider = frame.r - frame.l - (pill.r - pill.l);
+          const lower = frame.b - frame.t - (pill.b - pill.t);
+          report.push(`"${text}": ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
+          if (Math.abs(across) > 1.5 || Math.abs(down) > 1.5 || Math.abs(wider) > 2 || lower > 2) {
+            wrong = `the frame round "${text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the middle of its pill, and is ${(frame.r - frame.l).toFixed(1)}x${(frame.b - frame.t).toFixed(1)} px round a pill of ${(pill.r - pill.l).toFixed(1)}x${(pill.b - pill.t).toFixed(1)}`;
+            break;
+          }
+        }
+        if (!wrong && report.length < Math.min(arg, words.length)) wrong = `only ${report.length} words were measured`;
+        console.log(`    ${report.join("\n    ")}`);
         break;
       }
       case "open a word, then the mark": {
