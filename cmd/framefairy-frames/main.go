@@ -92,6 +92,12 @@ func info(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "info: "+format+"\n", args...)
 }
 
+// warn writes a line for the app's log at the level of a warning, see
+// engine.DecoderWarning: something went wrong that the decoder got round.
+func warn(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "warning: "+format+"\n", args...)
+}
+
 // about is the episode's picture in a few words, for the log.
 func (v *video) about() string {
 	p := v.stream.CodecParameters()
@@ -118,7 +124,13 @@ var (
 	owners = map[string]*cursor{}
 )
 
-// logged is what ffmpeg says, at the level of an error.
+// saidKept is how much of what ffmpeg said a cursor keeps, the latest.
+const saidKept = 1000
+
+// logged is what ffmpeg says, at the level of an error. A failure is
+// often told in two lines, the second only that it failed and the first
+// why, so a cursor keeps every line since it was last asked, up to
+// saidKept bytes of the latest.
 func logged(c astiav.Classer, _ astiav.LogLevel, _, msg string) {
 	said := strings.TrimSpace(msg)
 	var cl *astiav.Class
@@ -134,7 +146,10 @@ func logged(c astiav.Classer, _ astiav.LogLevel, _, msg string) {
 	// The object itself, or what it is part of.
 	for i := 0; cl != nil && i < 4; i, cl = i+1, cl.Parent() {
 		if owner := owners[classKey(cl)]; owner != nil {
-			owner.said = said
+			if owner.said != "" {
+				said = owner.said + "; " + said
+			}
+			owner.said = said[max(0, len(said)-saidKept):]
 			return
 		}
 	}
@@ -296,6 +311,8 @@ type video struct {
 	fc     *astiav.FormatContext
 	stream *astiav.Stream
 	dec    *astiav.CodecContext
+	// chip tells whether dec decodes on the graphics chip.
+	chip bool
 	// turned is how far the file asks for its picture to be turned to
 	// stand up, in degrees to the left, which ffmpeg does by itself and
 	// so the engine's sizes already are. See engine.SourceInfo.Turned.
@@ -369,7 +386,8 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 	// offered the chip with threads of its own failed on every frame on a
 	// Mac, "Invalid argument", since the chip is chosen for each frame from
 	// ffmpeg's threads.
-	if hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID()) {
+	chip := hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID())
+	if chip {
 		dec.SetHardwareDeviceContext(hardware)
 		said := ""
 		dec.SetPixelFormatCallback(func(pfs []astiav.PixelFormat) astiav.PixelFormat {
@@ -401,7 +419,7 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 		dec.Free()
 		return fmt.Errorf("the decoder could not be opened: %w", err)
 	}
-	v.dec = dec
+	v.dec, v.chip = dec, chip
 	return nil
 }
 
@@ -441,10 +459,17 @@ type cursor struct {
 	shown []byte
 	until int
 	// How often this open sought again for a seek that landed too late.
-	retries   int
-	sentEOF   bool
-	graphEOF  bool
-	failedWhy string
+	retries int
+	// Whether this open went on with the processor after the graphics
+	// chip failed, see toProcessor.
+	fellBack bool
+	// Packets sent to the decoder in this open, and whether the decoder
+	// was made to fail in it, see failAfter.
+	sentInOpen int
+	madeToFail bool
+	sentEOF    bool
+	graphEOF   bool
+	failedWhy  string
 	// What ffmpeg said about this cursor's objects, under saidMu, and the
 	// keys they are known by: the file and its decoder, and the chain.
 	said      string
@@ -521,6 +546,18 @@ func (c *cursor) fail(why string) {
 func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 	c.failedWhy = ""
 	c.asked, c.firstSaid = time.Now(), false
+	c.sentInOpen, c.madeToFail = 0, false
+	// A cursor that fell back to the processor tries the graphics chip
+	// again at the next open, see toProcessor.
+	if c.v != nil && c.fellBack {
+		c.fellBack = false
+		if c.d.hardware != nil {
+			if err := c.reopenDecoder(c.d.hardware); err != nil {
+				c.fail(err.Error())
+				return
+			}
+		}
+	}
 	opened := c.v == nil
 	if c.v == nil {
 		v, err := openVideo(c.d.path)
@@ -537,11 +574,13 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		c.v = v
 		c.light = lightOf(v.stream.CodecParameters().ColorTransferCharacteristic())
 		c.own(&c.keys, v.fc, v.dec)
-		c.pkt = astiav.AllocPacket()
-		c.decoded = astiav.AllocFrame()
-		c.held = astiav.AllocFrame()
-		c.brought = astiav.AllocFrame()
-		c.filtered = astiav.AllocFrame()
+		if c.pkt == nil {
+			c.pkt = astiav.AllocPacket()
+			c.decoded = astiav.AllocFrame()
+			c.held = astiav.AllocFrame()
+			c.brought = astiav.AllocFrame()
+			c.filtered = astiav.AllocFrame()
+		}
 	}
 	// The chain holds no frames between two, so it is kept unless the size
 	// changed.
@@ -680,7 +719,13 @@ func (c *cursor) next(n int, skip float64) {
 			return
 		}
 		if c.shown == nil || c.rank >= c.until {
-			if err := c.advance(); err != nil {
+			err := c.advance()
+			if err != nil && !errors.Is(err, astiav.ErrEof) && (c.v.chip || errors.Is(err, errMadeToFail)) {
+				if err = c.toProcessor(err); err == nil {
+					continue
+				}
+			}
+			if err != nil {
 				if errors.Is(err, astiav.ErrEof) {
 					c.say(fmt.Sprintf("the video ended after %d frames of %d asked", sent, n))
 					c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.End})
@@ -803,6 +848,63 @@ func (c *cursor) decode() (float64, error) {
 	}
 }
 
+// failAfter makes the decoder in use fail once in every open, on the
+// packet of that number it is sent, as the graphics chip does now and
+// then, so a test sees the cursor go on with the processor, see
+// toProcessor. On the processor it is the same reopen, so the race
+// detector on Linux proves it, and on a Mac the chip's way there too.
+// Nought, never, unless FRAMEFAIRY_FRAMES_FAIL_AFTER says otherwise.
+var failAfter, _ = strconv.Atoi(os.Getenv("FRAMEFAIRY_FRAMES_FAIL_AFTER"))
+
+var errMadeToFail = errors.New("made to fail by FRAMEFAIRY_FRAMES_FAIL_AFTER")
+
+// toProcessor goes on decoding on the processor after the graphics chip
+// failed, in sending a packet, receiving a frame or bringing one off the
+// chip. VideoToolbox fails a frame now and then on a virtual Mac,
+// "hardware accelerator failed to decode picture", and the cursor then
+// failed and the video preview stood still, one CI run in four. The
+// render decodes on the processor, so the frame the processor makes is
+// the frame the short has. The decoder is opened again without the chip
+// and the cursor seeks to the frame of the grid it is at, the way open
+// does, so the frames it sends go on from where they were. It stays on
+// the processor for the rest of this open and tries the chip again at the
+// next, because ffmpeg starts a lost VideoToolbox session again by
+// itself. The line goes to the log as a warning with all ffmpeg said, so
+// a report says why the chip failed, and the frames after it say whether
+// the file was fine.
+func (c *cursor) toProcessor(why error) error {
+	what := "the graphics chip failed"
+	if !c.v.chip {
+		what = "the decoder failed"
+	}
+	warn("cursor %d, picture: %s at frame %d, decodes on the processor for the rest of this open: %v",
+		c.id, what, c.rank, c.withSaid(why))
+	if err := c.reopenDecoder(nil); err != nil {
+		return err
+	}
+	c.fellBack = true
+	c.retries = 0
+	return c.seek(c.grid.At(c.rank) + framewire.Hair)
+}
+
+// reopenDecoder opens the picture's decoder again, on the graphics chip
+// where hardware is one. The chain is built again for the frames it
+// makes. Where it cannot be opened the file is closed too, so the next
+// open starts from nothing rather than from a cursor with no decoder.
+func (c *cursor) reopenDecoder(hardware *astiav.HardwareDeviceContext) error {
+	c.disown(&c.keys)
+	c.freeGraph()
+	c.v.dec.Free()
+	c.v.dec = nil
+	if err := c.v.openDecoder(hardware, c.say); err != nil {
+		c.v.close()
+		c.v = nil
+		return err
+	}
+	c.own(&c.keys, c.v.fc, c.v.dec)
+	return nil
+}
+
 // show scales the frame in decoded through the chain and shows it from
 // the cursor's frame of the grid up to until.
 func (c *cursor) show(until int) error {
@@ -849,6 +951,12 @@ func (c *cursor) feed() error {
 		if c.pkt.StreamIndex() != c.v.stream.Index() {
 			c.pkt.Unref()
 			continue
+		}
+		c.sentInOpen++
+		if failAfter > 0 && c.sentInOpen == failAfter && !c.madeToFail {
+			c.pkt.Unref()
+			c.madeToFail = true
+			return errMadeToFail
 		}
 		err = c.v.dec.SendPacket(c.pkt)
 		c.pkt.Unref()
