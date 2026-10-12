@@ -8,6 +8,7 @@
     onDropped,
     onAcknowledgements,
     onReport,
+    onUndo,
     onShowUpdates,
     onLicenceLink,
     onUpdates,
@@ -33,6 +34,7 @@
   import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
   import { said } from "./lib/said";
+  import { typing } from "./lib/keys";
 
   // The sidebar is a rail until the pointer reaches it, and stays open when
   // it is pinned. Open, it lies over the workspace rather than pushing it,
@@ -479,6 +481,13 @@
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
     // The video in front goes with the report by its name, whatever page
     // the menu was picked on, so a second pick keeps the first one's.
+    // Undo and Redo in the Edit menu go to the workspace in front, which
+    // hands them to a field being typed in. Elsewhere, on Report a
+    // Problem and in the settings, no workspace is in front, so the
+    // field's own undo answers here, or Cmd+Z in it would do nothing.
+    const noUndo = onUndo((what) => {
+      if (nav.view.name !== "episode" && typing()) document.execCommand(what);
+    });
     const noReport = onReport(() => {
       const v = nav.view;
       nav.go({ name: "report", video: v.name === "episode" ? v.path : v.name === "report" ? v.video : undefined });
@@ -524,6 +533,7 @@
       noChrome();
       noAcknowledgements();
       noReport();
+      noUndo();
       noUpdates();
       noShowUpdates();
       noLicenceLink();

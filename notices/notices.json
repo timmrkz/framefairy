@@ -40,6 +40,16 @@
     ]
   },
   {
+    "name": "github.com/gen2brain/malgo",
+    "version": "0.11.26",
+    "licence": "Unlicense",
+    "url": "https://github.com/gen2brain/malgo",
+    "part": "The app",
+    "texts": [
+      "github.com-gen2brain-malgo.txt"
+    ]
+  },
+  {
     "name": "github.com/go-ole/go-ole",
     "version": "1.3.0",
     "licence": "MIT",

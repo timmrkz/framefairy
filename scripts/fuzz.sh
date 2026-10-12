@@ -10,6 +10,7 @@ set -eu
 
 GO=${GO:-go}
 FUZZTIME=${FUZZTIME:-10000x}
+SHRINKTIME=${SHRINKTIME:-100x}
 JOBS=${FUZZJOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 case $JOBS in
 [1-9] | [1-9][0-9]*) ;;
@@ -29,7 +30,13 @@ if [ "${1:-}" = "--one" ]; then
 	if [ "$target" = FuzzSimulation ]; then
 		work=${SIMTIME:-300x}
 	fi
-	if out=$($GO test -run '^$' -fuzz "^$target\$" -fuzztime "$work" -parallel 1 "$pkg" 2>&1); then
+	# An input that reaches new code is shrunk before it is kept, and Go
+	# shrinks for up to a minute by the clock, in runs FUZZTIME does not
+	# count. Its search is a run for every pair of places in the input, so
+	# a target whose run takes milliseconds rather than microseconds shrank
+	# for the whole minute every time and the fuzzing seemed to hang. A
+	# count bounds that work the way FUZZTIME bounds the rest.
+	if out=$($GO test -run '^$' -fuzz "^$target\$" -fuzztime "$work" -fuzzminimizetime "$SHRINKTIME" -parallel 1 "$pkg" 2>&1); then
 		printf 'ok  \t%s %s\n' "$target" "$work"
 		exit 0
 	fi
