@@ -459,6 +459,10 @@ func TestTheCaptionLineMovesInStepsAndComesBack(t *testing.T) {
 	}
 }
 
+// planEditsRead is the most edits one run of FuzzPlanEdits makes. The
+// seeds added below are five edits at most.
+const planEditsRead = 32
+
 // FuzzPlanEdits runs whatever sequence of edits the fuzzer comes up with,
 // the way a person clicking around the workspace would. Whatever happens,
 // the plan stays a plan that renders. It is in memory: what is under test
@@ -493,6 +497,15 @@ func FuzzPlanEdits(f *testing.F) {
 		// the whole plan and a good part either side of it.
 		at := func(b byte) float64 { return float64(b) / 10 }
 		lastRevision := 0
+		// Only the first planEditsRead edits are made. Every edit is a plan
+		// written whole, so a run costs as much as its script is long, and
+		// the fuzzer grows scripts without end. When the plan was flushed to
+		// the disk, a script of hundreds of edits took most of a second, and
+		// shrinking one that reached new code took a minute, so the fuzzing
+		// seemed to hang, see scripts/fuzz.sh.
+		if len(script) > 3*planEditsRead {
+			script = script[:3*planEditsRead]
+		}
 		for i := 0; i+2 < len(script); i += 3 {
 			clip := "01"
 			if script[i+1]%2 == 1 {
