@@ -80,9 +80,8 @@ exception, even where that is not the frame the short shows. At rest the
 word stays lifted over the frame until the playhead moves or the clip
 plays. The frame's own layer stays while the two parts are on their way,
 or the layer before the step where the frame shows its word grown. At its
-peak the word's pill lies over the letters of the words beside it, where
-in the short those letters are drawn over the pill, for a tenth of a
-second. Nothing bounces while the clip plays, where the frames pop by
+peak the word's pill lies over the letters of the words beside it, as it
+does in the short. Nothing bounces while the clip plays, where the frames pop by
 themselves, or when the Mac is set to reduce motion. `Lift` and
 `CaptionLayers.sought` in `lib/frames/captions.ts`.
 

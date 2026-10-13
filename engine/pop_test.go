@@ -1,8 +1,13 @@
 package engine
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // The pop of a word, frame by frame, for every number of frames a word
@@ -82,5 +87,46 @@ func TestPopScaleIsThePillOnTheFrame(t *testing.T) {
 		if c.at && s != 1 || c.grew && s <= 1.01 {
 			t.Errorf("on frame %d the pill is drawn at %.3f", c.frame, s)
 		}
+	}
+}
+
+// The pill of the word being spoken and the word on it lie over the rest
+// of the line, so at the peak of the pop the words beside it never reach
+// into the pill. Tim saw the letters of the next word drawn over it, and
+// wanted the pop to stand out as a layer of its own.
+//
+// On the real disk: ffmpeg measures the captions.
+func TestThePillAndItsWordLieOverTheLine(t *testing.T) {
+	ffmpegtest.Need(t)
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	clip := Clip{ID: "01", Slug: "over", Segments: []Segment{{Start: 0, End: 2}}}
+	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	d := captionsView(Plan{}, clip, tr, nil).Drawing()
+	track, err := e.CaptionTrack(context.Background(), d.Laid, 540, 960, d.Style, SourceInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The highest layer of the line, the lowest of a pill and of the word
+	// on it.
+	line, pill, word := -1, 1<<30, 1<<30
+	for _, l := range strings.Split(string(track), "\n") {
+		var layer int
+		if _, err := fmt.Sscanf(l, "Dialogue: %d,", &layer); err != nil {
+			continue
+		}
+		switch {
+		case strings.Contains(l, ",Box,") && strings.Contains(l, `\fscx`):
+			pill = min(pill, layer)
+		case strings.Contains(l, ",Caption,") && strings.Contains(l, `\fscx`):
+			word = min(word, layer)
+		case strings.Contains(l, ",Caption,"):
+			line = max(line, layer)
+		}
+	}
+	if line < 0 || pill == 1<<30 || word == 1<<30 {
+		t.Fatalf("the caption file has a line on %d, a pill on %d and a word on %d", line, pill, word)
+	}
+	if !(line < pill && pill < word) {
+		t.Errorf("the line lies on layer %d, the pill on %d and its word on %d: the pill must lie over the line and the word over the pill", line, pill, word)
 	}
 }

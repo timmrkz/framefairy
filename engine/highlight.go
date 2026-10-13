@@ -69,9 +69,11 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // stretched up or down to keep off the other line and the word grown
 // 3 pixels a side, so Tim saw the pill move up or down and the word not
 // at all. At its peak a long word and its pill reach over the space to
-// the next word for a frame or two, as in every caption tool: the words
-// beside it are drawn over the pill, and the pop is over in a fifth of a
-// second.
+// the next word for a frame or two, as in every caption tool, and the
+// pop is over in a fifth of a second. The pill and its word lie over the
+// words beside them, a layer of their own coming forward: Tim saw the
+// letters of the next word reach into the pill at its peak, and wanted
+// the pop to stand out over everything round it.
 //
 // At rest the pill leaves room all round its word: as tall as the line,
 // from the top of the capitals and the tall letters the face draws to the
@@ -387,16 +389,17 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			}
 
 			// The pill, and the active word alone over it, both at one
-			// scale around one centre, one scale a frame. The word is the
+			// scale around one centre, one scale a frame, over the line,
+			// so the words beside them never reach into the pill. The word is the
 			// whole caption with the others hidden, so it stands where it
 			// stands in the line, and its anchor moves with the scale to
 			// keep its centre still.
 			only := taggedText(L.words, L.lines, func(j int) bool { return j == k && !c.Hidden[j] }, shown)
 			at := func(scale float64, from, to int) {
 				x, y := num(ax+(1-scale)*(cx-ax)), num(ay+(1-scale)*(cy-ay))
-				add(1, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s}%s{\p0}`,
+				add(3, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s}%s{\p0}`,
 					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), num(scale*100), num(scale*100), pill))
-				add(3, from, to, "Caption", fmt.Sprintf(`{\an2\pos(%s,%s)\fscx%s\fscy%s}%s`,
+				add(4, from, to, "Caption", fmt.Sprintf(`{\an2\pos(%s,%s)\fscx%s\fscy%s}%s`,
 					x, y, num(scale*100), num(scale*100), only))
 			}
 			// Each frame of the pop holds its scale from the hundredth its

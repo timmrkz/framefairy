@@ -806,7 +806,11 @@ for 1 to 10 frames back frame by frame and holds each to `popScales`, and
 `TestEveryWordReachesItsPeakOnAFrame` in `engine/pop_test.go` holds the
 rule at 24 to 60 fps for every number of frames. At its peak a long word
 and its pill reach over the space to the next word for a frame or two,
-as in every caption tool. The words beside it are drawn over the pill.
+as in every caption tool. The pill and its word lie over the words
+beside them, a layer of their own coming forward, so no letter reaches
+into the pill: libass draws the line on layer 2, the pill on 3 and the
+word on 4. Tim saw the next word's letters drawn over the pill at its
+peak. `TestThePillAndItsWordLieOverTheLine` in `engine/pop_test.go`.
 
 #201 had made the bounce a few pixels in height only, the pill stretched
 up or down to keep off the other line and the word grown 3 pixels a side,
