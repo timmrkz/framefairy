@@ -1718,7 +1718,7 @@
   const shownCaptions = $derived.by(() => {
     if (!captions) return captions;
     let view = captions;
-    if (reshaped) view = { ...view, captions: reshaped.cues, track: reshaped.track };
+    if (reshaped) view = { ...view, captions: reshaped.cues, track: reshaped.track, pieces: reshaped.pieces };
     if (captionShape) view = { ...view, captions: captionShape.cues, track: captionShape.track };
     if (colourDraft) {
       view = {
@@ -3137,6 +3137,7 @@
           return box && box.width > 0 ? box.left + box.width / 2 : undefined;
         }}
         captions={captions?.captions ?? []}
+        captionPieces={captions?.pieces}
         captionLook={shownCaptions
           ? {
               text: shownCaptions.style.primary,

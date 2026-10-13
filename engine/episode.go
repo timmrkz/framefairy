@@ -758,6 +758,12 @@ type CaptionsView struct {
 	// Engine.PreviewCaptions, so they are the short's and not a copy of them.
 	Track   string `json:"track"`
 	drawing *CaptionDrawing
+	// Pieces are the clip's pieces the captions were made for. The clip's
+	// clock is those pieces with the cuts taken out, so the captions are
+	// put back in the episode by them and by no others. A clip that was
+	// changed has new pieces before it has new captions, and its captions
+	// read by the new pieces jumped to another place and back.
+	Pieces []PieceView `json:"pieces"`
 }
 
 // CaptionDrawing is what a clip's captions are drawn from, by libass, in
@@ -906,7 +912,11 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	// scales by the real height.
 	const authored = 1920.0
 	em := FontScale(s.Font)
-	view := &CaptionsView{Captions: []CaptionView{}, Style: CaptionStyleView{
+	pieces := make([]PieceView, 0, len(clip.Segments))
+	for _, p := range clip.Segments {
+		pieces = append(pieces, PieceView{Start: p.Start, End: p.End})
+	}
+	view := &CaptionsView{Captions: []CaptionView{}, Pieces: pieces, Style: CaptionStyleView{
 		Font: s.Font, Size: s.Size * em / authored, LineHeight: 1 / em,
 		ChosenSize: s.Size, Bold: s.Bold != 0,
 		MarginV: s.MarginV / authored, MarginH: s.MarginH / authored,

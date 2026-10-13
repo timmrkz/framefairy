@@ -260,6 +260,19 @@ export function inEpisode(pieces: Piece[], at: number): number {
   return last ? last.end : at;
 }
 
+// Which word of the episode a word of a caption is: where it starts in the
+// episode, to the millisecond. A word is known by this and never by when it
+// starts on the clip's clock, because that clock is the clip with its cuts
+// taken out, and every cut before a word moves it. Known by the clip's
+// clock, the word under the playhead was a new word on every answer while
+// a cut before it was dragged, and the caption block on the clip timeline
+// and the pill in the video preview popped over and over with the playhead
+// standing still, found by Tim. A word that starts where a cut ends is the
+// piece after's, so it is read a hair in.
+export function wordInEpisode(pieces: Piece[], start: number): number {
+  return Math.round(inEpisode(pieces, start + 1e-6) * 1000) / 1000;
+}
+
 // Where the end of something on the clip's clock falls in the episode: a
 // caption that goes, a word that ends. A moment exactly at a cut is two
 // places in the episode, the end of the piece before and the start of the

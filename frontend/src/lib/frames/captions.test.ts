@@ -308,7 +308,7 @@ describe("the pop over a paused frame", () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     // Lets every answer on its way come, without moving the clock.
     const flush = async () => {
-      for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+      for (let i = 0; i < 10; i++) await new Promise((r) => (globalThis as unknown as { setImmediate: (f: () => void) => void }).setImmediate(() => r(undefined)));
     };
     let lit = 0;
     const asked = goSide(() => lit);
