@@ -505,6 +505,13 @@
 //                      on and three back with the arrow keys, which leave
 //                      the playhead a hair off the first frame's start
 //                      with that frame on the video preview, then the same
+//   ["on the playhead", n]
+//                      n marks are lit by the playhead, a thumbnail or a
+//                      keyframe on its frame, and each stands centred on
+//                      the playhead's line
+//   ["pinch in"]       pinches the clip timeline in to a tenth on the
+//                      playhead, where a frame is many pixels wide, and
+//                      takes the hand off it
 //   ["keyframe past", edge]
 //                      drags the first keyframe's diamond well past the
 //                      clip's "end" or "start" edge and lets go: the engine
@@ -1299,6 +1306,24 @@ export const sequences = [
       ["under the hand", "crop"],
       ["remove mark", "crop"],
       ["keyframes", 1],
+    ],
+  },
+  {
+    // Found by Tim: a thumbnail and a keyframe lit by the playhead stood
+    // half a pixel and a pixel to the right of its line. Plan row 2.234.
+    name: "a thumbnail and a keyframe on the playhead's frame stand centred on its line",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["thumbnail at", 0.1],
+      ["keyframe at", 0.1],
+      ["on the playhead", 2],
+      ["thumbnail at", 0.9],
+      ["keyframe at", 0.9],
+      ["on the playhead", 2],
+      ["pinch in"],
+      ["on the playhead", 2],
     ],
   },
   {
@@ -4543,7 +4568,7 @@ for (const seq of toWalk) {
         const paint = () =>
           page.evaluate(() => {
             const el = document.querySelector("[data-probe]");
-            const look = getComputedStyle(el, el.classList.contains("cropdot") ? "::after" : null);
+            const look = getComputedStyle(el);
             return `${look.backgroundColor} ${look.color}`;
           });
         const away = await paint();
@@ -4581,6 +4606,55 @@ for (const seq of toWalk) {
         const now = await entry();
         if (count(now) !== count(was) - 1) wrong = `a double-click left the clip ${count(now)} ${arg} marks, not ${count(was) - 1}`;
         else if (now.segments.length !== was.segments.length) wrong = `a double-click on the ${arg} mark cut the clip`;
+        break;
+      }
+      case "on the playhead": {
+        // Found by Tim: a keyframe lit by the playhead stood a pixel to the
+        // right of it and a thumbnail half a pixel, as he saw it on his Mac.
+        // The playhead was placed on the track's whole box and the marks on
+        // its inside, a pixel in from either side, and the playhead on its
+        // moment where a thumbnail stood on the middle of its frame and a
+        // keyframe on its start. So up close, where a frame is many pixels
+        // wide, they stood apart by as much. Plan row 2.234.
+        const m = await page.evaluate(() => {
+          const mid = (e) => {
+            const b = e.getBoundingClientRect();
+            return b.left + b.width / 2;
+          };
+          const line = document.querySelector(".clip-timeline .playhead");
+          const head = document.querySelector(".clip-timeline .head") ?? line;
+          return {
+            line: line ? mid(line) : NaN,
+            head: mid(head),
+            lit: [...document.querySelectorAll(".clip-timeline .thumb.here, .clip-timeline .cropdot.here")].map((e) => ({
+              kind: e.classList.contains("thumb") ? "thumbnail" : "keyframe",
+              at: mid(e),
+            })),
+          };
+        });
+        const off = m.lit.find((l) => Math.abs(l.at - m.line) > 0.01);
+        if (!Number.isFinite(m.line)) wrong = "the clip timeline shows no playhead";
+        else if (m.lit.length !== arg) wrong = `${m.lit.length} marks light on the playhead's frame, not ${arg}`;
+        else if (off) wrong = `the ${off.kind} lit by the playhead stands ${(off.at - m.line).toFixed(2)} px from its line`;
+        else if (Math.abs(m.head - m.line) > 0.01) wrong = `the playhead's head stands ${(m.head - m.line).toFixed(2)} px from its line`;
+
+        break;
+      }
+      case "pinch in": {
+        // Up close, pinched in on the playhead to a tenth, where a frame is
+        // many pixels wide, and the hand taken off the clip timeline.
+        const g = await handles(page);
+        const line = await page.evaluate(() => {
+          const b = document.querySelector(".clip-timeline .playhead")?.getBoundingClientRect();
+          return b ? b.left + b.width / 2 : NaN;
+        });
+        await page.mouse.move(Number.isFinite(line) ? line : g.track.x + g.track.w / 2, high(g.track));
+        await page.keyboard.down("Control");
+        await page.mouse.wheel(0, -230);
+        await page.keyboard.up("Control");
+        await page.waitForTimeout(300);
+        await page.mouse.move(g.track.x + g.track.w / 2, g.track.y + g.track.h + 80);
+        await settle(page);
         break;
       }
       case "keyframe past": {
@@ -4653,17 +4727,18 @@ for (const seq of toWalk) {
         }
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         // Drawn as a diamond, the shape editors draw a keyframe in, and
-        // the keyframe button's own: Lucide's diamond, filled.
+        // the keyframe button's own: Lucide's diamond, filled, as a
+        // thumbnail is Lucide's camera filled. Plan row 2.234.
         const shapes = await page.evaluate(() =>
-          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => getComputedStyle(e, "::after").maskImage),
+          [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg path")?.getAttribute("d") ?? "nothing"),
         );
         const sizes = await page.evaluate(() => [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.getBoundingClientRect().width));
         if (got.length !== arg) wrong = `the engine has ${got.length} keyframes, not ${arg}`;
         else if (new Set(got.map((m) => m.x)).size !== arg) wrong = `the keyframes stand at ${got.map((m) => m.x).join(", ")}, not each at its own place`;
         else if (dots !== arg) wrong = `the clip timeline draws ${dots} keyframes, not ${arg}`;
-        else if (shapes.some((c) => !c.includes("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
+        else if (shapes.some((c) => !c.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
           wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
-        else if (sizes.some((w) => w !== 16)) wrong = `a keyframe's diamond is ${sizes.join(", ")} px wide, not 16 px, found too small by Tim on #192`;
+        else if (sizes.some((w) => w !== 18)) wrong = `a keyframe is ${sizes.join(", ")} px wide, not 18 px like a thumbnail, found too small by Tim on #192`;
         break;
       }
       case "glides":
