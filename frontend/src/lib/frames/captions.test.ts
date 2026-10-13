@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CaptionLayers, laidPart, readLayer, turned, unturned, type Layer, type Over } from "./captions";
+import { CaptionLayers, laidPart, readLayer, readShowing, turned, unturned, type Layer, type Over } from "./captions";
 
 // A pixel of 10 bits a colour, red lowest, as the Go side sends every frame.
 const word = (r: number, g: number, b: number) => (r | (g << 10) | (b << 20)) >>> 0;
@@ -123,6 +123,12 @@ describe("the layers of the captions", () => {
     return b;
   }
 
+  // The answer to the nth ask, the way the Go side gives it: a layer whose
+  // first red is n, and the caption n with its first word lit.
+  function answerOf(n: number): Response {
+    return new Response(body(layer(0, 0, 1, 1, [n, 0, 0, 255])), { headers: { "X-Caption-Showing": `${n} 0` } });
+  }
+
   it("keeps the last layer up while the one for a newer frame is on its way, and draws again when it comes", async () => {
     const asked: string[] = [];
     let answer: (() => void)[] = [];
@@ -130,7 +136,7 @@ describe("the layers of the captions", () => {
       asked.push(url);
       const n = asked.length;
       return new Promise((done) => {
-        answer.push(() => done({ ok: true, arrayBuffer: async () => body(layer(0, 0, 1, 1, [n, 0, 0, 255])) }));
+        answer.push(() => done(answerOf(n)));
       });
     });
     let came = 0;
@@ -143,6 +149,8 @@ describe("the layers of the captions", () => {
     answer.shift()!();
     await vi.waitFor(() => expect(came).toBe(1));
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
+    // What the layer shows comes with it, for the caption box.
+    expect(layers.at(1.0, [10, 20])?.showing).toEqual({ caption: 1, word: 0 });
     // The next frame: the first one's layer stays until its own comes.
     expect(layers.at(1.04, [10, 20])?.pixels[0]).toBe(1);
     answer.shift()!();
@@ -173,7 +181,7 @@ describe("the layers of the captions", () => {
         answer.push(() =>
           fail(n)
             ? failed(new Error("gone"))
-            : done({ ok: true, arrayBuffer: async () => body(layer(0, 0, 1, 1, [n, 0, 0, 255])) }),
+            : done(answerOf(n)),
         );
       });
     });
@@ -263,5 +271,17 @@ describe("the layers of the captions", () => {
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
     layers.set({ path: "/v.mp4", track: "two", drafts: {} });
     expect(layers.at(1.0, [10, 20])).toBeNull();
+  });
+});
+
+describe("what a layer shows", () => {
+  it("is read off the header the Go side sends, and is nothing for a header it cannot read", () => {
+    expect(readShowing("3 1")).toEqual({ caption: 3, word: 1 });
+    expect(readShowing("0 -1")).toEqual({ caption: 0, word: -1 });
+    expect(readShowing("-1 -1")).toEqual({ caption: -1, word: -1 });
+    expect(readShowing(null)).toBeUndefined();
+    expect(readShowing("")).toBeUndefined();
+    expect(readShowing("1.5 0")).toBeUndefined();
+    expect(readShowing("one two")).toBeUndefined();
   });
 });
