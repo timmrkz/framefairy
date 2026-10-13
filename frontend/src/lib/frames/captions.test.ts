@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CaptionLayers, laidPart, readLayer, readShowing, turned, unturned, type Layer, type Over } from "./captions";
+import { CaptionLayers, laidPart, readLayer, readPop, readShowing, turned, unturned, type Layer, type Over } from "./captions";
 
 // A pixel of 10 bits a colour, red lowest, as the Go side sends every frame.
 const word = (r: number, g: number, b: number) => (r | (g << 10) | (b << 20)) >>> 0;
@@ -289,22 +289,23 @@ describe("the pop over a paused frame", () => {
   }
 
   // The Go side: a frame's own layer is red 100 plus the word it lights,
-  // with two frames of pop, and the layer so many frames ahead is red
-  // that many.
+  // with a pop from a frame behind it to two ahead, and the layer so many
+  // frames ahead is red 50 and that many.
   function goSide(word: () => number) {
     const asked: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       asked.push(url);
       const ahead = Number(new URLSearchParams(url.split("?")[1]).get("ahead") ?? 0);
-      if (ahead) return new Response(body(ahead), { headers: { "X-Caption-Showing": `0 ${word()}` } });
-      return new Response(body(100 + word()), { headers: { "X-Caption-Showing": `0 ${word()}`, "X-Caption-Pop": "2" } });
+      if (ahead) return new Response(body(50 + ahead), { headers: { "X-Caption-Showing": `0 ${word()}` } });
+      return new Response(body(100 + word()), { headers: { "X-Caption-Showing": `0 ${word()}`, "X-Caption-Pop": "1 2" } });
     });
     return asked;
   }
 
   // Tim stepped onto a word and saw it stand still, where the browser's
   // captions before #201 popped it.
-  it("plays the frames of the short after a frame that lights another word, then shows the frame's own", async () => {
+  // A step lands a frame into the word, so the pop starts a frame behind.
+  it("plays the frames of the short round a frame that lights another word, from the word's first, then shows the frame's own", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     // Lets every answer on its way come, without moving the clock.
     const flush = async () => {
@@ -323,13 +324,18 @@ describe("the pop over a paused frame", () => {
     expect(came).toBe(1);
     expect(red(1.0)).toBe(100);
     await flush();
-    expect(red(1.0)).toBe(1);
+    expect(red(1.0)).toBe(49);
     expect(layers.popping).toBe(true);
     const ahead = asked.filter((a) => a.includes("ahead="));
-    expect(ahead.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["1", "2"]);
+    expect(ahead.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["-1", "1", "2"]);
     expect(new URLSearchParams(ahead[0].split("?")[1]).get("at")).toBe("1.000000");
     vi.advanceTimersByTime(34);
-    expect(red(1.0)).toBe(2);
+    expect(red(1.0)).toBe(100);
+    vi.advanceTimersByTime(34);
+    expect(red(1.0)).toBe(51);
+    vi.advanceTimersByTime(34);
+    expect(red(1.0)).toBe(52);
+    expect(layers.popping).toBe(true);
     vi.advanceTimersByTime(34);
     expect(red(1.0)).toBe(100);
     expect(layers.popping).toBe(false);
@@ -346,7 +352,7 @@ describe("the pop over a paused frame", () => {
     await flush();
     red(1.5);
     await flush();
-    expect(red(1.5)).toBe(1);
+    expect(red(1.5)).toBe(49);
     expect(layers.stats.popped).toBe(2);
     red(1.54);
     expect(layers.popping).toBe(false);
@@ -368,6 +374,14 @@ describe("what a layer shows", () => {
     expect(readShowing(null)).toBeUndefined();
     expect(readShowing("")).toBeUndefined();
     expect(readShowing("1.5 0")).toBeUndefined();
+  });
+
+  it("reads the frames of a pop off its header, and nothing for one it cannot read", () => {
+    expect(readPop("1 3")).toEqual({ behind: 1, ahead: 3 });
+    expect(readPop("0 0")).toEqual({ behind: 0, ahead: 0 });
+    expect(readPop("2")).toBeUndefined();
+    expect(readPop("-1 2")).toBeUndefined();
+    expect(readPop(null)).toBeUndefined();
     expect(readShowing("one two")).toBeUndefined();
   });
 });

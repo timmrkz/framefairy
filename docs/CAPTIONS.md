@@ -47,13 +47,17 @@ word is the start of it, so a step onto a word showed it standing still.
 Before #201 the browser played a pop of its own on every new word, which
 Tim missed. Now, when the video preview comes to stand on a frame that
 lights another word than the frame before, by a step, Shift and an arrow
-or a click, it plays the layers of the frames of the short after it over
+or a click, it plays the layers of the frames of the short round it over
 the still picture, one each frame of the short, and comes back to the
-frame's own layer. `/frames/captions` says how many in `X-Caption-Pop`,
-`CaptionDrawing.PopFrames`: the frames before the pop looks again as it
-does on the frame paused on, `PopAgain`, through the peak and into the
-settle. Each is asked for with `ahead`, the frame of the short so many
-frames on. So the word pops as it pops in the short, and the frame the
+frame's own layer. They start at the word's first frame of the short: a
+step lands a frame into a word, see `wordStep`, already a third of the
+way up, and a pop played from there grew half as much. They end on the
+last frame before the pop looks again as it does on the frame paused on,
+`PopAgain`, through the peak and into the settle. `/frames/captions`
+says which in `X-Caption-Pop`, "<behind> <ahead>", from
+`CaptionDrawing.PopFrames`, and each is asked for with `ahead`, the
+frame of the short so many frames on, or back below nought. So the word
+pops as it pops in the short, and the frame the
 video preview stops on is still the short's frame, which a thumbnail
 takes. Nothing pops from a frame past the peak, while the clip plays,
 where the frames pop by themselves, or when the Mac is set to reduce

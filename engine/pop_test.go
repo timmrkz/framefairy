@@ -74,10 +74,11 @@ func TestPopAgainComesBackToTheSameLook(t *testing.T) {
 	}
 }
 
-// PopFrames counts the frames of the short a paused video preview plays
-// for the word on screen to pop: every frame before the pop looks again as
-// it does on the frame paused on, and none for a frame past the peak or
-// with no word lit.
+// PopFrames says which frames of the short a paused video preview plays
+// for the word on screen to pop: from the word's first frame, so a frame
+// a step lands on, a frame into the word, pops from rest, to the last
+// frame before the pop looks again as it does on the frame paused on.
+// None for a frame past the peak or with no word lit.
 func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
@@ -87,28 +88,32 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
 	}
 	for _, c := range []struct {
-		frame int
-		want  int
+		frame         int
+		behind, ahead int
 	}{
 		// Before the first word: nothing lit.
-		{0, 0},
+		{0, 0, 0},
 		// "Ich" lights at 0.5 s, frame 15 of the short, the frame at
 		// 10.5 s of the episode: its whole pop, seven frames of it.
-		{15, 6},
-		// A frame into the rise, 33 ms, comes back to its look 130 ms on.
-		{16, 3},
+		{15, 0, 6},
+		// A frame in, where a step lands, 33 ms up: from the word's
+		// first frame, and back to its look 130 ms on.
+		{16, 1, 3},
+		// Two frames in.
+		{17, 2, 2},
 		// Past the peak.
-		{20, 0},
+		{20, 0, 0},
 	} {
 		at := 10 + float64(c.frame)/30
-		if got := d.PopFrames(source, at); got != c.want {
-			t.Errorf("paused on frame %d PopFrames is %d, want %d", c.frame, got, c.want)
+		if behind, ahead := d.PopFrames(source, at); behind != c.behind || ahead != c.ahead {
+			t.Errorf("paused on frame %d PopFrames is %d behind and %d ahead, want %d and %d",
+				c.frame, behind, ahead, c.behind, c.ahead)
 		}
 		m := source.CaptionMoment(d.Clip, at)
-		for n := 1; n <= c.want; n++ {
-			if ahead := source.captionMomentAhead(d.Clip, at, n); ahead != m+int64(math.Round(float64(n)*1000/30)) &&
-				ahead != m+int64(math.Round(float64(n)*1000/30))+1 && ahead != m+int64(math.Round(float64(n)*1000/30))-1 {
-				t.Errorf("paused on frame %d, %d frames ahead is %d ms, not %d frames after %d ms", c.frame, n, ahead, n, m)
+		for n := -c.behind; n <= c.ahead; n++ {
+			want := m + int64(math.Round(float64(n)*1000/30))
+			if got := source.captionMomentAhead(d.Clip, at, n); got < want-1 || got > want+1 {
+				t.Errorf("paused on frame %d, %d frames ahead is %d ms, not %d frames from %d ms", c.frame, n, got, n, m)
 			}
 		}
 	}

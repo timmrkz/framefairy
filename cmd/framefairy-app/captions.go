@@ -31,13 +31,16 @@ import (
 //	                                 the word it shows in the header
 //	                                 X-Caption-Showing, "<caption> <word>",
 //	                                 see engine.CaptionShowing, and in
-//	                                 X-Caption-Pop how many frames of the
-//	                                 short after it the video preview
-//	                                 plays over it, paused, for its word
-//	                                 to pop, see engine.PopFrames. With
-//	                                 ahead, the captions of the frame of
-//	                                 the short so many frames after it,
-//	                                 which is how those are asked for
+//	                                 X-Caption-Pop which frames of the
+//	                                 short the video preview plays over
+//	                                 it, paused, for its word to pop,
+//	                                 "<behind> <ahead>", so many before it
+//	                                 to so many after it, see
+//	                                 engine.PopFrames. With ahead, the
+//	                                 captions of the frame of the short so
+//	                                 many frames after it, or before it
+//	                                 below nought, which is how those are
+//	                                 asked for
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -52,8 +55,8 @@ import (
 // and y, where the captions sit, as SetCaptionsHeight takes it. Each is
 // checked as the edit that saves it checks it.
 
-// popAheadMost is the most frames ahead a layer is asked for: a pop lasts
-// a fifth of a second, which is 24 frames at 120 a second.
+// popAheadMost is the most frames ahead or behind a layer is asked for: a
+// pop lasts 220 ms, which is 27 frames at 120 a second.
 const popAheadMost = 30
 
 // captionTracks are the drawings of the caption views the interface was
@@ -131,7 +134,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	height, _ := strconv.Atoi(q.Get("h"))
 	ahead := 0
 	if q.Has("ahead") {
-		if ahead, err = strconv.Atoi(q.Get("ahead")); err == nil && (ahead < 0 || ahead > popAheadMost) {
+		if ahead, err = strconv.Atoi(q.Get("ahead")); err == nil && (ahead < -popAheadMost || ahead > popAheadMost) {
 			err = fmt.Errorf("ahead is %d frames", ahead)
 		}
 	}
@@ -178,7 +181,8 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
 				if ahead == 0 {
-					w.Header().Set("X-Caption-Pop", strconv.Itoa(kept.drawing.PopFrames(source, at)))
+					behind, ahead := kept.drawing.PopFrames(source, at)
+					w.Header().Set("X-Caption-Pop", fmt.Sprintf("%d %d", behind, ahead))
 				}
 				_, _ = w.Write(l.Body())
 				return

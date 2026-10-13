@@ -1729,8 +1729,15 @@ export const sequences = [
     // Found by Tim on #201: a step onto a word left it standing still,
     // where the browser's captions before had popped it, and the word and
     // its pill did not grow together.
+    // Filmed at 29.97 fps, as a camera records: at the 5 fps of the
+    // other walks' videos the pop is over before the next frame.
     name: "a step onto a word pops it over the paused frame",
-    steps: [["step onto words and see them pop", 6]],
+    steps: [
+      ["add", 40, "30000/1001"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["step onto words and see them pop", 6],
+    ],
   },
   {
     // Plan row 2.130: a picture that starts after its sound, by an edit
@@ -5637,13 +5644,17 @@ for (const seq of toWalk) {
         await page.evaluate(() => document.body.focus());
         const report = [];
         let popped = 0;
+        // The most a pop grew, and how many started before the frame
+        // paused on.
+        let grew = 1;
+        let early = 0;
         for (let k = 0; k < arg && !wrong; k++) {
-          const before = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
+          const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
           const stop = await watchPills(page);
           await page.keyboard.press("Shift+ArrowRight");
           // The pop, if one starts, and its end.
           const started = await page
-            .waitForFunction((n) => (window.__captionLayers?.stats.popped ?? 0) > n, before, { timeout: 1500, polling: 10 })
+            .waitForFunction((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count, { timeout: 1500, polling: 10 })
             .then(() => true, () => false);
           await page.waitForFunction(() => !window.__captionLayers?.popping && !window.__captionLayers?.busy, null, {
             timeout: 5000,
@@ -5669,8 +5680,15 @@ for (const seq of toWalk) {
           report.push(`"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px` : "did not pop"}`);
           if (!started) continue;
           popped++;
-          // The word and its pill grow together, to 115 % of rest, from a
-          // frame at most a frame into the rise: well over 5 % on screen.
+          // The word and its pill grow together, to 115 % of rest, from
+          // the word's first frame, which a step lands a frame after: the
+          // pop starts smaller than the frame paused on shows it. The
+          // first frame of a word comes up to a frame after it lights, so
+          // a pop seen at 29.97 fps grows by 9 to 15 %, read here to a
+          // pixel or two of a pill a few dozen wide. Played from the frame
+          // the step lands on, a third of the way up, it grew 4 to 7 %.
+          grew = Math.max(grew, most / least);
+          if (least < widths[0]) early++;
           if (most < least * 1.05) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           }
@@ -5682,6 +5700,9 @@ for (const seq of toWalk) {
         }
         console.log(`    ${report.join(", ")}`);
         if (!wrong && popped < arg / 2) wrong = `only ${popped} of ${arg} steps onto a word popped it`;
+        else if (!wrong && grew < 1.12) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
+        else if (!wrong && early < popped / 2)
+          wrong = `only ${early} of ${popped} pops started before the frame paused on, from the word's first frame`;
         break;
       }
       case "frames on the pills": {
@@ -5698,11 +5719,11 @@ for (const seq of toWalk) {
           return null;
         };
         // Away from the clip's edges, where a click takes the edge, and
-        // once the word's bounce has settled: the pill grows into the room
-        // there is, so in its bounce it can grow more on one side than the
-        // other, and the frame is where it rests.
+        // once the word's pop has settled, 220 ms after it lights: the
+        // frame is where the pill rests. In its pop the pill grows round
+        // the same middle by up to 15 %.
         // A word stays lit until the next one starts.
-        const settled = (w) => w.start + 0.18 + 2 / fps;
+        const settled = (w) => w.start + 0.22 + 2 / fps;
         const length = pieces.reduce((n, p) => n + p.end - p.start, 0);
         const words = (state.captions ?? [])
           .flatMap((c) => {
@@ -5711,11 +5732,11 @@ for (const seq of toWalk) {
           })
           .filter((w) => w.start > 0.6 && w.lit < length - 0.6)
           .map((w) => ({ ...w, rests: settled(w) < w.lit - 1 / fps }))
-          // The words whose bounce settles first, then words in their bounce.
+          // The words whose pop settles first, then words in their pop.
           .sort((a, b) => Number(b.rests) - Number(a.rests))
           .slice(0, arg);
         if (words.filter((w) => w.rests).length < 2) {
-          wrong = `only ${words.filter((w) => w.rests).length} words are lit long enough for their bounce to settle`;
+          wrong = `only ${words.filter((w) => w.rests).length} words are lit long enough for their pop to settle`;
           break;
         }
         const report = [];
@@ -5776,11 +5797,12 @@ for (const seq of toWalk) {
           const down = mid(frame.t, frame.b) - mid(pill.t, pill.b);
           const wider = frame.r - frame.l - (pill.r - pill.l);
           const lower = frame.b - frame.t - (pill.b - pill.t);
-          report.push(`"${text}"${w.rests ? "" : " in its bounce"}: ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
-          // A word lit too briefly for its bounce to settle is read in its
-          // bounce, where the pill stands round the frame.
-          const inside = frame.t >= pill.t - 1.5 && frame.b <= pill.b + 1.5;
-          if (Math.abs(across) > 1.5 || Math.abs(wider) > 2 || (w.rests ? Math.abs(down) > 1.5 || lower > 2 : !inside)) {
+          report.push(`"${text}"${w.rests ? "" : " in its pop"}: ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
+          // A word lit too briefly for its pop to settle is read in its
+          // pop, where the pill stands on the frame's middle and is larger
+          // than the frame by at most the pop's 15 %.
+          const grown = (a) => (w.rests ? Math.abs(a) > 2 : a > 2 || a < -0.15 * (frame.r - frame.l) - 2);
+          if (Math.abs(across) > 1.5 || Math.abs(down) > 1.5 || grown(wider) || (w.rests ? lower > 2 : lower > 2 || lower < -0.15 * (frame.b - frame.t) - 2)) {
             wrong = `the frame round "${text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the middle of its pill, and is ${(frame.r - frame.l).toFixed(1)}x${(frame.b - frame.t).toFixed(1)} px round a pill of ${(pill.r - pill.l).toFixed(1)}x${(pill.b - pill.t).toFixed(1)}`;
             break;
           }
@@ -6395,9 +6417,8 @@ function framesOffPill(f, which) {
   if (!word) return null;
   if (!f.pill) return `${where}, no pill is drawn and the frame stands round "${word.text}"`;
   // Across, the frame stands on the middle of the pill. Down, it stands
-  // inside it: the pill grows into the room there is in its bounce, more
-  // on one side than the other where another line is near, and rests
-  // where the frame is.
+  // inside it: the pill pops round the frame's middle, larger than it in
+  // every direction, and rests where the frame is.
   const across = word.x - f.pill.x;
   const above = f.pill.t - word.t;
   const below = word.b - f.pill.b;

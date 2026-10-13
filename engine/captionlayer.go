@@ -80,20 +80,24 @@ func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
 	return ShowingAt(d.Laid, source.CaptionMoment(d.Clip, at))
 }
 
-// PopFrames is how many frames of the short after the one that shows the
-// frame of the episode that starts at the video preview plays over that
-// frame when it is paused on it, for the word lit there to pop the way it
-// does in the short, see PopAgain: the frames before the pop looks again
-// as it does on that frame. None where no word is lit, its pop is past its
-// peak, or the short has no frames to count.
-func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) int {
+// PopFrames is which frames of the short the video preview plays over
+// the frame of the episode that starts at when it is paused on it, for the
+// word lit there to pop the way it does in the short, counted from the
+// frame of the short that shows it: from behind frames before it, the
+// word's first frame, to ahead frames after it, the last before the pop
+// looks again as it does on that frame, see PopAgain. A step onto a word
+// lands a frame into it, see wordStep in the interface, already part of
+// the way up, so a pop played from there alone would leave its start out.
+// None where no word is lit, its pop is past its peak, or the short has
+// no frames to count.
+func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead int) {
 	if source.FPSNum <= 0 || source.FPSDen <= 0 {
-		return 0
+		return 0, 0
 	}
 	m := source.CaptionMoment(d.Clip, at)
 	on := ShowingAt(d.Laid, m)
 	if on.Caption < 0 || on.Word < 0 {
-		return 0
+		return 0, 0
 	}
 	c := d.Laid[on.Caption]
 	start, end := centiseconds(c.Start), centiseconds(c.End)
@@ -104,14 +108,16 @@ func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) int {
 	}
 	again := PopAgain(float64(m-int64(from)*10), to-from)
 	if again <= 0 {
-		return 0
+		return 0, 0
 	}
 	k, _ := source.shortFrame(d.Clip, at)
-	n := 0
-	for float64(source.shortMoment(k+int64(n)+1)-m) < again {
-		n++
+	for k-int64(behind) > 0 && source.shortMoment(k-int64(behind)-1) >= int64(from)*10 {
+		behind++
 	}
-	return n
+	for float64(source.shortMoment(k+int64(ahead)+1)-m) < again {
+		ahead++
+	}
+	return behind, ahead
 }
 
 // PreviewWordFrames is where the words of d stand in the short the render
