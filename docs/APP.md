@@ -1495,12 +1495,14 @@ bubble scrolled by those eight pixels.
       `engine/shape.go`. A cut's edges used to leave the playhead where it
       was, found by Tim, so the frame beside a cut could not be seen while
       it was placed.
-      With shift it is inside the word the edge snapped to, a frame into
-      the first word or a frame before the end of the last, so that word is
-      always the one lit. The edge itself stands a pause away from the
-      word, and the playhead used to go to the clip's start after a trim,
-      so the word was lit only when the pause happened to be none, which
-      looked random. After letting go the playhead stays where it was.
+      With shift it is the same frame, in line with the edge wherever the
+      edge lands on the words. It used to stand inside the word the edge
+      snapped to, a pause away from the edge, so that word was the one lit,
+      and Tim saw it leave the edge: a cut's left edge dragged on past the
+      last word took the playhead over the cut into the caption before it.
+      The edge is put on its frame first, the way the pieces are when the
+      gesture lands, so the playhead is never half a frame off the edge
+      drawn. After letting go the playhead stays where it was.
       While the clip plays the playhead does not go with the edge, it
       plays on, see the playhead above.
     - **Shift stops at the words that light up.** An edge dragged with

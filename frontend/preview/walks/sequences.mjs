@@ -36,6 +36,8 @@
 //                      in twenty steps while it is paused, reading the
 //                      playhead on every animation frame from the press to
 //                      after it lets go
+//   ["drag edge", which, px, "shift"]
+//                      the same with shift held, so the edge lands on words
 //   ["block after", n] clicks the caption block of the first caption that
 //                      appears after the clip's nth cut, from 1, which puts
 //                      the playhead on its first word
@@ -276,10 +278,10 @@
 //   ["followed", which]
 //                      since "drag edge", the playhead went with the edge:
 //                      it stood in four places or more while the hand
-//                      moved, and once it let go stands on the frame the
-//                      edge leaves on screen, the clip's or the piece's
-//                      first frame for "start" and "cut to", its last for
-//                      "end" and "cut from"
+//                      moved, on frames, and once it let go stands on the
+//                      frame the edge leaves on screen, the clip's or the
+//                      piece's first frame for "start" and "cut to", its
+//                      last for "end" and "cut from", with shift too
 //   ["pill pops", n]   the pill round the lit word in the video preview
 //                      popped n times since "count pops"
 //   ["played through"] since "drag while playing", the play went on as if
@@ -807,6 +809,28 @@ export const sequences = [
       ["drag edge", "end", -40],
       ["followed", "end"],
       ["drag edge", "start", 40],
+      ["followed", "start"],
+    ],
+  },
+  {
+    // Found by Tim on this: with shift, the playhead went inside the word
+    // the edge landed on, a pause away from the edge, and dragging a cut's
+    // left edge on past the last word took it over the cut into the
+    // caption before. It stays in line with the edge.
+    name: "a cut's edges dragged with shift keep the playhead in line with them",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", 40, "shift"],
+      ["followed", "cut from"],
+      ["drag edge", "cut from", -60, "shift"],
+      ["followed", "cut from"],
+      ["drag edge", "cut to", -40, "shift"],
+      ["followed", "cut to"],
+      ["drag edge", "cut to", 60, "shift"],
+      ["followed", "cut to"],
+      ["drag edge", "end", -60, "shift"],
+      ["followed", "end"],
+      ["drag edge", "start", 60, "shift"],
       ["followed", "start"],
     ],
   },
@@ -2392,6 +2416,8 @@ for (const seq of toWalk) {
   let played = null;
   let made = null;
   let loopEnd = null;
+  // Whether the last "drag edge" held shift.
+  let dragShift = false;
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
@@ -2762,7 +2788,8 @@ for (const seq of toWalk) {
         break;
       }
       case "drag edge": {
-        const [which, px] = arg;
+        const [which, px, how] = arg;
+        dragShift = how === "shift";
         const g = await handles(page);
         const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
         if (!box) {
@@ -2781,12 +2808,14 @@ for (const seq of toWalk) {
         });
         const y = box.y + box.h / 2;
         await page.mouse.move(middle(box), y);
+        if (dragShift) await page.keyboard.down("Shift");
         await page.mouse.down();
         for (let i = 1; i <= 20; i++) {
           await page.mouse.move(middle(box) + (px * i) / 20, y);
           await page.waitForTimeout(40);
         }
         await page.mouse.up();
+        if (dragShift) await page.keyboard.up("Shift");
         await watch.step("drag edge", s);
         await page.evaluate(() => (window.__followWatch = false));
         break;
@@ -2816,7 +2845,9 @@ for (const seq of toWalk) {
         const seen = await page.evaluate(() => window.__followed ?? []);
         const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
         const places = new Set(seen.map((t) => t.toFixed(3))).size;
-        if (places < 4) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
+        // On words the edge lands on a few places only, so the count is
+        // asked of a drag on frames.
+        if (places < 4 && !dragShift) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
         else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
         }

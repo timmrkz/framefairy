@@ -184,7 +184,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		start, end = roundTo(math.Max(0, start), 3), roundTo(end, 3)
 		playhead := -1.0
 		if g.Edge != "both" {
-			playhead = g.edgePlayhead(words, start, end, g.Edge == "start")
+			playhead = g.edgePlayhead(start, end, g.Edge == "start")
 		}
 		return func(pieces []*object, found []foundPiece) ([]*object, error) {
 			return trimPieces(pieces, found, clip.Rotations, start, end)
@@ -270,9 +270,9 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		playhead := -1.0
 		switch g.Edge {
 		case "from":
-			playhead = g.edgePlayhead(words, clip.Segments[i].Start, from, false)
+			playhead = g.edgePlayhead(clip.Segments[i].Start, from, false)
 		case "to":
-			playhead = g.edgePlayhead(words, to, clip.Segments[i+1].End, true)
+			playhead = g.edgePlayhead(to, clip.Segments[i+1].End, true)
 		}
 		return func(pieces []*object, _ []foundPiece) ([]*object, error) {
 			if i+1 >= len(pieces) || number(pieces[i+1].values[keyStart]) <= number(pieces[i].values[keyEnd]) {
@@ -381,41 +381,24 @@ func runOn(clip Clip, at float64) Clip {
 // edge of the clip or of a cut. start and end are the kept part the edge
 // bounds, the whole clip for a trim and the piece beside it for a cut, and
 // opens says the edge is the part's start, the clip's start or a cut's
-// right edge, rather than its end. On frames it is the frame at the edge:
-// the part's first frame, or its last, a frame before the end, because the
-// end is where the part is already over. On words it is inside the word the
-// edge landed on, a frame into the first word or a frame before the end of
-// the last, so that word is the one lit. The edge itself stands a pause
-// away from the word, and a playhead put there lit the word only when the
-// pause happened to be none.
-func (g Gesture) edgePlayhead(words []Cue, start, end float64, opens bool) float64 {
+// right edge, rather than its end. It is the frame at the edge, on words
+// as on frames: the part's first frame, or its last, a frame before the
+// end, because the end is where the part is already over. So the playhead
+// is in line with the edge the whole drag. With shift it used to stand
+// inside the word the edge landed on, a pause away from the edge, and
+// Tim saw it leave the cut's edge and land in a caption on the far side
+// of the cut. The part is put on frames first, the way the pieces are
+// as the gesture lands, see PieceOnFrames: an edge put on a word lies
+// between frames until then, and the playhead stood up to half a frame
+// from the edge drawn.
+func (g Gesture) edgePlayhead(start, end float64, opens bool) float64 {
+	start, end = g.Frames.PieceOnFrames(start, end)
+	if opens {
+		return start
+	}
 	frame := g.frame()
 	if frame <= 0 {
 		frame = 1.0 / 30
-	}
-	if opens {
-		if g.ToWords {
-			for _, w := range words {
-				if w.Start >= start-0.0005 {
-					if w.End <= end {
-						return math.Min(w.Start+frame, (w.Start+w.End)/2)
-					}
-					break
-				}
-			}
-		}
-		return start
-	}
-	if g.ToWords {
-		var word *Cue
-		for i := range words {
-			if words[i].End <= end+0.0005 {
-				word = &words[i]
-			}
-		}
-		if word != nil && word.Start >= start {
-			return math.Max(word.End-frame, (word.Start+word.End)/2)
-		}
 	}
 	return math.Max(end-frame, start)
 }
