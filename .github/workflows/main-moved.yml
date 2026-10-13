@@ -8,12 +8,22 @@
 # a pull request is opened or pushed to, for that one alone. A branch
 # started from a main that has moved on since is in conflict from its
 # first push, and no push to main follows to say so.
+#
+# A pull request is heard through pull_request_target, not pull_request.
+# GitHub runs no pull_request workflow on a pull request that conflicts
+# with main, because there is no merge of the two to run it on, so the
+# one case this trigger is for never ran it: #213 was opened in conflict
+# and nothing said so, plan row 2.241. pull_request_target runs on main
+# whatever the conflict, with main's workflow and main's script, which is
+# all this needs. It never checks out or runs the branch's code, and a
+# fork's pull request is left out below, so the token it gets to comment
+# with is never handed to code from outside.
 name: Main moved
 
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request_target:
     branches: [main]
     types: [opened, reopened, synchronize]
 
@@ -40,9 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Main with the whole history, because merging needs the common
-      # ancestor. On a pull request too: the default there is GitHub's
-      # merge of the two, which does not exist while they conflict, and
-      # the script that runs is main's, not the branch's.
+      # ancestor. On a pull request too, so the script that runs is
+      # main's, never the branch's.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
