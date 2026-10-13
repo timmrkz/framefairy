@@ -452,8 +452,23 @@
     void ask();
   }
 
+  // Who waits for the last answer: letting go saves the gesture once the
+  // place the hand left it is answered, see letGo.
+  let waiters: (() => void)[] = [];
+  function idle(): Promise<void> {
+    if (!asking && !nextGesture) return Promise.resolve();
+    return new Promise((done) => waiters.push(done));
+  }
+
   async function ask() {
-    if (asking || !nextGesture || !clip) return;
+    if (asking) return;
+    if (!nextGesture || !clip) {
+      nextGesture = null;
+      const done = waiters;
+      waiters = [];
+      for (const w of done) w();
+      return;
+    }
     const g = nextGesture;
     const asked = clip;
     const mine = shapeFor;
@@ -484,16 +499,22 @@
   }
 
   // The hand let go. The same gesture is saved, and a gesture that never
-  // moved anything is let go of with nothing saved.
+  // moved anything is let go of with nothing saved. The place the hand
+  // left it is answered first, so the playhead stands on the edge saved:
+  // a hand that let go while an answer was on its way left the last place
+  // unasked, and the playhead stood where the edge had been a few frames
+  // before.
   async function letGo(save: boolean) {
     const g = hand;
     hand = null;
-    nextGesture = null;
     if (!save || !g || !onreshape) {
+      nextGesture = null;
       shapeFor++;
       shaped = null;
       return;
     }
+    saving = true;
+    await idle();
     await reshape(g, [heldAt, leftAt]);
   }
 

@@ -450,10 +450,11 @@
 //   ["edges as rendered"]
 //                      the short Render wrote, read back from disk, and the
 //                      video preview agree on the clip's edges: with the
-//                      playhead put on the clip's start and on where each
-//                      cut ends by a click on it, the video preview shows
-//                      the frame the short starts that piece with, and on
-//                      the clip's end the short's last frame. The clip's
+//                      playhead put on the frame of the clip's start and of
+//                      where each cut ends by a click on it, the video
+//                      preview shows the frame the short starts that piece
+//                      with, and on the clip's last frame, put there by a
+//                      click on its end, the short's last frame. The clip's
 //                      end is where the search put it, and at least one
 //                      edge is kept to the millisecond just before its
 //                      frame's start
@@ -2336,9 +2337,15 @@ async function edgesAsRendered(page) {
     }
     await page.mouse.click(grip.x + grip.width / 2, high((await handles(page)).track));
     await settle(page);
+    // On the edge's frame, where the engine puts the playhead for an
+    // edge, see edgePlayhead in engine/shape.go: the first frame of the
+    // piece an edge starts, and the clip's last frame for its end.
     const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    if (Math.abs(placed - e.at) > 1e-6) {
-      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not ${e.at.toFixed(4)}`);
+    // A millisecond early is on the frame, the rounding the edges are kept
+    // to, which is the case this is about.
+    const frameOn = nearest(e.at) - (e.label === "Clip end" ? 1 : 0);
+    if (Math.floor((placed - videoStart + 0.001) * fps) !== frameOn) {
+      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
       continue;
     }
     const came = await page
