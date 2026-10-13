@@ -24,7 +24,8 @@ import (
 // with what they say happened, the app's log and what we need to read it.
 // It never holds a video, its transcript or its captions, and paths under
 // the home folder are written as ~, so the Mac's user name does not
-// travel. Help → Report a Problem…, plan row 2.188 and docs/LOGGING.md.
+// travel. Bugs in the sidebar, plan rows 2.188 and 2.244, bugs.go and
+// docs/LOGGING.md.
 
 // What the person may write, a few pages at most.
 const reportWordsMax = 20000
@@ -99,13 +100,19 @@ func homeless(b []byte) []byte {
 }
 
 // ReportProblem writes a report of a problem to the Desktop and shows it
-// in Finder, with what the person says happened and the video that was in
-// front, by its file name only. It gives the report's path.
+// in Finder, with what the person says happened, the pictures they
+// attached and the video that was in front, by its file name only, or
+// without one the video last worked on. It gives the report's path, and
+// lets go of the draft it was made from.
 func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 	if len(what) > reportWordsMax {
 		what = what[:reportWordsMax]
 	}
-	theLog.line(zerolog.InfoLevel, "app").Msg("a report of a problem is being made")
+	if video == "" {
+		video = f.report.lastVideo()
+	}
+	pictures := f.report.reportPictures()
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(what)).Int("pictures", len(pictures)).Msg("a report of a problem is being made")
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
 	add := func(name string, data []byte) error {
@@ -140,6 +147,17 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 			return "", err
 		}
 	}
+	// The pictures go as they are, since home is not in a picture's
+	// pixels and replacing it in them would spoil the file.
+	for i, pic := range pictures {
+		w, err := z.Create(fmt.Sprintf("Frame Fairy report/Pictures/%d.png", i+1))
+		if err == nil {
+			_, err = w.Write(pic)
+		}
+		if err != nil {
+			return "", err
+		}
+	}
 	// The trace lines of the last while, kept in memory and in no file,
 	// see appLog.
 	if recent := theLog.recent.all(); len(recent) > 0 {
@@ -154,7 +172,8 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		return "", fmt.Errorf("the report could not be saved: %w", err)
 	}
-	theLog.line(zerolog.InfoLevel, "app").Int("bytes", buf.Len()).Msg("a report of a problem was made")
+	theLog.line(zerolog.InfoLevel, "report").Int("bytes", buf.Len()).Int("pictures", len(pictures)).Msg("a report of a problem was made")
+	f.report.clear()
 	_ = showReport(path)
 	return path, nil
 }
