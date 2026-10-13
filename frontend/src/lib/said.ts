@@ -120,6 +120,26 @@ export function workspaces(): string {
 // that should fire every quarter of a second came this much late.
 const STOOD = 400;
 
+// How long an act may take to reach the screen before it is said, in ms.
+// A tenth of a second is where a click starts to feel slow, and Tim felt
+// the app take a moment to answer while nothing stood still long enough
+// to be said above. So each act says how long it took from the hand to
+// the first frame drawn after it, and how much of that the window was
+// still busy with something else before it heard the act at all, which
+// tells work in the window from work it waits on. Plan row 2.242.
+const SLOWLY = 150;
+
+function shown(what: string, e: Event) {
+  const heard = performance.now();
+  requestAnimationFrame(() =>
+    setTimeout(() => {
+      const took = performance.now() - e.timeStamp;
+      if (took <= SLOWLY || document.hidden) return;
+      said(`window: ${what} took ${Math.round(took)} ms to reach the screen, ${Math.round(heard - e.timeStamp)} ms of it before the window heard it`, { level: "warn" });
+    }),
+  );
+}
+
 // The control an act was on, by what the interface calls it, and never by
 // the words of a video: a word clicked in the caption box is named as the
 // caption box, so the log holds no transcript.
@@ -152,12 +172,22 @@ function pressed(e: KeyboardEvent): string {
 // window stood still, and what the space bar met. Every click and every
 // key that is not typing is an act.
 export function listen() {
-  window.addEventListener("pointerdown", (e) => act(`pressed ${control(e.target as Element | null)}`), true);
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      const what = `pressed ${control(e.target as Element | null)}`;
+      act(what);
+      shown(what, e);
+    },
+    true,
+  );
   window.addEventListener(
     "keydown",
     (e) => {
       if (e.repeat || ["Shift", "Meta", "Control", "Alt", "CapsLock"].includes(e.key) || typing(e)) return;
-      act(`${pressed(e)} on ${control(document.activeElement)}`);
+      const what = `${pressed(e)} on ${control(document.activeElement)}`;
+      act(what);
+      shown(what, e);
     },
     true,
   );
@@ -176,15 +206,34 @@ export function listen() {
   window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`, { level: "error" }));
   said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`, { level: "info" });
   // A window that stands still is a window doing something too long: the
-  // timer comes late by as much.
+  // timer comes late by as much. But WebKit lets the timers of an app that
+  // is not in front fire once a second at most, so a timer late while the
+  // app was behind another, or on its way back to the front, says nothing
+  // about the app. Every one of the 262 lines of two days in Tim's report
+  // was that, and none came while he worked. Plan row 2.242.
   let tick = performance.now();
+  let away = document.hidden || !document.hasFocus();
+  const leave = () => {
+    away = true;
+  };
+  const back = () => {
+    tick = performance.now();
+    away = document.hidden || !document.hasFocus();
+  };
+  window.addEventListener("blur", leave);
+  window.addEventListener("focus", back);
   setInterval(() => {
     const now = performance.now();
     const late = now - tick - 250;
     tick = now;
-    if (late > STOOD && !document.hidden) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
+    if (away) return back();
+    if (late > STOOD) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
   }, 250);
-  document.addEventListener("visibilitychange", () => said(`window: ${document.hidden ? "hidden" : "shown"}`));
+  document.addEventListener("visibilitychange", () => {
+    said(`window: ${document.hidden ? "hidden" : "shown"}`);
+    if (document.hidden) leave();
+    else back();
+  });
   // The space bar, before anything takes it: where the keyboard was, and
   // which workspace could have heard it.
   window.addEventListener(

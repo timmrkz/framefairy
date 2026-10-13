@@ -249,6 +249,18 @@
 //                      and then on to that share
 //   ["remove clip"]    presses the bin of the clip on screen in the clip
 //                      list, and waits until the Go side has it removed
+//   ["asks none", name, seconds]
+//                      the interface asks the Go side nothing of this name
+//                      for so many seconds
+//   ["swipe keeps the canvas", n]
+//                      swipes along the clip timeline n times with two
+//                      fingers, and the waveform's canvas is never made new
+//                      on the way, only drawn again
+//   ["stands still", away]
+//                      holds the window up for 900 ms, after it was told the
+//                      app went behind another when away is true, and reads
+//                      whether the log was told the window stood still: it
+//                      must be, unless the app was away
 //   ["remove two, hand still"]
 //                      presses the bins of the first two clips in the clip
 //                      list, one after the other, and leaves the hand where
@@ -1289,6 +1301,40 @@ export const sequences = [
     // for that word. Plan row 2.240.
     name: "a row to put back runs down once the hand is elsewhere, though it moved from under a still hand",
     steps: [["trim", "start", 300], ["make while paused", "i"], ["remove two, hand still"]],
+  },
+  {
+    // Tim felt the app lag while it worked. A running search reads the
+    // clip list again every two seconds, and every read made every clip a
+    // new one, the clip on screen too, so its captions were asked for
+    // again and the clip timeline and the caption box drew them again,
+    // with nothing changed. Plan row 2.242.
+    name: "a running search leaves the clip on screen alone",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["asks none", "Captions", 7],
+    ],
+  },
+  {
+    // A swipe along the clip timeline told the waveform's canvas its size
+    // on every step, which throws its pixels away and makes it new, twice
+    // the clip timeline's pixels on a Mac, with nothing changed in size.
+    // Plan row 2.242.
+    name: "a swipe along the clip timeline draws the waveform again on the same canvas",
+    steps: [["swipe keeps the canvas", 12]],
+  },
+  {
+    // WebKit lets the timers of an app that is not in front fire once a
+    // second at most, and the log said the window stood still every time
+    // the app came back to the front: 262 lines in two days of Tim's
+    // report, none while he worked. A window held up in front is still
+    // said. Plan row 2.242.
+    name: "the log says the window stood still only while the app is in front",
+    steps: [
+      ["stands still", true],
+      ["stands still", false],
+    ],
   },
   {
     name: "Cancel stops a search, and Continue carries it on to its clips",
@@ -4810,6 +4856,64 @@ for (const seq of toWalk) {
         }
         if (!gone) wrong = "the bin left the clip in the list";
         await watch.step("remove clip", s);
+        break;
+      }
+      case "asks none": {
+        const [name, seconds] = arg;
+        const before = await page.evaluate(() => window.__calls.length);
+        await page.waitForTimeout(seconds * 1000);
+        const asked = await page.evaluate((n) => window.__calls.slice(n).map((c) => c.name), before);
+        const these = asked.filter((c) => c === name).length;
+        if (these) wrong = `${name} was asked ${these} times in ${seconds} s, with nothing changed: ${asked.join(", ")}`;
+        break;
+      }
+      case "stands still": {
+        const before = await page.evaluate(() => window.__calls.length);
+        await page.evaluate((away) => {
+          if (away) window.dispatchEvent(new Event("blur"));
+          const until = performance.now() + 900;
+          while (performance.now() < until);
+        }, arg);
+        await page.waitForTimeout(400);
+        if (arg) await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await page.waitForTimeout(400);
+        const lines = await page.evaluate(
+          (n) =>
+            window.__calls
+              .slice(n)
+              .filter((c) => c.name === "Said")
+              .flatMap((c) => c.args[0].map((l) => l.text)),
+          before,
+        );
+        const stood = lines.some((l) => l.startsWith("window: stood still"));
+        if (arg && stood) wrong = `the log said the window stood still while the app was behind another: ${lines.join(" | ")}`;
+        if (!arg && !stood) wrong = `the window stood still for 900 ms in front and the log did not say so: ${lines.join(" | ")}`;
+        break;
+      }
+      case "swipe keeps the canvas": {
+        await page.evaluate(() => {
+          const canvas = document.querySelector(".clip-timeline canvas");
+          window.__madeNew = 0;
+          for (const side of ["width", "height"]) {
+            const own = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, side);
+            Object.defineProperty(canvas, side, {
+              configurable: true,
+              get() {
+                return own.get.call(this);
+              },
+              set(v) {
+                window.__madeNew++;
+                own.set.call(this, v);
+              },
+            });
+          }
+        });
+        const line = await page.locator(".clip-timeline").boundingBox();
+        await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
+        for (let i = 0; i < arg; i++) await page.mouse.wheel(i % 2 ? -40 : 40, 0);
+        await page.waitForTimeout(300);
+        const made = await page.evaluate(() => window.__madeNew);
+        if (made) wrong = `the waveform's canvas was made new ${made} times in ${arg} swipes`;
         break;
       }
       case "remove two, hand still": {
