@@ -27,7 +27,10 @@ import (
 //	                                 the captions of a view, by its track,
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
-//	                                 framewire.Layer
+//	                                 framewire.Layer, with the caption and
+//	                                 the word it shows in the header
+//	                                 X-Caption-Showing, "<caption> <word>",
+//	                                 see engine.CaptionShowing
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -144,7 +147,10 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
 			}
 			if err == nil {
+				// What the layer shows, which the caption box over it shows.
+				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
 				_, _ = w.Write(l.Body())
 				return
 			}

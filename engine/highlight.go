@@ -311,15 +311,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 				`{\p1\pos(0,0)\1c%s\1a&H%s&\bord0\shad0}%s{\p0}`, boxFill, boxAlpha, shape))
 		}
 
-		// When each word is the active one. A word stays active until the
-		// next one starts, so a short word never flickers.
-		begins := make([]int, len(L.words))
-		for k, w := range c.Words {
-			begins[k] = min(max(centiseconds(w.Start), start), end)
-		}
-		for k := 1; k < len(begins); k++ {
-			begins[k] = max(begins[k], begins[k-1])
-		}
+		begins := wordBegins(c, start, end)
 		all := func(int) bool { return true }
 		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
 
@@ -348,7 +340,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// phase from where BounceAt has it at the phase's start to where
 			// it has it at its end.
 			w, h := pr-pl, pb-pt
-			pill := roundedRect(0, 0, w, h, math.Min(h*0.3, radius+2))
+			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
 			pillScale := func(at Bounce) (string, string) {
 				return "100", num((h + 2*grow*at.Tall) / h * 100)
 			}

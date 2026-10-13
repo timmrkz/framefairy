@@ -13,7 +13,22 @@
 // and its pixels, red, green, blue and alpha, the alpha multiplied in, in
 // full range, see framewire.Layer. A moment with no captions is a box of
 // nothing.
-export type Layer = { x: number; y: number; w: number; h: number; pixels: Uint8Array };
+export type Layer = { x: number; y: number; w: number; h: number; pixels: Uint8Array; showing?: Showing };
+
+// What a layer shows: the caption, by its place among the captions of the
+// view, and the word of it being spoken, counted across its lines, each
+// -1 for none, as the Go side says it in the header X-Caption-Showing, see
+// engine.CaptionShowing. The caption box over the video preview shows the
+// caption and the word the layer on screen shows, so the frame round a word
+// is never a frame ahead of the pill under it. It followed the playhead,
+// which runs ahead of the frame on screen while the episode plays, and Tim
+// saw the frame go to the next caption a few frames before the pill did.
+export type Showing = { caption: number; word: number };
+
+export function readShowing(header: string | null): Showing | undefined {
+  const [caption, word] = (header ?? "").split(" ").map(Number);
+  return Number.isInteger(caption) && Number.isInteger(word) ? { caption, word } : undefined;
+}
 
 // The size of a layer's box in its body: four 16-bit numbers.
 const HEAD = 8;
@@ -157,8 +172,9 @@ export function laidPart(
 
 // Where libass put a word of the captions: the box its pill takes at
 // rest, as shares of the short's width and height from its top left
-// corner, see engine.WordFrame and /frames/captions/words.
-export type WordFrame = { x: number; y: number; w: number; h: number };
+// corner, and the radius of its corners as a share of the height, see
+// engine.WordFrame and /frames/captions/words.
+export type WordFrame = { x: number; y: number; w: number; h: number; r: number };
 
 // What the video preview asks the captions of: the episode, the captions
 // by their track, see engine.CaptionsView, and the drafts the hand is
@@ -263,7 +279,11 @@ export class CaptionLayers {
       ...ask.drafts,
     });
     void fetch(`/frames/captions?${q}`)
-      .then(async (r) => (r.ok ? readLayer(await r.arrayBuffer()) : null))
+      .then(async (r) => {
+        const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
+        if (layer) layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
+        return layer;
+      })
       .catch(() => null)
       .then((layer) => {
         this.going.delete(key);

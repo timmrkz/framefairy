@@ -608,7 +608,13 @@ func (c *inkCache) put(key string, box *inkBox) {
 	c.boxes[key] = *box
 }
 
-// roundedRect is an ASS drawing command for a rectangle with bezier corners.
+// quarterArc is how far along a side, as a share of the radius, the
+// handles of a cubic Bézier curve reach for it to follow a quarter of a
+// circle closest: 4/3·(√2−1).
+const quarterArc = 0.5523
+
+// roundedRect is an ASS drawing command for a rectangle with rounded
+// corners.
 func roundedRect(x0, y0, x1, y1, radius float64) string {
 	radius = math.Max(0, math.Min(radius, math.Min((x1-x0)/2, (y1-y0)/2)))
 	f := func(v float64) string { return fixed(v, 0) }
@@ -616,17 +622,23 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 		return fmt.Sprintf("m %s %s l %s %s l %s %s l %s %s",
 			f(x0), f(y0), f(x1), f(y0), f(x1), f(y1), f(x0), f(y1))
 	}
-	r := radius
+	// Each corner is a quarter of a circle of the radius, the way a
+	// browser rounds a corner: a curve whose handles reach 0.5523 of the
+	// radius along the sides, see quarterArc. Both handles on the corner
+	// itself drew a corner much sharper than the radius said, and the
+	// frame round a word in the caption box, rounded by the browser,
+	// stood round a pill with other corners.
+	r, c := radius, radius*(1-quarterArc)
 	return strings.Join([]string{
 		fmt.Sprintf("m %s %s", f(x0+r), f(y0)),
 		fmt.Sprintf("l %s %s", f(x1-r), f(y0)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y0), f(x1), f(y0), f(x1), f(y0+r)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x1-c), f(y0), f(x1), f(y0+c), f(x1), f(y0+r)),
 		fmt.Sprintf("l %s %s", f(x1), f(y1-r)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y1), f(x1), f(y1), f(x1-r), f(y1)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y1-c), f(x1-c), f(y1), f(x1-r), f(y1)),
 		fmt.Sprintf("l %s %s", f(x0+r), f(y1)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y1), f(x0), f(y1), f(x0), f(y1-r)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x0+c), f(y1), f(x0), f(y1-c), f(x0), f(y1-r)),
 		fmt.Sprintf("l %s %s", f(x0), f(y0+r)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y0), f(x0), f(y0), f(x0+r), f(y0)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y0+c), f(x0+c), f(y0), f(x0+r), f(y0)),
 	}, " ")
 }
 

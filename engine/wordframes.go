@@ -78,6 +78,58 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 	return layouts, true
 }
 
+// pillRadius is the radius of the corners of a pill h high, in a style
+// whose corners are radius, both in pixels of the short: a third of its
+// height, or the box's corners and two pixels, whichever is less. The
+// frame round a word in the caption box has the same corners, see
+// WordFrame.
+func pillRadius(h, radius float64) float64 { return math.Min(h*0.3, radius+2) }
+
+// wordBegins is the centisecond each word of a caption that shows from
+// start to end becomes the word being spoken: when it starts, inside the
+// caption, and never before the word before it. A word stays the one
+// spoken until the next one starts, so a short word never flickers.
+func wordBegins(c LaidCaption, start, end int) []int {
+	begins := make([]int, len(c.Words))
+	for k, w := range c.Words {
+		begins[k] = min(max(centiseconds(w.Start), start), end)
+	}
+	for k := 1; k < len(begins); k++ {
+		begins[k] = max(begins[k], begins[k-1])
+	}
+	return begins
+}
+
+// CaptionShowing is what libass shows of the captions at a moment of the
+// short, in milliseconds, by the times their caption file gives them:
+// the caption, -1 for none, and the word of it being spoken, counted
+// across its lines, -1 for none yet. The caption box over the video
+// preview shows what the layer under it shows by it, see
+// /frames/captions.
+type CaptionShowing struct {
+	Caption int `json:"caption"`
+	Word    int `json:"word"`
+}
+
+// ShowingAt is what libass shows of laid at the moment ms, see
+// CaptionShowing.
+func ShowingAt(laid []LaidCaption, ms int64) CaptionShowing {
+	for i, c := range laid {
+		start, end := centiseconds(c.Start), centiseconds(c.End)
+		if end <= start || ms < int64(start)*10 || ms >= int64(end)*10 {
+			continue
+		}
+		word := -1
+		for k, b := range wordBegins(c, start, end) {
+			if ms >= int64(b)*10 {
+				word = k
+			}
+		}
+		return CaptionShowing{Caption: i, Word: word}
+	}
+	return CaptionShowing{Caption: -1, Word: -1}
+}
+
 // pill is the box the pill of word k takes at rest, from the caption's
 // anchor, at size: the word's ink across with pillPadX at each side, and
 // its line down with pillPadY above and below.
@@ -96,6 +148,8 @@ type WordFrame struct {
 	Y float64 `json:"y"`
 	W float64 `json:"w"`
 	H float64 `json:"h"`
+	// R is the radius of its corners, as a share of the short's height.
+	R float64 `json:"r"`
 }
 
 // WordFrames is where the words of the captions stand in a short width by
@@ -112,13 +166,15 @@ func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, heig
 	}
 	ax := float64(width) / 2
 	ay := float64(height - pyround(s.MarginV*scale))
+	radius := float64(pyround(s.Radius * scale))
 	out := make([][]WordFrame, len(layouts))
 	for i, l := range layouts {
 		out[i] = make([]WordFrame, len(l.words))
 		for k := range l.words {
 			left, top, right, bottom := l.pill(k, size)
 			out[i][k] = WordFrame{X: (ax + left) / float64(width), Y: (ay + top) / float64(height),
-				W: (right - left) / float64(width), H: (bottom - top) / float64(height)}
+				W: (right - left) / float64(width), H: (bottom - top) / float64(height),
+				R: pillRadius(bottom-top, radius) / float64(height)}
 		}
 	}
 	return out

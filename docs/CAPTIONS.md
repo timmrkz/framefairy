@@ -123,6 +123,27 @@ browser laid the words out in its own font before, and Tim saw the frame
 stand off its word on #201. While a word is typed the browser lays the
 words out again, since it draws them itself then.
 
+Each word frame also carries the radius of the pill's corners, `r`, from
+`pillRadius` in `engine/wordframes.go`, the one rule the highlight draws
+the pill with, and the caption box rounds the frame round a word by it.
+The pill's corners are quarters of a circle, the way a browser rounds a
+corner, see `roundedRect` in `engine/ass.go`. Its curves had both handles
+on the corner before, which drew corners much sharper than the radius,
+and Tim saw the frame and the pill with different corners on #201.
+
+The caption box shows the caption and the lit word of the layer on
+screen, not of the playhead. The playhead is the sound, and the frame on
+the canvas trails it while a clip plays, and libass reads its caption
+file to the hundredth of a second at the moment `CaptionMoment` names on
+the short's frames. So `/frames/captions` says with every layer which
+caption and which word of it libass drew, in the header
+`X-Caption-Showing`, from `ShowingAt` in `engine/wordframes.go`, which
+reads the same times the caption file is written with, `wordBegins`. The
+video preview hands the caption box what the layer it paints says. Tim saw
+the frame round a word go on to the next caption a few frames before the
+pill did on #201, when the caption box worked the word out from the
+playhead.
+
 ## The tests
 
 - `TestTheVideoPreviewDrawsTheShortsCaptions` in
@@ -153,6 +174,18 @@ words out again, since it draws them itself then.
   draws" puts the playhead in five words and reads the pill off the
   canvas: the frame round the lit word stands on it within 1.5 pixels.
   The browser's own layout stood 5.5 pixels off.
+- The walk "the frame round a word stays on the pill while the clip
+  plays" plays three seconds over the end of a caption and reads the pill
+  off the canvas on every frame the browser paints: where a pill is drawn
+  a word is lit and its frame stands on the pill within 3 pixels, and
+  where none is drawn no word is lit. The caption box that followed the
+  playhead put the frame on the next caption's first word, 64 pixels off
+  the pill.
+- `TestShowingAtIsWhatTheCaptionFileShows` in `engine/wordframes_test.go`
+  holds `ShowingAt` to the hundredths the caption file is written in, and
+  `TestPillCornersAreQuartersOfACircle` holds each corner of a pill to a
+  circle of its radius, within half a pixel. The corners before ran 49.5
+  pixels from their centre for a radius of 40.
 - The walk "the video preview shows the short's captions, frame for
   frame" in `frontend/preview/walks/sequences.mjs`, against the real Go
   side: it renders a short, makes the video preview as large as the short,

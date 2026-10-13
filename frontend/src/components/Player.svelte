@@ -26,7 +26,7 @@
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
-  import { CaptionLayers, quarters, type CaptionAsk, type Over, type WordFrame } from "../lib/frames/captions";
+  import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -630,6 +630,23 @@
   let frozen = $state(0);
   const shown = $derived(fixing ? frozen : time);
 
+  // What the layer on screen shows, see Showing in lib/frames/captions.ts:
+  // the caption and the word libass drew on the frame the canvas shows,
+  // for the captions of a track. The caption box shows them, so it changes
+  // caption and word on the frame the picture does, playing or paused. A
+  // word being corrected keeps what was on screen when it was opened.
+  let drawn = $state<(Showing & { track: string }) | null>(null);
+  let frozenDrawn = $state<(Showing & { track: string }) | null>(null);
+  function onScreen(track: string | null, showing: Showing | undefined) {
+    const now = track && showing ? { track, ...showing } : null;
+    if (now?.track === drawn?.track && now?.caption === drawn?.caption && now?.word === drawn?.word) return;
+    drawn = now;
+  }
+  const showing = $derived.by(() => {
+    const d = fixing ? frozenDrawn : drawn;
+    return d && captions?.track === d.track ? d : null;
+  });
+
   // The caption standing at the playhead, with the word being spoken. The
   // engine hands over the lines and the look, so nothing about captions is
   // decided twice. None on the video: the episode playing on through the
@@ -637,6 +654,7 @@
   const caption = $derived.by(() => {
     if (!clip || !captions?.captions?.length || place === "video") return null;
     if (shown < clipStart - 0.05 || shown > clipEnd + 0.05) return null;
+    if (showing) return captions.captions[showing.caption] ?? null;
     const at = inClipTime(shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
   });
@@ -646,7 +664,7 @@
   // The word lit, counted across the caption's lines, by the rule the
   // render and the clip timeline go by. firstOfRow is where each line's
   // words begin in that count.
-  const lit = $derived(caption ? litWord(caption.lines ?? [], spoken) : -1);
+  const lit = $derived(!caption ? -1 : showing ? showing.word : litWord(caption.lines ?? [], spoken));
   const firstOfRow = $derived.by(() => {
     const out: number[] = [];
     let n = 0;
@@ -894,6 +912,7 @@
   ) {
     if (!said || !correctable) return;
     frozen = time;
+    frozenDrawn = drawn;
     if (!paused) toggle();
     fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text };
     // The caret is already where the hand put it. It is only moved when
@@ -1111,7 +1130,7 @@
   // from the line. Nothing while a word is typed, which the caption box
   // then draws itself in the browser's font, or while the words of this
   // caption are not known yet.
-  type LaidWord = { x: number; w: number; top: number; h: number };
+  type LaidWord = { x: number; w: number; top: number; h: number; r: number };
   const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
     if (fixing || !caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}`) return null;
     const frames = wordFrames.frames[(captions.captions ?? []).indexOf(caption)];
@@ -1120,7 +1139,7 @@
     // The line the captions were measured standing on, which the caption
     // box stands on wherever it is dragged.
     const line = 1 - captions.style.marginV;
-    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h }));
+    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h, r: f.r }));
     const x = Math.min(...words.map((f) => f.x));
     const top = Math.min(...words.map((f) => f.top));
     const w = Math.max(...words.map((f) => f.x + f.w)) - x;
@@ -1129,17 +1148,12 @@
   });
 
   // Where a word stands in the caption box laid out by libass, and the
-  // corners of its pill, which are a third of its height or the box's
-  // corners and two pixels of the short, whichever is rounder less, see
-  // engine.highlighted.
-  function wordPlace(
-    laid: { x: number; w: number; top: number },
-    f: LaidWord,
-    radius: number,
-  ): string {
+  // corners of its pill as the engine drew them, see engine.pillRadius,
+  // so the frame round the word has the pill's corners.
+  function wordPlace(laid: { x: number; w: number; top: number }, f: LaidWord): string {
     return `left: ${((f.x - laid.x) / laid.w) * 100}%; width: ${(f.w / laid.w) * 100}%;
       top: ${px(f.top - laid.top)}; height: ${px(f.h)}; line-height: ${px(f.h)};
-      border-radius: min(${px(f.h * 0.3)}, ${px(radius + 2 / 1920)});`;
+      border-radius: ${px(f.r)};`;
   }
 
   // Everything the captions over a frame are worked out from, so a change
@@ -1181,13 +1195,15 @@
     return !!clip && place !== "video" && frame + oneFrame > clipStart + 1e-6 && frame < clipEnd - 1e-6;
   }
 
+  // The captions over the frame the canvas draws, and what they show for
+  // the caption box, see onScreen.
   function overAt(frame: number): Over | null {
-    if (!captionAsk || !framesClip(frame)) return null;
-    const f = framingOf(frame);
+    const ask = captionAsk;
+    const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
-    if (!f || !size) return null;
-    const layer = layers.at(frame, size);
-    return layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    const layer = ask && size ? layers.at(frame, size) : null;
+    onScreen(ask?.track ?? null, layer?.showing);
+    return f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
   }
 
   function comingAt(frame: number) {
@@ -1592,7 +1608,7 @@
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
                     style="--pill: {captions.style.highlightColour};{laidWords?.words[firstOfRow[row] + i]
-                      ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i], captions.style.radius)
+                      ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i])
                       : ''}"
                     use:says={[word.text, captions]}
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}

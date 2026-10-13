@@ -72,6 +72,14 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
 }
 
+// Showing is what libass shows of the captions of d on the frame of the
+// episode that starts at, at the moment PreviewCaptions draws them at, so
+// the caption box over the video preview shows the caption and the word
+// the layer under it shows, see CaptionShowing.
+func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
+	return ShowingAt(d.Laid, source.CaptionMoment(d.Clip, at))
+}
+
 // PreviewWordFrames is where the words of d stand in the short the render
 // rs makes, with drafts on top of their style, the same captions
 // PreviewCaptions draws: the frame the caption box puts round a word is

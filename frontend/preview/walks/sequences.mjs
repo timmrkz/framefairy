@@ -512,6 +512,15 @@
 //                      word stands on it, its middle within 1.5 px of the
 //                      pill's and as wide within 2 px, and the pill is no
 //                      lower than the frame
+//   ["frame on the pill while it plays", seconds]
+//                      puts the playhead a second before the end of the
+//                      first caption that ends well inside the clip and
+//                      plays for so many seconds, and on every frame the
+//                      browser paints reads the pill libass drew off the
+//                      canvas: where a pill is drawn, the caption box
+//                      lights a word and its frame stands on the pill,
+//                      its middle within 3 px of the pill's, and where no
+//                      pill is drawn no word is lit
 //   ["answers late", ms]
 //                      every answer of the engine to a gesture on the clip
 //                      timeline, while the hand moves, comes ms late, the
@@ -1427,6 +1436,14 @@ export const sequences = [
     // font over the words libass drew.
     name: "the frame round a word in the caption box is the pill libass draws",
     steps: [["frames on the pills", 5]],
+  },
+  {
+    // Found by Tim on #201: while a clip played, the frame round a word
+    // went on to the first word of the next caption a few frames before
+    // the pill did, since the caption box followed the playhead and the
+    // pill the frame drawn.
+    name: "the frame round a word stays on the pill while the clip plays",
+    steps: [["frame on the pill while it plays", 3]],
   },
   {
     // Plan row 2.130: a picture that starts after its sound, by an edit
@@ -4836,6 +4853,118 @@ for (const seq of toWalk) {
         const at = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
         const got = Math.floor((at + 0.001) * fps);
         if (got !== want) wrong = `the playhead is at ${at} s, frame ${got}, not on the clip's ${arg} at frame ${want}, ${clip[arg]} s`;
+        break;
+      }
+      case "frame on the pill while it plays": {
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        const pieces = state.segments;
+        const into = (t) => {
+          let sum = 0;
+          for (const p of pieces) {
+            if (t < sum + p.end - p.start) return p.start + t - sum;
+            sum += p.end - p.start;
+          }
+          return null;
+        };
+        const length = pieces.reduce((n, p) => n + p.end - p.start, 0);
+        // The first caption that ends with room to play on both sides of
+        // its end, and room after it for the next one.
+        const end = (state.captions ?? []).map((c) => c.end).find((e) => e > 1.6 && e < length - arg);
+        const from = end === undefined ? null : into(end - 1);
+        if (from === null) {
+          wrong = "no caption ends far enough inside the clip to play over its end";
+          break;
+        }
+        if (!(await seekTo(page, from, fps))) {
+          wrong = `the video preview never showed the frame at ${from.toFixed(2)}`;
+          break;
+        }
+        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        // On every frame the browser paints, the pill on the canvas and
+        // the frame round the lit word, read in the same frame. The pill
+        // is looked for in a band round the caption box, so a pill of a
+        // caption the box does not hold is found too.
+        await page.evaluate(() => {
+          window.__pillWatch = { frames: [], on: true };
+          const s = document.createElement("canvas");
+          const g = s.getContext("2d", { willReadFrequently: true });
+          const look = () => {
+            if (!window.__pillWatch.on) return;
+            requestAnimationFrame(look);
+            const box = document.querySelector(".captions");
+            const canvas = document.querySelector(".screen canvas");
+            if (!box || !canvas?.width) return;
+            const word = document.querySelector(".captions .word.now");
+            const pill = (getComputedStyle(box.querySelector(".word") ?? box).getPropertyValue("--pill").match(/[\d.]+/g) ?? []).map(Number);
+            if (pill.length < 3) return;
+            const c = canvas.getBoundingClientRect();
+            const b = box.getBoundingClientRect();
+            const sx = canvas.width / c.width;
+            const sy = canvas.height / c.height;
+            const y0 = Math.max(0, Math.floor((b.top - c.top - b.height) * sy));
+            const y1 = Math.min(canvas.height, Math.ceil((b.bottom - c.top + b.height) * sy));
+            if (y1 <= y0) return;
+            s.width = canvas.width;
+            s.height = y1 - y0;
+            g.drawImage(canvas, 0, y0, s.width, s.height, 0, 0, s.width, s.height);
+            const d = g.getImageData(0, 0, s.width, s.height).data;
+            let [l, r, t, bt] = [Infinity, -Infinity, Infinity, -Infinity];
+            for (let y = 0; y < s.height; y++) {
+              for (let x = 0; x < s.width; x++) {
+                const i = (y * s.width + x) * 4;
+                if ([0, 1, 2].every((k) => Math.abs(d[i + k] - pill[k]) < 40)) {
+                  [l, r, t, bt] = [Math.min(l, x), Math.max(r, x + 1), Math.min(t, y), Math.max(bt, y + 1)];
+                }
+              }
+            }
+            const f = word?.getBoundingClientRect();
+            window.__pillWatch.frames.push({
+              at: Number(document.querySelector(".screen").dataset.playhead),
+              pictured: window.__pictured?.(),
+              text: word?.textContent ?? null,
+              frame: f ? { x: (f.left + f.right) / 2 - c.left, y: (f.top + f.bottom) / 2 - c.top } : null,
+              pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy },
+            });
+          };
+          requestAnimationFrame(look);
+        });
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("Space");
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) >= to, from + arg, {
+            timeout: arg * 1000 + 30000,
+            polling: "raf",
+          })
+          .catch(() => (wrong = `the play from ${from.toFixed(2)} never went on ${arg} s`));
+        await page.evaluate(() => {
+          if (document.querySelector('button[aria-label="Play"]')) return;
+          const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+          document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+          document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+        });
+        const frames = await page.evaluate(() => {
+          window.__pillWatch.on = false;
+          return window.__pillWatch.frames;
+        });
+        if (wrong) break;
+        const off = frames.find(
+          (f) =>
+            (f.pill && !f.frame) ||
+            (!f.pill && f.frame) ||
+            (f.pill && f.frame && Math.hypot(f.frame.x - f.pill.x, f.frame.y - f.pill.y) > 3),
+        );
+        const lit = new Set(frames.filter((f) => f.pill).map((f) => `${Math.round(f.pill.y)}:${f.text}`));
+        console.log(`    ${frames.length} frames painted, ${frames.filter((f) => f.pill).length} with a pill, ${lit.size} words lit`);
+        if (off) {
+          const what = !off.frame
+            ? "no word is lit in the caption box"
+            : !off.pill
+              ? `"${off.text}" is lit in the caption box`
+              : `the frame round "${off.text}" stands ${(off.frame.x - off.pill.x).toFixed(1)} px across and ${(off.frame.y - off.pill.y).toFixed(1)} px down from the pill`;
+          wrong = `at ${off.at.toFixed(3)} s, frame ${off.pictured} on the video preview, ${off.pill ? "a pill is drawn and " : "no pill is drawn and "}${what}`;
+        } else if (frames.filter((f) => f.pill).length < fps) wrong = `only ${frames.length} frames were read while it played`;
+        else if (lit.size < 3) wrong = `the play lit only ${lit.size} words, it never went from one caption to the next`;
         break;
       }
       case "frames on the pills": {

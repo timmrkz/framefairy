@@ -905,7 +905,10 @@ bubble scrolled by those eight pixels.
   shows the words itself, the letters typed included, until the word is
   saved. Until then each word of the caption box stands where libass drew
   it, on the pill it draws behind the word at rest, so the frame round a
-  word is the edge of its pill.
+  word is the edge of its pill, with the pill's corners. The caption box
+  holds the caption and the word of the frame on screen, not of the
+  playhead, so while a clip plays the frame and the pill go on to the
+  next word on the same frame.
   - **From the keyboard:** Shift and the arrows walk the playhead from
     word to word, and the word walked to wears the same frame the pointer
     puts on a word. Enter opens that word with the whole of it selected,
