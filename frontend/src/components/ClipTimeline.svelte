@@ -24,7 +24,7 @@
   // cuts between them, and either edge can be dragged to trim. Edges land
   // on the frame, and with shift on words the way the render cuts them. Two fingers move along the episode
   // and pinch to zoom, the way an editing timeline does.
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import {
     api,
     clock,
@@ -354,19 +354,6 @@
     });
   }
 
-  function scrub(event: PointerEvent) {
-    if (event.button !== 0) return;
-    if (twice(event)) {
-      event.preventDefault();
-      doubled(event.clientX);
-      return;
-    }
-    scrubPlayhead(event, timeAt, onseek, (held) => {
-      scrubbing = held;
-      onhold?.(held);
-    });
-  }
-
   // A double-click is told from the two presses rather than from the
   // browser's dblclick. The first press moves the playhead under the
   // pointer, so the second lands on the playhead's line, or on a cut's
@@ -431,21 +418,25 @@
   let nextGesture: Gesture | null = null;
   let asking = false;
   let shapeFor = 0;
-  // Which gesture the playhead follows. A click lets go before the answer
-  // to its press comes, and that answer still puts the playhead on the
-  // edge: only the next gesture makes it old.
-  let seekFor = 0;
+  // Who the playhead belongs to: every press on the clip timeline takes it,
+  // and an answer that comes back for an earlier press puts the playhead
+  // nowhere. A click on an edge and then at once on the track had the
+  // edge's late answer put the playhead back on the edge.
+  let owner = 0;
   // Where the playhead stood when the hand took hold, and where the
   // engine's answers have put it since. Kept here rather than read from
   // time when the hand lets go, because the last seek may not have
-  // landed yet.
+  // landed yet. Where it stood is read before the press moves it, so an
+  // undo puts it back where it was before the edge was pressed, see press.
   let heldAt = 0;
   let leftAt = 0;
+  let pressedFrom = 0;
+  let pressedTo = 0;
 
   function shape(g: Gesture) {
     if (!hand) {
-      heldAt = leftAt = time;
-      seekFor++;
+      heldAt = pressedFrom;
+      leftAt = pressedTo;
     }
     hand = g;
     nextGesture = g;
@@ -472,7 +463,7 @@
     const g = nextGesture;
     const asked = clip;
     const mine = shapeFor;
-    const following = seekFor;
+    const following = owner;
     const held = captions;
     nextGesture = null;
     asking = true;
@@ -485,7 +476,7 @@
       // clip, even a hair outside the pieces drawn so far. Not while the
       // episode plays: only the space bar and a click on the clip
       // timeline change a play, and an edge is neither, see edgesWhilePlaying.
-      if (following === seekFor && clip?.key === asked.key && answer && answer.playhead >= 0 && !playing) {
+      if (following === owner && clip?.key === asked.key && answer && answer.playhead >= 0 && !playing) {
         leftAt = answer.playhead;
         seekSoon(answer.playhead, "clip");
       }
@@ -514,9 +505,20 @@
       return;
     }
     saving = true;
-    await idle();
-    await reshape(g, [heldAt, leftAt]);
+    const run = (async () => {
+      await idle();
+      await reshape(g, [heldAt, leftAt]);
+    })();
+    saved = run.then(tick, tick);
+    await run;
   }
+
+  // The last gesture saved, and the clip it hands back drawn. The next
+  // press on an edge waits for it, so its gesture starts from the clip as
+  // saved. The edges stay where a hand can take them while it saves: they
+  // were taken off the page, and a press on an edge just let go of went to
+  // the playhead standing on it, found by Tim.
+  let saved: Promise<void> = Promise.resolve();
 
   // A click on a cut's button moves no playhead, so it stays where it is.
   async function reshape(g: Gesture, playhead: [number, number] = [time, time]) {
@@ -584,91 +586,89 @@
     return hand?.kind === "cut" && !savedCuts.some((s) => Math.abs(s.from - c.from) < 0.002);
   }
 
-  // An edge of the clip is dragged to trim it. Pressing one puts the
-  // playhead on it at once, the way a press anywhere else on the clip
-  // timeline does, which is how you start a clip over. It lands on the
-  // frame, and shift puts it on a word, read on every move, so letting go
-  // of shift part way through goes back to frames.
-  //
-  // The press is the gesture with the edge where it stands, so the engine
-  // says where the playhead goes from the first press, by the same rule as
-  // for the drag that follows, see edgePlayhead in engine/shape.go. It used
-  // to go there only when the hand let go, or once it had moved, and Tim
-  // saw it catch up with the edge late. The edge goes as far as the hand
-  // goes from where it was pressed, so a press beside its line does not
-  // make it jump under the hand.
-  function grab(edge: "start" | "end", event: PointerEvent) {
-    if (!editable || !onreshape) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (twice(event)) {
-      void resetEdge(edge);
-      return;
-    }
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    const from = event.clientX;
-    const was = edge === "start" ? first : last;
-    const pressed = timeAt(from);
-    let moved = false;
-    shape({ kind: "trim", edge, index: 0, from: was, to: 0, toWords: false });
-    const move = (e: PointerEvent) => {
-      if (!moved && Math.abs(e.clientX - from) > 2) moved = true;
-      if (!moved) return;
-      shape({ kind: "trim", edge, index: 0, from: was + timeAt(e.clientX) - pressed, to: 0, toWords: e.shiftKey });
+  // What an edge does with the hand: a gesture on the clip, made from how
+  // far the hand has gone since the press, so a press beside the edge's
+  // line does not make it jump. The engine says where the edge lands and
+  // where the playhead goes, see edgePlayhead in engine/shape.go, and shift
+  // puts the edge on words, read on every move, so letting go of shift
+  // part way through goes back to frames.
+  function gestureGrip(make: (delta: number, shift: boolean) => Gesture | null) {
+    let ready = false;
+    let last: [number, boolean] | null = null;
+    const go = (delta: number, shift: boolean) => {
+      const g = make(delta, shift);
+      if (g) shape(g);
     };
-    const up = async () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      await letGo(moved);
+    const started = saved.then(() => {
+      ready = true;
+      if (last) go(...last);
+    });
+    return {
+      drag(delta: number, shift: boolean) {
+        last = [delta, shift];
+        if (ready) go(delta, shift);
+      },
+      async release(moved: boolean) {
+        await started;
+        if (moved) await letGo(true);
+      },
     };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
   }
 
-  // An edge of a cut is pressed and dragged the way a clip edge is, and the
-  // other edge stays where it was. Shift puts the edges on words, the same
-  // as on a clip edge.
-  function grabCut(index: number, side: "from" | "to", event: PointerEvent) {
-    if (!editable || !onreshape) return;
-    const was = cuts.find((c) => c.index === index);
-    if (!was) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (twice(event)) {
-      void removeCut(index);
-      return;
-    }
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    const startX = event.clientX;
-    const pressed = timeAt(startX);
-    let moved = false;
-    shape({ kind: "move", edge: side, index, from: was.from, to: was.to, toWords: false });
-    const move = (e: PointerEvent) => {
-      if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
-      if (!moved) return;
-      const t = (side === "from" ? was.from : was.to) + timeAt(e.clientX) - pressed;
-      shape({
-        kind: "move",
-        edge: side,
-        index,
-        from: side === "from" ? t : was.from,
-        to: side === "to" ? t : was.to,
-        toWords: e.shiftKey,
-      });
+  // The frame at an edge, where the playhead stands for it: the frame it
+  // opens, or the last frame before it closes, the same as edgePlayhead
+  // in engine/shape.go answers for the edge once it moves. A millisecond
+  // early is on the frame, see frameAt.
+  function edgeFrame(t: number, opens: boolean): number {
+    const f = frame > 0 ? frame : 1 / 30;
+    const k = frameAt(t, f, frameStart);
+    return frameBegins(opens ? k : Math.max(k - 1, 0), f, frameStart);
+  }
+
+  // An edge of the clip is dragged to trim it, and a double-click puts it
+  // back where the clip was found.
+  function edgeGrip(edge: "start" | "end"): Grip | null {
+    if (!clip || locked || !onreshape) return null;
+    return {
+      at: playing ? null : edgeFrame(edge === "start" ? start : end, edge === "start"),
+      about: "clip",
+      twice: () => void resetEdge(edge),
+      ...gestureGrip((delta, shift) => ({
+        kind: "trim",
+        edge,
+        index: 0,
+        from: (edge === "start" ? first : last) + delta,
+        to: 0,
+        toWords: shift,
+      })),
     };
-    const up = async () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      await letGo(moved);
+  }
+
+  // An edge of a cut is dragged the way a clip edge is, and the other edge
+  // stays where it was. A double-click removes the cut.
+  function cutGrip(index: number, side: "from" | "to"): Grip | null {
+    if (!clip || locked || !onreshape) return null;
+    const drawn = cuts.find((c) => c.index === index);
+    if (!drawn) return null;
+    return {
+      at: playing ? null : edgeFrame(side === "from" ? drawn.from : drawn.to, side === "to"),
+      about: "clip",
+      twice: () => void removeCut(index),
+      ...gestureGrip((delta, shift) => {
+        const from = segments[index]?.end;
+        const to = segments[index + 1]?.start;
+        if (from === undefined || to === undefined) return null;
+        const t = (side === "from" ? from : to) + delta;
+        return {
+          kind: "move",
+          edge: side,
+          index,
+          from: side === "from" ? t : from,
+          to: side === "to" ? t : to,
+          toWords: shift,
+        };
+      }),
     };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
   }
 
   // How wide a cut taken out by a double-click starts, in pixels of the
@@ -1452,58 +1452,60 @@
     if (capDraft && !capMoving && !capSaving && captions !== capHeld) dropCaption();
   });
 
-  function grabCaption(i: number, edge: "start" | "end", event: PointerEvent) {
-    if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return;
+  // An edge of a caption is dragged on the clip's clock, a whole frame at a
+  // time, and how far it may go is the engine's to say. The playhead goes
+  // with it the way it goes with every edge, onto the frame the caption
+  // appears on or the last it is up on, and a double-click puts a moved
+  // edge back.
+  function captionEdgeGrip(i: number, edge: "start" | "end"): Grip | null {
+    if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return null;
     const c = captions[i];
-    event.preventDefault();
-    event.stopPropagation();
-    const target = event.currentTarget as HTMLElement;
-    target.setPointerCapture(event.pointerId);
-    const from = event.clientX;
+    if (!c) return null;
     const word = edge === "start" ? c.first : c.last;
     // The moment on the episode's clock, the start of a piece for a start
     // and the end of one for an end, where the two meet at a cut.
     const onEpisode = (at: number) => (edge === "start" ? inEpisode : endInEpisode)(segments, at);
+    const playheadAt = (at: number) => edgeFrame(onEpisode(at), edge === "start");
+    const from = edge === "start" ? c.start : Math.min(c.end, clipLength);
     capHeld = captions;
     capFor++;
-    let moved = false;
-    const move = (e: PointerEvent) => {
-      if (!moved && Math.abs(e.clientX - from) > 2) {
-        moved = true;
+    return {
+      at: playing ? null : playheadAt(from),
+      about: "clip",
+      twice: () => resetCaption(i, edge),
+      drag(delta) {
         capMoving = true;
-      }
-      if (!moved || word === undefined) return;
-      // On the clip's clock, a whole frame at a time, inside the clip. How
-      // far the edge may go is the engine's to say.
-      const at = Math.min(Math.max(Math.round(inClip(segments, timeAt(e.clientX)) / frame) * frame, 0), clipLength);
-      capDraft = { index: i, edge, at };
-      askCaption(word, edge, onEpisode(at));
+        if (word === undefined) return;
+        const at = Math.min(
+          Math.max(Math.round(inClip(segments, onEpisode(from) + delta) / frame) * frame, 0),
+          clipLength,
+        );
+        capDraft = { index: i, edge, at };
+        askCaption(word, edge, onEpisode(at));
+        if (!playing) seekSoon(playheadAt(at), "clip");
+      },
+      async release(moved) {
+        capMoving = false;
+        const d = capDraft;
+        if (!moved || !d || word === undefined) {
+          dropCaption();
+          return;
+        }
+        capSaving = true;
+        const ok = await oncaptiontime(word, edge, onEpisode(d.at));
+        capSaving = false;
+        if (!ok) dropCaption();
+      },
     };
-    const up = async () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", up);
-      target.removeEventListener("pointercancel", up);
-      capMoving = false;
-      const d = capDraft;
-      if (!moved || !d || word === undefined) {
-        // A click on an edge puts the playhead on it, the way a clip edge
-        // does, which is how a caption is heard from where it appears.
-        dropCaption();
-        if (!moved)
-          onseek(
-            edge === "start" ? inEpisode(segments, c.start) : endInEpisode(segments, Math.min(c.end, clipLength)),
-            "clip",
-          );
-        return;
-      }
-      capSaving = true;
-      const saved = await oncaptiontime(word, edge, onEpisode(d.at));
-      capSaving = false;
-      if (!saved) dropCaption();
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", up);
-    target.addEventListener("pointercancel", up);
+  }
+
+  // A caption block puts the playhead on its first word and picks it, so
+  // delete removes it.
+  function captionGrip(i: number): Grip | null {
+    const b = shownBlocks.find((x) => x.i === i);
+    if (!b) return null;
+    if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
+    return { at: firstWordOf(b.c) ?? b.from, about: "clip" };
   }
 
   // A double-click on an edge moved by hand, or drawn in with its word,
@@ -1581,59 +1583,151 @@
     return kind === "crop" ? frameBegins(frameAt(best, frame, frameStart), frame, frameStart) : best;
   }
 
-  function grabMark(kind: MarkKind, at: number, event: PointerEvent) {
+  // A thumbnail or a keyframe: the playhead goes onto it, the mark is
+  // dragged to another frame with the playhead going along, and a
+  // double-click removes it, the way it removes a cut.
+  function markGrip(kind: MarkKind, at: number): Grip {
+    return {
+      at,
+      twice: () => {
+        if (!locked) void markChange(kind)?.(at, -1);
+      },
+      drag(delta) {
+        if (locked || !markChange(kind)) return;
+        const to = markFrame(kind, at + delta);
+        markDrag = { kind, from: at, to };
+        seekSoon(to);
+      },
+      async release(moved) {
+        const d = markDrag;
+        if (!moved || !d) {
+          markDrag = null;
+          return;
+        }
+        cancelAnimationFrame(queued);
+        queued = 0;
+        onseek(d.to);
+        if (frameAt(d.to, frame, frameStart) === frameAt(d.from, frame, frameStart)) {
+          markDrag = null;
+          return;
+        }
+        try {
+          await markChange(kind)?.(d.from, d.to);
+        } finally {
+          markDrag = null;
+        }
+      },
+    };
+  }
+
+  // One press for the whole clip timeline. Every press, wherever it lands,
+  // goes through here and is handled the same way: it takes the playhead,
+  // puts it where the thing pressed says at once, tells a double-click by
+  // the two presses, starts a drag after two pixels, measures the drag
+  // from the press, and lets go. What is pressed only says where the
+  // playhead goes, what a drag and a release do and what a double-click
+  // does. Each used to have a handler of its own, and they drifted: one
+  // moved the playhead on the press, one when the hand let go, one only
+  // after the engine answered, and Tim asked why a click did something
+  // different on every kind of thing.
+  //
+  // What a press reaches is found here, in a fixed order, the nearest of
+  // a kind first: a clip edge, a cut's edge, a thumbnail or a keyframe, a
+  // caption's edge, a caption, and then the playhead and the track. What
+  // is drawn on top only decides what is seen. The playhead drawn over a
+  // cut's edge it was dragged with took the press from the edge.
+  type Grip = {
+    // Where the playhead goes on the press, or null where it stays.
+    at: number | null;
+    about?: "clip";
+    // The hand has gone delta seconds from the press, shift held or not.
+    drag?: (delta: number, shift: boolean) => void;
+    release?: (moved: boolean) => Promise<void> | void;
+    // A double-click here. Without one it is a double-click in the clip.
+    twice?: () => void;
+  };
+  const gripOrder = ["edge", "cut", "mark", "capedge", "caption"];
+
+  function gripOf(el: HTMLElement): Grip | null {
+    const d = el.dataset;
+    switch (d.grip) {
+      case "edge":
+        return edgeGrip(d.edge === "end" ? "end" : "start");
+      case "cut":
+        return cutGrip(Number(d.index), d.side === "to" ? "to" : "from");
+      case "mark":
+        return markGrip(d.kind === "crop" ? "crop" : "thumbnail", Number(d.at));
+      case "capedge":
+        return captionEdgeGrip(Number(d.index), d.edge === "end" ? "end" : "start");
+      case "caption":
+        return captionGrip(Number(d.index));
+    }
+    return null;
+  }
+
+  function gripAt(x: number, y: number): Grip | null {
+    const near = (el: HTMLElement) => {
+      const b = el.getBoundingClientRect();
+      return Math.abs(b.left + b.width / 2 - x);
+    };
+    const under = [
+      ...new Set(
+        document
+          .elementsFromPoint(x, y)
+          .map((el) => el.closest<HTMLElement>("[data-grip]"))
+          .filter((el): el is HTMLElement => !!el && over.contains(el)),
+      ),
+    ].sort((a, b) => gripOrder.indexOf(a.dataset.grip ?? "") - gripOrder.indexOf(b.dataset.grip ?? "") || near(a) - near(b));
+    for (const el of under) {
+      const g = gripOf(el);
+      if (g) return g;
+    }
+    return null;
+  }
+
+  function press(event: PointerEvent) {
     if (event.button !== 0) return;
+    owner++;
+    cancelAnimationFrame(queued);
+    queued = 0;
+    const grip = gripAt(event.clientX, event.clientY);
+    if (twice(event)) {
+      event.preventDefault();
+      if (grip?.twice) grip.twice();
+      else doubled(event.clientX);
+      return;
+    }
+    // The track and the playhead: the playhead goes under the hand.
+    if (!grip) {
+      scrubPlayhead(event, timeAt, onseek, (held) => {
+        scrubbing = held;
+        onhold?.(held);
+      });
+      return;
+    }
     event.preventDefault();
-    event.stopPropagation();
+    pressedFrom = time;
+    pressedTo = grip.at ?? time;
+    if (grip.at !== null) onseek(grip.at, grip.about);
+    if (!grip.drag && !grip.release) return;
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const pressed = timeAt(startX);
     let moved = false;
-    // A press puts the playhead on it at once, so the video preview shows
-    // it, the way a press anywhere on the clip timeline does.
-    onseek(at);
     const move = (e: PointerEvent) => {
-      if (locked || !markChange(kind)) return;
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
-      if (!moved) return;
-      const to = markFrame(kind, at + timeAt(e.clientX) - pressed);
-      markDrag = { kind, from: at, to };
-      seekSoon(to);
+      if (moved) grip.drag?.(timeAt(e.clientX) - pressed, e.shiftKey);
     };
-    const up = async () => {
+    const up = () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      const d = markDrag;
-      if (!moved || !d) {
-        markDrag = null;
-        return;
-      }
-      cancelAnimationFrame(queued);
-      queued = 0;
-      onseek(d.to);
-      if (frameAt(d.to, frame, frameStart) === frameAt(d.from, frame, frameStart)) {
-        markDrag = null;
-        return;
-      }
-      try {
-        await markChange(kind)?.(d.from, d.to);
-      } finally {
-        markDrag = null;
-      }
+      void grip.release?.(moved);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
-  }
-
-  // A double-click removes a mark, the way it removes a cut.
-  function removeMark(kind: MarkKind, at: number, event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (locked) return;
-    void markChange(kind)?.(at, -1);
   }
 
   const ticks = $derived.by(() => {
@@ -1657,13 +1751,15 @@
        what is inside it, which is what keeps the waveform inside its
        rounded corners, and the playhead is the one thing that has to reach
        past them. -->
-  <div class="over" class:scrubbing bind:this={over}>
+  <!-- One press for all of it, the track and what is drawn over it, the
+       marks and the playhead, see press. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="over" class:scrubbing bind:this={over} onpointerdown={press}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="track asks"
     class:scrubbing
     bind:this={track}
-    onpointerdown={scrub}
     aria-label="The clip timeline"
   >
     <canvas bind:this={canvas}></canvas>
@@ -1740,7 +1836,7 @@
             : "A part the clip leaves out."}
         ></div>
       {/each}
-      {#if editable && onreshape}
+      {#if clip && !locked && onreshape}
         <!-- The handles come after every cut, so a handle is never drawn
              under the next cut's block. -->
         {#each cuts as c (c.index)}
@@ -1752,7 +1848,9 @@
             tabindex="-1"
             aria-label="Where cut {c.index + 1} starts"
             aria-valuenow={c.from}
-            onpointerdown={(e) => grabCut(c.index, "from", e)}
+            data-grip="cut"
+            data-index={c.index}
+            data-side="from"
           ></div>
           <div
             class="cutedge"
@@ -1762,7 +1860,9 @@
             tabindex="-1"
             aria-label="Where cut {c.index + 1} ends"
             aria-valuenow={c.to}
-            onpointerdown={(e) => grabCut(c.index, "to", e)}
+            data-grip="cut"
+            data-index={c.index}
+            data-side="to"
           ></div>
         {/each}
       {/if}
@@ -1778,7 +1878,8 @@
           title={Math.abs(clip.found[0] - first) >= frame / 2
             ? "Where the clip starts, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
             : "Where the clip starts. Drag to trim it."}
-          onpointerdown={(e) => grab("start", e)}
+          data-grip="edge"
+          data-edge="start"
         ></div>
         <div
           class="edge"
@@ -1791,7 +1892,8 @@
           title={Math.abs(clip.found[1] - last) >= frame / 2
             ? "Where the clip ends, moved by hand. Drag to trim it, double-click to put it back where the clip was found."
             : "Where the clip ends. Drag to trim it."}
-          onpointerdown={(e) => grab("end", e)}
+          data-grip="edge"
+          data-edge="end"
         ></div>
       {/if}
       {#if captionsReadable}
@@ -1832,16 +1934,8 @@
                   title={onremovecaption && !locked
                     ? "Put the playhead where this caption appears. Delete then removes it."
                     : "Put the playhead where this caption appears"}
-                  onpointerdown={(e) => {
-                    e.stopPropagation();
-                    if (e.button !== 0) return;
-                    // On the press, the playhead and the pick both: the
-                    // block is drawn afresh as the playhead comes onto its
-                    // word, and a click needs the press and the release
-                    // on one element.
-                    onseek(firstWordOf(b.c) ?? b.from, "clip");
-                    if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
-                  }}
+                  data-grip="caption"
+                  data-index={b.i}
                 ><i></i></div>
               {/each}
             {/key}
@@ -1860,11 +1954,9 @@
               title={b.c.startMoved
                 ? "When this caption appears, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
                 : "When this caption appears. Drag to move it, over a word to remove the word."}
-              onpointerdown={(e) => grabCaption(b.i, "start", e)}
-              ondblclick={(e) => {
-                e.stopPropagation();
-                resetCaption(b.i, "start");
-              }}
+              data-grip="capedge"
+              data-index={b.i}
+              data-edge="start"
             ></div>
             <div
               class="capedge end"
@@ -1877,11 +1969,9 @@
               title={b.c.endMoved
                 ? "When this caption goes, moved from where its words put it. Drag to move it, over a word to remove the word, and double-click to put it back with its words."
                 : "When this caption goes. Drag to move it, over a word to remove the word."}
-              onpointerdown={(e) => grabCaption(b.i, "end", e)}
-              ondblclick={(e) => {
-                e.stopPropagation();
-                resetCaption(b.i, "end");
-              }}
+              data-grip="capedge"
+              data-index={b.i}
+              data-edge="end"
             ></div>
           {/each}
         {/if}
@@ -1945,8 +2035,9 @@
             title={locked
               ? "A thumbnail. Click to see it"
               : "A thumbnail. Click to see it, drag it to another frame, double-click to remove it"}
-            onpointerdown={(e) => grabMark("thumbnail", m.at, e)}
-            ondblclick={(e) => removeMark("thumbnail", m.at, e)}
+            data-grip="mark"
+            data-kind="thumbnail"
+            data-at={m.at}
           >
             {@render solid(CAMERA, 18, true)}
           </div>
@@ -1964,8 +2055,9 @@
             title={locked
               ? "A keyframe. Click to see it"
               : "A keyframe, where the crop stands on this frame. Click to see it, drag it to another frame, double-click to remove it"}
-            onpointerdown={(e) => grabMark("crop", m.at, e)}
-            ondblclick={(e) => removeMark("crop", m.at, e)}
+            data-grip="mark"
+            data-kind="crop"
+            data-at={m.at}
           >
             {@render solid(DIAMOND, 18)}
           </div>
@@ -1980,8 +2072,7 @@
       <div class="at" style="left: calc(1px + (100% - 2px) * {x(onFrame(time)) / 100})">
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="playhead" class:scrubbing onpointerdown={scrub} title="Drag to move the playhead"></div>
+        <div class="playhead" class:scrubbing title="Drag to move the playhead"></div>
       </div>
     {/if}
   </div>
