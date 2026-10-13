@@ -2693,7 +2693,14 @@ and Escape removes everything said since Dictate was pressed. It also
 stops by itself, keeping what was said, after 2 minutes without a word
 or once a recording is 10 minutes long, and says why under the field
 where the problem would be. Stop pressed while it does that gets every
-word all the same. The field
+word all the same. Two short notes going up sound once the microphone is
+open, and the same two going down when it stops, however it stops, so a
+person talking while they look at the workspace hears that they are
+heard and that it is over. macOS Dictation, Siri and the Google
+Assistant do the same, so the pair needs no learning. They are two soft
+sine notes a fifth apart, E5 and B5, made in the window with Web Audio
+rather than played from a file, see `frontend/src/lib/chime.ts`, plan
+row 2.244. The field
 is a `contenteditable` of plain text rather than a textarea, because a
 textarea cannot show some of its words grey.
 The app records, not the window, through malgo, see

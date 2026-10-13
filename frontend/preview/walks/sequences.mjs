@@ -205,6 +205,9 @@
 //                      and "escape" Escape, and "ends" presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
+//                      It hears two notes going up once the microphone is
+//                      open, and two going down when it stops, however
+//                      it stops.
 //                      "start" only starts it, "hearing" waits for more
 //                      to be heard, "settled" waits for words
 //                      before a pause to be settled, and a recording
@@ -4081,6 +4084,16 @@ for (const seq of toWalk) {
         if (!reportPage) {
           reportPage = await browser.newPage({ viewport: { width: 560, height: 640 } });
           reportPage.on("pageerror", (e) => errors.push(String(e)));
+          // Every note the window plays, with its pitch and whether the
+          // microphone was open then, for the dictate step's sounds.
+          await reportPage.addInitScript(() => {
+            window.__notes = [];
+            const start = OscillatorNode.prototype.start;
+            OscillatorNode.prototype.start = function (...a) {
+              window.__notes.push({ f: this.frequency.value, open: document.querySelector("button.dictate")?.getAttribute("aria-label") === "Stop" });
+              return start.apply(this, a);
+            };
+          });
           await reportPage.goto(new URL("?window=report", url).toString());
         } else {
           await reportPage.bringToFront();
@@ -4317,6 +4330,13 @@ for (const seq of toWalk) {
           wrong = "the microphone did not move while it heard a voice";
           break;
         }
+        // Two notes going up say the microphone is open, while it is.
+        const up = await page.evaluate(() => window.__notes.slice(-2));
+        if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
+          wrong = `the microphone opened without the start sound, it played ${JSON.stringify(up)}`;
+          break;
+        }
+        kept.notes = await page.evaluate(() => window.__notes.length);
         await watch.step("hearing", s);
         if (arg === "start") {
           kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
@@ -4341,6 +4361,10 @@ for (const seq of toWalk) {
           timeout: 20000,
         });
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
+        // Two notes going down say it stopped, however it stopped, and
+        // only those two.
+        const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);
+        if (down.length !== 2 || down[0].f <= down[1].f) wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
         await watch.step("dictate", s);
         break;
       }

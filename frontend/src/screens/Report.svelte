@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { api, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
+  import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
@@ -377,6 +378,7 @@
         if (d.error) problem = sentence(d.error);
         if (d.ended) note = sentence(d.ended) + ".";
         listening = false;
+        chime("off");
         loud = 0;
         catchUp(d.said ?? []);
         finish(true);
@@ -400,8 +402,11 @@
     placed = 0;
     asked = 0;
     begin();
+    wake();
     try {
       recording = await api.listen();
+      // The microphone is open: what is said from here is written down.
+      if (listening) chime("on");
     } catch (e) {
       listening = false;
       finish(false);
@@ -414,6 +419,7 @@
   async function keep() {
     if (!listening) return;
     listening = false;
+    chime("off");
     loud = 0;
     hearing = true;
     try {
@@ -435,6 +441,7 @@
   function drop() {
     if (!listening) return;
     listening = false;
+    chime("off");
     loud = 0;
     api.cancelListening().catch(() => {});
     finish(false);
