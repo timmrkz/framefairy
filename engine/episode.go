@@ -726,8 +726,7 @@ type CaptionStyleView struct {
 	// descent, while a browser takes a font size as the em square.
 	Size float64 `json:"size"`
 	// LineHeight is the space from one line to the next, as a share of the
-	// em size: the height of the face and the gap lineBreak puts between
-	// two lines.
+	// em size.
 	LineHeight float64 `json:"lineHeight"`
 	// ChosenSize is the size the caption style asks for, which is what the
 	// size control shows. It is also the size drawn at: a word too wide for
@@ -880,7 +879,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 	const authored = 1920.0
 	em := FontScale(s.Font)
 	view := &CaptionsView{Captions: []CaptionView{}, Style: CaptionStyleView{
-		Font: s.Font, Size: s.Size * em / authored, LineHeight: (1 + lineGap) / em,
+		Font: s.Font, Size: s.Size * em / authored, LineHeight: 1 / em,
 		ChosenSize: s.Size, Bold: s.Bold != 0,
 		MarginV: s.MarginV / authored, MarginH: s.MarginH / authored,
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,

@@ -270,30 +270,29 @@ const bounceSeen = 0.25
 // line, at rest or at the top of its bounce, and its bounce is large
 // enough to see. Tim saw the "g" of "wichtig" stand in the top right
 // corner of the pill of "Leute" on the line under it, on #201: libass
-// packs the lines of a caption as close as the face is tall, and the pill
-// reaches past its line.
+// stands the lines of a caption as close as the face is tall, and the
+// pill reached past its line. The lines stay where libass puts them.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func TestThePillNeverReachesAnotherLine(t *testing.T) {
 	t.Parallel()
-	// The first line reaches as deep as a line goes, the second as high:
-	// the tail of the g over the dots of the Ä.
+	// The caption Tim saw, the tail of the g over the L.
 	words := []Cue{
 		{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
-		{1.30, 1.80, "Ägypten"}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+		{1.30, 1.80, "Leute"}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
 	}
 	const top, rows = 1150, 650
 	_, _, laid, frames := shortRows(t, words, 2.6, top, rows)
-	if len(laid) != 1 || len(laid[0].Lines) != 2 || len(laid[0].Lines[1]) == 0 || laid[0].Lines[1][0].Text != "Ägypten" {
-		t.Fatalf("the words should make one caption of two lines, the second from Ägypten, not %+v", laid)
+	if len(laid) != 1 || len(laid[0].Lines) != 2 || len(laid[0].Lines[1]) == 0 || laid[0].Lines[1][0].Text != "Leute" {
+		t.Fatalf("the words should make one caption of two lines, the second from Leute, not %+v", laid)
 	}
 	style := ResolveStyle(nil)
 	size := float64(pyround(style.Size))
 	pill := pillColour(t, style)
 
 	// lines are the rows each line of letters stands in, top to bottom. A
-	// line's letters leave rows free inside it, between the dots of the Ä
-	// and the A, so rows closer than a fifth of the size are one line.
+	// line's letters leave rows free inside it, between the dot of an i and
+	// its stem, so rows closer than a tenth of the size are one line.
 	lines := func(f []byte) [][2]int {
 		var found [][2]int
 		for y := range rows {
@@ -306,7 +305,7 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 			}
 			switch {
 			case !ink:
-			case len(found) > 0 && float64(y-found[len(found)-1][1]) < 0.2*size:
+			case len(found) > 0 && float64(y-found[len(found)-1][1]) < 0.1*size:
 				found[len(found)-1][1] = y
 			default:
 				found = append(found, [2]int{y, y})
@@ -322,7 +321,7 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 		for k := from; k <= to; k++ {
 			f := frames[k]
 			ms := (k - from) * 1000 / bounceFPS
-			_, r, ptop, pbottom := pillBox(f, pill, rows)
+			l, r, ptop, pbottom := pillBox(f, pill, rows)
 			if r < 0 {
 				t.Errorf("%s, %3d ms after it lit: no pill", word.Text, ms)
 				continue
@@ -334,13 +333,36 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 					word.Text, ms, len(drawn), drawn)
 				continue
 			}
-			other, room := drawn[1], drawn[1][0]-pbottom-1
+			// The letters of the other line over or under the pill: the
+			// nearest row of their ink in the pill's columns.
+			other := drawn[1]
 			if i >= 4 {
-				other, room = drawn[0], ptop-drawn[0][1]-1
+				other = drawn[0]
+			}
+			nearest := -1
+			for y := other[0]; y <= other[1]; y++ {
+				for x := l; x <= r; x++ {
+					if isInk(f, x, y) {
+						if nearest < 0 || i >= 4 {
+							nearest = y
+						}
+						break
+					}
+				}
+				if nearest >= 0 && i < 4 {
+					break
+				}
+			}
+			if nearest < 0 {
+				continue
+			}
+			room := nearest - pbottom - 1
+			if i >= 4 {
+				room = ptop - nearest - 1
 			}
 			if float64(room) < clear {
-				t.Errorf("%s, %3d ms after it lit: the pill, rows %d to %d, comes %d pixels from the letters of the other line, rows %d to %d, closer than %.0f",
-					word.Text, ms, ptop, pbottom, room, other[0], other[1], clear)
+				t.Errorf("%s, %3d ms after it lit: the pill, rows %d to %d, comes %d pixels from a letter of the other line at row %d, closer than %.0f",
+					word.Text, ms, ptop, pbottom, room, nearest, clear)
 			}
 		}
 		if grew := float64(peakH-restH) / size; grew < bounceSeen {

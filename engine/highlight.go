@@ -68,7 +68,10 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // opened from inside its rest on every side, so the first frame of a word,
 // which is where a click on the word puts the playhead, showed the pill
 // hugging the letters, and at rest it reached only pillPadY past the
-// tallest letter of the words themselves. Tim saw both on #201.
+// tallest letter of the words themselves. Tim saw both on #201. Where a
+// word of another line of the caption stands over or under it, the pill
+// stops short of that word's letters, and bounces into the room there is,
+// see wordsLaid.pill and wordsLaid.bounce.
 // ---------------------------------------------------------------------------
 
 const (
@@ -87,6 +90,10 @@ const (
 	// pillPadY above and below its line, as shares of the caption size.
 	pillPadX = 0.14
 	pillPadY = 0.10
+	// lineClear is the least room the pill leaves to a letter of another
+	// line of its caption, at rest and at the top of its bounce, as a
+	// share of the caption size, see wordsLaid.pill.
+	lineClear = 0.04
 	// lineReach is the tallest and the deepest letters a line can hold,
 	// whose ink says how tall the line is, see pillLines.
 	lineReach = "ÉÅÁgjpqy"
@@ -149,7 +156,7 @@ func WordPeak(s Style, text string) float64 {
 // same height, whatever its letters, so a line's pill is the same height
 // for every word on it, a word of small letters as much as a word with an
 // accent or a tail.
-func pillLines(rows, size int) []string {
+func pillLines(rows int) []string {
 	words := make([]string, rows)
 	lines := make([][]int, rows)
 	for r := range rows {
@@ -158,7 +165,7 @@ func pillLines(rows, size int) []string {
 	}
 	out := make([]string, rows)
 	for r := range rows {
-		out[r] = taggedText(words, lines, func(j int) bool { return j == r }, shownTag(""), size)
+		out[r] = taggedText(words, lines, func(j int) bool { return j == r }, shownTag(""))
 	}
 	return out
 }
@@ -226,9 +233,9 @@ func alphaOf(colour string) string {
 	return "00"
 }
 
-// taggedText is the caption with each word shown or hidden, in a face of
-// size. Hidden words still take their place in the line.
-func taggedText(words []string, lines [][]int, visible func(int) bool, shown string, size int) string {
+// taggedText is the caption with each word shown or hidden. Hidden words
+// still take their place in the line.
+func taggedText(words []string, lines [][]int, visible func(int) bool, shown string) string {
 	rows := make([]string, len(lines))
 	for r, line := range lines {
 		parts := make([]string, len(line))
@@ -241,7 +248,7 @@ func taggedText(words []string, lines [][]int, visible func(int) bool, shown str
 		}
 		rows[r] = strings.Join(parts, " ")
 	}
-	return strings.Join(rows, lineBreak(size))
+	return strings.Join(rows, `\N`)
 }
 
 func centiseconds(t float64) int { return max(0, pyround(t*100)) }
@@ -313,7 +320,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 		begins := wordBegins(c, start, end)
 		all := func(int) bool { return true }
-		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown, size))
+		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
 
 		for k := range L.words {
 			from := begins[k]
@@ -325,32 +332,32 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 				continue
 			}
 			k := k
-			// The pill at rest, and the word's centre, which is the pill's:
-			// the middle of its ink across, the middle of its line down, so
-			// every word on a line bounces from one height.
+			// The pill at rest, and the word's centre: the middle of its ink
+			// across and of its pill down.
 			pl, pt, pr, pb := L.pill(k, size)
 			cx := ax + (pl+pr)/2
 			cy := ay + (pt+pb)/2
 
 			upCS, downCS := bouncePhases(to - from)
-			grow := bounceGrow * float64(size)
+			up, down := L.bounce(k, size)
 			peakScale := WordPeak(s, c.Words[k].Text)
 
-			// The pill behind the word, bouncing around its own centre: each
-			// phase from where BounceAt has it at the phase's start to where
-			// it has it at its end.
+			// The pill behind the word, bouncing: each phase from where
+			// BounceAt has it at the phase's start to where it has it at its
+			// end. It grows by up above and down below, so where one side has
+			// less room its centre moves with the growth.
 			w, h := pr-pl, pb-pt
 			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
-			pillScale := func(at Bounce) (string, string) {
-				return "100", num((h + 2*grow*at.Tall) / h * 100)
+			pillAt := func(at Bounce) (y, scale string) {
+				return num(cy + (down-up)/2*at.Tall), num((h + (up+down)*at.Tall) / h * 100)
 			}
 			pillEvent := func(from, to int, a, z Bounce) {
-				fromX, fromY := pillScale(a)
-				toX, toY := pillScale(z)
+				fromY, fromScale := pillAt(a)
+				toY, toScale := pillAt(z)
 				add(1, from, to, "Box", fmt.Sprintf(
-					`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s{\p0}`,
-					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), fromX, fromY,
-					(to-from)*10, toX, toY, pill))
+					`{\an5\move(%s,%s,%s,%s,0,%d)\p1\1c%s\1a&H%s&\bord0\shad0\fscx100\fscy%s\t(0,%d,\fscx100\fscy%s)}%s{\p0}`,
+					num(cx), fromY, num(cx), toY, (to-from)*10, s.HighlightColour, alphaOrSolid(s.HighlightAlpha),
+					fromScale, (to-from)*10, toScale, pill))
 			}
 			opening, peak, rest := Bounce{}, Bounce{Word: 1, Tall: 1}, Bounce{}
 			if upCS > 0 {
@@ -363,10 +370,10 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 			// The line with the active word hidden, so nothing else moves.
 			add(2, from, to, "Caption", "{"+anchor+"}"+
-				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown, size))
+				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown))
 
 			// The active word alone, scaled around its centre.
-			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown, size)
+			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown)
 			place := func(scale float64) (string, string) {
 				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
 			}

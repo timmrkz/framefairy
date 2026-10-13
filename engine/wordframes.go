@@ -53,9 +53,9 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 			k := k
 			// Measured opaque, whatever the text colour: a word is found by
 			// its ink, and a see-through one would leave little to find.
-			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag(""), size))
+			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
 		}
-		blocks = append(blocks, pillLines(len(lines), size)...)
+		blocks = append(blocks, pillLines(len(lines))...)
 	}
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
 	if !ok {
@@ -132,12 +132,85 @@ func ShowingAt(laid []LaidCaption, ms int64) CaptionShowing {
 
 // pill is the box the pill of word k takes at rest, from the caption's
 // anchor, at size: the word's ink across with pillPadX at each side, and
-// its line down with pillPadY above and below.
+// its line down with pillPadY above and below, but never nearer than
+// lineClear to a letter of the line above or below. Where a letter of the
+// other line comes nearer the word's own ink than twice lineClear, the
+// pill stops halfway between the two.
+//
+// libass stands the lines of a caption as close as the face is tall, so
+// a pill of the whole line and its room reached into the tail of a "g" on
+// the line above. Tim saw the "g" of "wichtig" stand in the pill of
+// "Leute" on #201, and the lines are not to move apart for it.
 func (l wordsLaid) pill(k, size int) (left, top, right, bottom float64) {
 	padX := math.Round(float64(size) * pillPadX)
 	padY := math.Round(float64(size) * pillPadY)
 	b, line := l.boxes[k], l.reach[l.lineOf[k]]
-	return float64(b.left) - padX, float64(line.top) - padY, float64(b.right) + padX, float64(line.bottom) + padY
+	left, right = float64(b.left)-padX, float64(b.right)+padX
+	top, bottom = float64(line.top)-padY, float64(line.bottom)+padY
+	clear := math.Round(float64(size) * lineClear)
+	if above, ok := l.inkAbove(k, left, right); ok {
+		top = math.Max(top, math.Min(above+1+clear, (above+1+float64(b.top))/2))
+	}
+	if below, ok := l.inkBelow(k, left, right); ok {
+		bottom = math.Min(bottom, math.Max(below-clear, (float64(b.bottom)+1+below)/2))
+	}
+	return left, top, right, bottom
+}
+
+// bounce is how far the pill of word k reaches above and below its rest
+// at the top of its bounce, at size: bounceGrow each way where there is
+// room, and what one side has no room for goes to the other, so every
+// word bounces as far. It never comes nearer than lineClear to a letter
+// of another line.
+func (l wordsLaid) bounce(k, size int) (up, down float64) {
+	grow := bounceGrow * float64(size)
+	clear := math.Round(float64(size) * lineClear)
+	left, top, right, bottom := l.pill(k, size)
+	roomUp, roomDown := math.Inf(1), math.Inf(1)
+	if above, ok := l.inkAbove(k, left, right); ok {
+		roomUp = math.Max(0, top-(above+1+clear))
+	}
+	if below, ok := l.inkBelow(k, left, right); ok {
+		roomDown = math.Max(0, below-clear-bottom)
+	}
+	up = math.Min(grow, roomUp)
+	down = math.Min(2*grow-up, roomDown)
+	up = math.Min(2*grow-down, roomUp)
+	return up, down
+}
+
+// inkAbove is the lowest row of ink of the line above word k between left
+// and right, false where there is no line above or none of its words
+// stands there.
+func (l wordsLaid) inkAbove(k int, left, right float64) (float64, bool) {
+	r := l.lineOf[k]
+	if r == 0 {
+		return 0, false
+	}
+	lowest, ok := math.Inf(-1), false
+	for _, j := range l.lines[r-1] {
+		if b := l.boxes[j]; float64(b.right) >= left && float64(b.left) <= right {
+			lowest, ok = math.Max(lowest, float64(b.bottom)), true
+		}
+	}
+	return lowest, ok
+}
+
+// inkBelow is the highest row of ink of the line below word k between
+// left and right, false where there is no line below or none of its words
+// stands there.
+func (l wordsLaid) inkBelow(k int, left, right float64) (float64, bool) {
+	r := l.lineOf[k]
+	if r+1 >= len(l.lines) {
+		return 0, false
+	}
+	highest, ok := math.Inf(1), false
+	for _, j := range l.lines[r+1] {
+		if b := l.boxes[j]; float64(b.right) >= left && float64(b.left) <= right {
+			highest, ok = math.Min(highest, float64(b.top)), true
+		}
+	}
+	return highest, ok
 }
 
 // WordFrame is where a word of a caption stands in the short: the box its

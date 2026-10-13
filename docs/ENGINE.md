@@ -779,7 +779,8 @@ At rest the pill already takes nearly the whole space, 0.14 of the size at
 each side against a space of 0.165 in Inter Black. So its sides never
 move: the pill reaches 0.16 of the size past its rest above and below at
 the peak and settles back, and it is never smaller than at rest. It
-reached 0.08 before, which Tim could hardly see on #201. The word
+reached 0.08 before, which Tim could hardly see on #201. Where another
+line leaves less room on one side, see below. The word
 grows by up to 0.03 of the size at each side, which keeps room in its
 pill, and no more than 15 %, so a short word grows by the whole 15 % and a
 long one by less. Growing by 15 % of the word took "respektvoll" 34 pixels
@@ -799,18 +800,22 @@ Tim saw on #201. `TestTheBounceKeepsTheSpaceBetweenWords` reads the bounce
 back from a short, and holds the pill to at least 0.10 of the size of room
 round its word on every frame and to never less than at rest.
 
-The lines of a caption stand apart by 0.32 of the size more than libass
-puts them, which packs them as close as the face is tall: the room the
-pill takes past its line, 0.10, the 0.16 it reaches at the top of its
-bounce, and 0.06 over. libass has no tag for the room between lines, so
-`lineBreak` in `engine/ass.go` puts an empty line in a face that tall
-between two lines, in every caption text the tool draws, measures or
-renders. Packed close, the "g" of "wichtig" stood in the pill of "Leute"
-on the line under it, which Tim saw on #201.
-`TestThePillNeverReachesAnotherLine` reads a caption of two lines back
-from a short, the tail of a "g" over the dots of an "Ä", and holds the
-pill to 0.06 of the size from the other line on every frame and the
-bounce to at least 0.25 of the size in height.
+libass stands the lines of a caption as close as the face is tall, so
+a pill of the whole line and its room reaches into the letters of the
+line above or below. The lines stay where libass puts them. The pill
+stops instead: never nearer than 0.04 of the size to the ink of a word of
+the other line over or under it, and halfway between where a letter of
+the other line comes nearer than that to the word's own ink,
+`wordsLaid.pill` in `engine/wordframes.go`. Its bounce stays as clear of
+the other line: it reaches as far as it has room each way, and what one
+side has no room for goes to the other, so a word on the bottom line of
+two bounces down and a word on the top line bounces up, and every word
+bounces as far, `wordsLaid.bounce`. Tim saw the "g" of "wichtig" stand in
+the pill of "Leute" on the line under it on #201, and the lines moved
+apart for it for a while, which he did not want.
+`TestThePillNeverReachesAnotherLine` reads that caption back from a short
+and holds the pill clear of the other line's letters on every frame and
+its bounce to at least 0.25 of the size in height.
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished
