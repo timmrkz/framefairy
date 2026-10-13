@@ -232,13 +232,16 @@ A file is added as a video when all of this holds:
 | Check | Where |
 | --- | --- |
 | Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
-| The decoder reads a first frame from it | `undecodable` in `cmd/framefairy-app/library.go` |
+| The decoder reads a first frame from it, or says nothing for 30 s | `undecodable` in `cmd/framefairy-app/library.go` |
 | Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
 | No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
 
 The ending decides first. A file with another ending is left out by its
 name, whatever it holds, and a file with one of these endings that holds
 no picture the decoder can read is left out with the decoder's reason.
+A decoder that gives no frame and no reason within 30 s says nothing
+about the file, only about a busy or hung machine, so the video is
+taken and the log keeps a warning.
 
 ### The bar
 

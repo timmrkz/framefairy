@@ -423,7 +423,10 @@ Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be heard
 and with `settled` waits for the words before the pause, `click heard`
 clicks into the first word still being heard and sees it settled with
-the cursor in it,
+the cursor in it, with what the Go side tells the window held back from
+reading the word to the click, `window.__pauseEvents` in
+`wails-bridge.ts`, since the stand-in hears new words each time and the
+click would land in other words than the ones it read,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
 bridge's microphone plays two seconds of a hum, then a pause and a

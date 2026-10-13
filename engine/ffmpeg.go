@@ -88,6 +88,9 @@ type Engine struct {
 	// encoderOrderFor, this one unless a test says otherwise, so the order
 	// of a Mac can be run on any machine.
 	system string
+	// stall is how long a render may go without a frame before its
+	// encoder is given up, encoderStall unless a test says otherwise.
+	stall time.Duration
 
 	mu               sync.Mutex
 	encoder          Encoder
@@ -195,6 +198,15 @@ func (e *Engine) RunFFmpeg(ctx context.Context, args []string, label string,
 // kept in stdout, for a run that pipes frames out while it reports.
 func (e *Engine) runFFmpegTo(ctx context.Context, args []string, label string,
 	total float64, cwd string, stdout io.Writer) (int, string) {
+	code, said, _ := e.runFFmpegWatched(ctx, args, label, total, cwd, stdout, 0)
+	return code, said
+}
+
+// runFFmpegWatched is runFFmpegTo that stops ffmpeg once it has gone stall
+// without moving on, and says so, for a run that has somewhere else to
+// go. Zero waits as long as it takes.
+func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label string,
+	total float64, cwd string, stdout io.Writer, stall time.Duration) (code int, said string, stalled bool) {
 	var kept []string
 	for _, a := range args {
 		if a != "-stats" {
@@ -209,7 +221,7 @@ func (e *Engine) runFFmpegTo(ctx context.Context, args []string, label string,
 
 	tmp, err := os.MkdirTemp("", "framefairy-")
 	if err != nil {
-		return 1, err.Error()
+		return 1, err.Error(), false
 	}
 	defer os.RemoveAll(tmp)
 	progressPath := filepath.Join(tmp, "progress")
@@ -218,8 +230,12 @@ func (e *Engine) runFFmpegTo(ctx context.Context, args []string, label string,
 
 	handle, err := os.Create(stderrPath)
 	if err != nil {
-		return 1, err.Error()
+		return 1, err.Error(), false
 	}
+	// Its own context, so a stall ends ffmpeg without ending the work it
+	// is part of.
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	cmd := exec.CommandContext(ctx, e.FFmpeg, full...)
 	cmd.Dir = cwd
 	cmd.Stderr = handle
@@ -227,7 +243,7 @@ func (e *Engine) runFFmpegTo(ctx context.Context, args []string, label string,
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		handle.Close()
-		return 127, err.Error()
+		return 127, err.Error(), false
 	}
 	finished := make(chan error, 1)
 	go func() { finished <- cmd.Wait() }()
@@ -247,6 +263,10 @@ loop:
 		elapsed := time.Since(started).Seconds()
 		if done > lastDone {
 			lastDone, lastMove, warned = done, time.Now(), false
+		} else if stall > 0 && !stalled && time.Since(lastMove) > stall {
+			e.Log.Warn("%s has not advanced for %s, so it is stopped", label, stall)
+			stalled = true
+			stop()
 		} else if !warned && time.Since(lastMove) > 2*time.Minute {
 			name := label
 			if name == "" {
@@ -274,7 +294,6 @@ loop:
 	handle.Close()
 	e.Log.ClearProgress()
 	stderr, _ := os.ReadFile(stderrPath)
-	code := 0
 	if waitErr != nil {
 		var exit *exec.ExitError
 		if errors.As(waitErr, &exit) {
@@ -283,7 +302,7 @@ loop:
 			code = 1
 		}
 	}
-	return code, strings.ToValidUTF8(string(stderr), "\uFFFD")
+	return code, strings.ToValidUTF8(string(stderr), "\uFFFD"), stalled
 }
 
 // --------------------------------------------------------------------------
