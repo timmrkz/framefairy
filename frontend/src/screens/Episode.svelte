@@ -990,7 +990,7 @@
   // Each read made every clip a new one, the clip on screen too, and its
   // captions were asked for and drawn again each time, the clip timeline
   // and the caption box with them, while nothing about it had changed.
-  // Plan row 2.241. Every other read is for an edit of the clips or of
+  // Plan row 2.242. Every other read is for an edit of the clips or of
   // their captions, and takes them all as new, so the captions of the clip
   // on screen are read again with them.
   async function refreshClips(found = false) {

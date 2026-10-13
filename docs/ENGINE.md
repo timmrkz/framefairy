@@ -951,7 +951,11 @@ frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
 the crop there, read like thumbnails: a mark that is not a number and a
 whole left edge is left out, and so is one outside every piece, which stays
 in the plan and comes back with its piece. A mark steers the pieces of its
-camera angle in its part, `markedPieces`, so no glide crosses a cut. With
+camera angle in the whole clip, `markedPieces`. A piece is given each mark
+at the moment of the video it would be at on the piece's stretch were
+nothing cut out, the clip's clock read from the piece's start, so the glide,
+worked out on frames of the video, runs across a cut the way the short
+plays it, and the render and the video preview need nothing new. With
 no mark, or one, the crop stands still. With two or more it glides from
 each to the next over the whole time between them by smoothstep, `glideX`,
 on the frames of the video. The left edge is not rounded to a pixel of the

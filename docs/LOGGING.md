@@ -149,7 +149,7 @@ work the window waited on. A call to the Go side slower than 150 ms is a
 100 ms is an `edits` line, `an edit of the clips was slow`, with where its
 time went in ms: `waited` for the edit before it of the same video,
 `before` reading the files as they were, `edit` the edit itself with its
-writes to the disk, and `after` reading them again. Plan row 2.241.
+writes to the disk, and `after` reading them again. Plan row 2.242.
 
 ```sh
 # what took long enough to be felt

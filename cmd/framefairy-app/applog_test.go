@@ -363,7 +363,7 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 
 // An edit that takes long enough to be felt says so, and where the time
 // went. The second of two edits of one video waits for the first, and the
-// line says it waited rather than worked. Plan row 2.241.
+// line says it waited rather than worked. Plan row 2.242.
 func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 	svc, mine, _ := anEpisodeWithAPlan(t)
 	_, read := testLog(t)

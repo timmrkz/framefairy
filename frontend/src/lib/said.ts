@@ -126,7 +126,7 @@ const STOOD = 400;
 // to be said above. So each act says how long it took from the hand to
 // the first frame drawn after it, and how much of that the window was
 // still busy with something else before it heard the act at all, which
-// tells work in the window from work it waits on. Plan row 2.241.
+// tells work in the window from work it waits on. Plan row 2.242.
 const SLOWLY = 150;
 
 function shown(what: string, e: Event) {

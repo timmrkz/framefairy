@@ -251,7 +251,7 @@ func (s *FrameFairy) lost(h *history) error {
 // is the one thing edits of one video wait on each other for, reading the
 // files as they were, the edit itself with its writes to the disk, and
 // reading them again after. Tim felt the app take a moment to answer, and
-// his machine is the one where the disk is the Mac's. Plan row 2.241.
+// his machine is the one where the disk is the Mac's. Plan row 2.242.
 func slowEdit(path string, asked, held, read, written, done time.Time) {
 	if done.Sub(asked) < slowEditAfter {
 		return
