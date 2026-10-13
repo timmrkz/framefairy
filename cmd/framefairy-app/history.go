@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"framefairy/engine"
 
@@ -90,18 +91,23 @@ func (s *FrameFairy) edit(path string, fn func() error) error {
 // where it stood before and after. The playhead is part of the step, never
 // a step of its own: a gesture that changed nothing is still no step.
 func (s *FrameFairy) editMoving(path string, playhead *[2]float64, fn func() error) error {
+	asked := time.Now()
 	h := s.historyOf(path)
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	held := time.Now()
 	logs := s.project(path).LogsDir()
 	before := engine.TakeSnapshot(s.store.files, logs)
+	read := time.Now()
 	heightWas := s.store.Settings().CaptionY
 	err := fn()
 	if err != nil {
 		theLog.line(zerolog.DebugLevel, "app").Str("video", filepath.Base(path)).Err(err).Msg("an edit of the clips was refused")
 	}
+	written := time.Now()
 	// A search can land a clip while the edit runs. It is not the edit's.
 	change := engine.ChangeBetween(before, engine.TakeSnapshot(s.store.files, logs)).LeaveOutNewClips()
+	slowEdit(path, asked, held, read, written, time.Now())
 	heightNow := s.store.Settings().CaptionY
 	st := step{change: change}
 	if heightWas != heightNow {
@@ -239,3 +245,25 @@ func (s *FrameFairy) lost(h *history) error {
 	h.undo, h.redo = nil, nil
 	return errors.New("this has changed since, so it cannot be taken back")
 }
+
+// slowEdit says so when an edit of the clips took long enough to be felt,
+// and where the time went: waiting for the edit before it to finish, which
+// is the one thing edits of one video wait on each other for, reading the
+// files as they were, the edit itself with its writes to the disk, and
+// reading them again after. Tim felt the app take a moment to answer, and
+// his machine is the one where the disk is the Mac's. Plan row 2.241.
+func slowEdit(path string, asked, held, read, written, done time.Time) {
+	if done.Sub(asked) < slowEditAfter {
+		return
+	}
+	theLog.line(zerolog.WarnLevel, "edits").Str("video", filepath.Base(path)).
+		Int64("ms", done.Sub(asked).Milliseconds()).
+		Int64("waited", held.Sub(asked).Milliseconds()).
+		Int64("before", read.Sub(held).Milliseconds()).
+		Int64("edit", written.Sub(read).Milliseconds()).
+		Int64("after", done.Sub(written).Milliseconds()).
+		Msg("an edit of the clips was slow")
+}
+
+// slowEditAfter is how long an edit may take before it is said.
+const slowEditAfter = 100 * time.Millisecond

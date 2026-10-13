@@ -360,3 +360,48 @@ func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, w
 		t.Fatalf("the transcript written is not read: %v", err)
 	}
 }
+
+// An edit that takes long enough to be felt says so, and where the time
+// went. The second of two edits of one video waits for the first, and the
+// line says it waited rather than worked. Plan row 2.241.
+func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	_, read := testLog(t)
+	first := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = svc.edit(mine, func() error {
+			close(first)
+			time.Sleep(2 * slowEditAfter)
+			return nil
+		})
+	}()
+	<-first
+	_ = svc.edit(mine, func() error { return nil })
+	<-done
+	var slow []map[string]any
+	for _, l := range read() {
+		if l["msg"] == "an edit of the clips was slow" {
+			slow = append(slow, l)
+		}
+	}
+	if len(slow) != 2 {
+		t.Fatalf("%d edits said they were slow, not both: %v", len(slow), slow)
+	}
+	var worked, waited map[string]any
+	for _, l := range slow {
+		if l["edit"].(float64) >= float64(slowEditAfter.Milliseconds()) {
+			worked = l
+		} else {
+			waited = l
+		}
+	}
+	if worked == nil || waited == nil {
+		t.Fatalf("one edit should have worked and one waited: %v", slow)
+	}
+	if waited["waited"].(float64) < float64(slowEditAfter.Milliseconds()) {
+		t.Errorf("the second edit does not say it waited for the first: %v", waited)
+	}
+	has(t, waited, map[string]any{"level": "warn", "from": "edits", "video": "ep.mp4"})
+}
