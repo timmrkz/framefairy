@@ -62,6 +62,25 @@
     }
   }
 
+  // Another window taking the focus takes the pointer with it, the report
+  // window above all, which Bugs opens. The app's window hears nothing of
+  // the pointer going, so the sidebar it was on stayed open until Tim
+  // clicked back in and moved. It closes when the app's window loses the
+  // focus, and the next move of the pointer, once it is back, says where
+  // the pointer is.
+  function away() {
+    if (sorting) return;
+    near = false;
+    asking = true;
+  }
+
+  // Only the keyboard going into the sidebar opens it. Focus that comes
+  // back to the button last clicked, when the app's window has the focus
+  // again, is not the person reaching for the sidebar.
+  function focusIn(e: FocusEvent) {
+    if ((e.target as Element).matches?.(":focus-visible")) near = true;
+  }
+
   function pointerMoved(e: PointerEvent) {
     if (!asking || sorting) return;
     asking = false;
@@ -550,7 +569,7 @@
   });
 </script>
 
-<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} />
+<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} onblur={away} />
 
 <div class="shell" style={titleBar.style}>
   <Bar {title} />
@@ -574,7 +593,7 @@
     class:open
     onpointerenter={() => (near = true)}
     onpointerleave={() => (near = false)}
-    onfocusin={() => (near = true)}
+    onfocusin={focusIn}
     onfocusout={() => (near = false)}
   >
     <div class="head row">

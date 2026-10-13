@@ -164,6 +164,13 @@
 //                      slowly enough to do something while it is
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["bugs, the pointer gone"]
+//                      clicks Bugs with the pointer on the sidebar, and
+//                      the app's window loses the focus to the report
+//                      window with no word of the pointer leaving, as on
+//                      a Mac. The sidebar closes then, stays closed when
+//                      the focus comes back to the button, and the next
+//                      move of the pointer outside leaves it closed
 //   ["bugs"]           clicks Bugs in the sidebar, which has the app open
 //                      the report window or bring it forward, and opens
 //                      the report window as a second page if none is open,
@@ -1354,6 +1361,13 @@ export const sequences = [
       ["removed goes"],
       ["pictures", 2],
     ],
+  },
+  {
+    // Plan row 2.244. Tim clicked Bugs, and the sidebar stayed open behind
+    // the report window until he clicked back into the app and moved the
+    // pointer.
+    name: "Bugs leaves the sidebar closed once the report window has the focus",
+    steps: [["bugs, the pointer gone"]],
   },
   {
     // Plan row 2.244. Report makes one zip with what was written and the
@@ -4134,6 +4148,42 @@ for (const seq of toWalk) {
         page = reportPage;
         await page.locator("button.dictate").waitFor();
         await settle(page);
+        break;
+      }
+      case "bugs, the pointer gone": {
+        page = main;
+        await main.mouse.move(20, 500);
+        await main.waitForTimeout(400);
+        const shut = () => main.evaluate(() => !document.querySelector("aside")?.classList.contains("open"));
+        if (await shut()) {
+          wrong = "the sidebar did not open under the pointer";
+          break;
+        }
+        // Clicked from the page, so the pointer stays where it is: on a Mac
+        // the report window comes up and the app's window hears nothing
+        // more of the pointer.
+        await main.evaluate(() => {
+          document.querySelector("aside button.bugs").click();
+          window.dispatchEvent(new FocusEvent("blur"));
+        });
+        await main.waitForTimeout(400);
+        if (!(await shut())) {
+          wrong = "the sidebar stayed open once the report window had the focus";
+          break;
+        }
+        // The focus comes back to the button that was clicked.
+        await main.evaluate(() => {
+          window.dispatchEvent(new FocusEvent("focus"));
+          document.querySelector("aside button.bugs").focus();
+        });
+        await main.waitForTimeout(400);
+        if (!(await shut())) {
+          wrong = "the sidebar opened when the app's window had the focus again";
+          break;
+        }
+        await main.mouse.move(750, 400);
+        await main.waitForTimeout(400);
+        if (!(await shut())) wrong = "the sidebar opened on the next move of the pointer outside it";
         break;
       }
       case "windows": {

@@ -148,7 +148,11 @@ The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
-come back. Closed, it leaves room for the settings column of the workspace,
+come back. It closes when the app's window loses the focus, as it does
+to the report window Bugs opens, since a Mac tells the window nothing
+of the pointer going then, and the next move of the pointer says where
+it is. Only the keyboard going into it opens it, not the focus coming
+back to the button last clicked. Closed, it leaves room for the settings column of the workspace,
 which is exactly what it covers when it opens. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
