@@ -808,7 +808,7 @@ and nothing said it had been asked for.
 The third is Bugs, plan row 2.244, which opens Report a Problem in a
 window of its own, something no walk can see: the walks run in one page
 of a browser. It clicks Bugs and asks the probe which windows the app has
-open, the app's own and `report`, clicks Bugs again and finds still the
+open, `app` and `report`, clicks Bugs again and finds still the
 two, closes the report window the way its close button does and finds
 the app's alone, and then Bugs opens it once more. The probe names every
 window the app has, from `app.Window.GetAll`, and closes one by its

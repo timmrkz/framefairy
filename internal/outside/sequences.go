@@ -54,8 +54,8 @@ package outside
 //                          it, "yes" or "no"
 //   {"windows", names}     the app has these windows open and no others,
 //                          their names in any order with a comma between
-//                          them: "Frame Fairy" is the app's own, "report"
-//                          the report window that Bugs opens
+//                          them: "app" is the app's own, "report" the
+//                          report window that Bugs opens
 //   {"search ends"}        no search of the video added runs any more
 //   {"search", how, from, to}
 //                          the video's search says how it ended,
@@ -142,15 +142,15 @@ var sequences = []sequence{
 		steps: []step{
 			{"set up"},
 			{"start"},
-			{"windows", "Frame Fairy"},
+			{"windows", "app"},
 			{"click", "Bugs"},
-			{"windows", "Frame Fairy, report"},
+			{"windows", "app, report"},
 			{"click", "Bugs"},
-			{"windows", "Frame Fairy, report"},
+			{"windows", "app, report"},
 			{"close", "report"},
-			{"windows", "Frame Fairy"},
+			{"windows", "app"},
 			{"click", "Bugs"},
-			{"windows", "Frame Fairy, report"},
+			{"windows", "app, report"},
 			{"quit"},
 		},
 	},
