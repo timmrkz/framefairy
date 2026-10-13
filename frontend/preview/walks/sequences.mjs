@@ -218,6 +218,17 @@
 //                      and then on to that share
 //   ["remove clip"]    presses the bin of the clip on screen in the clip
 //                      list, and waits until the Go side has it removed
+//   ["remove two, hand still"]
+//                      presses the bins of the first two clips in the clip
+//                      list, one after the other, and leaves the hand where
+//                      it pressed the second while the first one's row runs
+//                      out and closes, which moves the second row out from
+//                      under the hand. The page hears nothing of the
+//                      pointer meanwhile, the way WebKit tells it nothing
+//                      of a row moving from under a hand that stands
+//                      still, where Chromium makes up a move for it. Then
+//                      the hand goes to the clip timeline, and the second
+//                      row's time has to run down and close it
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -1052,6 +1063,15 @@ export const sequences = [
       ["wait for", "New"],
       ["row closes", ["Nothing new found", 10]],
     ],
+  },
+  {
+    // Tim removed a clip, worked on in the workspace, and the time to put
+    // it back stood still, the fill and all, until his hand passed over
+    // the row again. On his Mac a row moved out from under a hand that
+    // stood still is never told the hand is off it, and the time waited
+    // for that word. Plan row 2.240.
+    name: "a row to put back runs down once the hand is elsewhere, though it moved from under a still hand",
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["remove two, hand still"]],
   },
   {
     name: "Cancel stops a search, and Continue carries it on to its clips",
@@ -4253,6 +4273,77 @@ for (const seq of toWalk) {
         }
         if (!gone) wrong = "the bin left the clip in the list";
         await watch.step("remove clip", s);
+        break;
+      }
+      case "remove two, hand still": {
+        const bins = page.locator("aside ol li button.drop");
+        if ((await bins.count()) < 2) {
+          wrong = `the clip list has ${await bins.count()} clips to remove, not two`;
+          break;
+        }
+        const press = async (bin) => {
+          const box = await bin.boundingBox();
+          await page.mouse.move(box.x - 40, box.y + box.height / 2, { steps: 4 });
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+          await page.mouse.down();
+          await page.mouse.up();
+        };
+        await press(bins.nth(0));
+        await page.waitForSelector("aside ol .gone");
+        // The second bin is where it was: the first clip's row stays open
+        // while it can be put back.
+        await press(bins.nth(0));
+        const rows = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll("aside ol .gone")].map((g) => {
+              const run = g.querySelector(".fill .run");
+              return { top: Math.round(g.getBoundingClientRect().top), running: run.getAnimations().length > 0, at: getComputedStyle(run).transform };
+            }),
+          );
+        let now = [];
+        for (let i = 0; i < 30 && now.length < 2; i++) {
+          await page.waitForTimeout(100);
+          now = await rows();
+        }
+        if (now.length < 2) {
+          wrong = `${now.length} rows can be put back after two clips were removed`;
+          break;
+        }
+        if (now[1].running) {
+          wrong = "the second row's time runs down under the hand that removed it";
+          break;
+        }
+        const second = now[1].top;
+        // What WebKit says while the hand stands still: nothing.
+        await page.evaluate(() => {
+          const names = ["pointerover", "pointerout", "pointerenter", "pointerleave", "pointermove"];
+          const still = (e) => e.stopImmediatePropagation();
+          window.__stillHand = () => names.forEach((n) => window.removeEventListener(n, still, true));
+          names.forEach((n) => window.addEventListener(n, still, true));
+        });
+        for (let i = 0; i < 150 && now.length > 1; i++) {
+          await page.waitForTimeout(100);
+          now = await rows();
+        }
+        if (now.length !== 1 || now[0].top >= second) {
+          wrong = `the first row did not close and move the second up: ${JSON.stringify(now)}`;
+          break;
+        }
+        await page.waitForTimeout(400);
+        await page.evaluate(() => window.__stillHand());
+        const line = await page.locator(".clip-timeline").boundingBox();
+        await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
+        await page.waitForTimeout(600);
+        const a = await rows();
+        await page.waitForTimeout(500);
+        const b = await rows();
+        if (!a[0]?.running || a[0].at === b[0]?.at) {
+          wrong = `the row left to put back stands still with the hand on the clip timeline: ${JSON.stringify(b)}`;
+          break;
+        }
+        for (let i = 0; i < 120 && (await rows()).length; i++) await page.waitForTimeout(100);
+        if ((await rows()).length) wrong = "the row left to put back is still there after its time";
+        await watch.step("remove two, hand still", s);
         break;
       }
       case "thumbnail": {

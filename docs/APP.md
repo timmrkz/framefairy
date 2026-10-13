@@ -1310,7 +1310,9 @@ bubble scrolled by those eight pixels.
       seconds, with the light over it running the same way, right to
       left, see `Busy.svelte`, and it stands still while the pointer or
       the keyboard is on the row, so the time to change your mind is seen
-      and nobody is rushed. Nothing above or
+      and nobody is rushed. It runs on the moment the pointer is seen
+      anywhere else, also when the row moved away from under a pointer
+      that stood still, which WebKit never reports. Nothing above or
       below it moves while it is there, and when it goes the list closes
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they
