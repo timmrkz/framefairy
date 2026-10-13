@@ -714,13 +714,14 @@ export const sequences = [
     ],
   },
   {
-    // A word removed in the caption box is the clip's alone too: a clip
-    // made over it with I says it.
-    name: "a word removed, then a clip made over it with I, has the word",
+    // A word removed in the caption box is the clip's too, and goes with
+    // it.
+    name: "a word removed, then its clip removed and made again with I, has the word again",
     steps: [
       ["frame", "Schulhof"],
       ["press", "Backspace"],
       ["gone", "Schulhof"],
+      ["remove clip"],
       ["make here", "i"],
       ["holds", "Schulhof"],
       ["blocks"],
