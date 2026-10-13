@@ -676,28 +676,9 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 		clips = picked
 	}
 
-	style := plan.CaptionStyle()
-	if opts.Font != "" {
-		style["font"] = opts.Font
-	}
-	if opts.FontSize != 0 {
-		style["size"] = float64(opts.FontSize)
-	}
-	if opts.MarginV != nil {
-		style["margin_v"] = float64(*opts.MarginV)
-	}
-	if opts.HighlightColour != "" {
-		if highlightColour(opts.HighlightColour, "") == "" {
-			return errors.New("the highlight colour must look like #942192")
-		}
-		// A plan given a highlight colour of its own, in the captions
-		// column of the app, keeps it. This is the colour for the rest.
-		if _, own := style["highlight_colour"]; !own {
-			style["highlight_colour"] = opts.HighlightColour
-		}
-	}
-	if opts.NoHighlight {
-		style["highlight"] = 0.0
+	style, err := opts.CaptionLook(plan)
+	if err != nil {
+		return err
 	}
 
 	cropW, cropH := CropWindow(source, outW, outH)
@@ -755,9 +736,10 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	cueMap := map[string][]LaidCaption{}
 	for _, clip := range clips {
 		// Rendered on the source's frames, and captioned on them too, see
-		// OnFrames.
-		clip := source.OnFrames(clip)
-		cues := ClipCaptions(clip, heard, ResolveStyle(clipStyle(style, clip)))
+		// ClipDrawing.
+		drawing := ClipDrawing(style, clip, heard, source)
+		clip := drawing.Clip
+		cues := drawing.Laid
 		cueMap[clip.Basename()] = cues
 		started := time.Now()
 		log.Info("%s: %ss, %d segment(s), %d cues", clip.Basename(),
@@ -768,7 +750,7 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 			stem = shortStem(outDir, plan, clip)
 		}
 		path, err := e.renderShort(ctx, clip, opts.Source, source, outDir, stem, cues, rs,
-			clipStyle(style, clip), captionDir, opts.DryRun)
+			drawing.Style, captionDir, opts.DryRun)
 		if err != nil {
 			if ctx.Err() != nil {
 				return e.fail(ctx, ctx.Err())
@@ -903,6 +885,37 @@ func clipStyle(style map[string]any, clip Clip) map[string]any {
 	}
 	out["margin_v"] = *clip.CaptionY
 	return out
+}
+
+// CaptionLook is the caption style the render puts on the clips of plan:
+// the plan's own, with what the options set on top. The app takes the
+// video preview's captions from it too, see Look, so the short and the
+// video preview are never made in two styles.
+func (o Options) CaptionLook(plan Plan) (map[string]any, error) {
+	style := plan.CaptionStyle()
+	if o.Font != "" {
+		style["font"] = o.Font
+	}
+	if o.FontSize != 0 {
+		style["size"] = float64(o.FontSize)
+	}
+	if o.MarginV != nil {
+		style["margin_v"] = float64(*o.MarginV)
+	}
+	if o.HighlightColour != "" {
+		if highlightColour(o.HighlightColour, "") == "" {
+			return nil, errors.New("the highlight colour must look like #942192")
+		}
+		// A plan given a highlight colour of its own, in the captions
+		// column of the app, keeps it. This is the colour for the rest.
+		if _, own := style["highlight_colour"]; !own {
+			style["highlight_colour"] = o.HighlightColour
+		}
+	}
+	if o.NoHighlight {
+		style["highlight"] = 0.0
+	}
+	return style, nil
 }
 
 func writeProof(fsys afero.Fs, path string, clips []Clip, cueMap map[string][]LaidCaption) error {

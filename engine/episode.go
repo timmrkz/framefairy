@@ -777,12 +777,12 @@ func (v *CaptionsView) Drawing() *CaptionDrawing { return v.drawing }
 // own clock, in the lines and the look the render uses. It is what the app
 // draws over the picture, made by ClipCaptions like the render's, so that
 // nothing about captions is decided twice.
-func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+func ClipCaptionsView(fsys afero.Fs, planPath, clipID string, t *Transcript, look *Look) (*CaptionsView, error) {
 	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(plan, clip, t, overrides), nil
+	return captionsView(plan, clip, t, look), nil
 }
 
 // ShapedView is what a gesture makes of a clip, with the captions the clip
@@ -796,7 +796,7 @@ type ShapedView struct {
 // ShapeClipView works out what a gesture makes of a clip and its captions,
 // see ShapeClip.
 func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64,
-	overrides map[string]any) (*ShapedView, error) {
+	look *Look) (*ShapedView, error) {
 	shaped, err := ShapeClip(fsys, planPath, clipID, g, t, keepPause)
 	if err != nil {
 		return nil, err
@@ -805,7 +805,7 @@ func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcr
 	if err != nil {
 		return nil, err
 	}
-	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, overrides)}, nil
+	return &ShapedView{Shaped: shaped, Captions: captionsView(plan, shaped.Clip, t, look)}, nil
 }
 
 // ShapeCaptionTime works out the captions of a clip with the edge of one
@@ -813,13 +813,13 @@ func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcr
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
 func ShapeCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
-	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
+	t *Transcript, look *Look) (*CaptionsView, error) {
 	work := *t
-	moved, err := moveCaptionEdge(fsys, LoadCorrections(fsys, logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	moved, err := moveCaptionEdge(fsys, LoadCorrections(fsys, logsDir), planPath, clipID, word, edge, at, &work, look)
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(moved.plan, moved.clip, &work, overrides), nil
+	return captionsView(moved.plan, moved.clip, &work, look), nil
 }
 
 // planClip finds one clip of a plan.
@@ -836,17 +836,45 @@ func planClip(fsys afero.Fs, planPath, clipID string) (Plan, Clip, error) {
 	return Plan{}, Clip{}, fmt.Errorf("no clip %s in %s", Scrub(clipID, 60), filepath.Base(planPath))
 }
 
-// captionStyle is the look of a clip's captions: the plan's, the clip's
-// own caption line, and the overrides the render puts on top.
-func captionStyle(plan Plan, clip Clip, overrides map[string]any) map[string]any {
-	style := clipStyle(plan.CaptionStyle(), clip)
-	for key, value := range overrides {
-		if text, ok := value.(string); ok && text == "" {
-			continue
+// Look is how the captions of a clip are made: the caption style the
+// render puts on the clips, see Options.CaptionLook, and the frames of the
+// episode the short is made of, which they are timed on, see ClipDrawing.
+// A nil Look is the plan's own style on no frames.
+type Look struct {
+	Style  map[string]any
+	Source SourceInfo
+}
+
+// drawing is what the captions of clip of plan are drawn from in l.
+func (l *Look) drawing(plan Plan, clip Clip, t *Transcript) *CaptionDrawing {
+	if l == nil || l.Style == nil {
+		var source SourceInfo
+		if l != nil {
+			source = l.Source
 		}
-		style[key] = value
+		return ClipDrawing(plan.CaptionStyle(), clip, t, source)
 	}
-	return style
+	return ClipDrawing(l.Style, clip, t, l.Source)
+}
+
+// captionStyle is the plan's own look for the captions of clip, which is
+// how a gesture tells the words its edges land on, see ShowWords.
+func captionStyle(plan Plan, clip Clip) map[string]any {
+	return clipStyle(plan.CaptionStyle(), clip)
+}
+
+// ClipDrawing is what the captions of clip are drawn from, in style, made
+// of the words of t on the frames of source: the one way they are made,
+// for the short and for the video preview alike. The clip is put on the
+// frames the render cuts on, see OnFrames, and its own caption line is
+// taken, see clipStyle. The video preview once made its captions from the
+// clip as the plan has it, a fraction of a millisecond off the frames at
+// 29.97 frames a second, and lit a word a frame earlier or later than the
+// short on about a third of the clips of several pieces.
+func ClipDrawing(style map[string]any, clip Clip, t *Transcript, source SourceInfo) *CaptionDrawing {
+	clip = source.OnFrames(clip)
+	style = clipStyle(style, clip)
+	return &CaptionDrawing{Laid: ClipCaptions(clip, t, ResolveStyle(style)), Style: style, Clip: clip}
 }
 
 // ArrivingCaptionsView is the captions of a clip on its way, from the
@@ -854,7 +882,7 @@ func captionStyle(plan Plan, clip Clip, overrides map[string]any) map[string]any
 // out the way a written clip's are, in the style of the clip set it goes
 // into. It is nil until the builder has them.
 func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcript,
-	overrides map[string]any) *CaptionsView {
+	look *Look) *CaptionsView {
 	if len(u.Pieces) == 0 {
 		return nil
 	}
@@ -866,13 +894,13 @@ func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcr
 		return nil
 	}
 	plan, _, _ := LoadClips(fsys, planPath)
-	return captionsView(plan, clip, t, overrides)
+	return captionsView(plan, clip, t, look)
 }
 
-func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {
-	style := captionStyle(plan, clip, overrides)
-	s := ResolveStyle(style)
-	laid := ClipCaptions(clip, t, s)
+func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView {
+	drawing := look.drawing(plan, clip, t)
+	clip, laid := drawing.Clip, drawing.Laid
+	s := ResolveStyle(drawing.Style)
 
 	// The render authors every measure against a 1920 pixel tall frame and
 	// scales by the real height.
@@ -887,7 +915,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any)
 		Box: WebColour(s.BackColour), Highlight: s.Highlight,
 		HighlightColour: s.HighlightWeb(), Text: s.Text, BoxOn: s.Box,
 	}}
-	view.drawing = &CaptionDrawing{Laid: laid, Style: style, Clip: clip}
+	view.drawing = drawing
 	view.Track = view.drawing.name()
 	if s.BorderStyle != 3 && s.BorderStyle != 4 {
 		view.Style.Box = "rgba(0, 0, 0, 0)"

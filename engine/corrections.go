@@ -195,8 +195,8 @@ func putBack(heard []Cue, i int, text string) map[int]string {
 // only where it is in this caption. What is left is laid out as it was:
 // the caption goes and leaves its time empty, and the one before it goes
 // when it did, see Captions.
-func RemoveCaption(fsys afero.Fs, logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
-	view, err := ClipCaptionsView(fsys, planPath, clipID, t, overrides)
+func RemoveCaption(fsys afero.Fs, logsDir, planPath, clipID string, first float64, t *Transcript, look *Look) error {
+	view, err := ClipCaptionsView(fsys, planPath, clipID, t, look)
 	if err != nil {
 		return err
 	}

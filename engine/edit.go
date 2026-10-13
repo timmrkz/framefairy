@@ -1047,16 +1047,16 @@ type CaptionEdit struct {
 // is when that word starts in the episode, edge is "start" or "end", and at
 // is when the caption should appear or go, also in the episode. A time that
 // is not a number puts the caption back where its words put it. logsDir is
-// where the corrections are kept, and overrides the caption look the
-// captions are laid out in. It makes the change ShapeCaptionTime shows
+// where the corrections are kept, and look how the captions are made, see
+// Look. It makes the change ShapeCaptionTime shows
 // while the hand moves, see moveCaptionEdge, and says what it did to the
 // words, for the app's log.
 func SetCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
-	t *Transcript, overrides map[string]any) (CaptionEdit, error) {
+	t *Transcript, look *Look) (CaptionEdit, error) {
 	var moved captionEdge
 	err := changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
 		var err error
-		moved, err = moveCaptionEdge(fsys, corrections, planPath, clipID, word, edge, at, work, overrides)
+		moved, err = moveCaptionEdge(fsys, corrections, planPath, clipID, word, edge, at, work, look)
 		return err
 	})
 	if err != nil {
@@ -1128,7 +1128,7 @@ type captionEdge struct {
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
 func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, clipID string, word float64, edge string,
-	at float64, t *Transcript, overrides map[string]any) (captionEdge, error) {
+	at float64, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
 	}
@@ -1143,7 +1143,8 @@ func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, cli
 	// Only a caption of the clip that begins or ends on the word. A caption
 	// is made of its words and of nothing else.
 	key := wordKey(word)
-	laid := ClipCaptions(clip, t, ResolveStyle(captionStyle(plan, clip, overrides)))
+	// The captions as they are drawn, the ones the hand took hold of.
+	laid := look.drawing(plan, clip, t).Laid
 	i := slices.IndexFunc(laid, func(c LaidCaption) bool {
 		anchor := c.Opens
 		if edge == "end" {

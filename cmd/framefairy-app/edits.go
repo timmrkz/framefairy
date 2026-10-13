@@ -296,7 +296,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		done, err = engine.SetCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionLook(path, plan))
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
@@ -334,7 +334,7 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 		return nil, err
 	}
 	p := s.project(path)
-	view, err := engine.ShapeCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	view, err := engine.ShapeCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionLook(path, plan))
 	captionTracks.keep(path, view)
 	return view, err
 }
@@ -377,7 +377,7 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 	}
 	g.Frames = s.frames(context.Background(), path)
 	view, err := engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
-		s.captionOverrides(plan))
+		s.captionLook(path, plan))
 	if err == nil {
 		captionTracks.keep(path, view.Captions)
 	}

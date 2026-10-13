@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
@@ -113,25 +115,31 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionOverrides(planPath))
+	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionLook(path, planPath))
 	captionTracks.keep(path, view)
 	return view, err
 }
 
-// captionOverrides are the settings the render puts on top of a plan's
-// caption style, so the picture shows what the file will hold.
-func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
-	set := s.store.Settings()
-	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
-	// The highlight colour of the settings is for a plan that was not given
-	// one of its own in the captions column, the same as the render has it.
-	plan, _, err := engine.LoadClips(s.store.files, planPath)
+// captionLook is how the captions of the clips of planPath of the episode
+// at path are made, the way a render job makes them: in the style the
+// job's options put on the plan, on the episode's frames, see
+// engine.ClipDrawing. The video preview once took the style apart from
+// the render and the clip off the frames, and lit some words a frame from
+// where the short lights them.
+func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
+	plan, _, _ := engine.LoadClips(s.store.files, planPath)
+	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
-		overrides["highlight_colour"] = set.HighlightColour
-	} else if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
-		overrides["highlight_colour"] = set.HighlightColour
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
+		style = plan.CaptionStyle()
 	}
-	return overrides
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	source, err := s.probe(ctx, path)
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+	}
+	return &engine.Look{Style: style, Source: source}
 }
 
 // ArrivingCaptions are the captions of a clip on its way, the nth of a
@@ -167,7 +175,7 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionOverrides(plan))
+				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionLook(j.Episode, plan))
 				captionTracks.keep(j.Episode, view)
 				return view, nil
 			}

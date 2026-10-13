@@ -185,7 +185,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.RemoveCaption(s.store.files, p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
+		return engine.RemoveCaption(s.store.files, p.LogsDir(), plan, clipID, first, t, s.captionLook(path, plan))
 	})
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
 	line.Float64("word", first).Msg("a caption was removed")
