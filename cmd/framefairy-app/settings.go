@@ -8,8 +8,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/afero"
 
@@ -150,6 +152,7 @@ func openStoreIn(files afero.Fs, dir string) *store {
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
 	s.settings.apply(s.files)
+	s.markEarlier()
 	return s
 }
 
@@ -245,6 +248,11 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 				filepath.Base(abs), filepath.Base(other), filepath.Base(engine.WorkDir(abs))))
 			continue
 		}
+		if err := markAdded(s.files, abs); err != nil {
+			clash = append(clash, fmt.Sprintf("the folder %s beside %s cannot be written, %v",
+				filepath.Base(engine.WorkDir(abs)), filepath.Base(abs), err))
+			continue
+		}
 		s.episodes = append(s.episodes, abs)
 		seen[abs] = true
 		taken[engine.WorkDir(abs)] = abs
@@ -288,6 +296,130 @@ func (s *store) RemoveEpisode(path string) error {
 	}
 	s.episodes = kept
 	return s.save("library.json", s.episodes)
+}
+
+// addedFile marks a work folder as the folder of a video in the library.
+// It is written as the video is added, so a video whose folder no longer
+// has it had its folder deleted outside the app: Tim deleted one in Finder
+// to remove the video, and it stayed in the sidebar with nothing in it.
+// The folder alone could not say so, because the app writes a folder back
+// whenever it is asked about the video, the chosen clip and the waveform
+// among other things, so a folder deleted and opened again was there
+// again, with nothing in it.
+const addedFile = "added.json"
+
+// markAdded writes the mark into the work folder of a video added to the
+// library, and makes the folder where there is none.
+func markAdded(files afero.Fs, video string) error {
+	work := engine.WorkDir(video)
+	if err := files.MkdirAll(work, 0o755); err != nil {
+		return err
+	}
+	file, err := engine.SafeChildIn(files, work, addedFile)
+	if err != nil {
+		return err
+	}
+	if info, err := files.Stat(file); err == nil && info.Mode().IsRegular() {
+		return nil
+	}
+	body, err := json.Marshal(struct {
+		Added string `json:"added"`
+	}{time.Now().UTC().Format(time.RFC3339)})
+	if err != nil {
+		return err
+	}
+	return engine.WriteAtomic(files, file, body)
+}
+
+// marked says whether the work folder of a video carries the mark.
+func marked(files afero.Fs, video string) bool {
+	file, err := engine.SafeChildIn(files, engine.WorkDir(video), addedFile)
+	if err != nil {
+		return false
+	}
+	info, err := files.Stat(file)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// folderRemoved says whether the folder of a video in the library was
+// deleted outside the app: the video is there and its folder has no mark.
+// A video that is not there is not judged, because its folder is beside
+// it: a drive taken out or a folder moved away takes both, and the video
+// says File not found until they are back.
+func folderRemoved(files afero.Fs, video string) bool {
+	info, err := files.Stat(video)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	return !marked(files, video)
+}
+
+// writtenBack are the files the app writes into a video's folder when it
+// is asked about the video, opened or its waveform drawn, whether the
+// folder is there or not. A folder that holds nothing else was written
+// back after it was deleted.
+var writtenBack = map[string]bool{
+	chosenFile:                             true,
+	filepath.Join("logs", "levels.json"):   true,
+	filepath.Join("logs", "levels.frames"): true,
+}
+
+// markEarlier marks the folders of the videos added before there was a
+// mark, once, as the library is read: every folder that holds work of
+// its own. A folder that holds only what the app writes back is not
+// marked, so a folder deleted under an earlier version and written back
+// since leaves the list as it would now.
+func (s *store) markEarlier() {
+	for _, ep := range s.Episodes() {
+		if marked(s.files, ep) || linkedEpisode(s.files, ep) != "" {
+			continue
+		}
+		work := engine.WorkDir(ep)
+		own := afero.Walk(s.files, work, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(work, path)
+			if info.Mode().IsRegular() && !writtenBack[rel] {
+				return errOwnWork
+			}
+			return nil
+		})
+		if errors.Is(own, errOwnWork) {
+			_ = markAdded(s.files, ep)
+		}
+	}
+}
+
+// errOwnWork ends the look through a folder at its first file of work.
+var errOwnWork = errors.New("work of its own")
+
+// letGo takes a video whose folder was deleted outside the app out of the
+// library, and says whether it did: of two reads of the library at once,
+// one lets it go.
+func (s *store) letGo(path string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !slices.Contains(s.episodes, path) || !folderRemoved(s.files, path) {
+		return false, nil
+	}
+	s.episodes = slices.DeleteFunc(s.episodes, func(p string) bool { return p == path })
+	return true, s.save("library.json", s.episodes)
+}
+
+// clearLetGo deletes what was written into the folder of a video let go
+// after its folder was deleted, unless the video was added again since.
+// Under the store's lock, so an Add of the same video waits for it.
+func (s *store) clearLetGo(path string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if slices.Contains(s.episodes, path) || marked(s.files, path) {
+		return false, nil
+	}
+	if _, err := engine.LstatIn(s.files, engine.WorkDir(path)); err != nil {
+		return false, nil
+	}
+	return true, engine.DeleteWork(s.files, path)
 }
 
 // Known reports whether a file belongs to an episode in the library: the

@@ -196,12 +196,24 @@ half written, for an episode that is no longer in the library. The video file
 itself always stays, and so do the training records, which live in one
 folder of their own and are thrown away in the settings and nowhere else.
 
-The list of episodes is the app's own, in its config folder, not in those
-work folders. So an episode stays in the list when its folder is deleted by
-hand, and what it lost is simply gone: opening it then is the same as adding
-it, and the transcription starts by itself. With no folder beside it there is
-nothing to keep or to throw away, so the box says so and offers one
-**Remove**.
+The list of episodes is the app's own, `library.json` in its config folder,
+because a video can be anywhere on disk. Everything else about a video is in
+its work folder, so deleting that folder by hand, in Finder, is the same as
+**Remove** with the folder deleted: the video leaves the list, its work
+stops, and adding it again starts it from nothing. The app reads the list
+again as it starts and whenever it comes back to the front, and lets go of
+every video whose folder is gone, closing its workspace if it was open, see
+`letGoOfRemoved` in `library.go`. It tells a deleted folder by a mark the
+folder carries from the moment the video is added, `added.json`, and not by
+the folder alone, because the app writes a folder back whenever it is asked
+about the video, the chosen clip and the waveform among other things: Tim
+deleted a folder, opened the video, and a folder was there again with
+nothing of its own in it, plan row 2.247. A folder written back like that is
+deleted again once the video is let go. Videos added before the mark get it
+once, as the app starts, if their folder holds work of its own. A video that
+is not there itself, on a drive taken out, keeps its place and says File not
+found, whatever its folder. With no folder beside it there is nothing to
+keep or to throw away, so the box says so and offers one **Remove**.
 
 Anything that cannot be taken back asks in that same box, and nothing else
 does. Its buttons read left to right from the safest answer to the one that
@@ -2751,8 +2763,8 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
   terminal's environment, and an old key in it would otherwise win over
   the one just saved, without a word.
 - **Settings and the episode list:** plain JSON files in
-  `~/Library/Application Support/Frame Fairy` on macOS, `%AppData%\Frame Fairy` on
-  Windows and `~/.config/Frame Fairy` on Linux.
+  `~/Library/Application Support/FrameFairy` on macOS, `%AppData%\FrameFairy` on
+  Windows and `~/.config/FrameFairy` on Linux.
 - **Everything about an episode:** next to it in `<episode>.framefairy/`, the
   same folder the command line uses. See [CLI.md](CLI.md#run).
 - **Word corrections:** in `<episode>.framefairy/logs/corrections.json`. They

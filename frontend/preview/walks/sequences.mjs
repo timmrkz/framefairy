@@ -242,6 +242,17 @@
 //                      the key frame they are decoded after, read from the
 //                      file by ffprobe, waits for each in the video
 //                      preview, and plays from the last
+//   ["folder removed", when]
+//                      deletes the folder beside the video on screen,
+//                      <name>.framefairy, from outside the app, the way
+//                      Finder does: "away" while the app is behind
+//                      another, which then comes back to the front, and
+//                      "closed" while the app is closed, which is then
+//                      opened again
+//   ["let go"]         the video whose folder was removed has left the
+//                      sidebar and the library, its workspace is closed,
+//                      nothing writes its folder back and the video file
+//                      itself is still there
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -1978,6 +1989,24 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.247. Tim deleted a video's folder in Finder to remove the
+    // video, and it stayed in the sidebar with no clips and no lamp, and
+    // opening it wrote a folder back. Its folder is everything the app
+    // has of a video, so a video whose folder is gone has left the list,
+    // the way Remove with Delete takes it.
+    name: "a video whose folder is deleted outside the app leaves the list",
+    steps: [
+      ["add", 20],
+      ["wait for", "New"],
+      ["folder removed", "away"],
+      ["let go"],
+      ["add", 20],
+      ["wait for", "New"],
+      ["folder removed", "closed"],
+      ["let go"],
+    ],
+  },
+  {
     // Tim saw the play stutter, the playhead with it, as he dragged the
     // edge of a cut while the clip played. Only the space bar and a click
     // on the clip timeline change a play: an edge dragged while it plays
@@ -2878,6 +2907,8 @@ for (const seq of toWalk) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
+  // The video whose folder a walk deleted from outside the app.
+  let folderGone = "";
   let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -5464,6 +5495,55 @@ for (const seq of toWalk) {
         if (short !== was.short) wrong = `rendered again, the short is at ${short || "nowhere"}, not ${was.short}`;
         else if (!now || now.mtimeMs === was.file.mtimeMs) wrong = `rendered again, ${short} was not written again`;
         else if (added.length) wrong = `rendered again, ${added.join(", ")} appeared beside ${basename(short)}`;
+        break;
+      }
+      case "folder removed": {
+        folderGone = await episodeOn(page);
+        const folder = join(dirname(folderGone), `${basename(folderGone, extname(folderGone))}.framefairy`);
+        if (!existsSync(folder)) {
+          wrong = `${basename(folder)} is not there to delete`;
+          break;
+        }
+        rmSync(folder, { recursive: true, force: true });
+        if (arg === "closed") {
+          await control(url, "/reopen");
+          await page.reload();
+        } else {
+          // The person went to Finder and came back: the app lost the
+          // keyboard and has it again.
+          await page.evaluate(() => {
+            window.dispatchEvent(new FocusEvent("blur"));
+            window.dispatchEvent(new FocusEvent("focus"));
+          });
+        }
+        break;
+      }
+      case "let go": {
+        const name = basename(folderGone);
+        const folder = join(dirname(folderGone), `${basename(folderGone, extname(folderGone))}.framefairy`);
+        // The sidebar first, before the walk asks the Go side anything,
+        // so it is the app that read the library again and not the walk.
+        const left = await page
+          .waitForFunction(
+            (n) => ![...document.querySelectorAll("aside button.episode .name")].some((e) => e.textContent === n),
+            name,
+            { timeout: 5000, polling: 100 },
+          )
+          .then(() => true, () => false);
+        if (!left) {
+          wrong = `${name} is still in the sidebar 5 s after its folder was deleted`;
+          break;
+        }
+        await page.waitForTimeout(1500);
+        const library = await ask(page, "Library");
+        if (library.some((e) => e.source === folderGone)) wrong = `${name} is still in the library`;
+        else if ((await episodeOn(page)) === folderGone) wrong = `${name} is still open`;
+        else if (existsSync(folder)) wrong = `${basename(folder)} was written back`;
+        else if (!existsSync(folderGone)) wrong = `${name} itself was deleted`;
+        else if ((await page.locator(".workspace.front").count()) && !(await episodeOn(page))) {
+          wrong = `a workspace is still open with no video picked in the sidebar`;
+        }
+        await settle(page);
         break;
       }
       case "add namesake":

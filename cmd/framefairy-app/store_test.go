@@ -39,6 +39,9 @@ func memoryLibrary(t testing.TB, names ...string) (*FrameFairy, []string) {
 		if err := afero.WriteFile(st.files, ep, []byte("not really a video"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		if err := markAdded(st.files, ep); err != nil {
+			t.Fatal(err)
+		}
 		eps = append(eps, ep)
 	}
 	st.episodes = eps

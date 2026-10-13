@@ -252,13 +252,38 @@
   // for a moment before the setup covers it.
   let settingUp = $state<boolean | null>(null);
 
+  // Which read of the library is the latest. Reads overlap, the app coming
+  // to the front as Add's box closes among them, and one that answers
+  // after a later one holds an older library: a video just added, missing
+  // from it, would have closed again as it opened.
+  let reads = 0;
   async function refresh() {
+    const mine = ++reads;
     try {
-      episodes = await api.library();
+      const now = await api.library();
+      if (mine !== reads) return;
+      closeLeft(now);
+      episodes = now;
     } catch (err) {
+      if (mine !== reads) return;
       problem = errorText(err);
     }
     libraryRead = true;
+  }
+
+  // A video that left the library while it was on screen, its folder
+  // deleted outside the app, closes the way one removed with Remove does:
+  // the video opened before it comes back, or the page for none. Only one
+  // the library had and no longer has: a video just added is asked for
+  // before the read that has it answers.
+  function closeLeft(now: EpisodeStatus[]) {
+    const v = nav.view;
+    if (v.name !== "episode") return;
+    const has = (list: EpisodeStatus[], path: string) => list.some((e) => e.source === path);
+    if (has(now, v.path) || !has(episodes, v.path)) return;
+    const before = kept.find((p) => p !== v.path && has(now, p));
+    said("app: the video on screen left the library", { level: "info", video: v.path });
+    nav.go(before ? { name: "episode", path: before } : { name: "empty" });
   }
 
   // Which files the app takes as videos, said where Add is. The Go side
@@ -477,6 +502,13 @@
       .then((names) => (videoNames = names))
       .catch(() => {});
     const off = onEpisodeChanged(() => refresh());
+    // The library is read again whenever the app comes back to the front,
+    // which is where a person comes back from who deleted a video's folder
+    // in Finder: the Go side lets that video go as it answers, see
+    // letGoOfRemoved in library.go. The rest of the library is the app's
+    // own, so nothing else can have changed it while the app was behind.
+    const comeBack = () => refresh();
+    window.addEventListener("focus", comeBack);
     const noDropped = onDropped(took);
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
     // The video in front goes with the report by its name, whatever page
@@ -538,6 +570,7 @@
       noShowUpdates();
       noLicenceLink();
       noDropped();
+      window.removeEventListener("focus", comeBack);
       off();
     };
   });
