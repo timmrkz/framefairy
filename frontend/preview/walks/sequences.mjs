@@ -30,6 +30,37 @@
 //   ["join", n]        double-clicks on the clip timeline's nth cut, from 1,
 //                      which puts the part back
 //   ["trim", edge, px] drags the clip's "start" or "end" edge by px
+//   ["drag edge", which, px]
+//                      drags the clip's "start" or "end" edge, or the
+//                      "cut from" or "cut to" edge of its first cut, by px
+//                      in twenty steps while it is paused, reading the
+//                      playhead on every animation frame from the press to
+//                      after it lets go
+//   ["drag edge", which, px, "shift"]
+//                      the same with shift held, so the edge lands on words
+//   ["drag edge", which, px, "at the playhead"]
+//                      the same, pressed where the playhead's grip and the
+//                      edge's handle overlap rather than in its middle
+//   ["hold on", which] presses the track near the end away from it, then the
+//                      clip's "start" or "end" edge, the "cut from" or "cut
+//                      to" edge of its first cut, its first "thumbnail" or
+//                      "crop" mark, or the "caption start" or "caption end"
+//                      edge of its second caption, reading the playhead on
+//                      every animation frame while the button is down, and
+//                      lets go
+//   ["drag edge twice", which, px, again]
+//                      drags an edge by px, lets go, and at once, with
+//                      nothing waited for, drags it again by again
+//   ["edge then track", which]
+//                      clicks an edge and at once presses the track near
+//                      its right end: the playhead stands where the track
+//                      was pressed
+//   ["cut on caption", n]
+//                      double-clicks the middle of the caption block n,
+//                      from 0
+//   ["block after", n] clicks the caption block of the first caption that
+//                      appears after the clip's nth cut, from 1, which puts
+//                      the playhead on its first word
 //   ["drag while playing", edge, px]
 //                      plays the clip from a moment into it, and drags its
 //                      "end" edge, or the first edge of its first "cut", by
@@ -264,6 +295,27 @@
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      where the app says what went wrong, and the library
 //                      does not hold it
+//   ["followed", which]
+//                      since "drag edge", the playhead went with the edge:
+//                      it stood in four places or more while the hand
+//                      moved, on frames, and once it let go stands on the
+//                      frame the edge leaves on screen, the clip's or the
+//                      piece's first frame for "start" and "cut to", its
+//                      last for "end" and "cut from", with shift too
+//   ["went the hand's way", which]
+//                      since "drag edge", the edge never stood on the far
+//                      side of where it was pressed from the way the hand
+//                      went
+//   ["moved", which]   since "drag edge", the edge moved by a frame or more
+//   ["on press", which]
+//                      since "hold on", the playhead had moved while the
+//                      button was still down, onto the frame "followed"
+//                      names for an edge, the mark's frame, or the frame
+//                      the caption appears on or the last it is up on, in
+//                      no more animation frames than the press on the
+//                      track took
+//   ["pill pops", n]   the pill round the lit word in the video preview
+//                      popped n times since "count pops"
 //   ["played through"] since "drag while playing", the play went on as if
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
@@ -414,10 +466,11 @@
 //   ["edges as rendered"]
 //                      the short Render wrote, read back from disk, and the
 //                      video preview agree on the clip's edges: with the
-//                      playhead put on the clip's start and on where each
-//                      cut ends by a click on it, the video preview shows
-//                      the frame the short starts that piece with, and on
-//                      the clip's end the short's last frame. The clip's
+//                      playhead put on the frame of the clip's start and of
+//                      where each cut ends by a click on it, the video
+//                      preview shows the frame the short starts that piece
+//                      with, and on the clip's last frame, put there by a
+//                      click on its end, the short's last frame. The clip's
 //                      end is where the search put it, and at least one
 //                      edge is kept to the millisecond just before its
 //                      frame's start
@@ -622,16 +675,20 @@ export const sequences = [
     ],
   },
   {
+    // An edge pressed takes the playhead with it, so the edge's move is
+    // taken back with Undo while the playhead stands on the caption, the
+    // same change with no hand on the edge.
     name: "a caption block pops for neither edge dragged in, with the playhead on it",
     steps: [
-      ["block", "Schulhof"],
-      ["count pops"],
       ["edge in", ["start", "Schulhof"]],
-      ["pops", 0],
-      ["undo"],
       ["block", "Schulhof"],
       ["count pops"],
+      ["undo"],
+      ["pops", 0],
       ["edge in", ["end", "Schulhof"]],
+      ["block", "Schulhof"],
+      ["count pops"],
+      ["undo"],
       ["pops", 0],
     ],
   },
@@ -783,6 +840,151 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.235, found by Tim: the clip's edges took the playhead
+    // along and a cut's edges left it where it was, so the frame beside
+    // the cut could not be seen while it was placed.
+    name: "a cut's edges dragged take the playhead along, the way the clip's edges do",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -40],
+      ["followed", "cut from"],
+      ["drag edge", "cut to", 40],
+      ["followed", "cut to"],
+      ["drag edge", "end", -40],
+      ["followed", "end"],
+      ["drag edge", "start", 40],
+      ["followed", "start"],
+    ],
+  },
+  {
+    // Found by Tim on this: with shift, the playhead went inside the word
+    // the edge landed on, a pause away from the edge, and dragging a cut's
+    // left edge on past the last word took it over the cut into the
+    // caption before. It stays in line with the edge.
+    name: "a cut's edges dragged with shift keep the playhead in line with them",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", 40, "shift"],
+      ["followed", "cut from"],
+      ["drag edge", "cut from", -60, "shift"],
+      ["followed", "cut from"],
+      ["drag edge", "cut to", -40, "shift"],
+      ["followed", "cut to"],
+      ["drag edge", "cut to", 60, "shift"],
+      ["followed", "cut to"],
+      ["drag edge", "end", -60, "shift"],
+      ["followed", "end"],
+      ["drag edge", "start", 60, "shift"],
+      ["followed", "start"],
+    ],
+  },
+  {
+    // Found by Tim: a press anywhere on the clip timeline moved the
+    // playhead at once, and a press on an edge or a mark only when the
+    // hand let go or began to move, so it caught up with a drag late.
+    name: "a press on an edge or a mark puts the playhead on it at once",
+    steps: [
+      ["cut at", 0.5],
+      ["thumbnail at", 0.25],
+      ["keyframe at", 0.75],
+      ["hold on", "end"],
+      ["on press", "end"],
+      ["hold on", "start"],
+      ["on press", "start"],
+      ["hold on", "cut from"],
+      ["on press", "cut from"],
+      ["hold on", "cut to"],
+      ["on press", "cut to"],
+      ["hold on", "thumbnail"],
+      ["on press", "thumbnail"],
+      ["hold on", "crop"],
+      ["on press", "crop"],
+      ["hold on", "caption start"],
+      ["on press", "caption start"],
+      ["hold on", "caption end"],
+      ["on press", "caption end"],
+    ],
+  },
+  {
+    // Found by Tim: an edge let go of and taken again at once went to the
+    // playhead standing on it. While the first drag was being saved the
+    // edges were off the page.
+    name: "an edge taken again at once after a drag is the edge's",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge twice", "cut from", -30, -30],
+      ["moved", "cut from"],
+      ["followed", "cut from"],
+      ["drag edge twice", "end", -30, -30],
+      ["moved", "end"],
+      ["followed", "end"],
+    ],
+  },
+  {
+    // A click on an edge and at once a press on the track: an answer for
+    // the edge that came late put the playhead back on the edge.
+    name: "a press on the track straight after a click on an edge keeps the playhead there",
+    steps: [
+      // The engine is slow to answer, the way it can be on a long
+      // episode, so an answer to the click comes after the press.
+      ["cut at", 0.5],
+      ["hold", "Shape", 300],
+      ["edge then track", "cut from"],
+      ["hold", "Shape", 300],
+      ["edge then track", "end"],
+      ["hold", "Shape", 300],
+      ["edge then track", "start"],
+    ],
+  },
+  {
+    // Found by Tim: a cut's left edge pressed with shift and dragged right
+    // first jumped left, to the nearest word, and only then went right.
+    name: "an edge dragged with shift goes the way of the hand",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", 8, "shift"],
+      ["went the hand's way", "cut from"],
+      ["drag edge", "cut to", -8, "shift"],
+      ["went the hand's way", "cut to"],
+      ["drag edge", "end", -8, "shift"],
+      ["went the hand's way", "end"],
+      ["drag edge", "start", 8, "shift"],
+      ["went the hand's way", "start"],
+    ],
+  },
+  {
+    // Found by Tim: a cut's edge dragged takes the playhead along, so it
+    // stands on the edge, and the next press there took hold of the
+    // playhead and not the edge.
+    name: "a cut's edge with the playhead on it is the edge's to take",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -40],
+      ["drag edge", "cut from", -30, "at the playhead"],
+      ["moved", "cut from"],
+      ["followed", "cut from"],
+    ],
+  },
+  {
+    // Plan row 2.236, found by Tim: with the playhead on a caption after a
+    // cut, the cut's edges moved made the caption block and the pill in
+    // the video preview pop again and again. A word was known by when it
+    // starts on the clip's clock, which the cut moves. Undo takes the cut
+    // back with the playhead standing on the caption, which is the same
+    // change with no hand on an edge.
+    name: "a cut changed before the caption under the playhead pops nothing",
+    steps: [
+      ["cut at", 0.4],
+      ["block after", 1],
+      ["drag edge", "cut from", -40],
+      ["block after", 1],
+      ["count pops"],
+      ["undo"],
+      ["pops", 0],
+      ["pill pops", 0],
+    ],
+  },
+  {
     name: "a double-click in the clip cuts a part out, and one on the cut puts it back",
     steps: [
       ["mark", "start"],
@@ -791,6 +993,15 @@ export const sequences = [
       ["join", 1],
       ["cuts", 0],
       ["same", "start"],
+    ],
+  },
+  {
+    // Found in a review: a caption block kept the press to itself, so a
+    // double-click on one, across the middle of the clip, cut nothing.
+    name: "a double-click on a caption cuts a part out there",
+    steps: [
+      ["cut on caption", 1],
+      ["cuts", 1],
     ],
   },
   {
@@ -2190,9 +2401,15 @@ async function edgesAsRendered(page) {
     }
     await page.mouse.click(grip.x + grip.width / 2, high((await handles(page)).track));
     await settle(page);
+    // On the edge's frame, where the engine puts the playhead for an
+    // edge, see edgePlayhead in engine/shape.go: the first frame of the
+    // piece an edge starts, and the clip's last frame for its end.
     const placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
-    if (Math.abs(placed - e.at) > 1e-6) {
-      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not ${e.at.toFixed(4)}`);
+    // A millisecond early is on the frame, the rounding the edges are kept
+    // to, which is the case this is about.
+    const frameOn = nearest(e.at) - (e.label === "Clip end" ? 1 : 0);
+    if (Math.floor((placed - videoStart + 0.001) * fps) !== frameOn) {
+      problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
       continue;
     }
     const came = await page
@@ -2363,6 +2580,11 @@ for (const seq of toWalk) {
   let played = null;
   let made = null;
   let loopEnd = null;
+  // Whether the last "drag edge" held shift.
+  let dragShift = false;
+  const edgeLabel = { start: "Clip start", end: "Clip end", "cut from": "Where cut 1 starts", "cut to": "Where cut 1 ends" };
+  let dragPx = 0;
+  let held = null;
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
@@ -2434,14 +2656,15 @@ for (const seq of toWalk) {
           wrong = `there is no edge "${label}"`;
           break;
         }
-        // From the middle of the edge's handle to the moment itself, since
-        // the timeline reads where the pointer is, not how far it went.
-        // Held there a moment before it is let go, so what the timeline
-        // draws under the hand can be held against what it saves: the
-        // edge is where the drag showed it, and does not jump when let go.
+        // From the middle of the edge's handle, as far as from the edge to
+        // the moment, since the timeline reads how far the hand went from
+        // the press. Held there a moment before it is let go, so what the
+        // timeline draws under the hand can be held against what it saves:
+        // the edge is where the drag showed it, and does not jump when let
+        // go.
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
-        const target = await xOf(page, into(to));
+        const target = x + (await xOf(page, into(to))) - (await xOf(page, into(from)));
         await page.mouse.move(x, y);
         await page.mouse.down();
         for (let k = 1; k <= 6; k++) {
@@ -2473,10 +2696,13 @@ for (const seq of toWalk) {
           await page.waitForTimeout(400);
           await page.evaluate(() => {
             window.__pops = 0;
+            window.__pillPops = 0;
             if (!window.__popsHeard) {
               window.__popsHeard = true;
               document.addEventListener("animationstart", (e) => {
-                if (e.animationName === "pop" && e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+                if (e.animationName !== "pop") return;
+                if (e.target.closest?.(".clip-timeline .caption")) window.__pops++;
+                if (e.target.closest?.(".screen .captions")) window.__pillPops++;
               });
             }
           });
@@ -2485,6 +2711,12 @@ for (const seq of toWalk) {
           const n = await page.evaluate(() => window.__pops);
           if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
         }
+        break;
+      }
+      case "pill pops": {
+        await page.waitForTimeout(400);
+        const n = await page.evaluate(() => window.__pillPops);
+        if (n !== arg) wrong = `the pill in the video preview popped ${n} times, ${arg} wanted`;
         break;
       }
       case "edge put back": {
@@ -2721,6 +2953,16 @@ for (const seq of toWalk) {
         await watch.step("cut", s);
         break;
       }
+      case "cut on caption": {
+        const box = await page.locator(".clip-timeline .caption").nth(arg).boundingBox();
+        if (!box) {
+          wrong = `there is no caption ${arg + 1} to double-click`;
+          break;
+        }
+        await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+        await watch.step("cut", s);
+        break;
+      }
       case "join": {
         const g = await handles(page);
         await page.mouse.dblclick(middle(g.cuts[arg - 1]), high(g.track));
@@ -2732,6 +2974,278 @@ for (const seq of toWalk) {
         const [edge, px] = arg;
         await drag(page, middle(g[edge]), high(g.track), px, false);
         await watch.step("trim", s);
+        break;
+      }
+      case "drag edge": {
+        const [which, px, how] = arg;
+        dragShift = how === "shift";
+        dragPx = px;
+        const g = await handles(page);
+        const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
+        if (!box) {
+          wrong = `there is no ${which} edge to drag`;
+          break;
+        }
+        let x = middle(box);
+        if (how === "at the playhead") {
+          // The playhead's grip is its line and four pixels either side.
+          const line = await page.evaluate(() => {
+            const b = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
+            return b.left + b.width / 2;
+          });
+          const from = Math.max(line - 4, box.x + 1);
+          const to = Math.min(line + 4, box.x + box.w - 1);
+          if (!(to > from)) {
+            wrong = `the playhead's line at ${line.toFixed(1)} is not on the ${which} edge's handle, ${box.x.toFixed(1)} to ${(box.x + box.w).toFixed(1)}`;
+            break;
+          }
+          x = (from + to) / 2;
+        }
+        await page.evaluate((label) => {
+          window.__followed = [];
+          window.__edgeSeen = [];
+          window.__followWatch = true;
+          const tick = () => {
+            if (!window.__followWatch) return;
+            window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
+            const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+            if (edge) window.__edgeSeen.push(Number(edge.getAttribute("aria-valuenow")));
+            requestAnimationFrame(tick);
+          };
+          tick();
+        }, edgeLabel[which]);
+        const y = box.y + box.h / 2;
+        await page.mouse.move(x, y);
+        if (dragShift) await page.keyboard.down("Shift");
+        await page.mouse.down();
+        for (let i = 1; i <= 20; i++) {
+          await page.mouse.move(x + (px * i) / 20, y);
+          await page.waitForTimeout(40);
+        }
+        await page.mouse.up();
+        if (dragShift) await page.keyboard.up("Shift");
+        await watch.step("drag edge", s);
+        await page.evaluate(() => (window.__followWatch = false));
+        break;
+      }
+      case "hold on": {
+        // The playhead read on every animation frame from the press, for a
+        // press on the track first and then for the thing held, so "at
+        // once" is a number: no more frames than the track takes.
+        const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        const watchFrames = () =>
+          page.evaluate(() => {
+            window.__pressed = [];
+            window.__pressWatch = true;
+            const tick = () => {
+              if (!window.__pressWatch) return;
+              window.__pressed.push(Number(document.querySelector(".screen")?.dataset.playhead));
+              requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          });
+        const seen = () =>
+          page.evaluate(() => {
+            window.__pressWatch = false;
+            return window.__pressed;
+          });
+        const g = await handles(page);
+        const caption = (edge) =>
+          page.locator(`.clip-timeline [aria-label="When caption 2 ${edge === "end" ? "goes" : "appears"}"]`).first().boundingBox();
+        let box;
+        if (arg === "thumbnail" || arg === "crop") {
+          box = await page.locator(`.clip-timeline .mark${arg === "crop" ? ".cropdot" : ".thumb"}`).first().boundingBox();
+        } else if (arg === "caption start" || arg === "caption end") {
+          box = await caption(arg === "caption end" ? "end" : "start");
+        } else {
+          box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[arg];
+        }
+        if (!box) {
+          wrong = `there is no ${arg} to press`;
+          break;
+        }
+        // The track, near the end away from what is held, so the press on
+        // it moves the playhead off the frame it is then to come back to.
+        const left = box.x + (box.width ?? box.w) / 2 > g.track.x + g.track.w / 2;
+        const trackBefore = await at();
+        await watchFrames();
+        await page.mouse.move(left ? g.track.x + 8 : g.track.x + g.track.w - 8, high(g.track));
+        await page.mouse.down();
+        await page.waitForTimeout(150);
+        const track = await seen();
+        await page.mouse.up();
+        await watch.step("hold on", s);
+        const trackFrames = track.findIndex((t) => Math.abs(t - trackBefore) > 1e-6);
+        const before = await at();
+        await watchFrames();
+        await page.mouse.move(box.x + box.width / 2 || middle(box), box.y + (box.height ?? box.h) / 2);
+        await page.mouse.down();
+        await page.waitForTimeout(150);
+        held = { which: arg, before, frames: await seen(), trackFrames, at: await at() };
+        await page.mouse.up();
+        await watch.step("hold on", s);
+        break;
+      }
+      case "on press": {
+        const frame = 1 / (await rate(page));
+        const now = await engineState(page, watch.at);
+        const segs = now.segments;
+        // A moment on the clip's clock in the episode, the way the clip
+        // timeline reads it, a start where two pieces meet.
+        const into = (t, closes) => {
+          let sum = 0;
+          for (const p of segs) {
+            const span = p.end - p.start;
+            if (closes ? t <= sum + span + 1e-6 : t < sum + span - 1e-6) return p.start + t - sum;
+            sum += span;
+          }
+          return segs.at(-1).end;
+        };
+        let want;
+        if (arg === "thumbnail" || arg === "crop") {
+          want = await page.evaluate(
+            (kind) => Number(document.querySelector(`.clip-timeline .mark${kind}`)?.getAttribute("aria-valuenow")),
+            arg === "crop" ? ".cropdot" : ".thumb",
+          );
+        } else if (arg === "caption start") {
+          want = into(now.captions[1].start, false);
+        } else if (arg === "caption end") {
+          want = into(now.captions[1].end, true) - frame;
+        } else {
+          want = { start: segs[0].start, end: segs.at(-1).end - frame, "cut from": segs[0].end - frame, "cut to": segs[1]?.start }[arg];
+        }
+        const same = (a, b) => Math.floor(a / frame + 0.001 / frame) === Math.floor(b / frame + 0.001 / frame);
+        const on = held?.frames?.findIndex((t) => same(t, want)) ?? -1;
+        if (held?.which !== arg) wrong = `${arg} was not held`;
+        else if (same(held.before, want)) wrong = `the playhead stood on the ${arg}'s frame before the press, which proves nothing`;
+        else if (!same(held.at, want)) {
+          wrong = `the playhead stood at ${held.at.toFixed(3)} with the button down on the ${arg}, not on its frame at ${want.toFixed(3)}`;
+        } else if (held.trackFrames < 0) wrong = "a press on the track did not move the playhead";
+        else if (on > held.trackFrames) {
+          wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${held.trackFrames}`;
+        }
+        break;
+      }
+      case "went the hand's way": {
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        const back = seen.find((v) => (v - seen[0]) * dragPx < -0.0005);
+        if (!seen.length) wrong = `the ${arg} edge was not seen`;
+        else if (back !== undefined) {
+          wrong = `the ${arg} edge went from ${seen[0].toFixed(3)} to ${back.toFixed(3)}, against the hand, which went ${dragPx > 0 ? "right" : "left"}`;
+        }
+        break;
+      }
+      case "moved": {
+        const frame = 1 / (await rate(page));
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        if (!(seen.length && Math.abs(seen.at(-1) - seen[0]) >= frame - 0.001)) {
+          wrong = `the ${arg} edge stayed at ${seen[0]?.toFixed(3)} while the hand dragged it`;
+        }
+        break;
+      }
+      case "drag edge twice": {
+        // Dragged, let go, and taken again at once where it was let go, with
+        // nothing waited for in between, while the first is being saved.
+        const [which, px, again] = arg;
+        dragShift = false;
+        dragPx = again;
+        const g = await handles(page);
+        const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
+        if (!box) {
+          wrong = `there is no ${which} edge to drag`;
+          break;
+        }
+        const y = box.y + box.h / 2;
+        const x = middle(box);
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) {
+          await page.mouse.move(x + (px * i) / 10, y);
+          await page.waitForTimeout(30);
+        }
+        await page.mouse.up();
+        await page.evaluate((label) => {
+          window.__edgeSeen = [];
+          window.__followed = [];
+          window.__followWatch = true;
+          const tick = () => {
+            if (!window.__followWatch) return;
+            window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
+            const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+            if (edge) window.__edgeSeen.push(Number(edge.getAttribute("aria-valuenow")));
+            requestAnimationFrame(tick);
+          };
+          tick();
+        }, edgeLabel[which]);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) {
+          await page.mouse.move(x + px + (again * i) / 10, y);
+          await page.waitForTimeout(30);
+        }
+        await page.mouse.up();
+        await watch.step("drag edge twice", s);
+        await page.evaluate(() => (window.__followWatch = false));
+        break;
+      }
+      case "edge then track": {
+        // A click on an edge, and at once a press on the track: the
+        // playhead stays where the track was pressed.
+        const g = await handles(page);
+        const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[arg];
+        if (!box) {
+          wrong = `there is no ${arg} edge to click`;
+          break;
+        }
+        const y = box.y + box.h / 2;
+        await page.mouse.click(middle(box), y);
+        const x = g.track.x + g.track.w * 0.9;
+        await page.mouse.move(x, high(g.track));
+        await page.mouse.down();
+        await page.waitForTimeout(400);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        const want = await page.evaluate((x) => {
+          const b = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+          return x - b.left;
+        }, x);
+        await page.mouse.up();
+        await watch.step("edge then track", s);
+        const placed = await xOf(page, at);
+        if (Math.abs(placed - x) > 3) {
+          wrong = `the playhead stands ${(placed - x).toFixed(1)} px from where the track was pressed after a click on the ${arg}, ${want.toFixed(0)} px in`;
+        }
+        break;
+      }
+      case "block after": {
+        const now = await engineState(page, watch.at);
+        // Where the cut ends, on the clip's clock, which the captions are on.
+        const back = now.segments.slice(0, arg).reduce((sum, p) => sum + p.end - p.start, 0);
+        const cue = now.captions.find((c) => c.start >= back + 0.01);
+        if (!cue) {
+          wrong = `no caption appears after cut ${arg}`;
+          break;
+        }
+        await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
+        await watch.step("block after", s);
+        break;
+      }
+      case "followed": {
+        const segs = (await engineState(page, watch.at)).segments;
+        const frame = 1 / (await rate(page));
+        const want = {
+          start: segs[0].start,
+          end: segs.at(-1).end - frame,
+          "cut from": segs[0].end - frame,
+          "cut to": segs[1]?.start,
+        }[arg];
+        const seen = await page.evaluate(() => window.__followed ?? []);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        const places = new Set(seen.map((t) => t.toFixed(3))).size;
+        // On words the edge lands on a few places only, so the count is
+        // asked of a drag on frames.
+        if (places < 4 && !dragShift) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
+        else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
+          wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
+        }
         break;
       }
       case "drag while playing": {

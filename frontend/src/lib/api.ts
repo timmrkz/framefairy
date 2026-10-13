@@ -302,6 +302,10 @@ export type CaptionSwitch = "text" | "box" | "highlight";
 export interface CaptionsView {
   captions: CaptionCue[] | null;
   style: CaptionStyle;
+  // The clip's pieces the captions were made for, whose clock they are on.
+  // A clip that was changed has its new pieces before its new captions, and
+  // the captions are put in the episode by these until those arrive.
+  pieces?: { start: number; end: number }[];
 }
 
 // The window as it was left on the range picker, see chosenWindow.

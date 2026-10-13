@@ -900,7 +900,7 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	}
 	// And they are where an edge dragged with shift lands: the start of the
 	// clip dragged onto the second half of the long word starts the clip
-	// there, and the playhead is in that half, so it is the one lit.
+	// there, and the playhead is on that start, in line with the edge.
 	half := stops[1]
 	shaped, err := ShapeClip(fsys, path, "01", Gesture{Kind: "trim", Edge: "start", From: half.Start + 0.01,
 		ToWords: true, Frames: at25}, tr, 0.1)
@@ -911,8 +911,8 @@ func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	if got := shaped.Pieces[0].Start; got != (Gesture{Frames: at25}).onFrame(half.Start) {
 		t.Errorf("the clip starts at %v, not at the second half %+v", got, half)
 	}
-	if shaped.Playhead < half.Start || shaped.Playhead >= half.End {
-		t.Errorf("the playhead is at %v, outside %+v", shaped.Playhead, half)
+	if shaped.Playhead != shaped.Pieces[0].Start {
+		t.Errorf("the playhead is at %v, not on the clip's start %v", shaped.Playhead, shaped.Pieces[0].Start)
 	}
 }
 
@@ -1139,6 +1139,142 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 			}
 			if c.g.Kind == "move" && got[1].Start != 11.92 {
 				t.Errorf("the right edge moved to %v", got[1].Start)
+			}
+		})
+	}
+}
+
+// A cut's edge takes the playhead with it the way the clip's edges do, so
+// the video preview shows the frame the edge leaves on screen while it is
+// dragged. The cut's left edge ends the piece before it, the way the clip's
+// end ends the clip, so the playhead stands a frame before it, in the last
+// frame that piece shows. The right edge starts the piece after it, the
+// way the clip's start does, so the playhead stands on it. On words it is
+// the same, in line with the edge. Tim saw the playhead stay where it was
+// while a cut's edge was dragged, and move with the clip's own edges, and
+// then, with shift, leave the edge for the inside of a word a pause away,
+// on the far side of the cut.
+func TestACutsEdgeTakesThePlayheadTheWayTheClipsEdgesDo(t *testing.T) {
+	t.Parallel()
+	tr := cutsTranscript()
+	frame := 1.0 / 25
+	// Clip 02 is 20 to 21 and 24 to 26, with "fünf" 20.1 to 20.6, "sechs"
+	// 20.7 to 21, "sieben" 24.1 to 24.6 and "acht" 25 to 25.6.
+	cases := []struct {
+		name string
+		g    Gesture
+		// The playhead, from the pieces the gesture leaves, and the word it
+		// has to be in on words.
+		want func(p []PieceView) float64
+		word *Cue
+	}{
+		{"the left edge on frames", Gesture{Kind: "move", Edge: "from", From: 20.61, To: 24},
+			func(p []PieceView) float64 { return p[0].End - frame }, nil},
+		{"the right edge on frames", Gesture{Kind: "move", Edge: "to", From: 21, To: 24.41},
+			func(p []PieceView) float64 { return p[1].Start }, nil},
+		{"the left edge on words", Gesture{Kind: "move", Edge: "from", From: 21.05, To: 24, ToWords: true},
+			func(p []PieceView) float64 { return p[0].End - frame }, nil},
+		{"the left edge on words, dragged on past the last word", Gesture{Kind: "move", Edge: "from", From: 22.5, To: 24, ToWords: true},
+			func(p []PieceView) float64 { return p[0].End - frame }, nil},
+		{"the right edge on words", Gesture{Kind: "move", Edge: "to", From: 21, To: 24.05, ToWords: true},
+			func(p []PieceView) float64 { return p[1].Start }, nil},
+		{"the right edge on words, dragged back over a word", Gesture{Kind: "move", Edge: "to", From: 21, To: 24.9, ToWords: true},
+			func(p []PieceView) float64 { return p[1].Start }, nil},
+		{"the clip's end on words", Gesture{Kind: "trim", Edge: "end", From: 25.3, ToWords: true},
+			func(p []PieceView) float64 { return p[1].End - frame }, nil},
+		{"the clip's start on words", Gesture{Kind: "trim", Edge: "start", From: 20.3, ToWords: true},
+			func(p []PieceView) float64 { return p[0].Start }, nil},
+		// The clip's own edges, for the same rules.
+		{"the clip's end on frames", Gesture{Kind: "trim", Edge: "end", From: 25.41},
+			func(p []PieceView) float64 { return p[1].End - frame }, nil},
+		{"the clip's start on frames", Gesture{Kind: "trim", Edge: "start", From: 20.21},
+			func(p []PieceView) float64 { return p[0].Start }, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			fsys, path := cutsPlanPath(t)
+			c.g.Frames = at25
+			shaped, err := ShapeClip(fsys, path, "02", c.g, tr, 0.1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.want != nil {
+				if want := roundTo(c.want(shaped.Pieces), 3); math.Abs(shaped.Playhead-want) > 0.0005 {
+					t.Errorf("the playhead is at %v, want %v, the pieces %+v", shaped.Playhead, want, shaped.Pieces)
+				}
+			}
+			if c.word != nil && (shaped.Playhead < c.word.Start || shaped.Playhead >= c.word.End) {
+				t.Errorf("the playhead is at %v, outside %+v, the pieces %+v", shaped.Playhead, *c.word, shaped.Pieces)
+			}
+		})
+	}
+	// Both edges of a cut moved at once, the way a clip moved whole is,
+	// leave the playhead where it is.
+	fsys, path := cutsPlanPath(t)
+	shaped, err := ShapeClip(fsys, path, "02", Gesture{Kind: "move", From: 20.5, To: 24.5, Frames: at25}, tr, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shaped.Playhead >= 0 {
+		t.Errorf("both edges moved put the playhead at %v", shaped.Playhead)
+	}
+}
+
+// An edge put on words goes the way the hand goes, or stays where it is
+// until the hand is nearer the next place it can land than where it
+// stood. Found by Tim: a cut's left edge dragged right with shift first
+// jumped left, to the nearest word, and only then went right.
+func TestAnEdgeOnWordsGoesTheWayOfTheHand(t *testing.T) {
+	t.Parallel()
+	// Clip 02 with its cut's edges in the air between the words: "sechs"
+	// ends at 21 and "sieben" starts at 24.1.
+	plan := strings.Replace(cutsPlan, `{"start": 20.0, "end": 21.0, "crop_x": 300},
+                  {"start": 24.0, "end": 26.0, "crop_x": 900}`,
+		`{"start": 20.0, "end": 22.0, "crop_x": 300},
+                  {"start": 23.0, "end": 26.0, "crop_x": 900}`, 1)
+	tr := cutsTranscript()
+	cases := []struct {
+		name string
+		g    Gesture
+		// Where the edge stood, and where it is after the gesture.
+		was  float64
+		edge func(p []PieceView) float64
+	}{
+		{"a cut's left edge dragged right", Gesture{Kind: "move", Edge: "from", From: 22.05, To: 23}, 22,
+			func(p []PieceView) float64 { return p[0].End }},
+		{"a cut's left edge dragged left", Gesture{Kind: "move", Edge: "from", From: 21.95, To: 23}, 22,
+			func(p []PieceView) float64 { return p[0].End }},
+		{"a cut's left edge pressed", Gesture{Kind: "move", Edge: "from", From: 22, To: 23}, 22,
+			func(p []PieceView) float64 { return p[0].End }},
+		{"a cut's right edge dragged left", Gesture{Kind: "move", Edge: "to", From: 22, To: 22.95}, 23,
+			func(p []PieceView) float64 { return p[1].Start }},
+		{"a cut's right edge dragged right", Gesture{Kind: "move", Edge: "to", From: 22, To: 23.05}, 23,
+			func(p []PieceView) float64 { return p[1].Start }},
+		{"the clip's end dragged right", Gesture{Kind: "trim", Edge: "end", From: 26.05}, 26,
+			func(p []PieceView) float64 { return p[len(p)-1].End }},
+		{"the clip's end dragged left", Gesture{Kind: "trim", Edge: "end", From: 25.95}, 26,
+			func(p []PieceView) float64 { return p[len(p)-1].End }},
+		{"the clip's start dragged left", Gesture{Kind: "trim", Edge: "start", From: 19.95}, 20,
+			func(p []PieceView) float64 { return p[0].Start }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			fsys, path := writePlanAt(t, plan)
+			c.g.ToWords = true
+			c.g.Frames = at25
+			shaped, err := ShapeClip(fsys, path, "02", c.g, tr, 0.1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hand := c.g.From
+			if c.g.Edge == "to" {
+				hand = c.g.To
+			}
+			landed := c.edge(shaped.Pieces)
+			if (landed-c.was)*(hand-c.was) < 0 || (hand == c.was && math.Abs(landed-c.was) > 0.0005) {
+				t.Errorf("the hand went from %v to %v and the edge to %v, the pieces %+v", c.was, hand, landed, shaped.Pieces)
 			}
 		})
 	}
