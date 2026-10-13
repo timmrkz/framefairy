@@ -14,7 +14,7 @@ import (
 )
 
 // The bounce of the word being spoken, read back from a finished short:
-// the pill grows above and below by what BounceAt says on every frame,
+// the pill grows above and below by what bounceAt says on every frame,
 // never wider than it rests, and a long word with its pill never reaches
 // into the next word. Tim saw "respektvoll" on a thumbnail grow 15 % of
 // its own width a side and its pill cover "ist".
@@ -240,13 +240,13 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 
 	for k := lit; k <= lit+10; k++ {
 		since := float64(k-lit) / bounceFPS
-		b := BounceAt(since, span)
+		b := bounceAt(since, span)
 		l, r, top, bottom := box(frames[k])
 		pw, ph := r-l+1, bottom-top+1
 		wantW := float64(restW)
-		wantH := float64(restH) + 2*grow*b.Tall
+		wantH := float64(restH) + 2*grow*b
 		if math.Abs(float64(pw)-wantW) > 3 || math.Abs(float64(ph)-wantH) > 3 {
-			t.Errorf("%3.0f ms after the word lit the pill is %dx%d, BounceAt says %.0fx%.0f", since*1000, pw, ph, wantW, wantH)
+			t.Errorf("%3.0f ms after the word lit the pill is %dx%d, bounceAt says %.0fx%.0f", since*1000, pw, ph, wantW, wantH)
 		}
 		gap := false
 		for x := restR + 1; x < next; x++ {

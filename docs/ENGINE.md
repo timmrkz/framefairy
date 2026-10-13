@@ -785,7 +785,7 @@ grows by up to 0.03 of the size at each side, which keeps room in its
 pill, and no more than 15 %, so a short word grows by the whole 15 % and a
 long one by less. Growing by 15 % of the word took "respektvoll" 34 pixels
 a side and its pill over "ist", which Tim saw on a thumbnail, plan row
-2.211. Where the bounce stands at any moment is `BounceAt` in
+2.211. How long the bounce grows and settles is `bouncePhases` in
 `engine/highlight.go`, and the subtitle file is written from it.
 
 At rest the pill is as tall as its line, from the top of the tallest

@@ -541,8 +541,11 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
 	out := make([]*inkBox, len(blocks))
 	var missing []int
+	// Only a face the program carries is the same file whatever its name
+	// finds, see measureKey. One left to the machine is measured each time.
+	_, keep := FontByName(s.Font)
 	for i, block := range blocks {
-		if box, ok := measured.get(measureKey(block, s, width, size)); ok {
+		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
 			out[i] = box
 		} else {
 			missing = append(missing, i)
@@ -568,7 +571,7 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 		}
 		for k, i := range missing[start:end] {
 			out[i] = boxes[k]
-			if boxes[k] != nil {
+			if boxes[k] != nil && keep {
 				measured.put(measureKey(blocks[i], s, width, size), boxes[k])
 			}
 		}
@@ -578,6 +581,9 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 }
 
 // measureKey is what a block's ink depends on.
+// The face is known by its name, which is enough for a face the program
+// carries, see fontBundle: one name is always the same file. A face left
+// to the machine is not kept, see measureMany.
 func measureKey(block string, s Style, width, size int) string {
 	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.Font, size, s.Bold, width, block)
 }

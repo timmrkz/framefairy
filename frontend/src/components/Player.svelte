@@ -22,7 +22,7 @@
   // video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
-  import { insideClip, litWord, type Piece } from "../lib/flow";
+  import { insideClip, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
@@ -665,10 +665,12 @@
 
   const spoken = $derived(inClipTime(shown));
 
-  // The word lit, counted across the caption's lines, by the rule the
-  // render and the clip timeline go by. firstOfRow is where each line's
-  // words begin in that count.
-  const lit = $derived(!caption ? -1 : showing ? showing.word : litWord(caption.lines ?? [], spoken));
+  // The word lit, counted across the caption's lines: the one the layer on
+  // screen lights, and none until a layer of these captions has come. The
+  // playhead's word lit here while the picture drew no captions yet, after
+  // a clip was picked or an edit landed, which is a second say in what is
+  // lit. firstOfRow is where each line's words begin in that count.
+  const lit = $derived(!caption || !showing ? -1 : showing.word);
   const firstOfRow = $derived.by(() => {
     const out: number[] = [];
     let n = 0;
@@ -1608,7 +1610,7 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
-                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && (!showing || firstOfRow[row] + i === lit)}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && !!showing && firstOfRow[row] + i === lit}
                     class:now={captions.style.highlight && firstOfRow[row] + i === lit}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"

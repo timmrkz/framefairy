@@ -50,7 +50,7 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // shrinks around its own centre. Both the scale and the move are linear in
 // time within each phase, which keeps them in step frame by frame.
 //
-// How far the bounce has come at a moment is BounceAt, and the subtitle
+// How far the bounce has come at a moment is bounceAt, and the subtitle
 // file is written from its phases.
 //
 // The bounce reaches out by a few pixels, the same for every word, never
@@ -99,15 +99,6 @@ const (
 	lineReach = "ÉÅÁgjpqy"
 )
 
-// Bounce is where the bounce of the word being spoken stands. Word runs
-// from 0 to 1 and back to 0, the word's share of its growth. Tall runs
-// from 0 to 1 and back to 0, how far the pill reaches above and below its
-// rest, in bounceGrow. Its sides never move.
-type Bounce struct {
-	Word float64 `json:"word"`
-	Tall float64 `json:"tall"`
-}
-
 // bouncePhases is how long a word lit for span hundredths of a second
 // grows and settles back, in hundredths, the subtitle file's clock. A
 // word too short for both gets each in proportion.
@@ -121,22 +112,23 @@ func bouncePhases(span int) (up, down int) {
 	return u / 10, d / 10
 }
 
-// BounceAt is the bounce of a word since seconds after it lit, lit for
-// span hundredths of a second. Within each phase it is linear in time,
-// which is how libass moves from one value to the next.
-func BounceAt(since float64, span int) Bounce {
+// bounceAt is how far into its bounce a word is, since seconds after it
+// lit, lit for span hundredths of a second: from 0 at rest to 1 at the
+// top and back to 0, the share of its growth the word and its pill have.
+// Within each phase it is linear in time, which is how libass moves from
+// one value to the next, and the subtitle file is written from its
+// phases, see bouncePhases.
+func bounceAt(since float64, span int) float64 {
 	up, down := bouncePhases(span)
 	ms := math.Max(since, 0) * 1000
 	upMS, downMS := float64(up*10), float64(down*10)
 	switch {
 	case ms < upMS:
-		f := ms / upMS
-		return Bounce{Word: f, Tall: f}
+		return ms / upMS
 	case ms < upMS+downMS:
-		f := (ms - upMS) / downMS
-		return Bounce{Word: 1 - f, Tall: 1 - f}
+		return 1 - (ms-upMS)/downMS
 	}
-	return Bounce{}
+	return 0
 }
 
 // WordPeak is how large a word grows at the top of its bounce: as far as
@@ -343,15 +335,15 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			peakScale := WordPeak(s, c.Words[k].Text)
 
 			// The pill behind the word, bouncing: each phase from where
-			// BounceAt has it at the phase's start to where it has it at its
+			// bounceAt has it at the phase's start to where it has it at its
 			// end. It grows by up above and down below, so where one side has
 			// less room its centre moves with the growth.
 			w, h := pr-pl, pb-pt
 			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
-			pillAt := func(at Bounce) (y, scale string) {
-				return num(cy + (down-up)/2*at.Tall), num((h + (up+down)*at.Tall) / h * 100)
+			pillAt := func(at float64) (y, scale string) {
+				return num(cy + (down-up)/2*at), num((h + (up+down)*at) / h * 100)
 			}
-			pillEvent := func(from, to int, a, z Bounce) {
+			pillEvent := func(from, to int, a, z float64) {
 				fromY, fromScale := pillAt(a)
 				toY, toScale := pillAt(z)
 				add(1, from, to, "Box", fmt.Sprintf(
@@ -359,7 +351,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 					num(cx), fromY, num(cx), toY, (to-from)*10, s.HighlightColour, alphaOrSolid(s.HighlightAlpha),
 					fromScale, (to-from)*10, toScale, pill))
 			}
-			opening, peak, rest := Bounce{}, Bounce{Word: 1, Tall: 1}, Bounce{}
+			opening, peak, rest := 0.0, 1.0, 0.0
 			if upCS > 0 {
 				pillEvent(from, from+upCS, opening, peak)
 			}

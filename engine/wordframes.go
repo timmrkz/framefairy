@@ -79,7 +79,7 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 }
 
 // pillRadius is the radius of the corners of a pill h high, in a style
-// whose corners are radius, both in pixels of the short: a third of its
+// whose corners are radius, both in pixels of the short: three tenths of its
 // height, or the box's corners and two pixels, whichever is less. The
 // frame round a word in the caption box has the same corners, see
 // WordFrame.
