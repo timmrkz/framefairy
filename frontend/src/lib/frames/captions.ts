@@ -226,6 +226,12 @@ export class CaptionLayers {
     return this.going.size > 0 || this.waiting !== null;
   }
 
+  // Whether the frame on screen was drawn with a layer not its own, the
+  // last one given, while its own is on its way, for the walks.
+  get late(): boolean {
+    return this.waiting !== null;
+  }
+
   set(ask: CaptionAsk | null) {
     const key = ask ? `${ask.path}\n${ask.track}\n${new URLSearchParams(ask.drafts)}` : "";
     if (!ask || ask.path !== this.ask?.path || ask.track !== this.ask?.track) this.last = null;

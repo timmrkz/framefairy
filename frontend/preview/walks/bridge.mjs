@@ -311,7 +311,8 @@ async function reader(page) {
 // them, since it was put up before. Also whether the playhead moved,
 // data-playhead on the video preview, so a play whose first frame is the
 // one already on screen is seen to have started. And on every animation
-// frame, what lies over the picture, see overlay.
+// frame, what lies over the picture, see overlay, with the number of the
+// frame on screen under it, pictured, or -1 while there is none.
 export async function recordFrames(page, frame) {
   await reader(page);
   await overlayReader(page);
@@ -329,7 +330,7 @@ export async function recordFrames(page, frame) {
       if (n >= 0 && n !== last) window.__frames.push(n);
       last = n;
       if (screen.dataset.playhead !== from) window.__moved = true;
-      window.__overlays.push(window.__overlay());
+      window.__overlays.push({ ...window.__overlay(), pictured: n });
       requestAnimationFrame(watch);
     };
     requestAnimationFrame(watch);
@@ -348,7 +349,8 @@ export async function recordFrames(page, frame) {
 // chosen clip dimmed there or no clip chosen at all, which card of the
 // clip list is chosen, a clip on its way included, and what the video
 // preview lays over the picture: the crop frame, the shade beside it and
-// the caption box.
+// the caption box, and whether the captions over the picture wait for the
+// layer of its frame, late.
 async function overlayReader(page) {
   await page.evaluate(() => {
     if (window.__overlay) return;
@@ -365,6 +367,7 @@ async function overlayReader(page) {
         crop: !!document.querySelector(".atop .frame"),
         shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),
+        late: !!window.__captionLayers?.late,
       };
     };
   });
