@@ -91,6 +91,7 @@ func main() {
 	// The report window and its draft, see bugs.go. The draft is kept
 	// beside the settings.
 	svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	svc.report.stop = svc.CancelListening
 	svc.report.told = func(open bool) {
 		if app != nil {
 			app.Event.Emit("report-window", open)

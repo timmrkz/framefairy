@@ -94,6 +94,9 @@ type reporting struct {
 	said func(ReportDraft)
 	// pick asks for pictures in the system's open box.
 	pick func() ([]string, error)
+	// stop drops the recording the window had going, once the window is
+	// gone, CancelListening. Set by main.go.
+	stop func()
 	// The video of the last act that named one, which a report names.
 	video string
 }
@@ -141,6 +144,15 @@ func (r *reporting) open(how string) {
 			r.front, r.shut = nil, nil
 			r.mu.Unlock()
 			theLog.line(zerolog.InfoLevel, "report").Msg("the report window closed")
+			// A recording is the window's, and goes with it. Tim closed
+			// the window with Cmd+W while he talked, and the recording
+			// ran on: the next window took it up again, and every word
+			// he had said came back grey into the text the draft had
+			// kept, with the cursor somewhere in it. What was written
+			// down is in the draft already.
+			if r.stop != nil {
+				r.stop()
+			}
 			if r.told != nil {
 				r.told(false)
 			}

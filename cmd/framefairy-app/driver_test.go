@@ -98,6 +98,7 @@ func (d *desk) start(st *store) {
 	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.quiet = d.quiet
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	d.svc.report.stop = d.svc.CancelListening
 	d.svc.report.told = func(open bool) { d.bus.send("report-window", open) }
 	d.svc.report.said = func(r ReportDraft) { d.bus.send("report-draft", r) }
 	d.svc.report.make = func(closed func()) (func(), func()) {

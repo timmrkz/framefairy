@@ -2693,6 +2693,10 @@ grid closes over it, the look the clip list uses, `Removed.svelte`.
 What is written and attached is a draft, kept in the app's folder
 under `report/` as it is written, so closing the window, or the app,
 loses nothing. Report lets go of it, and the next report starts empty.
+A recording goes with the window: closing it while somebody talks drops
+the recording, and what was written down by then stays in the draft as
+text. Left running, the next window took it up again, and every word
+already said came back grey into the text the draft had kept.
 See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
 `cmd/framefairy-app/bugs.go`.
 
