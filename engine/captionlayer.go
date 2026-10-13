@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,17 +51,18 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 // that starts at at, at width by height, as the short shows them on that
 // frame made that size: drafts on top of their style, laid out the way
 // the render rs lays them out, with the light of the episode, in its
-// decoder dec. The caption file is written once into dir, named by what
-// is in it, with the faces it needs beside it. A style with the captions
-// off draws nothing, as the render burns nothing in.
-func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir string, d *CaptionDrawing,
+// decoder dec. The caption file is written once into the folder
+// PreviewCaptionsFolder of the work folder work, named by what is in it,
+// with the faces it needs beside it. A style with the captions off draws
+// nothing, as the render burns nothing in.
+func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work string, d *CaptionDrawing,
 	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
 	style := d.drafted(drafts)
 	resolved := ResolveStyle(style)
 	if len(d.Laid) == 0 || !resolved.Text {
 		return framewire.Layer{}, nil
 	}
-	file, err := e.previewTrack(ctx, dir, d, style, resolved.Font, source, rs.OutW, rs.OutH)
+	file, err := e.previewTrack(ctx, work, d, style, resolved.Font, source, rs.OutW, rs.OutH)
 	if err != nil {
 		return framewire.Layer{}, err
 	}
@@ -69,7 +71,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
 	}
 	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
-		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
+		File: file, Fonts: filepath.Join(filepath.Dir(file), FontsFolder)}, source.CaptionMoment(d.Clip, at))
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -190,14 +192,29 @@ func (d *CaptionDrawing) drafted(drafts map[string]any) map[string]any {
 	return style
 }
 
+// PreviewCaptionsFolder is where in a work folder the video preview's
+// caption files are written, see PreviewCaptions.
+var PreviewCaptionsFolder = filepath.Join("captions", "preview")
+
+// ErrNoWorkFolder is a caption file that was not written because the
+// work folder it goes into is gone.
+var ErrNoWorkFolder = errors.New("the video's folder is gone")
+
 // previewTrack is the caption file of captions in a style, written into
-// dir under a name made from what is in it, once. The video preview asks
+// the folder PreviewCaptionsFolder of the work folder work under a name
+// made from what is in it, once. The video preview asks
 // for a few frames at once, so the same file is often asked for by several
 // requests together: one makes it and the others wait for it, see
 // trackCache.once, because two writing one file each found it gone under
 // them or half written.
-func (e *Engine) previewTrack(ctx context.Context, dir string, d *CaptionDrawing, style map[string]any,
+func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawing, style map[string]any,
 	font string, source SourceInfo, outW, outH int) (string, error) {
+	// The folder by where it really leads, which must be inside the work
+	// folder.
+	dir, err := SafeChild(work, PreviewCaptionsFolder)
+	if err != nil {
+		return "", err
+	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
 	return previewTracks.once(key, func() (string, error) {
@@ -218,6 +235,12 @@ func (e *Engine) previewTrack(ctx context.Context, dir string, d *CaptionDrawing
 		// The name is made from what is in it, so a file of that name
 		// already holds it.
 		if _, err := os.Stat(file); err != nil {
+			// The work folder is made by adding a video, never here: one
+			// deleted outside the app while the video preview still asked
+			// for captions was written back, and the video stayed.
+			if _, err := os.Stat(work); err != nil {
+				return "", fmt.Errorf("%w: %w", ErrNoWorkFolder, err)
+			}
 			if err := writeWhole(dir, file, track); err != nil {
 				return "", err
 			}

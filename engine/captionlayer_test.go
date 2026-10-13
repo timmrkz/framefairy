@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -262,13 +263,17 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	}
 	root := t.TempDir()
 	for round := range 20 {
-		dir := filepath.Join(root, fmt.Sprint(round))
+		work := filepath.Join(root, fmt.Sprint(round))
+		if err := os.Mkdir(work, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.Join(work, PreviewCaptionsFolder)
 		var wg sync.WaitGroup
 		files := make([]string, 6)
 		errs := make([]error, 6)
 		for i := range files {
 			wg.Go(func() {
-				files[i], errs[i] = e.previewTrack(ctx, dir, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+				files[i], errs[i] = e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
 			})
 		}
 		wg.Wait()
@@ -490,12 +495,11 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 	defer dec.Close()
 	const w, h = 270, 480
 	rs := RenderSettings{OutW: 540, OutH: 960, ScaleUp: true}
-	captions := filepath.Join(dir, "captions")
 	// Well after "respektvoll" has popped, at rest.
 	at := 1.3
 	layer := func(dd *CaptionDrawing) framewire.Layer {
 		t.Helper()
-		l, err := e.PreviewCaptions(ctx, dec, captions, dd, nil, info, rs, at, w, h)
+		l, err := e.PreviewCaptions(ctx, dec, dir, dd, nil, info, rs, at, w, h)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -518,5 +522,29 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 	}
 	if d.Laid[0].Lift != "" {
 		t.Errorf("lifting a part changed the captions it was made from")
+	}
+}
+
+// A video's folder deleted outside the app while the video preview still
+// asks for its captions is not written back: the caption file goes only
+// into a work folder that is there.
+//
+// On the real disk: ffmpeg measures the captions, and the folder being
+// gone from the disk is what the test is about.
+func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
+	t.Parallel()
+	ffmpegtest.Need(t)
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	clip := Clip{ID: "01", Slug: "gone", Segments: []Segment{{Start: 0, End: 2}}}
+	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	d := captionsView(Plan{}, clip, tr, nil).Drawing()
+	work := filepath.Join(t.TempDir(), "folge.framefairy")
+	_, err := e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+	if !errors.Is(err, ErrNoWorkFolder) {
+		t.Errorf("a caption file for a work folder that is gone gave %v", err)
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Errorf("the work folder was written back: %v", err)
 	}
 }

@@ -5538,7 +5538,9 @@ for (const seq of toWalk) {
         const library = await ask(page, "Library");
         if (library.some((e) => e.source === folderGone)) wrong = `${name} is still in the library`;
         else if ((await episodeOn(page)) === folderGone) wrong = `${name} is still open`;
-        else if (existsSync(folder)) wrong = `${basename(folder)} was written back`;
+        // With what was written into it, which says what wrote it.
+        else if (existsSync(folder))
+          wrong = `${basename(folder)} was written back, with ${readdirSync(folder, { recursive: true }).join(", ") || "nothing in it"}`;
         else if (!existsSync(folderGone)) wrong = `${name} itself was deleted`;
         else if ((await page.locator(".workspace.front").count()) && !(await episodeOn(page))) {
           wrong = `a workspace is still open with no video picked in the sidebar`;

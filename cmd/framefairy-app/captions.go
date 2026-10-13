@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -166,22 +167,21 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			// caption file is laid out at.
 			e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
 			o := jobOptions(st, e)
-			// The folder by where it really leads, which must be inside
-			// the episode's work folder.
-			var dir string
-			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l framewire.Layer
 			// A video whose folder was deleted outside the app is let go
 			// as the app comes back to the front, see letGoOfRemoved, and
-			// the caption file is not written into a folder that is gone,
-			// which would bring the folder back.
-			if err == nil && !marked(st.files, path) {
+			// until then its captions write nothing into a folder that is
+			// gone, which would bring the folder back. The engine checks
+			// again as it writes, see engine.ErrNoWorkFolder.
+			if !marked(st.files, path) {
 				http.NotFound(w, r)
 				return
 			}
-			if err == nil {
-				l, err = e.PreviewCaptions(ctx, dec, dir, drawing, drafts, source, o.RenderSettings(), at, width, height)
+			l, err = e.PreviewCaptions(ctx, dec, engine.WorkDir(path), drawing, drafts, source, o.RenderSettings(), at, width, height)
+			if errors.Is(err, engine.ErrNoWorkFolder) {
+				http.NotFound(w, r)
+				return
 			}
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound

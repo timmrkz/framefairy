@@ -127,7 +127,7 @@ is made once however many ask, and the others wait for it, see
 `trackCache.once`. It is written whole under a name of its own and then
 renamed into place, so no ask reads half a file. A file that could not be
 made is not remembered, so the next ask tries again. The folder keeps the
-256 used last and removes the rest, those of earlier runs first.
+256 used last and removes the rest, those of earlier runs first. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
 
 The decoder draws the file twice, over black and over white, and takes
 colour and coverage from the two, `framewire.Layer`: red, green and blue
