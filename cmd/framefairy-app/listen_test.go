@@ -711,3 +711,29 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 	}
 	f.CancelListening()
 }
+
+// A recording nobody spoke into is written down as nothing, though the
+// speech model hears words in the hum of a room. Tim pressed Dictate and
+// Stop a few times in a row, said nothing, and was given "yeah yeah".
+// Plan row 2.244.
+func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
+	room := tone(3)
+	for i := range room {
+		room[i] /= 30
+	}
+	f, read := listenWith(t, room)
+	if _, err := f.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	d, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Said) != 0 {
+		t.Fatalf("the hum of a room was written down as %q", d.Said)
+	}
+	if find(read(), "nobody spoke, so nothing was written down") == nil {
+		t.Fatal("the log does not say nobody spoke")
+	}
+}
