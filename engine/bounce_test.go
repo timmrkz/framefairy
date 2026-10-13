@@ -31,6 +31,8 @@ const bounceTop, bounceRows = 1400, 400
 // shortRows renders words as the captions of a short from 0 to end of a
 // black episode at bounceFPS, 1080x1920, and reads back rows of it from
 // top, one rgb24 frame after another.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
 func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
 	ctx := context.Background()
