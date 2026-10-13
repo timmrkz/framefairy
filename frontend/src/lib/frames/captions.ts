@@ -17,7 +17,8 @@
 // track, and what it shows of them, showing.
 // And which frames of the short the video preview plays over the frame,
 // paused, for its word to pop, pop, so many before its own and so many
-// after, see Replay.
+// after, see Replay, and how large the pill of its word is drawn, scale,
+// 1 at rest, which the frame round the word grows by.
 export type Layer = {
   x: number;
   y: number;
@@ -27,6 +28,7 @@ export type Layer = {
   track?: string;
   showing?: Showing;
   pop?: Pop;
+  scale?: number;
 };
 
 // Frames of the short before a frame and after it, as the Go side says it
@@ -53,6 +55,13 @@ export function readShowing(header: string | null): Showing | undefined {
 export function readPop(header: string | null): Pop | undefined {
   const m = /^(\d+) (\d+)$/.exec(header ?? "");
   return m ? { behind: Number(m[1]), ahead: Number(m[2]) } : undefined;
+}
+
+// How large the pill is drawn, from the header X-Caption-Scale, at rest
+// when it is missing or makes no sense.
+export function readScale(header: string | null): number {
+  const s = Number(header ?? "1");
+  return Number.isFinite(s) && s > 0 && s < 2 ? s : 1;
 }
 
 // The size of a layer's box in its body: four 16-bit numbers.
@@ -280,9 +289,11 @@ export class CaptionLayers {
   // was drawn with that was not its own yet.
   readonly stats = { asked: 0, late: 0, popped: 0 };
   // The pop being played over the frame paused on, and what the layer
-  // given last showed, by its track, which says when the word changed.
+  // given last showed and on which frame, which says when the word
+  // changed.
   private replay: Replay | null = null;
   private seen = "";
+  private seenAt = NaN;
 
   constructor(
     private came: () => void,
@@ -334,9 +345,13 @@ export class CaptionLayers {
     const have = this.kept.get(want.key);
     if (have) {
       this.last = have;
-      const seen = have.showing ? `${have.track}\n${have.showing.caption} ${have.showing.word}` : "";
-      const changed = seen !== this.seen;
+      // Another word on another frame: a step or a click onto it. New
+      // captions over the same frame, after a word was corrected or the
+      // style changed, are no step, and popped the word as it was left.
+      const seen = have.showing ? `${have.showing.caption} ${have.showing.word}` : "";
+      const changed = seen !== this.seen && frame !== this.seenAt;
       this.seen = seen;
+      this.seenAt = frame;
       const pop = have.pop;
       if (changed && have.showing && have.showing.word >= 0 && pop && pop.behind + pop.ahead > 0 && this.still?.paused() && !calm())
         this.play(want, have, pop);
@@ -371,12 +386,16 @@ export class CaptionLayers {
               ...ask.drafts,
             })}`,
           )
-            .then(async (r) => (r.ok ? readLayer(await r.arrayBuffer()) : null))
+            .then(async (r) => {
+              const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
+              if (layer) layer.scale = readScale(r.headers.get("X-Caption-Scale"));
+              return layer;
+            })
             .catch(() => null),
     );
     void Promise.all(asked).then((layers) => {
       if (this.replay !== replay) return;
-      replay.layers = layers.map((l) => l && { ...l, track: ask.track, showing: this.last?.showing });
+      replay.layers = layers.map((l) => l && { ...l, track: ask.track, showing: have.showing });
       const step = Math.max(1, (this.still?.frameLength() ?? 1 / 30) * 1000);
       const next = () => {
         if (this.replay !== replay) return;
@@ -423,6 +442,7 @@ export class CaptionLayers {
           layer.track = ask.track;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
           layer.pop = readPop(r.headers.get("X-Caption-Pop"));
+          layer.scale = readScale(r.headers.get("X-Caption-Scale"));
         }
         return layer;
       })

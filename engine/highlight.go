@@ -177,11 +177,33 @@ func popDrawn(since float64, span int) float64 {
 	return 1
 }
 
-// PopAgain is how long the short goes on past since milliseconds after a
-// word lit for span hundredths of a second lit until its pop looks again
-// as it does then, in milliseconds: from a moment of the rise, through the
-// peak, to the moment of the settle with the same scale. Nothing from the
-// peak on. The video preview plays that much of the short over a frame it
+// popStart is the hundredth of a second the pop of a word that lights at
+// from, a hundredth of a second of the short, starts at: the first frame
+// of the short that shows the word, which then shows it at rest, the
+// same look as every frame after the pop. A step onto a word lands on
+// that frame, so the video preview stands on the word at rest and plays
+// the whole pop over it, see CaptionDrawing.PopFrames. Started where the
+// word lights, its first frame showed it up to a frame into its pop,
+// grown by a few hundredths, and the pill stood bigger than the frame
+// round it. Without frames to count, from.
+func (s SourceInfo) popStart(from int) int {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return from
+	}
+	ms := int64(from) * 10
+	k := max(0, int64(math.Floor(float64(ms)*float64(s.FPSNum)/(float64(s.FPSDen)*1000)))-1)
+	for s.shortMoment(k) < ms {
+		k++
+	}
+	return int((s.shortMoment(k) + 9) / 10)
+}
+
+// PopAgain is how long the short goes on past since milliseconds after
+// the pop of a word lit for span hundredths of a second started until its
+// pop looks again as it does then, in milliseconds: from a moment of the
+// rise, through the peak, to the moment of the settle with the same
+// scale, or from before the pop to its end, back at rest. Nothing from
+// the peak on. The video preview plays that much of the short over a frame it
 // is paused on when it lands on a word, so the word pops as it would
 // while playing and comes to rest on the frame it is paused on, see
 // CaptionDrawing.PopFrames.
@@ -194,7 +216,7 @@ func PopAgain(since float64, span int) float64 {
 			peak = float64(k * 10)
 		}
 	}
-	if since < 0 || since >= peak {
+	if since >= peak {
 		return 0
 	}
 	now := popDrawn(since, span)
@@ -315,11 +337,12 @@ func csToASS(cs int) string {
 
 func num(v float64) string { return strconv.FormatFloat(roundTo(v, 2), 'f', -1, 64) }
 
-// highlighted is the caption track with the bouncing highlight. It is
-// nothing, without an error, when the captions cannot be measured, and the
-// plain track is made instead.
+// highlighted is the caption track with the bouncing highlight, for a
+// short of the frames of source, see SourceInfo.popStart. It is nothing,
+// without an error, when the captions cannot be measured, and the plain
+// track is made instead.
 func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
-	width, height int, s Style) ([]byte, error) {
+	width, height int, s Style, source SourceInfo) ([]byte, error) {
 	shown := shownTag(s.Primary)
 	scale := float64(height) / 1920.0
 	size := max(12, pyround(s.Size*scale))
@@ -422,15 +445,21 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 					`{\an2\move(%s,%s,%s,%s,0,%d)\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s`,
 					x0, y0, x1, y1, ms, num(a*100), num(a*100), ms, num(z*100), num(z*100), only))
 			}
-			knots := popKnots(to - from)
-			for n := 1; n < len(knots); n++ {
-				pop(from+knots[n-1], from+knots[n],
-					popDrawn(float64(knots[n-1]*10), to-from), popDrawn(float64(knots[n]*10), to-from))
+			// At rest until the first frame of the short that shows the
+			// word, then the pop, then at rest again.
+			still := func(from, to int) {
+				add(1, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0}%s{\p0}`,
+					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), pill))
+				add(3, from, to, "Caption", "{"+anchor+"}"+only)
 			}
-			rested := from + knots[len(knots)-1]
-			add(1, rested, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0}%s{\p0}`,
-				num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), pill))
-			add(3, rested, to, "Caption", "{"+anchor+"}"+only)
+			starts := min(source.popStart(from), to)
+			still(from, starts)
+			knots := popKnots(to - starts)
+			for n := 1; n < len(knots); n++ {
+				pop(starts+knots[n-1], starts+knots[n],
+					popDrawn(float64(knots[n-1]*10), to-starts), popDrawn(float64(knots[n]*10), to-starts))
+			}
+			still(starts+knots[len(knots)-1], to)
 		}
 	}
 

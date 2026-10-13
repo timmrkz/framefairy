@@ -298,6 +298,39 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	}
 }
 
+// A word's first frame in the short shows it at rest, and its pop starts
+// on the frame after, see SourceInfo.popStart. A step onto a word lands on
+// its first frame, and Tim saw the pill there still grown, bigger than
+// the frame round it, after the pop had played over the paused frame:
+// the pop started where the word lit, between two frames, and its first
+// frame caught it on its way up.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestAWordsFirstFrameShowsItAtRest(t *testing.T) {
+	t.Parallel()
+	// It lights at 0.43 s, half a frame before the frame at 0.44 s.
+	words := []Cue{{0.43, 1.13, "respektvoll"}}
+	_, _, _, frames := shortRows(t, words, 1.4, bounceTop, bounceRows)
+	const first, rest = 22, 45
+	if len(frames) <= rest {
+		t.Fatalf("the short has %d frames", len(frames))
+	}
+	pill := pillColour(t, ResolveStyle(nil))
+	width := func(k int) float64 {
+		l, r, _, _ := pillBox(frames[k], pill, bounceRows)
+		if r < 0 {
+			t.Fatalf("frame %d has no pill", k)
+		}
+		return float64(r - l + 1)
+	}
+	if got, want := width(first), width(rest); math.Abs(got-want) > 2 {
+		t.Errorf("on its first frame the pill is %.0f pixels wide, at rest %.0f", got, want)
+	}
+	if got, want := width(first+1), width(rest); got < want+10 {
+		t.Errorf("on its second frame the pill is %.0f pixels wide, at rest %.0f: it does not pop", got, want)
+	}
+}
+
 // The pill of the word being spoken, at rest, never reaches the letters of
 // another line. Tim saw the "g" of "wichtig" stand in the top right
 // corner of the pill of "Leute" on the line under it, on #201: libass

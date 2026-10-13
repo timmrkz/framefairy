@@ -1952,6 +1952,7 @@
             start: f ? f.from : inEpisode(pieces, word.start),
             end: f ? f.to : endInEpisode(pieces, word.end),
             text: word.text,
+            framed: !!f,
           });
         }
       }

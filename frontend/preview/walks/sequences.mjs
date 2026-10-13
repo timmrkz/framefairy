@@ -5648,10 +5648,8 @@ for (const seq of toWalk) {
         await page.evaluate(() => document.body.focus());
         const report = [];
         let popped = 0;
-        // The most a pop grew, and how many started before the frame
-        // paused on.
+        // The most a pop grew.
         let grew = 1;
-        let early = 0;
         for (let k = 0; k < arg && !wrong; k++) {
           const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
           const stop = await watchPills(page);
@@ -5684,29 +5682,20 @@ for (const seq of toWalk) {
           report.push(`"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px` : "did not pop"}`);
           if (!started) continue;
           popped++;
-          // The word and its pill grow together, to 115 % of rest, from
-          // the word's first frame, which a step lands a frame after: the
-          // pop starts smaller than the frame paused on shows it. The
-          // first frame of a word comes up to a frame after it lights, so
-          // a pop seen at 29.97 fps grows by 9 to 15 %, read here to a
-          // pixel or two of a pill a few dozen wide. Played from the frame
-          // the step lands on, a third of the way up, it grew 4 to 7 %.
           grew = Math.max(grew, most / least);
-          if (least < widths[0]) early++;
-          if (most < least * 1.05) {
+          // The word and its pill grow together, to 115 % of rest, from
+          // the word's first frame, where the step lands, at rest, and
+          // back to rest. Tim saw it stop grown, a frame into the word,
+          // with the frame round it at rest.
+          if (most < least * 1.08) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
-          }
-          // And comes back to the frame paused on: the pill as on the
-          // first paint of the word.
-          else if (Math.abs(last.pill.w - widths[0]) > 1.5) {
-            wrong = `after the pop of "${last.keyed.text}" the pill is ${last.pill.w.toFixed(1)} px wide, not the ${widths[0].toFixed(1)} px of the frame paused on`;
+          } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
+            wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
           }
         }
         console.log(`    ${report.join(", ")}`);
-        if (!wrong && popped < arg / 2) wrong = `only ${popped} of ${arg} steps onto a word popped it`;
+        if (!wrong && popped < arg) wrong = `only ${popped} of ${arg} steps onto a word popped it`;
         else if (!wrong && grew < 1.12) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
-        else if (!wrong && early < popped / 2)
-          wrong = `only ${early} of ${popped} pops started before the frame paused on, from the word's first frame`;
         break;
       }
       case "frames on the pills": {
@@ -5803,10 +5792,8 @@ for (const seq of toWalk) {
           const lower = frame.b - frame.t - (pill.b - pill.t);
           report.push(`"${text}"${w.rests ? "" : " in its pop"}: ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
           // A word lit too briefly for its pop to settle is read in its
-          // pop, where the pill stands on the frame's middle and is larger
-          // than the frame by at most the pop's 15 %.
-          const grown = (a) => (w.rests ? Math.abs(a) > 2 : a > 2 || a < -0.15 * (frame.r - frame.l) - 2);
-          if (Math.abs(across) > 1.5 || Math.abs(down) > 1.5 || grown(wider) || (w.rests ? lower > 2 : lower > 2 || lower < -0.15 * (frame.b - frame.t) - 2)) {
+          // pop, where the frame grows with the pill round its middle.
+          if (Math.abs(across) > 1.5 || Math.abs(down) > 1.5 || Math.abs(wider) > 2 || Math.abs(lower) > 2) {
             wrong = `the frame round "${text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the middle of its pill, and is ${(frame.r - frame.l).toFixed(1)}x${(frame.b - frame.t).toFixed(1)} px round a pill of ${(pill.r - pill.l).toFixed(1)}x${(pill.b - pill.t).toFixed(1)}`;
             break;
           }
@@ -6368,6 +6355,7 @@ async function watchPills(page) {
           y: (f.top + f.bottom) / 2 - c.top,
           t: f.top - c.top,
           b: f.bottom - c.top,
+          w: f.right - f.left,
         };
       };
       window.__pillWatch.frames.push({
@@ -6421,13 +6409,15 @@ function framesOffPill(f, which) {
   if (!word) return null;
   if (!f.pill) return `${where}, no pill is drawn and the frame stands round "${word.text}"`;
   // Across, the frame stands on the middle of the pill. Down, it stands
-  // inside it: the pill pops round the frame's middle, larger than it in
-  // every direction, and rests where the frame is.
+  // inside it, and it is as wide as the pill: the pill pops round the
+  // frame's middle and the frame grows with it. Tim saw the frame stay at
+  // rest round a pill still grown.
   const across = word.x - f.pill.x;
   const above = f.pill.t - word.t;
   const below = word.b - f.pill.b;
-  if (Math.abs(across) > 3 || above > 3 || below > 3) {
-    return `${where}, the frame round "${word.text}" stands ${across.toFixed(1)} px across from the pill, ${above.toFixed(1)} px over its top and ${below.toFixed(1)} px under its bottom`;
+  const narrower = f.pill.w - word.w;
+  if (Math.abs(across) > 3 || above > 3 || below > 3 || Math.abs(narrower) > 3) {
+    return `${where}, the frame round "${word.text}" stands ${across.toFixed(1)} px across from the pill, ${above.toFixed(1)} px over its top and ${below.toFixed(1)} px under its bottom, and is ${narrower.toFixed(1)} px narrower`;
   }
   return null;
 }

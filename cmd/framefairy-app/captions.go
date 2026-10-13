@@ -30,7 +30,10 @@ import (
 //	                                 framewire.Layer, with the caption and
 //	                                 the word it shows in the header
 //	                                 X-Caption-Showing, "<caption> <word>",
-//	                                 see engine.CaptionShowing, and in
+//	                                 see engine.CaptionShowing, in
+//	                                 X-Caption-Scale how large the pill of
+//	                                 that word is drawn on it, 1 at rest,
+//	                                 see engine.PopScale, and in
 //	                                 X-Caption-Pop which frames of the
 //	                                 short the video preview plays over
 //	                                 it, paused, for its word to pop,
@@ -180,6 +183,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
+				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(kept.drawing.PopScale(source, at, ahead), 'f', 4, 64))
 				if ahead == 0 {
 					behind, ahead := kept.drawing.PopFrames(source, at)
 					w.Header().Set("X-Caption-Pop", fmt.Sprintf("%d %d", behind, ahead))

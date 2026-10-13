@@ -643,11 +643,20 @@
   // for the captions of a track. The caption box shows them, so it changes
   // caption and word on the frame the picture does, playing or paused. A
   // word being corrected keeps what was on screen when it was opened.
-  let drawn = $state<(Showing & { track: string }) | null>(null);
-  let frozenDrawn = $state<(Showing & { track: string }) | null>(null);
-  function onScreen(track: string | null, showing: Showing | undefined) {
-    const now = track && showing ? { track, ...showing } : null;
-    if (now?.track === drawn?.track && now?.caption === drawn?.caption && now?.word === drawn?.word) return;
+  // And how large libass draws the pill of that word on the frame, 1 at
+  // rest, which the frame round the word grows by, so it stays on the
+  // pill's edge through the pop, as it did when the browser drew both.
+  let drawn = $state<(Showing & { track: string; scale: number }) | null>(null);
+  let frozenDrawn = $state<(Showing & { track: string; scale: number }) | null>(null);
+  function onScreen(track: string | null, showing: Showing | undefined, scale = 1) {
+    const now = track && showing ? { track, ...showing, scale } : null;
+    if (
+      now?.track === drawn?.track &&
+      now?.caption === drawn?.caption &&
+      now?.word === drawn?.word &&
+      now?.scale === drawn?.scale
+    )
+      return;
     drawn = now;
   }
   const showing = $derived.by(() => {
@@ -1222,7 +1231,7 @@
     const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
     const layer = ask && size ? layers.at(frame, size) : null;
-    onScreen(layer?.track ?? null, layer?.showing);
+    onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
     return f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
   }
 
@@ -1552,6 +1561,7 @@
         class="captions"
         class:typing={!!fixing}
         class:laid={!!laidWords}
+        style:--pop={showing?.scale ?? 1}
         style="{laidWords
           ? `left: calc(${box.left}% + ${laidWords.x * box.width}%); width: ${laidWords.w * box.width}%;
              bottom: ${px(captionY / 1920 - laidWords.top - laidWords.h)}; height: ${px(laidWords.h)};`
@@ -1977,6 +1987,13 @@
     margin: 0;
     padding: 0;
     font-size: var(--size);
+  }
+
+  /* The word being spoken is framed on its pill, which libass grows round
+     its middle in the pop, so the frame grows with it, by the scale the
+     layer on screen says, see onScreen. At rest it is 1. */
+  .laid .line span.now {
+    transform: scale(var(--pop, 1));
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */

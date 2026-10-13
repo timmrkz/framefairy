@@ -652,14 +652,15 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 // captions laid out in lines, see ClipCaptions.
 func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 	width, height int, overrides map[string]any) error {
-	return e.writeASS(ctx, laid, path, width, height, overrides, framewire.SDR)
+	return e.writeASS(ctx, laid, path, width, height, overrides, SourceInfo{})
 }
 
-// writeASS is WriteASS for a short of standard video or of HDR, whose
-// captions are drawn at the reference white, see inLight.
+// writeASS is WriteASS for a short of the episode source: of standard
+// video or of HDR, whose captions are drawn at the reference white, see
+// inLight, and on its frames, see SourceInfo.popStart.
 func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
-	width, height int, overrides map[string]any, light framewire.Light) error {
-	track, err := e.CaptionTrack(ctx, laid, width, height, overrides, light)
+	width, height int, overrides map[string]any, source SourceInfo) error {
+	track, err := e.CaptionTrack(ctx, laid, width, height, overrides, source)
 	if err != nil {
 		return err
 	}
@@ -670,12 +671,14 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 // captions laid out in lines and their style: what libass draws, in the
 // short, in its thumbnails and in the video preview alike. It is the only
 // place a caption's look is decided, so nothing that draws captions can
-// look different from the short. See docs/CAPTIONS.md.
+// look different from the short. The source gives the light the captions
+// are drawn in and the frames the short has, which the pop of a word
+// starts on. See docs/CAPTIONS.md.
 func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
-	overrides map[string]any, light framewire.Light) ([]byte, error) {
-	s := ResolveStyle(overrides).inLight(light)
+	overrides map[string]any, source SourceInfo) ([]byte, error) {
+	s := ResolveStyle(overrides).inLight(source.Light())
 	if s.Highlight {
-		track, err := e.highlighted(ctx, laid, width, height, s)
+		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {
 			return track, err
 		}

@@ -168,6 +168,9 @@ export interface Word {
   said?: number;
   whole?: string;
   part?: number;
+  // A word lit on frames of the short, see WordFrame: start is where the
+  // first of them starts and end where the last ends, in the episode.
+  framed?: boolean;
 }
 
 // What a hand does to a clip on the clip timeline, see engine/shape.go:
@@ -1119,12 +1122,20 @@ export function snapCaptionY(y: number): number {
 // same frame and the right word is lit. A word shorter than two frames is
 // entered by half of itself.
 //
+// A word lit on frames of the short, framed, is known by the frames
+// themselves, so there is no edge to keep away from: it is entered in the
+// middle of its first frame. That frame shows it at rest, before its pop,
+// and the video preview plays the whole pop over it, see
+// engine.SourceInfo.popStart. A frame in, the paused frame caught the pop
+// on its way up and the pill stayed grown after it.
+//
 // Null means there is nowhere to go: no words heard here yet, or the
 // playhead is already before the first or past the last of them.
 // Where the playhead goes to stand on a word: a frame in, never on the
-// edge. A word shorter than two frames is entered by half of itself.
-export function intoWord(word: { start: number; end: number }, frame: number): number {
-  return Math.min(word.start + frame, (word.start + word.end) / 2);
+// edge, or the middle of its first frame when it is framed. A word shorter
+// than two frames is entered by half of itself.
+export function intoWord(word: { start: number; end: number; framed?: boolean }, frame: number): number {
+  return Math.min(word.start + (word.framed ? frame / 2 : frame), (word.start + word.end) / 2);
 }
 
 export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {

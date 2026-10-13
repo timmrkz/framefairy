@@ -77,7 +77,7 @@ func TestTheVideoPreviewDrawsTheShortsCaptions(t *testing.T) {
 	if err := os.MkdirAll(captions, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	track, err := e.CaptionTrack(ctx, laid, w, h, nil, info.Light())
+	track, err := e.CaptionTrack(ctx, laid, w, h, nil, info)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
 	view := captionsView(Plan{}, clip, tr, nil)
 	d := view.Drawing()
-	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, framewire.SDR)
+	want, err := e.CaptionTrack(ctx, d.Laid, 540, 960, d.Style, SourceInfo{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 		errs := make([]error, 6)
 		for i := range files {
 			wg.Go(func() {
-				files[i], errs[i] = e.previewTrack(ctx, dir, d, d.Style, ResolveStyle(d.Style).Font, framewire.SDR, 540, 960)
+				files[i], errs[i] = e.previewTrack(ctx, dir, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
 			})
 		}
 		wg.Wait()
@@ -304,7 +304,7 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	clip := Clip{ID: "01", Slug: "small", Segments: []Segment{{Start: 0, End: 1.4}}}
 	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
 	const W, H, by = 1080, 1920, 3
-	track, err := e.CaptionTrack(ctx, laid, W, H, nil, framewire.SDR)
+	track, err := e.CaptionTrack(ctx, laid, W, H, nil, SourceInfo{})
 	if err != nil {
 		t.Fatal(err)
 	}

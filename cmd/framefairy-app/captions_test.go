@@ -50,6 +50,9 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	}
 	// Which frames of the short to play over it, paused, for its word to
 	// pop, and those frames, asked for by how far ahead or behind they are.
+	if s, err := strconv.ParseFloat(rec.Header().Get("X-Caption-Scale"), 64); err != nil || s < 1 || s > 1.2 {
+		t.Errorf("the captions say the pill is drawn at %q", rec.Header().Get("X-Caption-Scale"))
+	}
 	var behind, after int
 	if n, err := fmt.Sscanf(rec.Header().Get("X-Caption-Pop"), "%d %d", &behind, &after); err != nil || n != 2 ||
 		behind < 0 || after < 0 || behind > popAheadMost || after > popAheadMost {

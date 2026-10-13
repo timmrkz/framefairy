@@ -75,15 +75,15 @@ func TestPopAgainComesBackToTheSameLook(t *testing.T) {
 }
 
 // PopFrames says which frames of the short a paused video preview plays
-// for the word on screen to pop: from the word's first frame, so a frame
-// a step lands on, a frame into the word, pops from rest, to the last
-// frame before the pop looks again as it does on the frame paused on.
+// for the word on screen to pop: from the word's first frame, at rest,
+// where a step lands, to the last frame before the pop looks again as it
+// does on the frame paused on.
 // None for a frame past the peak or with no word lit.
 func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
 		Laid: []LaidCaption{
-			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 1.2, "Ich"}, {1.2, 2, "war"}}}},
+			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 1.21, "Ich"}, {1.21, 2, "war"}}}},
 		},
 		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
 	}
@@ -96,13 +96,17 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 		// "Ich" lights at 0.5 s, frame 15 of the short, the frame at
 		// 10.5 s of the episode: its whole pop, seven frames of it.
 		{15, 0, 6},
-		// A frame in, where a step lands, 33 ms up: from the word's
+		// A frame in, 33 ms up, where a click may land: from the word's
 		// first frame, and back to its look 130 ms on.
 		{16, 1, 3},
 		// Two frames in.
 		{17, 2, 2},
 		// Past the peak.
 		{20, 0, 0},
+		// "war" lights at 1.21 s, between frames 36 and 37: its first
+		// frame shows it at rest, its pop starts on the hundredth after,
+		// and the whole of it plays, six frames to rest again.
+		{37, 0, 6},
 	} {
 		at := 10 + float64(c.frame)/30
 		if behind, ahead := d.PopFrames(source, at); behind != c.behind || ahead != c.ahead {
@@ -116,5 +120,33 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 				t.Errorf("paused on frame %d, %d frames ahead is %d ms, not %d frames from %d ms", c.frame, n, got, n, m)
 			}
 		}
+	}
+}
+
+// PopScale is the pill's scale on the frame, at rest on a word's first
+// frame, whether the word lights on a frame or between two, and grown on
+// the frames of its pop.
+func TestPopScaleIsThePillOnTheFrame(t *testing.T) {
+	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
+	d := &CaptionDrawing{
+		Laid: []LaidCaption{
+			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 1.21, "Ich"}, {1.21, 2, "war"}}}},
+		},
+		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
+	}
+	at := func(frame int) float64 { return 10 + float64(frame)/30 }
+	for _, c := range []struct {
+		frame    int
+		at, grew bool
+	}{{0, true, false}, {15, true, false}, {16, false, true}, {18, false, true}, {30, true, false},
+		{37, true, false}, {38, false, true}} {
+		s := d.PopScale(source, at(c.frame), 0)
+		if c.at && s != 1 || c.grew && s <= 1.01 {
+			t.Errorf("on frame %d the pill is drawn at %.3f", c.frame, s)
+		}
+	}
+	// Ahead counts frames of the short.
+	if a, b := d.PopScale(source, at(15), 3), d.PopScale(source, at(18), 0); a != b {
+		t.Errorf("three frames ahead of frame 15 the pill is at %.3f, on frame 18 at %.3f", a, b)
 	}
 }

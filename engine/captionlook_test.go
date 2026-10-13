@@ -90,7 +90,7 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	}
 	d := view.Drawing()
 	rs := base.RenderSettings()
-	file, err := e.previewTrack(ctx, t.TempDir(), d, d.drafted(nil), ResolveStyle(d.Style).Font, info.Light(), rs.OutW, rs.OutH)
+	file, err := e.previewTrack(ctx, t.TempDir(), d, d.drafted(nil), ResolveStyle(d.Style).Font, info, rs.OutW, rs.OutH)
 	if err != nil {
 		t.Fatal(err)
 	}
