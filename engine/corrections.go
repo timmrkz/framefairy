@@ -115,23 +115,55 @@ func SetWordText(fsys afero.Fs, planPath, clipID string, at float64, text string
 
 // RemoveWord removes a word from a clip, the word heard at a moment, or
 // one of the words a correction made of it, part counted from nought, or
-// all of it with part below nought. It is kept with the clip, so the
-// episode still says it, every other clip still shows it, and it goes
-// when the clip goes. The word keeps what it reads, so the captions keep
-// the room it took, see Captions, and an undo or typing it back in beside
-// its neighbour puts it back.
+// all of it with part below nought, see dropWords. It is the clip's, so
+// the episode still says it, every other clip still shows it, and it goes
+// when the clip goes. A word removed as it was heard keeps what it reads,
+// so the captions keep the room it took, see Captions, and an undo or
+// typing it back in beside its neighbour puts it back.
 func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t *Transcript) error {
 	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
-		heard, ok := t.Of(Clip{Corrections: corrections}).HeardAt(at)
+		work := *t.Of(Clip{Corrections: corrections})
+		heard, ok := work.HeardAt(at)
 		if !ok {
 			return renderErr("there is no word at %s", HMS(at))
 		}
 		if part >= max(len(strings.Fields(heard.Text)), 1) {
 			return renderErr("the word at %s is not %d words", HMS(at), part+1)
 		}
-		removed.takeHeard(heard, part)
-		return nil
+		var parts map[int]bool
+		if part >= 0 {
+			parts = map[int]bool{part: true}
+		}
+		return dropWords(corrections, removed, heard, parts, &work)
 	})
+}
+
+// dropWords takes words of a heard word out of a clip: parts, the words a
+// correction made of it, counted from nought, or all of it when parts is
+// nil. Some of the words a correction made are taken out of what the
+// correction reads, the way they were typed in, so the words after them
+// close up: "war noch" with "noch" taken out reads "war" again. All of
+// them, or a word as it was heard, is the heard word removed from the
+// clip, which keeps its room. t is the clip's words, a copy of its own to
+// change, and heard is one of its heard words.
+func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, parts map[int]bool,
+	t *Transcript) error {
+	if removed.removesHeard(heard) {
+		return nil
+	}
+	var kept []string
+	if parts != nil {
+		for i, word := range strings.Fields(heard.Text) {
+			if !parts[i] {
+				kept = append(kept, word)
+			}
+		}
+	}
+	if len(kept) == 0 {
+		removed.take(heard)
+		return nil
+	}
+	return correctWord(corrections, removed, heard.Start, strings.Join(kept, " "), t)
 }
 
 // editClipWords changes what a clip's words read and which it does not
@@ -156,14 +188,6 @@ func editClipWords(fsys afero.Fs, planPath, clipID string,
 		putCorrections(c, corrections)
 		putRemovedWords(c, removed)
 		return nil
-	})
-}
-
-// editRemovedWords changes the words a clip does not show, see
-// editClipWords.
-func editRemovedWords(fsys afero.Fs, planPath, clipID string, change func(RemovedWords) error) error {
-	return editClipWords(fsys, planPath, clipID, func(_ map[string]string, removed RemovedWords) error {
-		return change(removed)
 	})
 }
 
@@ -297,11 +321,7 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	// The heard words of the caption, each with the part of it the
 	// caption holds, or all of it. A word the captions draw in halves is
 	// there twice, and is one word.
-	type shown struct {
-		heard Cue
-		part  int
-	}
-	var words []shown
+	var words []shownWord
 	for _, line := range cue.Lines {
 		for _, w := range line.Words {
 			if w.Said == nil {
@@ -315,18 +335,59 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 			if w.Part != nil {
 				part = *w.Part
 			}
-			words = append(words, shown{heard, part})
+			words = append(words, shownWord{heard, part})
 		}
 	}
 	if len(words) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
-	return editRemovedWords(fsys, planPath, clipID, func(removed RemovedWords) error {
-		for _, w := range words {
-			removed.takeHeard(w.heard, w.part)
-		}
-		return nil
+	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+		work := *t.Of(Clip{Corrections: corrections})
+		return dropShown(corrections, removed, words, &work)
 	})
+}
+
+// shownWord is a word a caption shows: the heard word it is made from,
+// and which of the words a correction made of it it is, counted from
+// nought, or all of it below nought.
+type shownWord struct {
+	heard Cue
+	part  int
+}
+
+// dropShown takes words a caption shows out of a clip, the way RemoveWord
+// takes one, see dropWords. t is the clip's words, a copy of its own to
+// change.
+func dropShown(corrections map[string]string, removed RemovedWords, words []shownWord, t *Transcript) error {
+	var order []float64
+	parts := map[float64]map[int]bool{}
+	for _, w := range words {
+		at := w.heard.Start
+		had, seen := parts[at]
+		if !seen {
+			order = append(order, at)
+		}
+		switch {
+		case w.part < 0 || (seen && had == nil):
+			parts[at] = nil
+		case !seen:
+			parts[at] = map[int]bool{w.part: true}
+		default:
+			had[w.part] = true
+		}
+	}
+	for _, at := range order {
+		// The heard word as it reads now, since taking out the words of
+		// one changes no other.
+		heard, ok := t.HeardAt(at)
+		if !ok {
+			continue
+		}
+		if err := dropWords(corrections, removed, heard, parts[at], t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // trimCaption is what dragging an edge of a caption across its words does
@@ -342,12 +403,12 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 //
 // to is where the edge is, on the clip's clock. The caption is the one
 // laid out now, with the edge where it stands. The words are changed in
-// removed, the words the clip does not show, and nothing is written. It
-// says how many words it took out and put back.
-func trimCaption(removed RemovedWords, clip Clip, c LaidCaption, edge string, to float64,
-	t *Transcript) CaptionEdit {
+// corrections and removed, the clip's, and nothing is written. It says
+// how many words it took out and put back.
+func trimCaption(corrections map[string]string, removed RemovedWords, clip Clip, c LaidCaption, edge string,
+	to float64, t *Transcript) (CaptionEdit, error) {
 	if len(clip.Segments) == 0 {
-		return CaptionEdit{}
+		return CaptionEdit{}, nil
 	}
 	t = t.Of(clip)
 	from := c.Start
@@ -400,12 +461,27 @@ func trimCaption(removed RemovedWords, clip Clip, c LaidCaption, edge string, to
 		}
 	}
 	for _, w := range back {
-		removed.put(t, w)
+		if heard, ok := t.HeardAt(w.Start); ok {
+			removed.forget(heard)
+		}
 	}
+	var words []shownWord
 	for _, w := range gone {
-		removed.take(t, w)
+		heard, ok := t.HeardAt(w.Start)
+		if !ok {
+			continue
+		}
+		part := -1
+		if len(strings.Fields(heard.Text)) > 1 {
+			part = t.PartOf(heard, w)
+		}
+		words = append(words, shownWord{heard, part})
 	}
-	return CaptionEdit{Removed: len(gone), Back: len(back)}
+	work := *t
+	if err := dropShown(corrections, removed, words, &work); err != nil {
+		return CaptionEdit{}, err
+	}
+	return CaptionEdit{Removed: len(gone), Back: len(back)}, nil
 }
 
 // plainValue is an object of a plan as it is edited, which keeps its keys

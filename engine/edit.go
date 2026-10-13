@@ -1062,6 +1062,7 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 		if err != nil {
 			return err
 		}
+		putCorrections(c, moved.clip.Corrections)
 		putRemovedWords(c, moved.clip.RemovedWords)
 		times, _ := c.values[keyCaptionTimes].(*object)
 		if times == nil {
@@ -1150,6 +1151,10 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		return captionEdge{}, renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
 	out := captionEdge{plan: plan, clip: clip, at: math.NaN()}
+	corrections := maps.Clone(clip.Corrections)
+	if corrections == nil {
+		corrections = map[string]string{}
+	}
 	removed := clip.RemovedWords.clone()
 	if !reset {
 		to := ClipTime(clip, at)
@@ -1159,7 +1164,7 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			to, at = laid[i+1].Start, EpisodeTime(clip, laid[i+1].Start)
 		}
-		out.done = trimCaption(removed, clip, laid[i], edge, to, t)
+		out.done, err = trimCaption(corrections, removed, clip, laid[i], edge, to, t)
 		out.at = roundTo(at, 3)
 	} else {
 		// Put back where all its words put it, the ones taken out at that
@@ -1168,12 +1173,18 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		if edge == "start" {
 			past = -1
 		}
-		out.done = trimCaption(removed, clip, laid[i], edge, past, t)
+		out.done, err = trimCaption(corrections, removed, clip, laid[i], edge, past, t)
+	}
+	if err != nil {
+		return captionEdge{}, err
 	}
 	if len(removed) == 0 {
 		removed = nil
 	}
-	out.clip.RemovedWords = removed
+	if len(corrections) == 0 {
+		corrections = nil
+	}
+	out.clip.RemovedWords, out.clip.Corrections = removed, corrections
 	times := maps.Clone(clip.CaptionTimes)
 	if times == nil {
 		times = map[string]CaptionTime{}

@@ -974,9 +974,10 @@ bubble scrolled by those eight pixels.
     caption box with the key, before the engine has answered, and comes
     back if the engine refuses. A removal is the clip's, not the
     episode's: it is kept in the clip's plan entry, `removed_words`, by
-    the moment the word was heard and which of a correction's words it
-    is, so the word is gone from this clip's captions and its render, and
-    Cmd+Z brings it back. The episode still says it, so every other clip
+    the moment the word was heard, so the word is gone from this clip's
+    captions and its render, and Cmd+Z brings it back. One of the words a
+    correction made, like a word typed in beside another, is taken out of
+    what the correction reads instead, so the words after it close up. The episode still says it, so every other clip
     shows it, a search and the model read it, and a clip removed and made
     again where it was has it, see `RemovedWords` in
     `engine/removedwords.go`. It used to be a correction to nothing in

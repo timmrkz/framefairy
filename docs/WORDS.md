@@ -51,7 +51,10 @@ or a cut and the words the arrow keys walk are all made from it.
 box, or with its caption on the clip timeline, is kept in the clip's plan
 entry, `removed_words`, against the word heard, and the clip's captions
 are laid out with it there and not shown, see `RemovedWords` in
-`engine/removedwords.go`. It never changes what is said: the words said
+`engine/removedwords.go`. One of the words a correction made of a heard
+word, like a word typed in beside another, is taken out of what the
+correction reads instead, so the words after it close up, see
+`dropWords` in `engine/corrections.go`. It never changes what is said: the words said
 keep it, every other clip shows it, and a clip made again where a removed
 one was has it. Corrections and removals alike are the clip's, so a clip
 removed takes everything done to its words with it. Tim chose that.
