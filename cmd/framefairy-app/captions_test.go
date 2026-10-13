@@ -48,6 +48,20 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	if rec.Code != http.StatusOK || l.W == 0 || l.H == 0 || l.X+l.W > 270 || l.Y+l.H > 480 {
 		t.Fatalf("the captions answered %d %q, a layer at %d,%d of %dx%d", rec.Code, rec.Body.String(), l.X, l.Y, l.W, l.H)
 	}
+	// How many frames of the short to play over it, paused, for its word
+	// to pop, and those frames, asked for by how far ahead they are.
+	if n, err := strconv.Atoi(rec.Header().Get("X-Caption-Pop")); err != nil || n < 0 || n > popAheadMost {
+		t.Errorf("the captions say %q frames pop", rec.Header().Get("X-Caption-Pop"))
+	}
+	ahead := url.Values{}
+	for k, v := range ask {
+		ahead[k] = v
+	}
+	ahead.Set("ahead", "2")
+	if rec, l := draw(ahead); rec.Code != http.StatusOK || l.W == 0 || rec.Header().Get("X-Caption-Pop") != "" {
+		t.Errorf("two frames ahead the captions answered %d with a layer %dx%d and pop %q",
+			rec.Code, l.W, l.H, rec.Header().Get("X-Caption-Pop"))
+	}
 	// Lower on the picture where the captions are drafted lower.
 	low := url.Values{}
 	for k, v := range ask {
@@ -67,10 +81,13 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		t.Errorf("switched off, the captions still draw %dx%d", none.W, none.H)
 	}
 	for name, q := range map[string]url.Values{
-		"no track":     {"path": {mine}, "track": {"0123"}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
-		"another path": {"path": {"/not/mine.mp4"}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
-		"no size":      {"path": {mine}, "track": {view.Track}, "at": {"10.2"}},
-		"no colour":    {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"red"}},
+		"no track":      {"path": {mine}, "track": {"0123"}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
+		"another path":  {"path": {"/not/mine.mp4"}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
+		"no size":       {"path": {mine}, "track": {view.Track}, "at": {"10.2"}},
+		"no colour":     {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"red"}},
+		"too far ahead": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"31"}},
+		"behind":        {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"-1"}},
+		"ahead nothing": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"x"}},
 	} {
 		if rec, _ := draw(q); rec.Code == http.StatusOK {
 			t.Errorf("%s was answered", name)

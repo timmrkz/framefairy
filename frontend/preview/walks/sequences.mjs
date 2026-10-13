@@ -1495,6 +1495,13 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim on #201: a step onto a word left it standing still,
+    // where the browser's captions before had popped it, and the word and
+    // its pill did not grow together.
+    name: "a step onto a word pops it over the paused frame",
+    steps: [["step onto words and see them pop", 6]],
+  },
+  {
     // Plan row 2.130: a picture that starts after its sound, by an edit
     // list. The clip's start is dragged to before the picture starts,
     // where the render took the picture's frames from its first on and the
@@ -5013,6 +5020,65 @@ for (const seq of toWalk) {
         console.log(`    ${report.join(", ")}`);
         break;
       }
+      case "step onto words and see them pop": {
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        const first = state.segments[0];
+        if (!(await seekTo(page, first.start + 0.5 / fps, fps))) {
+          wrong = "the video preview never showed the clip's first frame";
+          break;
+        }
+        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => document.body.focus());
+        const report = [];
+        let popped = 0;
+        for (let k = 0; k < arg && !wrong; k++) {
+          const before = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
+          const stop = await watchPills(page);
+          await page.keyboard.press("Shift+ArrowRight");
+          // The pop, if one starts, and its end.
+          const started = await page
+            .waitForFunction((n) => (window.__captionLayers?.stats.popped ?? 0) > n, before, { timeout: 1500, polling: 10 })
+            .then(() => true, () => false);
+          await page.waitForFunction(() => !window.__captionLayers?.popping && !window.__captionLayers?.busy, null, {
+            timeout: 5000,
+            polling: 10,
+          });
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const frames = await stop();
+          const off = frames.find((f) => framesOffPill(f, "keyed"));
+          const last = frames[frames.length - 1];
+          if (off) {
+            wrong = `after Shift and the right arrow ${k + 1} times, ${framesOffPill(off, "keyed")}`;
+            break;
+          }
+          if (!last?.keyed || !last.pill) {
+            wrong = `after Shift and the right arrow ${k + 1} times, no word wears the keyboard's frame on a pill`;
+            break;
+          }
+          // The paints of the word stepped onto, its pill's width on each.
+          const on = frames.filter((f) => f.pill && f.keyed?.text === last.keyed.text);
+          const widths = on.map((f) => f.pill.w);
+          const least = Math.min(...widths);
+          const most = Math.max(...widths);
+          report.push(`"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px` : "did not pop"}`);
+          if (!started) continue;
+          popped++;
+          // The word and its pill grow together, to 115 % of rest, from a
+          // frame at most a frame into the rise: well over 5 % on screen.
+          if (most < least * 1.05) {
+            wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
+          }
+          // And comes back to the frame paused on: the pill as on the
+          // first paint of the word.
+          else if (Math.abs(last.pill.w - widths[0]) > 1.5) {
+            wrong = `after the pop of "${last.keyed.text}" the pill is ${last.pill.w.toFixed(1)} px wide, not the ${widths[0].toFixed(1)} px of the frame paused on`;
+          }
+        }
+        console.log(`    ${report.join(", ")}`);
+        if (!wrong && popped < arg / 2) wrong = `only ${popped} of ${arg} steps onto a word popped it`;
+        break;
+      }
       case "frames on the pills": {
         const fps = await rate(page);
         const state = await engineState(page, watch.at);
@@ -5680,7 +5746,10 @@ async function watchPills(page) {
         late: window.__captionLayers?.late ?? false,
         now: frame(box.querySelector(".word.now")),
         keyed: frame(box.querySelector(".word.keyed")),
-        pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy, t: (y0 + t) / sy, b: (y0 + bt) / sy },
+        pill:
+          l === Infinity
+            ? null
+            : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy, t: (y0 + t) / sy, b: (y0 + bt) / sy, w: (r - l) / sx },
       });
     };
     requestAnimationFrame(look);
