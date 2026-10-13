@@ -10,7 +10,9 @@ import (
 // can be lit for at the rates videos come in: at rest on its first frame,
 // popPeak on a frame of its own, up to it and down from it without a step
 // back, and at rest again by its last frame, in no more than popLength.
-// The same number of frames always pops the same way.
+// A word of one frame is popPeak on it, because the frames on either side
+// belong to its neighbours. The same number of frames always pops the
+// same way.
 func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
 	for _, fps := range []float64{24, 25, 30000.0 / 1001, 30, 50, 60} {
 		for lit := 1; lit <= 20; lit++ {
@@ -19,11 +21,14 @@ func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
 				t.Errorf("%.2f fps, lit for %d frames: %d frames of pop", fps, lit, len(s))
 				continue
 			}
+			if lit == 1 {
+				if len(s) != 1 || s[0] != popPeak {
+					t.Errorf("%.2f fps, lit for one frame: %v, not the peak", fps, s)
+				}
+				continue
+			}
 			if s[0] != 1 {
 				t.Errorf("%.2f fps, lit for %d frames: the first frame is at %.3f, not at rest", fps, lit, s[0])
-			}
-			if lit == 1 {
-				continue
 			}
 			peak := 0
 			for i := range s {

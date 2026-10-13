@@ -783,7 +783,12 @@ at rest by its last frame, eased like a sine on either side of the peak,
 in no more than 220 ms. At 25 fps a long word pops 1.0, 1.075, 1.13,
 1.15, 1.13, 1.075, 1.0. A word lit for fewer frames pops in the frames it
 has: three frames are rest, 1.15, rest, two are rest and 1.15, and a word
-lit for one frame cannot pop. Each frame holds its scale from the
+lit for one frame stands at 115 % on that frame. The frame before it
+still belongs to the word before and the frame after it to the word
+after, so the rise and the settle are the hand-over between them. That
+is how karaoke effects deal with a syllable too short for its effect:
+`retime("presyl")` and `retime("postsyl")` in Aegisub's kara-templater
+run the effect before and after the syllable's own time. Each frame holds its scale from the
 hundredth of a second its frame starts in, so libass draws exactly that
 scale on that frame, in the short and in the video preview alike. A frame
 lands on the word at its own size wherever a click or a step lands, and
@@ -797,7 +802,7 @@ once: whether the peak landed on a frame was chance, a short word was cut
 on its way up, and the ease-out dropped most of the way in one frame
 after the peak. `TestEveryWordOfAShortPopsOnItsFrames` in
 `engine/bounce_test.go` reads every word of a 25 fps short with words lit
-for 2 to 10 frames back frame by frame and holds each to `popScales`, and
+for 1 to 10 frames back frame by frame and holds each to `popScales`, and
 `TestEveryWordReachesItsPeakOnAFrame` in `engine/pop_test.go` holds the
 rule at 24 to 60 fps for every number of frames. At its peak a long word
 and its pill reach over the space to the next word for a frame or two,

@@ -532,9 +532,11 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 }
 
 // Every word of a short at 25 fps, the rate of Tim's videos, read back
-// frame by frame: words lit for 2 to 10 frames each pop as popScales says
+// frame by frame: words lit for 1 to 10 frames each pop as popScales says
 // for the frames they have, at rest on their first frame, at popPeak on a
 // frame, and at rest again by their last when they have three or more.
+// "ja" is lit for one frame first, and stands at popPeak on it, measured
+// against the same word at rest at the end.
 // Tim's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
 // rise and snap back, "so" and "einem" grow on one frame, and "so'n" not
 // at all: the pop was a curve in milliseconds, and where the frames fell
@@ -544,8 +546,8 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	t.Parallel()
 	const fps = 25
-	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.76, "so"},
-		{0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "Beispiel."}}
+	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.64, "ja"},
+		{0.64, 0.76, "so"}, {0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "ja"}}
 	_, _, _, frames := shortRowsAt(t, fps, words, 1.64, bounceTop, bounceRows)
 	pill := pillColour(t, ResolveStyle(nil))
 
@@ -574,6 +576,11 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 		name := words[i].Text
 		want := popScales(len(w.widths), fps)
 		rest := w.widths[0]
+		if len(w.widths) == 1 {
+			// A word of one frame has no frame at rest, so its rest is
+			// the same word's at the end, where its pill starts at rest.
+			rest = seen[len(seen)-1].widths[0]
+		}
 		var got []string
 		top := 0.0
 		for k, width := range w.widths {
@@ -590,7 +597,7 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 				t.Errorf("%s, lit for %d frames, frame %d: the pill is at %.3f, not %.3f", name, len(w.widths), k, scale, should)
 			}
 		}
-		if len(w.widths) >= 2 && math.Abs(top-popPeak) > 3.5/rest {
+		if math.Abs(top-popPeak) > 3.5/rest {
 			t.Errorf("%s, lit for %d frames, pops to %.3f, not %.2f: %v", name, len(w.widths), top, popPeak, got)
 		}
 		if n := len(w.widths); n >= 3 && math.Abs(w.widths[n-1]/rest-1) > 3.5/rest {

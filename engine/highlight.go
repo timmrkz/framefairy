@@ -106,10 +106,17 @@ const (
 // popPeak on one frame, at rest again by its last, eased in and out like a
 // sine on either side of the peak, and over in popLength or the frames it
 // has, whichever is less. A word of two frames shows its peak on the
-// second, and a word of one frame does not pop.
+// second. A word of one frame shows its peak on that frame: the frame
+// before it is still the word before, and the frame after it the word
+// after, so the rise and the settle are the hand-over between them, the
+// way karaoke effects run past a syllable's own time, see retime in
+// Aegisub's kara-templater.
 func popScales(lit int, fps float64) []float64 {
-	if lit < 2 {
+	if lit < 1 {
 		return []float64{1}
+	}
+	if lit == 1 {
+		return []float64{popPeak}
 	}
 	n := min(lit-1, max(1, int(math.Round(popLength*fps/1000))))
 	if n == 1 {

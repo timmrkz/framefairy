@@ -59,7 +59,8 @@ says which in `X-Caption-Pop`, "<behind> <ahead>", from
 frame of the short so many frames on, or back below nought. So the word
 pops as it pops in the short, and the frame the
 video preview stops on is still the short's frame, which a thumbnail
-takes. Nothing pops from a frame past the peak, while the clip plays,
+takes. A word lit for one frame stands at its peak on it and plays
+nothing over it. Nothing pops from a frame past the peak, while the clip plays,
 where the frames pop by themselves, or when the Mac is set to reduce
 motion. `Replay` in `lib/frames/captions.ts`.
 
@@ -218,7 +219,7 @@ before, with the keyboard's frame already round the next, which Tim saw on
   the pop back from a rendered short: on every frame the word and its
   pill are as large as `popScales` says, in width and in height, around
   one centre. `TestEveryWordOfAShortPopsOnItsFrames` does the same for
-  every word of a 25 fps short, with words lit for 2 to 10 frames. `TestThePillLeavesRoomRoundItsWord` in the same file holds
+  every word of a 25 fps short, with words lit for 1 to 10 frames. `TestThePillLeavesRoomRoundItsWord` in the same file holds
   the pill to at least a tenth of the caption size round its word on its
   first frame and at rest, and `WordFrames` to where the pill rests,
   within 2 pixels. `TestThePillAtRestNeverReachesAnotherLine` reads a
