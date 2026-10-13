@@ -4036,8 +4036,12 @@ for (const seq of toWalk) {
             wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
             break;
           }
-          await sized.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
-          await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          // Twice: the frame's own layer, then the pop it may start over
+          // the frame once it is drawn, see "the pop over a paused frame".
+          for (let i = 0; i < 2; i++) {
+            await sized.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+            await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          }
           // Nothing but the canvas draws them: the caption box over it
           // shows no word and no pill unless a word is being typed.
           const painted = await sized.evaluate(() => {

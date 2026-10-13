@@ -294,9 +294,12 @@ export class CaptionLayers {
     return this.replay !== null;
   }
 
-  // Whether a layer is on its way, for the walks.
+  // Whether a layer is on its way or a pop is being played, for the
+  // walks: until neither, the screen may not show the frame's own layer.
+  // A walk that held the video preview to the short read a frame of the
+  // pop over the frame it stepped to.
   get busy(): boolean {
-    return this.going.size > 0 || this.waiting !== null;
+    return this.going.size > 0 || this.waiting !== null || this.replay !== null;
   }
 
   // Whether the frame on screen was drawn with a layer not its own, the
