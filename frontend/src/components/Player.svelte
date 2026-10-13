@@ -398,8 +398,13 @@
   // across the clip's edge while playing was lost: the new program started
   // the play again from where it was, the queue said so at once, that set
   // the playhead back, and the seek after it went to the playhead.
-  export function seek(t: number, about?: About) {
+  //
+  // A step from word to word bounces the word it lands on over the frame,
+  // and any other way of getting there shows the frame alone, see
+  // CaptionLayers.sought.
+  export function seek(t: number, about?: About, wordStep = false) {
     const at = Math.max(0, Math.min(t, source.duration));
+    layers.sought(wordStep);
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
     if (!queue) return;
@@ -1954,12 +1959,25 @@
     pointer-events: auto;
     cursor: text;
     caret-color: var(--accent-hi);
-    outline: 1px solid transparent;
+    /* The frame stands across the pill's edge, a pixel of the screen out
+       and one in. libass draws the edge where it falls, between two
+       pixels as often as not, and the row it half covers comes out half
+       dark, while the browser puts a frame on whole pixels. As an outline
+       round the outside of the box, that row showed between the frame
+       and the pill or just inside the frame, and Tim saw the pill a pixel
+       short at the top or the bottom. Across the edge, the frame covers
+       that row wherever it falls. An outline cannot be moved by half a
+       point, its offset is rounded, so the frame is a shadow. */
+    --frame: transparent;
+    --frame-width: var(--hair);
+    box-shadow:
+      0 0 0 var(--frame-width) var(--frame),
+      inset 0 0 0 var(--frame-width) var(--frame);
   }
 
   .word.correctable:hover,
   .word.keyed {
-    outline-color: var(--accent-hi);
+    --frame: var(--accent-hi);
   }
 
   /* The word being corrected wears the frame and nothing else. A
@@ -1975,8 +1993,8 @@
      two it had before it was opened: the one under the pointer, or the
      keyboard's, which stays on it while the playhead does. */
   .word.fixing {
-    outline-width: 2px;
-    outline-color: var(--accent-hi);
+    --frame-width: calc(2 * var(--hair));
+    --frame: var(--accent-hi);
   }
 
   /* The words where libass put them, see laidWords: the caption box is

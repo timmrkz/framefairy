@@ -15,8 +15,8 @@
 // nothing.
 // A layer from the Go side also says which captions it was drawn from,
 // track, and what it shows of them, showing.
-// And which frames of the short the video preview plays over the frame,
-// paused, for its word to pop, pop, so many before its own and so many
+// And which frames of the bounce the video preview plays over the frame,
+// paused after a word step, pop, so many before its own and so many
 // after, see Replay, and how large the pill of its word is drawn, scale,
 // 1 at rest, which the frame round the word grows by.
 export type Layer = {
@@ -31,7 +31,7 @@ export type Layer = {
   scale?: number;
 };
 
-// Frames of the short before a frame and after it, as the Go side says it
+// Frames of the bounce before a frame and after it, as the Go side says it
 // in the header X-Caption-Pop, "<behind> <ahead>", see engine.PopFrames.
 export type Pop = { behind: number; ahead: number };
 
@@ -242,29 +242,37 @@ const AGAIN = 250;
 // A layer asked for: the ask it belongs to, the frame and the size.
 type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
 
-// The pop played over a paused frame. The short pops the word being
-// spoken in the frames after it lights, and a frame paused on shows one
-// moment of that. So when the video preview comes to stand on a frame
-// that lights another word than the frame before, by a step, Shift and an
-// arrow or a click, it plays the layers of the frames of the short round
-// it over the still picture, the ones the Go side says, see
-// engine.PopFrames, one each frame of the short, and comes back to the
-// frame's own layer, which looks as the last of them leaves it. They start
-// at the word's first frame, behind the frame paused on: a step lands a
-// frame into a word, already part of the way up, and a pop played from
-// there left its start out and was half as large. The word
-// pops the way it pops in the short and the frame paused on stays the
-// short's. Before #201 the browser played a pop of its own on every new
-// word, and Tim missed it once the video preview drew libass's captions.
-type Replay = { key: string; layers: (Layer | null)[]; shown: number; timer?: ReturnType<typeof setTimeout> };
+// The bounce played over a paused frame after a word step. Shift and an
+// arrow step from word to word, and the word stepped to bounces, from
+// rest through its peak, however briefly the short lights it: libass
+// draws the frames of its bounce on the Go side, see
+// engine.CaptionDrawing.Bouncing, and they are played over the still
+// picture one each frame of the short, ending on the frame's own layer,
+// which looks as the last of them leaves it, see engine.PopFrames. Every
+// other way of coming to stand on a frame, an arrow alone, a click, a
+// drag, shows the frame as the short shows it and nothing over it. Tim
+// saw the pop the short burns in played again over every frame he
+// stepped to, two animations mixed into one, and wanted a step from frame
+// to frame to show only the short's frames and a step from word to word to
+// bounce its word, a word of one frame too.
+// Before is the layer given before the step, which stays while the frames
+// of the bounce are on their way: the frame's own layer shows a word of one
+// frame at its peak, and the bounce starts at rest.
+type Replay = {
+  key: string;
+  layers: (Layer | null)[];
+  shown: number;
+  before: Layer | null;
+  timer?: ReturnType<typeof setTimeout>;
+};
 
-// Whether the person asked the system for less motion, which the pop over
-// a paused frame then leaves out, as the browser's pop did.
+// Whether the person asked the system for less motion, which the bounce
+// over a paused frame then leaves out, as the browser's pop did.
 function calm(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// What the layers need to know of the video preview to play a pop: whether
+// What the layers need to know of the video preview to play a bounce: whether
 // it is paused, and how long a frame of the short lasts, in seconds.
 export type Still = { paused(): boolean; frameLength(): number };
 
@@ -290,27 +298,27 @@ export class CaptionLayers {
   // For the walks: how many layers were asked for and how many a frame
   // was drawn with that was not its own yet.
   readonly stats = { asked: 0, late: 0, popped: 0 };
-  // The pop being played over the frame paused on, and what the layer
-  // given last showed and on which frame, which says when the word
-  // changed.
+  // The bounce being played over the frame paused on, and the frame on
+  // screen when a word step asked for one, which the next frame other than
+  // it bounces on. Null when the last step was no word step.
   private replay: Replay | null = null;
-  private seen = "";
-  private seenAt = NaN;
+  private shownAt = NaN;
+  private bounceFrom: number | null = null;
 
   constructor(
     private came: () => void,
     private still?: Still,
   ) {}
 
-  // Whether a pop is being played over a paused frame, for the walks.
+  // Whether a bounce is being played over a paused frame, for the walks.
   get popping(): boolean {
     return this.replay !== null;
   }
 
-  // Whether a layer is on its way or a pop is being played, for the
+  // Whether a layer is on its way or a bounce is being played, for the
   // walks: until neither, the screen may not show the frame's own layer.
   // A walk that held the video preview to the short read a frame of the
-  // pop over the frame it stepped to.
+  // bounce over the frame it stepped to.
   get busy(): boolean {
     return this.going.size > 0 || this.waiting !== null || this.replay !== null;
   }
@@ -338,6 +346,13 @@ export class CaptionLayers {
     return { key: `${this.askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`, ask, frame, size };
   }
 
+  // The playhead was put somewhere, by a word step or by anything else.
+  // The next frame other than the one on screen bounces its word after a
+  // word step, and after anything else does not.
+  sought(wordStep: boolean) {
+    this.bounceFrom = wordStep ? this.shownAt : null;
+  }
+
   // The layer of the frame that starts at frame, or while it is on its way
   // the one given last. Null with no captions to draw.
   at(frame: number, size: [number, number]): Layer | null {
@@ -346,18 +361,20 @@ export class CaptionLayers {
     if (!want) return null;
     const have = this.kept.get(want.key);
     if (have) {
+      const before = this.last;
       this.last = have;
-      // Another word on another frame: a step or a click onto it. New
-      // captions over the same frame, after a word was corrected or the
-      // style changed, are no step, and popped the word as it was left.
-      const seen = have.showing ? `${have.showing.caption} ${have.showing.word}` : "";
-      const changed = seen !== this.seen && frame !== this.seenAt;
-      this.seen = seen;
-      this.seenAt = frame;
-      const pop = have.pop;
-      if (changed && have.showing && have.showing.word >= 0 && pop && pop.behind + pop.ahead > 0 && this.still?.paused() && !calm())
-        this.play(want, have, pop);
-      return this.replay?.layers[this.replay.shown] ?? have;
+      this.shownAt = frame;
+      // The frame a word step came to. New captions over the same frame,
+      // after a word was corrected or the style changed, are no step.
+      if (this.bounceFrom !== null && frame !== this.bounceFrom) {
+        this.bounceFrom = null;
+        const pop = have.pop;
+        if (have.showing && have.showing.word >= 0 && pop && pop.behind + pop.ahead > 0 && this.still?.paused() && !calm())
+          this.play(want, have, pop, before);
+      }
+      const r = this.replay;
+      if (!r) return have;
+      return r.shown < 0 ? (r.before ?? have) : (r.layers[r.shown] ?? have);
     }
     this.stats.late++;
     this.waiting = want;
@@ -365,36 +382,35 @@ export class CaptionLayers {
     return this.last;
   }
 
-  // The pop over the frame of want, whose own layer is have: its layers
+  // The bounce over the frame of want, whose own layer is have: its layers
   // asked for all at once, then shown one a frame, ending on the frame's
   // own.
-  private play(want: Wanted, have: Layer, pop: Pop) {
+  private play(want: Wanted, have: Layer, pop: Pop, before: Layer | null) {
     const { key, ask, frame, size } = want;
-    const replay: Replay = { key, layers: [], shown: -1 };
+    const replay: Replay = { key, layers: [], shown: -1, before };
     this.replay = replay;
     this.stats.popped++;
     const frames = Array.from({ length: pop.behind + pop.ahead + 1 }, (_, n) => n - pop.behind);
     const asked = frames.map((n) =>
-      n === 0
-        ? Promise.resolve(have)
-        : fetch(
-            `/frames/captions?${new URLSearchParams({
-              path: ask.path,
-              track: ask.track,
-              at: frame.toFixed(6),
-              w: String(size[0]),
-              h: String(size[1]),
-              ahead: String(n),
-              ...(ask.typing ? { typing: ask.typing } : {}),
-              ...ask.drafts,
-            })}`,
-          )
-            .then(async (r) => {
-              const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
-              if (layer) layer.scale = readScale(r.headers.get("X-Caption-Scale"));
-              return layer;
-            })
-            .catch(() => null),
+      fetch(
+        `/frames/captions?${new URLSearchParams({
+          path: ask.path,
+          track: ask.track,
+          at: frame.toFixed(6),
+          w: String(size[0]),
+          h: String(size[1]),
+          ahead: String(n),
+          bounce: "1",
+          ...(ask.typing ? { typing: ask.typing } : {}),
+          ...ask.drafts,
+        })}`,
+      )
+        .then(async (r) => {
+          const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
+          if (layer) layer.scale = readScale(r.headers.get("X-Caption-Scale"));
+          return layer;
+        })
+        .catch(() => null),
     );
     void Promise.all(asked).then((layers) => {
       if (this.replay !== replay) return;
@@ -411,7 +427,7 @@ export class CaptionLayers {
     });
   }
 
-  // The pop over a paused frame stopped, by a move to another frame, a
+  // The bounce over a paused frame stopped, by a move to another frame, a
   // play, or another ask.
   private stop() {
     if (!this.replay) return;

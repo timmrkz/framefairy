@@ -163,6 +163,17 @@
   }
 }
 
+/* One pixel of the screen, the thinnest line that is still sharp: a
+   point of CSS on most screens and half of one on a Retina screen. */
+:root {
+  --hair: 1px;
+}
+@media (min-resolution: 2dppx) {
+  :root {
+    --hair: 0.5px;
+  }
+}
+
 /* The columns beside the picture on a whole pixel, see --spans. */
 @supports (width: round(down, 3px, 2px)) {
   :root {

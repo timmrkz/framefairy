@@ -274,7 +274,7 @@ describe("the layers of the captions", () => {
   });
 });
 
-describe("the pop over a paused frame", () => {
+describe("the bounce after a word step", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -289,23 +289,24 @@ describe("the pop over a paused frame", () => {
   }
 
   // The Go side: a frame's own layer is red 100 plus the word it lights,
-  // with a pop from a frame behind it to two ahead, and the layer so many
-  // frames ahead is red 50 and that many.
+  // with a bounce from a frame behind it to two ahead, and the frame of
+  // the bounce so many frames ahead is red 50 and that many.
   function goSide(word: () => number) {
     const asked: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       asked.push(url);
-      const ahead = Number(new URLSearchParams(url.split("?")[1]).get("ahead") ?? 0);
-      if (ahead) return new Response(body(50 + ahead), { headers: { "X-Caption-Showing": `0 ${word()}` } });
+      const q = new URLSearchParams(url.split("?")[1]);
+      if (q.get("bounce") === "1") return new Response(body(50 + Number(q.get("ahead") ?? 0)), { headers: { "X-Caption-Showing": `0 ${word()}` } });
       return new Response(body(100 + word()), { headers: { "X-Caption-Showing": `0 ${word()}`, "X-Caption-Pop": "1 2" } });
     });
     return asked;
   }
 
-  // Tim stepped onto a word and saw it stand still, where the browser's
-  // captions before #201 popped it.
-  // A step lands a frame into the word, so the pop starts a frame behind.
-  it("plays the frames of the short round a frame that lights another word, from the word's first, then shows the frame's own", async () => {
+  // Tim saw the pop the short burns in played again over every frame he
+  // stepped to, the arrow keys included, and wanted a step from word to
+  // word to bounce its word and a step from frame to frame to show only
+  // the short's frames.
+  it("bounces the word a word step lands on, from the word's first frame, and shows only the frame after any other step", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     // Lets every answer on its way come, without moving the clock.
     const flush = async () => {
@@ -318,50 +319,77 @@ describe("the pop over a paused frame", () => {
     const layers = new CaptionLayers(() => came++, { paused: () => paused, frameLength: () => 1 / 30 });
     layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
     const red = (at: number) => layers.at(at, [10, 20])?.pixels[0];
-    // The first frame: its word lights, and its pop plays.
+    // The first frame shows its own layer, and nothing bounces.
     red(1.0);
     await flush();
     expect(came).toBe(1);
     expect(red(1.0)).toBe(100);
     await flush();
-    expect(red(1.0)).toBe(49);
-    expect(layers.popping).toBe(true);
-    const ahead = asked.filter((a) => a.includes("ahead="));
-    expect(ahead.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["-1", "1", "2"]);
-    expect(new URLSearchParams(ahead[0].split("?")[1]).get("at")).toBe("1.000000");
-    vi.advanceTimersByTime(34);
-    expect(red(1.0)).toBe(100);
-    vi.advanceTimersByTime(34);
-    expect(red(1.0)).toBe(51);
-    vi.advanceTimersByTime(34);
-    expect(red(1.0)).toBe(52);
-    expect(layers.popping).toBe(true);
-    vi.advanceTimersByTime(34);
     expect(red(1.0)).toBe(100);
     expect(layers.popping).toBe(false);
-    // Drawn again on the same word, nothing pops.
-    expect(red(1.0)).toBe(100);
-    // The next frame, the same word: nothing pops.
+    // An arrow alone onto another word shows its frame and nothing over it.
+    layers.sought(false);
+    lit = 1;
     red(1.04);
     await flush();
-    expect(red(1.04)).toBe(100);
-    expect(layers.stats.popped).toBe(1);
-    // A step onto another word pops it, and a step away stops the pop.
-    lit = 1;
+    expect(red(1.04)).toBe(101);
+    await flush();
+    expect(red(1.04)).toBe(101);
+    expect(layers.stats.popped).toBe(0);
+    // A word step bounces the word it lands on. The layer before stays
+    // while the frames of the bounce are on their way.
+    layers.sought(true);
+    lit = 2;
     red(1.5);
     await flush();
-    red(1.5);
+    expect(red(1.5)).toBe(101);
+    expect(layers.popping).toBe(true);
     await flush();
     expect(red(1.5)).toBe(49);
-    expect(layers.stats.popped).toBe(2);
-    red(1.54);
+    const bounce = asked.filter((a) => a.includes("bounce=1"));
+    expect(bounce.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["-1", "0", "1", "2"]);
+    expect(new URLSearchParams(bounce[0].split("?")[1]).get("at")).toBe("1.500000");
+    vi.advanceTimersByTime(34);
+    expect(red(1.5)).toBe(50);
+    vi.advanceTimersByTime(34);
+    expect(red(1.5)).toBe(51);
+    vi.advanceTimersByTime(34);
+    expect(red(1.5)).toBe(52);
+    expect(layers.popping).toBe(true);
+    vi.advanceTimersByTime(34);
+    expect(red(1.5)).toBe(102);
     expect(layers.popping).toBe(false);
-    // Playing, a new word pops in the frames themselves, not over them.
+    expect(layers.stats.popped).toBe(1);
+    // Drawn again on the same frame, nothing bounces.
+    expect(red(1.5)).toBe(102);
+    // A word step that stays on its frame, then an arrow alone: nothing
+    // bounces.
+    layers.sought(true);
+    expect(red(1.5)).toBe(102);
+    layers.sought(false);
+    lit = 3;
+    red(1.54);
+    await flush();
+    expect(red(1.54)).toBe(103);
+    expect(layers.stats.popped).toBe(1);
+    // A step away stops a bounce.
+    layers.sought(true);
+    lit = 4;
+    red(1.6);
+    await flush();
+    red(1.6);
+    expect(layers.popping).toBe(true);
+    layers.sought(false);
+    red(1.64);
+    expect(layers.popping).toBe(false);
+    expect(layers.stats.popped).toBe(2);
+    // Playing, nothing bounces over the frames.
     paused = false;
-    lit = 2;
+    layers.sought(true);
+    lit = 5;
     red(2.0);
     await flush();
-    expect(red(2.0)).toBe(102);
+    expect(red(2.0)).toBe(105);
     expect(layers.stats.popped).toBe(2);
   });
 });

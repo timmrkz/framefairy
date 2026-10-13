@@ -139,8 +139,9 @@
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, and a step while the episode plays on the
-    // video says that, see placeOf in lib/playhead.ts.
-    onseek: (t: number, about?: About) => void;
+    // video says that, see placeOf in lib/playhead.ts. A step from word to
+    // word says so, and the word it lands on bounces in the video preview.
+    onseek: (t: number, about?: About, wordStep?: boolean) => void;
     // The hand has taken hold of the playhead, or let go of it, so a play
     // can wait under the hand, see hold in Player.svelte.
     onhold?: (held: boolean) => void;
@@ -907,7 +908,7 @@
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const through = playing && dimmed;
-    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined);
+    const put = (t: number, wordStep = false) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined, wordStep);
     if (!event.shiftKey) {
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
@@ -929,14 +930,14 @@
     const walk = lit.length && !through && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
-      put(to);
+      put(to, true);
       return;
     }
     // Out of words. With loop on, the clip comes round the way a play of
     // it does: past its last word is its first word, and before its first
     // its last. Without, at its ends is the clip beside it, because the
     // words go on even where this clip does not.
-    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step));
+    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step), true);
     else if (walk === lit) onwalkclip?.(back);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }

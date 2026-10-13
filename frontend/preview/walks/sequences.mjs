@@ -1816,12 +1816,17 @@ export const sequences = [
     // At 25 fps, the rate of Tim's videos, forward and back again to the
     // clip's first word: Tim saw some words pop fully, some barely, some
     // rise and snap back, and the first word not at all.
+    // Then Tim saw the pop the short burns in played again over every
+    // frame he stepped to with an arrow alone, two animations mixed into
+    // one: a step from frame to frame shows the short's frames and nothing
+    // over them, and only a step from word to word bounces.
     name: "a step onto a word pops it over the paused frame",
     steps: [
       ["add", 40, "25"],
       ["wait for", "New"],
       ["cards", 1],
       ["step onto words and see them pop", 6],
+      ["step frame by frame and see nothing pop", 40],
     ],
   },
   {
@@ -5903,18 +5908,50 @@ for (const seq of toWalk) {
           grew = Math.max(grew, most / least);
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
-          // back to rest. Tim saw it stop grown, a frame into the word,
-          // with the frame round it at rest, and some words grow by a few
-          // pixels on one frame.
+          // back to rest, however briefly the short lights it. Tim saw it
+          // stop grown, a frame into the word, with the frame round it at
+          // rest, and some words grow by a few pixels on one frame. A word
+          // the short lights for one frame stands at its peak there, and
+          // its bounce ends at the peak, on the frame as the short shows it.
+          const ends = Math.abs(last.pill.w - least) <= 1.5 || last.pill.w >= least * 1.13;
           if (most < least * 1.13) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
-          } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
-            wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
+          } else if (Math.abs(widths[0] - least) > 1.5 || !ends) {
+            wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest or at its peak`;
           }
         }
         console.log(`    ${report.join(", ")}`);
         if (!wrong && popped < 2 * arg) wrong = `only ${popped} of ${2 * arg} steps onto a word popped it`;
         else if (!wrong && grew < 1.12) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
+        break;
+      }
+      case "step frame by frame and see nothing pop": {
+        // arg steps of a frame from the clip's first frame, each onto the
+        // frame as the short shows it, and nothing played over it, a step
+        // onto a new word too.
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        if (!(await seekTo(page, state.segments[0].start + 0.5 / fps, fps))) {
+          wrong = "the video preview never showed the clip's first frame";
+          break;
+        }
+        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => document.body.focus());
+        const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
+        const words = new Set();
+        for (let k = 0; k < arg && !wrong; k++) {
+          await page.keyboard.press("ArrowRight");
+          await page.waitForTimeout(80);
+          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 10 });
+          const now = await page.evaluate(() => ({
+            popped: window.__captionLayers?.stats.popped ?? 0,
+            word: document.querySelector(".captions .word.now")?.textContent ?? "",
+          }));
+          if (now.word) words.add(now.word);
+          if (now.popped !== count) wrong = `step ${k + 1} of a frame, onto "${now.word}", played a bounce over the frame`;
+        }
+        console.log(`    ${arg} frames over ${words.size} words, nothing played over them`);
+        if (!wrong && words.size < 2) wrong = `${arg} frames lit only ${words.size} word`;
         break;
       }
       case "frames on the pills": {

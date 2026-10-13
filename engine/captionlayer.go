@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -117,20 +118,60 @@ func (d *CaptionDrawing) PopScale(source SourceInfo, at float64, ahead int) floa
 	return scales[j]
 }
 
-// PopFrames is which frames of the short the video preview plays over
-// the frame of the episode that starts at when it is paused on it, for the
-// word lit there to pop the way it does in the short, counted from the
-// frame of the short that shows it: from behind frames before it, the
-// word's first frame, to ahead frames after it, the first frame past the
-// peak that is no larger than the frame paused on. A step onto a word
-// lands on its first frame, at rest, so the whole pop plays and ends at
-// rest. None where no word is lit, from the peak on, or where the short
+// Bouncing is d as the video preview bounces the word lit on the frame of
+// the episode that starts at, when a word step lands on it: the caption of
+// that word alone, the word lit for as long as its whole pop takes, and
+// the words after it later by as much. So it pops from rest through its
+// peak and back however briefly the short lights it, a word of one frame
+// too. d itself where no word is lit there, or where the short lights it
+// long enough already, and then the bounce is the short's own frames.
+//
+// The bounce is how the video preview shows a step from word to word, and
+// nothing the short shows. Tim saw the pop the short burns in played again
+// over every frame he stepped to, the arrow keys included, two animations
+// mixed into one, and wanted a step from frame to frame to show only the
+// short's frames and a step from word to word to bounce its word.
+func (d *CaptionDrawing) Bouncing(source SourceInfo, at float64) *CaptionDrawing {
+	m := source.CaptionMoment(d.Clip, at)
+	from, to, ok := d.popping(m)
+	if !ok {
+		return d
+	}
+	// A whole pop needs its frames, one more to rest on, and the frame the
+	// word may light in the middle of.
+	g := source.popGrid()
+	frame := float64(g.FPSDen) * 1000 / float64(g.FPSNum)
+	need := from + int(math.Ceil((popLength+2*frame)/10))
+	if to >= need {
+		return d
+	}
+	later := float64(need-to) / 100
+	on := ShowingAt(d.Laid, m)
+	c := d.Laid[on.Caption]
+	c.Words = slices.Clone(c.Words)
+	for k := on.Word + 1; k < len(c.Words); k++ {
+		c.Words[k].Start += later
+		c.Words[k].End += later
+	}
+	c.End += later
+	return &CaptionDrawing{Laid: []LaidCaption{c}, Style: d.Style, Clip: d.Clip}
+}
+
+// PopFrames is which frames of the bounce the video preview plays over
+// the frame of the episode that starts at, paused on it after a word step,
+// see Bouncing, counted from the frame of the short that shows it: from
+// behind frames before it, the word's first frame, at rest, to ahead
+// frames after it, the first frame from the peak on that is no larger than
+// the short draws the word on the frame paused on. So the bounce ends on
+// the frame as the short shows it, at rest where a step lands on a word,
+// and at its peak for a word of one frame, which the short shows at its
+// peak. None where no word is lit, past the bounce, or where the short
 // has no frames to count.
 func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead int) {
 	if source.FPSNum <= 0 || source.FPSDen <= 0 {
 		return 0, 0
 	}
-	from, to, ok := d.popping(source.CaptionMoment(d.Clip, at))
+	from, to, ok := d.Bouncing(source, at).popping(source.CaptionMoment(d.Clip, at))
 	if !ok {
 		return 0, 0
 	}
@@ -143,15 +184,16 @@ func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead
 			peak = i
 		}
 	}
-	if j < 0 || j >= peak {
-		return 0, 0
-	}
-	end := len(scales) - 1
-	for i := peak + 1; i < len(scales); i++ {
-		if scales[i] <= scales[j] {
+	own := d.PopScale(source, at, 0)
+	end := -1
+	for i := peak; i < len(scales); i++ {
+		if scales[i] <= own {
 			end = i
 			break
 		}
+	}
+	if j < 0 || end < 0 || j > end {
+		return 0, 0
 	}
 	return j, end - j
 }
@@ -180,7 +222,6 @@ func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, draft
 	return frames
 }
 
-// drafted is the style of d with drafts on top, only those of
 // Typing is d with word of caption hidden, the word being typed in the
 // caption box: libass draws the rest of the caption where it always
 // does, and the browser draws only what is typed, in the word's place.
@@ -196,6 +237,7 @@ func (d *CaptionDrawing) Typing(word CaptionShowing) *CaptionDrawing {
 	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip}
 }
 
+// drafted is the style of d with drafts on top, only those of
 // CaptionDrafts.
 func (d *CaptionDrawing) drafted(drafts map[string]any) map[string]any {
 	style := map[string]any{}

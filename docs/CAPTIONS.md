@@ -40,29 +40,45 @@ the episode that holds `at`: the frame of the short that shows it,
 video preview asks libass for the same moment the render does, and the
 pill is at the same stage of its bounce on the same frame.
 
-## The pop over a paused frame
+## The bounce after a word step
 
-A frame paused on shows one moment of the pop, and the first frame of a
-word is the start of it, so a step onto a word showed it standing still.
-Before #201 the browser played a pop of its own on every new word, which
-Tim missed. Now, when the video preview comes to stand on a frame that
-lights another word than the frame before, by a step, Shift and an arrow
-or a click, it plays the layers of the frames of the short round it over
-the still picture, one each frame of the short, and comes back to the
-frame's own layer. The pop is laid out on the short's frames, starting
-at rest on the word's first frame, `popScales` in `engine/highlight.go`,
-and a step lands inside that frame, see `intoWord`. So the replay plays
-the whole pop from rest, up to the peak and back to rest, and the word
-ends at its own size on the frame paused on. `/frames/captions`
-says which in `X-Caption-Pop`, "<behind> <ahead>", from
-`CaptionDrawing.PopFrames`, and each is asked for with `ahead`, the
-frame of the short so many frames on, or back below nought. So the word
-pops as it pops in the short, and the frame the
-video preview stops on is still the short's frame, which a thumbnail
-takes. A word lit for one frame stands at its peak on it and plays
-nothing over it. Nothing pops from a frame past the peak, while the clip plays,
-where the frames pop by themselves, or when the Mac is set to reduce
-motion. `Replay` in `lib/frames/captions.ts`.
+The short burns its pop into its frames, and a frame paused on shows one
+moment of it. A step from frame to frame, an arrow alone, a click or a
+drag, shows exactly that: the frame as the short shows it, with nothing
+played over it. A step from word to word, Shift and an arrow, bounces the
+word it lands on, which is how the video preview shows the step and is
+nothing the short shows. Tim saw the pop the short burns in played again
+over every frame he stepped to, the arrow keys included, two animations
+mixed into one, and wanted them apart.
+
+The bounce is libass's too. `CaptionDrawing.Bouncing` is the caption of
+that word alone, with the word lit for as long as its whole pop takes
+and the words after it later by as much, so a word the short lights for
+one frame or three bounces from rest through its peak like any other. A
+word lit long enough bounces in the short's own frames. Its frames are
+asked for with `bounce=1` and `ahead`, so many frames of the short on
+from the frame paused on, or back below nought. `/frames/captions` says
+which in `X-Caption-Pop`, "<behind> <ahead>", from
+`CaptionDrawing.PopFrames`: from the word's first frame, at rest, where a
+step lands, see `intoWord`, through the peak to the first frame no larger
+than the short draws the word on the frame paused on. So the bounce ends
+on the frame as the short shows it, at rest, and a word lit for one
+frame, which the short shows at its peak, rises to its peak and stays
+there. The layer before the step stays while the frames of the bounce
+are on their way. Nothing bounces while the clip plays, where the frames
+pop by themselves, or when the Mac is set to reduce motion. `Replay` and
+`CaptionLayers.sought` in `lib/frames/captions.ts`.
+
+## The frame round a word
+
+The frame round a word in the caption box stands across the edge of its
+pill, a pixel of the screen out and one in, `--hair` in `app.css`. libass
+draws the edge where it falls, between two pixels as often as not, and
+the row it half covers comes out half dark, while the browser puts a
+frame on whole pixels. As an outline round the box, that row showed
+between the frame and the pill or just inside it, and Tim saw the pill a
+pixel short at the top or the bottom. An outline cannot be moved by half
+a point, so the frame is a shadow.
 
 ## The size
 
@@ -226,11 +242,16 @@ before, with the keyboard's frame already round the next, which Tim saw on
   caption of two lines back from a short: the pill at rest keeps 0.04 of
   the size from the letters of the other line, with the lines where
   libass puts them, see ENGINE.md.
-- `TestEveryWordReachesItsPeakOnAFrame` and
-  `TestPopFramesCountsTheFramesOfThePop` in `engine/pop_test.go`, and
-  "the pop over a paused frame" in `captions.test.ts`: a word the video
-  preview lands on while paused pops over the still frame and comes back
-  to the frame's own layer, see below.
+- `TestEveryWordReachesItsPeakOnAFrame`,
+  `TestPopFramesCountsTheFramesOfThePop` and
+  `TestAWordStepBouncesEveryWordWhole` in `engine/pop_test.go`, and "the
+  bounce after a word step" in `captions.test.ts`: a word step bounces
+  its word over the still frame, a word of one frame and of three too,
+  and ends on the frame's own layer, and any other step shows the frame
+  alone, see above. The walk "a step onto a word pops it over the paused
+  frame" steps six words on and back with Shift and the arrows, each
+  bouncing to 115 % and back, then forty frames over four words with the
+  right arrow, over which nothing is played.
   `TestTheWordFramesRouteSaysWhereLibassPutTheWords` in
   `cmd/framefairy-app/captions_test.go` asks the route for them.
 - The walk "the frame round a word in the caption box is the pill libass

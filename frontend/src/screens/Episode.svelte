@@ -1085,8 +1085,8 @@
   // Putting the playhead somewhere is a jump, not a drift, so the clip
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
-  function seekTo(t: number, about?: About) {
-    player?.seek(t, about);
+  function seekTo(t: number, about?: About, wordStep = false) {
+    player?.seek(t, about, wordStep);
     timeline?.fit(t);
   }
 
@@ -2578,7 +2578,7 @@
     landOn = null;
     const word = want.last ? lit[lit.length - 1] : lit[0];
     const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
-    seekTo(at);
+    seekTo(at, undefined, true);
     // The word landed on is the keyboard's word, as any word walked to is.
     untrack(() => player?.keyAt(at));
   });
@@ -3128,7 +3128,7 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about) => player?.seek(t, about)}
+        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}

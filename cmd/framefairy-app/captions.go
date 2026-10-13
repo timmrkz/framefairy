@@ -23,7 +23,7 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&typing=<caption> <word>][&<drafts>]
+//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&bounce=1][&typing=<caption> <word>][&<drafts>]
 //	                                 the captions of a view, by its track,
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
@@ -35,15 +35,18 @@ import (
 //	                                 that word is drawn on it, 1 at rest,
 //	                                 see engine.PopScale, and in
 //	                                 X-Caption-Pop which frames of the
-//	                                 short the video preview plays over
-//	                                 it, paused, for its word to pop,
+//	                                 bounce the video preview plays over
+//	                                 it, paused after a word step,
 //	                                 "<behind> <ahead>", so many before it
 //	                                 to so many after it, see
 //	                                 engine.PopFrames. With ahead, the
 //	                                 captions of the frame of the short so
 //	                                 many frames after it, or before it
-//	                                 below nought, which is how those are
-//	                                 asked for. With typing, the caption
+//	                                 below nought. With bounce, those of
+//	                                 the bounce of its word, see
+//	                                 engine.CaptionDrawing.Bouncing,
+//	                                 which is how the frames of a bounce
+//	                                 are asked for. With typing, the caption
 //	                                 without the ink of that word, which
 //	                                 the caption box draws as it is typed,
 //	                                 see engine.CaptionDrawing.Typing
@@ -144,6 +147,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			err = fmt.Errorf("ahead is %d frames", ahead)
 		}
 	}
+	bounce := q.Get("bounce") == "1"
 	// The word being typed in the caption box, which libass leaves out.
 	typing := engine.CaptionShowing{Caption: -1, Word: -1}
 	if err == nil && q.Has("typing") {
@@ -177,9 +181,13 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			// the episode's work folder.
 			var dir string
 			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
+			drawing := kept.drawing.Typing(typing)
+			if bounce {
+				drawing = drawing.Bouncing(source, at)
+			}
 			var l framewire.Layer
 			if err == nil {
-				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing.Typing(typing), drafts, source, o.RenderSettings(), at, ahead, width, height)
+				l, err = e.PreviewCaptions(ctx, dec, dir, drawing, drafts, source, o.RenderSettings(), at, ahead, width, height)
 			}
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound
@@ -194,8 +202,8 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
-				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(kept.drawing.PopScale(source, at, ahead), 'f', 4, 64))
-				if ahead == 0 {
+				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(drawing.PopScale(source, at, ahead), 'f', 4, 64))
+				if ahead == 0 && !bounce {
 					behind, ahead := kept.drawing.PopFrames(source, at)
 					w.Header().Set("X-Caption-Pop", fmt.Sprintf("%d %d", behind, ahead))
 				}

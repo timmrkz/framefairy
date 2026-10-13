@@ -62,10 +62,12 @@ func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
 	}
 }
 
-// PopFrames says which frames of the short a paused video preview plays
-// for the word on screen to pop: from the word's first frame, at rest,
-// where a step lands, to the first frame past the peak no larger than the
-// frame paused on. None from the peak on or with no word lit.
+// PopFrames says which frames of the bounce a paused video preview plays
+// after a word step, for the word on screen to bounce: from the word's
+// first frame, at rest, where a step lands, to the first frame from the
+// peak on no larger than the short draws on the frame paused on, so the
+// bounce ends on the frame as the short shows it. None past the bounce or
+// with no word lit.
 func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
@@ -83,14 +85,16 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 		// "Ich" lights at 0.5 s, frame 15 of the short, the frame at
 		// 10.5 s of the episode: its whole pop, seven frames to rest.
 		{15, 0, 7},
-		// A frame in, where a click may land: from the word's first
-		// frame, and on to the first frame past the peak no larger.
+		// A frame in: from the word's first frame, and on to the first
+		// frame past the peak no larger.
 		{16, 1, 6},
 		// Two frames in.
 		{17, 2, 4},
-		// On the peak, and past it.
-		{19, 0, 0},
-		{20, 0, 0},
+		// On the peak, and a frame past it: up to the frame.
+		{19, 4, 0},
+		{20, 5, 0},
+		// Past the pop.
+		{23, 0, 0},
 		// "war" lights at 1.21 s, between frames 36 and 37: its first
 		// frame shows it at rest, and the whole pop plays.
 		{37, 0, 7},
@@ -107,6 +111,63 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 				t.Errorf("paused on frame %d, %d frames ahead is %d ms, not %d frames from %d ms", c.frame, n, got, n, m)
 			}
 		}
+	}
+}
+
+// A word step bounces its word from rest through its peak however briefly
+// the short lights it. A word of one frame, which the short shows at its
+// peak, rises from rest to the peak, where the frame stands. A word of
+// three frames, which the short pops in three, bounces in all seven and
+// comes to rest. A word long enough for its pop bounces in the short's own
+// frames, with the short's own captions. Tim wanted a step from word to
+// word to bounce, a word of one frame too, and a step from frame to frame
+// to show the short's frames alone.
+func TestAWordStepBouncesEveryWordWhole(t *testing.T) {
+	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
+	d := &CaptionDrawing{
+		Laid: []LaidCaption{
+			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 0.53, "ja"}, {0.53, 0.6, "so"},
+				{0.6, 1.5, "eben"}, {1.5, 2, "nicht"}}}},
+			{Caption: Caption{Start: 2, End: 3, Words: []Cue{{2, 3, "Und"}}}},
+		},
+		Clip: Clip{Segments: []Segment{{Start: 10, End: 13}}},
+	}
+	at := func(frame int) float64 { return 10 + float64(frame)/30 }
+	for _, c := range []struct {
+		word   string
+		frame  int
+		ahead  int
+		scales string
+	}{
+		{"ja", 15, 4, "[1.000 1.057 1.106 1.139 1.150]"},
+		{"so", 16, 7, "[1.000 1.057 1.106 1.139 1.150 1.130 1.075 1.000]"},
+		{"eben", 18, 7, "[1.000 1.057 1.106 1.139 1.150 1.130 1.075 1.000]"},
+	} {
+		if s := d.Showing(source, at(c.frame)); s.Word < 0 || d.Laid[s.Caption].Words[s.Word].Text != c.word {
+			t.Fatalf("frame %d shows %+v, not %q", c.frame, s, c.word)
+		}
+		behind, ahead := d.PopFrames(source, at(c.frame))
+		if behind != 0 || ahead != c.ahead {
+			t.Errorf("%q bounces %d behind and %d ahead, want 0 and %d", c.word, behind, ahead, c.ahead)
+		}
+		b := d.Bouncing(source, at(c.frame))
+		var scales []float64
+		for n := 0; n <= ahead; n++ {
+			scales = append(scales, b.PopScale(source, at(c.frame), n))
+		}
+		if got := fmt.Sprintf("%.3f", scales); got != c.scales {
+			t.Errorf("%q bounces %s, want %s", c.word, got, c.scales)
+		}
+		if last, own := scales[len(scales)-1], d.PopScale(source, at(c.frame), 0); math.Abs(last-own) > 1e-9 {
+			t.Errorf("%q ends its bounce at %.3f, and the short shows it at %.3f", c.word, last, own)
+		}
+	}
+	if b := d.Bouncing(source, at(18)); b != d {
+		t.Errorf("a word lit long enough bounces with captions of its own")
+	}
+	b := d.Bouncing(source, at(15))
+	if len(b.Laid) != 1 || len(d.Laid) != 2 || d.Laid[0].Words[1].Start != 0.53 || d.Laid[0].End != 2 {
+		t.Errorf("the bounce of a short word changed the captions it was made from, or kept the others")
 	}
 }
 
