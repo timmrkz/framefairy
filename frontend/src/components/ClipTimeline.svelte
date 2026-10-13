@@ -11,7 +11,7 @@
   // The shapes of a keyframe and a thumbnail on the clip timeline:
   // Lucide's diamond and camera, the icons of their
   // buttons, drawn filled rather than as a line, the camera with its lens
-  // left open. Plan row 2.232.
+  // left open. Plan row 2.234.
   const DIAMOND =
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
   const CAMERA =
@@ -315,7 +315,7 @@
   // a marker. A thumbnail is kept on the middle of its frame and the
   // playhead anywhere in one, so drawn where they are they stood up to a
   // frame apart on the frame they share, and a mark lit by the playhead
-  // stood beside it. Plan row 2.232.
+  // stood beside it. Plan row 2.234.
   function onFrame(t: number): number {
     return frame > 0 ? frameBegins(frameAt(t, frame, frameStart), frame, frameStart) : t;
   }
@@ -1869,7 +1869,7 @@
            playhead, because the track clips what is inside it, and on its
            inside, see .inside, so a mark stands where the waveform has its
            frame. Taken hold of, dragged and removed the same way. Plan
-           rows 3.26 and 2.232. -->
+           rows 3.26 and 2.234. -->
       <div class="inside">
       <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
         {#each thumbMarks as m, i (m.at)}
@@ -1916,7 +1916,7 @@
     {#if time >= view.from && time <= view.to}
       <!-- On the track's inside, where the waveform and every mark are
            placed, and on the start of the frame it is in, where a mark
-           lit by it stands. Plan row 2.232. -->
+           lit by it stands. Plan row 2.234. -->
       <div class="at" style="left: calc(1px + (100% - 2px) * {x(onFrame(time)) / 100})">
         <!-- The playhead of the range picker too, drawn by .playhead in
              app.css. -->
@@ -2284,7 +2284,7 @@
      dragged, the same for both kinds, so one is never the other drawn
      inside out. Even sizes centred on the playhead's own grid, so on a
      whole pixel or between two the mark's middle and the line's are the
-     same. Plan row 2.232. */
+     same. Plan row 2.234. */
   .mark {
     position: absolute;
     width: 18px;

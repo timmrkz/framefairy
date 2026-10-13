@@ -232,13 +232,16 @@ A file is added as a video when all of this holds:
 | Check | Where |
 | --- | --- |
 | Its name ends in `.mp4`, `.mov`, `.m4v` or `.mkv`, in capitals or not | `IsVideo` in `engine/episode.go` |
-| The decoder reads a first frame from it | `undecodable` in `cmd/framefairy-app/library.go` |
+| The decoder reads a first frame from it, or says nothing for 30 s | `undecodable` in `cmd/framefairy-app/library.go` |
 | Neither it nor the work folder beside it is a link | `linkedEpisode` in `cmd/framefairy-app/settings.go` |
 | No video in the list would share its work folder, as `ep.mp4` and `ep.mov` would | `AddEpisodes` in `cmd/framefairy-app/settings.go` |
 
 The ending decides first. A file with another ending is left out by its
 name, whatever it holds, and a file with one of these endings that holds
 no picture the decoder can read is left out with the decoder's reason.
+A decoder that gives no frame and no reason within 30 s says nothing
+about the file, only about a busy or hung machine, so the video is
+taken and the log keeps a warning.
 
 ### The bar
 
@@ -720,7 +723,7 @@ The two differed: the clip timeline seemed to show the arrows on the
 playhead only because the playhead so often stands on the chosen clip's
 edge. **The playhead looks the same on both**, one rule, `.playhead` in
 `app.css`: a line and nothing else, running 12 px past the track's top and
-bottom border, 2.232. On the range picker it had a head above the track
+bottom border, 2.234. On the range picker it had a head above the track
 and on the clip timeline a line alone, and Tim asked for the two to match.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
@@ -1892,7 +1895,7 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
 - **The playhead and every mark stand on the start of their frame**, the
   way editors draw them, so a mark the playhead is on is centred on its
   line however far the clip timeline is pinched in. The playhead moves a
-  frame at a time, as the video preview does. Plan row 2.232.
+  frame at a time, as the video preview does. Plan row 2.234.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows

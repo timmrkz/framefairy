@@ -658,19 +658,34 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 			return outPath, nil
 		}
 
-		code, stderr := e.RunFFmpeg(ctx, cmd[1:], "rendering "+clip.Basename(),
-			clip.Duration(), resolvePath(captionDir))
+		stall := e.stallFor(encoder, source.Light())
+		code, stderr, stalled := e.runFFmpegWatched(ctx, cmd[1:], "rendering "+clip.Basename(),
+			clip.Duration(), resolvePath(captionDir), nil, stall)
 		if ctx.Err() != nil {
 			os.Remove(tmp)
 			return "", ctx.Err()
 		}
-		if code == 0 {
+		if code == 0 && !stalled {
 			break
 		}
 		os.Remove(tmp)
 		tail := strip(stderr)
 		if len(tail) > 600 {
 			tail = tail[len(tail)-600:]
+		}
+		// An encoder that stops making frames, without a word, is left
+		// the same way as one that fails, see encoderStall. Only an
+		// encoder with another after it is given a limit at all.
+		if stalled {
+			next, ok := e.encoderAfter(ctx, encoder, source.Light())
+			if !ok {
+				return "", renderErr("rendering %s: the encoder %s made no frame for %s:\n%s",
+					clip.Basename(), encoder, stall, tail)
+			}
+			e.Log.Warn("rendering %s: the encoder %s made no frame for %s, rendering it again with %s: %s",
+				clip.Basename(), encoder, stall, next, tail)
+			encoder = next
+			continue
 		}
 		// An encoder that failed by itself, the Mac's media engine above
 		// all, hands the short to the next one this system has, see

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
@@ -56,7 +57,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	var log bytes.Buffer
 	e.Log = NewLog(&log, false, false)
 	calls := filepath.Join(dir, "calls")
-	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac)
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, false)
 	// The encoder Preflight found for this system is let go, so the
 	// render reaches for the Mac's.
 	e.system, e.encoder = "darwin", Encoder{}
@@ -94,6 +95,100 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	made, _ = os.ReadFile(calls)
 	if !strings.HasPrefix(string(made), "media engine\n") {
 		t.Errorf("the next short started with %q, not on the media engine", made)
+	}
+}
+
+// A render goes on when the Mac's media engine stops making frames without
+// a word. VideoToolbox's encoder hung for eight minutes on CI's virtual
+// Mac, in TestProjectSteps on main at 3d55aff, and the render waited until
+// the test run was killed: nothing but a failure in the encoder's own
+// words handed it on. A render that makes no frame for encoderStall goes
+// on with the next encoder, the way a failed one does. Plan row 2.232.
+//
+// On the real disk: ffmpeg makes the episode and renders the short.
+func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
+	onMac := hasEncoder(string(listing), "h264_videotoolbox")
+	if !onMac && !hasEncoder(string(listing), "libx264") {
+		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "episode.mp4")
+	if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
+		"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
+		"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", source).CombinedOutput(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, out)
+	}
+	info, err := e.Probe(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var log bytes.Buffer
+	e.Log = NewLog(&log, false, false)
+	calls := filepath.Join(dir, "calls")
+	e.FFmpeg = failingMediaEngine(t, e.FFmpeg, calls, onMac, true)
+	e.system, e.encoder = "darwin", Encoder{}
+	// A minute is the real limit. The test waits two seconds of it.
+	e.stall = 2 * time.Second
+
+	clip := info.OnFrames(Clip{ID: "01", Slug: "hung", Segments: []Segment{{Start: 0.5, End: 2.5}}})
+	rs := RenderSettings{OutW: 90, OutH: 160, CRF: 30, Preset: "ultrafast", AudioBitrate: "96k", ScaleUp: true}
+	// Without the limit the render waits on the stand-in's ten minutes,
+	// so it is given one of its own to fail in rather than the test run's.
+	within, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	short, err := e.RenderClip(within, clip, source, info, filepath.Join(dir, "out"), nil, rs, nil,
+		filepath.Join(dir, "captions"), false)
+	if err != nil {
+		said, _ := os.ReadFile(calls + ".said")
+		t.Fatalf("the short failed with the media engine hung: %v\nffmpeg on the processor said:\n%s", err, said)
+	}
+	if _, err := os.Stat(short); err != nil {
+		t.Fatal(err)
+	}
+	made, _ := os.ReadFile(calls)
+	if renders := strings.Split(strings.TrimSpace(string(made)), "\n"); len(renders) != 2 ||
+		renders[0] != "media engine" || renders[1] != "processor" {
+		t.Errorf("the renders were %q, not one on the media engine and one on the processor", renders)
+	}
+	if said := log.String(); !strings.Contains(said, "h264_videotoolbox made no frame for 2s") {
+		t.Errorf("the log does not say the media engine stopped making frames:\n%s", said)
+	}
+}
+
+// Only an encoder with another after it is given a limit, and it is the
+// same for HDR. libx264, the last there is, and an encoder named by hand
+// that is not in the order are waited for, since there is nothing to go on
+// with.
+func TestOnlyAnEncoderWithAnotherAfterItIsGivenUp(t *testing.T) {
+	mac := encodingEngineOn(t, "darwin", "h264_videotoolbox", "hevc_videotoolbox", "libx264")
+	linux := encodingEngineOn(t, "linux", "libx264")
+	cases := []struct {
+		e       *Engine
+		encoder Encoder
+		light   framewire.Light
+		want    time.Duration
+	}{
+		{mac, videoToolbox, framewire.SDR, encoderStall},
+		{mac, onProcessor(videoToolbox), framewire.SDR, encoderStall},
+		{mac, x264, framewire.SDR, 0},
+		{mac, hevcVideoToolbox, framewire.PQ, encoderStall},
+		{mac, Encoder{Name: "h264_nvenc"}, framewire.SDR, 0},
+		{linux, x264, framewire.SDR, 0},
+	}
+	for _, c := range cases {
+		if got := c.e.stallFor(c.encoder, c.light); got != c.want {
+			t.Errorf("%s on %s may go %s without a frame, not %s", c.encoder, c.e.system, got, c.want)
+		}
 	}
 }
 
@@ -149,11 +244,13 @@ func encodingEngineOn(t *testing.T, goos string, encoders ...string) *Engine {
 // failingMediaEngine is a stand-in for ffmpeg at real that lists
 // VideoToolbox's encoders and fails every render that does not ask for the
 // processor, the way the media engine fails, and writes which it was to
-// calls. A render on the processor goes to real, as it is on a Mac and
-// with libx264 for Apple's encoder elsewhere.
+// calls. With hang, it fails the other way the media engine has: it makes
+// no frame, says nothing and never ends. A render on the processor goes
+// to real, as it is on a Mac and with libx264 for Apple's encoder
+// elsewhere.
 //
 // On the real disk: the stand-in ffmpeg is a program that is run.
-func failingMediaEngine(t *testing.T, real, calls string, onMac bool) string {
+func failingMediaEngine(t *testing.T, real, calls string, onMac, hang bool) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in is a shell script")
@@ -161,6 +258,12 @@ func failingMediaEngine(t *testing.T, real, calls string, onMac bool) string {
 	toX264 := "1"
 	if onMac {
 		toX264 = ""
+	}
+	fail := `echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
+  echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
+  exit 187`
+	if hang {
+		fail = `exec sleep 600`
 	}
 	script := `#!/bin/sh
 real='` + real + `'
@@ -175,9 +278,7 @@ case " $* " in
   echo processor >> "$calls" ;;
 *" h264_videotoolbox "*)
   echo 'media engine' >> "$calls"
-  echo '[h264_videotoolbox @ 0x6000013c] Error encoding frame: -12912' >&2
-  echo '[vost#0:0/h264_videotoolbox @ 0x6000013d] Error submitting video frame to the encoder' >&2
-  exit 187 ;;
+  ` + fail + ` ;;
 *) exec "$real" "$@" ;;
 esac
 # On the processor: all ffmpeg says is kept for the test, and elsewhere

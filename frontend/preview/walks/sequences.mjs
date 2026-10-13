@@ -1310,7 +1310,7 @@ export const sequences = [
   },
   {
     // Found by Tim: a thumbnail and a keyframe lit by the playhead stood
-    // half a pixel and a pixel to the right of its line. Plan row 2.232.
+    // half a pixel and a pixel to the right of its line. Plan row 2.234.
     name: "a thumbnail and a keyframe on the playhead's frame stand centred on its line",
     steps: [
       ["add", 30, "25"],
@@ -2636,6 +2636,12 @@ for (const seq of toWalk) {
         // or more, just after its second letter, so the X typed there has
         // letters of the word on either side. A click a fixed 12 px in
         // landed after a short word like "er" on CI, not in it.
+        // What is heard is held back from the window from the reading of
+        // the word to the click, see __pauseEvents in wails-bridge.ts. The
+        // stand-in speech model hears new words each time, and on CI
+        // "erzählt," was read and "er wäre" clicked, which put the X
+        // after "er", in one run of three on a busy machine.
+        await page.evaluate(() => window.__pauseEvents(true));
         const at = await page.evaluate(() => {
           const mark = document.querySelector(".telling .hearing");
           const text = mark?.firstChild;
@@ -2649,18 +2655,23 @@ for (const seq of toWalk) {
           return r && { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
         });
         if (!at) {
+          await page.evaluate(() => window.__pauseEvents(false));
           wrong = "nothing was being heard to click into";
           break;
         }
         await page.mouse.click(at.x, at.y);
+        // Read before what waited is let through, which may be heard
+        // words that are new.
         const where = await page.evaluate(() => {
           const sel = getSelection();
           const mark = document.querySelector(".telling .hearing");
-          return {
+          const where = {
             heard: mark?.textContent.trim() ?? "",
             inMark: !!mark?.contains(sel.anchorNode),
             inSaid: !!document.querySelector(".telling .dictated")?.contains(sel.anchorNode),
           };
+          window.__pauseEvents(false);
+          return where;
         });
         if (where.heard) wrong = `the words clicked into are still being heard: "${where.heard}"`;
         else if (where.inMark || !where.inSaid) wrong = "the cursor is not in the words clicked into";
@@ -4604,7 +4615,7 @@ for (const seq of toWalk) {
         // its inside, a pixel in from either side, and the playhead on its
         // moment where a thumbnail stood on the middle of its frame and a
         // keyframe on its start. So up close, where a frame is many pixels
-        // wide, they stood apart by as much. Plan row 2.232.
+        // wide, they stood apart by as much. Plan row 2.234.
         const m = await page.evaluate(() => {
           const mid = (e) => {
             const b = e.getBoundingClientRect();
@@ -4717,7 +4728,7 @@ for (const seq of toWalk) {
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         // Drawn as a diamond, the shape editors draw a keyframe in, and
         // the keyframe button's own: Lucide's diamond, filled, as a
-        // thumbnail is Lucide's camera filled. Plan row 2.232.
+        // thumbnail is Lucide's camera filled. Plan row 2.234.
         const shapes = await page.evaluate(() =>
           [...document.querySelectorAll(".clip-timeline .cropdot")].map((e) => e.querySelector("svg path")?.getAttribute("d") ?? "nothing"),
         );
