@@ -745,7 +745,8 @@ What it needs, and nothing else needs:
 
 The probe listens on 127.0.0.1:47290, for the test only. It says what the
 app has: the links it was handed, whether its window is in front, and what
-the settings show, read out of the page itself. It presses a button the
+the settings show, read out of the page itself, and which windows it has
+open. It presses a button the
 way a click does, found by its words, and it quits the app. It adds a
 video the way Add does once a file is picked, and asks for a search the
 way New does, and with that it can quit in the same moment, stopping
@@ -790,6 +791,15 @@ again and asks the probe how that search ended. It has to be interrupted,
 about the window it was asked for, which the clip list shows as
 Interrupted with Continue. A search cut off there once left no record,
 and nothing said it had been asked for.
+
+The third is Bugs, plan row 2.244, which opens Report a Problem in a
+window of its own, something no walk can see: the walks run in one page
+of a browser. It clicks Bugs and asks the probe which windows the app has
+open, the app's own and `report`, clicks Bugs again and finds still the
+two, closes the report window the way its close button does and finds
+the app's alone, and then Bugs opens it once more. The probe names every
+window the app has, from `app.Window.GetAll`, and closes one by its
+name.
 
 A link is handed to macOS with `open`, which is what a browser or a mail
 app does once a link is clicked and its own question, whether to open

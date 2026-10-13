@@ -81,6 +81,9 @@ type ProbeState struct {
 	// Searches is every search the app knows of, as the clip list reads
 	// them: running, or how one ended.
 	Searches []SearchView `json:"searches"`
+	// Windows is the name of every window the app has open, the app's
+	// own and the report window, see bugs.go.
+	Windows []string `json:"windows"`
 	// Problem says why the page could not be read, if it could not.
 	Problem string `json:"problem,omitempty"`
 }
@@ -156,6 +159,7 @@ func startProbe(svc *FrameFairy) {
 	mux.HandleFunc("GET /state", theProbe.state)
 	mux.HandleFunc("POST /click", theProbe.click)
 	mux.HandleFunc("POST /quit", theProbe.quit)
+	mux.HandleFunc("POST /close", theProbe.close)
 	mux.HandleFunc("POST /add", theProbe.add)
 	mux.HandleFunc("POST /search", theProbe.search)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -164,7 +168,12 @@ func startProbe(svc *FrameFairy) {
 }
 
 func (p *probe) state(w http.ResponseWriter, _ *http.Request) {
-	s := ProbeState{Licence: p.svc.Licence(), Searches: []SearchView{}}
+	s := ProbeState{Licence: p.svc.Licence(), Searches: []SearchView{}, Windows: []string{}}
+	if p.svc.app != nil {
+		for _, w := range p.svc.app.Window.GetAll() {
+			s.Windows = append(s.Windows, w.Name())
+		}
+	}
 	for _, j := range p.svc.jobs.list() {
 		if j.Kind == engine.JobSearch {
 			s.Searches = append(s.Searches, SearchView{Episode: j.Episode, State: j.State, Step: j.Step,
@@ -274,6 +283,19 @@ func (p *probe) click(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no button on screen says "+words, http.StatusNotFound)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// close closes a window by its name the way its close button does:
+// POST /close?window=report. It answers 404 when no such window is open.
+func (p *probe) close(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("window")
+	win, ok := p.svc.app.Window.GetByName(name)
+	if !ok {
+		http.Error(w, "no window called "+name+" is open", http.StatusNotFound)
+		return
+	}
+	win.Close()
 	w.WriteHeader(http.StatusNoContent)
 }
 

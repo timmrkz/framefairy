@@ -34,6 +34,8 @@ package outside
 //                          asks for a search of the window from and to, in
 //                          seconds, and quits the app in the same moment,
 //                          the way the second Cmd+Q stops everything
+//   {"close", window}      closes the window of this name the way its close
+//                          button does, "report" for the report window
 //
 // and what has to come of them. Each waits until it holds, and the step
 // fails when it does not within 20 seconds:
@@ -50,6 +52,10 @@ package outside
 //   {"saved", yes}         a key is in the keychain, "yes" or "no"
 //   {"waiting", yes}       a key from a link waits for the settings to take
 //                          it, "yes" or "no"
+//   {"windows", names}     the app has these windows open and no others,
+//                          their names in any order with a comma between
+//                          them: "Frame Fairy" is the app's own, "report"
+//                          the report window that Bugs opens
 //   {"search ends"}        no search of the video added runs any more
 //   {"search", how, from, to}
 //                          the video's search says how it ended,
@@ -126,6 +132,28 @@ var sequences = []sequence{
 			{"search", "interrupted", "30", "60"},
 		},
 	},
+	{
+		// Plan row 2.244. Bugs opens Report a Problem in a window of its
+		// own, so a person can talk about a problem while they go through
+		// it in the app. There is one at a time: Bugs again brings it
+		// forward rather than opening another, and once it is closed Bugs
+		// opens it again. Quitting closes it with the app.
+		name: "Bugs opens one report window at a time",
+		steps: []step{
+			{"set up"},
+			{"start"},
+			{"windows", "Frame Fairy"},
+			{"click", "Bugs"},
+			{"windows", "Frame Fairy, report"},
+			{"click", "Bugs"},
+			{"windows", "Frame Fairy, report"},
+			{"close", "report"},
+			{"windows", "Frame Fairy"},
+			{"click", "Bugs"},
+			{"windows", "Frame Fairy, report"},
+			{"quit"},
+		},
+	},
 }
 
 // verbs is every verb a step can start with, and how many words may follow
@@ -150,6 +178,8 @@ var verbs = map[string][2]int{
 	"search ends":     {0, 0},
 	"search and quit": {2, 2},
 	"search":          {3, 3},
+	"windows":         {1, 1},
+	"close":           {1, 1},
 }
 
 func (s step) String() string { return strings.Join(s, " ") }
