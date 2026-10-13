@@ -192,13 +192,16 @@
 //                      back runs out and the grid closes over it
 //   ["report", n]      presses Report and reads the zip it made: what was
 //                      written and n pictures, and the field empty after
+//   ["pictures fit"]   every picture is drawn whole in its tile, in its
+//                      middle, reaching both sides or top and bottom
+//   ["report at end"]  the report's field is scrolled to its end
 //   ["report lines up"]
 //                      the microphone, the paperclip and Report are one
 //                      height, the two are square, the tiles are one size
 //                      on whole pixels with a space between them, and the
 //                      row keeps its width while Report is pressed
 //   ["write", text, n] types text into the report's field and puts the
-//                      cursor n characters in
+//                      cursor n characters in, or at its end for "end"
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
@@ -1291,6 +1294,34 @@ export const sequences = [
       ["paste picture"],
       ["pictures", 4],
       ["report lines up"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim attached screenshots of every shape: tall ones
+    // showed only a strip of their middle, and a small tall one showed
+    // nothing at all. Every picture is drawn whole, in the middle of its
+    // tile and as large as it lets it be.
+    name: "Pictures of every shape are drawn whole in their tiles",
+    steps: [
+      ["bugs"],
+      ["drop pictures", "446x738 152x338 1492x190 142x104 786x504 380x1766"],
+      ["pictures", 6],
+      ["pictures fit"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim ended a dictation at the end of a long report
+    // with Enter and with the microphone, and the microphone left the
+    // field scrolled half a line up where Enter kept its end in view.
+    // Both keep the end of what was said in view.
+    name: "Stop and Enter both leave the end of a long report in view",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen", "end"],
+      ["dictate", "button"],
+      ["report at end"],
+      ["dictate", "enter"],
+      ["report at end"],
     ],
   },
   {
@@ -4138,15 +4169,20 @@ for (const seq of toWalk) {
       }
       case "drop pictures": {
         const [n, other] = Array.isArray(arg) ? arg : [arg];
+        // A number of pictures, or their shapes, "446x738".
+        const shapes = typeof n === "string" ? n.split(" ") : Array(n).fill("");
         const files = [];
-        for (let i = 0; i < n; i++) files.push(await (await fetch(new URL("/pick-picture?box=0", url))).json());
+        for (const shape of shapes) {
+          const [w, h] = shape.split("x");
+          files.push(await (await fetch(new URL(`/pick-picture?box=0${w ? `&w=${w}&h=${h}` : ""}`, url))).json());
+        }
         if (other) files.push(await (await fetch(new URL(`/pick-picture?box=0&kind=text&name=${encodeURIComponent(other)}`, url))).json());
         const before = await page.locator("li.tile").count();
         wrong = await dropOn(page, files);
         if (wrong) break;
         await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + n, { timeout: 10000 })
-          .catch(() => (wrong = `a drop of ${n} pictures left ${before} on the report window`));
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length, { timeout: 10000 })
+          .catch(() => (wrong = `a drop of ${shapes.length} pictures left ${before} on the report window`));
         await settle(page);
         break;
       }
@@ -4179,6 +4215,45 @@ for (const seq of toWalk) {
         if (!wrong && unseen) wrong = `${unseen} of the pictures did not load`;
         break;
       }
+      case "pictures fit": {
+        // Every picture is drawn whole in its tile, in its middle, and as
+        // large as the tile lets it be: it reaches both sides or the top
+        // and the bottom. Tim saw tall pictures cut off and small ones
+        // standing in a corner.
+        await page.waitForFunction(() => [...document.querySelectorAll("li.tile figure img")].every((i) => i.complete && i.naturalWidth), null, { timeout: 10000 }).catch(() => {});
+        const bad = await page.evaluate(() =>
+          [...document.querySelectorAll("li.tile figure")].flatMap((fig) => {
+            const img = fig.querySelector("img");
+            const f = fig.getBoundingClientRect();
+            const inner = { l: f.left + fig.clientLeft, t: f.top + fig.clientTop, w: fig.clientWidth, h: fig.clientHeight };
+            const b = img.getBoundingClientRect();
+            const fit = getComputedStyle(img).objectFit;
+            const s = fit === "contain" ? Math.min(b.width / img.naturalWidth, b.height / img.naturalHeight) : b.width / img.naturalWidth;
+            const w = img.naturalWidth * s;
+            const h = img.naturalHeight * s;
+            const l = b.left + (b.width - w) / 2;
+            const t = b.top + (b.height - h) / 2;
+            const name = `${img.naturalWidth}x${img.naturalHeight}`;
+            const out = [];
+            if (l < inner.l - 0.5 || t < inner.t - 0.5 || l + w > inner.l + inner.w + 0.5 || t + h > inner.t + inner.h + 0.5) out.push(`${name} is cut off, drawn ${Math.round(w)}x${Math.round(h)} in a tile of ${inner.w}x${inner.h}`);
+            else if (Math.abs(w - inner.w) > 1 && Math.abs(h - inner.h) > 1) out.push(`${name} is drawn ${Math.round(w)}x${Math.round(h)}, short of its tile of ${inner.w}x${inner.h} both ways`);
+            else if (Math.abs(l + w / 2 - (inner.l + inner.w / 2)) > 1 || Math.abs(t + h / 2 - (inner.t + inner.h / 2)) > 1) out.push(`${name} is not in the middle of its tile`);
+            return out;
+          }),
+        );
+        if (bad.length) wrong = bad.join(", ");
+        break;
+      }
+      case "report at end": {
+        // The field shows the end of what is in it, down to its padding.
+        const m = await page.evaluate(() => {
+          const f = document.querySelector(".telling");
+          return [f.scrollTop, f.scrollHeight - f.clientHeight];
+        });
+        if (m[1] <= 0) wrong = "the report is not long enough to scroll";
+        else if (Math.abs(m[0] - m[1]) > 1) wrong = `the report is scrolled to ${m[0]} px, not to its end at ${m[1]} px`;
+        break;
+      }
       case "picture note": {
         const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
         if (!said.includes(arg)) wrong = `the line beside the buttons says "${said}", not "${arg}"`;
@@ -4196,8 +4271,14 @@ for (const seq of toWalk) {
         const id = await tile.getAttribute("data-id");
         await tile.locator(".bin").click();
         // The tile says Removed in the frame of the click.
-        const gone = await page.evaluate((id) => !!document.querySelector(`li.tile[data-id="${id}"] .gone`), id);
-        if (!gone) wrong = `picture ${arg} did not say Removed in its place`;
+        const gone = await page.evaluate((id) => {
+          const g = document.querySelector(`li.tile[data-id="${id}"] .gone`);
+          return g ? getComputedStyle(g).animationName : null;
+        }, id);
+        if (gone === null) wrong = `picture ${arg} did not say Removed in its place`;
+        // It says so where the picture was, with nothing sliding in. Tim
+        // saw a swipe across the tile.
+        else if (gone !== "none") wrong = `picture ${arg} says Removed with the animation ${gone}`;
         await settle(page);
         break;
       }
@@ -4276,7 +4357,10 @@ for (const seq of toWalk) {
         await page.evaluate((n) => {
           const field = document.querySelector(".telling");
           const at = document.createRange();
-          at.setStart(field.firstChild, n);
+          if (n === "end") {
+            at.selectNodeContents(field);
+            at.collapse(false);
+          } else at.setStart(field.firstChild, n);
           getSelection().removeAllRanges();
           getSelection().addRange(at);
         }, at);

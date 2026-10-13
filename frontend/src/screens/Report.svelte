@@ -194,7 +194,7 @@
     at.insertNode(said);
     // A space from the word before, where it would run into it.
     if (/\S$/.test(around(said)[0])) said.prepend(" ");
-    field.focus();
+    field.focus({ preventScroll: true });
     const after = document.createRange();
     after.setStartAfter(said);
     getSelection()?.removeAllRanges();
@@ -346,6 +346,7 @@
     mark?.remove();
     said = mark = null;
     if (!was) return read();
+    const top = field.scrollTop;
     const at = document.createRange();
     at.setStartBefore(was);
     at.setEndAfter(was);
@@ -354,7 +355,7 @@
     was.remove();
     if (kept && text) {
       const words = (/\S$/.test(before) ? " " : "") + text + (/^\S/.test(after) ? " " : "");
-      field.focus();
+      field.focus({ preventScroll: true });
       getSelection()?.removeAllRanges();
       getSelection()?.addRange(at);
       if (!document.execCommand("insertText", false, words)) {
@@ -362,6 +363,12 @@
         at.insertNode(document.createTextNode(words));
       }
     }
+    // The field stays as dictating left it, with the end of the report in
+    // view, down to its padding, when what was said ends it, however the
+    // dictation was stopped. Stop on Tim's Mac left it half a line up,
+    // where Enter did not, since the browser put the cursor in view its
+    // own way.
+    field.scrollTop = after.trim() ? top : field.scrollHeight;
     read();
   }
 
@@ -783,8 +790,6 @@
     margin: 0;
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
     background: var(--ink-2);
     border: 1px solid var(--line);
     border-radius: var(--radius-s);
@@ -796,9 +801,15 @@
     outline-offset: 1px;
   }
 
+  /* The picture fills the tile's inside and is fitted into it whole, in
+     its middle, as large as the tile lets it be, small ones too. Sized by
+     max-width and max-height in a grid, it was drawn at its own size and
+     cut off, a strip of a tall one or a corner of a small one. */
   .tile img {
-    max-width: 100%;
-    max-height: 100%;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     display: block;
   }

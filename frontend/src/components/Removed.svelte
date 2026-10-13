@@ -56,6 +56,9 @@
     gap: 6px;
     border-radius: var(--radius-s);
     overflow: hidden;
+    /* It takes the picture's place where it stands. A row of the clip
+       list slides in, which across a tile read as a swipe to Tim. */
+    animation: none;
   }
 
   /* The fill that runs down wears the colour of what was taken away,
