@@ -14,6 +14,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// oneWay is how every name in a report is written.
+var oneWay = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)*$`)
+
 // A report of a problem is one zip on the Desktop, shown in Finder, with
 // what the person wrote, the log with its older files unpacked and the
 // trace lines kept in memory, what the
@@ -23,9 +26,6 @@ import (
 // Plan row 2.188.
 //
 // On the real disk: the report holds the log lumberjack keeps on the disk.
-// oneWay is how every name in a report is written.
-var oneWay = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)*$`)
-
 func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
