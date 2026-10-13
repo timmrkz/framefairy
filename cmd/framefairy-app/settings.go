@@ -341,17 +341,26 @@ func marked(files afero.Fs, video string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// folderRemoved says whether the folder of a video in the library was
-// deleted outside the app: the video is there and its folder has no mark.
-// A video that is not there is not judged, because its folder is beside
-// it: a drive taken out or a folder moved away takes both, and the video
-// says File not found until they are back.
-func folderRemoved(files afero.Fs, video string) bool {
-	info, err := files.Stat(video)
-	if err != nil || !info.Mode().IsRegular() {
+// deletedOutside says whether a video in the library was deleted outside
+// the app: its folder has no mark, and the video is there, or the folder
+// it was in is. A video deleted in Finder with its folder, the way Tim
+// cleared two of his, leaves the folder they were in behind. A drive
+// taken out or a folder moved away takes that folder too, so a video
+// whose folder is gone with it is not judged: it says File not found
+// until it is back.
+func deletedOutside(files afero.Fs, video string) bool {
+	if marked(files, video) {
 		return false
 	}
-	return !marked(files, video)
+	info, err := files.Stat(video)
+	if err == nil {
+		return info.Mode().IsRegular()
+	}
+	if !os.IsNotExist(err) {
+		return false
+	}
+	dir, err := files.Stat(filepath.Dir(video))
+	return err == nil && dir.IsDir()
 }
 
 // writtenBack are the files the app writes into a video's folder when it
@@ -400,7 +409,7 @@ var errOwnWork = errors.New("work of its own")
 func (s *store) letGo(path string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !slices.Contains(s.episodes, path) || !folderRemoved(s.files, path) {
+	if !slices.Contains(s.episodes, path) || !deletedOutside(s.files, path) {
 		return false, nil
 	}
 	s.episodes = slices.DeleteFunc(s.episodes, func(p string) bool { return p == path })
