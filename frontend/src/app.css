@@ -362,6 +362,39 @@ input[type="password"] {
   border-color: var(--accent-hi);
 }
 
+/* The playhead, on the range picker and on the clip timeline: one
+   playhead seen at two distances, so one rule draws it. A line and
+   nothing else, running 12 px past the track's top and bottom border,
+   further than a keyframe or a thumbnail stands out of the clip
+   timeline, so it is seen going on past a mark on its frame and is never
+   taken for one. Asked for by Tim in place of a head, plan row 2.234.
+   It is dragged left and right and taken hold of a few pixels either
+   side of the line, and goes white while it is held. Each track keeps
+   only where it stands. */
+.playhead {
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent-hi);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.playhead.scrubbing {
+  background: #fff;
+}
+
 
 /* A clip as a mark on a track: a capsule from where it starts to where it
    ends, in the app's colour, green once it is rendered, across the middle
