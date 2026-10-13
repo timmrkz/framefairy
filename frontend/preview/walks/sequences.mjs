@@ -6115,10 +6115,13 @@ for (const seq of toWalk) {
           // least seen in CI, so this holds only that the screen drew it
           // step by step. That every frame of the screen gets its own
           // scale is held by "the bounce after a word step" in
-          // captions.test.ts.
+          // captions.test.ts. So too the peak: with fewer frames one may
+          // land a little off it, 12.7 % of 15 on a machine running six
+          // walks at once, so a word holds that it popped, and the whole
+          // walk that some pop reached the peak.
           if (bounced < 5) {
             wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen`;
-          } else if (most < least * 1.13) {
+          } else if (most < least * 1.1) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
@@ -6126,7 +6129,7 @@ for (const seq of toWalk) {
         }
         console.log(`    ${report.join(", ")}`);
         if (!wrong && popped < 2 * arg) wrong = `only ${popped} of ${2 * arg} steps onto a word popped it`;
-        else if (!wrong && grew < 1.12) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
+        else if (!wrong && grew < 1.14) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
         break;
       }
       case "step frame by frame and see nothing pop": {
