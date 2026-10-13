@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"maps"
 	"math"
 	"sort"
 	"strings"
@@ -22,27 +23,17 @@ func (t *Transcript) hear(raw []Cue) {
 	t.Correct(nil)
 }
 
-// Correct makes the words again with an episode's corrections, keyed by the
-// millisecond a word starts, as corrections.json keeps them. A correction
-// says what a word reads. Removing a word is the clip's, see RemovedWords,
-// so a correction never takes a word out of what the episode says.
-//
-// A correction to nothing, or one behind removedMark, is how a word was
-// removed for the whole episode before removing became the clip's: it
-// reads what it read when it was removed, or what was heard. Such a word
-// comes back in every clip, which is what a clip made again over it
-// should have had. No migration: which clips removed it is not known.
+// Correct makes the words again with a clip's corrections, keyed by the
+// millisecond a word starts, see Clip.Corrections. A correction says what
+// a word reads, and one that reads as several words splits the word into
+// them. Removing a word is the clip's too, see RemovedWords, and no
+// correction takes a word out.
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
 	for _, w := range t.snapped {
-		if text, ok := corrections[wordKey(w.Start)]; ok {
-			if was, gone := strings.CutPrefix(text, removedMark); gone {
-				text = was
-			}
-			if strings.TrimSpace(text) != "" {
-				w.Text = text
-			}
+		if text, ok := corrections[wordKey(w.Start)]; ok && strings.TrimSpace(text) != "" {
+			w.Text = text
 		}
 		heard = append(heard, w)
 		if strings.TrimSpace(w.Text) == "" {
@@ -52,6 +43,22 @@ func (t *Transcript) Correct(corrections map[string]string) {
 	}
 	t.HeardWords, t.Words = heard, words
 	t.Language = wordsLanguage(words)
+	t.fixes = maps.Clone(corrections)
+}
+
+// Of is the words as a clip has them: what was heard, with the clip's own
+// corrections. Every clip reads its words through here, its captions, its
+// edges and the edits of its words alike, so a word corrected in one clip
+// reads as it was heard in every other, and in a clip made again where a
+// removed one was. A clip with no corrections reads the episode's words
+// as they are, and nothing is copied.
+func (t *Transcript) Of(clip Clip) *Transcript {
+	if maps.Equal(t.fixes, clip.Corrections) || (len(t.fixes) == 0 && len(clip.Corrections) == 0) {
+		return t
+	}
+	own := *t
+	own.Correct(clip.Corrections)
+	return &own
 }
 
 // captionWordsIn is the words a clip's captions are laid out from: the
@@ -86,6 +93,7 @@ func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []Cu
 // clipCaptionWords is captionWordsIn for a clip, the words its captions
 // can need.
 func (t *Transcript) clipCaptionWords(clip Clip) []Cue {
+	t = t.Of(clip)
 	if len(clip.Segments) == 0 {
 		return t.captionWordsIn(clip.RemovedWords, math.Inf(-1), math.Inf(1))
 	}
@@ -284,6 +292,7 @@ func HoldsWord(start, end float64, w Cue) bool {
 // app alike: from the words the clip says, in the clip's style, hyphenated
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
+	t = t.Of(clip)
 	captions := Captions(clip, t.clipCaptionWords(clip), max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }

@@ -43,8 +43,11 @@ const (
 	keyCaptionTimes = "caption_times"
 	// keyRemovedWords is the words a clip does not show, see RemovedWords.
 	keyRemovedWords = "removed_words"
-	keyThumbnails   = "thumbnails"
-	keyFound        = "found"
+	// keyCorrections is what the words of a clip read where they were
+	// heard wrong, see Clip.Corrections.
+	keyCorrections = "corrections"
+	keyThumbnails  = "thumbnails"
+	keyFound       = "found"
 	// keyFoundSegments is the pieces a clip was found with, each with the
 	// framing of its shot, so what a gesture puts back is framed by the
 	// shot it shows.

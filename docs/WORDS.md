@@ -27,12 +27,18 @@ before a fix reached them.
 There are two levels, and each is worked out in one function.
 
 **What is said**, `Transcript.Words`. The recogniser's words, moved onto
-the sound (`SnapWords`), with the corrections applied, and a correction
-that reads as two words split into two words that share the time the
-recogniser measured. Everything that reads the episode reads these: the
-prompt, the room a window has, the clip timeline, the edits. The stored
-transcript keeps the recogniser's own words, and the corrections stay in
-`corrections.json`, so nothing the recogniser heard is lost.
+the sound (`SnapWords`). Everything that reads the episode reads these:
+the prompt, the room a window has, the clip timeline.
+
+**What a clip says**, `Transcript.Of`. The words said with the clip's own
+corrections, and a correction that reads as two words split into two
+words that share the time the recogniser measured. A correction is kept
+in the clip's plan entry, `corrections`, so it goes with the clip, and
+another clip over the same word reads it as it was heard. A clip's
+captions, its edges and the edits of its words all read its words
+through here. The stored transcript keeps the recogniser's own words, so
+nothing the recogniser heard is lost. Corrections used to be kept for the
+whole episode in `corrections.json`, which is no longer read.
 
 **What is shown**, `Shown`. The words said, the way a clip's captions show
 them: a word too wide for a line is its two hyphenated halves, each with
@@ -47,9 +53,8 @@ entry, `removed_words`, against the word heard, and the clip's captions
 are laid out with it there and not shown, see `RemovedWords` in
 `engine/removedwords.go`. It never changes what is said: the words said
 keep it, every other clip shows it, and a clip made again where a removed
-one was has it. A correction is the episode's, because a misheard word is
-wrong in every clip, and a removal is the clip's, because hiding a word is
-a choice about one short.
+one was has it. Corrections and removals alike are the clip's, so a clip
+removed takes everything done to its words with it. Tim chose that.
 
 **A clip's words** are not stored. A clip is its pieces, and its words are
 the words said that its pieces hold, `Said`: a word is in the clip

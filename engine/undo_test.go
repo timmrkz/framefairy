@@ -174,31 +174,29 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	change := edited(t, fsys, logs, func() error {
-		return SetWordText(fsys, logs, path, "01", 10.6, "zwo", tr)
+		return SetWordText(fsys, path, "01", 10.6, "zwo", tr)
 	})
-	if LoadCorrections(fsys, logs)[wordKey(10.6)] != "zwo" {
+	if clipsOf(t, fsys, path)["01"].Corrections[wordKey(10.6)] != "zwo" {
 		t.Fatal("the word was not corrected")
 	}
 	// A word of another clip corrected since is not the undo's to take.
-	if err := SetWordText(fsys, logs, path, "01", 20.1, "fünf!", tr); err != nil {
+	if err := SetWordText(fsys, path, "02", 20.1, "fünf!", tr); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := change.Undo(); err != nil {
 		t.Fatal(err)
 	}
-	corrections := LoadCorrections(fsys, logs)
-	if _, ok := corrections[wordKey(10.6)]; ok {
+	clips := clipsOf(t, fsys, path)
+	if _, ok := clips["01"].Corrections[wordKey(10.6)]; ok {
 		t.Error("the correction is still there")
 	}
-	if corrections[wordKey(20.1)] != "fünf!" {
+	if clips["02"].Corrections[wordKey(20.1)] != "fünf!" {
 		t.Error("a correction made since was lost")
 	}
-	// The words made again from what is kept say zwei again.
-	again := editableTranscript()
-	again.Correct(corrections)
-	for _, w := range Said(clipsOf(t, fsys, path)["01"], again.Words) {
+	// The clip's words say zwei again.
+	for _, w := range Said(clips["01"], tr.Of(clips["01"]).Words) {
 		if w.Text == "zwo" {
-			t.Errorf("the clip still says zwo: %v", again.Words)
+			t.Errorf("the clip still says zwo: %v", tr.Of(clips["01"]).Words)
 		}
 	}
 }

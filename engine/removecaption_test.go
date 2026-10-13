@@ -2,7 +2,6 @@ package engine
 
 import (
 	"math"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,7 +45,6 @@ func cueWords(c CaptionView) string {
 // a caption block clicked on the clip timeline and taken out with delete.
 func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	fsys, path := captionPlanPath(t)
-	logs := filepath.Dir(path)
 	tr := fromStored(captionHeard(), nil, 0, 0, nil)
 	before, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
@@ -75,7 +73,7 @@ func TestRemovingACaptionRemovesItsWordsAndNothingElse(t *testing.T) {
 	// Each word is removed as it would be on its own, so each comes back
 	// on its own too: corrected again, it reads what it is given.
 	first := gone.Lines[0].Words[0]
-	if err := SetWordText(fsys, logs, path, "01", *first.Said, "Hier", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", *first.Said, "Hier", tr); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := ClipCaptionsView(fsys, path, "01", tr, nil)

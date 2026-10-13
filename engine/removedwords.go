@@ -16,8 +16,7 @@ import (
 // caption, removed its clip, made the clip again with I where it had been,
 // and the caption was still gone.
 //
-// What a word reads stays the video's, see corrections.go: a misheard word
-// is wrong in every clip.
+// What a word reads is the clip's in the same way, see corrections.go.
 
 // RemovedWords is the words a clip does not show, each kept against the
 // word heard, by the millisecond it starts in the episode, as a

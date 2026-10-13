@@ -147,24 +147,23 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 	return out, nil
 }
 
-// SetWord corrects a word of an episode, typed in the caption box of a
-// clip, for every clip that says it. A word typed empty is removed from
-// that clip alone, and a word the clip removed typed back in beside its
+// SetWord corrects a word of one clip, typed in its caption box. Every
+// other clip still reads it as it was heard. A word typed empty is removed
+// from the clip, and a word the clip removed typed back in beside its
 // neighbour comes back in it. See engine.SetWordText.
 func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, start float64, text string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	p := s.project(path)
-	// Read fresh, not from what Waveform and Words keep: an edit works on
-	// the words themselves, and nothing else may be holding them.
-	t, err := p.Transcript()
+	// A correction changes the clip and never what the video says, so the
+	// words kept are the words to read.
+	t, err := s.words(path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.SetWordText(s.store.files, p.LogsDir(), plan, clipID, start, text, t)
+		return engine.SetWordText(s.store.files, plan, clipID, start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)

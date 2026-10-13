@@ -947,11 +947,15 @@ bubble scrolled by those eight pixels.
     Chromium, on Windows and in the preview, a clicked button kept it, and
     Enter then pressed the button again instead of opening a word: a click
     on Highlight and then Enter switched the highlight back on.
-  - The correction applies to every clip with that word, because it belongs
-    to the episode and not to the clip. It is kept in
-    `<episode>.framefairy/logs/corrections.json` and applied every time the
-    transcript is read. Removing a word or a caption is different: it
-    belongs to the clip, see below.
+  - **A correction belongs to the clip it is typed in.** It is kept in the
+    clip's plan entry, `corrections`, against the word the recogniser
+    heard, and the clip's words are made with it, `Transcript.Of` in
+    `engine/words.go`. Every other clip over the same word reads it as it
+    was heard, a search and the model read what was heard, and a clip
+    removed and made again where it was starts from what was heard. Tim
+    chose this: everything done to a clip goes with it. Corrections used to
+    be kept for the whole episode in `logs/corrections.json`, which is no
+    longer read, so the corrections made before are gone.
   - **A correction may hold more than one word.** Where the recogniser heard
     one word and two were said, writing both splits the word it measured
     between them, so the captions break and highlight them one by one.
@@ -978,8 +982,7 @@ bubble scrolled by those eight pixels.
     `engine/removedwords.go`. It used to be a correction to nothing in
     `corrections.json`, kept for the whole episode: Tim removed a caption,
     removed its clip, made it again with I where it had been, and the
-    caption was still gone. A removal of that kind from before is read
-    as no removal at all, so the word is back in every clip. A word
+    caption was still gone. A word
     removed then corrected again comes back with the new text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
     word gone from it: the captions are laid out as if the word were still
@@ -2761,8 +2764,9 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
   Windows and `~/.config/FrameFairy` on Linux.
 - **Everything about an episode:** next to it in `<episode>.framefairy/`, the
   same folder the command line uses. See [CLI.md](CLI.md#run).
-- **Word corrections:** in `<episode>.framefairy/logs/corrections.json`. They
-  change what captions show, never the stored transcript.
+- **Word corrections and removed words:** in each clip's plan entry,
+  `corrections` and `removed_words`. They change what that clip's
+  captions show, never the stored transcript or another clip.
 - **Training records:** in `<episode>.framefairy/training/`. The app writes them
   and shows nothing about them. See [TRAINING.md](TRAINING.md).
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,

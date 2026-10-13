@@ -62,6 +62,11 @@ type Clip struct {
 	// caption box or with a caption on the clip timeline, see
 	// RemovedWords. They are the clip's, and go with it.
 	RemovedWords RemovedWords
+	// Corrections are what the words of the clip read where they were
+	// heard wrong, typed in the caption box, by the millisecond the word
+	// heard starts in the episode, see Transcript.Of. They are the clip's,
+	// and go with it.
+	Corrections map[string]string
 	// Thumbnails are the moments of the episode the render takes a picture
 	// of the short at, in time order. Only moments inside a kept piece are
 	// here: one a trim or a cut left outside stays in the plan and comes
@@ -439,6 +444,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			CaptionY:     captionY,
 			CaptionTimes: readCaptionTimes(entry[keyCaptionTimes]),
 			RemovedWords: readRemovedWords(entry[keyRemovedWords]),
+			Corrections:  readCorrections(entry[keyCorrections]),
 			Thumbnails:   readThumbnails(entry[keyThumbnails], segments),
 			CropMarks:    marks,
 			Found:        readFound(entry[keyFound]),

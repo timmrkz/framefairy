@@ -1,45 +1,84 @@
 package engine
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
-	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/spf13/afero"
 )
 
-// Word corrections are kept per episode in logs/corrections.json, keyed by
-// the millisecond a word starts. They change what captions show and never
-// the stored transcript, so the model's prompts stay the same and the
-// recogniser's own output is never lost.
-
-type correctionsFile struct {
-	Version int               `json:"version"`
-	Words   map[string]string `json:"words"`
-}
-
-func correctionsPath(logsDir string) string {
-	return filepath.Join(logsDir, "corrections.json")
-}
+// Word corrections are kept with the clip they are typed in, in its plan
+// entry, keyed by the millisecond the word heard starts, see
+// Clip.Corrections. They change what that clip's captions show and never
+// the stored transcript or another clip, so the model's prompts stay the
+// same, the recogniser's own output is never lost, and a clip removed and
+// made again starts from what was heard. They used to be kept for the
+// whole episode in logs/corrections.json, and Tim chose to have them go
+// with the clip. That file is no longer read.
 
 func wordKey(start float64) string {
 	return fmt.Sprintf("%d", int64(math.Round(start*1000)))
 }
 
-// LoadCorrections reads an episode's word corrections.
-func LoadCorrections(fsys afero.Fs, logsDir string) map[string]string {
-	var file correctionsFile
-	data, err := afero.ReadFile(fsys, correctionsPath(logsDir))
-	if err != nil || json.Unmarshal(data, &file) != nil || file.Words == nil {
-		return map[string]string{}
+// maxCorrections is how many words one clip may have corrected, far more
+// than a clip of any length says.
+const maxCorrections = 5000
+
+// readCorrections takes the corrections of a clip out of its plan entry,
+// which is untrusted like the rest of it. A key that is not a millisecond
+// of an episode and a text a word could not be corrected to are left out.
+func readCorrections(raw any) map[string]string {
+	fields, ok := raw.(map[string]any)
+	if !ok || len(fields) == 0 {
+		return nil
 	}
-	return file.Words
+	out := map[string]string{}
+	for key, value := range fields {
+		if len(out) == maxCorrections {
+			break
+		}
+		ms, err := strconv.ParseInt(key, 10, 64)
+		if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != key {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		if clean, err := CleanWordText(text); err == nil && clean == text {
+			out[key] = text
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// putCorrections keeps the corrections of a clip in its plan entry, and
+// keeps no key for a clip with none.
+func putCorrections(c *object, corrections map[string]string) {
+	if len(corrections) == 0 {
+		c.remove(keyCorrections)
+		return
+	}
+	keys := slices.Sorted(maps.Keys(corrections))
+	slices.SortFunc(keys, func(a, b string) int {
+		am, _ := strconv.ParseInt(a, 10, 64)
+		bm, _ := strconv.ParseInt(b, 10, 64)
+		return int(am - bm)
+	})
+	fixes := newObject()
+	for _, key := range keys {
+		fixes.set(key, corrections[key])
+	}
+	c.set(keyCorrections, fixes)
 }
 
 // CleanWordText checks a corrected word.
@@ -54,33 +93,24 @@ func CleanWordText(text string) (string, error) {
 	return text, nil
 }
 
-// SetWordText corrects one word of an episode, the word heard at a moment,
-// typed in the caption box of a clip of a plan. The correction is kept for
-// the episode, against the word the recogniser heard, and the words are
-// made again with it, see Transcript.Correct. No clip keeps words of its
-// own, so every clip that says the word says it corrected from here on.
+// SetWordText corrects one word of a clip of a plan, the word heard at a
+// moment, typed in the caption box. The correction is kept with the clip,
+// against the word the recogniser heard, and the clip's words are made
+// with it, see Transcript.Of. Another clip over the same word still reads
+// what was heard, and the correction goes when the clip goes.
 //
 // A word corrected to nothing is removed from the clip, see RemoveWord,
 // and a word removed from the clip typed back in beside its neighbour
-// comes back in the clip, see putBack. Removing is the clip's and never
-// the episode's: a word removed for the episode was gone from every clip,
-// and from a clip made again where a removed one had been.
-func SetWordText(fsys afero.Fs, logsDir, planPath, clipID string, at float64, text string, t *Transcript) error {
+// comes back in it, see putBack.
+func SetWordText(fsys afero.Fs, planPath, clipID string, at float64, text string, t *Transcript) error {
 	if strings.TrimSpace(Scrub(text, 200)) == "" {
 		return RemoveWord(fsys, planPath, clipID, at, -1, t)
 	}
-	_, clip, err := planClip(fsys, planPath, clipID)
-	if err != nil {
-		return err
-	}
-	removed := clip.RemovedWords.clone()
-	err = changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
-		return correctWord(corrections, removed, at, text, work)
+	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+		// A copy, so the words read by everything else stay as they were.
+		work := *t.Of(Clip{Corrections: corrections})
+		return correctWord(corrections, removed, at, text, &work)
 	})
-	if err != nil || maps.Equal(removed, clip.RemovedWords.clone()) {
-		return err
-	}
-	return setRemovedWords(fsys, planPath, clipID, removed)
 }
 
 // RemoveWord removes a word from a clip, the word heard at a moment, or
@@ -91,44 +121,49 @@ func SetWordText(fsys afero.Fs, logsDir, planPath, clipID string, at float64, te
 // the room it took, see Captions, and an undo or typing it back in beside
 // its neighbour puts it back.
 func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t *Transcript) error {
-	heard, ok := t.HeardAt(at)
-	if !ok {
-		return renderErr("there is no word at %s", HMS(at))
-	}
-	if part >= max(len(strings.Fields(heard.Text)), 1) {
-		return renderErr("the word at %s is not %d words", HMS(at), part+1)
-	}
-	return editRemovedWords(fsys, planPath, clipID, func(removed RemovedWords) error {
+	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+		heard, ok := t.Of(Clip{Corrections: corrections}).HeardAt(at)
+		if !ok {
+			return renderErr("there is no word at %s", HMS(at))
+		}
+		if part >= max(len(strings.Fields(heard.Text)), 1) {
+			return renderErr("the word at %s is not %d words", HMS(at), part+1)
+		}
 		removed.takeHeard(heard, part)
 		return nil
 	})
 }
 
-// editRemovedWords changes the words a clip does not show and writes them
-// to its plan entry, nothing when the change fails or changes nothing.
-func editRemovedWords(fsys afero.Fs, planPath, clipID string, change func(RemovedWords) error) error {
+// editClipWords changes what a clip's words read and which it does not
+// show, and writes both to its plan entry, nothing when the change fails
+// or changes nothing. Both are read from the plan as it is under its lock,
+// so two edits one after the other each see the other's.
+func editClipWords(fsys afero.Fs, planPath, clipID string,
+	change func(corrections map[string]string, removed RemovedWords) error) error {
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
 		}
+		corrections := maps.Clone(readCorrections(plainValue(c.values[keyCorrections])))
+		if corrections == nil {
+			corrections = map[string]string{}
+		}
 		removed := readRemovedWords(c.values[keyRemovedWords]).clone()
-		if err := change(removed); err != nil {
+		if err := change(corrections, removed); err != nil {
 			return err
 		}
+		putCorrections(c, corrections)
 		putRemovedWords(c, removed)
 		return nil
 	})
 }
 
-// setRemovedWords writes the words a clip does not show to its plan entry.
-func setRemovedWords(fsys afero.Fs, planPath, clipID string, removed RemovedWords) error {
-	return editRemovedWords(fsys, planPath, clipID, func(r RemovedWords) error {
-		clear(r)
-		for key := range removed {
-			r[key] = true
-		}
-		return nil
+// editRemovedWords changes the words a clip does not show, see
+// editClipWords.
+func editRemovedWords(fsys afero.Fs, planPath, clipID string, change func(RemovedWords) error) error {
+	return editClipWords(fsys, planPath, clipID, func(_ map[string]string, removed RemovedWords) error {
+		return change(removed)
 	})
 }
 
@@ -142,36 +177,11 @@ func putRemovedWords(c *object, removed RemovedWords) {
 	c.set(keyRemovedWords, removed.list())
 }
 
-// changeWords makes a change to the corrections of an episode, worked out
-// against a copy of its words, writes them, and then corrects t. Nothing is
-// written when the change fails or changes nothing.
-func changeWords(fsys afero.Fs, logsDir string, t *Transcript,
-	change func(corrections map[string]string, work *Transcript) error) error {
-	trainingMu.Lock()
-	corrections := LoadCorrections(fsys, logsDir)
-	was := maps.Clone(corrections)
-	work := *t
-	err := change(corrections, &work)
-	if err == nil && !maps.Equal(was, corrections) {
-		var body []byte
-		body, err = marshalNoEscape(correctionsFile{Version: 1, Words: corrections})
-		if err == nil {
-			err = WriteAtomic(fsys, correctionsPath(logsDir), append(body, '\n'))
-		}
-	}
-	trainingMu.Unlock()
-	if err != nil {
-		return err
-	}
-	t.Correct(corrections)
-	return nil
-}
-
-// correctWord keeps in corrections what the word heard at a moment says,
-// the way SetWordText keeps it, and corrects t from them, so the next word
-// is changed against this one. removed is the words the clip it is typed
-// in does not show, and a word of them typed back in beside its neighbour
-// comes back in it.
+// correctWord keeps in corrections, a clip's, what the word heard at a
+// moment says, the way SetWordText keeps it, and corrects t from them, so
+// the next word is changed against this one. t is the clip's words, a copy
+// of its own to change. removed is the words the clip does not show, and a
+// word of them typed back in beside its neighbour comes back in it.
 func correctWord(corrections map[string]string, removed RemovedWords, at float64, text string, t *Transcript) error {
 	text, err := CleanWordText(text)
 	if err != nil {
@@ -279,6 +289,11 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	if cue == nil {
 		return renderErr("there is no caption at %s", HMS(first))
 	}
+	_, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return err
+	}
+	t = t.Of(clip)
 	// The heard words of the caption, each with the part of it the
 	// caption holds, or all of it. A word the captions draw in halves is
 	// there twice, and is one word.
@@ -334,6 +349,7 @@ func trimCaption(removed RemovedWords, clip Clip, c LaidCaption, edge string, to
 	if len(clip.Segments) == 0 {
 		return CaptionEdit{}
 	}
+	t = t.Of(clip)
 	from := c.Start
 	if edge == "end" {
 		from = c.End
@@ -390,4 +406,16 @@ func trimCaption(removed RemovedWords, clip Clip, c LaidCaption, edge string, to
 		removed.take(t, w)
 	}
 	return CaptionEdit{Removed: len(gone), Back: len(back)}
+}
+
+// plainValue is an object of a plan as it is edited, which keeps its keys
+// in order, as the map a plan is read into, so one reader reads both.
+func plainValue(v any) any {
+	o, ok := v.(*object)
+	if !ok {
+		return v
+	}
+	out := make(map[string]any, len(o.values))
+	maps.Copy(out, o.values)
+	return out
 }

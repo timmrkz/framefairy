@@ -303,7 +303,6 @@ func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB 
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
 	t.Heard = file.heard()
-	t.Correct(LoadCorrections(fsys, logsDir))
 	return t, nil
 }
 
@@ -857,6 +856,7 @@ func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcr
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {
+	t = t.Of(clip)
 	s := ResolveStyle(captionStyle(plan, clip, overrides))
 	laid := ClipCaptions(clip, t, s)
 

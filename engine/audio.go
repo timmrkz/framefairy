@@ -73,6 +73,8 @@ type Transcript struct {
 	// Language is what the words are in, as ISO 639-1, read off them once.
 	Language string
 	snapped  []Cue
+	// fixes are the corrections the words were made with, see Of.
+	fixes map[string]string
 	// Loudness in dB every FrameSeconds, starting at Start.
 	Frames []float32
 	Start  float64

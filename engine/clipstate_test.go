@@ -53,11 +53,10 @@ func captionsOf(v *CaptionsView) []string {
 }
 
 // readAgain is the transcript as the app reads it after an edit, from
-// what was heard and what the episode keeps beside it.
-func readAgain(fsys afero.Fs, logs string, heard []Cue) *Transcript {
-	t := fromStored(heard, nil, 0, 0, nil)
-	t.Correct(LoadCorrections(fsys, logs))
-	return t
+// what was heard. Nothing beside it is read: what an edit does to words is
+// kept in the clip.
+func readAgain(_ afero.Fs, _ string, heard []Cue) *Transcript {
+	return fromStored(heard, nil, 0, 0, nil)
 }
 
 // A clip made again where a removed one was is a clip of its own, with
@@ -194,4 +193,57 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if got, want := strings.Join(captionsOf(again), "\n"), strings.Join(captionsOf(first), "\n"); got != want {
 		t.Errorf("made again it has\n%s\nthe first time\n%s", got, want)
 	}
+}
+
+// A word corrected in one clip is corrected there alone, and goes with the
+// clip: a clip made again where it was reads what was heard. Tim chose
+// this over a correction kept for the whole video, so a clip made again
+// starts from nothing done to it.
+func TestACorrectionGoesWithItsClip(t *testing.T) {
+	plan := `{
+  "source": "ep.mp4",
+  "clips": [
+    {"id": "01", "slug": "schulhof", "segments": [{"start": 59.9, "end": 66.0}]},
+    {"id": "02", "slug": "schulhof-lang", "segments": [{"start": 59.9, "end": 66.0}]}
+  ]
+}`
+	fsys, path := writePlanAt(t, plan)
+	tr := readAgain(fsys, filepath.Dir(path), captionHeard())
+	if err := SetWordText(fsys, path, "01", 61.2, "zwei", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownWordsOf(t, fsys, path, "01", tr); !strings.Contains(got, "stand zwei Typ") {
+		t.Errorf("the clip corrected shows %q", got)
+	}
+	if got := shownWordsOf(t, fsys, path, "02", tr); !strings.Contains(got, "stand ein Typ") {
+		t.Errorf("the other clip over the same words shows %q", got)
+	}
+	if tr.Words[2].Text != "ein" {
+		t.Errorf("the video says %q", tr.Words[2].Text)
+	}
+	if err := SetRejected(fsys, path, "01", true); err != nil {
+		t.Fatal(err)
+	}
+	hand := filepath.Join(filepath.Dir(path), HandPlanName)
+	body := `{"source": "ep.mp4", "clips": [{"id": "h01", "slug": "schulhof", "segments": [{"start": 59.9, "end": 66.0}]}]}`
+	if err := afero.WriteFile(fsys, hand, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownWordsOf(t, fsys, hand, "h01", tr); !strings.Contains(got, "stand ein Typ") {
+		t.Errorf("the clip made again shows %q", got)
+	}
+}
+
+// shownWordsOf is what one clip of a plan shows, its captions' words.
+func shownWordsOf(t *testing.T, fsys afero.Fs, path, id string, tr *Transcript) string {
+	t.Helper()
+	view, err := ClipCaptionsView(fsys, path, id, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, c := range view.Captions {
+		out = append(out, cueWords(c))
+	}
+	return strings.Join(out, " ")
 }

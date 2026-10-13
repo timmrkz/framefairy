@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -302,7 +301,6 @@ func TestACaptionEdgeStopsAtTheCaptionBeside(t *testing.T) {
 // words would put it, 0.9, so the test sees which of the two it is.
 func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	// The end of "eins zwei" moved from 1.1 to 0.85, short of the middle
 	// of "zwei", 0.8, which stays.
@@ -312,7 +310,7 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-0.85 eins zwei" {
 		t.Fatalf("moved: %q", got)
 	}
-	if err := SetWordText(fsys, logs, path, "01", 10.6, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, fsys, path, tr); got[0] != "0.00-0.85 eins" {
@@ -329,7 +327,6 @@ func TestAMovedEdgeStaysWhenItsWordIsRemoved(t *testing.T) {
 // the edge back out.
 func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	// The start of "drei vier" moved out from 1.2 to 1.15.
 	if _, err := SetCaptionTime(fsys, path, "01", 12.0, "start", 11.95, tr, nil); err != nil {
@@ -338,7 +335,7 @@ func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	if got := shownCaptions(t, fsys, path, tr); got[1] != "1.15-3.30 drei vier" {
 		t.Fatalf("moved: %q", got)
 	}
-	if err := SetWordText(fsys, logs, path, "01", 12.0, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 12.0, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
@@ -349,7 +346,7 @@ func TestAnEdgeMovedOutComesInWhenItsWordIsRemoved(t *testing.T) {
 	if got := shownCaptions(t, fsys, path, tr); got[1] != "2.20-3.30 vier" || !view.Captions[1].StartMoved {
 		t.Errorf("drei removed in the caption box: %q, moved %v", got, view.Captions[1].StartMoved)
 	}
-	if err := SetWordText(fsys, logs, path, "01", 12.0, "drei", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 12.0, "drei", tr); err != nil {
 		t.Fatal(err)
 	}
 	if got := shownCaptions(t, fsys, path, tr); got[1] != "1.15-3.30 drei vier" {
@@ -384,9 +381,7 @@ func TestAWordTheClipCutsIntoIsPassed(t *testing.T) {
 // saves, and showing it writes nothing.
 func TestAnEdgeShowsWhatItSaves(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	logs := filepath.Dir(path)
 	tr := editableTranscript()
-	plan, _ := afero.ReadFile(fsys, path)
 	for _, step := range []struct {
 		word float64
 		edge string
@@ -396,11 +391,12 @@ func TestAnEdgeShowsWhatItSaves(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		plan, _ := afero.ReadFile(fsys, path)
+		if _, err := ShapeCaptionTime(fsys, path, "01", step.word, step.edge, step.at, tr, nil); err != nil {
+			t.Fatal(err)
+		}
 		if now, _ := afero.ReadFile(fsys, path); !bytes.Equal(now, plan) {
 			t.Fatal("showing an edge wrote the plan")
-		}
-		if _, err := fsys.Stat(correctionsPath(logs)); err == nil && step.at == 10.7 {
-			t.Fatal("showing an edge wrote the corrections")
 		}
 		if _, err := SetCaptionTime(fsys, path, "01", step.word, step.edge, step.at, tr, nil); err != nil {
 			t.Fatal(err)
@@ -442,7 +438,6 @@ func TestOnlyACaptionEdgeIsMoved(t *testing.T) {
 // out, which after a drag is about where it already stood.
 func TestAnEdgePutBackBringsBackItsWords(t *testing.T) {
 	fsys, path := editablePlanPath(t)
-	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	was := shownCaptions(t, fsys, path, tr)
 	for _, drag := range []float64{10.7, 10.3} {
@@ -462,7 +457,7 @@ func TestAnEdgePutBackBringsBackItsWords(t *testing.T) {
 	}
 	// The same after the word was removed in the caption box, and the edge
 	// says it can be put back.
-	if err := SetWordText(fsys, logs, path, "01", 10.6, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)

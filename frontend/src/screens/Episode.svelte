@@ -1540,11 +1540,9 @@
     const ticket = words.send();
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
-      // Other clips with the same word changed too.
-      const read = listed.send();
-      const list = (await api.clips(path)) ?? [];
-      if (!words.keep(ticket) || !listed.keep(read)) return;
-      clips = list.map((c) => (c.key === updated.key ? updated : c));
+      // A correction is the clip's own, so no other clip changed.
+      if (!words.keep(ticket)) return;
+      putClip(updated);
     } catch (err) {
       words.keep(ticket);
       problem = errorText(err);
