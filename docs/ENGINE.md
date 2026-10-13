@@ -802,20 +802,25 @@ round its word on every frame and to never less than at rest.
 
 libass stands the lines of a caption as close as the face is tall, so
 a pill of the whole line and its room reaches into the letters of the
-line above or below. The lines stay where libass puts them. The pill
-stops instead: never nearer than 0.04 of the size to the ink of a word of
-the other line over or under it, and halfway between where a letter of
-the other line comes nearer than that to the word's own ink,
-`wordsLaid.pill` in `engine/wordframes.go`. Its bounce stays as clear of
-the other line: it reaches as far as it has room each way, and what one
-side has no room for goes to the other, so a word on the bottom line of
-two bounces down and a word on the top line bounces up, and every word
-bounces as far, `wordsLaid.bounce`. Tim saw the "g" of "wichtig" stand in
-the pill of "Leute" on the line under it on #201, and the lines moved
-apart for it for a while, which he did not want.
-`TestThePillNeverReachesAnotherLine` reads that caption back from a short
+line above or below. The lines stay where libass puts them. The pills of
+a line stop instead, all at one height so the pill keeps its height as it
+walks along the line: never nearer than 0.04 of the size to the ink of the
+other line over the width of the line, `wordsLaid.lineBand` in
+`engine/wordframes.go`. Where the letters of the two lines are nearer
+than that leaves room for, the tail of a "g" over the dots of an "Ä", the
+pill keeps 0.04 of the size over its own letters and touches the other
+line. Its bounce stays as clear: it reaches as far as it has room each
+way, and what one side has no room for goes to the other, so a word on
+the bottom line of two bounces mostly down and one on the top line mostly
+up, and every word bounces as far, `wordsLaid.bounce`. Tim saw the "g" of
+"wichtig" stand in the pill of "Leute" on the line under it on #201. The
+lines moved apart for it for a while, which he did not want, and then the
+pill stopped short word by word and jumped as it walked along a line.
+`TestThePillNeverReachesAnotherLine` reads his caption back from a short
 and holds the pill clear of the other line's letters on every frame and
 its bounce to at least 0.25 of the size in height.
+`TestEveryPillOfALineIsOneHeightAndClearOfTheOther` holds the rule on
+where libass puts the words, for his caption and for the one with "Ä".
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished

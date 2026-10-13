@@ -68,10 +68,10 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // opened from inside its rest on every side, so the first frame of a word,
 // which is where a click on the word puts the playhead, showed the pill
 // hugging the letters, and at rest it reached only pillPadY past the
-// tallest letter of the words themselves. Tim saw both on #201. Where a
-// word of another line of the caption stands over or under it, the pill
-// stops short of that word's letters, and bounces into the room there is,
-// see wordsLaid.pill and wordsLaid.bounce.
+// tallest letter of the words themselves. Tim saw both on #201. Where
+// another line of the caption stands over or under it, the pills of its
+// line stop short of that line's letters, all at one height, and bounce
+// into the room there is, see wordsLaid.lineBand and wordsLaid.bounce.
 // ---------------------------------------------------------------------------
 
 const (
@@ -92,7 +92,7 @@ const (
 	pillPadY = 0.10
 	// lineClear is the least room the pill leaves to a letter of another
 	// line of its caption, at rest and at the top of its bounce, as a
-	// share of the caption size, see wordsLaid.pill.
+	// share of the caption size, see wordsLaid.lineBand.
 	lineClear = 0.04
 	// lineReach is the tallest and the deepest letters a line can hold,
 	// whose ink says how tall the line is, see pillLines.

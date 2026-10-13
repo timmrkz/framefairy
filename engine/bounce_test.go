@@ -7,6 +7,7 @@ import (
 	"math"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"framefairy/internal/ffmpegtest"
@@ -369,5 +370,95 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 			t.Errorf("%s: the pill grows from %d to %d pixels at the top of its bounce, %.2f of the size, less than %.2f",
 				word.Text, restH, peakH, grew, bounceSeen)
 		}
+	}
+}
+
+// Every pill of a line of a caption rests at one height and bounces alike,
+// clear of the letters of the other line by lineClear, at rest and at the
+// top of its bounce. Where the letters of the two lines come nearer than
+// that leaves room for, the tail of the "g" of "wichtig" over the dots of
+// an "Ä", the pill keeps lineClear over its own letters and touches the
+// other line, and bounces only away from it. Read off where libass puts
+// the words, for Tim's caption and for that one. A pill stopped short word
+// by word jumped as it walked along the line, from "ist" to "es" by 14
+// pixels.
+//
+// On the real disk: libass, through ffmpeg, measures where the words are.
+func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	if _, err := e.SubtitleFilter(ctx); err != nil {
+		ffmpegtest.Unusable(t, "this ffmpeg cannot draw captions: %v", err)
+	}
+	style := ResolveStyle(nil)
+	size := pyround(style.Size)
+	grow := bounceGrow * float64(size)
+	clear := math.Round(float64(size) * lineClear)
+	for _, second := range []string{"Leute", "Ägypten"} {
+		words := []Cue{
+			{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
+			{1.30, 1.80, second}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+		}
+		clip := Clip{ID: "01", Segments: []Segment{{Start: 0, End: 2.6}}}
+		laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
+		if len(laid) != 1 || len(laid[0].Lines) != 2 {
+			t.Fatalf("%s: the words should make one caption of two lines, not %+v", second, laid)
+		}
+		layouts, ok := e.layWords(ctx, laid, style, shortW, size)
+		if !ok {
+			t.Fatalf("%s: the words could not be measured", second)
+		}
+		L := layouts[0]
+		var rows []string
+		for r, line := range L.lines {
+			inkTop, inkBottom := L.lineInk(r)
+			for _, k := range line {
+				left, top, right, bottom := L.pill(k, size)
+				up, down := L.bounce(k, size)
+				rows = append(rows, fmt.Sprintf("%-9s %4.0f to %4.0f, up %2.0f, down %2.0f", L.words[k], top, bottom, up, down))
+				first := line[0]
+				_, firstTop, _, firstBottom := L.pill(first, size)
+				firstUp, firstDown := L.bounce(first, size)
+				if top != firstTop || bottom != firstBottom || up != firstUp || down != firstDown {
+					t.Errorf("%s: the pill of %q rests at %.0f to %.0f and bounces %.0f up and %.0f down, that of %q on its line at %.0f to %.0f, %.0f and %.0f",
+						second, L.words[k], top, bottom, up, down, L.words[first], firstTop, firstBottom, firstUp, firstDown)
+				}
+				if math.Abs(up+down-2*grow) > 0.5 {
+					t.Errorf("%s: the pill of %q bounces %.0f in all, not %.0f", second, L.words[k], up+down, 2*grow)
+				}
+				// The other line's letters over or under the pill.
+				for o := range L.lines {
+					if o == r {
+						continue
+					}
+					for _, j := range L.lines[o] {
+						b := L.boxes[j]
+						if float64(b.right) < left || float64(b.left) > right {
+							continue
+						}
+						// A pill runs from its top to its bottom, the row of its
+						// bottom the first one under it, the way an ink box's
+						// bottom is its last row.
+						gap, own, grows := (top-up)-float64(b.bottom+1), float64(inkTop)-top, up
+						if o > r {
+							gap, own, grows = float64(b.top)-(bottom+down), bottom-float64(inkBottom+1), down
+						}
+						tight := own < clear+0.5 && grows == 0
+						if gap < clear-0.5 && !tight {
+							t.Errorf("%s: at the top of its bounce the pill of %q comes %.0f pixels from %q on the other line, less than %.0f",
+								second, L.words[k], gap, L.words[j], clear)
+						}
+						if own < clear-0.5 {
+							t.Errorf("%s: the pill of %q leaves its own line %.0f pixels, less than %.0f", second, L.words[k], own, clear)
+						}
+					}
+				}
+			}
+		}
+		t.Logf("%s:\n%s", second, strings.Join(rows, "\n"))
 	}
 }
