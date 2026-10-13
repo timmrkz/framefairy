@@ -193,7 +193,9 @@
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
-//                      and says Removed
+//                      and says Removed, its time standing full while the
+//                      pointer is on it. [i, "key"] presses Delete on the
+//                      tile instead, the pointer standing on it
 //   ["put back", i]    presses Put it back on picture i
 //   ["removed goes"]   the pointer leaves, and the time to put the picture
 //                      back runs out and the grid closes over it
@@ -1391,7 +1393,7 @@ export const sequences = [
       ["remove picture", 2],
       ["put back", 2],
       ["pictures", 3],
-      ["remove picture", 2],
+      ["remove picture", [2, "key"]],
       ["removed goes"],
       ["pictures", 2],
     ],
@@ -4346,25 +4348,43 @@ for (const seq of toWalk) {
         break;
       }
       case "remove picture": {
-        const tile = page.locator("li.tile").nth(arg - 1);
+        // By Delete on the tile under a pointer that stands still, with
+        // "key", the way a Mac draws a row that comes up under it: not
+        // under the pointer until the pointer moves.
+        const [i, how] = [arg].flat();
+        const tile = page.locator("li.tile").nth(i - 1);
         await tile.hover();
         await page.waitForTimeout(150);
         const shown = await page.evaluate(() => [...document.querySelectorAll("li.tile .bin")].map((b) => getComputedStyle(b).opacity));
-        if (shown[arg - 1] !== "1" || shown.filter((o) => o === "1").length !== 1) {
-          wrong = `pointing at picture ${arg} the bins stand at ${shown.join(", ")}`;
+        if (shown[i - 1] !== "1" || shown.filter((o) => o === "1").length !== 1) {
+          wrong = `pointing at picture ${i} the bins stand at ${shown.join(", ")}`;
           break;
         }
         const id = await tile.getAttribute("data-id");
-        await tile.locator(".bin").click();
+        if (how === "key") {
+          await tile.locator("figure").focus();
+          await page.keyboard.press("Delete");
+        } else await tile.locator(".bin").click();
         // The tile says Removed in the frame of the click.
         const gone = await page.evaluate((id) => {
           const g = document.querySelector(`li.tile[data-id="${id}"] .gone`);
           return g ? getComputedStyle(g).animationName : null;
         }, id);
-        if (gone === null) wrong = `picture ${arg} did not say Removed in its place`;
+        if (gone === null) wrong = `picture ${i} did not say Removed in its place`;
         // It says so where the picture was, with nothing sliding in. Tim
         // saw a swipe across the tile.
-        else if (gone !== "none") wrong = `picture ${arg} says Removed with the animation ${gone}`;
+        else if (gone !== "none") wrong = `picture ${i} says Removed with the animation ${gone}`;
+        if (wrong) break;
+        // The pointer is still on it, so its time has not started: the
+        // fill stands full until the pointer leaves. Tim saw it run for a
+        // moment and stop a little short of full.
+        await page.waitForTimeout(500);
+        const fill = await page.evaluate((id) => {
+          const run = document.querySelector(`li.tile[data-id="${id}"] .gone .run`);
+          const box = run?.parentElement?.getBoundingClientRect();
+          return run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null;
+        }, id);
+        if (fill === null || fill > 0.001) wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it`;
         await settle(page);
         break;
       }

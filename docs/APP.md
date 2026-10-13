@@ -1328,7 +1328,14 @@ bubble scrolled by those eight pixels.
       the keyboard is on the row, so the time to change your mind is seen
       and nobody is rushed. It runs on the moment the pointer is seen
       anywhere else, also when the row moved away from under a pointer
-      that stood still, which WebKit never reports. Nothing above or
+      that stood still, which WebKit never reports. A row that appears
+      under the pointer, as it does under the trash can just pressed,
+      starts held and full, and its time starts once the pointer leaves:
+      WebKit does not count it as under the pointer until the pointer
+      moves, so the time ran for a moment and stopped a little short of
+      full, Tim found. Where the pointer was last seen says it. The
+      pictures of a report wear the same row and the same time, see
+      Report a Problem. Nothing above or
       below it moves while it is there, and when it goes the list closes
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they
@@ -2689,6 +2696,10 @@ on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
 tile under the pointer, or on Delete with the tile focused, and the
 tile then says Removed with **Put it back** for a moment before the
 grid closes over it, the look the clip list uses, `Removed.svelte`.
+The bin is the quiet trash can of every list, with no box of its own,
+and a shade falls from its corner so it reads on any picture, while the
+tile's edge lifts. On a solid grey square it looked pasted on, Tim
+found.
 
 What is written and attached is a draft, kept in the app's folder
 under `report/` as it is written, so closing the window, or the app,

@@ -898,19 +898,43 @@
   }
 
   /* The bin in the tile's top right corner, a space in, only while the
-     pointer is on the tile or the keyboard is in it. */
+     pointer is on the tile or the keyboard is in it. It is the quiet
+     trash can of every list, with no box of its own: on a solid grey
+     square it looked pasted on, Tim found, next to how it looks under
+     the hand. A shade falls from that corner instead, so it reads on
+     any picture, and the tile's edge lifts the way a row's does. */
   .tile .bin {
     position: absolute;
     top: var(--gap);
     right: var(--gap);
     opacity: 0;
     pointer-events: none;
-    background: var(--ink-1);
+    color: var(--text);
+  }
+
+  .tile figure::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 100% 0, var(--backdrop), transparent calc(3 * var(--control-h)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .tile:hover figure,
+  .tile:focus-within figure {
+    border-color: var(--faint);
+  }
+
+  .tile:hover figure::after,
+  .tile:focus-within figure::after,
+  .tile:hover .bin,
+  .tile:focus-within .bin {
+    opacity: 1;
   }
 
   .tile:hover .bin,
   .tile:focus-within .bin {
-    opacity: 1;
     pointer-events: auto;
   }
 
