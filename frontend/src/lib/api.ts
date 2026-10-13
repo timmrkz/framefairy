@@ -604,8 +604,23 @@ export const api = {
   // its id, see lib/said.ts.
   acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),
   // Writes a report of a problem to the Desktop and shows it in Finder,
-  // and gives its path, see screens/Report.svelte.
+  // and gives its path, see screens/Report.svelte. Without a video it
+  // names the one last worked on in the app.
   reportProblem: (what: string, video: string) => call<string>("ReportProblem", what, video),
+  // Opens the report window, or brings it forward when it is open, see
+  // bugs.go. how is what was clicked, for the log.
+  openReport: (how: string) => call<void>("OpenReport", how),
+  reportWindowOpen: () => call<boolean>("ReportWindowOpen"),
+  // The draft of a report, what is written and the pictures attached,
+  // kept until a report is made from it.
+  reportDraft: () => call<ReportDraft>("ReportDraft"),
+  saveReportText: (text: string) => call<void>("SaveReportText", text),
+  // Asks for pictures in the system's open box and attaches them. A
+  // pasted picture comes as its bytes in base64.
+  attachPictures: () => call<ReportDraft>("AttachPictures"),
+  attachPasted: (name: string, data: string) => call<ReportDraft>("AttachPasted", name, data),
+  removePicture: (id: string) => call<ReportDraft>("RemovePicture", id),
+  putBackPicture: (id: string) => call<ReportDraft>("PutBackPicture", id),
   // Starts recording what the person says for a report and gives the
   // recording's number. What is said is written down while it is said,
   // see onDictation, and stopping gives every piece of it. Cancelling
@@ -877,9 +892,13 @@ export interface Undone {
 }
 
 // Undo and Redo in the Edit menu. The menu has the keys, so this is how
-// they reach the app.
+// they reach the app. The event goes to every window, and only the one
+// the person is in takes it: Cmd+Z typing in the report window must not
+// take back an edit of a clip in the app's window behind it.
 export function onUndo(fn: (what: "undo" | "redo") => void): () => void {
-  return Events.On("undo", (ev) => fn(ev.data as "undo" | "redo"));
+  return Events.On("undo", (ev) => {
+    if (document.hasFocus()) fn(ev.data as "undo" | "redo");
+  });
 }
 
 // Acknowledgements in the Help menu, which is where apps keep the notices
@@ -925,9 +944,31 @@ export function onDictation(fn: (d: Dictation) => void): () => void {
   return Events.On("dictation", (ev) => fn(ev.data as Dictation));
 }
 
-// Report a Problem… in the Help menu.
-export function onReport(fn: () => void): () => void {
-  return Events.On("report", () => fn());
+// A picture attached to a report, which the window shows from
+// /report-picture?id=.
+export interface ReportPicture {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+}
+
+// A report before it is made. error says why pictures just given were
+// left out.
+export interface ReportDraft {
+  text: string;
+  pictures: ReportPicture[];
+  error?: string;
+}
+
+// The report window opened or closed, for Bugs in the sidebar.
+export function onReportWindow(fn: (open: boolean) => void): () => void {
+  return Events.On("report-window", (ev) => fn(Boolean(ev.data)));
+}
+
+// What became of files dropped on the report window.
+export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
+  return Events.On("report-draft", (ev) => fn(ev.data as ReportDraft));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

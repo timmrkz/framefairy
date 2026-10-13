@@ -26,6 +26,9 @@ type Line = { at: number; text: string; act?: string } & Said;
 // it, so what one act set off is read together. See docs/LOGGING.md.
 let acts = 0;
 let acting = "";
+// The report window counts its own acts, so its ids start with r and
+// never stand for an act of the app's window, see bugs.go.
+const actMark = typeof location !== "undefined" && new URLSearchParams(location.search).get("window") === "report" ? "r" : "a";
 
 // The video in front, if there is one.
 function inFront(): string | undefined {
@@ -34,7 +37,7 @@ function inFront(): string | undefined {
 
 // Starts an act: says what the person did, at once, and gives its id.
 export function act(what: string, video = inFront()): string {
-  acting = `a${(++acts).toString(36)}`;
+  acting = `${actMark}${(++acts).toString(36)}`;
   api.acted({ id: acting, at: Date.now(), what, video }).catch(() => {});
   return acting;
 }

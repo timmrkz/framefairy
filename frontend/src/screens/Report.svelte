@@ -1,15 +1,18 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, onDictation, onLoudness } from "../lib/api";
+  import { api, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
+  import Removed from "../components/Removed.svelte";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
 
-  // Report a Problem…, from the Help menu: what the person says happened,
-  // and one button that puts it on the Desktop with the app's log, as the
-  // one file they send us. The Go side writes it and shows it in Finder,
-  // see report.go and docs/LOGGING.md. Plan row 2.188.
-  let { video }: { video?: string } = $props();
+  // Report a Problem, in the window Bugs in the sidebar opens: what the
+  // person says happened, the pictures they attach, and one button that
+  // puts it on the Desktop with the app's log, as the one file they send
+  // us. The Go side writes it and shows it in Finder, see report.go,
+  // bugs.go and docs/LOGGING.md. Plan rows 2.188 and 2.244. What is
+  // written and attached is a draft the Go side keeps until Report, so
+  // closing the window loses nothing.
 
   let what = $state("");
   let making = $state(false);
@@ -54,11 +57,100 @@
   };
 
   // The field's text, as it is sent. While somebody dictates it holds
-  // what is still being heard too, and Make Report waits until that is
+  // what is still being heard too, and Report waits until that is
   // kept.
   const read = () => {
     what = field.innerText.replace(/\n$/, "");
+    keepText();
   };
+
+  // The field is kept as it changes, a moment after the last change, and
+  // at once when the window goes.
+  let saving: ReturnType<typeof setTimeout> | null = null;
+  let loaded = false;
+  function keepText() {
+    if (!loaded) return;
+    if (saving) clearTimeout(saving);
+    saving = setTimeout(saveNow, 300);
+  }
+  function saveNow() {
+    if (saving) clearTimeout(saving);
+    saving = null;
+    if (loaded) api.saveReportText(what).catch(() => {});
+  }
+
+  // The pictures attached, in the order they came, and the ones removed
+  // a moment ago, by id. A removed one keeps its place, says so
+  // and offers itself back, and then the grid closes over it.
+  let pictures = $state<ReportPicture[]>([]);
+  let removed = $state<Record<string, { picture: ReportPicture }>>({});
+  let attaching = $state(false);
+  // The pictures on screen: the attached and the removed in their places.
+  const tiles = $derived.by(() => {
+    const all = [...pictures.map((p) => ({ p, gone: false })), ...Object.values(removed).map((r) => ({ p: r.picture, gone: true }))];
+    return all.sort((a, b) => order(a.p.id) - order(b.p.id));
+  });
+  const order = (id: string) => Number(id.slice(1)) || 0;
+
+  // took shows what the Go side says the draft holds now, with why a
+  // picture was left out.
+  function took(d: ReportDraft) {
+    pictures = d.pictures ?? [];
+    for (const id of Object.keys(removed)) if (pictures.some((p) => p.id === id)) delete removed[id];
+    if (d.error) {
+      problem = d.error.endsWith(".") ? d.error : d.error + ".";
+      made = "";
+    }
+  }
+
+  async function attach() {
+    if (attaching) return;
+    attaching = true;
+    problem = "";
+    try {
+      took(await api.attachPictures());
+    } catch (e) {
+      problem = sentence(e);
+    } finally {
+      attaching = false;
+    }
+  }
+
+  function removePicture(p: ReportPicture) {
+    removed[p.id] = { picture: p };
+    pictures = pictures.filter((q) => q.id !== p.id);
+    api.removePicture(p.id).then(took, (e) => (problem = sentence(e)));
+  }
+
+  function putBack(id: string) {
+    delete removed[id];
+    api.putBackPicture(id).then(took, (e) => (problem = sentence(e)));
+  }
+
+  // A picture pasted into the field is attached, the way Mail takes one.
+  // Text pastes as text.
+  function pasted(e: ClipboardEvent) {
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    e.preventDefault();
+    problem = "";
+    for (const f of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = String(reader.result).replace(/^data:[^,]*,/, "");
+        api.attachPasted(f.name || "Pasted picture.png", data).then(took, (err) => (problem = sentence(err)));
+      };
+      reader.readAsDataURL(f);
+    }
+  }
+
+  // Delete or Backspace on a tile removes its picture.
+  function tileKey(e: KeyboardEvent, p: ReportPicture) {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      removePicture(p);
+    }
+  }
 
   function remember() {
     const sel = getSelection();
@@ -365,14 +457,45 @@
     if (listening) api.cancelListening().catch(() => {});
   });
 
+  // The draft from before, the window's last time open or the app's last
+  // run, and what a drop on the window attaches.
+  onMount(() => {
+    api
+      .reportDraft()
+      .then((d) => {
+        if (d.text && !what) {
+          field.textContent = d.text;
+          what = d.text;
+        }
+        took({ ...d, error: "" });
+      })
+      .catch(() => {})
+      .finally(() => (loaded = true));
+    const noDraft = onReportDraft(took);
+    const leave = () => saveNow();
+    window.addEventListener("pagehide", leave);
+    return () => {
+      noDraft();
+      window.removeEventListener("pagehide", leave);
+      saveNow();
+    };
+  });
+
   async function make() {
     if (making) return;
     making = true;
     problem = "";
     note = "";
     try {
-      const path = await api.reportProblem(what, video ?? "");
+      if (saving) clearTimeout(saving);
+      saving = null;
+      const path = await api.reportProblem(what, "");
       made = path.split(/[\\/]/).pop() ?? path;
+      // The report holds it all, and the next one starts empty.
+      field.textContent = "";
+      what = "";
+      pictures = [];
+      removed = {};
     } catch (e) {
       problem = e instanceof Error ? e.message : String(e);
     } finally {
@@ -400,6 +523,7 @@
           aria-label="What happened"
           spellcheck="true"
           oninput={typed}
+          onpaste={pasted}
           onbeforeinput={follow}
           onpointerdown={freeze}
           onkeyup={remember}
@@ -412,19 +536,34 @@
       </div>
     </div>
     <div class="item">
+      <!-- Square, the microphone alone, the way a toolbar shows it: what
+           it does is in its title. Its name says what a press does now,
+           Dictate, Stop or Writing, for the keyboard and a screen reader. -->
       <button
-        class="act dictate"
+        class="act square dictate"
         class:listening
         onclick={dictate}
         disabled={hearing || making}
         style:--loud={loud}
+        aria-label={listening ? "Stop" : hearing ? "Writing" : "Dictate"}
         title={listening
-          ? "Keeps what you said. Enter does the same, and Escape removes it"
-          : "Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
+          ? "Stop. Keeps what you said. Enter does the same, and Escape removes it"
+          : hearing
+            ? "Writing down what you said"
+            : "Dictate. Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
       >
         {#if listening || hearing}<Busy />{/if}
         <Icon name="mic" />
-        {listening ? "Stop" : hearing ? "Writing…" : "Dictate"}
+      </button>
+      <button
+        class="act square attach"
+        onclick={attach}
+        disabled={attaching || making}
+        aria-label="Attach pictures"
+        title="Attach pictures. Screenshots work best. You can also drop them on this window or paste them"
+      >
+        {#if attaching}<Busy />{/if}
+        <Icon name="attach" />
       </button>
       <div class="words">
         {#if problem}
@@ -449,17 +588,46 @@
            before it is made. -->
       <span class="ask always">
         <Info label="What a report holds" side="right">
-          What you write here, the app's log of what it did, which build this is and what Mac it runs on, and your
-          settings. Never a video, its words or its captions, and your home folder is written as ~. It is saved on the
-          Desktop as one zip file, which Finder shows, and you can look inside before you send it.
+          What you write here, the pictures you attach, without what else their files hold, the app's log of what it
+          did, which build this is and what Mac it runs on, and your settings. Never a video, its words or its
+          captions, and your home folder is written as ~. It is saved on the Desktop as one zip file, which Finder
+          shows, and you can look inside before you send it.
         </Info>
       </span>
-      <button class="act primary" onclick={make} disabled={making || listening || hearing} title="Saves the report on the Desktop and shows it in Finder">
+      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop and shows it in Finder">
         {#if making}<Busy />{/if}
-        {making ? "Making…" : "Make Report"}
+        {making ? "Making…" : "Report"}
       </button>
     </div>
   </div>
+  {#if tiles.length > 0}
+    <!-- The pictures attached, in the order they came, each with a bin
+         on hover. A removed one keeps its place for a moment, says so and
+         offers itself back, the way a removed clip's row does. -->
+    <div class="shots">
+    <ul class="pictures" aria-label="Pictures">
+      {#each tiles as t (t.p.id)}
+        <li class="tile" data-id={t.p.id}>
+          {#if t.gone}
+            <Removed
+              tile
+              onputback={() => putBack(t.p.id)}
+              onend={() => delete removed[t.p.id]}
+            />
+          {:else}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+            <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
+              <img src="/report-picture?id={t.p.id}" alt={t.p.name} draggable="false" />
+            </figure>
+            <button class="glyph small quiet danger bin" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
+              <Icon name="trash" />
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -475,6 +643,14 @@
     width: 100%;
     max-width: 880px;
     margin: 0 auto;
+  }
+
+  /* The card and the pictures keep their own height, and the page
+     scrolls once the pictures reach past the window's foot. Left to
+     shrink, the card gave way to the pictures and its field was
+     squeezed to nothing behind the buttons. */
+  section > :global(*) {
+    flex: none;
   }
 
   .always {
@@ -525,12 +701,19 @@
     font-style: italic;
   }
 
-  /* Room for the longest wording, Make Report, so the row keeps still,
-     and Dictate the same size beside it, with room for Writing… and the
-     microphone. */
+  /* Room for the longest wording of Report, Making…, so the row keeps
+     still. */
   .act {
     min-width: 116px;
     flex: none;
+  }
+
+  /* The microphone and the paperclip are square, as tall as every control
+     in the row and as wide. */
+  .act.square {
+    min-width: 0;
+    width: var(--control-h);
+    padding: 0;
   }
 
   /* The microphone moves with the voice it hears, so the person sees they
@@ -547,10 +730,87 @@
     color: var(--accent);
   }
 
-  .act.dictate {
+  .act.square {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
   }
+
+  /* The pictures under the card, a space below it, in tiles of one size
+     with a space between them: three across, four once the page is wide
+     enough for four of 150 px. Every tile has the shape 16 to 10, the
+     picture whole inside it. A tile's width and height are rounded down
+     to whole pixels, so every tile and the bin in its corner stand on
+     whole pixels, and what that leaves, less than a pixel a tile, stays
+     at the end of the row. The width is worked out from the room the
+     page has, 100cqw of .shots, in the stylesheet. */
+  .shots {
+    container: shots / inline-size;
+  }
+
+  .pictures {
+    --cols: 3;
+    --tile-w: round(down, calc((100cqw - (var(--cols) - 1) * var(--gap)) / var(--cols)), 1px);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), var(--tile-w));
+    grid-auto-rows: round(down, calc(var(--tile-w) * 10 / 16), 1px);
+    gap: var(--gap);
+  }
+
+  @container shots (min-width: 636px) {
+    .pictures {
+      --cols: 4;
+    }
+  }
+
+  .tile {
+    position: relative;
+    min-width: 0;
+  }
+
+  .tile figure {
+    margin: 0;
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    overflow: hidden;
+  }
+
+  .tile figure:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .tile img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* The bin in the tile's top right corner, a space in, only while the
+     pointer is on the tile or the keyboard is in it. */
+  .tile .bin {
+    position: absolute;
+    top: var(--gap);
+    right: var(--gap);
+    opacity: 0;
+    pointer-events: none;
+    background: var(--ink-1);
+  }
+
+  .tile:hover .bin,
+  .tile:focus-within .bin {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
 </style>

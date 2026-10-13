@@ -49,6 +49,12 @@ type desk struct {
 	// quiet is how long a recording nobody talks into goes on, in every
 	// opening of the app, 0 for as long as in the app.
 	quiet time.Duration
+	// The report windows Bugs made and brought forward, the window the
+	// app would have made, and the pictures its open box hands over
+	// next, see bugs.go.
+	reportMade, reportFronted atomic.Int32
+	pictureMu                 sync.Mutex
+	pictures                  []string
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -91,6 +97,20 @@ func (d *desk) start(st *store) {
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
 	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.quiet = d.quiet
+	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	d.svc.report.told = func(open bool) { d.bus.send("report-window", open) }
+	d.svc.report.said = func(r ReportDraft) { d.bus.send("report-draft", r) }
+	d.svc.report.make = func(closed func()) (func(), func()) {
+		d.reportMade.Add(1)
+		return func() { d.reportFronted.Add(1) }, closed
+	}
+	d.svc.report.pick = func() ([]string, error) {
+		d.pictureMu.Lock()
+		defer d.pictureMu.Unlock()
+		picked := d.pictures
+		d.pictures = nil
+		return picked, nil
+	}
 	if d.bus != nil {
 		d.svc.levels = newMeasuring(d.svc.store.files, func(episode string) { d.bus.send("levels", episode) })
 	}

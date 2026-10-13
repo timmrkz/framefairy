@@ -80,8 +80,6 @@ export type View =
   | { name: "settings" }
   | { name: "updates" }
   | { name: "acknowledgements" }
-  // Report a Problem…, with the video that was in front when it was asked.
-  | { name: "report"; video?: string }
   | { name: "empty" };
 
 class Nav {

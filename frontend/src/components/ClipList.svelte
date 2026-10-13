@@ -4,6 +4,7 @@
   import { Carrier, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
   import { secondThoughts } from "../lib/removed";
+  import Removed from "./Removed.svelte";
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
@@ -357,20 +358,12 @@
           <span class="meta muted num">{a.title ? a.what : clock(a.start)}{left ? `, ${left}` : ""}</span>
         {/if}
       {:else if clip && clip.key in removed}
-        <div class="gone busyhost">
-          <Icon name="trash" />
-          <span class="what">Removed</span>
-          <span class="grow"></span>
-          <button class="quiet back" onclick={() => onputback?.(clip.key)}>Put it back</button>
-          <!-- How long it can still be put back, in the one fill the app
-               has, running down to nothing, see Busy. -->
-          <Busy
-            drain={secondThoughts}
-            spent={removed[clip.key]}
-            onend={() => onforget?.(clip.key)}
-            onresume={(left) => onheld?.(clip.key, left)}
-          />
-        </div>
+        <Removed
+          spent={removed[clip.key]}
+          onputback={() => onputback?.(clip.key)}
+          onend={() => onforget?.(clip.key)}
+          onresume={(left) => onheld?.(clip.key, left)}
+        />
       {:else if clip}
         <button
           class="pick"
@@ -493,54 +486,6 @@
      saying what happened and offering it back. It slides in from the right
      the way the clip went, so the eye sees it leave rather than find a gap
      later. */
-  .gone {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: var(--card-h);
-    padding: 0 8px;
-    background: color-mix(in srgb, var(--err) 14%, transparent);
-    color: var(--err);
-    animation: swept 0.18s ease-out;
-  }
-
-  /* The fill that runs down wears the colour of what was taken away,
-     over the light app.css gives every control that holds a Busy. */
-  .gone.busyhost {
-    --lit: var(--err);
-    --wash-from: color-mix(in srgb, var(--err) 12%, transparent);
-    --wash-to: color-mix(in srgb, var(--err) 24%, transparent);
-  }
-
-  .gone .what {
-    font-weight: 600;
-  }
-
-  .gone .grow {
-    flex: 1;
-  }
-
-  .back {
-    color: var(--text);
-  }
-
-  @keyframes swept {
-    from {
-      transform: translateX(24px);
-      opacity: 0;
-    }
-    to {
-      transform: none;
-      opacity: 1;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .gone {
-      animation: none;
-    }
-  }
-
   .title {
     font-weight: 600;
     width: 100%;

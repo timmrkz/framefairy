@@ -49,14 +49,7 @@ let paused: { name: string; data: unknown }[] | null = null;
 // What the menu bar sends, which a browser has no menu bar for: a walk
 // presses Undo and Redo with window.__menu("undo") and window.__menu("redo"),
 // the way the preview does.
-// Help → Report a Problem… is window.__menu("report").
-(window as any).__menu = (what: string) => {
-  if (what === "report") {
-    tell("report", null);
-    return;
-  }
-  tell("undo", what);
-};
+(window as any).__menu = (what: string) => tell("undo", what);
 
 export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
@@ -133,7 +126,10 @@ Object.assign(wails, {
     const on = target(x, y);
     unlight();
     if (!on) return false;
-    await fetch("/drop", {
+    // The report window attaches pictures dropped on it, see bugs.go, and
+    // the app's window adds videos.
+    const report = new URLSearchParams(location.search).get("window") === "report";
+    await fetch(report ? "/drop-report" : "/drop", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(filenames),
