@@ -204,6 +204,19 @@
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
+//   ["report scroll", n]
+//                      turns the wheel over the report's field by n
+//                      pixels, down for more than 0
+//   ["report follows"] more is said, and the field follows it: the words
+//                      being said are in view, at its end when they end
+//                      the report
+//   ["report stays"]   more is said, and the field stays where the last
+//                      "report scroll" put it
+//   ["caret at words"] the cursor is drawn right after the words being
+//                      said, the field's own hidden
+//   ["caret elsewhere"]
+//                      clicks into the report's first line, and the field
+//                      shows its own cursor there again
 //   ["report lines up"]
 //                      the microphone, the paperclip and Report are one
 //                      height, the two are square, the tiles are one size
@@ -1331,6 +1344,27 @@ export const sequences = [
       ["report at end"],
       ["dictate", "enter"],
       ["report at end"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim scrolled up to read while he talked, and the
+    // field pulled him back down with every word. It follows the words
+    // the way a terminal follows its output, until scrolled away from
+    // them and again once back at them. And the cursor stood at the front
+    // of the last line while the words ran on.
+    name: "While dictating the field follows the words until scrolled away, like a terminal",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["caret at words"],
+      ["report scroll", -120],
+      ["report stays"],
+      ["report scroll", 5000],
+      ["report follows"],
+      ["caret elsewhere"],
+      ["dictate", "button"],
     ],
   },
   {
@@ -4380,6 +4414,67 @@ for (const seq of toWalk) {
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
         const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
+        break;
+      }
+      case "report scroll": {
+        const box = await page.locator(".telling").boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+        await page.mouse.wheel(0, arg);
+        // Read as soon as the wheel has turned, before the next words come.
+        kept.scrolledTo = await page.locator(".telling").evaluate(
+          (f, was) => new Promise((done) => {
+            const read = () => (f.scrollTop !== was ? done(f.scrollTop) : requestAnimationFrame(read));
+            requestAnimationFrame(read);
+            setTimeout(() => done(f.scrollTop), 1000);
+          }),
+          was,
+        );
+        if (arg < 0 && kept.scrolledTo >= was) wrong = `the wheel did not scroll the field up, it is at ${kept.scrolledTo} px`;
+        break;
+      }
+      case "report follows":
+      case "report stays": {
+        const was = await page.locator(".telling").evaluate((f) => f.innerText);
+        const more = await page
+          .waitForFunction((was) => document.querySelector(".telling").innerText !== was, was, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!more) {
+          wrong = "nothing more was said";
+          break;
+        }
+        await page.waitForTimeout(100);
+        const m = await page.locator(".telling").evaluate((f) => {
+          const mark = f.querySelector(".hearing")?.getBoundingClientRect();
+          const box = f.getBoundingClientRect();
+          return {
+            top: f.scrollTop,
+            end: f.scrollHeight - f.clientHeight,
+            seen: !!mark && mark.bottom <= box.bottom + 1 && mark.top >= box.top - 1,
+          };
+        });
+        if (what === "report stays") {
+          if (m.top !== kept.scrolledTo) wrong = `the field moved to ${m.top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
+        } else if (!m.seen) wrong = "the words being said are out of view";
+        else if (Math.abs(m.top - m.end) > 1) wrong = `the field is at ${m.top} px, not at its end, ${m.end} px`;
+        break;
+      }
+      case "caret at words": {
+        const c = await page.locator(".telling").evaluate((f) => {
+          const mark = f.querySelector(".hearing");
+          return { ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor, bar: mark ? getComputedStyle(mark).borderRightWidth : "" };
+        });
+        if (!c.ours || c.bar !== "1px" || c.caret !== "rgba(0, 0, 0, 0)") wrong = `the cursor is not drawn after the words being said: ${JSON.stringify(c)}`;
+        break;
+      }
+      case "caret elsewhere": {
+        const box = await page.locator(".telling").boundingBox();
+        await page.locator(".telling").evaluate((f) => (f.scrollTop = 0));
+        await page.mouse.click(box.x + 20, box.y + 12);
+        await page.waitForTimeout(200);
+        const c = await page.locator(".telling").evaluate((f) => ({ ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor }));
+        if (c.ours || c.caret === "rgba(0, 0, 0, 0)") wrong = `the field hides its cursor after a click into its first line: ${JSON.stringify(c)}`;
         break;
       }
       case "report lines up": {

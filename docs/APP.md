@@ -2704,8 +2704,13 @@ See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
 rather than typing it, plan row 2.189, the way dictation on claude.ai
 works. Pressed, it says **Stop** and wears the beam while the app
 listens, and the words appear where the cursor was while they are said,
-grey and slanted until they are kept, and the field keeps its last line
-in view. The microphone in the button grows and shrinks with the voice it
+grey and slanted until they are kept. The field follows the words the
+way a terminal follows its output: they stay in view as they come, until
+the person scrolls away to read, and then the field stays where they put
+it until they scroll back to the words. The cursor stands right after
+the words while nobody has put it elsewhere, drawn there by the end of
+the words themselves, since WebKit drew it at the front of the last line
+while the words ran on. The microphone in the button grows and shrinks with the voice it
 hears, about ten times a second, and wears the accent while it listens,
 so the person sees they are heard. The
 beam stays the sign that it listens, because running work shows the beam

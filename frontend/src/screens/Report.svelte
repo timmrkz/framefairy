@@ -50,6 +50,18 @@
   // Where the cursor was in the field, kept while the button has the
   // focus, since the field forgets it then on some systems.
   let cursor: Range | null = null;
+  // Whether the field follows the words as they come, the way a terminal
+  // follows its output: it does until the person scrolls away from them,
+  // and again once they scroll back to them. lastTop is where the field
+  // was last scrolled to follow them, so that scroll is not taken for the
+  // person's.
+  let following = true;
+  let lastTop = -1;
+  // Whether the cursor is right after the words being said, where what is
+  // said next goes. It is drawn there by the mark, see the style, since
+  // WebKit drew it at the front of the last line on Tim's Mac while the
+  // words ran on to the right.
+  let ours = $state(false);
 
   const sentence = (e: unknown) => {
     const said = e instanceof Error ? e.message : String(e);
@@ -197,6 +209,42 @@
     after.setStartAfter(said);
     getSelection()?.removeAllRanges();
     getSelection()?.addRange(after);
+    following = true;
+    lastTop = -1;
+    caret();
+  }
+
+  // atWords says whether the words being said are in view in the field.
+  function atWords(): boolean {
+    if (!mark) return false;
+    const m = mark.getBoundingClientRect();
+    const f = field.getBoundingClientRect();
+    return m.bottom <= f.bottom + 1 && m.top >= f.top - 1;
+  }
+
+  // scrolled hears the field scroll. A scroll that was not the field
+  // following the words is the person's, and the field follows the words
+  // from then on only while they are in view.
+  function scrolled() {
+    if (!listening || !mark) return;
+    following = field.scrollTop === lastTop || atWords();
+  }
+
+  // caret says whether the cursor is right after the words being said,
+  // with nothing between, in the field that has the focus.
+  function caret() {
+    const sel = getSelection();
+    let at = false;
+    if (listening && said && mark && field.contains(said) && document.activeElement === field && sel?.rangeCount && sel.isCollapsed) {
+      const r = sel.getRangeAt(0);
+      const gap = document.createRange();
+      gap.setStartAfter(mark);
+      if (gap.comparePoint(r.startContainer, r.startOffset) >= 0) {
+        gap.setEnd(r.startContainer, r.startOffset);
+        at = !gap.toString();
+      }
+    }
+    ours = at;
   }
 
   // What has been settled so far, without what is still being heard.
@@ -225,9 +273,15 @@
     if (!said || !mark) return;
     const rest = space(now);
     // At the end of the report, down to its padding. Tim talked past the
-    // field's last line and could not see what was written down.
-    if (rest.trim()) mark.scrollIntoView({ block: "nearest", inline: "nearest" });
-    else field.scrollTop = field.scrollHeight;
+    // field's last line and could not see what was written down. Not
+    // while the person has scrolled away to read: then the field stays
+    // where they put it, as Tim asked.
+    if (following) {
+      if (rest.trim()) mark.scrollIntoView({ block: "nearest", inline: "nearest" });
+      else field.scrollTop = field.scrollHeight;
+      lastTop = field.scrollTop;
+    }
+    caret();
     read();
   }
 
@@ -366,7 +420,8 @@
     // dictation was stopped. Stop on Tim's Mac left it half a line up,
     // where Enter did not, since the browser put the cursor in view its
     // own way.
-    field.scrollTop = after.trim() ? top : field.scrollHeight;
+    field.scrollTop = after.trim() || !following ? top : field.scrollHeight;
+    ours = false;
     read();
   }
 
@@ -469,6 +524,11 @@
     if (listening) api.cancelListening().catch(() => {});
   });
 
+  onMount(() => {
+    document.addEventListener("selectionchange", caret);
+    return () => document.removeEventListener("selectionchange", caret);
+  });
+
   // The draft from before, the window's last time open or the app's last
   // run, and what a drop on the window attaches.
   onMount(() => {
@@ -532,6 +592,7 @@
       <div class="box">
         <div
           class="telling selectable"
+          class:ours
           bind:this={field}
           contenteditable="plaintext-only"
           role="textbox"
@@ -543,6 +604,7 @@
           onpaste={pasted}
           onbeforeinput={follow}
           onpointerdown={freeze}
+          onscroll={scrolled}
           onkeyup={remember}
           onmouseup={remember}
           onblur={remember}
@@ -714,6 +776,26 @@
   .telling :global(.dictated) {
     color: var(--muted);
     font-style: italic;
+  }
+
+  /* The cursor while it is right after the words being said, drawn by
+     the end of the mark, which is always where those words end, however
+     they wrap. The field's own is hidden then. It blinks the way the
+     system's does, and takes no room, so nothing moves as it goes. */
+  .telling.ours {
+    caret-color: transparent;
+  }
+
+  .telling.ours :global(.hearing) {
+    border-right: 1px solid var(--text);
+    margin-right: -1px;
+    animation: caret 1.06s steps(1) infinite;
+  }
+
+  @keyframes caret {
+    50% {
+      border-right-color: transparent;
+    }
   }
 
   /* Room for the longest wording of Report, Making…, so the row keeps
