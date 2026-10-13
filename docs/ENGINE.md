@@ -775,7 +775,12 @@ around one centre, the middle of the pill, in every direction alike, to
 stays lit until the next word starts. The pop lasts 220 ms, reaches its
 peak at 55 % of that, and both the rise and the settle are eased out,
 CSS's ease-out, the pop the video preview played as a CSS animation
-before #201. A word lit for less pops in the time it has. The pop
+before #201. The curve is the same for every word. A word lit for less
+than the pop shows as much of it as it is lit for and goes back to its
+size as the next word lights, as the CSS animation did. Before, the whole
+curve was squeezed into the time such a word had, so a word spoken fast
+rose almost twice as fast as a slow one, `TestEveryWordPopsOnTheSameCurve`.
+The pop
 starts on the first frame of the short that shows the word, which shows
 it at rest, `popStart`, so the frame a click or a step lands on is the
 word at its own size, and the frames after it pop. It is the

@@ -105,11 +105,11 @@ func (d *CaptionDrawing) popping(source SourceInfo, m int64) (from, starts, to i
 // through the pop, as it did when the browser drew both.
 func (d *CaptionDrawing) PopScale(source SourceInfo, at float64, ahead int) float64 {
 	m := source.captionMomentAhead(d.Clip, at, ahead)
-	_, starts, to, ok := d.popping(source, m)
+	_, starts, _, ok := d.popping(source, m)
 	if !ok {
 		return 1
 	}
-	return popDrawn(float64(m-int64(starts)*10), to-starts)
+	return popDrawn(float64(m - int64(starts)*10))
 }
 
 // PopFrames is which frames of the short the video preview plays over

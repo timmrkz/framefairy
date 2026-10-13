@@ -272,7 +272,7 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	peak := 0.0
 	for k := lit; k <= lit+12; k++ {
 		since := float64(k-lit) * 1000 / bounceFPS
-		want := popDrawn(since, span)
+		want := popDrawn(since)
 		peak = max(peak, want)
 		p, w := read(k)
 		got := map[string][2]float64{
@@ -384,8 +384,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	for i, word := range words {
 		lit, to := int(math.Round(word.Start*bounceFPS)), int(math.Round(word.End*bounceFPS))-1
 		// The first frame after its pop.
-		length, _ := popTimes(centiseconds(word.End) - centiseconds(word.Start))
-		from := lit + int(math.Ceil(length*bounceFPS/1000))
+		from := lit + int(math.Ceil(popLength*bounceFPS/1000))
 		if from > to {
 			// Lit too short a time to come to rest.
 			continue

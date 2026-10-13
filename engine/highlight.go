@@ -84,7 +84,9 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 const (
 	// popLength is how long the pop lasts, in milliseconds, and popRise
 	// the share of it the word takes to reach popPeak, its scale at the
-	// top. A word lit for less pops in the time it has.
+	// top. It is the same for every word: a word lit for less shows as
+	// much of the pop as it is lit for, and goes back to its size as the
+	// next word lights, the way the CSS animation did before #201.
 	popLength = 220
 	popRise   = 0.55
 	popPeak   = 1.15
@@ -127,32 +129,22 @@ func easeOut(p float64) float64 {
 	return 3*(1-u)*u*u + u*u*u
 }
 
-// popTimes is how long the pop of a word lit for span hundredths of a
-// second lasts, and how long it rises, in milliseconds.
-func popTimes(span int) (length, rise float64) {
-	length = math.Min(popLength, float64(span*10))
-	return length, length * popRise
-}
-
-// popAt is the scale of a word lit for span hundredths of a second, since
-// milliseconds after it lit, on the eased curve.
-func popAt(since float64, span int) float64 {
-	length, rise := popTimes(span)
+// popAt is the scale of the word since milliseconds after its pop
+// started, on the eased curve.
+func popAt(since float64) float64 {
 	switch {
-	case since <= 0 || since >= length:
+	case since <= 0 || since >= popLength:
 		return 1
-	case since < rise:
-		return 1 + (popPeak-1)*easeOut(since/rise)
+	case since < popLength*popRise:
+		return 1 + (popPeak-1)*easeOut(since/(popLength*popRise))
 	}
-	return popPeak - (popPeak-1)*easeOut((since-rise)/(length-rise))
+	return popPeak - (popPeak-1)*easeOut((since-popLength*popRise)/(popLength*(1-popRise)))
 }
 
-// popKnots are the hundredths of a second after a word lit for span lit
-// where the straight pieces of its pop meet, the first 0 and the last the
-// end of the pop.
-func popKnots(span int) []int {
-	length, _ := popTimes(span)
-	end := int(math.Ceil(length / 10))
+// popKnots are the hundredths of a second after the pop started where the
+// straight pieces of its curve meet, the first 0 and the last its end.
+func popKnots() []int {
+	end := int(math.Ceil(popLength / 10))
 	var knots []int
 	for at := 0; at < end; at += popKnot {
 		knots = append(knots, at)
@@ -160,18 +152,18 @@ func popKnots(span int) []int {
 	return append(knots, end)
 }
 
-// popDrawn is the scale libass draws a word lit for span hundredths of a
-// second at, since milliseconds after it lit: popAt at the knots, and a
-// straight line between them.
-func popDrawn(since float64, span int) float64 {
-	knots := popKnots(span)
+// popDrawn is the scale libass draws the word at, since milliseconds after
+// its pop started: popAt at the knots, and a straight line between them.
+// The same for every word, however long it is lit.
+func popDrawn(since float64) float64 {
+	knots := popKnots()
 	for i := 1; i < len(knots); i++ {
 		a, b := float64(knots[i-1]*10), float64(knots[i]*10)
 		if since < b {
 			if since < a {
 				return 1
 			}
-			return popAt(a, span) + (popAt(b, span)-popAt(a, span))*(since-a)/(b-a)
+			return popAt(a) + (popAt(b)-popAt(a))*(since-a)/(b-a)
 		}
 	}
 	return 1
@@ -202,26 +194,26 @@ func (s SourceInfo) popStart(from int) int {
 // the pop of a word lit for span hundredths of a second started until its
 // pop looks again as it does then, in milliseconds: from a moment of the
 // rise, through the peak, to the moment of the settle with the same
-// scale, or from before the pop to its end, back at rest. Nothing from
-// the peak on. The video preview plays that much of the short over a frame it
+// scale, or from before the pop to its end, back at rest. A word lit for
+// less than the pop goes as far as it is lit. Nothing from the peak on. The video preview plays that much of the short over a frame it
 // is paused on when it lands on a word, so the word pops as it would
 // while playing and comes to rest on the frame it is paused on, see
 // CaptionDrawing.PopFrames.
 func PopAgain(since float64, span int) float64 {
-	length, _ := popTimes(span)
+	length := min(popLength, float64(span*10))
 	// The peak as drawn, the knot the pieces rise to.
 	peak := 0.0
-	for _, k := range popKnots(span) {
-		if popDrawn(float64(k*10), span) > popDrawn(peak, span) {
+	for _, k := range popKnots() {
+		if popDrawn(float64(k*10)) > popDrawn(peak) {
 			peak = float64(k * 10)
 		}
 	}
-	if since >= peak {
+	if since >= peak || since >= length {
 		return 0
 	}
-	now := popDrawn(since, span)
+	now := popDrawn(since)
 	for t := peak + 1; t < length; t++ {
-		if popDrawn(t, span) <= now {
+		if popDrawn(t) <= now {
 			return t - since
 		}
 	}
@@ -452,14 +444,17 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), pill))
 				add(3, from, to, "Caption", "{"+anchor+"}"+only)
 			}
+			// A word lit for less than the pop shows the pop until the
+			// next word lights, on the same curve as every other word.
 			starts := min(source.popStart(from), to)
 			still(from, starts)
-			knots := popKnots(to - starts)
-			for n := 1; n < len(knots); n++ {
-				pop(starts+knots[n-1], starts+knots[n],
-					popDrawn(float64(knots[n-1]*10), to-starts), popDrawn(float64(knots[n]*10), to-starts))
+			end := starts
+			for n, knots := 1, popKnots(); n < len(knots) && starts+knots[n-1] < to; n++ {
+				a, b := knots[n-1], min(knots[n], to-starts)
+				pop(starts+a, starts+b, popDrawn(float64(a*10)), popDrawn(float64(b*10)))
+				end = starts + b
 			}
-			still(starts+knots[len(knots)-1], to)
+			still(end, to)
 		}
 	}
 

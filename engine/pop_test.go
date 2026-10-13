@@ -7,41 +7,63 @@ import (
 
 // The pop as drawn: from rest to popPeak and back, eased out on the way up
 // and on the way down, in straight pieces that meet the curve at every
-// knot. A word lit for less time than a pop pops in the time it has.
+// knot.
 func TestThePopRisesToItsPeakAndSettles(t *testing.T) {
-	for _, span := range []int{70, 22, 12} {
-		length, rise := popTimes(span)
-		if got := popDrawn(0, span); got != 1 {
-			t.Errorf("lit for %d hundredths, the word starts at %.3f, not at rest", span, got)
+	rise := popLength * popRise
+	if got := popDrawn(0); got != 1 {
+		t.Errorf("the word starts at %.3f, not at rest", got)
+	}
+	if got := popDrawn(popLength); got != 1 {
+		t.Errorf("the word ends its pop at %.3f, not at rest", got)
+	}
+	top, at := 0.0, 0.0
+	last := 1.0
+	for ms := 0.0; ms <= popLength; ms++ {
+		s := popDrawn(ms)
+		if s < 1 || s > popPeak+1e-9 {
+			t.Errorf("%.0f ms into its pop the word is at %.3f", ms, s)
 		}
-		if got := popDrawn(length, span); got != 1 {
-			t.Errorf("lit for %d hundredths, the word ends its pop at %.3f, not at rest", span, got)
+		// Up until the peak and down after it, never back.
+		if (ms <= rise-10 && s < last-1e-9) || (ms >= rise+10 && s > last+1e-9) {
+			t.Errorf("%.0f ms into its pop the word goes from %.4f to %.4f", ms, last, s)
 		}
-		top, at := 0.0, 0.0
-		last := 1.0
-		for ms := 0.0; ms <= length; ms++ {
-			s := popDrawn(ms, span)
-			if s < 1 || s > popPeak+1e-9 {
-				t.Errorf("lit for %d hundredths, %.0f ms after it lit the word is at %.3f", span, ms, s)
-			}
-			// Up until the peak and down after it, never back.
-			if (ms <= rise-10 && s < last-1e-9) || (ms >= rise+10 && s > last+1e-9) {
-				t.Errorf("lit for %d hundredths, %.0f ms after it lit the word goes from %.4f to %.4f", span, ms, last, s)
-			}
-			if s > top {
-				top, at = s, ms
-			}
-			last = s
+		if s > top {
+			top, at = s, ms
 		}
-		if top < popPeak-0.01 || math.Abs(at-rise) > 20 {
-			t.Errorf("lit for %d hundredths, the pop peaks at %.3f %.0f ms after it lit, not at %.2f near %.0f ms",
-				span, top, at, popPeak, rise)
+		last = s
+	}
+	if top < popPeak-0.01 || math.Abs(at-rise) > 20 {
+		t.Errorf("the pop peaks at %.3f %.0f ms in, not at %.2f near %.0f ms", top, at, popPeak, rise)
+	}
+	// Eased out: further than a third of the way up a third into the
+	// rise, where a straight line would be.
+	if popDrawn(rise/3) < 1+(popPeak-1)*0.42 {
+		t.Errorf("a third into the rise the word is at %.3f, not eased out", popDrawn(rise/3))
+	}
+}
+
+// Every word pops on the one curve, a word spoken fast as much as a word
+// spoken slowly, until the next word lights. A word lit for less than the
+// pop had the whole curve squeezed into its time, so it rose almost twice
+// as fast, and Tim saw the pop differ from word to word.
+func TestEveryWordPopsOnTheSameCurve(t *testing.T) {
+	source := SourceInfo{FPSNum: 100, FPSDen: 1, Duration: 60}
+	d := &CaptionDrawing{
+		Laid: []LaidCaption{
+			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 0.62, "du"}, {0.62, 1.5, "warst"}}}},
+		},
+		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
+	}
+	for k := range 12 {
+		fast, slow := d.PopScale(source, 10.5+float64(k)/100, 0), d.PopScale(source, 10.62+float64(k)/100, 0)
+		if math.Abs(fast-slow) > 1e-9 {
+			t.Errorf("%d ms into their pops a word lit for 120 ms is at %.4f, one lit for 880 ms at %.4f", k*10, fast, slow)
 		}
-		// Eased out: further than a third of the way up a third into the
-		// rise, where a straight line would be.
-		if popDrawn(rise/3, span) < 1+(popPeak-1)*0.42 && rise >= 60 {
-			t.Errorf("lit for %d hundredths, a third into the rise the word is at %.3f, not eased out", span, popDrawn(rise/3, span))
-		}
+	}
+	// The next word lights before the pop is over: the word goes back to
+	// its size with the pill.
+	if got := d.PopScale(source, 10.62, 0); got != 1 {
+		t.Errorf("the next word starts its pop at %.3f, not at rest", got)
 	}
 }
 
@@ -49,11 +71,11 @@ func TestThePopRisesToItsPeakAndSettles(t *testing.T) {
 // it: PopAgain is the first moment of the settle that looks the same, and
 // nothing past the peak.
 func TestPopAgainComesBackToTheSameLook(t *testing.T) {
-	for _, span := range []int{70, 15} {
-		length, _ := popTimes(span)
+	for _, span := range []int{70, 15, 8} {
+		length := min(popLength, float64(span*10))
 		peak := 0.0
-		for ms := 0.0; ms < length; ms++ {
-			if popDrawn(ms, span) > popDrawn(peak, span) {
+		for ms := 0.0; ms < popLength; ms++ {
+			if popDrawn(ms) > popDrawn(peak) {
 				peak = ms
 			}
 		}
@@ -65,10 +87,14 @@ func TestPopAgainComesBackToTheSameLook(t *testing.T) {
 				}
 				continue
 			}
-			now := popDrawn(since, span)
-			if again <= 0 || popDrawn(since+again, span) > now+1e-9 || popDrawn(since+again-1, span) <= now {
+			now := popDrawn(since)
+			if since+again == length {
+				// Lit for less than the pop: it plays until the next word.
+				continue
+			}
+			if again <= 0 || popDrawn(since+again) > now+1e-9 || popDrawn(since+again-1) <= now {
 				t.Errorf("lit for %d hundredths, %.0f ms after it lit at %.4f, PopAgain is %.0f ms, which is at %.4f",
-					span, since, now, again, popDrawn(since+again, span))
+					span, since, now, again, popDrawn(since+again))
 			}
 		}
 	}
