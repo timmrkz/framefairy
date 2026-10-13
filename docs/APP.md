@@ -259,7 +259,7 @@ taken and the log keeps a warning.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Settings**, **Updates**, **Acknowledgements** or **Report a Problem**. No screen
+screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**, and in the report window **Report a Problem**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -2651,12 +2651,42 @@ the licence asks to be said and to the licence's own text. The list is built int
 
 ### Report a Problem
 
-In the Help menu too, where Mac apps keep it. One field for what happened
-and **Make Report**, which saves one zip file on the Desktop and shows it
-in Finder: what was written, the app's log, the build and the Mac, and
-the settings, with the home folder written as ~ and nothing of a video
-but its file name. The info mark beside **Make Report** says what goes in.
-See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
+**Bugs**, with a bug, at the foot of the sidebar between Settings and
+Updates, opens Report a Problem in a window of its own, plan row 2.244.
+A window and not a page, so a person can talk about a problem while
+they go through it in the app. It opens beside the app's window where
+the screen has room, and there is one at a time: Bugs while it is open
+brings it forward. Bugs wears the look of the page on screen while the
+window is open. Closing the app's window closes it too. It was in the
+Help menu before, where Mac apps keep it, and Tim wanted it where a
+person looks while working.
+
+One field for what happened, and one row under it: **Dictate**, a
+square with the microphone alone, **Attach**, a square with the
+paperclip, and **Report**, which saves one zip file on the Desktop and
+shows it in Finder: what was written, the pictures, the app's log, the
+build and the Mac, and the settings, with the home folder written as ~
+and nothing of a video but its file name. The info mark beside
+**Report** says what goes in.
+
+The pictures are for screenshots. They come from the paperclip's open
+box, from a drop anywhere on the window, or from a paste into the
+field. PNG or JPEG, ten at most and 10 MB each, and each one is
+decoded and written again as PNG, so nothing the file held besides the
+picture travels, a place or a camera among it. A file that is not a
+picture, or is too big, or would make an eleventh, is left out and the
+line under the field says which and why. They show under the card in a
+grid of three, four once the window is wide, every tile the same size
+on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
+tile under the pointer, or on Delete with the tile focused, and the
+tile then says Removed with **Put it back** for a moment before the
+grid closes over it, the look the clip list uses, `Removed.svelte`.
+
+What is written and attached is a draft, kept in the app's folder
+under `report/` as it is written, so closing the window, or the app,
+loses nothing. Report lets go of it, and the next report starts empty.
+See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
+`cmd/framefairy-app/bugs.go`.
 
 **Dictate**, at the left of the same row, is for saying what happened
 rather than typing it, plan row 2.189, the way dictation on claude.ai

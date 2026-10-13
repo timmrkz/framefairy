@@ -124,6 +124,10 @@ each with a POST:
 | --- | --- |
 | `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
+| `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
+| `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
+| `/pick-picture` | makes a PNG of `w` by `h` pixels called `name`, for the paperclip's box to hand over next, or with `&box=0` only makes it, for a walk to drop. With `&kind=text` it is a file of text named like a picture, which the report has to leave out |
+| `/report-made` | the names of the files in the last report on the bridge's Desktop |
 | `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
@@ -410,8 +414,17 @@ language model or of the speech model, and `speech` slows the speech
 model down. Then `refused`, the card shook and no list and no box opened
 and the settings name the models they named, `asks`, the box asking
 whether to remove opened, `changed`, the settings name another model,
-and `hearing`, a search still hears. For Report a Problem: `menu`
-`report` picks it in the menu bar, `write` types into its field and
+and `hearing`, a search still hears. For Report a Problem: `bugs`
+clicks Bugs in the sidebar and goes on in the report window, a second
+page of the browser, and `windows` and `close report` say how many the
+app made and close it. `attach` presses the paperclip with a picture
+waiting in the box, `drop pictures` and `paste picture` bring pictures
+in the other two ways, `pictures` counts the tiles, `picture note` reads
+why one was left out, `remove picture` presses a tile's bin, `put back`
+its Put it back, and `removed goes` waits for the grid to close over it.
+`report` presses Report, sees the row keep its width, and reads the zip
+for the pictures and the field for nothing, and `report lines up`
+measures the row and the tiles on whole pixels. `write` types into its field and
 puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
 listens and the microphone move with the hum, then ends it with Stop,
