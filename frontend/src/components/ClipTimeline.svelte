@@ -2317,9 +2317,11 @@
   }
 
   /* A thumbnail is centred on the clip's bottom rule, at the other end of
-     the playhead's line. */
+     the playhead's line, and a pixel higher: the camera's body sits below
+     the middle of its icon, under the bump on top, so centred by its box
+     it looked a pixel low. Tim asked for the pixel. */
   .thumb {
-    bottom: calc(var(--frame-line) / 2 - 9px);
+    bottom: calc(var(--frame-line) / 2 - 8px);
   }
 
   /* The mark at the start of a rotated part: the Rotate button's icon,

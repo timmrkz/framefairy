@@ -1887,7 +1887,8 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
 - **Each thumbnail is a mark** centred on the clip's bottom rule on the
-  clip timeline, the same camera filled in the app's light colour, with
+  clip timeline, a pixel higher because the camera's body sits below the
+  middle of its icon, the same camera filled in the app's light colour, with
   nothing behind it but its shape, so a click on the button is seen
   leaving its picture on the timeline. It turns white while the playhead
   is on its frame and stands centred on the playhead's line. A keyframe
