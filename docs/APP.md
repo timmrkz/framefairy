@@ -1490,18 +1490,68 @@ bubble scrolled by those eight pixels.
       24.72. A shot the trim had taken away comes back with its own crop,
       from the camera switch, the same as a cut put back, see
       [ENGINE.md](ENGINE.md).
-    - **The playhead goes with the edge.** While either edge of a clip is
-      dragged, the playhead stands on it and the video preview shows that
-      frame, the clip as it is being dragged, with its captions. On frames
-      it is the clip's first frame, or its last, a frame before the end.
-      With shift it is inside the word the edge snapped to, a frame into
-      the first word or a frame before the end of the last, so that word is
-      always the one lit. The edge itself stands a pause away from the
-      word, and the playhead used to go to the clip's start after a trim,
-      so the word was lit only when the pause happened to be none, which
-      looked random. After letting go the playhead stays where it was.
+    - **The playhead goes with the edge.** While either edge of a clip or
+      of a cut is dragged, the playhead stands on it and the video preview
+      shows that frame, the clip as it is being dragged, with its captions.
+      On frames it is the clip's first frame, or its last, a frame before
+      the end. A cut's left edge ends the piece before it, the way the
+      clip's end ends the clip, so the playhead stands in that piece's last
+      frame, and a cut's right edge starts the piece after it, the way the
+      clip's start does, so it stands on that piece's first frame. One rule
+      in the engine answers for all four, `edgePlayhead` in
+      `engine/shape.go`. A cut's edges used to leave the playhead where it
+      was, found by Tim, so the frame beside a cut could not be seen while
+      it was placed.
+      With shift it is the same frame, in line with the edge wherever the
+      edge lands on the words. It used to stand inside the word the edge
+      snapped to, a pause away from the edge, so that word was the one lit,
+      and Tim saw it leave the edge: a cut's left edge dragged on past the
+      last word took the playhead over the cut into the caption before it.
+      The edge is put on its frame first, the way the pieces are when the
+      gesture lands, so the playhead is never half a frame off the edge
+      drawn. After letting go the playhead stays where it was.
       While the clip plays the playhead does not go with the edge, it
       plays on, see the playhead above.
+    - **One press for the whole clip timeline.** Every press on it, on
+      the track, the playhead, an edge of the clip or of a cut, a
+      thumbnail, a keyframe, a caption or a caption's edge, goes through
+      one handler, `press` in `ClipTimeline.svelte`, and is handled the
+      same way: the playhead goes where the thing pressed says at once, a
+      double-click is told from the two presses, a drag starts after two
+      pixels and is measured from the press, so a press beside a line does
+      not make it jump, and letting go saves. What is pressed only says
+      where the playhead goes, what its drag and its double-click do. Each
+      kind of thing used to have a handler of its own, and they drifted:
+      the track moved the playhead on the press, an edge only once the
+      engine answered, a caption's edge only when the hand let go, and
+      Tim asked why a click did something different on every kind of
+      thing. An edge's playhead is the frame it opens or the last frame
+      before it closes, the same rule `edgePlayhead` in `engine/shape.go`
+      has for the drag, worked out where it is pressed rather than asked
+      for.
+    - **What a press takes is the nearest thing of the first kind under
+      it**, in a fixed order: a thumbnail or a keyframe, a clip edge, a
+      cut's edge, a caption's edge, a caption, and only then the playhead
+      and the track. What is drawn on top only decides what is seen. The
+      playhead stands on an edge it was dragged with, and a press there
+      took hold of the playhead instead, found by Tim. A mark comes first
+      because it is small and sits on the clip's rules, often on its first
+      frame, where an edge reaches over it and would leave it with no way
+      to be taken hold of.
+    - **An edge can be taken again at once.** The edges stay while the
+      last drag is saved, and a drag that starts then waits for the save
+      and goes on from the edge as saved. They used to go for as long as
+      the save took, so pressing an edge again straight after letting go
+      moved the playhead instead, found by Tim.
+    - **The last press owns the playhead.** Every press takes it, and an
+      answer the engine gives for an earlier one no longer moves it, so a
+      click on an edge followed at once by a click on the track leaves the
+      playhead where the track was clicked.
+    - **Shift goes the way of the hand.** An edge dragged with shift goes
+      to a word only in the direction the hand goes, and stays where it
+      is until the stop nearest the hand lies ahead of where the edge
+      stood, `toward` in `engine/shape.go`. The nearest word could be behind it,
+      and Tim saw a cut's left edge dragged right jump left first.
     - **Shift stops at the words that light up.** An edge dragged with
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two
@@ -2005,7 +2055,10 @@ moved by hand, on the clip timeline.
 - **The captions run across the middle of the clip timeline**, each a
   block from where it appears to where it goes, on the same clock as
   everything else on it. A click on a block puts the playhead on that
-  caption's first word.
+  caption's first word, and a double-click cuts a part out there, the way
+  it does anywhere in the clip. The block used to keep the press to
+  itself, so a double-click on it, across the middle of the clip, did
+  nothing.
 - **Either edge is dragged, and moves its own caption only.** Where two
   captions meet, the line between them has two sides: the left side is
   where the one before goes, the right side where the one after appears.
@@ -2083,8 +2136,14 @@ moved by hand, on the clip timeline.
   under the pointer, or the one being dragged, is a white line with a dark
   edge that goes again when the hand lets go. Two captions that meet have
   a gap of two pixels between them.
-- **A click on an edge puts the playhead on it**, the way a clip edge does,
-  which is how a caption is heard from where it appears.
+- **A press on an edge puts the playhead on it**, the way a clip edge does,
+  which is how a caption is heard from where it appears: on the frame it
+  appears on, or the last frame it is up on. While the edge is dragged
+  the playhead goes with it, so the video preview shows the frame the
+  caption now starts or ends on. It used to go there only when the hand
+  let go, and not at all in a drag, the one thing on the clip timeline
+  left that way after Tim's report, see One press for the whole clip
+  timeline.
 
 A moved caption is kept in the clip's plan against the word it begins or
 ends on, by when that word starts in the episode, so it survives the

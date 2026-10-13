@@ -20,7 +20,7 @@
   // video preview shows the video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
-  import { insideClip, litWord, type Piece } from "../lib/flow";
+  import { insideClip, litWord, wordInEpisode, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
@@ -343,10 +343,14 @@
   const clipStart = $derived(pieces.length ? pieces[0].start : 0);
   const clipEnd = $derived(pieces.length ? pieces[pieces.length - 1].end : 0);
 
-  // The captions run on the clip's clock, which has the cuts taken out.
+  // The captions run on the clip's clock, which has the cuts taken out: the
+  // clock of the pieces they were made for. A clip that was changed has its
+  // new pieces a moment before its new captions, and the captions read on
+  // the new pieces' clock showed and lit another word for that moment.
+  const captionPieces = $derived(captions?.pieces?.length ? captions.pieces : pieces);
   function inClipTime(t: number): number {
     let sum = 0;
-    for (const p of pieces) {
+    for (const p of captionPieces) {
       if (t < p.start) return sum;
       if (t < p.end) return sum + (t - p.start);
       sum += p.end - p.start;
@@ -1392,7 +1396,10 @@
                    two is split into two halves of nothing, both starting
                    where it did, and a key that was the moment alone would
                    then be the same key twice, which is not a caption that
-                   looks wrong but an app that stops. -->
+                   looks wrong but an app that stops. The moment is where
+                   the word starts in the episode, see wordInEpisode: on
+                   the clip's clock a cut before it moved it, and the pill
+                   popped on every answer while the cut was dragged. -->
               <!-- Each word says which moment it stands for. Nothing on
                    screen reads it: it is there so a probe can, because
                    which word lights up is decided by comparing two clocks
@@ -1400,7 +1407,7 @@
                    playhead landing a thousandth of a millisecond before a
                    word start, and so lighting nothing, was found with
                    these and could not have been found without them. -->
-              {#each line as { word, said }, i (`${i}:${word.start}`)}{#if !doubled(word, said) && !(said && gone.has(goneKey(said)))}{#if i > 0}{" "}{/if}<span
+              {#each line as { word, said }, i (`${i}:${wordInEpisode(captionPieces, word.start)}`)}{#if !doubled(word, said) && !(said && gone.has(goneKey(said)))}{#if i > 0}{" "}{/if}<span
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
