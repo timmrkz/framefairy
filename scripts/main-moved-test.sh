@@ -15,6 +15,16 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fail=0
 
+# The workflow hears a pull request through pull_request_target. GitHub
+# runs no pull_request workflow on a pull request that conflicts with
+# main, so a pull request opened in conflict was never told, plan row
+# 2.241.
+flow=$here/../.github/workflows/main-moved.yml
+if ! grep -q '^  pull_request_target:' "$flow" || grep -q '^  pull_request:' "$flow"; then
+	echo "FAIL: main-moved.yml must hear pull requests through pull_request_target, which runs on a pull request in conflict" >&2
+	fail=1
+fi
+
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
