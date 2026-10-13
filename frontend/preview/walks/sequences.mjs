@@ -5017,15 +5017,19 @@ for (const seq of toWalk) {
           }
           return null;
         };
-        // Away from the clip's edges, where a click takes the edge.
+        // Away from the clip's edges, where a click takes the edge, and
+        // once the word's bounce has settled: the pill grows into the room
+        // there is, so in its bounce it can grow more on one side than the
+        // other, and the frame is where it rests.
+        const settled = (w) => w.start + 0.18 + 2 / fps;
         const length = pieces.reduce((n, p) => n + p.end - p.start, 0);
         const words = (state.captions ?? [])
           .flatMap((c) => c.lines.flatMap((l) => l.words))
-          .filter((w) => (w.start + w.end) / 2 > 0.6 && (w.start + w.end) / 2 < length - 0.6)
+          .filter((w) => settled(w) < w.end - 1 / fps && w.start > 0.6 && w.end < length - 0.6)
           .slice(0, arg);
         const report = [];
         for (const w of words) {
-          const at = into((w.start + w.end) / 2);
+          const at = into(Math.max((w.start + w.end) / 2, settled(w)));
           if (at === null) continue;
           if (!(await seekTo(page, at, fps))) {
             wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
@@ -5638,14 +5642,20 @@ async function watchPills(page) {
       const frame = (word) => {
         if (!word) return null;
         const f = word.getBoundingClientRect();
-        return { text: word.textContent, x: (f.left + f.right) / 2 - c.left, y: (f.top + f.bottom) / 2 - c.top };
+        return {
+          text: word.textContent,
+          x: (f.left + f.right) / 2 - c.left,
+          y: (f.top + f.bottom) / 2 - c.top,
+          t: f.top - c.top,
+          b: f.bottom - c.top,
+        };
       };
       window.__pillWatch.frames.push({
         at: Number(document.querySelector(".screen").dataset.playhead),
         pictured: window.__pictured?.(),
         now: frame(box.querySelector(".word.now")),
         keyed: frame(box.querySelector(".word.keyed")),
-        pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy },
+        pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy, t: (y0 + t) / sy, b: (y0 + bt) / sy },
       });
     };
     requestAnimationFrame(look);
@@ -5667,9 +5677,16 @@ function framesOffPill(f, which) {
   if (which === "now" && f.pill && !word) return `${where}, a pill is drawn and no word is lit in the caption box`;
   if (!word) return null;
   if (!f.pill) return `${where}, no pill is drawn and the frame stands round "${word.text}"`;
+  // Across, the frame stands on the middle of the pill. Down, it stands
+  // inside it: the pill grows into the room there is in its bounce, more
+  // on one side than the other where another line is near, and rests
+  // where the frame is.
   const across = word.x - f.pill.x;
-  const down = word.y - f.pill.y;
-  if (Math.hypot(across, down) > 3) return `${where}, the frame round "${word.text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the pill`;
+  const above = f.pill.t - word.t;
+  const below = word.b - f.pill.b;
+  if (Math.abs(across) > 3 || above > 3 || below > 3) {
+    return `${where}, the frame round "${word.text}" stands ${across.toFixed(1)} px across from the pill, ${above.toFixed(1)} px over its top and ${below.toFixed(1)} px under its bottom`;
+  }
   return null;
 }
 
