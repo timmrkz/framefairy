@@ -1510,6 +1510,23 @@ bubble scrolled by those eight pixels.
       drawn. After letting go the playhead stays where it was.
       While the clip plays the playhead does not go with the edge, it
       plays on, see the playhead above.
+    - **A press is where it starts.** Pressing an edge of the clip or of a
+      cut, a thumbnail or a keyframe puts the playhead on it at once, the
+      way a press anywhere else on the clip timeline does, and the drag
+      goes on from there. The press of an edge is the gesture with the
+      edge where it stands, so the engine puts the playhead by the same
+      rule as for the drag. It used to go there only when the hand let go
+      or began to move, found by Tim, and then caught up with the drag
+      late. An edge moves as far as the hand does from where it was
+      pressed, so a press beside its line does not make it jump. A cut's
+      edges are over the playhead and over the captions' handles, the way
+      the clip's edges are: the playhead stands on an edge it was dragged
+      with, and a press there took hold of the playhead instead.
+    - **Shift goes the way of the hand.** An edge dragged with shift goes
+      to a word only in the direction the hand goes, and stays where it
+      is until the hand is nearer a word ahead than where the edge stood,
+      `toward` in `engine/shape.go`. The nearest word could be behind it,
+      and Tim saw a cut's left edge dragged right jump left first.
     - **Shift stops at the words that light up.** An edge dragged with
       shift lands on the words the way the clip's captions split them, so
       the halves of a hyphenated word, or a correction that reads as two

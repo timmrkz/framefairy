@@ -431,6 +431,10 @@
   let nextGesture: Gesture | null = null;
   let asking = false;
   let shapeFor = 0;
+  // Which gesture the playhead follows. A click lets go before the answer
+  // to its press comes, and that answer still puts the playhead on the
+  // edge: only the next gesture makes it old.
+  let seekFor = 0;
   // Where the playhead stood when the hand took hold, and where the
   // engine's answers have put it since. Kept here rather than read from
   // time when the hand lets go, because the last seek may not have
@@ -439,7 +443,10 @@
   let leftAt = 0;
 
   function shape(g: Gesture) {
-    if (!hand) heldAt = leftAt = time;
+    if (!hand) {
+      heldAt = leftAt = time;
+      seekFor++;
+    }
     hand = g;
     nextGesture = g;
     void ask();
@@ -450,6 +457,7 @@
     const g = nextGesture;
     const asked = clip;
     const mine = shapeFor;
+    const following = seekFor;
     const held = captions;
     nextGesture = null;
     asking = true;
@@ -457,14 +465,14 @@
       const answer = await api.shape(path, asked.plan, asked.id, g);
       if (mine === shapeFor && clip?.key === asked.key && answer) {
         shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
-        // The playhead goes with the edge being dragged, so it is on the
-        // clip, even a hair outside the pieces drawn so far. Not while the
-        // episode plays: only the space bar and a click on the clip
-        // timeline change a play, and an edge is neither, see edgesWhilePlaying.
-        if (answer.playhead >= 0 && !playing) {
-          leftAt = answer.playhead;
-          seekSoon(answer.playhead, "clip");
-        }
+      }
+      // The playhead goes with the edge being dragged, so it is on the
+      // clip, even a hair outside the pieces drawn so far. Not while the
+      // episode plays: only the space bar and a click on the clip
+      // timeline change a play, and an edge is neither, see edgesWhilePlaying.
+      if (following === seekFor && clip?.key === asked.key && answer && answer.playhead >= 0 && !playing) {
+        leftAt = answer.playhead;
+        seekSoon(answer.playhead, "clip");
       }
     } catch {
       // A gesture the engine says no to shows the last one it said yes to.
@@ -555,10 +563,19 @@
     return hand?.kind === "cut" && !savedCuts.some((s) => Math.abs(s.from - c.from) < 0.002);
   }
 
-  // An edge of the clip is dragged to trim it. Clicking one without
-  // dragging puts the playhead exactly on it, which is how you start a clip
-  // over. It lands on the frame, and shift puts it on a word, read on every
-  // move, so letting go of shift part way through goes back to frames.
+  // An edge of the clip is dragged to trim it. Pressing one puts the
+  // playhead on it at once, the way a press anywhere else on the clip
+  // timeline does, which is how you start a clip over. It lands on the
+  // frame, and shift puts it on a word, read on every move, so letting go
+  // of shift part way through goes back to frames.
+  //
+  // The press is the gesture with the edge where it stands, so the engine
+  // says where the playhead goes from the first press, by the same rule as
+  // for the drag that follows, see edgePlayhead in engine/shape.go. It used
+  // to go there only when the hand let go, or once it had moved, and Tim
+  // saw it catch up with the edge late. The edge goes as far as the hand
+  // goes from where it was pressed, so a press beside its line does not
+  // make it jump under the hand.
   function grab(edge: "start" | "end", event: PointerEvent) {
     if (!editable || !onreshape) return;
     event.preventDefault();
@@ -570,30 +587,29 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const from = event.clientX;
+    const was = edge === "start" ? first : last;
+    const pressed = timeAt(from);
     let moved = false;
+    shape({ kind: "trim", edge, index: 0, from: was, to: 0, toWords: false });
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - from) > 2) moved = true;
       if (!moved) return;
-      shape({ kind: "trim", edge, index: 0, from: timeAt(e.clientX), to: 0, toWords: e.shiftKey });
+      shape({ kind: "trim", edge, index: 0, from: was + timeAt(e.clientX) - pressed, to: 0, toWords: e.shiftKey });
     };
     const up = async () => {
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      if (!moved) {
-        if (!playing) onseek(edge === "start" ? first : last, "clip");
-        return;
-      }
-      await letGo(true);
+      await letGo(moved);
     };
     target.addEventListener("pointermove", move);
     target.addEventListener("pointerup", up);
     target.addEventListener("pointercancel", up);
   }
 
-  // An edge of a cut is dragged the way a clip edge is, and the other edge
-  // stays where it was. Shift puts the edges on words, the same as on a
-  // clip edge.
+  // An edge of a cut is pressed and dragged the way a clip edge is, and the
+  // other edge stays where it was. Shift puts the edges on words, the same
+  // as on a clip edge.
   function grabCut(index: number, side: "from" | "to", event: PointerEvent) {
     if (!editable || !onreshape) return;
     const was = cuts.find((c) => c.index === index);
@@ -607,11 +623,13 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
+    const pressed = timeAt(startX);
     let moved = false;
+    shape({ kind: "move", edge: side, index, from: was.from, to: was.to, toWords: false });
     const move = (e: PointerEvent) => {
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      const t = timeAt(e.clientX);
+      const t = (side === "from" ? was.from : was.to) + timeAt(e.clientX) - pressed;
       shape({
         kind: "move",
         edge: side,
@@ -625,9 +643,6 @@
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
-      // A click without a drag puts the playhead on the edge, the way a
-      // click on an edge of the clip does, while paused.
-      if (!moved && !playing) onseek(side === "from" ? was.from : was.to);
       await letGo(moved);
     };
     target.addEventListener("pointermove", move);
@@ -1552,12 +1567,16 @@
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
     const startX = event.clientX;
+    const pressed = timeAt(startX);
     let moved = false;
+    // A press puts the playhead on it at once, so the video preview shows
+    // it, the way a press anywhere on the clip timeline does.
+    onseek(at);
     const move = (e: PointerEvent) => {
       if (locked || !markChange(kind)) return;
       if (!moved && Math.abs(e.clientX - startX) > 2) moved = true;
       if (!moved) return;
-      const to = markFrame(kind, timeAt(e.clientX));
+      const to = markFrame(kind, at + timeAt(e.clientX) - pressed);
       markDrag = { kind, from: at, to };
       seekSoon(to);
     };
@@ -1566,10 +1585,8 @@
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
       const d = markDrag;
-      // A click puts the playhead on it, so the video preview shows it.
       if (!moved || !d) {
         markDrag = null;
-        onseek(at);
         return;
       }
       cancelAnimationFrame(queued);
@@ -1770,7 +1787,7 @@
                that takes a caption out before it gives it another place, and
                the block under the playhead was drawn afresh and popped. -->
           {#each shownBlocks as b (b.c.first ?? `at ${b.i}`)}
-            <!-- A click puts the playhead on the caption's first word, where
+            <!-- A press puts the playhead on the caption's first word, where
                  the video preview shows it spoken. That is where it appears,
                  except for the first caption of a clip, which is on screen
                  from the clip's first frame, before its first word. -->
@@ -1794,8 +1811,13 @@
                   title={onremovecaption && !locked
                     ? "Put the playhead where this caption appears. Delete then removes it."
                     : "Put the playhead where this caption appears"}
-                  onpointerdown={(e) => e.stopPropagation()}
-                  onclick={() => {
+                  onpointerdown={(e) => {
+                    e.stopPropagation();
+                    if (e.button !== 0) return;
+                    // On the press, the playhead and the pick both: the
+                    // block is drawn afresh as the playhead comes onto its
+                    // word, and a click needs the press and the release
+                    // on one element.
                     onseek(firstWordOf(b.c) ?? b.from, "clip");
                     if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
                   }}
@@ -2128,7 +2150,13 @@
     width: 12px;
     margin-left: -6px;
     cursor: ew-resize;
-    z-index: 2;
+    /* Over the playhead and the handles of the captions, the way the
+       clip's own edges are. A cut's edge dragged takes the playhead with
+       it, so the playhead stands on the edge, and the caption before the
+       cut ends there with a handle of its own. A press there took hold of
+       one of them instead of the edge, found by Tim. The cut's edge is the
+       one a hand there means. */
+    z-index: 7;
   }
 
   .cutedge::after {

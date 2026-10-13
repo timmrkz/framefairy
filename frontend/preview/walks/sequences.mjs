@@ -38,6 +38,13 @@
 //                      after it lets go
 //   ["drag edge", which, px, "shift"]
 //                      the same with shift held, so the edge lands on words
+//   ["drag edge", which, px, "at the playhead"]
+//                      the same, pressed where the playhead's grip and the
+//                      edge's handle overlap rather than in its middle
+//   ["hold on", which] presses the clip's "start" or "end" edge, the
+//                      "cut from" or "cut to" edge of its first cut, or its
+//                      first "thumbnail" or "crop" mark, reads the playhead
+//                      while the button is still down, and lets go
 //   ["block after", n] clicks the caption block of the first caption that
 //                      appears after the clip's nth cut, from 1, which puts
 //                      the playhead on its first word
@@ -282,6 +289,15 @@
 //                      frame the edge leaves on screen, the clip's or the
 //                      piece's first frame for "start" and "cut to", its
 //                      last for "end" and "cut from", with shift too
+//   ["went the hand's way", which]
+//                      since "drag edge", the edge never stood on the far
+//                      side of where it was pressed from the way the hand
+//                      went
+//   ["moved", which]   since "drag edge", the edge moved by a frame or more
+//   ["on press", which]
+//                      since "hold on", the playhead had moved while the
+//                      button was still down, onto the frame "followed"
+//                      names for an edge, or onto the mark's frame
 //   ["pill pops", n]   the pill round the lit word in the video preview
 //                      popped n times since "count pops"
 //   ["played through"] since "drag while playing", the play went on as if
@@ -839,6 +855,58 @@ export const sequences = [
       ["followed", "end"],
       ["drag edge", "start", 60, "shift"],
       ["followed", "start"],
+    ],
+  },
+  {
+    // Found by Tim: a press anywhere on the clip timeline moved the
+    // playhead at once, and a press on an edge or a mark only when the
+    // hand let go or began to move, so it caught up with a drag late.
+    name: "a press on an edge or a mark puts the playhead on it at once",
+    steps: [
+      ["cut at", 0.5],
+      ["thumbnail at", 0.25],
+      ["keyframe at", 0.75],
+      ["hold on", "end"],
+      ["on press", "end"],
+      ["hold on", "start"],
+      ["on press", "start"],
+      ["hold on", "cut from"],
+      ["on press", "cut from"],
+      ["hold on", "cut to"],
+      ["on press", "cut to"],
+      ["hold on", "thumbnail"],
+      ["on press", "thumbnail"],
+      ["hold on", "crop"],
+      ["on press", "crop"],
+    ],
+  },
+  {
+    // Found by Tim: a cut's left edge pressed with shift and dragged right
+    // first jumped left, to the nearest word, and only then went right.
+    name: "an edge dragged with shift goes the way of the hand",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", 8, "shift"],
+      ["went the hand's way", "cut from"],
+      ["drag edge", "cut to", -8, "shift"],
+      ["went the hand's way", "cut to"],
+      ["drag edge", "end", -8, "shift"],
+      ["went the hand's way", "end"],
+      ["drag edge", "start", 8, "shift"],
+      ["went the hand's way", "start"],
+    ],
+  },
+  {
+    // Found by Tim: a cut's edge dragged takes the playhead along, so it
+    // stands on the edge, and the next press there took hold of the
+    // playhead and not the edge.
+    name: "a cut's edge with the playhead on it is the edge's to take",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -40],
+      ["drag edge", "cut from", -30, "at the playhead"],
+      ["moved", "cut from"],
+      ["followed", "cut from"],
     ],
   },
   {
@@ -2443,6 +2511,9 @@ for (const seq of toWalk) {
   let loopEnd = null;
   // Whether the last "drag edge" held shift.
   let dragShift = false;
+  const edgeLabel = { start: "Clip start", end: "Clip end", "cut from": "Where cut 1 starts", "cut to": "Where cut 1 ends" };
+  let dragPx = 0;
+  let held = null;
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
@@ -2826,34 +2897,112 @@ for (const seq of toWalk) {
       case "drag edge": {
         const [which, px, how] = arg;
         dragShift = how === "shift";
+        dragPx = px;
         const g = await handles(page);
         const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
         if (!box) {
           wrong = `there is no ${which} edge to drag`;
           break;
         }
-        await page.evaluate(() => {
+        let x = middle(box);
+        if (how === "at the playhead") {
+          // The playhead's grip is its line and four pixels either side.
+          const line = await page.evaluate(() => {
+            const b = document.querySelector(".clip-timeline .playhead").getBoundingClientRect();
+            return b.left + b.width / 2;
+          });
+          const from = Math.max(line - 4, box.x + 1);
+          const to = Math.min(line + 4, box.x + box.w - 1);
+          if (!(to > from)) {
+            wrong = `the playhead's line at ${line.toFixed(1)} is not on the ${which} edge's handle, ${box.x.toFixed(1)} to ${(box.x + box.w).toFixed(1)}`;
+            break;
+          }
+          x = (from + to) / 2;
+        }
+        await page.evaluate((label) => {
           window.__followed = [];
+          window.__edgeSeen = [];
           window.__followWatch = true;
           const tick = () => {
             if (!window.__followWatch) return;
             window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
+            const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+            if (edge) window.__edgeSeen.push(Number(edge.getAttribute("aria-valuenow")));
             requestAnimationFrame(tick);
           };
-          requestAnimationFrame(tick);
-        });
+          tick();
+        }, edgeLabel[which]);
         const y = box.y + box.h / 2;
-        await page.mouse.move(middle(box), y);
+        await page.mouse.move(x, y);
         if (dragShift) await page.keyboard.down("Shift");
         await page.mouse.down();
         for (let i = 1; i <= 20; i++) {
-          await page.mouse.move(middle(box) + (px * i) / 20, y);
+          await page.mouse.move(x + (px * i) / 20, y);
           await page.waitForTimeout(40);
         }
         await page.mouse.up();
         if (dragShift) await page.keyboard.up("Shift");
         await watch.step("drag edge", s);
         await page.evaluate(() => (window.__followWatch = false));
+        break;
+      }
+      case "hold on": {
+        const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
+        let box;
+        if (arg === "thumbnail" || arg === "crop") {
+          box = await page.locator(`.clip-timeline .mark${arg === "crop" ? ".cropdot" : ".thumb"}`).first().boundingBox();
+        } else {
+          const g = await handles(page);
+          box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[arg];
+        }
+        if (!box) {
+          wrong = `there is no ${arg} to press`;
+          break;
+        }
+        const before = await at();
+        await page.mouse.move(box.x + box.width / 2 || middle(box), box.y + (box.height ?? box.h) / 2);
+        await page.mouse.down();
+        await page.waitForTimeout(150);
+        held = { which: arg, before, at: await at() };
+        await page.mouse.up();
+        await watch.step("hold on", s);
+        break;
+      }
+      case "on press": {
+        const frame = 1 / (await rate(page));
+        let want;
+        if (arg === "thumbnail" || arg === "crop") {
+          want = await page.evaluate(
+            (kind) => Number(document.querySelector(`.clip-timeline .mark${kind}`)?.getAttribute("aria-valuenow")),
+            arg === "crop" ? ".cropdot" : ".thumb",
+          );
+        } else {
+          const segs = (await engineState(page, watch.at)).segments;
+          want = { start: segs[0].start, end: segs.at(-1).end - frame, "cut from": segs[0].end - frame, "cut to": segs[1]?.start }[arg];
+        }
+        const same = (a, b) => Math.floor(a / frame + 1e-6) === Math.floor(b / frame + 1e-6);
+        if (held?.which !== arg) wrong = `${arg} was not held`;
+        else if (same(held.before, want)) wrong = `the playhead stood on the ${arg}'s frame before the press, which proves nothing`;
+        else if (!same(held.at, want)) {
+          wrong = `the playhead stood at ${held.at.toFixed(3)} with the button down on the ${arg}, not on its frame at ${want.toFixed(3)}`;
+        }
+        break;
+      }
+      case "went the hand's way": {
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        const back = seen.find((v) => (v - seen[0]) * dragPx < -0.0005);
+        if (!seen.length) wrong = `the ${arg} edge was not seen`;
+        else if (back !== undefined) {
+          wrong = `the ${arg} edge went from ${seen[0].toFixed(3)} to ${back.toFixed(3)}, against the hand, which went ${dragPx > 0 ? "right" : "left"}`;
+        }
+        break;
+      }
+      case "moved": {
+        const frame = 1 / (await rate(page));
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        if (!(seen.length && Math.abs(seen.at(-1) - seen[0]) >= frame - 0.001)) {
+          wrong = `the ${arg} edge stayed at ${seen[0]?.toFixed(3)} while the hand dragged it`;
+        }
         break;
       }
       case "block after": {

@@ -153,11 +153,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		}
 		switch g.Edge {
 		case "start":
-			start = g.landStart(words, g.From, keepPause)
+			start = toward(first, g.From, g.landStart(words, g.From, keepPause))
 			start = math.Min(start, end-MinClip)
 			start = math.Max(start, end-MaxClipSpan)
 		case "end":
-			end = g.landEnd(words, goes, g.From, keepPause)
+			end = toward(last, g.From, g.landEnd(words, goes, g.From, keepPause))
 			end = math.Max(end, start+MinClip)
 			// Not past the end of the video, which is where the hand
 			// goes when it pulls the last clip of a video out to the end.
@@ -251,9 +251,11 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		switch g.Edge {
 		case "from":
 			to = clip.Segments[i+1].Start
+			from = toward(clip.Segments[i].End, g.From, from)
 			from = math.Min(math.Max(from, low), to-least)
 		case "to":
 			from = clip.Segments[i].End
+			to = toward(clip.Segments[i+1].Start, g.To, to)
 			to = math.Max(math.Min(to, high), from+least)
 		case "":
 			from = math.Min(math.Max(from, low), high-least)
@@ -375,6 +377,21 @@ func runOn(clip Clip, at float64) Clip {
 	out[len(out)-1].End = math.Max(out[len(out)-1].End, at) + 60
 	clip.Segments = out
 	return clip
+}
+
+// toward is where an edge that stood at was lands, when the hand is at hand
+// and the rule it is put on, a word or a frame, puts it at landed: there,
+// when that is the way the hand went, and otherwise where it stood. The
+// nearest word can be behind the edge, and an edge that went there went
+// against the hand. Tim pressed a cut's left edge with shift, moved right,
+// and it jumped left first. So it stays until the hand is nearer a place
+// ahead of it than where it stood, and a press, the hand where the edge
+// is, moves nothing.
+func toward(was, hand, landed float64) float64 {
+	if (landed-was)*(hand-was) > 0 {
+		return landed
+	}
+	return was
 }
 
 // edgePlayhead is where the playhead stands while an edge is dragged, an
