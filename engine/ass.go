@@ -383,14 +383,38 @@ func cueText(line []Cue) string {
 }
 
 // assText is the lines of a caption as one ASS text, with the hard spaces
-// that pad a caption when no box is drawn.
-func (l LaidCaption) assText(pad int) string {
+// that pad a caption when no box is drawn, in a face of size.
+func (l LaidCaption) assText(pad, size int) string {
 	spaces := strings.Repeat(`\h`, pad)
 	rows := make([]string, len(l.Lines))
 	for i, line := range l.Lines {
 		rows[i] = spaces + EscapeASSText(cueText(line)) + spaces
 	}
-	return strings.Join(rows, `\N`)
+	return strings.Join(rows, lineBreak(size))
+}
+
+// lineGap is the room between two lines of a caption, as a share of the
+// caption size, over what libass leaves, which is the face's own height
+// and no more: the accent of a capital on one line touches the tail of a
+// letter on the line above. The pill of the word being spoken reaches
+// pillPadY past its line and bounceGrow more at the top of its bounce, so
+// the gap is that and a little more, and the pill never reaches the
+// letters of another line. Tim saw the "g" of "wichtig" stand in the pill
+// of "Leute" on the line under it, on #201.
+const lineGap = pillPadY + bounceGrow + lineClear
+
+// lineClear is the least room between the pill at the top of its bounce
+// and the letters of the next line, as a share of the caption size.
+const lineClear = 0.06
+
+// lineBreak breaks a caption in a face of size onto its next line, lineGap
+// lower than libass alone would put it: an empty line of a hard space in a
+// face as tall as the gap, and the face of size again after it. libass
+// has no tag for the room between lines, and a line is as tall as the
+// largest face on it. The same text is drawn, measured and rendered, so
+// everything placed from a measurement moves with it.
+func lineBreak(size int) string {
+	return fmt.Sprintf(`\N{\fs%d}\h\N{\fs%d}`, max(1, pyround(lineGap*float64(size))), size)
 }
 
 type inkBox struct{ left, top, right, bottom int }
@@ -683,7 +707,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 
 	blocks := make([]string, len(laid))
 	for i, c := range laid {
-		blocks[i] = c.assText(0)
+		blocks[i] = c.assText(0, size)
 	}
 
 	// Measured once, and one caption that cannot be measured sends the whole
@@ -721,7 +745,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	if boxes == nil {
 		for _, c := range laid {
 			events = append(events, fmt.Sprintf("Dialogue: 0,%s,%s,Caption,,0,0,0,,%s",
-				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad)))
+				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad, size)))
 		}
 	} else {
 		padX := float64(pyround(s.BoxPadX * scale))

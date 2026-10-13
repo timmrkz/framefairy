@@ -53,9 +53,9 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 			k := k
 			// Measured opaque, whatever the text colour: a word is found by
 			// its ink, and a see-through one would leave little to find.
-			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
+			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag(""), size))
 		}
-		blocks = append(blocks, pillLines(len(lines))...)
+		blocks = append(blocks, pillLines(len(lines), size)...)
 	}
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
 	if !ok {

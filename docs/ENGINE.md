@@ -777,8 +777,9 @@ The bounce reaches out by the same few pixels for every word, never by a
 share of the word, so the space between two words stays on every frame.
 At rest the pill already takes nearly the whole space, 0.14 of the size at
 each side against a space of 0.165 in Inter Black. So its sides never
-move: the pill reaches 0.08 of the size past its rest above and below at
-the peak and settles back, and it is never smaller than at rest. The word
+move: the pill reaches 0.16 of the size past its rest above and below at
+the peak and settles back, and it is never smaller than at rest. It
+reached 0.08 before, which Tim could hardly see on #201. The word
 grows by up to 0.03 of the size at each side, which keeps room in its
 pill, and no more than 15 %, so a short word grows by the whole 15 % and a
 long one by less. Growing by 15 % of the word took "respektvoll" 34 pixels
@@ -797,6 +798,19 @@ click on the word puts the playhead, showed it hugging the letters, which
 Tim saw on #201. `TestTheBounceKeepsTheSpaceBetweenWords` reads the bounce
 back from a short, and holds the pill to at least 0.10 of the size of room
 round its word on every frame and to never less than at rest.
+
+The lines of a caption stand apart by 0.32 of the size more than libass
+puts them, which packs them as close as the face is tall: the room the
+pill takes past its line, 0.10, the 0.16 it reaches at the top of its
+bounce, and 0.06 over. libass has no tag for the room between lines, so
+`lineBreak` in `engine/ass.go` puts an empty line in a face that tall
+between two lines, in every caption text the tool draws, measures or
+renders. Packed close, the "g" of "wichtig" stood in the pill of "Leute"
+on the line under it, which Tim saw on #201.
+`TestThePillNeverReachesAnotherLine` reads a caption of two lines back
+from a short, the tail of a "g" over the dots of an "Ä", and holds the
+pill to 0.06 of the size from the other line on every frame and the
+bounce to at least 0.25 of the size in height.
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished

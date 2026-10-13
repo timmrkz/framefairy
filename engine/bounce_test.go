@@ -28,10 +28,13 @@ const roomAround = 0.10
 // from: the line sits 300 pixels over the bottom.
 const bounceTop, bounceRows = 1400, 400
 
-// On the real disk: ffmpeg renders the short and the test reads it back.
-func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
+// shortRows renders words as the captions of a short from 0 to end of a
+// black episode at bounceFPS, 1080x1920, and reads back rows of it from
+// top, one rgb24 frame after another.
+func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
 	}
@@ -39,9 +42,10 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
 	}
 	source := filepath.Join(t.TempDir(), "episode.mp4")
+	long := math.Ceil(end) + 1
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=2", bounceFPS),
-		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=2",
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=%g", bounceFPS, long),
+		"-f", "lavfi", "-i", fmt.Sprintf("anullsrc=r=48000:cl=stereo:d=%g", long),
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
 	}
@@ -49,16 +53,10 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	style := ResolveStyle(nil)
-	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.40, "ist."}}
-	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 1.6}}})
-	laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
-	if len(laid) != 1 || len(laid[0].Lines) != 1 {
-		t.Fatalf("the words should make one caption of one line, not %+v", laid)
-	}
+	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: end}}})
+	laid = ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, ResolveStyle(nil))
 
-	const w, h = 1080, 1920
-	rs := RenderSettings{OutW: w, OutH: h, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
+	rs := RenderSettings{OutW: shortW, OutH: shortH, CRF: 12, Preset: "ultrafast", AudioBitrate: "128k", ScaleUp: true}
 	dir := t.TempDir()
 	short, err := e.RenderClip(ctx, clip, source, info, filepath.Join(dir, "out"), laid, rs, nil,
 		filepath.Join(dir, "captions"), false)
@@ -66,47 +64,73 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err := exec.Command("ffmpeg", "-v", "error", "-i", short, "-vf",
-		fmt.Sprintf("crop=%d:%d:0:%d", w, bounceRows, bounceTop),
+		fmt.Sprintf("crop=%d:%d:0:%d", shortW, rows, top),
 		"-f", "rawvideo", "-pix_fmt", "rgb24", "-").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	size := w * bounceRows * 3
-	var frames [][]byte
+	size := shortW * rows * 3
 	for i := 0; i+size <= len(out); i += size {
 		frames = append(frames, out[i:i+size])
 	}
+	return e, info, laid, frames
+}
 
+const shortW, shortH = 1080, 1920
+
+// pillColour is the colour of the pill behind the word being spoken.
+func pillColour(t *testing.T, s Style) [3]int {
+	t.Helper()
 	var pill [3]int
 	var alpha float64
-	if _, err := fmt.Sscanf(style.HighlightWeb(), "rgba(%d, %d, %d, %g)", &pill[0], &pill[1], &pill[2], &alpha); err != nil {
+	if _, err := fmt.Sscanf(s.HighlightWeb(), "rgba(%d, %d, %d, %g)", &pill[0], &pill[1], &pill[2], &alpha); err != nil {
 		t.Fatal(err)
 	}
-	isPill := func(f []byte, x, y int) bool {
-		i := (y*w + x) * 3
-		return abs(int(f[i])-pill[0]) < 40 && abs(int(f[i+1])-pill[1]) < 40 && abs(int(f[i+2])-pill[2]) < 40
-	}
-	isInk := func(f []byte, x, y int) bool {
-		i := (y*w + x) * 3
-		return f[i] > 160 && f[i+1] > 160 && f[i+2] > 160
-	}
-	// The pill's box on a frame, and whether a column holds anything but
-	// the caption's box.
-	pillBox := func(f []byte) (left, right, top, bottom int) {
-		left, right, top, bottom = w, -1, bounceRows, -1
-		for y := range bounceRows {
-			for x := range w {
-				if isPill(f, x, y) {
-					left, right = min(left, x), max(right, x)
-					top, bottom = min(top, y), max(bottom, y)
-				}
+	return pill
+}
+
+// isPill and isInk say whether a pixel of a frame shortW wide is the pill
+// or the white of a letter.
+func isPill(f []byte, pill [3]int, x, y int) bool {
+	i := (y*shortW + x) * 3
+	return abs(int(f[i])-pill[0]) < 40 && abs(int(f[i+1])-pill[1]) < 40 && abs(int(f[i+2])-pill[2]) < 40
+}
+
+func isInk(f []byte, x, y int) bool {
+	i := (y*shortW + x) * 3
+	return f[i] > 160 && f[i+1] > 160 && f[i+2] > 160
+}
+
+// pillBox is the box of the pill on a frame of rows rows, right below zero
+// when there is none.
+func pillBox(f []byte, pill [3]int, rows int) (left, right, top, bottom int) {
+	left, right, top, bottom = shortW, -1, rows, -1
+	for y := range rows {
+		for x := range shortW {
+			if isPill(f, pill, x, y) {
+				left, right = min(left, x), max(right, x)
+				top, bottom = min(top, y), max(bottom, y)
 			}
 		}
-		return
 	}
+	return
+}
+
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
+	t.Parallel()
+	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.40, "ist."}}
+	e, info, laid, frames := shortRows(t, words, 1.6, bounceTop, bounceRows)
+	if len(laid) != 1 || len(laid[0].Lines) != 1 {
+		t.Fatalf("the words should make one caption of one line, not %+v", laid)
+	}
+	const w, h = shortW, shortH
+	style := ResolveStyle(nil)
+	pill := pillColour(t, style)
+	box := func(f []byte) (left, right, top, bottom int) { return pillBox(f, pill, bounceRows) }
 	empty := func(f []byte, x int) bool {
 		for y := range bounceRows {
-			if isPill(f, x, y) || isInk(f, x, y) {
+			if isPill(f, pill, x, y) || isInk(f, x, y) {
 				return false
 			}
 		}
@@ -120,7 +144,7 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	if len(frames) < 45 {
 		t.Fatalf("the short has %d frames", len(frames))
 	}
-	restL, restR, restT, restB := pillBox(frames[40])
+	restL, restR, restT, restB := box(frames[40])
 	if restR < 0 {
 		t.Fatal("no pill behind respektvoll once it settled")
 	}
@@ -144,8 +168,8 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	// of the size past the tallest letter of the line.
 	room := func(name string, from, to int) {
 		t.Helper()
-		_, _, restT, restB := pillBox(frames[to])
-		restLeft, restRight, _, _ := pillBox(frames[to])
+		_, _, restT, restB := box(frames[to])
+		restLeft, restRight, _, _ := box(frames[to])
 		least := w
 		defer func() {
 			t.Logf("%s: the pill is %dx%d at rest and leaves at least %d pixels round the word", name,
@@ -153,7 +177,7 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 		}()
 		for k := from; k <= to; k++ {
 			f := frames[k]
-			l, r, top, bottom := pillBox(f)
+			l, r, top, bottom := box(f)
 			if r < 0 {
 				t.Errorf("%s: no pill on frame %d", name, k)
 				continue
@@ -193,13 +217,13 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	// The frame the caption box puts round a word is where its pill rests,
 	// so it stands round the word libass drew. Tim saw it stand off its
 	// word on #201, laid out by the browser's own font.
-	frames0 := e.WordFrames(ctx, laid, w, h, nil, info.Light())
+	frames0 := e.WordFrames(context.Background(), laid, w, h, nil, info.Light())
 	if len(frames0) != 1 || len(frames0[0]) != len(words) {
 		t.Fatalf("word frames %+v, want one caption of %d words", frames0, len(words))
 	}
 	// "Das" rests on frame 24, "respektvoll" on frame 40.
 	for i, at := range []int{24, 40} {
-		l, r, top, bottom := pillBox(frames[at])
+		l, r, top, bottom := box(frames[at])
 		fr := frames0[0][i]
 		got := [4]float64{fr.X * w, fr.Y*h - bounceTop, (fr.X + fr.W) * w, (fr.Y+fr.H)*h - bounceTop}
 		drawn := [4]float64{float64(l), float64(top), float64(r + 1), float64(bottom + 1)}
@@ -214,7 +238,7 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	for k := lit; k <= lit+10; k++ {
 		since := float64(k-lit) / bounceFPS
 		b := BounceAt(since, span)
-		l, r, top, bottom := pillBox(frames[k])
+		l, r, top, bottom := box(frames[k])
 		pw, ph := r-l+1, bottom-top+1
 		wantW := float64(restW)
 		wantH := float64(restH) + 2*grow*b.Tall
@@ -231,6 +255,95 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 		if !gap {
 			t.Errorf("%3.0f ms after respektvoll lit nothing is left of the space before ist, between %d and %d: the pill reaches %d",
 				since*1000, restR, next, r)
+		}
+	}
+}
+
+// bounceSeen is the least the pill of a word lit long enough to bounce
+// grows in height at the top of its bounce, as a share of the caption
+// size. Tim could hardly see a bounce of 0.16 on #201.
+const bounceSeen = 0.25
+
+// The pill of the word being spoken never reaches the letters of another
+// line, at rest or at the top of its bounce, and its bounce is large
+// enough to see. Tim saw the "g" of "wichtig" stand in the top right
+// corner of the pill of "Leute" on the line under it, on #201: libass
+// packs the lines of a caption as close as the face is tall, and the pill
+// reaches past its line.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestThePillNeverReachesAnotherLine(t *testing.T) {
+	t.Parallel()
+	// The first line reaches as deep as a line goes, the second as high:
+	// the tail of the g over the dots of the Ä.
+	words := []Cue{
+		{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
+		{1.30, 1.80, "Ägypten"}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+	}
+	const top, rows = 1150, 650
+	_, _, laid, frames := shortRows(t, words, 2.6, top, rows)
+	if len(laid) != 1 || len(laid[0].Lines) != 2 || len(laid[0].Lines[1]) == 0 || laid[0].Lines[1][0].Text != "Ägypten" {
+		t.Fatalf("the words should make one caption of two lines, the second from Ägypten, not %+v", laid)
+	}
+	style := ResolveStyle(nil)
+	size := float64(pyround(style.Size))
+	pill := pillColour(t, style)
+
+	// lines are the rows each line of letters stands in, top to bottom. A
+	// line's letters leave rows free inside it, between the dots of the Ä
+	// and the A, so rows closer than a fifth of the size are one line.
+	lines := func(f []byte) [][2]int {
+		var found [][2]int
+		for y := range rows {
+			ink := false
+			for x := range shortW {
+				if isInk(f, x, y) {
+					ink = true
+					break
+				}
+			}
+			switch {
+			case !ink:
+			case len(found) > 0 && float64(y-found[len(found)-1][1]) < 0.2*size:
+				found[len(found)-1][1] = y
+			default:
+				found = append(found, [2]int{y, y})
+			}
+		}
+		return found
+	}
+
+	clear := lineClear*size - 2
+	for i, word := range words {
+		from, to := int(math.Round(word.Start*bounceFPS)), int(math.Round(word.End*bounceFPS))-1
+		var restH, peakH int
+		for k := from; k <= to; k++ {
+			f := frames[k]
+			ms := (k - from) * 1000 / bounceFPS
+			_, r, ptop, pbottom := pillBox(f, pill, rows)
+			if r < 0 {
+				t.Errorf("%s, %3d ms after it lit: no pill", word.Text, ms)
+				continue
+			}
+			restH, peakH = pbottom-ptop+1, max(peakH, pbottom-ptop+1)
+			drawn := lines(f)
+			if len(drawn) != 2 {
+				t.Errorf("%s, %3d ms after it lit: the letters stand in %d bands of rows, %v, not one for each of the two lines: the lines touch",
+					word.Text, ms, len(drawn), drawn)
+				continue
+			}
+			other, room := drawn[1], drawn[1][0]-pbottom-1
+			if i >= 4 {
+				other, room = drawn[0], ptop-drawn[0][1]-1
+			}
+			if float64(room) < clear {
+				t.Errorf("%s, %3d ms after it lit: the pill, rows %d to %d, comes %d pixels from the letters of the other line, rows %d to %d, closer than %.0f",
+					word.Text, ms, ptop, pbottom, room, other[0], other[1], clear)
+			}
+		}
+		if grew := float64(peakH-restH) / size; grew < bounceSeen {
+			t.Errorf("%s: the pill grows from %d to %d pixels at the top of its bounce, %.2f of the size, less than %.2f",
+				word.Text, restH, peakH, grew, bounceSeen)
 		}
 	}
 }

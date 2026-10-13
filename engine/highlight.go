@@ -76,7 +76,7 @@ const (
 	bounceDown = 100 // ms to settle back
 	// bounceGrow is how far the pill reaches above and below where it
 	// rests at the peak, as a share of the caption size.
-	bounceGrow = 0.08
+	bounceGrow = 0.16
 	// wordRoom is how far the word may grow out on either side, as a share
 	// of the caption size: a little of the pill's room at its sides, so the
 	// word keeps room in its pill at the top of the bounce too. A short
@@ -149,7 +149,7 @@ func WordPeak(s Style, text string) float64 {
 // same height, whatever its letters, so a line's pill is the same height
 // for every word on it, a word of small letters as much as a word with an
 // accent or a tail.
-func pillLines(rows int) []string {
+func pillLines(rows, size int) []string {
 	words := make([]string, rows)
 	lines := make([][]int, rows)
 	for r := range rows {
@@ -158,7 +158,7 @@ func pillLines(rows int) []string {
 	}
 	out := make([]string, rows)
 	for r := range rows {
-		out[r] = taggedText(words, lines, func(j int) bool { return j == r }, shownTag(""))
+		out[r] = taggedText(words, lines, func(j int) bool { return j == r }, shownTag(""), size)
 	}
 	return out
 }
@@ -226,9 +226,9 @@ func alphaOf(colour string) string {
 	return "00"
 }
 
-// taggedText is the caption with each word shown or hidden. Hidden words
-// still take their place in the line.
-func taggedText(words []string, lines [][]int, visible func(int) bool, shown string) string {
+// taggedText is the caption with each word shown or hidden, in a face of
+// size. Hidden words still take their place in the line.
+func taggedText(words []string, lines [][]int, visible func(int) bool, shown string, size int) string {
 	rows := make([]string, len(lines))
 	for r, line := range lines {
 		parts := make([]string, len(line))
@@ -241,7 +241,7 @@ func taggedText(words []string, lines [][]int, visible func(int) bool, shown str
 		}
 		rows[r] = strings.Join(parts, " ")
 	}
-	return strings.Join(rows, `\N`)
+	return strings.Join(rows, lineBreak(size))
 }
 
 func centiseconds(t float64) int { return max(0, pyround(t*100)) }
@@ -313,7 +313,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 		begins := wordBegins(c, start, end)
 		all := func(int) bool { return true }
-		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
+		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown, size))
 
 		for k := range L.words {
 			from := begins[k]
@@ -363,10 +363,10 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 			// The line with the active word hidden, so nothing else moves.
 			add(2, from, to, "Caption", "{"+anchor+"}"+
-				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown))
+				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown, size))
 
 			// The active word alone, scaled around its centre.
-			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown)
+			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown, size)
 			place := func(scale float64) (string, string) {
 				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
 			}

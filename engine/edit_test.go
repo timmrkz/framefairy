@@ -736,7 +736,7 @@ func TestAShownWordKeepsTheTextOpacity(t *testing.T) {
 		}
 	}
 	line := taggedText([]string{"eins", "zwei"}, [][]int{{0, 1}}, func(i int) bool { return i == 0 },
-		shownTag("&H40FFFFFF"))
+		shownTag("&H40FFFFFF"), 96)
 	if line != `{\alpha&H40&}eins {\alpha&HFF&}zwei` {
 		t.Errorf("line %s", line)
 	}

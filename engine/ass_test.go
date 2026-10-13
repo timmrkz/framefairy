@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -414,12 +415,15 @@ func TestWriteASSKeepsCaptionTextInert(t *testing.T) {
 	}
 }
 
-// withoutOwnTags removes the two tags the writer puts in itself, the hard
-// spaces that pad a caption and the line break between its lines. What is
-// left came from the caption text.
+// withoutOwnTags removes the tags the writer puts in itself, the hard
+// spaces that pad a caption and the line break between its lines with the
+// sizes of its gap, see lineBreak. What is left came from the caption text.
 func withoutOwnTags(text string) string {
+	text = ownSize.ReplaceAllString(text, "")
 	return strings.NewReplacer(`\h`, "", `\N`, "").Replace(text)
 }
+
+var ownSize = regexp.MustCompile(`\{\\fs[0-9]+\}`)
 
 // FuzzWriteASS throws caption text at the writer and insists the file stays
 // a caption file: one Dialogue line per caption, with no override syntax in
