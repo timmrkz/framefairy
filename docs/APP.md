@@ -2715,7 +2715,11 @@ See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
 rather than typing it, plan row 2.189, the way dictation on claude.ai
 works. Pressed, it says **Stop** and wears the beam while the app
 listens, and the words appear where the cursor was while they are said,
-grey and slanted until they are kept. The field follows the words the
+grey and slanted until they are kept. Nothing is written down until the
+microphone has been as loud as a voice, 10 dB over a quiet room, since
+the speech model hears words in a room where nobody speaks: Tim pressed
+Dictate and Stop a few times without a word and was given "yeah yeah".
+The field follows the words the
 way a terminal follows its output: they stay in view as they come, until
 the person scrolls away to read, and then the field stays where they put
 it until they scroll back to the words. The cursor stands right after
