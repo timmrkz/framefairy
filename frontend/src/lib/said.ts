@@ -206,15 +206,34 @@ export function listen() {
   window.addEventListener("unhandledrejection", (e) => said(`unhandled: ${text([e.reason])}`, { level: "error" }));
   said(`window: started, ${navigator.userAgent}, ${window.devicePixelRatio}x, ${innerWidth}x${innerHeight}, WebGPU ${"gpu" in navigator ? "there" : "not there"}`, { level: "info" });
   // A window that stands still is a window doing something too long: the
-  // timer comes late by as much.
+  // timer comes late by as much. But WebKit lets the timers of an app that
+  // is not in front fire once a second at most, so a timer late while the
+  // app was behind another, or on its way back to the front, says nothing
+  // about the app. Every one of the 262 lines of two days in Tim's report
+  // was that, and none came while he worked. Plan row 2.242.
   let tick = performance.now();
+  let away = document.hidden || !document.hasFocus();
+  const leave = () => {
+    away = true;
+  };
+  const back = () => {
+    tick = performance.now();
+    away = document.hidden || !document.hasFocus();
+  };
+  window.addEventListener("blur", leave);
+  window.addEventListener("focus", back);
   setInterval(() => {
     const now = performance.now();
     const late = now - tick - 250;
     tick = now;
-    if (late > STOOD && !document.hidden) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
+    if (away) return back();
+    if (late > STOOD) said(`window: stood still for ${Math.round(late)} ms`, { level: "warn" });
   }, 250);
-  document.addEventListener("visibilitychange", () => said(`window: ${document.hidden ? "hidden" : "shown"}`));
+  document.addEventListener("visibilitychange", () => {
+    said(`window: ${document.hidden ? "hidden" : "shown"}`);
+    if (document.hidden) leave();
+    else back();
+  });
   // The space bar, before anything takes it: where the keyboard was, and
   // which workspace could have heard it.
   window.addEventListener(
