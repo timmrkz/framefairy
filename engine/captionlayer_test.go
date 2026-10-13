@@ -410,6 +410,8 @@ func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
 // word's ink taken away, with the highlight and without, so nothing else
 // of the caption moves. Tim saw the whole caption grow as a word was
 // opened, because the browser drew all of it in its own font.
+//
+// On the real disk: ffmpeg measures the captions to lay out the pills.
 func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 	ffmpegtest.Need(t)
 	ctx := context.Background()
