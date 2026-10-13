@@ -210,6 +210,11 @@ func (s *FrameFairy) Opened(n int) []string {
 		marked bool
 		at     int64
 	}
+	// A video deleted outside the app is let go first, so the app never
+	// opens on it as it starts: Tim deleted two videos with their folders,
+	// an earlier version wrote the chosen clip back into one, and the app
+	// opened on it after an update and said it was not in the library.
+	s.letGoOfRemoved()
 	var all []seen
 	for _, ep := range s.store.Episodes() {
 		file, err := engine.SafeChildIn(s.store.files, engine.WorkDir(ep), chosenFile)
