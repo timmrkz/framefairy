@@ -15,7 +15,7 @@ import (
 
 // The pop of the word being spoken, read back from a finished short: the
 // word and its pill grow together, by one scale around one centre, in
-// every direction, as far as popDrawn says on every frame, and at rest the
+// every direction, as far as popScales says on every frame, and at rest the
 // pill leaves room round its word. Tim saw #201's bounce move the pill
 // only up or down and the word hardly at all.
 
@@ -31,10 +31,16 @@ const bounceTop, bounceRows = 1400, 400
 
 // shortRows renders words as the captions of a short from 0 to end of a
 // black episode at bounceFPS, 1080x1920, and reads back rows of it from
-// top, one rgb24 frame after another.
+// top, one rgb24 frame after another. shortRowsAt does it at fps.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+	t.Helper()
+	return shortRowsAt(t, bounceFPS, words, end, top, rows)
+}
+
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func shortRowsAt(t *testing.T, fps int, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
 	ctx := context.Background()
 	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -47,7 +53,7 @@ func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	long := math.Ceil(end) + 1
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=%g", bounceFPS, long),
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=%g", fps, long),
 		"-f", "lavfi", "-i", fmt.Sprintf("anullsrc=r=48000:cl=stereo:d=%g", long),
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -221,7 +227,7 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 }
 
 // The word being spoken and its pill pop together: on every frame both
-// are as large as popDrawn says, by one scale in width and in height,
+// are as large as popScales says, by one scale in width and in height,
 // around the one centre they share, and at the top the scale reaches
 // popPeak. Tim saw #201's bounce stretch the pill up or down alone while
 // the word grew by 1 %, and on main the pill opened from smaller than the
@@ -259,8 +265,9 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 		return box{float64(l), float64(r + 1), float64(top), float64(bottom + 1)},
 			box{float64(il), float64(ir + 1), float64(it), float64(ib + 1)}
 	}
-	// It lights at 0.50 s, frame 25, and is lit for 70 hundredths.
-	const lit, span = 25, 70
+	// It lights at 0.50 s, frame 25, and is lit for 35 frames.
+	const lit = 25
+	scales := popScales(35, bounceFPS)
 	if len(frames) < lit+20 {
 		t.Fatalf("the short has %d frames", len(frames))
 	}
@@ -272,7 +279,10 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 	peak := 0.0
 	for k := lit; k <= lit+12; k++ {
 		since := float64(k-lit) * 1000 / bounceFPS
-		want := popDrawn(since)
+		want := 1.0
+		if k-lit < len(scales) {
+			want = scales[k-lit]
+		}
 		peak = max(peak, want)
 		p, w := read(k)
 		got := map[string][2]float64{
@@ -285,7 +295,7 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 		for what, g := range got {
 			// Two pixels of what was measured, for the edges libass smooths.
 			if math.Abs(g[0]-want) > 2.5/g[1] {
-				t.Errorf("%3.0f ms after the word lit %s is %.3f of its rest, popDrawn says %.3f", since, what, g[0], want)
+				t.Errorf("%3.0f ms after the word lit %s is %.3f of its rest, the pop says %.3f", since, what, g[0], want)
 			}
 		}
 		if math.Abs((p.l+p.r)/2-cx) > 1 || math.Abs((p.t+p.b)/2-cy) > 1 || math.Abs((w.l+w.r)/2-cx) > 1.5 {
@@ -299,7 +309,7 @@ func TestTheWordAndItsPillPopTogether(t *testing.T) {
 }
 
 // A word's first frame in the short shows it at rest, and its pop starts
-// on the frame after, see SourceInfo.popStart. A step onto a word lands on
+// on the frame after, see popScales. A step onto a word lands on
 // its first frame, and Tim saw the pill there still grown, bigger than
 // the frame round it, after the pop had played over the paused frame:
 // the pop started where the word lit, between two frames, and its first
@@ -384,7 +394,7 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	for i, word := range words {
 		lit, to := int(math.Round(word.Start*bounceFPS)), int(math.Round(word.End*bounceFPS))-1
 		// The first frame after its pop.
-		from := lit + int(math.Ceil(popLength*bounceFPS/1000))
+		from := lit + len(popScales(to-lit+1, bounceFPS))
 		if from > to {
 			// Lit too short a time to come to rest.
 			continue
@@ -518,5 +528,73 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 			}
 		}
 		t.Logf("%s:\n%s", second, strings.Join(rows, "\n"))
+	}
+}
+
+// Every word of a short at 25 fps, the rate of Tim's videos, read back
+// frame by frame: words lit for 2 to 10 frames each pop as popScales says
+// for the frames they have, at rest on their first frame, at popPeak on a
+// frame, and at rest again by their last when they have three or more.
+// Tim's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
+// rise and snap back, "so" and "einem" grow on one frame, and "so'n" not
+// at all: the pop was a curve in milliseconds, and where the frames fell
+// on it was chance.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
+	t.Parallel()
+	const fps = 25
+	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.76, "so"},
+		{0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "Beispiel."}}
+	_, _, _, frames := shortRowsAt(t, fps, words, 1.64, bounceTop, bounceRows)
+	pill := pillColour(t, ResolveStyle(nil))
+
+	// The frames each word is lit on, by where its pill stands: a word's
+	// pill keeps its middle through its pop.
+	type lit struct {
+		x, y   float64
+		widths []float64
+	}
+	var seen []lit
+	for _, f := range frames {
+		l, r, top, bottom := pillBox(f, pill, bounceRows)
+		if r < 0 {
+			continue
+		}
+		x, y := float64(l+r)/2, float64(top+bottom)/2
+		if n := len(seen); n == 0 || math.Abs(seen[n-1].x-x) > 4 || math.Abs(seen[n-1].y-y) > 4 {
+			seen = append(seen, lit{x: x, y: y})
+		}
+		seen[len(seen)-1].widths = append(seen[len(seen)-1].widths, float64(r-l+1))
+	}
+	if len(seen) != len(words) {
+		t.Fatalf("%d words lit in the short, not %d", len(seen), len(words))
+	}
+	for i, w := range seen {
+		name := words[i].Text
+		want := popScales(len(w.widths), fps)
+		rest := w.widths[0]
+		var got []string
+		top := 0.0
+		for k, width := range w.widths {
+			scale := width / rest
+			top = max(top, scale)
+			got = append(got, fmt.Sprintf("%.3f", scale))
+			should := 1.0
+			if k < len(want) {
+				should = want[k]
+			}
+			// Two pixels of the pill, for the edges libass smooths.
+			if math.Abs(scale-should) > 2.5/rest {
+				t.Errorf("%s, lit for %d frames, frame %d: the pill is at %.3f, not %.3f", name, len(w.widths), k, scale, should)
+			}
+		}
+		if len(w.widths) >= 2 && math.Abs(top-popPeak) > 2.5/rest {
+			t.Errorf("%s, lit for %d frames, pops to %.3f, not %.2f: %v", name, len(w.widths), top, popPeak, got)
+		}
+		if n := len(w.widths); n >= 3 && math.Abs(w.widths[n-1]/rest-1) > 2.5/rest {
+			t.Errorf("%s, lit for %d frames, ends its last frame at %.3f, not at rest: %v", name, n, w.widths[n-1]/rest, got)
+		}
+		t.Logf("%-10s %2d frames: %v", name, len(w.widths), got)
 	}
 }

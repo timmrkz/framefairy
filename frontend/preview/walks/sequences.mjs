@@ -1767,9 +1767,12 @@ export const sequences = [
     // its pill did not grow together.
     // Filmed at 29.97 fps, as a camera records: at the 5 fps of the
     // other walks' videos the pop is over before the next frame.
+    // At 25 fps, the rate of Tim's videos, forward and back again to the
+    // clip's first word: Tim saw some words pop fully, some barely, some
+    // rise and snap back, and the first word not at all.
     name: "a step onto a word pops it over the paused frame",
     steps: [
-      ["add", 40, "30000/1001"],
+      ["add", 40, "25"],
       ["wait for", "New"],
       ["cards", 1],
       ["step onto words and see them pop", 6],
@@ -5759,10 +5762,12 @@ for (const seq of toWalk) {
         let popped = 0;
         // The most a pop grew.
         let grew = 1;
-        for (let k = 0; k < arg && !wrong; k++) {
+        // arg steps to the right, then as many back to the first word.
+        for (let k = 0; k < 2 * arg && !wrong; k++) {
+          const key = k < arg ? "Shift+ArrowRight" : "Shift+ArrowLeft";
           const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
           const stop = await watchPills(page);
-          await page.keyboard.press("Shift+ArrowRight");
+          await page.keyboard.press(key);
           // The pop, if one starts, and its end.
           const started = await page
             .waitForFunction((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count, { timeout: 1500, polling: 10 })
@@ -5776,11 +5781,11 @@ for (const seq of toWalk) {
           const off = frames.find((f) => framesOffPill(f, "keyed"));
           const last = frames[frames.length - 1];
           if (off) {
-            wrong = `after Shift and the right arrow ${k + 1} times, ${framesOffPill(off, "keyed")}`;
+            wrong = `after ${key} on step ${k + 1}, ${framesOffPill(off, "keyed")}`;
             break;
           }
           if (!last?.keyed || !last.pill) {
-            wrong = `after Shift and the right arrow ${k + 1} times, no word wears the keyboard's frame on a pill`;
+            wrong = `after ${key} on step ${k + 1}, no word wears the keyboard's frame on a pill`;
             break;
           }
           // The paints of the word stepped onto, its pill's width on each.
@@ -5795,15 +5800,16 @@ for (const seq of toWalk) {
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
           // back to rest. Tim saw it stop grown, a frame into the word,
-          // with the frame round it at rest.
-          if (most < least * 1.08) {
+          // with the frame round it at rest, and some words grow by a few
+          // pixels on one frame.
+          if (most < least * 1.13) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
           }
         }
         console.log(`    ${report.join(", ")}`);
-        if (!wrong && popped < arg) wrong = `only ${popped} of ${arg} steps onto a word popped it`;
+        if (!wrong && popped < 2 * arg) wrong = `only ${popped} of ${2 * arg} steps onto a word popped it`;
         else if (!wrong && grew < 1.12) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
         break;
       }

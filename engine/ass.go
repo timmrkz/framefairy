@@ -676,7 +676,7 @@ func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 
 // writeASS is WriteASS for a short of the episode source: of standard
 // video or of HDR, whose captions are drawn at the reference white, see
-// inLight, and on its frames, see SourceInfo.popStart.
+// inLight, and on its frames, see popScales.
 func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 	width, height int, overrides map[string]any, source SourceInfo) error {
 	track, err := e.CaptionTrack(ctx, laid, width, height, overrides, source)

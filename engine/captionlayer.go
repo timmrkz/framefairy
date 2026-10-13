@@ -80,13 +80,13 @@ func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
 	return ShowingAt(d.Laid, source.CaptionMoment(d.Clip, at))
 }
 
-// popping is the word lit at the moment m of the short, the hundredth of
-// a second its pop starts at and the hundredth it is lit until, see
-// SourceInfo.popStart. ok is false where no word is lit.
-func (d *CaptionDrawing) popping(source SourceInfo, m int64) (from, starts, to int, ok bool) {
+// popping is the word lit at the moment m of the short, and the
+// hundredths of a second it is lit from and to. ok is false where no word
+// is lit.
+func (d *CaptionDrawing) popping(m int64) (from, to int, ok bool) {
 	on := ShowingAt(d.Laid, m)
 	if on.Caption < 0 || on.Word < 0 {
-		return 0, 0, 0, false
+		return 0, 0, false
 	}
 	c := d.Laid[on.Caption]
 	start, end := centiseconds(c.Start), centiseconds(c.End)
@@ -95,54 +95,65 @@ func (d *CaptionDrawing) popping(source SourceInfo, m int64) (from, starts, to i
 	if on.Word+1 < len(begins) {
 		to = begins[on.Word+1]
 	}
-	return from, min(source.popStart(from), to), to, true
+	return from, to, true
 }
 
 // PopScale is the scale libass draws the pill of the word lit on the frame
 // of the short ahead frames after the one that shows the frame of the
-// episode that starts at, 1 at rest, see popDrawn. The caption box grows
+// episode that starts at, 1 at rest, see popScales. The caption box grows
 // the frame round the word by it, so the frame stays on the pill's edge
 // through the pop, as it did when the browser drew both.
 func (d *CaptionDrawing) PopScale(source SourceInfo, at float64, ahead int) float64 {
 	m := source.captionMomentAhead(d.Clip, at, ahead)
-	_, starts, _, ok := d.popping(source, m)
+	from, to, ok := d.popping(m)
 	if !ok {
 		return 1
 	}
-	return popDrawn(float64(m - int64(starts)*10))
+	first, scales := source.wordPop(from, to)
+	j := source.popGrid().frameOf(m) - first
+	if j < 0 || j >= int64(len(scales)) {
+		return 1
+	}
+	return scales[j]
 }
 
 // PopFrames is which frames of the short the video preview plays over
 // the frame of the episode that starts at when it is paused on it, for the
 // word lit there to pop the way it does in the short, counted from the
 // frame of the short that shows it: from behind frames before it, the
-// word's first frame, to ahead frames after it, the last before the pop
-// looks again as it does on that frame, see PopAgain. A step onto a word
-// lands on its first frame, at rest before its pop, so the whole pop
-// plays and ends at rest. A frame further in, by a click, plays from the
-// word's first frame. None where no word is lit, its pop is past its
-// peak, or the short has no frames to count.
+// word's first frame, to ahead frames after it, the first frame past the
+// peak that is no larger than the frame paused on. A step onto a word
+// lands on its first frame, at rest, so the whole pop plays and ends at
+// rest. None where no word is lit, from the peak on, or where the short
+// has no frames to count.
 func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead int) {
 	if source.FPSNum <= 0 || source.FPSDen <= 0 {
 		return 0, 0
 	}
-	m := source.CaptionMoment(d.Clip, at)
-	from, starts, to, ok := d.popping(source, m)
+	from, to, ok := d.popping(source.CaptionMoment(d.Clip, at))
 	if !ok {
 		return 0, 0
 	}
-	again := PopAgain(float64(m-int64(starts)*10), to-starts)
-	if again <= 0 {
+	first, scales := source.wordPop(from, to)
+	k, _ := source.shortFrame(d.Clip, at)
+	j := int(k - first)
+	peak := 0
+	for i, s := range scales {
+		if s > scales[peak] {
+			peak = i
+		}
+	}
+	if j < 0 || j >= peak {
 		return 0, 0
 	}
-	k, _ := source.shortFrame(d.Clip, at)
-	for k-int64(behind) > 0 && source.shortMoment(k-int64(behind)-1) >= int64(from)*10 {
-		behind++
+	end := len(scales) - 1
+	for i := peak + 1; i < len(scales); i++ {
+		if scales[i] <= scales[j] {
+			end = i
+			break
+		}
 	}
-	for float64(source.shortMoment(k+int64(ahead)+1)-m) < again {
-		ahead++
-	}
-	return behind, ahead
+	return j, end - j
 }
 
 // PreviewWordFrames is where the words of d stand in the short the render

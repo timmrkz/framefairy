@@ -47,23 +47,23 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // libass scales a line around its anchor point, which would carry a growing
 // word sideways. Moving the anchor by (1 - scale) times the distance from the
 // anchor to the word's centre cancels that exactly, so the word grows and
-// shrinks around its own centre. Both the scale and the move are linear in
-// time within each piece of the pop, which keeps them in step frame by
-// frame.
+// shrinks around its own centre.
 //
 // The word being spoken and its pill are one thing that comes towards the
 // viewer: both grow by one scale around one centre, the middle of the
 // pill, in every direction alike, then settle back to rest. It is the
-// karaoke "grow" of Aegisub's templates, a word set on its own centre with
-// \t taking \fscx and \fscy up and back down, and the same pop the
-// video preview played as a CSS animation before #201: a rise to the peak
-// in popRise of the time, then a settle, each eased out, CSS's ease-out.
+// karaoke "grow" of Aegisub's templates, a word set on its own centre and
+// scaled up and back down.
 //
-// libass moves along \move and \t in a straight line, and the word stays
-// on its centre only while its scale and its move keep in step, so the
-// eased curve is drawn as short straight pieces, popKnot hundredths of a
-// second each, the same for the word and the pill. popDrawn is that curve
-// as drawn, and the subtitle file is written from it.
+// The pop is laid out on the frames of the short, popScales, because the
+// frames are all anybody sees. It starts at rest on the word's first
+// frame, reaches popPeak on a frame of its own, and is back at rest by
+// the word's last frame, in no more than popLength. Each frame holds one
+// scale, from the hundredth its frame starts in, so libass draws exactly
+// that scale on that frame. A curve in milliseconds, sampled wherever the
+// frames fell, put the peak on a frame or between two by chance, and cut
+// a short word off on its way up: Tim saw some words pop fully, some
+// barely and some rise and snap back, in one caption at 25 fps.
 //
 // #201 had made the bounce a few pixels in height only, the pill
 // stretched up or down to keep off the other line and the word grown
@@ -82,17 +82,12 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // ---------------------------------------------------------------------------
 
 const (
-	// popLength is how long the pop lasts, in milliseconds, and popRise
-	// the share of it the word takes to reach popPeak, its scale at the
-	// top. It is the same for every word: a word lit for less shows as
-	// much of the pop as it is lit for, and goes back to its size as the
-	// next word lights, the way the CSS animation did before #201.
+	// popLength is the longest the pop lasts, from rest to rest, in
+	// milliseconds, popRise the share of it it takes to reach popPeak,
+	// its scale at the top.
 	popLength = 220
 	popRise   = 0.55
 	popPeak   = 1.15
-	// popKnot is how long each straight piece of the drawn curve lasts,
-	// in hundredths of a second.
-	popKnot = 2
 	// pillPadX is the room the pill leaves at the sides of its word, and
 	// pillPadY above and below its line, as shares of the caption size.
 	pillPadX = 0.14
@@ -106,118 +101,67 @@ const (
 	lineReach = "ÉÅÁgjpqy"
 )
 
-// easeOut is CSS's ease-out, cubic-bezier(0, 0, 0.58, 1), at p from 0 to
-// 1: fast at first and slowing to a stop.
-func easeOut(p float64) float64 {
-	if p <= 0 {
-		return 0
+// popScales is the scale of a word lit for lit frames of a short of fps
+// frames a second, frame by frame from its first: at rest on the first,
+// popPeak on one frame, at rest again by its last, eased in and out like a
+// sine on either side of the peak, and over in popLength or the frames it
+// has, whichever is less. A word of two frames shows its peak on the
+// second, and a word of one frame does not pop.
+func popScales(lit int, fps float64) []float64 {
+	if lit < 2 {
+		return []float64{1}
 	}
-	if p >= 1 {
-		return 1
+	n := min(lit-1, max(1, int(math.Round(popLength*fps/1000))))
+	if n == 1 {
+		return []float64{1, popPeak}
 	}
-	x := func(u float64) float64 { return 3*(1-u)*u*u*0.58 + u*u*u }
-	lo, hi := 0.0, 1.0
-	for range 40 {
-		mid := (lo + hi) / 2
-		if x(mid) < p {
-			lo = mid
+	p := min(max(int(math.Round(popRise*float64(n))), 1), n-1)
+	scales := make([]float64, n+1)
+	for k := range scales {
+		if k <= p {
+			scales[k] = 1 + (popPeak-1)*math.Sin(math.Pi/2*float64(k)/float64(p))
 		} else {
-			hi = mid
+			scales[k] = 1 + (popPeak-1)*math.Cos(math.Pi/2*float64(k-p)/float64(n-p))
 		}
 	}
-	u := (lo + hi) / 2
-	return 3*(1-u)*u*u + u*u*u
+	scales[0], scales[p], scales[n] = 1, popPeak, 1
+	return scales
 }
 
-// popAt is the scale of the word since milliseconds after its pop
-// started, on the eased curve.
-func popAt(since float64) float64 {
-	switch {
-	case since <= 0 || since >= popLength:
-		return 1
-	case since < popLength*popRise:
-		return 1 + (popPeak-1)*easeOut(since/(popLength*popRise))
-	}
-	return popPeak - (popPeak-1)*easeOut((since-popLength*popRise)/(popLength*(1-popRise)))
-}
-
-// popKnots are the hundredths of a second after the pop started where the
-// straight pieces of its curve meet, the first 0 and the last its end.
-func popKnots() []int {
-	end := int(math.Ceil(popLength / 10))
-	var knots []int
-	for at := 0; at < end; at += popKnot {
-		knots = append(knots, at)
-	}
-	return append(knots, end)
-}
-
-// popDrawn is the scale libass draws the word at, since milliseconds after
-// its pop started: popAt at the knots, and a straight line between them.
-// The same for every word, however long it is lit.
-func popDrawn(since float64) float64 {
-	knots := popKnots()
-	for i := 1; i < len(knots); i++ {
-		a, b := float64(knots[i-1]*10), float64(knots[i]*10)
-		if since < b {
-			if since < a {
-				return 1
-			}
-			return popAt(a) + (popAt(b)-popAt(a))*(since-a)/(b-a)
-		}
-	}
-	return 1
-}
-
-// popStart is the hundredth of a second the pop of a word that lights at
-// from, a hundredth of a second of the short, starts at: the first frame
-// of the short that shows the word, which then shows it at rest, the
-// same look as every frame after the pop. A step onto a word lands on
-// that frame, so the video preview stands on the word at rest and plays
-// the whole pop over it, see CaptionDrawing.PopFrames. Started where the
-// word lights, its first frame showed it up to a frame into its pop,
-// grown by a few hundredths, and the pill stood bigger than the frame
-// round it. Without frames to count, from.
-func (s SourceInfo) popStart(from int) int {
+// popGrid is the frames the pop is laid out on: the short's, or 30 a
+// second where there are none to count, as for a caption file written on
+// its own.
+func (s SourceInfo) popGrid() SourceInfo {
 	if s.FPSNum <= 0 || s.FPSDen <= 0 {
-		return from
+		return SourceInfo{FPSNum: 30, FPSDen: 1}
 	}
-	ms := int64(from) * 10
+	return s
+}
+
+// frameOf is the frame of the short showing the moment ms: the last frame
+// that starts at or before it.
+func (s SourceInfo) frameOf(ms int64) int64 {
 	k := max(0, int64(math.Floor(float64(ms)*float64(s.FPSNum)/(float64(s.FPSDen)*1000)))-1)
-	for s.shortMoment(k) < ms {
+	for s.shortMoment(k+1) <= ms {
 		k++
 	}
-	return int((s.shortMoment(k) + 9) / 10)
+	return k
 }
 
-// PopAgain is how long the short goes on past since milliseconds after
-// the pop of a word lit for span hundredths of a second started until its
-// pop looks again as it does then, in milliseconds: from a moment of the
-// rise, through the peak, to the moment of the settle with the same
-// scale, or from before the pop to its end, back at rest. A word lit for
-// less than the pop goes as far as it is lit. Nothing from the peak on. The video preview plays that much of the short over a frame it
-// is paused on when it lands on a word, so the word pops as it would
-// while playing and comes to rest on the frame it is paused on, see
-// CaptionDrawing.PopFrames.
-func PopAgain(since float64, span int) float64 {
-	length := min(popLength, float64(span*10))
-	// The peak as drawn, the knot the pieces rise to.
-	peak := 0.0
-	for _, k := range popKnots() {
-		if popDrawn(float64(k*10)) > popDrawn(peak) {
-			peak = float64(k * 10)
-		}
+// wordPop is the pop of a word lit from from to to, hundredths of a second
+// of the short: its first frame, the first that starts at or after from,
+// and its scale frame by frame from there, see popScales.
+func (s SourceInfo) wordPop(from, to int) (first int64, scales []float64) {
+	g := s.popGrid()
+	first = g.frameOf(int64(from) * 10)
+	if g.shortMoment(first) < int64(from)*10 {
+		first++
 	}
-	if since >= peak || since >= length {
-		return 0
+	lit := 0
+	for lit < 64 && g.shortMoment(first+int64(lit)) < int64(to)*10 {
+		lit++
 	}
-	now := popDrawn(since)
-	for t := peak + 1; t < length; t++ {
-		if popDrawn(t) <= now {
-			return t - since
-		}
-	}
-	return length - since
+	return first, popScales(lit, float64(g.FPSNum)/float64(g.FPSDen))
 }
 
 // pillLines are the blocks that measure how tall each line of a caption of
@@ -330,7 +274,7 @@ func csToASS(cs int) string {
 func num(v float64) string { return strconv.FormatFloat(roundTo(v, 2), 'f', -1, 64) }
 
 // highlighted is the caption track with the bouncing highlight, for a
-// short of the frames of source, see SourceInfo.popStart. It is nothing,
+// short of the frames of source, see popScales. It is nothing,
 // without an error, when the captions cannot be measured, and the plain
 // track is made instead.
 func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
@@ -416,45 +360,33 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			add(2, from, to, "Caption", "{"+anchor+"}"+
 				taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
 
-			// The pill, and the active word alone over it, popping piece by
-			// piece of the curve, both at one scale around one centre. The
-			// word is the whole caption with the others hidden, so it stands
-			// where it stands in the line, and its anchor moves with the
-			// scale to keep its centre still.
+			// The pill, and the active word alone over it, both at one
+			// scale around one centre, one scale a frame. The word is the
+			// whole caption with the others hidden, so it stands where it
+			// stands in the line, and its anchor moves with the scale to
+			// keep its centre still.
 			only := taggedText(L.words, L.lines, func(j int) bool { return j == k && !c.Hidden[j] }, shown)
-			place := func(scale float64) (string, string) {
-				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
+			at := func(scale float64, from, to int) {
+				x, y := num(ax+(1-scale)*(cx-ax)), num(ay+(1-scale)*(cy-ay))
+				add(1, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s}%s{\p0}`,
+					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), num(scale*100), num(scale*100), pill))
+				add(3, from, to, "Caption", fmt.Sprintf(`{\an2\pos(%s,%s)\fscx%s\fscy%s}%s`,
+					x, y, num(scale*100), num(scale*100), only))
 			}
-			pop := func(from, to int, a, z float64) {
-				ms := (to - from) * 10
-				add(1, from, to, "Box", fmt.Sprintf(
-					`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s{\p0}`,
-					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha),
-					num(a*100), num(a*100), ms, num(z*100), num(z*100), pill))
-				x0, y0 := place(a)
-				x1, y1 := place(z)
-				add(3, from, to, "Caption", fmt.Sprintf(
-					`{\an2\move(%s,%s,%s,%s,0,%d)\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s`,
-					x0, y0, x1, y1, ms, num(a*100), num(a*100), ms, num(z*100), num(z*100), only))
+			// Each frame of the pop holds its scale from the hundredth its
+			// frame starts in to the hundredth the next starts in, so the
+			// frame shows exactly that scale. Before the first frame, and
+			// after the pop, the word is at rest.
+			first, scales := source.wordPop(from, to)
+			grid := source.popGrid()
+			edge := func(j int) int {
+				return min(to, max(from, int(grid.shortMoment(first+int64(j))/10)))
 			}
-			// At rest until the first frame of the short that shows the
-			// word, then the pop, then at rest again.
-			still := func(from, to int) {
-				add(1, from, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0}%s{\p0}`,
-					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), pill))
-				add(3, from, to, "Caption", "{"+anchor+"}"+only)
+			at(1, from, edge(0))
+			for j, scale := range scales {
+				at(scale, edge(j), edge(j+1))
 			}
-			// A word lit for less than the pop shows the pop until the
-			// next word lights, on the same curve as every other word.
-			starts := min(source.popStart(from), to)
-			still(from, starts)
-			end := starts
-			for n, knots := 1, popKnots(); n < len(knots) && starts+knots[n-1] < to; n++ {
-				a, b := knots[n-1], min(knots[n], to-starts)
-				pop(starts+a, starts+b, popDrawn(float64(a*10)), popDrawn(float64(b*10)))
-				end = starts + b
-			}
-			still(end, to)
+			at(1, edge(len(scales)), to)
 		}
 	}
 

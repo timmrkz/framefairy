@@ -1126,7 +1126,7 @@ export function snapCaptionY(y: number): number {
 // themselves, so there is no edge to keep away from: it is entered in the
 // middle of its first frame. That frame shows it at rest, before its pop,
 // and the video preview plays the whole pop over it, see
-// engine.SourceInfo.popStart. A frame in, the paused frame caught the pop
+// engine.popScales. A frame in, the paused frame caught the pop
 // on its way up and the pill stayed grown after it.
 //
 // Null means there is nowhere to go: no words heard here yet, or the

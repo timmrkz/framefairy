@@ -772,35 +772,43 @@ The word being spoken sits on a reddish purple pill and pops towards the
 viewer: the word and its pill are one thing that grows by one scale,
 around one centre, the middle of the pill, in every direction alike, to
 115 % and back, while every other word stays exactly where it is. The word
-stays lit until the next word starts. The pop lasts 220 ms, reaches its
-peak at 55 % of that, and both the rise and the settle are eased out,
-CSS's ease-out, the pop the video preview played as a CSS animation
-before #201. The curve is the same for every word. A word lit for less
-than the pop shows as much of it as it is lit for and goes back to its
-size as the next word lights, as the CSS animation did. Before, the whole
-curve was squeezed into the time such a word had, so a word spoken fast
-rose almost twice as fast as a slow one, `TestEveryWordPopsOnTheSameCurve`.
-The pop
-starts on the first frame of the short that shows the word, which shows
-it at rest, `popStart`, so the frame a click or a step lands on is the
-word at its own size, and the frames after it pop. It is the
-karaoke "grow" of Aegisub's templates: a word set on its own centre with
-`\t` taking `\fscx` and `\fscy` up and back down.
+stays lit until the next word starts. It is the karaoke "grow" of
+Aegisub's templates: a word set on its own centre and scaled up and back
+down.
 
-libass moves along `\t` and `\move` in a straight line, and the word stays
-on its centre only while its scale and its move keep in step, so the
-eased curve is written as straight pieces of 20 ms each, the same for the
-word and the pill. `popDrawn` in `engine/highlight.go` is the curve as
-drawn, and the subtitle file is written from it. At its peak a long word
-and its pill reach over the space to the next word for a frame or two, as
-in every caption tool. The words beside it are drawn over the pill.
+The pop is laid out on the frames of the short, because the frames are
+all anybody sees, `popScales` in `engine/highlight.go`. A word starts at
+rest on its first frame, reaches 115 % on a frame of its own, and is back
+at rest by its last frame, eased like a sine on either side of the peak,
+in no more than 220 ms. At 25 fps a long word pops 1.0, 1.075, 1.13,
+1.15, 1.13, 1.075, 1.0. A word lit for fewer frames pops in the frames it
+has: three frames are rest, 1.15, rest, two are rest and 1.15, and a word
+lit for one frame cannot pop. Each frame holds its scale from the
+hundredth of a second its frame starts in, so libass draws exactly that
+scale on that frame, in the short and in the video preview alike. A frame
+lands on the word at its own size wherever a click or a step lands, and
+the frames after it pop.
+
+Before, the pop was a curve in milliseconds, CSS's ease-out over 220 ms,
+written as 20 ms pieces, and libass sampled it wherever the frames fell.
+Tim's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
+rise and snap back, "so" and "einem" grow on one frame and settle at
+once: whether the peak landed on a frame was chance, a short word was cut
+on its way up, and the ease-out dropped most of the way in one frame
+after the peak. `TestEveryWordOfAShortPopsOnItsFrames` in
+`engine/bounce_test.go` reads every word of a 25 fps short with words lit
+for 2 to 10 frames back frame by frame and holds each to `popScales`, and
+`TestEveryWordReachesItsPeakOnAFrame` in `engine/pop_test.go` holds the
+rule at 24 to 60 fps for every number of frames. At its peak a long word
+and its pill reach over the space to the next word for a frame or two,
+as in every caption tool. The words beside it are drawn over the pill.
 
 #201 had made the bounce a few pixels in height only, the pill stretched
 up or down to keep off the other line and the word grown 3 pixels a side,
 so Tim saw the pill move up or down and the word not at all, plan row
 2.211. `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go`
 reads the pop back from a short and holds the word and its pill to
-`popDrawn` on every frame, in width and height, around one centre.
+`popScales` on every frame, in width and height, around one centre.
 
 At rest the pill is as tall as its line, from the top of the tallest
 letter the face draws to the bottom of the deepest, with 0.10 of the size

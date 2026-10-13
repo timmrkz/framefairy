@@ -49,11 +49,11 @@ Tim missed. Now, when the video preview comes to stand on a frame that
 lights another word than the frame before, by a step, Shift and an arrow
 or a click, it plays the layers of the frames of the short round it over
 the still picture, one each frame of the short, and comes back to the
-frame's own layer. The pop starts on the word's first frame of the
-short, which shows it at rest, `popStart` in `engine/highlight.go`, and a
-step lands inside that frame, see `intoWord`. So the replay plays the
-whole pop from rest, up to the peak and back to rest, and the word ends
-at its own size on the frame paused on, `PopAgain`. `/frames/captions`
+frame's own layer. The pop is laid out on the short's frames, starting
+at rest on the word's first frame, `popScales` in `engine/highlight.go`,
+and a step lands inside that frame, see `intoWord`. So the replay plays
+the whole pop from rest, up to the peak and back to rest, and the word
+ends at its own size on the frame paused on. `/frames/captions`
 says which in `X-Caption-Pop`, "<behind> <ahead>", from
 `CaptionDrawing.PopFrames`, and each is asked for with `ahead`, the
 frame of the short so many frames on, or back below nought. So the word
@@ -216,15 +216,16 @@ before, with the keyboard's frame already round the next, which Tim saw on
   the layer of the whole frame, pixel for pixel.
 - `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go` reads
   the pop back from a rendered short: on every frame the word and its
-  pill are as large as `popDrawn` says, in width and in height, around
-  one centre. `TestThePillLeavesRoomRoundItsWord` in the same file holds
+  pill are as large as `popScales` says, in width and in height, around
+  one centre. `TestEveryWordOfAShortPopsOnItsFrames` does the same for
+  every word of a 25 fps short, with words lit for 2 to 10 frames. `TestThePillLeavesRoomRoundItsWord` in the same file holds
   the pill to at least a tenth of the caption size round its word on its
   first frame and at rest, and `WordFrames` to where the pill rests,
   within 2 pixels. `TestThePillAtRestNeverReachesAnotherLine` reads a
   caption of two lines back from a short: the pill at rest keeps 0.04 of
   the size from the letters of the other line, with the lines where
   libass puts them, see ENGINE.md.
-- `TestPopAgainComesBackToTheSameLook` and
+- `TestEveryWordReachesItsPeakOnAFrame` and
   `TestPopFramesCountsTheFramesOfThePop` in `engine/pop_test.go`, and
   "the pop over a paused frame" in `captions.test.ts`: a word the video
   preview lands on while paused pops over the still frame and comes back

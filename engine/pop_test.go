@@ -1,110 +1,66 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
 
-// The pop as drawn: from rest to popPeak and back, eased out on the way up
-// and on the way down, in straight pieces that meet the curve at every
-// knot.
-func TestThePopRisesToItsPeakAndSettles(t *testing.T) {
-	rise := popLength * popRise
-	if got := popDrawn(0); got != 1 {
-		t.Errorf("the word starts at %.3f, not at rest", got)
-	}
-	if got := popDrawn(popLength); got != 1 {
-		t.Errorf("the word ends its pop at %.3f, not at rest", got)
-	}
-	top, at := 0.0, 0.0
-	last := 1.0
-	for ms := 0.0; ms <= popLength; ms++ {
-		s := popDrawn(ms)
-		if s < 1 || s > popPeak+1e-9 {
-			t.Errorf("%.0f ms into its pop the word is at %.3f", ms, s)
-		}
-		// Up until the peak and down after it, never back.
-		if (ms <= rise-10 && s < last-1e-9) || (ms >= rise+10 && s > last+1e-9) {
-			t.Errorf("%.0f ms into its pop the word goes from %.4f to %.4f", ms, last, s)
-		}
-		if s > top {
-			top, at = s, ms
-		}
-		last = s
-	}
-	if top < popPeak-0.01 || math.Abs(at-rise) > 20 {
-		t.Errorf("the pop peaks at %.3f %.0f ms in, not at %.2f near %.0f ms", top, at, popPeak, rise)
-	}
-	// Eased out: further than a third of the way up a third into the
-	// rise, where a straight line would be.
-	if popDrawn(rise/3) < 1+(popPeak-1)*0.42 {
-		t.Errorf("a third into the rise the word is at %.3f, not eased out", popDrawn(rise/3))
-	}
-}
-
-// Every word pops on the one curve, a word spoken fast as much as a word
-// spoken slowly, until the next word lights. A word lit for less than the
-// pop had the whole curve squeezed into its time, so it rose almost twice
-// as fast, and Tim saw the pop differ from word to word.
-func TestEveryWordPopsOnTheSameCurve(t *testing.T) {
-	source := SourceInfo{FPSNum: 100, FPSDen: 1, Duration: 60}
-	d := &CaptionDrawing{
-		Laid: []LaidCaption{
-			{Caption: Caption{Start: 0, End: 2, Words: []Cue{{0.5, 0.62, "du"}, {0.62, 1.5, "warst"}}}},
-		},
-		Clip: Clip{Segments: []Segment{{Start: 10, End: 12}}},
-	}
-	for k := range 12 {
-		fast, slow := d.PopScale(source, 10.5+float64(k)/100, 0), d.PopScale(source, 10.62+float64(k)/100, 0)
-		if math.Abs(fast-slow) > 1e-9 {
-			t.Errorf("%d ms into their pops a word lit for 120 ms is at %.4f, one lit for 880 ms at %.4f", k*10, fast, slow)
-		}
-	}
-	// The next word lights before the pop is over: the word goes back to
-	// its size with the pill.
-	if got := d.PopScale(source, 10.62, 0); got != 1 {
-		t.Errorf("the next word starts its pop at %.3f, not at rest", got)
-	}
-}
-
-// Played over a paused frame, the pop comes back to how that frame shows
-// it: PopAgain is the first moment of the settle that looks the same, and
-// nothing past the peak.
-func TestPopAgainComesBackToTheSameLook(t *testing.T) {
-	for _, span := range []int{70, 15, 8} {
-		length := min(popLength, float64(span*10))
-		peak := 0.0
-		for ms := 0.0; ms < popLength; ms++ {
-			if popDrawn(ms) > popDrawn(peak) {
-				peak = ms
+// The pop of a word, frame by frame, for every number of frames a word
+// can be lit for at the rates videos come in: at rest on its first frame,
+// popPeak on a frame of its own, up to it and down from it without a step
+// back, and at rest again by its last frame, in no more than popLength.
+// The same number of frames always pops the same way.
+func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
+	for _, fps := range []float64{24, 25, 30000.0 / 1001, 30, 50, 60} {
+		for lit := 1; lit <= 20; lit++ {
+			s := popScales(lit, fps)
+			if len(s) > lit {
+				t.Errorf("%.2f fps, lit for %d frames: %d frames of pop", fps, lit, len(s))
+				continue
 			}
-		}
-		for since := 0.0; since < length; since++ {
-			again := PopAgain(since, span)
-			if since >= peak {
-				if again != 0 {
-					t.Errorf("lit for %d hundredths, %.0f ms after it lit, past the peak, PopAgain is %.0f", span, since, again)
+			if s[0] != 1 {
+				t.Errorf("%.2f fps, lit for %d frames: the first frame is at %.3f, not at rest", fps, lit, s[0])
+			}
+			if lit == 1 {
+				continue
+			}
+			peak := 0
+			for i := range s {
+				if s[i] > s[peak] {
+					peak = i
 				}
-				continue
 			}
-			now := popDrawn(since)
-			if since+again == length {
-				// Lit for less than the pop: it plays until the next word.
-				continue
+			if s[peak] != popPeak {
+				t.Errorf("%.2f fps, lit for %d frames: the pop reaches %.3f, not %.2f, %v", fps, lit, s[peak], popPeak, s)
 			}
-			if again <= 0 || popDrawn(since+again) > now+1e-9 || popDrawn(since+again-1) <= now {
-				t.Errorf("lit for %d hundredths, %.0f ms after it lit at %.4f, PopAgain is %.0f ms, which is at %.4f",
-					span, since, now, again, popDrawn(since+again))
+			for i := 1; i < len(s); i++ {
+				if (i <= peak && s[i] <= s[i-1]) || (i > peak && s[i] >= s[i-1]) {
+					t.Errorf("%.2f fps, lit for %d frames: frame %d goes from %.3f to %.3f, %v", fps, lit, i, s[i-1], s[i], s)
+				}
+			}
+			if lit >= 3 && s[len(s)-1] != 1 {
+				t.Errorf("%.2f fps, lit for %d frames: the pop ends at %.3f, not at rest, %v", fps, lit, s[len(s)-1], s)
+			}
+			if ms := float64(len(s)-1) * 1000 / fps; ms > popLength+1000/fps/2 {
+				t.Errorf("%.2f fps, lit for %d frames: the pop lasts %.0f ms", fps, lit, ms)
 			}
 		}
+	}
+	// What Tim's 25 fps video shows for a long word, and for a word of
+	// three frames.
+	if got := fmt.Sprintf("%.3f", popScales(20, 25)); got != "[1.000 1.075 1.130 1.150 1.130 1.075 1.000]" {
+		t.Errorf("a long word at 25 fps pops %s", got)
+	}
+	if got := fmt.Sprintf("%.3f", popScales(3, 25)); got != "[1.000 1.150 1.000]" {
+		t.Errorf("a word of three frames at 25 fps pops %s", got)
 	}
 }
 
 // PopFrames says which frames of the short a paused video preview plays
 // for the word on screen to pop: from the word's first frame, at rest,
-// where a step lands, to the last frame before the pop looks again as it
-// does on the frame paused on.
-// None for a frame past the peak or with no word lit.
+// where a step lands, to the first frame past the peak no larger than the
+// frame paused on. None from the peak on or with no word lit.
 func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
@@ -120,19 +76,19 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 		// Before the first word: nothing lit.
 		{0, 0, 0},
 		// "Ich" lights at 0.5 s, frame 15 of the short, the frame at
-		// 10.5 s of the episode: its whole pop, seven frames of it.
-		{15, 0, 6},
-		// A frame in, 33 ms up, where a click may land: from the word's
-		// first frame, and back to its look 130 ms on.
-		{16, 1, 3},
+		// 10.5 s of the episode: its whole pop, seven frames to rest.
+		{15, 0, 7},
+		// A frame in, where a click may land: from the word's first
+		// frame, and on to the first frame past the peak no larger.
+		{16, 1, 6},
 		// Two frames in.
-		{17, 2, 2},
-		// Past the peak.
+		{17, 2, 4},
+		// On the peak, and past it.
+		{19, 0, 0},
 		{20, 0, 0},
 		// "war" lights at 1.21 s, between frames 36 and 37: its first
-		// frame shows it at rest, its pop starts on the hundredth after,
-		// and the whole of it plays, six frames to rest again.
-		{37, 0, 6},
+		// frame shows it at rest, and the whole pop plays.
+		{37, 0, 7},
 	} {
 		at := 10 + float64(c.frame)/30
 		if behind, ahead := d.PopFrames(source, at); behind != c.behind || ahead != c.ahead {
