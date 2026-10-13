@@ -1528,11 +1528,14 @@ bubble scrolled by those eight pixels.
       has for the drag, worked out where it is pressed rather than asked
       for.
     - **What a press takes is the nearest thing of the first kind under
-      it**, in a fixed order: a clip edge, a cut's edge, a thumbnail or a
-      keyframe, a caption's edge, a caption, and only then the playhead
+      it**, in a fixed order: a thumbnail or a keyframe, a clip edge, a
+      cut's edge, a caption's edge, a caption, and only then the playhead
       and the track. What is drawn on top only decides what is seen. The
       playhead stands on an edge it was dragged with, and a press there
-      took hold of the playhead instead, found by Tim.
+      took hold of the playhead instead, found by Tim. A mark comes first
+      because it is small and sits on the clip's rules, often on its first
+      frame, where an edge reaches over it and would leave it with no way
+      to be taken hold of.
     - **An edge can be taken again at once.** The edges stay while the
       last drag is saved, and a drag that starts then waits for the save
       and goes on from the edge as saved. They used to go for as long as

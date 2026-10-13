@@ -1632,10 +1632,13 @@
   // different on every kind of thing.
   //
   // What a press reaches is found here, in a fixed order, the nearest of
-  // a kind first: a clip edge, a cut's edge, a thumbnail or a keyframe, a
+  // a kind first: a thumbnail or a keyframe, a clip edge, a cut's edge, a
   // caption's edge, a caption, and then the playhead and the track. What
   // is drawn on top only decides what is seen. The playhead drawn over a
-  // cut's edge it was dragged with took the press from the edge.
+  // cut's edge it was dragged with took the press from the edge. A mark
+  // comes first because it is small and sits on the clip's rules, often
+  // on the clip's first frame, where an edge reaches over it: an edge
+  // first left a keyframe there with no way to be taken hold of.
   type Grip = {
     // Where the playhead goes on the press, or null where it stays.
     at: number | null;
@@ -1646,7 +1649,7 @@
     // A double-click here. Without one it is a double-click in the clip.
     twice?: () => void;
   };
-  const gripOrder = ["edge", "cut", "mark", "capedge", "caption"];
+  const gripOrder = ["mark", "edge", "cut", "capedge", "caption"];
 
   function gripOf(el: HTMLElement): Grip | null {
     const d = el.dataset;
