@@ -4,8 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"framefairy/internal/ffmpegtest"
 )
@@ -45,5 +47,48 @@ func TestAddLeavesOutWhatItsDecoderCannotDecode(t *testing.T) {
 		if p != good {
 			t.Errorf("%s is in the library", filepath.Base(p))
 		}
+	}
+}
+
+// A video whose first frame does not come in time is taken, not left out.
+// On CI's Mac, with its media engine hung, three tests had a good video
+// left out after 30 s as "the picture cannot be decoded, context deadline
+// exceeded". A wait says nothing about the file, only about the machine,
+// and only the decoder's own words leave a video out. Plan row 2.233.
+//
+// The decoder is a stand-in that takes every request and answers none,
+// the way one hung in the media engine does.
+//
+// On the real disk: the stand-in decoder is a program that is run. And
+// FRAMEFAIRY_FRAMES names it for the whole process, which open does
+// already with HOME, so the test does not run beside others.
+func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	d := open(t)
+	good := d.episode("spaet", "6")
+	hung := filepath.Join(t.TempDir(), "framefairy-frames")
+	if err := os.WriteFile(hung, []byte("#!/bin/sh\nexec cat >/dev/null\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FRAMEFAIRY_FRAMES", hung)
+	abs, _ := filepath.Abs(good)
+	t.Cleanup(func() {
+		openPreviews.mu.Lock()
+		dec := openPreviews.decoders[abs]
+		delete(openPreviews.decoders, abs)
+		openPreviews.mu.Unlock()
+		if dec != nil {
+			dec.Close()
+		}
+	})
+	d.svc.firstFrame = time.Second
+	added, err := d.svc.addEpisodes([]string{good})
+	if err != nil {
+		t.Fatalf("Add said %v", err)
+	}
+	if len(added) != 1 || added[0] != good {
+		t.Fatalf("added %v, want %s", added, filepath.Base(good))
 	}
 }

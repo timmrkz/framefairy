@@ -796,7 +796,7 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 2.231, found by Tim: the clip's edges took the playhead
+    // Plan row 2.235, found by Tim: the clip's edges took the playhead
     // along and a cut's edges left it where it was, so the frame beside
     // the cut could not be seen while it was placed.
     name: "a cut's edges dragged take the playhead along, the way the clip's edges do",
@@ -835,7 +835,7 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 2.232, found by Tim: with the playhead on a caption after a
+    // Plan row 2.236, found by Tim: with the playhead on a caption after a
     // cut, the cut's edges moved made the caption block and the pill in
     // the video preview pop again and again. A word was known by when it
     // starts on the clip's clock, which the cut moves. Undo takes the cut
@@ -2700,6 +2700,12 @@ for (const seq of toWalk) {
         // or more, just after its second letter, so the X typed there has
         // letters of the word on either side. A click a fixed 12 px in
         // landed after a short word like "er" on CI, not in it.
+        // What is heard is held back from the window from the reading of
+        // the word to the click, see __pauseEvents in wails-bridge.ts. The
+        // stand-in speech model hears new words each time, and on CI
+        // "erzählt," was read and "er wäre" clicked, which put the X
+        // after "er", in one run of three on a busy machine.
+        await page.evaluate(() => window.__pauseEvents(true));
         const at = await page.evaluate(() => {
           const mark = document.querySelector(".telling .hearing");
           const text = mark?.firstChild;
@@ -2713,18 +2719,23 @@ for (const seq of toWalk) {
           return r && { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
         });
         if (!at) {
+          await page.evaluate(() => window.__pauseEvents(false));
           wrong = "nothing was being heard to click into";
           break;
         }
         await page.mouse.click(at.x, at.y);
+        // Read before what waited is let through, which may be heard
+        // words that are new.
         const where = await page.evaluate(() => {
           const sel = getSelection();
           const mark = document.querySelector(".telling .hearing");
-          return {
+          const where = {
             heard: mark?.textContent.trim() ?? "",
             inMark: !!mark?.contains(sel.anchorNode),
             inSaid: !!document.querySelector(".telling .dictated")?.contains(sel.anchorNode),
           };
+          window.__pauseEvents(false);
+          return where;
         });
         if (where.heard) wrong = `the words clicked into are still being heard: "${where.heard}"`;
         else if (where.inMark || !where.inSaid) wrong = "the cursor is not in the words clicked into";
