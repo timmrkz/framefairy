@@ -4232,9 +4232,9 @@ for (const seq of toWalk) {
           break;
         }
         const names = await (await fetch(new URL("/report-made", url))).json();
-        const pictures = names.filter((n) => /\/Pictures\/\d+\.png$/.test(n)).length;
+        const pictures = names.filter((n) => /\/pictures\/\d+\.png$/.test(n)).length;
         if (pictures !== arg) wrong = `the report holds ${pictures} pictures, not ${arg}: ${names.join(", ")}`;
-        else if (written && !names.some((n) => n.endsWith("What happened.txt"))) wrong = "the report holds nothing of what was written";
+        else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
         const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
         break;

@@ -251,7 +251,7 @@ func TestThePreviewServesOnlyTheDraftsPictures(t *testing.T) {
 	}
 }
 
-// A report holds the draft's pictures in its order, as Pictures/1.png and
+// A report holds the draft's pictures in its order, as pictures/1.png and
 // on, and a report made lets go of the draft. Without a video named it
 // names the video the last act did.
 //
@@ -289,7 +289,7 @@ func TestAReportHoldsThePictures(t *testing.T) {
 		rc.Close()
 	}
 	for i, want := range [][2]int{{12, 8}, {8, 12}} {
-		name := fmt.Sprintf("Frame Fairy report/Pictures/%d.png", i+1)
+		name := fmt.Sprintf("Frame Fairy report/pictures/%d.png", i+1)
 		cfg, err := png.DecodeConfig(bytes.NewReader(got[name]))
 		if err != nil || [2]int{cfg.Width, cfg.Height} != want {
 			t.Fatalf("%s is %dx%d, %v, want %v", name, cfg.Width, cfg.Height, err, want)

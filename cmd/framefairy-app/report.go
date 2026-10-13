@@ -124,7 +124,7 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 		return err
 	}
 	if strings.TrimSpace(what) != "" {
-		if err := add("What happened.txt", []byte(strings.TrimSpace(what)+"\n")); err != nil {
+		if err := add("what-happened.txt", []byte(strings.TrimSpace(what)+"\n")); err != nil {
 			return "", err
 		}
 	}
@@ -143,14 +143,14 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 		if err != nil {
 			continue
 		}
-		if err := add("logs/"+strings.TrimSuffix(filepath.Base(path), ".gz"), data); err != nil {
+		if err := add("logs/"+logName(path), data); err != nil {
 			return "", err
 		}
 	}
 	// The pictures go as they are, since home is not in a picture's
 	// pixels and replacing it in them would spoil the file.
 	for i, pic := range pictures {
-		w, err := z.Create(fmt.Sprintf("Frame Fairy report/Pictures/%d.png", i+1))
+		w, err := z.Create(fmt.Sprintf("Frame Fairy report/pictures/%d.png", i+1))
 		if err == nil {
 			_, err = w.Write(pic)
 		}
@@ -161,7 +161,7 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 	// The trace lines of the last while, kept in memory and in no file,
 	// see appLog.
 	if recent := theLog.recent.all(); len(recent) > 0 {
-		if err := add("logs/recent frames.log", recent); err != nil {
+		if err := add("logs/recent-frames.log", recent); err != nil {
 			return "", err
 		}
 	}
@@ -200,4 +200,12 @@ func freeName(dir, name, ext string) string {
 		path = filepath.Join(dir, fmt.Sprintf("%s %d%s", name, i, ext))
 	}
 	return path
+}
+
+// logName is the name a file of the log has in a report, written like
+// every other name there, in small letters with hyphens:
+// app-2026-10-09T10-00-00.000.log.gz, as lumberjack keeps an older file,
+// is app-2026-10-09-10-00-00.000.log.
+func logName(path string) string {
+	return strings.ToLower(strings.Replace(strings.TrimSuffix(filepath.Base(path), ".gz"), "T", "-", 1))
 }

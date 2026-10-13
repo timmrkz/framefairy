@@ -29,15 +29,23 @@ The report window has one field, for what happened, screenshots
 attached under it, and **Report**. The report is one zip file on the
 Desktop, shown in Finder:
 
-- what the person wrote
-- the pictures attached, as `Pictures/1.png` and on, each written again
+- what the person wrote, `what-happened.txt`
+- the pictures attached, as `pictures/1.png` and on, each written again
   as PNG so nothing else the file held travels
-- the log and its older files, unpacked
+- the log and its older files, unpacked, in `logs/`
 - the trace lines of the last while, which are kept in memory, see
-  Levels below
+  Levels below, `logs/recent-frames.log`
 - the build, the macOS version, the chip, the memory, the run of the
-  app, and the file name of the video that was in front
-- the settings, which hold no keys: those are in the keychain
+  app, and the file name of the video that was in front, `about.json`
+- the settings, which hold no keys: those are in the keychain,
+  `settings.json`
+
+Every name inside the zip is written one way, in small letters with a
+hyphen between words, an older file of the log too:
+`app-2026-10-09-10-00-00.000.log`. Tim found `Pictures` and
+`What happened.txt` beside `logs` and `about.json`. Only the zip and the
+folder in it are called `Frame Fairy report` and the time, the way macOS
+names a screenshot, since that is the name a person sees on the Desktop.
 
 It never holds the video, its transcript or its captions. That leaves
 out the jobs folder of a video too, since what a search sent the model
@@ -133,7 +141,7 @@ guesswork.
 Everything from `debug` up is always written, see above. `trace` lines
 go to memory instead of the file: the last 8000, about an hour of a
 play, a few MB at most. A report carries them as
-`logs/recent frames.log`. A play that stutters is found by the pattern
+`logs/recent-frames.log`. A play that stutters is found by the pattern
 over every frame, and that is exactly what happened just before the
 person reported it, so nobody has to switch anything on beforehand and
 do it all again. An early version had a **Detailed Log** switch in the
