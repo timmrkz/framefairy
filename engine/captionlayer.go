@@ -54,7 +54,7 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 // is in it, with the faces it needs beside it. A style with the captions
 // off draws nothing, as the render burns nothing in.
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir string, d *CaptionDrawing,
-	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
+	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, ahead, width, height int) (framewire.Layer, error) {
 	style := d.drafted(drafts)
 	resolved := ResolveStyle(style)
 	if len(d.Laid) == 0 || !resolved.Text {
@@ -69,7 +69,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
 	}
 	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
-		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
+		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.captionMomentAhead(d.Clip, at, ahead))
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -78,6 +78,40 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 // the layer under it shows, see CaptionShowing.
 func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
 	return ShowingAt(d.Laid, source.CaptionMoment(d.Clip, at))
+}
+
+// PopFrames is how many frames of the short after the one that shows the
+// frame of the episode that starts at the video preview plays over that
+// frame when it is paused on it, for the word lit there to pop the way it
+// does in the short, see PopAgain: the frames before the pop looks again
+// as it does on that frame. None where no word is lit, its pop is past its
+// peak, or the short has no frames to count.
+func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) int {
+	if source.FPSNum <= 0 || source.FPSDen <= 0 {
+		return 0
+	}
+	m := source.CaptionMoment(d.Clip, at)
+	on := ShowingAt(d.Laid, m)
+	if on.Caption < 0 || on.Word < 0 {
+		return 0
+	}
+	c := d.Laid[on.Caption]
+	start, end := centiseconds(c.Start), centiseconds(c.End)
+	begins := wordBegins(c, start, end)
+	from, to := begins[on.Word], end
+	if on.Word+1 < len(begins) {
+		to = begins[on.Word+1]
+	}
+	again := PopAgain(float64(m-int64(from)*10), to-from)
+	if again <= 0 {
+		return 0
+	}
+	k, _ := source.shortFrame(d.Clip, at)
+	n := 0
+	for float64(source.shortMoment(k+int64(n)+1)-m) < again {
+		n++
+	}
+	return n
 }
 
 // PreviewWordFrames is where the words of d stand in the short the render

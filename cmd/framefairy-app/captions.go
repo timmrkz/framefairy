@@ -23,14 +23,21 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&<drafts>]
+//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&<drafts>]
 //	                                 the captions of a view, by its track,
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
 //	                                 framewire.Layer, with the caption and
 //	                                 the word it shows in the header
 //	                                 X-Caption-Showing, "<caption> <word>",
-//	                                 see engine.CaptionShowing
+//	                                 see engine.CaptionShowing, and in
+//	                                 X-Caption-Pop how many frames of the
+//	                                 short after it the video preview
+//	                                 plays over it, paused, for its word
+//	                                 to pop, see engine.PopFrames. With
+//	                                 ahead, the captions of the frame of
+//	                                 the short so many frames after it,
+//	                                 which is how those are asked for
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -44,6 +51,10 @@ import (
 // highlightOpacity, the switches textOn, boxOn and highlightOn, 0 or 1,
 // and y, where the captions sit, as SetCaptionsHeight takes it. Each is
 // checked as the edit that saves it checks it.
+
+// popAheadMost is the most frames ahead a layer is asked for: a pop lasts
+// a fifth of a second, which is 24 frames at 120 a second.
+const popAheadMost = 30
 
 // captionTracks are the drawings of the caption views the interface was
 // given lately, by their tracks, each with the episode it belongs to. A
@@ -118,6 +129,12 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	at, err := strconv.ParseFloat(q.Get("at"), 64)
 	width, _ := strconv.Atoi(q.Get("w"))
 	height, _ := strconv.Atoi(q.Get("h"))
+	ahead := 0
+	if q.Has("ahead") {
+		if ahead, err = strconv.Atoi(q.Get("ahead")); err == nil && (ahead < 0 || ahead > popAheadMost) {
+			err = fmt.Errorf("ahead is %d frames", ahead)
+		}
+	}
 	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || width < 1 || height < 1 || width > 7680 || height > 7680 {
 		http.Error(w, "captions need a moment, a width and a height", http.StatusBadRequest)
 		return
@@ -145,7 +162,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
 			var l framewire.Layer
 			if err == nil {
-				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
+				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, ahead, width, height)
 			}
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound
@@ -160,6 +177,9 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
+				if ahead == 0 {
+					w.Header().Set("X-Caption-Pop", strconv.Itoa(kept.drawing.PopFrames(source, at)))
+				}
 				_, _ = w.Write(l.Body())
 				return
 			}

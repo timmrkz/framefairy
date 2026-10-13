@@ -40,6 +40,25 @@ the episode that holds `at`: the frame of the short that shows it,
 video preview asks libass for the same moment the render does, and the
 pill is at the same stage of its bounce on the same frame.
 
+## The pop over a paused frame
+
+A frame paused on shows one moment of the pop, and the first frame of a
+word is the start of it, so a step onto a word showed it standing still.
+Before #201 the browser played a pop of its own on every new word, which
+Tim missed. Now, when the video preview comes to stand on a frame that
+lights another word than the frame before, by a step, Shift and an arrow
+or a click, it plays the layers of the frames of the short after it over
+the still picture, one each frame of the short, and comes back to the
+frame's own layer. `/frames/captions` says how many in `X-Caption-Pop`,
+`CaptionDrawing.PopFrames`: the frames before the pop looks again as it
+does on the frame paused on, `PopAgain`, through the peak and into the
+settle. Each is asked for with `ahead`, the frame of the short so many
+frames on. So the word pops as it pops in the short, and the frame the
+video preview stops on is still the short's frame, which a thumbnail
+takes. Nothing pops from a frame past the peak, while the clip plays,
+where the frames pop by themselves, or when the Mac is set to reduce
+motion. `Replay` in `lib/frames/captions.ts`.
+
 ## The size
 
 There is one rule for the size of the short, `Options.RenderSettings()`,
@@ -179,15 +198,21 @@ before, with the keyboard's frame already round the next, which Tim saw on
 - `TestTheLayerOfTheBoxIsTheLayerOfTheFrame` in
   `cmd/framefairy-frames/ink_test.go`: the layer worked out in its box is
   the layer of the whole frame, pixel for pixel.
-- `TestTheBounceKeepsTheSpaceBetweenWords` in `engine/bounce_test.go`
-  reads the pill of every frame back from a rendered short: it leaves at
-  least a tenth of the caption size round its word on every frame, and
-  `WordFrames` puts each word where its pill rests, within 2 pixels.
-  `TestThePillNeverReachesAnotherLine` in the same file reads a caption
-  of two lines back from a short: the pill keeps 0.04 of the size from
-  the letters of the other line on every frame, and its bounce grows it
-  by at least 0.25 of the size, with the lines where libass puts them,
-  see ENGINE.md.
+- `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go` reads
+  the pop back from a rendered short: on every frame the word and its
+  pill are as large as `popDrawn` says, in width and in height, around
+  one centre. `TestThePillLeavesRoomRoundItsWord` in the same file holds
+  the pill to at least a tenth of the caption size round its word on its
+  first frame and at rest, and `WordFrames` to where the pill rests,
+  within 2 pixels. `TestThePillAtRestNeverReachesAnotherLine` reads a
+  caption of two lines back from a short: the pill at rest keeps 0.04 of
+  the size from the letters of the other line, with the lines where
+  libass puts them, see ENGINE.md.
+- `TestPopAgainComesBackToTheSameLook` and
+  `TestPopFramesCountsTheFramesOfThePop` in `engine/pop_test.go`, and
+  "the pop over a paused frame" in `captions.test.ts`: a word the video
+  preview lands on while paused pops over the still frame and comes back
+  to the frame's own layer, see below.
   `TestTheWordFramesRouteSaysWhereLibassPutTheWords` in
   `cmd/framefairy-app/captions_test.go` asks the route for them.
 - The walk "the frame round a word in the caption box is the pill libass

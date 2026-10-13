@@ -169,29 +169,6 @@ func (l wordsLaid) lineBand(r, size int) (top, bottom float64) {
 	return top, bottom
 }
 
-// bounce is how far the pill of word k reaches above and below its rest
-// at the top of its bounce, at size: bounceGrow each way where there is
-// room, and what one side has no room for goes to the other, so every
-// word bounces as far. It never comes nearer than lineClear to a letter
-// of another line, and every word of a line bounces alike.
-func (l wordsLaid) bounce(k, size int) (up, down float64) {
-	grow := bounceGrow * float64(size)
-	clear := math.Round(float64(size) * lineClear)
-	r := l.lineOf[k]
-	top, bottom := l.lineBand(r, size)
-	roomUp, roomDown := math.Inf(1), math.Inf(1)
-	if above, ok := l.nearestInk(r, r-1, size); ok {
-		roomUp = math.Max(0, top-(above+1+clear))
-	}
-	if below, ok := l.nearestInk(r, r+1, size); ok {
-		roomDown = math.Max(0, below-clear-bottom)
-	}
-	up = math.Min(grow, roomUp)
-	down = math.Min(2*grow-up, roomDown)
-	up = math.Min(2*grow-down, roomUp)
-	return up, down
-}
-
 // lineInk is the highest and the lowest row of the ink of the words of
 // line r.
 func (l wordsLaid) lineInk(r int) (top, bottom float64) {

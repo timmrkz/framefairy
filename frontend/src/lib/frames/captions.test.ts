@@ -274,6 +274,92 @@ describe("the layers of the captions", () => {
   });
 });
 
+describe("the pop over a paused frame", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function body(red: number): ArrayBuffer {
+    const b = new ArrayBuffer(8 + 4);
+    const v = new DataView(b);
+    [0, 0, 1, 1].forEach((n, i) => v.setUint16(2 * i, n, true));
+    new Uint8Array(b, 8).set([red, 0, 0, 255]);
+    return b;
+  }
+
+  // The Go side: a frame's own layer is red 100 plus the word it lights,
+  // with two frames of pop, and the layer so many frames ahead is red
+  // that many.
+  function goSide(word: () => number) {
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      asked.push(url);
+      const ahead = Number(new URLSearchParams(url.split("?")[1]).get("ahead") ?? 0);
+      if (ahead) return new Response(body(ahead), { headers: { "X-Caption-Showing": `0 ${word()}` } });
+      return new Response(body(100 + word()), { headers: { "X-Caption-Showing": `0 ${word()}`, "X-Caption-Pop": "2" } });
+    });
+    return asked;
+  }
+
+  // Tim stepped onto a word and saw it stand still, where the browser's
+  // captions before #201 popped it.
+  it("plays the frames of the short after a frame that lights another word, then shows the frame's own", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    // Lets every answer on its way come, without moving the clock.
+    const flush = async () => {
+      for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    };
+    let lit = 0;
+    const asked = goSide(() => lit);
+    let paused = true;
+    let came = 0;
+    const layers = new CaptionLayers(() => came++, { paused: () => paused, frameLength: () => 1 / 30 });
+    layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+    const red = (at: number) => layers.at(at, [10, 20])?.pixels[0];
+    // The first frame: its word lights, and its pop plays.
+    red(1.0);
+    await flush();
+    expect(came).toBe(1);
+    expect(red(1.0)).toBe(100);
+    await flush();
+    expect(red(1.0)).toBe(1);
+    expect(layers.popping).toBe(true);
+    const ahead = asked.filter((a) => a.includes("ahead="));
+    expect(ahead.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["1", "2"]);
+    expect(new URLSearchParams(ahead[0].split("?")[1]).get("at")).toBe("1.000000");
+    vi.advanceTimersByTime(34);
+    expect(red(1.0)).toBe(2);
+    vi.advanceTimersByTime(34);
+    expect(red(1.0)).toBe(100);
+    expect(layers.popping).toBe(false);
+    // Drawn again on the same word, nothing pops.
+    expect(red(1.0)).toBe(100);
+    // The next frame, the same word: nothing pops.
+    red(1.04);
+    await flush();
+    expect(red(1.04)).toBe(100);
+    expect(layers.stats.popped).toBe(1);
+    // A step onto another word pops it, and a step away stops the pop.
+    lit = 1;
+    red(1.5);
+    await flush();
+    red(1.5);
+    await flush();
+    expect(red(1.5)).toBe(1);
+    expect(layers.stats.popped).toBe(2);
+    red(1.54);
+    expect(layers.popping).toBe(false);
+    // Playing, a new word pops in the frames themselves, not over them.
+    paused = false;
+    lit = 2;
+    red(2.0);
+    await flush();
+    expect(red(2.0)).toBe(102);
+    expect(layers.stats.popped).toBe(2);
+  });
+});
+
 describe("what a layer shows", () => {
   it("is read off the header the Go side sends, and is nothing for a header it cannot read", () => {
     expect(readShowing("3 1")).toEqual({ caption: 3, word: 1 });

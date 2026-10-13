@@ -768,25 +768,31 @@ frame, see docs/TESTING.md.
 
 ## The bouncing word
 
-The word being spoken sits on a reddish purple pill and bounces: word and
-pill grow for 80 ms and settle back over 100 ms, around the word's own
-centre, while every other word stays exactly where it is. The word stays lit
-until the next word starts.
+The word being spoken sits on a reddish purple pill and pops towards the
+viewer: the word and its pill are one thing that grows by one scale,
+around one centre, the middle of the pill, in every direction alike, to
+115 % and back, while every other word stays exactly where it is. The word
+stays lit until the next word starts. The pop lasts 220 ms, reaches its
+peak at 55 % of that, and both the rise and the settle are eased out,
+CSS's ease-out, the pop the video preview played as a CSS animation
+before #201. A word lit for less pops in the time it has. It is the
+karaoke "grow" of Aegisub's templates: a word set on its own centre with
+`\t` taking `\fscx` and `\fscy` up and back down.
 
-The bounce reaches out by the same few pixels for every word, never by a
-share of the word, so the space between two words stays on every frame.
-At rest the pill already takes nearly the whole space, 0.14 of the size at
-each side against a space of 0.165 in Inter Black. So its sides never
-move: the pill reaches 0.16 of the size past its rest above and below at
-the peak and settles back, and it is never smaller than at rest. It
-reached 0.08 before, which Tim could hardly see on #201. Where another
-line leaves less room on one side, see below. The word
-grows by up to 0.03 of the size at each side, which keeps room in its
-pill, and no more than 15 %, so a short word grows by the whole 15 % and a
-long one by less. Growing by 15 % of the word took "respektvoll" 34 pixels
-a side and its pill over "ist", which Tim saw on a thumbnail, plan row
-2.211. How long the bounce grows and settles is `bouncePhases` in
-`engine/highlight.go`, and the subtitle file is written from it.
+libass moves along `\t` and `\move` in a straight line, and the word stays
+on its centre only while its scale and its move keep in step, so the
+eased curve is written as straight pieces of 20 ms each, the same for the
+word and the pill. `popDrawn` in `engine/highlight.go` is the curve as
+drawn, and the subtitle file is written from it. At its peak a long word
+and its pill reach over the space to the next word for a frame or two, as
+in every caption tool. The words beside it are drawn over the pill.
+
+#201 had made the bounce a few pixels in height only, the pill stretched
+up or down to keep off the other line and the word grown 3 pixels a side,
+so Tim saw the pill move up or down and the word not at all, plan row
+2.211. `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go`
+reads the pop back from a short and holds the word and its pill to
+`popDrawn` on every frame, in width and height, around one centre.
 
 At rest the pill is as tall as its line, from the top of the tallest
 letter the face draws to the bottom of the deepest, with 0.10 of the size
@@ -796,9 +802,9 @@ every line of a face the same height. The pill used to open from 0.08
 inside its rest on every side and to reach only 0.10 past the tallest
 letter of the words themselves, so the first frame of a word, where a
 click on the word puts the playhead, showed it hugging the letters, which
-Tim saw on #201. `TestTheBounceKeepsTheSpaceBetweenWords` reads the bounce
-back from a short, and holds the pill to at least 0.10 of the size of room
-round its word on every frame and to never less than at rest.
+Tim saw on #201. `TestThePillLeavesRoomRoundItsWord` reads the pill back
+from a short, and holds it to at least 0.10 of the size of room round its
+word on its first frame and at rest.
 
 libass stands the lines of a caption as close as the face is tall, so
 a pill of the whole line and its room reaches into the letters of the
@@ -809,16 +815,13 @@ other line over the width of the line, `wordsLaid.lineBand` in
 `engine/wordframes.go`. Where the letters of the two lines are nearer
 than that leaves room for, the tail of a "g" over the dots of an "Ä", the
 pill keeps 0.04 of the size over its own letters and touches the other
-line. Its bounce stays as clear: it reaches as far as it has room each
-way, and what one side has no room for goes to the other, so a word on
-the bottom line of two bounces mostly down and one on the top line mostly
-up, and every word bounces as far, `wordsLaid.bounce`. Tim saw the "g" of
+line. For the few frames of its pop the pill grows over the other line
+like it grows over the words beside it. Tim saw the "g" of
 "wichtig" stand in the pill of "Leute" on the line under it on #201. The
 lines moved apart for it for a while, which he did not want, and then the
 pill stopped short word by word and jumped as it walked along a line.
-`TestThePillNeverReachesAnotherLine` reads his caption back from a short
-and holds the pill clear of the other line's letters on every frame and
-its bounce to at least 0.25 of the size in height.
+`TestThePillAtRestNeverReachesAnotherLine` reads his caption back from a
+short and holds the pill at rest clear of the other line's letters.
 `TestEveryPillOfALineIsOneHeightAndClearOfTheOther` holds the rule on
 where libass puts the words, for his caption and for the one with "Ä".
 

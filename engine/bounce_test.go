@@ -13,11 +13,11 @@ import (
 	"framefairy/internal/ffmpegtest"
 )
 
-// The bounce of the word being spoken, read back from a finished short:
-// the pill grows above and below by what bounceAt says on every frame,
-// never wider than it rests, and a long word with its pill never reaches
-// into the next word. Tim saw "respektvoll" on a thumbnail grow 15 % of
-// its own width a side and its pill cover "ist".
+// The pop of the word being spoken, read back from a finished short: the
+// word and its pill grow together, by one scale around one centre, in
+// every direction, as far as popDrawn says on every frame, and at rest the
+// pill leaves room round its word. Tim saw #201's bounce move the pill
+// only up or down and the word hardly at all.
 
 const bounceFPS = 50
 
@@ -120,7 +120,7 @@ func pillBox(f []byte, pill [3]int, rows int) (left, right, top, bottom int) {
 }
 
 // On the real disk: ffmpeg renders the short and the test reads it back.
-func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
+func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 	t.Parallel()
 	words := []Cue{{0.20, 0.40, "Das"}, {0.50, 1.00, "respektvoll"}, {1.00, 1.40, "ist."}}
 	e, info, laid, frames := shortRows(t, words, 1.6, bounceTop, bounceRows)
@@ -131,40 +131,17 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 	style := ResolveStyle(nil)
 	pill := pillColour(t, style)
 	box := func(f []byte) (left, right, top, bottom int) { return pillBox(f, pill, bounceRows) }
-	empty := func(f []byte, x int) bool {
-		for y := range bounceRows {
-			if isPill(f, pill, x, y) || isInk(f, x, y) {
-				return false
-			}
-		}
-		return true
-	}
-
 	// "respektvoll" lights at 0.50 s, frame 25, and is lit until "ist."
 	// at 1.00 s. Frame 40, 0.30 s on, is long settled.
 	lit := 25
-	span := centiseconds(1.00) - centiseconds(0.50)
 	if len(frames) < 45 {
 		t.Fatalf("the short has %d frames", len(frames))
 	}
-	restL, restR, restT, restB := box(frames[40])
-	if restR < 0 {
-		t.Fatal("no pill behind respektvoll once it settled")
-	}
-	restW, restH := restR-restL+1, restB-restT+1
-	next := restR + 1
-	for next < w && empty(frames[40], next) {
-		next++
-	}
-	if next-restR < 3 {
-		t.Fatalf("at rest the pill ends at %d and ist starts at %d, no space to keep", restR, next)
-	}
-	grow := bounceGrow * float64(pyround(style.Size))
 
 	// The room the pill leaves around its word, on every frame the word is
 	// lit: at least roomAround of the caption size above, below and at both
-	// sides of the word's ink, at its first frame, at the top of its
-	// bounce and at rest. The pill never comes in tighter than at rest.
+	// sides of the word's ink, at its first frame and at rest. The pill
+	// never comes in tighter than at rest.
 	// Tim saw the pill hug the word on #201: it opened from inside its rest
 	// on every side, so the frame a click on a word lands on, its first,
 	// showed it with no room at all, and at rest it reached only a tenth
@@ -178,7 +155,11 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 			t.Logf("%s: the pill is %dx%d at rest and leaves at least %d pixels round the word", name,
 				restRight-restLeft+1, restB-restT+1, least)
 		}()
-		for k := from; k <= to; k++ {
+		// Its first frame and at rest: in between the word and its pill
+		// grow by one scale, which keeps the room, see
+		// TestTheWordAndItsPillPopTogether, and at the top of the pop the
+		// pill of a long word reaches the next word's letters.
+		for _, k := range []int{from, to} {
 			f := frames[k]
 			l, r, top, bottom := box(f)
 			if r < 0 {
@@ -237,45 +218,96 @@ func TestTheBounceKeepsTheSpaceBetweenWords(t *testing.T) {
 			}
 		}
 	}
+}
 
-	for k := lit; k <= lit+10; k++ {
-		since := float64(k-lit) / bounceFPS
-		b := bounceAt(since, span)
-		l, r, top, bottom := box(frames[k])
-		pw, ph := r-l+1, bottom-top+1
-		wantW := float64(restW)
-		wantH := float64(restH) + 2*grow*b
-		if math.Abs(float64(pw)-wantW) > 3 || math.Abs(float64(ph)-wantH) > 3 {
-			t.Errorf("%3.0f ms after the word lit the pill is %dx%d, bounceAt says %.0fx%.0f", since*1000, pw, ph, wantW, wantH)
-		}
-		gap := false
-		for x := restR + 1; x < next; x++ {
-			if empty(frames[k], x) {
-				gap = true
-				break
+// The word being spoken and its pill pop together: on every frame both
+// are as large as popDrawn says, by one scale in width and in height,
+// around the one centre they share, and at the top the scale reaches
+// popPeak. Tim saw #201's bounce stretch the pill up or down alone while
+// the word grew by 1 %, and on main the pill opened from smaller than the
+// word.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestTheWordAndItsPillPopTogether(t *testing.T) {
+	t.Parallel()
+	words := []Cue{{0.50, 1.20, "respektvoll"}}
+	_, _, laid, frames := shortRows(t, words, 1.4, bounceTop, bounceRows)
+	if len(laid) != 1 || len(laid[0].Words) != 1 {
+		t.Fatalf("the word should make one caption, not %+v", laid)
+	}
+	pill := pillColour(t, ResolveStyle(nil))
+	// The ink of the word, the white of its letters anywhere.
+	ink := func(f []byte) (left, right, top, bottom int) {
+		left, right, top, bottom = shortW, -1, bounceRows, -1
+		for y := range bounceRows {
+			for x := range shortW {
+				if isInk(f, x, y) {
+					left, right = min(left, x), max(right, x)
+					top, bottom = min(top, y), max(bottom, y)
+				}
 			}
 		}
-		if !gap {
-			t.Errorf("%3.0f ms after respektvoll lit nothing is left of the space before ist, between %d and %d: the pill reaches %d",
-				since*1000, restR, next, r)
+		return
+	}
+	type box struct{ l, r, t, b float64 }
+	read := func(k int) (p, w box) {
+		l, r, top, bottom := pillBox(frames[k], pill, bounceRows)
+		il, ir, it, ib := ink(frames[k])
+		if r < 0 || ir < 0 {
+			t.Fatalf("frame %d has no pill or no word", k)
 		}
+		return box{float64(l), float64(r + 1), float64(top), float64(bottom + 1)},
+			box{float64(il), float64(ir + 1), float64(it), float64(ib + 1)}
+	}
+	// It lights at 0.50 s, frame 25, and is lit for 70 hundredths.
+	const lit, span = 25, 70
+	if len(frames) < lit+20 {
+		t.Fatalf("the short has %d frames", len(frames))
+	}
+	restPill, restWord := read(lit + 15)
+	cx, cy := (restPill.l+restPill.r)/2, (restPill.t+restPill.b)/2
+	// How far the word's ink stands from the pill's middle, which grows
+	// with the scale.
+	wordUp, wordDown := cy-restWord.t, restWord.b-cy
+	peak := 0.0
+	for k := lit; k <= lit+12; k++ {
+		since := float64(k-lit) * 1000 / bounceFPS
+		want := popDrawn(since, span)
+		peak = max(peak, want)
+		p, w := read(k)
+		got := map[string][2]float64{
+			"the pill's width":  {(p.r - p.l) / (restPill.r - restPill.l), restPill.r - restPill.l},
+			"the pill's height": {(p.b - p.t) / (restPill.b - restPill.t), restPill.b - restPill.t},
+			"the word's width":  {(w.r - w.l) / (restWord.r - restWord.l), restWord.r - restWord.l},
+			"the word's top":    {(cy - w.t) / wordUp, wordUp},
+			"the word's bottom": {(w.b - cy) / wordDown, wordDown},
+		}
+		for what, g := range got {
+			// Two pixels of what was measured, for the edges libass smooths.
+			if math.Abs(g[0]-want) > 2.5/g[1] {
+				t.Errorf("%3.0f ms after the word lit %s is %.3f of its rest, popDrawn says %.3f", since, what, g[0], want)
+			}
+		}
+		if math.Abs((p.l+p.r)/2-cx) > 1 || math.Abs((p.t+p.b)/2-cy) > 1 || math.Abs((w.l+w.r)/2-cx) > 1.5 {
+			t.Errorf("%3.0f ms after the word lit the pill's middle is at %.1f, %.1f and the word's across at %.1f, not where they rest, %.1f, %.1f",
+				since, (p.l+p.r)/2, (p.t+p.b)/2, (w.l+w.r)/2, cx, cy)
+		}
+	}
+	if peak < popPeak-0.01 {
+		t.Errorf("the pop reaches %.3f, not %.2f", peak, popPeak)
 	}
 }
 
-// bounceSeen is the least the pill of a word lit long enough to bounce
-// grows in height at the top of its bounce, as a share of the caption
-// size. Tim could hardly see a bounce of 0.16 on #201.
-const bounceSeen = 0.25
-
-// The pill of the word being spoken never reaches the letters of another
-// line, at rest or at the top of its bounce, and its bounce is large
-// enough to see. Tim saw the "g" of "wichtig" stand in the top right
+// The pill of the word being spoken, at rest, never reaches the letters of
+// another line. Tim saw the "g" of "wichtig" stand in the top right
 // corner of the pill of "Leute" on the line under it, on #201: libass
 // stands the lines of a caption as close as the face is tall, and the
-// pill reached past its line. The lines stay where libass puts them.
+// pill reached past its line. The lines stay where libass puts them. For
+// the few frames of its pop the word and its pill grow in every direction
+// and may reach over the other line, see TestTheWordAndItsPillPopTogether.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
-func TestThePillNeverReachesAnotherLine(t *testing.T) {
+func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 	t.Parallel()
 	// The caption Tim saw, the tail of the g over the L.
 	words := []Cue{
@@ -317,17 +349,22 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 
 	clear := lineClear*size - 2
 	for i, word := range words {
-		from, to := int(math.Round(word.Start*bounceFPS)), int(math.Round(word.End*bounceFPS))-1
-		var restH, peakH int
+		lit, to := int(math.Round(word.Start*bounceFPS)), int(math.Round(word.End*bounceFPS))-1
+		// The first frame after its pop.
+		length, _ := popTimes(centiseconds(word.End) - centiseconds(word.Start))
+		from := lit + int(math.Ceil(length*bounceFPS/1000))
+		if from > to {
+			// Lit too short a time to come to rest.
+			continue
+		}
 		for k := from; k <= to; k++ {
 			f := frames[k]
-			ms := (k - from) * 1000 / bounceFPS
+			ms := (k - lit) * 1000 / bounceFPS
 			l, r, ptop, pbottom := pillBox(f, pill, rows)
 			if r < 0 {
 				t.Errorf("%s, %3d ms after it lit: no pill", word.Text, ms)
 				continue
 			}
-			restH, peakH = pbottom-ptop+1, max(peakH, pbottom-ptop+1)
 			drawn := lines(f)
 			if len(drawn) != 2 {
 				t.Errorf("%s, %3d ms after it lit: the letters stand in %d bands of rows, %v, not one for each of the two lines: the lines touch",
@@ -366,19 +403,14 @@ func TestThePillNeverReachesAnotherLine(t *testing.T) {
 					word.Text, ms, ptop, pbottom, room, nearest, clear)
 			}
 		}
-		if grew := float64(peakH-restH) / size; grew < bounceSeen {
-			t.Errorf("%s: the pill grows from %d to %d pixels at the top of its bounce, %.2f of the size, less than %.2f",
-				word.Text, restH, peakH, grew, bounceSeen)
-		}
 	}
 }
 
-// Every pill of a line of a caption rests at one height and bounces alike,
-// clear of the letters of the other line by lineClear, at rest and at the
-// top of its bounce. Where the letters of the two lines come nearer than
-// that leaves room for, the tail of the "g" of "wichtig" over the dots of
-// an "Ä", the pill keeps lineClear over its own letters and touches the
-// other line, and bounces only away from it. Read off where libass puts
+// Every pill of a line of a caption rests at one height, clear of the
+// letters of the other line by lineClear. Where the letters of the two
+// lines come nearer than that leaves room for, the tail of the "g" of
+// "wichtig" over the dots of an "Ä", the pill keeps lineClear over its own
+// letters and touches the other line. Read off where libass puts
 // the words, for Tim's caption and for that one. A pill stopped short word
 // by word jumped as it walked along the line, from "ist" to "es" by 14
 // pixels.
@@ -396,7 +428,6 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	}
 	style := ResolveStyle(nil)
 	size := pyround(style.Size)
-	grow := bounceGrow * float64(size)
 	clear := math.Round(float64(size) * lineClear)
 	for _, second := range []string{"Leute", "Ägypten"} {
 		words := []Cue{
@@ -418,17 +449,12 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 			inkTop, inkBottom := L.lineInk(r)
 			for _, k := range line {
 				left, top, right, bottom := L.pill(k, size)
-				up, down := L.bounce(k, size)
-				rows = append(rows, fmt.Sprintf("%-9s %4.0f to %4.0f, up %2.0f, down %2.0f", L.words[k], top, bottom, up, down))
+				rows = append(rows, fmt.Sprintf("%-9s %4.0f to %4.0f", L.words[k], top, bottom))
 				first := line[0]
 				_, firstTop, _, firstBottom := L.pill(first, size)
-				firstUp, firstDown := L.bounce(first, size)
-				if top != firstTop || bottom != firstBottom || up != firstUp || down != firstDown {
-					t.Errorf("%s: the pill of %q rests at %.0f to %.0f and bounces %.0f up and %.0f down, that of %q on its line at %.0f to %.0f, %.0f and %.0f",
-						second, L.words[k], top, bottom, up, down, L.words[first], firstTop, firstBottom, firstUp, firstDown)
-				}
-				if math.Abs(up+down-2*grow) > 0.5 {
-					t.Errorf("%s: the pill of %q bounces %.0f in all, not %.0f", second, L.words[k], up+down, 2*grow)
+				if top != firstTop || bottom != firstBottom {
+					t.Errorf("%s: the pill of %q rests at %.0f to %.0f, that of %q on its line at %.0f to %.0f",
+						second, L.words[k], top, bottom, L.words[first], firstTop, firstBottom)
 				}
 				// The other line's letters over or under the pill.
 				for o := range L.lines {
@@ -443,13 +469,13 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 						// A pill runs from its top to its bottom, the row of its
 						// bottom the first one under it, the way an ink box's
 						// bottom is its last row.
-						gap, own, grows := (top-up)-float64(b.bottom+1), float64(inkTop)-top, up
+						gap, own := top-float64(b.bottom+1), float64(inkTop)-top
 						if o > r {
-							gap, own, grows = float64(b.top)-(bottom+down), bottom-float64(inkBottom+1), down
+							gap, own = float64(b.top)-bottom, bottom-float64(inkBottom+1)
 						}
-						tight := own < clear+0.5 && grows == 0
+						tight := own < clear+0.5
 						if gap < clear-0.5 && !tight {
-							t.Errorf("%s: at the top of its bounce the pill of %q comes %.0f pixels from %q on the other line, less than %.0f",
+							t.Errorf("%s: at rest the pill of %q comes %.0f pixels from %q on the other line, less than %.0f",
 								second, L.words[k], gap, L.words[j], clear)
 						}
 						if own < clear-0.5 {

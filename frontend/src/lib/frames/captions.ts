@@ -15,7 +15,18 @@
 // nothing.
 // A layer from the Go side also says which captions it was drawn from,
 // track, and what it shows of them, showing.
-export type Layer = { x: number; y: number; w: number; h: number; pixels: Uint8Array; track?: string; showing?: Showing };
+// And how many frames of the short after its own the video preview plays
+// over the frame, paused, for its word to pop, pop, see Replay.
+export type Layer = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  pixels: Uint8Array;
+  track?: string;
+  showing?: Showing;
+  pop?: number;
+};
 
 // What a layer shows: the caption, by its place among the captions of the
 // view, and the word of it being spoken, counted across its lines, each
@@ -208,6 +219,29 @@ const AGAIN = 250;
 // A layer asked for: the ask it belongs to, the frame and the size.
 type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
 
+// The pop played over a paused frame. The short pops the word being
+// spoken in the frames after it lights, and a frame paused on shows one
+// moment of that. So when the video preview comes to stand on a frame
+// that lights another word than the frame before, by a step, Shift and an
+// arrow or a click, it plays the layers of the frames of the short after
+// it over the still picture, as many as the Go side says, see
+// engine.PopFrames, one each frame of the short, and comes back to the
+// frame's own layer, which looks as the last of them leaves it. The word
+// pops the way it pops in the short and the frame paused on stays the
+// short's. Before #201 the browser played a pop of its own on every new
+// word, and Tim missed it once the video preview drew libass's captions.
+type Replay = { key: string; layers: (Layer | null)[]; shown: number; timer?: ReturnType<typeof setTimeout> };
+
+// Whether the person asked the system for less motion, which the pop over
+// a paused frame then leaves out, as the browser's pop did.
+function calm(): boolean {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// What the layers need to know of the video preview to play a pop: whether
+// it is paused, and how long a frame of the short lasts, in seconds.
+export type Still = { paused(): boolean; frameLength(): number };
+
 // The layers of the captions of the video preview, asked for each frame
 // of the episode by the moment it starts, at a size. A frame on its way to
 // the screen asks ahead, coming, so its layer is there when it is drawn.
@@ -229,9 +263,21 @@ export class CaptionLayers {
   private last: Layer | null = null;
   // For the walks: how many layers were asked for and how many a frame
   // was drawn with that was not its own yet.
-  readonly stats = { asked: 0, late: 0 };
+  readonly stats = { asked: 0, late: 0, popped: 0 };
+  // The pop being played over the frame paused on, and what the layer
+  // given last showed, by its track, which says when the word changed.
+  private replay: Replay | null = null;
+  private seen = "";
 
-  constructor(private came: () => void) {}
+  constructor(
+    private came: () => void,
+    private still?: Still,
+  ) {}
+
+  // Whether a pop is being played over a paused frame, for the walks.
+  get popping(): boolean {
+    return this.replay !== null;
+  }
 
   // Whether a layer is on its way, for the walks.
   get busy(): boolean {
@@ -265,16 +311,67 @@ export class CaptionLayers {
   // the one given last. Null with no captions to draw.
   at(frame: number, size: [number, number]): Layer | null {
     const want = this.wanted(frame, size);
+    if (want?.key !== this.replay?.key) this.stop();
     if (!want) return null;
     const have = this.kept.get(want.key);
     if (have) {
       this.last = have;
-      return have;
+      const seen = have.showing ? `${have.track}\n${have.showing.caption} ${have.showing.word}` : "";
+      const changed = seen !== this.seen;
+      this.seen = seen;
+      if (changed && have.showing && have.showing.word >= 0 && (have.pop ?? 0) > 0 && this.still?.paused() && !calm())
+        this.play(want, have.pop!);
+      return this.replay?.layers[this.replay.shown] ?? have;
     }
     this.stats.late++;
     this.waiting = want;
     this.fetch(want);
     return this.last;
+  }
+
+  // The pop over the frame of want, frames of the short long: its layers
+  // asked for all at once, then shown one a frame, then the frame's own.
+  private play(want: Wanted, frames: number) {
+    const { key, ask, frame, size } = want;
+    const replay: Replay = { key, layers: [], shown: -1 };
+    this.replay = replay;
+    this.stats.popped++;
+    const asked = Array.from({ length: frames }, (_, n) =>
+      fetch(
+        `/frames/captions?${new URLSearchParams({
+          path: ask.path,
+          track: ask.track,
+          at: frame.toFixed(6),
+          w: String(size[0]),
+          h: String(size[1]),
+          ahead: String(n + 1),
+          ...ask.drafts,
+        })}`,
+      )
+        .then(async (r) => (r.ok ? readLayer(await r.arrayBuffer()) : null))
+        .catch(() => null),
+    );
+    void Promise.all(asked).then((layers) => {
+      if (this.replay !== replay) return;
+      replay.layers = layers.map((l) => l && { ...l, track: ask.track, showing: this.last?.showing });
+      const step = Math.max(1, (this.still?.frameLength() ?? 1 / 30) * 1000);
+      const next = () => {
+        if (this.replay !== replay) return;
+        replay.shown++;
+        if (replay.shown >= replay.layers.length) this.replay = null;
+        else replay.timer = setTimeout(next, step);
+        this.came();
+      };
+      next();
+    });
+  }
+
+  // The pop over a paused frame stopped, by a move to another frame, a
+  // play, or another ask.
+  private stop() {
+    if (!this.replay) return;
+    clearTimeout(this.replay.timer);
+    this.replay = null;
   }
 
   // A frame that starts at frame is on its way to the screen.
@@ -302,6 +399,7 @@ export class CaptionLayers {
         if (layer) {
           layer.track = ask.track;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
+          layer.pop = Number(r.headers.get("X-Caption-Pop")) || 0;
         }
         return layer;
       })

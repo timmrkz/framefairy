@@ -769,6 +769,18 @@ func (s SourceInfo) CaptionMoment(clip Clip, at float64) int64 {
 	return s.shortMoment(k)
 }
 
+// captionMomentAhead is the moment libass draws the captions at on the
+// frame of the short ahead frames after the one that shows the frame of
+// the episode that starts at, see CaptionMoment. Without a rate the short
+// has no frames to count, and it is that frame's own moment.
+func (s SourceInfo) captionMomentAhead(clip Clip, at float64, ahead int) int64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 || ahead <= 0 {
+		return s.CaptionMoment(clip, at)
+	}
+	k, _ := s.shortFrame(clip, at)
+	return s.shortMoment(k + int64(ahead))
+}
+
 // shortMoment is the moment libass draws the captions at on frame k of a
 // short, from nought, see CaptionMoment.
 func (s SourceInfo) shortMoment(k int64) int64 {

@@ -48,98 +48,162 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // word sideways. Moving the anchor by (1 - scale) times the distance from the
 // anchor to the word's centre cancels that exactly, so the word grows and
 // shrinks around its own centre. Both the scale and the move are linear in
-// time within each phase, which keeps them in step frame by frame.
+// time within each piece of the pop, which keeps them in step frame by
+// frame.
 //
-// How far the bounce has come at a moment is bounceAt, and the subtitle
-// file is written from its phases.
+// The word being spoken and its pill are one thing that comes towards the
+// viewer: both grow by one scale around one centre, the middle of the
+// pill, in every direction alike, then settle back to rest. It is the
+// karaoke "grow" of Aegisub's templates, a word set on its own centre with
+// \t taking \fscx and \fscy up and back down, and the same pop the
+// video preview played as a CSS animation before #201: a rise to the peak
+// in popRise of the time, then a settle, each eased out, CSS's ease-out.
 //
-// The bounce reaches out by a few pixels, the same for every word, never
-// by a share of the word. At rest the pill already takes nearly the whole
-// space between two words, 0.14 of the size against a space of 0.165 in
-// Inter Black, so it grows above and below and never past its own sides,
-// and the word grows inside its pill. A share of the word carried a long
-// word into the next: "respektvoll" grew 34 pixels a side and its pill
-// covered "ist", which Tim saw on a thumbnail.
+// libass moves along \move and \t in a straight line, and the word stays
+// on its centre only while its scale and its move keep in step, so the
+// eased curve is drawn as short straight pieces, popKnot hundredths of a
+// second each, the same for the word and the pill. popDrawn is that curve
+// as drawn, and the subtitle file is written from it.
 //
-// The pill is never smaller than at rest, and at rest it leaves room all
-// round its word: as tall as the line, from the top of the tallest letter
-// the face draws to the bottom of the deepest, with pillPadY over that,
-// the same for every word of the line whatever its letters. It once
-// opened from inside its rest on every side, so the first frame of a word,
-// which is where a click on the word puts the playhead, showed the pill
-// hugging the letters, and at rest it reached only pillPadY past the
-// tallest letter of the words themselves. Tim saw both on #201. Where
-// another line of the caption stands over or under it, the pills of its
-// line stop short of that line's letters, all at one height, and bounce
-// into the room there is, see wordsLaid.lineBand and wordsLaid.bounce.
+// #201 had made the bounce a few pixels in height only, the pill
+// stretched up or down to keep off the other line and the word grown
+// 3 pixels a side, so Tim saw the pill move up or down and the word not
+// at all. At its peak a long word and its pill reach over the space to
+// the next word for a frame or two, as in every caption tool: the words
+// beside it are drawn over the pill, and the pop is over in a fifth of a
+// second.
+//
+// At rest the pill leaves room all round its word: as tall as the line,
+// from the top of the tallest letter the face draws to the bottom of the
+// deepest, with pillPadY over that, the same for every word of the line
+// whatever its letters. Where another line of the caption stands over or
+// under it, the pills of its line rest short of that line's letters, all
+// at one height, see wordsLaid.lineBand.
 // ---------------------------------------------------------------------------
 
 const (
-	bounceUp   = 80  // ms to grow to the peak
-	bounceDown = 100 // ms to settle back
-	// bounceGrow is how far the pill reaches above and below where it
-	// rests at the peak, as a share of the caption size.
-	bounceGrow = 0.16
-	// wordRoom is how far the word may grow out on either side, as a share
-	// of the caption size: a little of the pill's room at its sides, so the
-	// word keeps room in its pill at the top of the bounce too. A short
-	// word stops at wordPeak.
-	wordRoom = 0.03
-	wordPeak = 1.15
+	// popLength is how long the pop lasts, in milliseconds, and popRise
+	// the share of it the word takes to reach popPeak, its scale at the
+	// top. A word lit for less pops in the time it has.
+	popLength = 220
+	popRise   = 0.55
+	popPeak   = 1.15
+	// popKnot is how long each straight piece of the drawn curve lasts,
+	// in hundredths of a second.
+	popKnot = 2
 	// pillPadX is the room the pill leaves at the sides of its word, and
 	// pillPadY above and below its line, as shares of the caption size.
 	pillPadX = 0.14
 	pillPadY = 0.10
-	// lineClear is the least room the pill leaves to a letter of another
-	// line of its caption, at rest and at the top of its bounce, as a
-	// share of the caption size, see wordsLaid.lineBand.
+	// lineClear is the least room the pill at rest leaves to a letter of
+	// another line of its caption, as a share of the caption size, see
+	// wordsLaid.lineBand.
 	lineClear = 0.04
 	// lineReach is the tallest and the deepest letters a line can hold,
 	// whose ink says how tall the line is, see pillLines.
 	lineReach = "ÉÅÁgjpqy"
 )
 
-// bouncePhases is how long a word lit for span hundredths of a second
-// grows and settles back, in hundredths, the subtitle file's clock. A
-// word too short for both gets each in proportion.
-func bouncePhases(span int) (up, down int) {
-	ms := span * 10
-	u, d := bounceUp, bounceDown
-	if ms < u+d {
-		u = ms * bounceUp / (bounceUp + bounceDown)
-		d = ms - u
+// easeOut is CSS's ease-out, cubic-bezier(0, 0, 0.58, 1), at p from 0 to
+// 1: fast at first and slowing to a stop.
+func easeOut(p float64) float64 {
+	if p <= 0 {
+		return 0
 	}
-	return u / 10, d / 10
+	if p >= 1 {
+		return 1
+	}
+	x := func(u float64) float64 { return 3*(1-u)*u*u*0.58 + u*u*u }
+	lo, hi := 0.0, 1.0
+	for range 40 {
+		mid := (lo + hi) / 2
+		if x(mid) < p {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	u := (lo + hi) / 2
+	return 3*(1-u)*u*u + u*u*u
 }
 
-// bounceAt is how far into its bounce a word is, since seconds after it
-// lit, lit for span hundredths of a second: from 0 at rest to 1 at the
-// top and back to 0, the share of its growth the word and its pill have.
-// Within each phase it is linear in time, which is how libass moves from
-// one value to the next, and the subtitle file is written from its
-// phases, see bouncePhases.
-func bounceAt(since float64, span int) float64 {
-	up, down := bouncePhases(span)
-	ms := math.Max(since, 0) * 1000
-	upMS, downMS := float64(up*10), float64(down*10)
+// popTimes is how long the pop of a word lit for span hundredths of a
+// second lasts, and how long it rises, in milliseconds.
+func popTimes(span int) (length, rise float64) {
+	length = math.Min(popLength, float64(span*10))
+	return length, length * popRise
+}
+
+// popAt is the scale of a word lit for span hundredths of a second, since
+// milliseconds after it lit, on the eased curve.
+func popAt(since float64, span int) float64 {
+	length, rise := popTimes(span)
 	switch {
-	case ms < upMS:
-		return ms / upMS
-	case ms < upMS+downMS:
-		return 1 - (ms-upMS)/downMS
+	case since <= 0 || since >= length:
+		return 1
+	case since < rise:
+		return 1 + (popPeak-1)*easeOut(since/rise)
 	}
-	return 0
+	return popPeak - (popPeak-1)*easeOut((since-rise)/(length-rise))
 }
 
-// WordPeak is how large a word grows at the top of its bounce: as far as
-// wordRoom lets it, measured from the face the way the lines are, and no
-// more than wordPeak.
-func WordPeak(s Style, text string) float64 {
-	width := roomFor(s).width(text)
-	if width <= 0 {
-		return wordPeak
+// popKnots are the hundredths of a second after a word lit for span lit
+// where the straight pieces of its pop meet, the first 0 and the last the
+// end of the pop.
+func popKnots(span int) []int {
+	length, _ := popTimes(span)
+	end := int(math.Ceil(length / 10))
+	var knots []int
+	for at := 0; at < end; at += popKnot {
+		knots = append(knots, at)
 	}
-	return math.Min(wordPeak, 1+2*wordRoom*s.Size/width)
+	return append(knots, end)
+}
+
+// popDrawn is the scale libass draws a word lit for span hundredths of a
+// second at, since milliseconds after it lit: popAt at the knots, and a
+// straight line between them.
+func popDrawn(since float64, span int) float64 {
+	knots := popKnots(span)
+	for i := 1; i < len(knots); i++ {
+		a, b := float64(knots[i-1]*10), float64(knots[i]*10)
+		if since < b {
+			if since < a {
+				return 1
+			}
+			return popAt(a, span) + (popAt(b, span)-popAt(a, span))*(since-a)/(b-a)
+		}
+	}
+	return 1
+}
+
+// PopAgain is how long the short goes on past since milliseconds after a
+// word lit for span hundredths of a second lit until its pop looks again
+// as it does then, in milliseconds: from a moment of the rise, through the
+// peak, to the moment of the settle with the same scale. Nothing from the
+// peak on. The video preview plays that much of the short over a frame it
+// is paused on when it lands on a word, so the word pops as it would
+// while playing and comes to rest on the frame it is paused on, see
+// CaptionDrawing.PopFrames.
+func PopAgain(since float64, span int) float64 {
+	length, _ := popTimes(span)
+	// The peak as drawn, the knot the pieces rise to.
+	peak := 0.0
+	for _, k := range popKnots(span) {
+		if popDrawn(float64(k*10), span) > popDrawn(peak, span) {
+			peak = float64(k * 10)
+		}
+	}
+	if since < 0 || since >= peak {
+		return 0
+	}
+	now := popDrawn(since, span)
+	for t := peak + 1; t < length; t++ {
+		if popDrawn(t, span) <= now {
+			return t - since
+		}
+	}
+	return length - since
 }
 
 // pillLines are the blocks that measure how tall each line of a caption of
@@ -324,65 +388,49 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 				continue
 			}
 			k := k
-			// The pill at rest, and the word's centre: the middle of its ink
-			// across and of its pill down.
+			// The pill at rest, and the centre the word and its pill pop
+			// around: the middle of the pill, which is the middle of the
+			// word's ink across.
 			pl, pt, pr, pb := L.pill(k, size)
 			cx := ax + (pl+pr)/2
 			cy := ay + (pt+pb)/2
-
-			upCS, downCS := bouncePhases(to - from)
-			up, down := L.bounce(k, size)
-			peakScale := WordPeak(s, c.Words[k].Text)
-
-			// The pill behind the word, bouncing: each phase from where
-			// bounceAt has it at the phase's start to where it has it at its
-			// end. It grows by up above and down below, so where one side has
-			// less room its centre moves with the growth.
 			w, h := pr-pl, pb-pt
 			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
-			pillAt := func(at float64) (y, scale string) {
-				return num(cy + (down-up)/2*at), num((h + (up+down)*at) / h * 100)
-			}
-			pillEvent := func(from, to int, a, z float64) {
-				fromY, fromScale := pillAt(a)
-				toY, toScale := pillAt(z)
-				add(1, from, to, "Box", fmt.Sprintf(
-					`{\an5\move(%s,%s,%s,%s,0,%d)\p1\1c%s\1a&H%s&\bord0\shad0\fscx100\fscy%s\t(0,%d,\fscx100\fscy%s)}%s{\p0}`,
-					num(cx), fromY, num(cx), toY, (to-from)*10, s.HighlightColour, alphaOrSolid(s.HighlightAlpha),
-					fromScale, (to-from)*10, toScale, pill))
-			}
-			opening, peak, rest := 0.0, 1.0, 0.0
-			if upCS > 0 {
-				pillEvent(from, from+upCS, opening, peak)
-			}
-			if downCS > 0 {
-				pillEvent(from+upCS, from+upCS+downCS, peak, rest)
-			}
-			pillEvent(from+upCS+downCS, to, rest, rest)
 
 			// The line with the active word hidden, so nothing else moves.
 			add(2, from, to, "Caption", "{"+anchor+"}"+
 				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown))
 
-			// The active word alone, scaled around its centre.
+			// The pill, and the active word alone over it, popping piece by
+			// piece of the curve, both at one scale around one centre. The
+			// word is the whole caption with the others hidden, so it stands
+			// where it stands in the line, and its anchor moves with the
+			// scale to keep its centre still.
 			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown)
 			place := func(scale float64) (string, string) {
 				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
 			}
-			x0, y0 := place(1)
-			x1, y1 := place(peakScale)
-			top := num(peakScale * 100)
-			if upCS > 0 {
-				add(3, from, from+upCS, "Caption", fmt.Sprintf(
-					`{\an2\move(%s,%s,%s,%s,0,%d)\fscx100\fscy100\t(0,%d,\fscx%s\fscy%s)}%s`,
-					x0, y0, x1, y1, upCS*10, upCS*10, top, top, only))
+			pop := func(from, to int, a, z float64) {
+				ms := (to - from) * 10
+				add(1, from, to, "Box", fmt.Sprintf(
+					`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s{\p0}`,
+					num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha),
+					num(a*100), num(a*100), ms, num(z*100), num(z*100), pill))
+				x0, y0 := place(a)
+				x1, y1 := place(z)
+				add(3, from, to, "Caption", fmt.Sprintf(
+					`{\an2\move(%s,%s,%s,%s,0,%d)\fscx%s\fscy%s\t(0,%d,\fscx%s\fscy%s)}%s`,
+					x0, y0, x1, y1, ms, num(a*100), num(a*100), ms, num(z*100), num(z*100), only))
 			}
-			if downCS > 0 {
-				add(3, from+upCS, from+upCS+downCS, "Caption", fmt.Sprintf(
-					`{\an2\move(%s,%s,%s,%s,0,%d)\fscx%s\fscy%s\t(0,%d,\fscx100\fscy100)}%s`,
-					x1, y1, x0, y0, downCS*10, top, top, downCS*10, only))
+			knots := popKnots(to - from)
+			for n := 1; n < len(knots); n++ {
+				pop(from+knots[n-1], from+knots[n],
+					popDrawn(float64(knots[n-1]*10), to-from), popDrawn(float64(knots[n]*10), to-from))
 			}
-			add(3, from+upCS+downCS, to, "Caption", "{"+anchor+"}"+only)
+			rested := from + knots[len(knots)-1]
+			add(1, rested, to, "Box", fmt.Sprintf(`{\an5\pos(%s,%s)\p1\1c%s\1a&H%s&\bord0\shad0}%s{\p0}`,
+				num(cx), num(cy), s.HighlightColour, alphaOrSolid(s.HighlightAlpha), pill))
+			add(3, rested, to, "Caption", "{"+anchor+"}"+only)
 		}
 	}
 
