@@ -299,11 +299,16 @@
 //                      Finder does: "away" while the app is behind
 //                      another, which then comes back to the front, and
 //                      "closed" while the app is closed, which is then
-//                      opened again
+//                      opened again, and "with the video" deletes the
+//                      video too, while the app is behind another.
+//                      "written back" deletes both while the app is
+//                      closed and writes the chosen clip back into a new
+//                      folder, the way the app did when it was asked
+//                      about a video whose folder was gone, before 2.247
 //   ["let go"]         the video whose folder was removed has left the
 //                      sidebar and the library, its workspace is closed,
 //                      nothing writes its folder back and the video file
-//                      itself is still there
+//                      itself is still there, unless it was deleted too
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -701,7 +706,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
@@ -2073,6 +2078,19 @@ export const sequences = [
       ["wait for", "New"],
       ["folder removed", "closed"],
       ["let go"],
+      // Tim then deleted two videos from Documents with their folders,
+      // and they stayed with a red lamp, File not found.
+      ["add", 20],
+      ["wait for", "New"],
+      ["folder removed", "with the video"],
+      ["let go"],
+      // One of them had been opened after it was deleted, which wrote its
+      // chosen clip back, and the app opened on it after the update and
+      // said it was not in the library.
+      ["add", 20],
+      ["wait for", "New"],
+      ["folder removed", "written back"],
+      ["let go"],
     ],
   },
   {
@@ -2923,6 +2941,8 @@ for (const seq of toWalk) {
   let droppedVideo = "";
   // The video whose folder a walk deleted from outside the app.
   let folderGone = "";
+  // Whether the walk deleted that video too.
+  let videoGone = false;
   let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
@@ -5676,7 +5696,13 @@ for (const seq of toWalk) {
           break;
         }
         rmSync(folder, { recursive: true, force: true });
-        if (arg === "closed") {
+        videoGone = arg === "with the video" || arg === "written back";
+        if (videoGone) rmSync(folderGone, { force: true });
+        if (arg === "written back") {
+          mkdirSync(folder);
+          writeFileSync(join(folder, "chosen.json"), JSON.stringify({ clip: "", opened: Date.now() }));
+        }
+        if (arg === "closed" || arg === "written back") {
           await control(url, "/reopen");
           await page.reload();
         } else {
@@ -5710,7 +5736,7 @@ for (const seq of toWalk) {
         if (library.some((e) => e.source === folderGone)) wrong = `${name} is still in the library`;
         else if ((await episodeOn(page)) === folderGone) wrong = `${name} is still open`;
         else if (existsSync(folder)) wrong = `${basename(folder)} was written back`;
-        else if (!existsSync(folderGone)) wrong = `${name} itself was deleted`;
+        else if (!videoGone && !existsSync(folderGone)) wrong = `${name} itself was deleted`;
         else if ((await page.locator(".workspace.front").count()) && !(await episodeOn(page))) {
           wrong = `a workspace is still open with no video picked in the sidebar`;
         }

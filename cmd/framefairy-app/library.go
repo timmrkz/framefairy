@@ -215,7 +215,8 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 }
 
 // letGoOfRemoved takes every video whose folder was deleted outside the
-// app out of the library, the way Remove with Delete does: its folder is
+// app, with the video or without it, see deletedOutside, out of the
+// library, the way Remove with Delete does: its folder is
 // everything the app has of it, so with the folder gone the video is
 // gone from the app too, and adding it again starts it from nothing.
 // The interface reads the library as the app starts and whenever it comes
@@ -227,7 +228,7 @@ func (s *FrameFairy) RemoveEpisode(path string, deleteWork bool) error {
 // is waited for out of the way, and what it wrote back is deleted.
 func (s *FrameFairy) letGoOfRemoved() {
 	for _, ep := range s.store.Episodes() {
-		if !folderRemoved(s.store.files, ep) {
+		if !deletedOutside(s.store.files, ep) {
 			continue
 		}
 		gone, err := s.store.letGo(ep)
@@ -238,8 +239,9 @@ func (s *FrameFairy) letGoOfRemoved() {
 		if !gone {
 			continue
 		}
+		_, err = s.store.files.Stat(ep)
 		theLog.line(zerolog.InfoLevel, "files").Str("video", filepath.Base(ep)).
-			Str("folder", filepath.Base(engine.WorkDir(ep))).
+			Str("folder", filepath.Base(engine.WorkDir(ep))).Bool("videoDeleted", err != nil).
 			Msg("the video's folder was deleted outside the app, so the video leaves the library")
 		s.jobs.closeEpisode(ep)
 		s.levels.stop(ep)
