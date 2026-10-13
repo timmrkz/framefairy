@@ -713,16 +713,18 @@ Putting the playhead somewhere on the range picker is asking to look there,
 so the clip timeline goes there too. With a clip chosen that counts as moving
 the view by hand, and the view stays where it was put. **The playhead is
 dragged the same way on both**: a press anywhere on the track or on the
-playhead's head takes hold of it, and the video preview follows the hand,
+playhead takes hold of it, and the video preview follows the hand,
 one seek a frame, until it lets go. The range picker only went there once
 the hand let go, and Tim asked for it to behave like the clip timeline. It
 is one function, `scrub` in `frontend/src/lib/scrub.ts`, used by both. The
-playhead is taken hold of by its line as well as its head, a few pixels
-either side, and on both tracks it shows the arrows left and right under
+playhead is taken hold of by its line, a few pixels either side, and on both tracks it shows the arrows left and right under
 the pointer, the way a clip's edges do. The empty track shows the hand.
 The two differed: the clip timeline seemed to show the arrows on the
 playhead only because the playhead so often stands on the chosen clip's
-edge.
+edge. **The playhead looks the same on both**, one rule, `.playhead` in
+`app.css`: a line and nothing else, running 12 px past the track's top and
+bottom border, 2.234. On the range picker it had a head above the track
+and on the clip timeline a line alone, and Tim asked for the two to match.
 
 The **crosshair** in the row under the timeline goes to the playhead, always,
 clip or no clip, and puts it in the middle of the view, because the reason to
@@ -1542,7 +1544,7 @@ bubble scrolled by those eight pixels.
       jumps. Letting go first waits for the engine's answer to where the
       hand let go, so on a busy machine, where the answers come late, the
       playhead still ends on the edge and not where an earlier answer put
-      it, see plan row 2.234.
+      it, see plan row 2.237.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over. While it plays, a click on an edge does nothing to
       the play.
@@ -1689,7 +1691,7 @@ bubble scrolled by those eight pixels.
       works: a swipe left or right travels through the episode, and a pinch
       zooms around the pointer, down to two seconds across the track and out
       to the whole episode. Both are heard anywhere over the clip timeline,
-      the playhead and its head included: a click puts the playhead under
+      the playhead included: a click puts the playhead under
       the hand, and a swipe from there goes on, 2.230. **Both ends are walls.** A pinch that can go no
       closer does nothing at all, rather than carrying on and sliding the
       view sideways. A view moved by hand stays where it was put,
@@ -1899,10 +1901,17 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   stands on a thumbnail, removes it. It can only be pressed
   with the playhead inside the clip, because a frame that was cut is not in
   the short.
-- **Each thumbnail is a mark** along the foot of the clip timeline, the
-  same camera in the app's colour, so a click on the button is seen
-  leaving its picture on the timeline. It sits on a chip of the app's
-  colour while the playhead is on its frame.
+- **Each thumbnail is a mark** centred on the clip's bottom rule on the
+  clip timeline, a pixel higher because the camera's body sits below the
+  middle of its icon, the same camera filled in the app's light colour, with
+  nothing behind it but its shape, so a click on the button is seen
+  leaving its picture on the timeline. It turns white while the playhead
+  is on its frame and stands centred on the playhead's line. A keyframe
+  looks the same way, see Keyframes.
+- **The playhead and every mark stand on the start of their frame**, the
+  way editors draw them, so a mark the playhead is on is centred on its
+  line however far the clip timeline is pinched in. The playhead moves a
+  frame at a time, as the video preview does. Plan row 2.234.
 - **With the playhead on a thumbnail**, the button or **T** removes it.
   What one click adds, one click takes away.
 - **A click on a mark** puts the playhead on it, so the video preview shows
@@ -1941,11 +1950,13 @@ or walks across the picture. Plan row 3.26, the design is in
   plays, so what plays is what renders. The glide is not rounded to a
   pixel of the video, and the short places it to its own pixel, so a slow
   glide moves on every frame instead of standing and jumping.
-- **Each keyframe is a diamond** on the clip's bottom rule on the clip
-  timeline, under the thumbnails, in the app's colour, filled white while
-  the playhead is on its frame, the clip's first and last frame included.
-  It is 16 px wide, larger than it was at first, after Tim found it too
-  small. It is the thumbnail's kind of mark: a click puts the
+- **Each keyframe is a diamond** centred on the clip's top rule on the
+  clip timeline, drawn and lit the way a thumbnail is: filled in the
+  app's light colour, and white while the playhead is on its frame, the
+  clip's first and last frame included. It is 18 px, larger than it was
+  at first, after Tim found it too small. A thumbnail and a keyframe on
+  one frame stand at either end of the playhead's line, which runs 12 px
+  on past the clip timeline's top and bottom border, past both marks. It is the thumbnail's kind of mark: a click puts the
   playhead on it, a drag moves it to another frame with its crop, and a
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past

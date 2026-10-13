@@ -15,6 +15,7 @@
   import RepeatOff from "@lucide/svelte/icons/repeat-off";
   import Camera from "@lucide/svelte/icons/camera";
   import CameraOff from "@lucide/svelte/icons/camera-off";
+  import Diamond from "@lucide/svelte/icons/diamond";
   import DiamondPlus from "@lucide/svelte/icons/diamond-plus";
   import DiamondMinus from "@lucide/svelte/icons/diamond-minus";
   import Locate from "@lucide/svelte/icons/locate";
@@ -63,7 +64,9 @@
     "thumbnail-add": Camera,
     "thumbnail-remove": CameraOff,
     // A keyframe of the crop, drawn as the diamond editors draw one.
-    // Plan row 3.26.
+    // Plan row 3.26. On the clip timeline the keyframe itself, the
+    // diamond alone, the way the camera alone is a thumbnail there.
+    keyframe: Diamond,
     "keyframe-add": DiamondPlus,
     "keyframe-remove": DiamondMinus,
     // Rotate Left: an arrow turning anticlockwise, and nothing else, so
