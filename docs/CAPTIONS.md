@@ -173,6 +173,21 @@ the caption grow as a word was opened and shrink as it was left. Only
 before libass has said where the words stand does the browser still draw
 the whole caption while a word is typed.
 
+While the word typed is the word lit, libass leaves out its pill too, and
+the caption box draws the pill behind the letters typed. It is libass's
+pill as long as it holds the word: its height, its corners, and its width,
+which is the margin left round the browser's letters, read once as the
+word is opened. It grows round its middle by exactly what is typed, so a
+word made longer, or made two, stays inside it. libass drew the pill at
+the word's old size, and Tim saw a word typed longer run out of it. On a
+frame of the pop the word opens at that frame's scale and keeps it while
+it is typed, since the frame stays where it was, so opening a word moves
+nothing. The rest of the line stays put while a word is typed, and the
+grown pill lies over the words beside it, as the pop does. Enter saves
+the word, and libass lays the line out again with it, which moves the
+words beside it apart and can break the line in another place. The walk
+"a word typed longer grows its pill round its middle".
+
 Its words stand where libass put them. `/frames/captions/words` in
 `cmd/framefairy-app/captions.go` answers with where each word of a view
 stands in the short, `engine.WordFrame`, the box its pill takes at rest:
