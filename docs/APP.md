@@ -913,7 +913,9 @@ bubble scrolled by those eight pixels.
   word is the edge of its pill, with the pill's corners. The caption box
   holds the caption and the word of the frame on screen, not of the
   playhead, so while a clip plays the frame and the pill go on to the
-  next word on the same frame.
+  next word on the same frame. Shift and the arrows walk to the frame where
+  the picture lights the next word, and the keyboard's frame comes with the
+  pill, never before it.
   - **From the keyboard:** Shift and the arrows walk the playhead from
     word to word, and the word walked to wears the same frame the pointer
     puts on a word. Enter opens that word with the whole of it selected,

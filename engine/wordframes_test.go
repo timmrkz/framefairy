@@ -93,3 +93,61 @@ func TestPillCornersAreQuartersOfACircle(t *testing.T) {
 		t.Errorf("the pill has %d rounded corners, not 4", corners)
 	}
 }
+
+// When the picture lights a word, by WordsLit, is when the layer of each
+// frame says it does, frame for frame, on a clip whose pieces start off
+// the frames' grid. And it is not when the word's own time says: a frame
+// into a word by its time lands, for some word here, on a frame that
+// still lights the word before, which is where Shift and an arrow put the
+// keyboard's frame a frame ahead of the pill on #201.
+func TestWordsLitIsWhatEachFrameShows(t *testing.T) {
+	source := SourceInfo{FPSNum: 25, FPSDen: 1, Duration: 60}
+	d := &CaptionDrawing{
+		Laid: []LaidCaption{
+			{Caption: Caption{Start: 0, End: 1.5, Words: []Cue{{0, 0.3, "Ich"}, {0.33, 0.6, "war"}, {0.61, 1.0, "vielleicht"}, {1.03, 1.5, "sechs"}}}},
+			{Caption: Caption{Start: 1.5, End: 3.1, Words: []Cue{{1.5, 1.9, "Jahre"}, {1.9, 2.35, "alt,"}, {2.41, 2.43, "als"}, {2.43, 3.1, "ich"}}}},
+		},
+		Clip: Clip{Segments: []Segment{{Start: 10.023, End: 11.513}, {Start: 20.258, End: 21.9}}},
+	}
+	lit := d.WordsLit(source)
+	if len(lit) != 2 {
+		t.Fatalf("WordsLit gives %d captions, not 2", len(lit))
+	}
+	ahead := 0
+	for _, seg := range d.Clip.Segments {
+		first, end := source.pieceFrames(seg.Start, seg.End)
+		for n := first; n < end; n++ {
+			at := source.keptAt(n)
+			on := d.Showing(source, at)
+			want := CaptionShowing{-1, -1}
+			for i := range lit {
+				for k, span := range lit[i] {
+					if at >= span[0] && at < span[1] {
+						want = CaptionShowing{i, k}
+					}
+				}
+			}
+			if on.Word >= 0 && on != want {
+				t.Errorf("the frame at %.3f s shows caption %d word %d, WordsLit has caption %d word %d there",
+					at, on.Caption, on.Word, want.Caption, want.Word)
+			}
+		}
+	}
+	// A frame into each word by its own time, on the clip's clock.
+	frame := 1 / 25.0
+	for i, c := range d.Laid {
+		for k, w := range c.Words {
+			clip := min(w.Start+frame, (w.Start+w.End)/2)
+			if on := d.Showing(source, source.frameStartHolding(EpisodeTime(d.Clip, clip))); on.Caption == i && on.Word != k {
+				ahead++
+			}
+		}
+	}
+	if ahead == 0 {
+		t.Errorf("a frame into every word by its time lights that word, so this clip does not show what WordsLit is for")
+	}
+	// The word too short to fall on a frame of its own is lit on none.
+	if got := lit[1][2]; got != [2]float64{-1, -1} {
+		t.Errorf(`"als", lit for 20 ms between two frames, is lit from %.3f to %.3f s, on no frame was wanted`, got[0], got[1])
+	}
+}

@@ -83,14 +83,25 @@ func (d *CaptionDrawing) Showing(source SourceInfo, at float64) CaptionShowing {
 // PreviewWordFrames is where the words of d stand in the short the render
 // rs makes, with drafts on top of their style, the same captions
 // PreviewCaptions draws: the frame the caption box puts round a word is
-// placed from it. Nothing when the captions are off or cannot be measured.
+// placed from it, and when the picture lights each, see WordsLit. Nothing
+// when the captions are off or cannot be measured.
 func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, drafts map[string]any,
 	source SourceInfo, rs RenderSettings) [][]WordFrame {
 	style := d.drafted(drafts)
 	if len(d.Laid) == 0 || !ResolveStyle(style).Text {
 		return nil
 	}
-	return e.WordFrames(ctx, d.Laid, rs.OutW, rs.OutH, style, source.Light())
+	frames := e.WordFrames(ctx, d.Laid, rs.OutW, rs.OutH, style, source.Light())
+	lit := d.WordsLit(source)
+	for i := range frames {
+		for k := range frames[i] {
+			frames[i][k].From, frames[i][k].To = -1, -1
+			if i < len(lit) && k < len(lit[i]) {
+				frames[i][k].From, frames[i][k].To = lit[i][k][0], lit[i][k][1]
+			}
+		}
+	}
+	return frames
 }
 
 // drafted is the style of d with drafts on top, only those of

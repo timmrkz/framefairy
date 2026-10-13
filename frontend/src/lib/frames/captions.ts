@@ -13,7 +13,9 @@
 // and its pixels, red, green, blue and alpha, the alpha multiplied in, in
 // full range, see framewire.Layer. A moment with no captions is a box of
 // nothing.
-export type Layer = { x: number; y: number; w: number; h: number; pixels: Uint8Array; showing?: Showing };
+// A layer from the Go side also says which captions it was drawn from,
+// track, and what it shows of them, showing.
+export type Layer = { x: number; y: number; w: number; h: number; pixels: Uint8Array; track?: string; showing?: Showing };
 
 // What a layer shows: the caption, by its place among the captions of the
 // view, and the word of it being spoken, counted across its lines, each
@@ -172,9 +174,19 @@ export function laidPart(
 
 // Where libass put a word of the captions: the box its pill takes at
 // rest, as shares of the short's width and height from its top left
-// corner, and the radius of its corners as a share of the height, see
-// engine.WordFrame and /frames/captions/words.
-export type WordFrame = { x: number; y: number; w: number; h: number; r: number };
+// corner, and the radius of its corners as a share of the height. And
+// when the picture lights it, from and to on the episode's clock, from the
+// start of the first frame libass draws it lit on to the end of the last,
+// -1 for a word lit on no frame. See engine.WordFrame and
+// /frames/captions/words.
+export type WordFrame = { x: number; y: number; w: number; h: number; r: number; from: number; to: number };
+
+// The word frames of the captions of a track, each caption's words in
+// their order, or null where the Go side cannot say, see WordFrame.
+export async function wordFramesOf(path: string, track: string, signal: AbortSignal): Promise<WordFrame[][] | null> {
+  const r = await fetch(`/frames/captions/words?${new URLSearchParams({ path, track })}`, { signal });
+  return r.ok ? ((await r.json()) as WordFrame[][] | null) : null;
+}
 
 // What the video preview asks the captions of: the episode, the captions
 // by their track, see engine.CaptionsView, and the drafts the hand is
@@ -287,7 +299,10 @@ export class CaptionLayers {
     void fetch(`/frames/captions?${q}`)
       .then(async (r) => {
         const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
-        if (layer) layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
+        if (layer) {
+          layer.track = ask.track;
+          layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
+        }
         return layer;
       })
       .catch(() => null)

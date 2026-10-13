@@ -47,6 +47,7 @@
     clip,
     making,
     captions = null,
+    wordFrames = null,
     drafts = {},
     time = $bindable(0),
     onplayclip,
@@ -75,6 +76,9 @@
     making?: string;
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
+    // Where libass puts each word of the captions of a track, see
+    // WordFrame, null while they are on their way or cannot be said.
+    wordFrames?: { key: string; frames: WordFrame[][] | null } | null;
     // What the hand is changing of their colours and switches on the way,
     // as /frames/captions takes it, see cmd/framefairy-app/captions.go.
     // Only what is being changed: the rest is the captions' own.
@@ -682,7 +686,15 @@
   // keyboard: it stays on a word saved with Enter, and goes with anything
   // else, see forget, and when the playhead leaves the word, the clip
   // playing among them.
-  let keyed = $state<{ start: number; end: number } | null>(null);
+  // Its frame shows on the frame the picture lights the word on, see
+  // showing: a walk moves the playhead at once, but the picture lights the
+  // word only once the frame there and its captions are on screen, and the
+  // frame went to the next word a frame or more before the pill did, which
+  // Tim saw on #201.
+  // A word is the keyboard's while the picture lights it: from and to, on
+  // the episode's clock, see WordFrame, or by its own time on the clip's
+  // clock where those are not known.
+  let keyed = $state<{ start: number; end: number; from?: number; to?: number } | null>(null);
   // When Shift and an arrow were pressed. The next move of the playhead is
   // the walk landing, and its word becomes the keyboard's word.
   let walked = 0;
@@ -691,17 +703,43 @@
   // the word does.
   const give = 0.05;
   $effect(() => {
-    const at = spoken;
+    const at = shown;
     untrack(() => {
       if (walked && Date.now() - walked < 1000) {
         walked = 0;
-        const word = wordAt(at);
-        keyed = word ? { start: word.start, end: word.end } : null;
+        keyed = keyOf(at);
         return;
       }
-      if (keyed && (at < keyed.start - give || at >= keyed.end + give)) keyed = null;
+      if (!keyed) return;
+      const out =
+        keyed.from !== undefined && keyed.to !== undefined
+          ? at < keyed.from - give || at >= keyed.to
+          : inClipTime(at) < keyed.start - give || inClipTime(at) >= keyed.end + give;
+      if (out) keyed = null;
     });
   });
+
+  // The word the picture lights at a moment of the episode, as the
+  // keyboard's word, by when the engine says each word is lit, see
+  // WordFrame, in whichever caption it is: the caption box may still hold
+  // the caption before while the picture there is on its way. By the
+  // word's own time where those are not known. Shift and an arrow walk to
+  // where the picture lights a word, see lit in Episode.svelte, so the
+  // keyboard's word is the word walked to.
+  function keyOf(at: number): { start: number; end: number; from?: number; to?: number } | null {
+    const frames = captions?.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
+    if (frames) {
+      for (const [i, cue] of (captions?.captions ?? []).entries()) {
+        const words = (cue.lines ?? []).flatMap((line) => line.words);
+        for (const [k, word] of words.entries()) {
+          const f = frames[i]?.[k];
+          if (f && f.from >= 0 && at >= f.from - give && at < f.to) return { start: word.start, end: word.end, from: f.from, to: f.to };
+        }
+      }
+    }
+    const word = wordAt(inClipTime(at));
+    return word ? { start: word.start, end: word.end } : null;
+  }
 
   // A word is corrected at the moment it was opened at, and a correction
   // ends when the playhead leaves that moment, however it is moved: the
@@ -725,8 +763,7 @@
   // it put the playhead, and that word takes the frame.
   export function keyAt(t: number) {
     walked = 0;
-    const word = wordAt(inClipTime(t));
-    keyed = word ? { start: word.start, end: word.end } : null;
+    keyed = keyOf(t);
   }
 
   // A colour taken from the picture, for the captions column's colour
@@ -1098,32 +1135,6 @@
     if (dragCaptions !== null) asked.y = String(dragCaptions);
     return { path, track: captions.track, drafts: asked };
   });
-  // Where libass puts each word of the captions, as the engine measured it,
-  // see /frames/captions/words in cmd/framefairy-app/captions.go: the box
-  // each word's pill takes at rest, as shares of the short. The caption box
-  // puts its words there, so the frame round a word is round the word
-  // libass drew and its pill, not round a word the browser laid out in its
-  // own font. Tim saw the frame stand off its word on #201. They are asked
-  // for by the track alone: what the hand drafts moves no word but for
-  // the height, and the height is the caption box's own, see laidWords.
-  // A drag of an edge makes new captions on every step, so an ask the
-  // captions moved on from is called off, and the Go side stops measuring
-  // for it.
-  let wordFrames = $state<{ key: string; frames: WordFrame[][] } | null>(null);
-  $effect(() => {
-    const key = captions?.track ? `${path}\n${captions.track}` : "";
-    if (!key || untrack(() => wordFrames?.key) === key) return;
-    const q = new URLSearchParams({ path, track: captions!.track! });
-    const off = new AbortController();
-    void fetch(`/frames/captions/words?${q}`, { signal: off.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((frames: WordFrame[][] | null) => {
-        if (frames && !off.signal.aborted) wordFrames = { key, frames };
-      })
-      .catch(() => {});
-    return () => off.abort();
-  });
-
   // The words of the caption shown where libass put them, each as a box in
   // the caption box, from the line the captions stand on, as shares of
   // the short: x and w of its width, top and h of its height, top down
@@ -1132,7 +1143,8 @@
   // caption are not known yet.
   type LaidWord = { x: number; w: number; top: number; h: number; r: number };
   const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
-    if (fixing || !caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}`) return null;
+    if (fixing || !caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}` || !wordFrames.frames)
+      return null;
     const frames = wordFrames.frames[(captions.captions ?? []).indexOf(caption)];
     const count = (caption.lines ?? []).reduce((n, line) => n + line.words.length, 0);
     if (!frames || frames.length !== count || !count) return null;
@@ -1202,7 +1214,7 @@
     const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
     const layer = ask && size ? layers.at(frame, size) : null;
-    onScreen(ask?.track ?? null, layer?.showing);
+    onScreen(layer?.track ?? null, layer?.showing);
     return f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
   }
 
@@ -1596,7 +1608,7 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
-                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && (!showing || firstOfRow[row] + i === lit)}
                     class:now={captions.style.highlight && firstOfRow[row] + i === lit}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"

@@ -521,6 +521,18 @@
 //                      lights a word and its frame stands on the pill,
 //                      its middle within 3 px of the pill's, and where no
 //                      pill is drawn no word is lit
+//   ["walk the words with the frame on the pill", n]
+//                      from the clip's first frame, Shift and the right
+//                      arrow n times, and on every frame the browser paints
+//                      after each press reads the pill libass drew off the
+//                      canvas: the keyboard's frame stands on the pill,
+//                      within 3 px, on every frame it shows, never on a
+//                      word the picture has not lit yet, and is there once
+//                      the captions of the frame have come
+//   ["layers late", ms]
+//                      every caption layer the video preview asks the Go
+//                      side for comes ms late, the way it does on a busy
+//                      machine
 //   ["answers late", ms]
 //                      every answer of the engine to a gesture on the clip
 //                      timeline, while the hand moves, comes ms late, the
@@ -1469,6 +1481,16 @@ export const sequences = [
     // pill the frame drawn.
     name: "the frame round a word stays on the pill while the clip plays",
     steps: [["frame on the pill while it plays", 3]],
+  },
+  {
+    // Found by Tim on #201: Shift and an arrow put the keyboard's frame
+    // on the next word a frame before the pill came, while the picture's
+    // captions were on their way.
+    name: "the keyboard's frame goes from word to word with the pill",
+    steps: [
+      ["layers late", 120],
+      ["walk the words with the frame on the pill", 8],
+    ],
   },
   {
     // Plan row 2.130: a picture that starts after its sound, by an edit
@@ -4869,6 +4891,17 @@ for (const seq of toWalk) {
         else if (lit === away) wrong = `the ${arg} mark looks the same under the hand as away from it, ${away}`;
         break;
       }
+      case "layers late": {
+        await page.evaluate((ms) => {
+          const real = window.fetch;
+          window.fetch = async (input, init) => {
+            const answer = real(input, init);
+            if (String(input).startsWith("/frames/captions?")) await new Promise((r) => setTimeout(r, ms));
+            return answer;
+          };
+        }, arg);
+        break;
+      }
       case "answers late": {
         await page.evaluate((ms) => {
           const real = window.fetch;
@@ -4917,54 +4950,7 @@ for (const seq of toWalk) {
           break;
         }
         await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
-        // On every frame the browser paints, the pill on the canvas and
-        // the frame round the lit word, read in the same frame. The pill
-        // is looked for in a band round the caption box, so a pill of a
-        // caption the box does not hold is found too.
-        await page.evaluate(() => {
-          window.__pillWatch = { frames: [], on: true };
-          const s = document.createElement("canvas");
-          const g = s.getContext("2d", { willReadFrequently: true });
-          const look = () => {
-            if (!window.__pillWatch.on) return;
-            requestAnimationFrame(look);
-            const box = document.querySelector(".captions");
-            const canvas = document.querySelector(".screen canvas");
-            if (!box || !canvas?.width) return;
-            const word = document.querySelector(".captions .word.now");
-            const pill = (getComputedStyle(box.querySelector(".word") ?? box).getPropertyValue("--pill").match(/[\d.]+/g) ?? []).map(Number);
-            if (pill.length < 3) return;
-            const c = canvas.getBoundingClientRect();
-            const b = box.getBoundingClientRect();
-            const sx = canvas.width / c.width;
-            const sy = canvas.height / c.height;
-            const y0 = Math.max(0, Math.floor((b.top - c.top - b.height) * sy));
-            const y1 = Math.min(canvas.height, Math.ceil((b.bottom - c.top + b.height) * sy));
-            if (y1 <= y0) return;
-            s.width = canvas.width;
-            s.height = y1 - y0;
-            g.drawImage(canvas, 0, y0, s.width, s.height, 0, 0, s.width, s.height);
-            const d = g.getImageData(0, 0, s.width, s.height).data;
-            let [l, r, t, bt] = [Infinity, -Infinity, Infinity, -Infinity];
-            for (let y = 0; y < s.height; y++) {
-              for (let x = 0; x < s.width; x++) {
-                const i = (y * s.width + x) * 4;
-                if ([0, 1, 2].every((k) => Math.abs(d[i + k] - pill[k]) < 40)) {
-                  [l, r, t, bt] = [Math.min(l, x), Math.max(r, x + 1), Math.min(t, y), Math.max(bt, y + 1)];
-                }
-              }
-            }
-            const f = word?.getBoundingClientRect();
-            window.__pillWatch.frames.push({
-              at: Number(document.querySelector(".screen").dataset.playhead),
-              pictured: window.__pictured?.(),
-              text: word?.textContent ?? null,
-              frame: f ? { x: (f.left + f.right) / 2 - c.left, y: (f.top + f.bottom) / 2 - c.top } : null,
-              pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy },
-            });
-          };
-          requestAnimationFrame(look);
-        });
+        const stop = await watchPills(page);
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("Space");
         await page
@@ -4979,28 +4965,43 @@ for (const seq of toWalk) {
           document.body.dispatchEvent(new KeyboardEvent("keydown", key));
           document.body.dispatchEvent(new KeyboardEvent("keyup", key));
         });
-        const frames = await page.evaluate(() => {
-          window.__pillWatch.on = false;
-          return window.__pillWatch.frames;
-        });
+        const frames = await stop();
         if (wrong) break;
-        const off = frames.find(
-          (f) =>
-            (f.pill && !f.frame) ||
-            (!f.pill && f.frame) ||
-            (f.pill && f.frame && Math.hypot(f.frame.x - f.pill.x, f.frame.y - f.pill.y) > 3),
-        );
-        const lit = new Set(frames.filter((f) => f.pill).map((f) => `${Math.round(f.pill.y)}:${f.text}`));
+        const off = frames.find((f) => framesOffPill(f, "now"));
+        const lit = new Set(frames.filter((f) => f.pill).map((f) => `${Math.round(f.pill.y)}:${f.now?.text}`));
         console.log(`    ${frames.length} frames painted, ${frames.filter((f) => f.pill).length} with a pill, ${lit.size} words lit`);
-        if (off) {
-          const what = !off.frame
-            ? "no word is lit in the caption box"
-            : !off.pill
-              ? `"${off.text}" is lit in the caption box`
-              : `the frame round "${off.text}" stands ${(off.frame.x - off.pill.x).toFixed(1)} px across and ${(off.frame.y - off.pill.y).toFixed(1)} px down from the pill`;
-          wrong = `at ${off.at.toFixed(3)} s, frame ${off.pictured} on the video preview, ${off.pill ? "a pill is drawn and " : "no pill is drawn and "}${what}`;
-        } else if (frames.filter((f) => f.pill).length < fps) wrong = `only ${frames.length} frames were read while it played`;
+        if (off) wrong = framesOffPill(off, "now");
+        else if (frames.filter((f) => f.pill).length < fps) wrong = `only ${frames.length} frames were read while it played`;
         else if (lit.size < 3) wrong = `the play lit only ${lit.size} words, it never went from one caption to the next`;
+        break;
+      }
+      case "walk the words with the frame on the pill": {
+        const fps = await rate(page);
+        const state = await engineState(page, watch.at);
+        const first = state.segments[0];
+        // From the clip's first frame, so the walk goes over the words of
+        // the first captions and from one caption to the next.
+        if (!(await seekTo(page, first.start + 0.5 / fps, fps))) {
+          wrong = "the video preview never showed the clip's first frame";
+          break;
+        }
+        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => document.body.focus());
+        const report = [];
+        for (let k = 0; k < arg && !wrong; k++) {
+          const stop = await watchPills(page);
+          await page.keyboard.press("Shift+ArrowRight");
+          await page.waitForTimeout(150);
+          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const frames = await stop();
+          const off = frames.find((f) => framesOffPill(f, "keyed"));
+          const last = frames[frames.length - 1];
+          if (off) wrong = `after Shift and the right arrow ${k + 1} times, ${framesOffPill(off, "keyed")}`;
+          else if (!last?.keyed) wrong = `after Shift and the right arrow ${k + 1} times, no word wears the keyboard's frame`;
+          else report.push(`"${last.keyed.text}" ${frames.filter((f) => !f.keyed).length} frames without the frame`);
+        }
+        console.log(`    ${report.join(", ")}`);
         break;
       }
       case "frames on the pills": {
@@ -5595,6 +5596,83 @@ for (const seq of toWalk) {
   await browser.close();
 }
 process.exit(failures ? 1 : 0);
+
+// Reads, on every frame the browser paints, the pill libass drew off the
+// canvas and the frames the caption box puts round words: the lit word's,
+// now, and the keyboard's, keyed. The pill is looked for in a band round
+// the caption box, so a pill of a caption the box does not hold is found
+// too. Says how to stop, which hands back what was read.
+async function watchPills(page) {
+  await page.evaluate(() => {
+    window.__pillWatch = { frames: [], on: true };
+    const s = document.createElement("canvas");
+    const g = s.getContext("2d", { willReadFrequently: true });
+    const look = () => {
+      if (!window.__pillWatch.on) return;
+      requestAnimationFrame(look);
+      const box = document.querySelector(".captions");
+      const canvas = document.querySelector(".screen canvas");
+      if (!box || !canvas?.width) return;
+      const pill = (getComputedStyle(box.querySelector(".word") ?? box).getPropertyValue("--pill").match(/[\d.]+/g) ?? []).map(Number);
+      if (pill.length < 3) return;
+      const c = canvas.getBoundingClientRect();
+      const b = box.getBoundingClientRect();
+      const sx = canvas.width / c.width;
+      const sy = canvas.height / c.height;
+      const y0 = Math.max(0, Math.floor((b.top - c.top - b.height) * sy));
+      const y1 = Math.min(canvas.height, Math.ceil((b.bottom - c.top + b.height) * sy));
+      if (y1 <= y0) return;
+      s.width = canvas.width;
+      s.height = y1 - y0;
+      g.drawImage(canvas, 0, y0, s.width, s.height, 0, 0, s.width, s.height);
+      const d = g.getImageData(0, 0, s.width, s.height).data;
+      let [l, r, t, bt] = [Infinity, -Infinity, Infinity, -Infinity];
+      for (let y = 0; y < s.height; y++) {
+        for (let x = 0; x < s.width; x++) {
+          const i = (y * s.width + x) * 4;
+          if ([0, 1, 2].every((k) => Math.abs(d[i + k] - pill[k]) < 40)) {
+            [l, r, t, bt] = [Math.min(l, x), Math.max(r, x + 1), Math.min(t, y), Math.max(bt, y + 1)];
+          }
+        }
+      }
+      const frame = (word) => {
+        if (!word) return null;
+        const f = word.getBoundingClientRect();
+        return { text: word.textContent, x: (f.left + f.right) / 2 - c.left, y: (f.top + f.bottom) / 2 - c.top };
+      };
+      window.__pillWatch.frames.push({
+        at: Number(document.querySelector(".screen").dataset.playhead),
+        pictured: window.__pictured?.(),
+        now: frame(box.querySelector(".word.now")),
+        keyed: frame(box.querySelector(".word.keyed")),
+        pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy },
+      });
+    };
+    requestAnimationFrame(look);
+  });
+  return () =>
+    page.evaluate(() => {
+      window.__pillWatch.on = false;
+      return window.__pillWatch.frames;
+    });
+}
+
+// What is wrong on a frame read by watchPills with the frame round a word,
+// the lit word's, "now", or the keyboard's, "keyed", or null. A lit word
+// stands on the pill, and where a pill is drawn a word is lit. The
+// keyboard's frame, where there is one, stands on the pill too.
+function framesOffPill(f, which) {
+  const word = f[which];
+  const where = `at ${f.at.toFixed(3)} s, frame ${f.pictured} on the video preview`;
+  if (which === "now" && f.pill && !word) return `${where}, a pill is drawn and no word is lit in the caption box`;
+  if (!word) return null;
+  if (!f.pill) return `${where}, no pill is drawn and the frame stands round "${word.text}"`;
+  const across = word.x - f.pill.x;
+  const down = word.y - f.pill.y;
+  if (Math.hypot(across, down) > 3) return `${where}, the frame round "${word.text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the pill`;
+  return null;
+}
+
 
 // The left edge of the crop on each frame of the video, gliding over a
 // piece's keyframes by smoothstep, the way the engine's glideX and

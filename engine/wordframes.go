@@ -150,6 +150,12 @@ type WordFrame struct {
 	H float64 `json:"h"`
 	// R is the radius of its corners, as a share of the short's height.
 	R float64 `json:"r"`
+	// From and To are when the picture lights the word, on the episode's
+	// clock: from the start of the first frame of the clip libass draws it
+	// lit on to the end of the last, see WordsLit. Both -1 for a word lit
+	// on no frame, or where the frames are not known.
+	From float64 `json:"from"`
+	To   float64 `json:"to"`
 }
 
 // WordFrames is where the words of the captions stand in a short width by
@@ -175,6 +181,49 @@ func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, heig
 			out[i][k] = WordFrame{X: (ax + left) / float64(width), Y: (ay + top) / float64(height),
 				W: (right - left) / float64(width), H: (bottom - top) / float64(height),
 				R: pillRadius(bottom-top, radius) / float64(height)}
+		}
+	}
+	return out
+}
+
+// WordsLit is when the picture lights each word of the captions of d, on
+// the episode's clock, each caption's words in their order: from the start
+// of the first frame of the clip on which libass draws the word lit to the
+// end of the last, read frame by frame at the moment CaptionMoment names,
+// with ShowingAt. A word lit on no frame is -1 to -1. Nothing where the
+// rate of the frames is not known.
+//
+// The caption's own times are on the clip's clock, and a piece of the
+// short starts on the frame nearest its start, so a word can light up to
+// half a frame before or after its time says. Shift and an arrow walked to
+// a word by its time and landed, now and then, on a frame that still lit
+// the word before, with the keyboard's frame already on the next. Tim saw
+// it on #201.
+func (d *CaptionDrawing) WordsLit(source SourceInfo) [][][2]float64 {
+	if source.FPSNum <= 0 || source.FPSDen <= 0 {
+		return nil
+	}
+	out := make([][][2]float64, len(d.Laid))
+	for i, c := range d.Laid {
+		out[i] = make([][2]float64, len(c.Words))
+		for k := range out[i] {
+			out[i][k] = [2]float64{-1, -1}
+		}
+	}
+	var k int64
+	for _, seg := range d.Clip.Segments {
+		first, end := source.pieceFrames(seg.Start, seg.End)
+		for n := first; n < end; n++ {
+			on := ShowingAt(d.Laid, source.shortMoment(k))
+			k++
+			if on.Caption < 0 || on.Word < 0 || on.Word >= len(out[on.Caption]) {
+				continue
+			}
+			span := &out[on.Caption][on.Word]
+			if span[0] < 0 {
+				span[0] = source.keptAt(n)
+			}
+			span[1] = source.keptAt(n + 1)
 		}
 	}
 	return out

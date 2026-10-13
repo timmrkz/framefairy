@@ -76,6 +76,7 @@
   } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import { holdAhead } from "../lib/frames/queue";
+  import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -1928,22 +1929,54 @@
   // Reading the caption is what makes both right at once, and it will go
   // on being right, because it is the same list either way: whatever
   // lights up is what these keys walk.
+  //
+  // And each word is where the picture lights it, by the frames the engine
+  // reads it lit on, see WordFrame. A caption's times are on the clip's
+  // clock, and a piece of the short starts on the frame nearest its
+  // start, so a word walked to by its own time was now and then not lit
+  // yet on the frame the walk landed on, while the keyboard's frame was
+  // already round it. A word lit on no frame is not walked to. By the
+  // words' own times only until the frames are known.
   const lit = $derived.by(() => {
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
+    const frames = captions.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
     const out: Word[] = [];
-    for (const cue of captions.captions) {
+    for (const [i, cue] of captions.captions.entries()) {
+      let k = 0;
       for (const line of cue.lines) {
         for (const word of line.words) {
+          const f = frames?.[i]?.[k++];
+          if (f && f.from < 0) continue;
           out.push({
-            start: inEpisode(pieces, word.start),
-            end: endInEpisode(pieces, word.end),
+            start: f ? f.from : inEpisode(pieces, word.start),
+            end: f ? f.to : endInEpisode(pieces, word.end),
             text: word.text,
           });
         }
       }
     }
     return out;
+  });
+  // Where libass puts each word of the captions shown and when the picture
+  // lights it, see WordFrame, asked for once for each track: what the hand
+  // drafts moves no word but for the height, and the height is the caption
+  // box's own. A drag of an edge makes new captions on every step, so an
+  // ask the captions moved on from is called off, and the Go side stops
+  // measuring for it. The video preview places the words of the caption
+  // box by them, and lit walks by them.
+  let wordFrames = $state<{ key: string; frames: WordFrame[][] | null } | null>(null);
+  $effect(() => {
+    const track = shownCaptions?.track;
+    const key = track ? `${path}\n${track}` : "";
+    if (!key || untrack(() => wordFrames?.key) === key) return;
+    const off = new AbortController();
+    void wordFramesOf(path, track!, off.signal)
+      .then((frames) => {
+        if (!off.signal.aborted) wordFrames = { key, frames };
+      })
+      .catch(() => {});
+    return () => off.abort();
   });
   let fonts = $state<CaptionFont[]>([]);
 
@@ -2529,6 +2562,8 @@
   $effect(() => {
     const want = landOn;
     if (!want || current?.key !== want.key || !lit.length) return;
+    // Where the picture lights the words, once the engine has said.
+    if (captions?.track && wordFrames?.key !== `${path}\n${captions.track}`) return;
     landOn = null;
     const word = want.last ? lit[lit.length - 1] : lit[0];
     const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
@@ -2983,6 +3018,7 @@
           sleeping={away}
           bind:time
           captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}
+          {wordFrames}
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}

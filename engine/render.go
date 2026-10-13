@@ -766,6 +766,12 @@ func (s SourceInfo) CaptionMoment(clip Clip, at float64) int64 {
 		return int64(math.Round(ClipTime(clip, at) * 1000))
 	}
 	k, _ := s.shortFrame(clip, at)
+	return s.shortMoment(k)
+}
+
+// shortMoment is the moment libass draws the captions at on frame k of a
+// short, from nought, see CaptionMoment.
+func (s SourceInfo) shortMoment(k int64) int64 {
 	us := int64(math.Round(float64(k) * float64(s.FPSDen) * 1_000_000 / float64(s.FPSNum)))
 	return (us + 500) / 1000
 }

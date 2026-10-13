@@ -144,6 +144,21 @@ the frame round a word go on to the next caption a few frames before the
 pill did on #201, when the caption box worked the word out from the
 playhead.
 
+The keyboard goes by the frames too. Each word frame also says when the
+picture lights the word, `from` and `to` on the episode's clock, from
+`WordsLit` in `engine/wordframes.go`: it reads every frame of the clip at
+the moment `CaptionMoment` names, with `ShowingAt`. Shift and an arrow walk
+to where the picture lights the next word, see `lit` in
+`frontend/src/screens/Episode.svelte`, and the word walked to is the
+keyboard's while the picture lights it. Its frame shows on a frame only
+when the layer on screen lights that word too, so a layer still on its way
+holds it back with the pill. A caption's times are on the clip's clock and
+a piece of the short starts on the frame nearest its start, so a word can
+light up to half a frame before or after its own time. Walking by the
+words' own times landed now and then on a frame that still lit the word
+before, with the keyboard's frame already round the next, which Tim saw on
+#201.
+
 ## The tests
 
 - `TestTheVideoPreviewDrawsTheShortsCaptions` in
@@ -181,6 +196,14 @@ playhead.
   where none is drawn no word is lit. The caption box that followed the
   playhead put the frame on the next caption's first word, 64 pixels off
   the pill.
+- The walk "the keyboard's frame goes from word to word with the pill"
+  makes every caption layer come 120 ms late and presses Shift and the
+  right arrow eight times. On every frame painted after each press, the
+  keyboard's frame stands on the pill libass drew, within 3 pixels, and it
+  is there once the layer has come. Before, it stood on "war" 38 pixels
+  from the pill, which was still on "Ich". `TestWordsLitIsWhatEachFrameShows`
+  holds `WordsLit` to the layer of every frame of a clip whose pieces start
+  off the grid of the frames.
 - `TestShowingAtIsWhatTheCaptionFileShows` in `engine/wordframes_test.go`
   holds `ShowingAt` to the hundredths the caption file is written in, and
   `TestPillCornersAreQuartersOfACircle` holds each corner of a pill to a
