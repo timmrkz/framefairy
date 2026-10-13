@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // The caption file the video preview draws is the caption file the render
@@ -22,6 +24,7 @@ import (
 // caption file where ffmpeg would read it.
 func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	t.Parallel()
+	ffmpegtest.Need(t)
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
@@ -33,7 +36,7 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	var heard int32
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {
-		t.Skip(err)
+		ffmpegtest.Unusable(t, "%s", err)
 	}
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 	base := DefaultOptions()
