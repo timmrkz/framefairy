@@ -41,6 +41,16 @@ worked out for a clip, from the clip's style and the episode's language.
 The captions, the highlight, the caption blocks, the snapping of an edge
 or a cut and the words the arrow keys walk are all made from it.
 
+**What a clip leaves out** is the clip's. A word removed in the caption
+box, or with its caption on the clip timeline, is kept in the clip's plan
+entry, `removed_words`, against the word heard, and the clip's captions
+are laid out with it there and not shown, see `RemovedWords` in
+`engine/removedwords.go`. It never changes what is said: the words said
+keep it, every other clip shows it, and a clip made again where a removed
+one was has it. A correction is the episode's, because a misheard word is
+wrong in every clip, and a removal is the clip's, because hiding a word is
+a choice about one short.
+
 **A clip's words** are not stored. A clip is its pieces, and its words are
 the words said that its pieces hold, `Said`: a word is in the clip
 while the clip holds more than a frame of its sound. Plans no longer carry

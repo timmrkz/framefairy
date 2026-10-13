@@ -54,20 +54,92 @@ func CleanWordText(text string) (string, error) {
 	return text, nil
 }
 
-// SetWordText corrects one word of an episode, the word heard at a moment.
-// The correction is kept for the episode, against the word the recogniser
-// heard, and the words are made again with it, see Transcript.Correct. No
-// clip keeps words of its own, so every clip that says the word says it
-// corrected from here on.
+// SetWordText corrects one word of an episode, the word heard at a moment,
+// typed in the caption box of a clip of a plan. The correction is kept for
+// the episode, against the word the recogniser heard, and the words are
+// made again with it, see Transcript.Correct. No clip keeps words of its
+// own, so every clip that says the word says it corrected from here on.
 //
-// A word corrected to nothing is removed: it is kept as an empty
-// correction, so the word heard is still there to correct again and an
-// undo puts it back, and the words leave it out. Removing a word was
-// lost when the words became one list, because an empty word was refused.
-func SetWordText(fsys afero.Fs, logsDir string, at float64, text string, t *Transcript) error {
-	return changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
-		return correctWord(corrections, at, text, work)
+// A word corrected to nothing is removed from the clip, see RemoveWord,
+// and a word removed from the clip typed back in beside its neighbour
+// comes back in the clip, see putBack. Removing is the clip's and never
+// the episode's: a word removed for the episode was gone from every clip,
+// and from a clip made again where a removed one had been.
+func SetWordText(fsys afero.Fs, logsDir, planPath, clipID string, at float64, text string, t *Transcript) error {
+	if strings.TrimSpace(Scrub(text, 200)) == "" {
+		return RemoveWord(fsys, planPath, clipID, at, -1, t)
+	}
+	_, clip, err := planClip(fsys, planPath, clipID)
+	if err != nil {
+		return err
+	}
+	removed := clip.RemovedWords.clone()
+	err = changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
+		return correctWord(corrections, removed, at, text, work)
 	})
+	if err != nil || maps.Equal(removed, clip.RemovedWords.clone()) {
+		return err
+	}
+	return setRemovedWords(fsys, planPath, clipID, removed)
+}
+
+// RemoveWord removes a word from a clip, the word heard at a moment, or
+// one of the words a correction made of it, part counted from nought, or
+// all of it with part below nought. It is kept with the clip, so the
+// episode still says it, every other clip still shows it, and it goes
+// when the clip goes. The word keeps what it reads, so the captions keep
+// the room it took, see Captions, and an undo or typing it back in beside
+// its neighbour puts it back.
+func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t *Transcript) error {
+	heard, ok := t.HeardAt(at)
+	if !ok {
+		return renderErr("there is no word at %s", HMS(at))
+	}
+	if part >= max(len(strings.Fields(heard.Text)), 1) {
+		return renderErr("the word at %s is not %d words", HMS(at), part+1)
+	}
+	return editRemovedWords(fsys, planPath, clipID, func(removed RemovedWords) error {
+		removed.takeHeard(heard, part)
+		return nil
+	})
+}
+
+// editRemovedWords changes the words a clip does not show and writes them
+// to its plan entry, nothing when the change fails or changes nothing.
+func editRemovedWords(fsys afero.Fs, planPath, clipID string, change func(RemovedWords) error) error {
+	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
+		c, err := findClip(clips, clipID)
+		if err != nil {
+			return err
+		}
+		removed := readRemovedWords(c.values[keyRemovedWords]).clone()
+		if err := change(removed); err != nil {
+			return err
+		}
+		putRemovedWords(c, removed)
+		return nil
+	})
+}
+
+// setRemovedWords writes the words a clip does not show to its plan entry.
+func setRemovedWords(fsys afero.Fs, planPath, clipID string, removed RemovedWords) error {
+	return editRemovedWords(fsys, planPath, clipID, func(r RemovedWords) error {
+		clear(r)
+		for key := range removed {
+			r[key] = true
+		}
+		return nil
+	})
+}
+
+// putRemovedWords keeps the words a clip does not show in its plan entry,
+// and keeps no key for a clip that shows every word.
+func putRemovedWords(c *object, removed RemovedWords) {
+	if len(removed) == 0 {
+		c.remove(keyRemovedWords)
+		return
+	}
+	c.set(keyRemovedWords, removed.list())
 }
 
 // changeWords makes a change to the corrections of an episode, worked out
@@ -97,38 +169,35 @@ func changeWords(fsys afero.Fs, logsDir string, t *Transcript,
 
 // correctWord keeps in corrections what the word heard at a moment says,
 // the way SetWordText keeps it, and corrects t from them, so the next word
-// is changed against this one.
-func correctWord(corrections map[string]string, at float64, text string, t *Transcript) error {
-	if strings.TrimSpace(Scrub(text, 200)) == "" {
-		text = ""
-	} else {
-		var err error
-		if text, err = CleanWordText(text); err != nil {
-			return err
-		}
+// is changed against this one. removed is the words the clip it is typed
+// in does not show, and a word of them typed back in beside its neighbour
+// comes back in it.
+func correctWord(corrections map[string]string, removed RemovedWords, at float64, text string, t *Transcript) error {
+	text, err := CleanWordText(text)
+	if err != nil {
+		return err
 	}
 	word, ok := t.HeardAt(at)
 	if !ok {
 		return renderErr("there is no word at %s", HMS(at))
 	}
 	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= word.Start })
-	for j, says := range putBack(t.HeardWords, i, text) {
+	// A word the clip removed whole and corrected again is shown again
+	// with what it now reads.
+	if removed.removesHeard(word) {
+		removed.forget(word)
+	}
+	gone := func(j int) bool { return j >= 0 && j < len(t.HeardWords) && removed.removesHeard(t.HeardWords[j]) }
+	for j, says := range putBack(t.HeardWords, i, text, gone) {
+		if j != i {
+			removed.forget(t.HeardWords[j])
+		}
 		// A word that reads as the recogniser heard it again keeps no
 		// correction, so a word put back is the word it was before.
 		key := wordKey(t.HeardWords[j].Start)
-		switch {
-		case says == "":
-			// A word removed keeps what it read, behind removedMark, so
-			// the captions keep the room it took. Removed again, it keeps
-			// what it read the first time.
-			if was := t.HeardWords[j].Text; was != "" {
-				corrections[key] = removedMark + was
-			} else if _, kept := corrections[key]; !kept {
-				corrections[key] = removedMark
-			}
-		case j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " "):
+		if j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " ") {
 			delete(corrections, key)
-		default:
+		} else {
 			corrections[key] = says
 		}
 	}
@@ -137,7 +206,8 @@ func correctWord(corrections map[string]string, at float64, text string, t *Tran
 }
 
 // putBack is what a correction of the i-th heard word changes, by heard
-// word. A removed word is put back by typing it into the word beside it,
+// word. A word the clip removed, removed(j) for the j-th heard word, is
+// put back by typing it into the word beside it,
 // "weil" made "weil ein", and that is the removed word coming back, so it
 // goes back where it was heard, not into its neighbour: the words typed
 // after what the word read go into the removed words that follow it, and
@@ -150,13 +220,12 @@ func correctWord(corrections map[string]string, at float64, text string, t *Tran
 // Each removed word takes one word, the nearest first. Words typed beyond
 // the removed ones there are go to the farthest of them, which is the
 // word they were typed beside.
-func putBack(heard []Cue, i int, text string) map[int]string {
+func putBack(heard []Cue, i int, text string, removed func(j int) bool) map[int]string {
 	put := map[int]string{i: text}
 	was, now := strings.Fields(heard[i].Text), strings.Fields(text)
 	if len(was) == 0 || len(now) <= len(was) {
 		return put
 	}
-	removed := func(j int) bool { return j >= 0 && j < len(heard) && strings.TrimSpace(heard[j].Text) == "" }
 	if slices.Equal(now[:len(was)], was) && removed(i+1) {
 		extra := now[len(was):]
 		var slots []int
@@ -189,13 +258,13 @@ func putBack(heard []Cue, i int, text string) map[int]string {
 }
 
 // RemoveCaption removes the caption of a clip that begins on a word, the
-// one heard at first: every word in it is removed the way SetWordText
-// removes one, so each is still the word heard there, to put back on its
-// own or with an undo. A word that a correction made several is removed
-// only where it is in this caption. What is left is laid out as it was:
-// the caption goes and leaves its time empty, and the one before it goes
-// when it did, see Captions.
-func RemoveCaption(fsys afero.Fs, logsDir, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
+// one heard at first: every word in it is removed from the clip the way
+// RemoveWord removes one, so each is still the word heard there, to put
+// back on its own or with an undo. A word that a correction made several
+// is removed only where it is in this caption. What is left is laid out
+// as it was: the caption goes and leaves its time empty, and the one
+// before it goes when it did, see Captions.
+func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Transcript, overrides map[string]any) error {
 	view, err := ClipCaptionsView(fsys, planPath, clipID, t, overrides)
 	if err != nil {
 		return err
@@ -210,79 +279,60 @@ func RemoveCaption(fsys afero.Fs, logsDir, planPath, clipID string, first float6
 	if cue == nil {
 		return renderErr("there is no caption at %s", HMS(first))
 	}
-	// The heard words of the caption, each with the parts of it the
+	// The heard words of the caption, each with the part of it the
 	// caption holds, or all of it. A word the captions draw in halves is
 	// there twice, and is one word.
-	whole := map[float64]string{}
-	parts := map[float64]map[int]bool{}
-	var order []float64
+	type shown struct {
+		heard Cue
+		part  int
+	}
+	var words []shown
 	for _, line := range cue.Lines {
 		for _, w := range line.Words {
 			if w.Said == nil {
 				continue
 			}
-			at := *w.Said
-			if _, seen := whole[at]; !seen {
-				whole[at] = w.Whole
-				parts[at] = map[int]bool{}
-				order = append(order, at)
+			heard, ok := t.HeardAt(*w.Said)
+			if !ok {
+				continue
 			}
-			if w.Part == nil {
-				parts[at] = nil
-			} else if parts[at] != nil {
-				parts[at][*w.Part] = true
+			part := -1
+			if w.Part != nil {
+				part = *w.Part
 			}
+			words = append(words, shown{heard, part})
 		}
 	}
-	if len(order) == 0 {
+	if len(words) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
-	return changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
-		return removeParts(corrections, work, order, whole, parts)
+	return editRemovedWords(fsys, planPath, clipID, func(removed RemovedWords) error {
+		for _, w := range words {
+			removed.takeHeard(w.heard, w.part)
+		}
+		return nil
 	})
 }
 
-// removeParts removes heard words, each started at a moment of order, the
-// way SetWordText removes one, in corrections and in t. whole is what each
-// reads, and parts the words of it a correction made several of that go,
-// or nil when all of it goes.
-func removeParts(corrections map[string]string, t *Transcript, order []float64, whole map[float64]string,
-	parts map[float64]map[int]bool) error {
-	for _, at := range order {
-		var kept []string
-		if parts[at] != nil {
-			for i, word := range strings.Fields(whole[at]) {
-				if !parts[at][i] {
-					kept = append(kept, word)
-				}
-			}
-		}
-		if err := correctWord(corrections, at, strings.Join(kept, " "), t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // trimCaption is what dragging an edge of a caption across its words does
-// to them. Dragged in, the words the edge passes leave the caption, removed
-// the way SetWordText removes one, so pulling the left edge of "one two
-// three" past "one" reads "two three", and the right edge past "three"
-// reads "one two". Dragged back out, the words of the caption removed
-// before that it passes come back. A word is passed when the edge crosses
-// its middle, on the clip's clock, which is where the word is drawn: a
-// word the start of the clip cuts into is passed in the part of it the
-// clip shows. A caption keeps at least one word this way, because delete
-// removes a caption whole.
+// to them. Dragged in, the words the edge passes leave the caption,
+// removed from the clip the way RemoveWord removes one, so pulling the
+// left edge of "one two three" past "one" reads "two three", and the right
+// edge past "three" reads "one two". Dragged back out, the words of the
+// caption removed before that it passes come back. A word is passed when
+// the edge crosses its middle, on the clip's clock, which is where the
+// word is drawn: a word the start of the clip cuts into is passed in the
+// part of it the clip shows. A caption keeps at least one word this way,
+// because delete removes a caption whole.
 //
 // to is where the edge is, on the clip's clock. The caption is the one
 // laid out now, with the edge where it stands. The words are changed in
-// corrections and in t, and nothing is written. It says how many words it
-// took out and put back.
-func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge string, to float64,
-	t *Transcript) (CaptionEdit, error) {
+// removed, the words the clip does not show, and nothing is written. It
+// says how many words it took out and put back.
+func trimCaption(removed RemovedWords, clip Clip, c LaidCaption, edge string, to float64,
+	t *Transcript) CaptionEdit {
 	if len(clip.Segments) == 0 {
-		return CaptionEdit{}, nil
+		return CaptionEdit{}
 	}
 	from := c.Start
 	if edge == "end" {
@@ -302,8 +352,7 @@ func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge s
 	}
 	// The words the caption was laid out from, the removed ones among them,
 	// on the clip's clock and on the episode's.
-	all, was := clipWords(clip, t.captionWordsIn(clip.Segments[0].Start-captionReach,
-		clip.Segments[len(clip.Segments)-1].End+captionReach))
+	all, was := clipWords(clip, t.clipCaptionWords(clip))
 	length := clipLength(clip)
 	var gone, back []Cue
 	shown := 0
@@ -311,8 +360,8 @@ func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge s
 		if w.Start < c.Opens-0.0005 || w.Start > c.Closes+0.0005 {
 			continue
 		}
-		text, removed := removedText(w.Text)
-		if !removed {
+		text, isRemoved := removedText(w.Text)
+		if !isRemoved {
 			shown++
 		}
 		mid := shownMiddle(all[k], length)
@@ -320,10 +369,10 @@ func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge s
 			continue
 		}
 		switch {
-		case in && !removed:
+		case in && !isRemoved:
 			gone = append(gone, w)
-		case !in && removed && text != "":
-			back = append(back, Cue{w.Start, w.End, text})
+		case !in && isRemoved && text != "":
+			back = append(back, w)
 		}
 	}
 	if len(gone) > 0 && len(gone) == shown {
@@ -335,30 +384,10 @@ func trimCaption(corrections map[string]string, clip Clip, c LaidCaption, edge s
 		}
 	}
 	for _, w := range back {
-		if err := correctWord(corrections, w.Start, w.Text, t); err != nil {
-			return CaptionEdit{}, err
-		}
+		removed.put(t, w)
 	}
-	whole := map[float64]string{}
-	parts := map[float64]map[int]bool{}
-	var order []float64
 	for _, w := range gone {
-		heard, ok := t.HeardAt(w.Start)
-		if !ok {
-			continue
-		}
-		at := heard.Start
-		if _, seen := whole[at]; !seen {
-			whole[at] = heard.Text
-			parts[at] = map[int]bool{}
-			order = append(order, at)
-		}
-		if len(strings.Fields(heard.Text)) < 2 {
-			parts[at] = nil
-		} else if parts[at] != nil {
-			parts[at][t.PartOf(heard, w)] = true
-		}
+		removed.take(t, w)
 	}
-	done := CaptionEdit{Removed: len(gone), Back: len(back)}
-	return done, removeParts(corrections, t, order, whole, parts)
+	return CaptionEdit{Removed: len(gone), Back: len(back)}
 }

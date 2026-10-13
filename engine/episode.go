@@ -800,14 +800,13 @@ func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcr
 // where the hand has it, the words it crosses taken out or put back, and
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
-func ShapeCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
+func ShapeCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
-	work := *t
-	moved, err := moveCaptionEdge(fsys, LoadCorrections(fsys, logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, t, overrides)
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(moved.plan, moved.clip, &work, overrides), nil
+	return captionsView(moved.plan, moved.clip, t, overrides), nil
 }
 
 // planClip finds one clip of a plan.

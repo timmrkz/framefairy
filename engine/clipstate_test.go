@@ -16,6 +16,33 @@ import (
 // had removed was still missing. A removed word was kept for the whole
 // video, so every clip over it lost it, the one made again included.
 
+// oneClipPlan is a plan of one clip, 01, from start to end, in a work
+// folder of its own, and the folder of the episode's logs it is in.
+func oneClipPlan(t *testing.T, fsys afero.Fs, start, end float64) (logs, path string) {
+	t.Helper()
+	logs = filepath.Join(memDir(t, fsys), "ep.framefairy", "logs")
+	path = filepath.Join(logs, "clips.json")
+	plan := fmt.Sprintf(`{"source": "ep.mp4", "clips": [{"id": "01", "slug": "a", "segments": [{"start": %g, "end": %g}]}]}`, start, end)
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return logs, path
+}
+
+// shownWords is what clip 01 of a plan shows, its captions' words.
+func shownWords(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
+	t.Helper()
+	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, c := range view.Captions {
+		out = append(out, cueWords(c))
+	}
+	return strings.Join(out, " ")
+}
+
 // captionsOf is every caption of a clip, its words and when it is up.
 func captionsOf(v *CaptionsView) []string {
 	var out []string
@@ -47,7 +74,7 @@ func TestAClipMadeAgainHasTheCaptionsItsRemovedOneLost(t *testing.T) {
 	if len(before.Captions) < 2 {
 		t.Fatalf("the test needs two captions, the clip has %d", len(before.Captions))
 	}
-	if err := RemoveCaption(fsys, logs, path, "01", before.Captions[0].First, tr, nil); err != nil {
+	if err := RemoveCaption(fsys, path, "01", before.Captions[0].First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetRejected(fsys, path, "01", true); err != nil {
@@ -88,7 +115,7 @@ func TestACaptionRemovedInOneClipIsRemovedThereAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveCaption(fsys, logs, path, "01", before.Captions[0].First, tr, nil); err != nil {
+	if err := RemoveCaption(fsys, path, "01", before.Captions[0].First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	fresh := readAgain(fsys, logs, captionHeard())
@@ -142,7 +169,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if len(first.Captions) < 2 {
 		t.Fatalf("the test needs two captions, the clip has %d", len(first.Captions))
 	}
-	if err := RemoveCaption(disk, p.LogsDir(), p.HandPlanPath(), "h01", first.Captions[1].First, tr, nil); err != nil {
+	if err := RemoveCaption(disk, p.HandPlanPath(), "h01", first.Captions[1].First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetRejected(disk, p.HandPlanPath(), "h01", true); err != nil {

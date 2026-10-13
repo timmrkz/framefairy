@@ -147,6 +147,10 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 	return out, nil
 }
 
+// SetWord corrects a word of an episode, typed in the caption box of a
+// clip, for every clip that says it. A word typed empty is removed from
+// that clip alone, and a word the clip removed typed back in beside its
+// neighbour comes back in it. See engine.SetWordText.
 func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, start float64, text string) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
@@ -160,7 +164,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.SetWordText(s.store.files, p.LogsDir(), start, text, t)
+		return engine.SetWordText(s.store.files, p.LogsDir(), plan, clipID, start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
@@ -171,21 +175,48 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 	return s.clipEntry(ctx, path, plan, clipID)
 }
 
-// RemoveCaption removes the caption of a clip that begins on the word heard
-// at first, every word in it, as one step to undo. See engine.RemoveCaption.
-func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID string, first float64) (ClipEntry, error) {
+// RemoveWord removes a word from the captions of one clip, the word heard
+// at start, or one of the words a correction made of it, part counted
+// from nought, or all of it with part below nought. The video still says
+// it and every other clip still shows it. See engine.RemoveWord.
+func (s *FrameFairy) RemoveWord(ctx context.Context, path, plan, clipID string, start float64, part int) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	p := s.project(path)
-	// Read fresh, as SetWord does: an edit works on the words themselves.
-	t, err := p.Transcript()
+	// Removing a word changes the clip and never what the video says, so
+	// the words kept are the words to read.
+	t, err := s.words(path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.RemoveCaption(s.store.files, p.LogsDir(), plan, clipID, first, t, s.captionOverrides(plan))
+		return engine.RemoveWord(s.store.files, plan, clipID, start, part, t)
+	})
+	// Where the word is and which of its words, never what it reads.
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line.Float64("word", start).Int("part", part).Msg("a word was removed")
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	return s.clipEntry(ctx, path, plan, clipID)
+}
+
+// RemoveCaption removes the caption of a clip that begins on the word heard
+// at first, every word in it, from that clip alone, as one step to undo.
+// See engine.RemoveCaption.
+func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID string, first float64) (ClipEntry, error) {
+	if !s.store.PlanOf(path, plan) {
+		return ClipEntry{}, errNotInLibrary
+	}
+	// As RemoveWord: the clip changes, and the words said do not.
+	t, err := s.words(path)
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	began := time.Now()
+	err = s.edit(path, func() error {
+		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, s.captionOverrides(plan))
 	})
 	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
 	line.Float64("word", first).Msg("a caption was removed")

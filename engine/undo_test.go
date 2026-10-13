@@ -174,13 +174,13 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	logs := filepath.Dir(path)
 	tr := editableTranscript()
 	change := edited(t, fsys, logs, func() error {
-		return SetWordText(fsys, logs, 10.6, "zwo", tr)
+		return SetWordText(fsys, logs, path, "01", 10.6, "zwo", tr)
 	})
 	if LoadCorrections(fsys, logs)[wordKey(10.6)] != "zwo" {
 		t.Fatal("the word was not corrected")
 	}
 	// A word of another clip corrected since is not the undo's to take.
-	if err := SetWordText(fsys, logs, 20.1, "fünf!", tr); err != nil {
+	if err := SetWordText(fsys, logs, path, "01", 20.1, "fünf!", tr); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := change.Undo(); err != nil {
@@ -209,7 +209,7 @@ func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	logs := filepath.Dir(path)
 	change := edited(t, fsys, logs, func() error {
-		_, err := SetCaptionTime(fsys, filepath.Dir(path), path, "01", 10.0, "start", 9.8, editableTranscript(), nil)
+		_, err := SetCaptionTime(fsys, path, "01", 10.0, "start", 9.8, editableTranscript(), nil)
 		return err
 	})
 	moved := func() bool {

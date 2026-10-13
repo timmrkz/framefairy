@@ -1636,6 +1636,20 @@ const Answers = {
         }
         return Promise.resolve(clipOf(String(args[2])));
       }
+      case "RemoveWord": {
+        // A stand-in: here the word is gone from every clip that reads it
+        // back through fixed(), where the engine removes it from the one
+        // clip alone, see engine.RemoveWord.
+        if (location.search.includes("refuse")) {
+          return Promise.reject(new Error("there is no word at 0:57"));
+        }
+        const key = said(Number(args[3]));
+        const word = allWords().find((w) => said(w.start) === key);
+        const reads = (fixed()[key] ?? word?.text ?? "").split(" ").filter(Boolean);
+        const part = Number(args[4]);
+        fixed()[key] = part < 0 ? "" : reads.filter((_, i) => i !== part).join(" ");
+        return Promise.resolve(clipOf(String(args[2])));
+      }
       case "Waveform": {
         const from = Number(args[1]) || 0;
         const to = Number(args[2]) || 14423;
