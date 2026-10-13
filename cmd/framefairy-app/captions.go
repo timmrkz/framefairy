@@ -23,7 +23,7 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&<drafts>]
+//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&typing=<caption> <word>][&<drafts>]
 //	                                 the captions of a view, by its track,
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
@@ -43,7 +43,10 @@ import (
 //	                                 captions of the frame of the short so
 //	                                 many frames after it, or before it
 //	                                 below nought, which is how those are
-//	                                 asked for
+//	                                 asked for. With typing, the caption
+//	                                 without the ink of that word, which
+//	                                 the caption box draws as it is typed,
+//	                                 see engine.CaptionDrawing.Typing
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -141,6 +144,14 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			err = fmt.Errorf("ahead is %d frames", ahead)
 		}
 	}
+	// The word being typed in the caption box, which libass leaves out.
+	typing := engine.CaptionShowing{Caption: -1, Word: -1}
+	if err == nil && q.Has("typing") {
+		var n int
+		if n, err = fmt.Sscanf(q.Get("typing"), "%d %d", &typing.Caption, &typing.Word); err == nil && n != 2 {
+			err = fmt.Errorf("typing is %q", q.Get("typing"))
+		}
+	}
 	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || width < 1 || height < 1 || width > 7680 || height > 7680 {
 		http.Error(w, "captions need a moment, a width and a height", http.StatusBadRequest)
 		return
@@ -168,7 +179,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
 			var l framewire.Layer
 			if err == nil {
-				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, ahead, width, height)
+				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing.Typing(typing), drafts, source, o.RenderSettings(), at, ahead, width, height)
 			}
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound

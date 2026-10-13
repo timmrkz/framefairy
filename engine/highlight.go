@@ -398,7 +398,7 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		}
 
 		begins := wordBegins(c, start, end)
-		all := func(int) bool { return true }
+		all := func(j int) bool { return !c.Hidden[j] }
 		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
 
 		for k := range L.words {
@@ -422,14 +422,14 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 			// The line with the active word hidden, so nothing else moves.
 			add(2, from, to, "Caption", "{"+anchor+"}"+
-				taggedText(L.words, L.lines, func(j int) bool { return j != k }, shown))
+				taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
 
 			// The pill, and the active word alone over it, popping piece by
 			// piece of the curve, both at one scale around one centre. The
 			// word is the whole caption with the others hidden, so it stands
 			// where it stands in the line, and its anchor moves with the
 			// scale to keep its centre still.
-			only := taggedText(L.words, L.lines, func(j int) bool { return j == k }, shown)
+			only := taggedText(L.words, L.lines, func(j int) bool { return j == k && !c.Hidden[j] }, shown)
 			place := func(scale float64) (string, string) {
 				return num(ax + (1-scale)*(cx-ax)), num(ay + (1-scale)*(cy-ay))
 			}

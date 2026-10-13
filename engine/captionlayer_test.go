@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -402,4 +403,45 @@ func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
 		return 0
 	}
 	return float64(sum) / float64(n)
+}
+
+// A word being typed in the caption box is left out of the captions
+// libass draws, in its place: the caption file is the same file with that
+// word's ink taken away, with the highlight and without, so nothing else
+// of the caption moves. Tim saw the whole caption grow as a word was
+// opened, because the browser drew all of it in its own font.
+func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
+	ffmpegtest.Need(t)
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	clip := Clip{ID: "01", Slug: "typing", Segments: []Segment{{Start: 0, End: 2}}}
+	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.2, "respektvoll"}, {1.2, 1.5, "ist."}}, Language: "de"}
+	for _, style := range []map[string]any{nil, {"highlight": false}} {
+		view := captionsView(Plan{}, clip, tr, nil)
+		d := view.Drawing()
+		d.Style = style
+		shown := shownTag(ResolveStyle(style).Primary)
+		normal, err := e.CaptionTrack(ctx, d.Laid, 540, 960, style, SourceInfo{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		typed := d.Typing(CaptionShowing{Caption: 0, Word: 1})
+		typing, err := e.CaptionTrack(ctx, typed.Laid, 540, 960, style, SourceInfo{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Laid[0].Hidden != nil {
+			t.Fatalf("typing hid a word of the drawing itself")
+		}
+		if style == nil && (strings.Contains(string(typing), shown+"respektvoll") || !strings.Contains(string(normal), shown+"respektvoll")) {
+			t.Errorf("highlight %v: the word being typed is drawn, or the word was never drawn:\n%s", style, typing)
+		}
+		want := strings.ReplaceAll(string(normal), shown+"respektvoll", hidden+"respektvoll")
+		if style == nil && string(typing) != want {
+			t.Errorf("with the highlight the caption file is more than the word's ink apart:\n%s\nnot\n%s", typing, want)
+		}
+		if style != nil && !strings.Contains(string(typing), "Das "+hidden+"respektvoll"+shown+" ist.") {
+			t.Errorf("without the highlight the word is not hidden in its place:\n%s", typing)
+		}
+	}
 }

@@ -10,6 +10,12 @@
 //                      in the caption box, clicks it and leaves it with
 //                      Escape, so it wears the keyboard's frame
 //   ["click", word]    clicks the word, which opens it
+//   ["open in place", word]
+//                      clicks the word and leaves it with Escape, and sees
+//                      no word of the caption box move, libass draw the
+//                      caption without that word's letters while it is
+//                      open and with the rest where they were, and nothing
+//                      pop when it is left
 //   ["block", word]    clicks the block on the clip timeline of the caption
 //                      the engine has the word in, which picks it
 //   ["gone", word]     no caption the engine has holds the word
@@ -829,6 +835,13 @@ export const sequences = [
       ["same", "start"],
       ["blocks"],
     ],
+  },
+  {
+    // Found by Tim on #201: a word opened in the caption box made the
+    // whole caption grow, drawn by the browser, and shrink again when it
+    // was left, and leaving it popped the word lit.
+    name: "a word opened in the caption box stays where libass draws it",
+    steps: [["open in place", "Jahre"]],
   },
   {
     name: "a word saved empty is removed",
@@ -3069,6 +3082,79 @@ for (const seq of toWalk) {
         await word(arg).click();
         await watch.step("click", s);
         break;
+      case "open in place": {
+        // The words where they stand in the caption box, and the white of
+        // the letters libass draws on the canvas inside the word and round
+        // it, with the word shut, open, and shut again.
+        const settled = async () => {
+          for (let i = 0; i < 2; i++) {
+            await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+            await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          }
+        };
+        const look = () =>
+          page.evaluate((text) => {
+            const words = [...document.querySelectorAll(".captions .word")];
+            const canvas = document.querySelector(".screen canvas");
+            const it = words.find((w) => w.textContent === text);
+            if (!it || !canvas?.width) return null;
+            const c = canvas.getBoundingClientRect();
+            const sx = canvas.width / c.width;
+            const sy = canvas.height / c.height;
+            const s = document.createElement("canvas");
+            s.width = canvas.width;
+            s.height = canvas.height;
+            const g = s.getContext("2d", { willReadFrequently: true });
+            g.drawImage(canvas, 0, 0);
+            const f = it.getBoundingClientRect();
+            const x0 = Math.floor((f.left - c.left) * sx);
+            const x1 = Math.ceil((f.right - c.left) * sx);
+            const y0 = Math.floor((f.top - c.top) * sy);
+            const y1 = Math.ceil((f.bottom - c.top) * sy);
+            // Near white, the letters, inside the word and in a band as
+            // wide again on each side of it.
+            const white = (a, b) => {
+              const d = g.getImageData(a, y0, Math.max(1, b - a), Math.max(1, y1 - y0)).data;
+              let n = 0;
+              for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) n++;
+              return n;
+            };
+            const w = x1 - x0;
+            return {
+              rects: words.map((e) => {
+                const r = e.getBoundingClientRect();
+                return [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 10) / 10);
+              }),
+              inside: white(x0, x1),
+              around: white(Math.max(0, x0 - w), x0) + white(x1, Math.min(canvas.width, x1 + w)),
+              popped: window.__captionLayers?.stats.popped ?? 0,
+            };
+          }, arg);
+        await settled();
+        const shut = await look();
+        if (!shut) {
+          wrong = `"${arg}" is not in the caption box`;
+          break;
+        }
+        await word(arg).click();
+        await watch.step("click", s);
+        await settled();
+        const open = await look();
+        await page.keyboard.press("Escape");
+        await settled();
+        const again = await look();
+        const moved = (a, b) => a.rects.findIndex((r, i) => r.some((v, k) => Math.abs(v - (b.rects[i]?.[k] ?? NaN)) > 0.6));
+        console.log(`    shut ${shut.inside} white inside, ${shut.around} round, open ${open?.inside} and ${open?.around}`);
+        if (!open || !again) wrong = `"${arg}" left the caption box`;
+        else if (moved(shut, open) >= 0) wrong = `opening "${arg}" moved word ${moved(shut, open) + 1} of the caption box from ${shut.rects[moved(shut, open)]} to ${open.rects[moved(shut, open)]}`;
+        else if (moved(shut, again) >= 0) wrong = `leaving "${arg}" moved word ${moved(shut, again) + 1} of the caption box`;
+        else if (shut.inside < 20 || open.inside > shut.inside / 10)
+          wrong = `libass drew ${shut.inside} white pixels of "${arg}" shut and ${open.inside} open, where the caption box draws it`;
+        else if (Math.abs(open.around - shut.around) > shut.around / 20 + 5)
+          wrong = `round "${arg}" libass drew ${shut.around} white pixels shut and ${open.around} open: the caption moved`;
+        else if (again.popped !== shut.popped) wrong = `leaving "${arg}" popped the word lit`;
+        break;
+      }
       case "button": {
         const button = page.getByRole("button", { name: arg, exact: true });
         await button.click();

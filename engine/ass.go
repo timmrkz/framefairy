@@ -313,6 +313,11 @@ func CaptionRoom(s Style) float64 {
 type LaidCaption struct {
 	Caption
 	Lines [][]Cue
+	// Hidden are the words, counted across the lines from nought, drawn
+	// with no ink and in their place, with their pill: the word being
+	// typed in the caption box, which the browser draws there while
+	// libass draws the rest, see CaptionDrawing.Typing.
+	Hidden map[int]bool `json:",omitempty"`
 }
 
 // LayOutCaptions breaks captions into the lines they are drawn in, at the
@@ -383,12 +388,26 @@ func cueText(line []Cue) string {
 }
 
 // assText is the lines of a caption as one ASS text, with the hard spaces
-// that pad a caption when no box is drawn.
-func (l LaidCaption) assText(pad int) string {
+// that pad a caption when no box is drawn, its hidden words with no ink
+// and the others as shown.
+func (l LaidCaption) assText(pad int, shown string) string {
 	spaces := strings.Repeat(`\h`, pad)
 	rows := make([]string, len(l.Lines))
+	n := 0
 	for i, line := range l.Lines {
-		rows[i] = spaces + EscapeASSText(cueText(line)) + spaces
+		if len(l.Hidden) == 0 {
+			rows[i] = spaces + EscapeASSText(cueText(line)) + spaces
+			continue
+		}
+		parts := make([]string, len(line))
+		for p, c := range line {
+			parts[p] = EscapeASSText(c.Text)
+			if l.Hidden[n] {
+				parts[p] = hidden + parts[p] + shown
+			}
+			n++
+		}
+		rows[i] = spaces + strings.Join(parts, " ") + spaces
 	}
 	return strings.Join(rows, `\N`)
 }
@@ -692,7 +711,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 
 	blocks := make([]string, len(laid))
 	for i, c := range laid {
-		blocks[i] = c.assText(0)
+		blocks[i] = c.assText(0, shownTag(s.Primary))
 	}
 
 	// Measured once, and one caption that cannot be measured sends the whole
@@ -730,7 +749,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	if boxes == nil {
 		for _, c := range laid {
 			events = append(events, fmt.Sprintf("Dialogue: 0,%s,%s,Caption,,0,0,0,,%s",
-				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad)))
+				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad, shownTag(s.Primary))))
 		}
 	} else {
 		padX := float64(pyround(s.BoxPadX * scale))

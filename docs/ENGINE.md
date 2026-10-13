@@ -775,7 +775,10 @@ around one centre, the middle of the pill, in every direction alike, to
 stays lit until the next word starts. The pop lasts 220 ms, reaches its
 peak at 55 % of that, and both the rise and the settle are eased out,
 CSS's ease-out, the pop the video preview played as a CSS animation
-before #201. A word lit for less pops in the time it has. It is the
+before #201. A word lit for less pops in the time it has. The pop
+starts on the first frame of the short that shows the word, which shows
+it at rest, `popStart`, so the frame a click or a step lands on is the
+word at its own size, and the frames after it pop. It is the
 karaoke "grow" of Aegisub's templates: a word set on its own centre with
 `\t` taking `\fscx` and `\fscy` up and back down.
 

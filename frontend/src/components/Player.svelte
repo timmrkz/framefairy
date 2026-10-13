@@ -1146,21 +1146,36 @@
   const layers = new CaptionLayers(() => queue?.repaint(), { paused: () => paused, frameLength: () => oneFrame });
   // For the walks, which wait until the captions over the frame are drawn.
   (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
+  // While a word is typed, libass draws the caption without it and the
+  // caption box draws only what is typed, where libass puts the word, see
+  // typed. Before libass knows where the words stand, the caption box
+  // draws the whole caption itself.
   const captionAsk = $derived.by((): CaptionAsk | null => {
-    if (!clip || !captions?.track || !captions.captions?.length || captions.style.text === false || fixing) return null;
+    if (!clip || !captions?.track || !captions.captions?.length || captions.style.text === false) return null;
+    if (fixing && (!laidWords || typed < 0)) return null;
     const asked: Record<string, string> = { ...drafts };
     if (dragCaptions !== null) asked.y = String(dragCaptions);
-    return { path, track: captions.track, drafts: asked };
+    const typing = fixing && caption ? `${captions.captions.indexOf(caption)} ${typed}` : undefined;
+    return { path, track: captions.track, drafts: asked, typing };
+  });
+  // The word being typed, counted across the lines of its caption.
+  const typed = $derived.by(() => {
+    if (!fixing) return -1;
+    for (const [row, line] of rows.entries()) {
+      const i = line.findIndex(({ word }) => word.start === fixing!.at);
+      if (i >= 0) return firstOfRow[row] + i;
+    }
+    return -1;
   });
   // The words of the caption shown where libass put them, each as a box in
   // the caption box, from the line the captions stand on, as shares of
   // the short: x and w of its width, top and h of its height, top down
-  // from the line. Nothing while a word is typed, which the caption box
-  // then draws itself in the browser's font, or while the words of this
-  // caption are not known yet.
+  // from the line. Nothing while the words of this caption are not known
+  // yet. While a word is typed, it is drawn here in its place, see
+  // captionAsk.
   type LaidWord = { x: number; w: number; top: number; h: number; r: number };
   const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
-    if (fixing || !caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}` || !wordFrames.frames)
+    if (!caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}` || !wordFrames.frames)
       return null;
     const frames = wordFrames.frames[(captions.captions ?? []).indexOf(caption)];
     const count = (caption.lines ?? []).reduce((n, line) => n + line.words.length, 0);
@@ -1573,7 +1588,8 @@
                font-weight: {captions.style.bold ? 800 : 500};
                font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
-               color: {fixing ? captions.style.primary : 'transparent'}"
+               --typed: {captions.style.primary};
+               color: {fixing && !laidWords ? captions.style.primary : 'transparent'}"
       >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -1581,7 +1597,7 @@
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
-          style="background: {captions.style.boxOn === false || !fixing ? 'transparent' : captions.style.box};
+          style="background: {captions.style.boxOn === false || !fixing || laidWords ? 'transparent' : captions.style.box};
                  border-radius: {px(captions.style.radius)};
                  padding: {px(captions.style.padY)} {px(captions.style.padX)}"
           title="Drag the handle up or down to place the captions"
@@ -2026,15 +2042,24 @@
 
   /* The pop is in app.css, because the caption block on the clip timeline
      makes the same one. */
-  .typing .line span.now {
+  .typing:not(.laid) .line span.now {
     background: var(--pill);
     animation: pop 0.22s ease-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .typing .line span.now {
+    .typing:not(.laid) .line span.now {
       animation: none;
     }
+  }
+
+  /* Libass draws the caption without the word being typed, and the word
+     is drawn here, in its place, in the caption's colour. The browser
+     drew the whole caption while a word was typed, larger than libass
+     draws it, so the caption grew as a word was opened. */
+  .laid .line span.fixing {
+    color: var(--typed);
+    transform: none;
   }
 
 

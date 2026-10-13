@@ -170,6 +170,21 @@ func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, draft
 }
 
 // drafted is the style of d with drafts on top, only those of
+// Typing is d with word of caption hidden, the word being typed in the
+// caption box: libass draws the rest of the caption where it always
+// does, and the browser draws only what is typed, in the word's place.
+// When the browser drew the whole caption while a word was typed, it came
+// out larger than libass draws it, and the caption grew as a word was
+// opened and shrank as it was left. d itself when there is no such word.
+func (d *CaptionDrawing) Typing(word CaptionShowing) *CaptionDrawing {
+	if word.Caption < 0 || word.Caption >= len(d.Laid) || word.Word < 0 {
+		return d
+	}
+	laid := slices.Clone(d.Laid)
+	laid[word.Caption].Hidden = map[int]bool{word.Word: true}
+	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip}
+}
+
 // CaptionDrafts.
 func (d *CaptionDrawing) drafted(drafts map[string]any) map[string]any {
 	style := map[string]any{}

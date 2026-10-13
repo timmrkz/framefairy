@@ -223,7 +223,9 @@ export async function wordFramesOf(path: string, track: string, signal: AbortSig
 // What the video preview asks the captions of: the episode, the captions
 // by their track, see engine.CaptionsView, and the drafts the hand is
 // changing on the way, as /frames/captions takes them.
-export type CaptionAsk = { path: string; track: string; drafts: Record<string, string> };
+// Typing is the word being typed in the caption box, "<caption> <word>",
+// which libass leaves out, see engine.CaptionDrawing.Typing.
+export type CaptionAsk = { path: string; track: string; drafts: Record<string, string>; typing?: string };
 
 // How many layers are kept, and how many may be on their way at once. A
 // layer is the crop's width by the captions' height, a few hundred
@@ -320,7 +322,7 @@ export class CaptionLayers {
   }
 
   set(ask: CaptionAsk | null) {
-    const key = ask ? `${ask.path}\n${ask.track}\n${new URLSearchParams(ask.drafts)}` : "";
+    const key = ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
     if (!ask || ask.path !== this.ask?.path || ask.track !== this.ask?.track) this.last = null;
     if (key !== this.askKey) {
       this.waiting = null;
@@ -383,6 +385,7 @@ export class CaptionLayers {
               w: String(size[0]),
               h: String(size[1]),
               ahead: String(n),
+              ...(ask.typing ? { typing: ask.typing } : {}),
               ...ask.drafts,
             })}`,
           )
@@ -433,6 +436,7 @@ export class CaptionLayers {
       at: frame.toFixed(6),
       w: String(size[0]),
       h: String(size[1]),
+      ...(ask.typing ? { typing: ask.typing } : {}),
       ...ask.drafts,
     });
     void fetch(`/frames/captions?${q}`)

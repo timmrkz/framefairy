@@ -49,11 +49,11 @@ Tim missed. Now, when the video preview comes to stand on a frame that
 lights another word than the frame before, by a step, Shift and an arrow
 or a click, it plays the layers of the frames of the short round it over
 the still picture, one each frame of the short, and comes back to the
-frame's own layer. They start at the word's first frame of the short: a
-step lands a frame into a word, see `wordStep`, already a third of the
-way up, and a pop played from there grew half as much. They end on the
-last frame before the pop looks again as it does on the frame paused on,
-`PopAgain`, through the peak and into the settle. `/frames/captions`
+frame's own layer. The pop starts on the word's first frame of the
+short, which shows it at rest, `popStart` in `engine/highlight.go`, and a
+step lands inside that frame, see `intoWord`. So the replay plays the
+whole pop from rest, up to the peak and back to rest, and the word ends
+at its own size on the frame paused on, `PopAgain`. `/frames/captions`
 says which in `X-Caption-Pop`, "<behind> <ahead>", from
 `CaptionDrawing.PopFrames`, and each is asked for with `ahead`, the
 frame of the short so many frames on, or back below nought. So the word
@@ -129,9 +129,16 @@ drawn with, never the next one's.
 
 The caption box over the picture stays: it is what the hand takes hold of
 to click a word, correct it and drag the captions up or down. It draws
-nothing while the captions are only shown. While a word is typed it shows
-the words itself, since the letters being typed are not in any caption
-file yet, and the layer steps aside until the word is saved.
+nothing while the captions are only shown. While a word is typed, libass
+draws the caption without that word, in its place, `typing` on
+`/frames/captions` and `CaptionDrawing.Typing`, and the caption box draws
+only the letters being typed, on that word's box and in the caption's
+colour, since they are in no caption file yet. Nothing else of the
+caption moves. Before, the layer stepped aside and the browser drew the
+whole caption in its own font, larger than libass draws it, and Tim saw
+the caption grow as a word was opened and shrink as it was left. Only
+before libass has said where the words stand does the browser still draw
+the whole caption while a word is typed.
 
 Its words stand where libass put them. `/frames/captions/words` in
 `cmd/framefairy-app/captions.go` answers with where each word of a view
@@ -143,8 +150,13 @@ box places each word on that box, from the line the captions stand on,
 so the frame round a word under the hand is the edge of its pill and the
 word stands in its middle, wherever the captions are dragged. The
 browser laid the words out in its own font before, and Tim saw the frame
-stand off its word on #201. While a word is typed the browser lays the
-words out again, since it draws them itself then.
+stand off its word on #201.
+
+The frame round the lit word grows with its pill. Every layer says how
+large libass draws the pill of its word on that frame, `X-Caption-Scale`
+from `CaptionDrawing.PopScale`, and the caption box scales the word's
+frame by it round the pill's middle, so the frame stays on the pill's
+edge through the pop, as it did when the browser drew both.
 
 Each word frame also carries the radius of the pill's corners, `r`, from
 `pillRadius` in `engine/wordframes.go`, the one rule the highlight draws

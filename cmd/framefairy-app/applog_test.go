@@ -152,6 +152,15 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	serve("/frames/close?id=none", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	// A caption layer is bytes, one for every frame drawn: a trace line,
+	// without them.
+	serve("/frames/captions?path=/videos/start.mp4&at=1.5&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(make([]byte, 2048))
+	})
+	serve("/frames/captions?path=/videos/start.mp4&at=1.6&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
+	})
 	serve("/frames/hold?path=/videos/start.mp4", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the video's decoder could not start", http.StatusInternalServerError)
 	})
@@ -167,6 +176,15 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	has(t, find(lines, "hold"), map[string]any{
 		"level": "warn", "video": "start.mp4", "status": 500, "said": "the video's decoder could not start",
 	})
+	has(t, find(lines, "captions at 1.6"), map[string]any{
+		"level": "warn", "video": "start.mp4", "status": 500, "said": "the captions could not be drawn",
+	})
+	if find(lines, "captions at 1.5") != nil {
+		t.Error("a caption layer that came as it should was written to the file")
+	}
+	if kept := string(theLog.recent.all()); strings.Contains(kept, `\u0000`) {
+		t.Errorf("the memory holds the bytes of a caption layer: %s", kept)
+	}
 	if find(lines, "read n 4 skip 0") != nil {
 		t.Error("a pull that went as it should was written to the file")
 	}

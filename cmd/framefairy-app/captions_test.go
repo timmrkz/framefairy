@@ -62,6 +62,15 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	for k, v := range ask {
 		ahead[k] = v
 	}
+	// With the word being typed left out.
+	typing := url.Values{}
+	for k, v := range ask {
+		typing[k] = v
+	}
+	typing.Set("typing", "0 1")
+	if rec, l := draw(typing); rec.Code != http.StatusOK || l.W == 0 {
+		t.Errorf("with a word being typed the captions answered %d with a layer %dx%d", rec.Code, l.W, l.H)
+	}
 	for _, n := range []string{"2", "-1"} {
 		ahead.Set("ahead", n)
 		if rec, l := draw(ahead); rec.Code != http.StatusOK || l.W == 0 || rec.Header().Get("X-Caption-Pop") != "" {
@@ -95,6 +104,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		"too far ahead":  {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"31"}},
 		"too far behind": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"-31"}},
 		"ahead nothing":  {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"x"}},
+		"typing nothing": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "typing": {"x"}},
 	} {
 		if rec, _ := draw(q); rec.Code == http.StatusOK {
 			t.Errorf("%s was answered", name)
