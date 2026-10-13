@@ -172,6 +172,14 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l framewire.Layer
+			// A video whose folder was deleted outside the app is let go
+			// as the app comes back to the front, see letGoOfRemoved, and
+			// the caption file is not written into a folder that is gone,
+			// which would bring the folder back.
+			if err == nil && !marked(st.files, path) {
+				http.NotFound(w, r)
+				return
+			}
 			if err == nil {
 				l, err = e.PreviewCaptions(ctx, dec, dir, drawing, drafts, source, o.RenderSettings(), at, width, height)
 			}

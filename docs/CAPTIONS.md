@@ -267,7 +267,7 @@ before, with the keyboard's frame already round the next, which Tim saw on
   word of one frame too, and any other step shows the frame alone, see
   above. The walk "a step onto a word pops it over the paused frame"
   steps six words on and back with Shift and the arrows, each bouncing to
-  115 % and back over at least nine frames of the screen, then forty
+  115 % and back over at least five frames of the screen, then forty
   frames over four words with the right arrow, over which nothing is
   played. "screen light" holds the GPU's word, grown over a box, to
   `laidPart`'s.

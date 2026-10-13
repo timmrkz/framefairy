@@ -6000,10 +6000,14 @@ for (const seq of toWalk) {
           // alike. Tim saw it stop grown, a frame into the word, with the
           // frame round it at rest, and some words grow by a few pixels on
           // one frame, and then a word of one frame stop at its peak.
-          // At the screen's rate, not the short's: Tim found the bounce
-          // laggy when it was the short's frames of the pop, 25 a second,
-          // five or six in all.
-          if (bounced < 9) {
+          // On the screen's frames, one scale each: Tim found the bounce
+          // laggy when it was the short's frames of the pop, 25 a second.
+          // A runner busy with other walks draws fewer, 7 of 13 at the
+          // least seen in CI, so this holds only that the screen drew it
+          // step by step. That every frame of the screen gets its own
+          // scale is held by "the bounce after a word step" in
+          // captions.test.ts.
+          if (bounced < 5) {
             wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen`;
           } else if (most < least * 1.13) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;

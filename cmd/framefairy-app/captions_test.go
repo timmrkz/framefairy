@@ -295,3 +295,32 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 		t.Errorf("half written caption files were left: %v %v", left, err)
 	}
 }
+
+// A video whose folder is deleted outside the app is let go as the app
+// comes back to the front, and until then the video preview may still ask
+// for its captions. The caption file is not written into the folder that
+// is gone: it brought the folder back, and the walk "a video whose folder
+// is deleted outside the app leaves the list" found it written back.
+func TestTheCaptionsOfAVideoWhoseFolderIsGoneWriteNothingBack(t *testing.T) {
+	// On the real disk: the decoder is a program of its own and reads the
+	// episode and the caption file from there.
+	svc, mine, view := captionsEpisode(t)
+	handler := mediaMiddleware(svc.store)(http.NotFoundHandler())
+	if err := os.RemoveAll(engine.WorkDir(mine)); err != nil {
+		t.Fatal(err)
+	}
+	ask := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}}
+	for _, part := range []string{"", "word", "rest"} {
+		if part != "" {
+			ask.Set("part", part)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+ask.Encode(), nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("the captions of a video whose folder is gone answered %d, part %q", rec.Code, part)
+		}
+	}
+	if _, err := os.Stat(engine.WorkDir(mine)); !os.IsNotExist(err) {
+		t.Errorf("the video's folder was written back: %v", err)
+	}
+}
