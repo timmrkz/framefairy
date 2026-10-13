@@ -165,7 +165,13 @@ closes that gap. It runs
 every open pull request on every push to `main`, and for one pull request
 whenever it is opened or pushed to. The second is for a branch started
 from a `main` that has moved on since: it is in conflict from its first
-push, and no push to `main` follows to say so. A pull request that still
+push, and no push to `main` follows to say so. It hears a pull request
+through `pull_request_target`, not `pull_request`, because GitHub runs no
+`pull_request` workflow on a pull request that conflicts with `main`: #213
+was opened in conflict, and neither CI nor this workflow ran on it, so
+nothing said so, plan row 2.241. `pull_request_target` runs main's
+workflow and main's script whatever the conflict, and they only read the
+branch, never run it. A pull request that still
 merges is left alone: merging `main` into it would only add a commit, a CI
 run and a build to take, and change nothing being tested.
 

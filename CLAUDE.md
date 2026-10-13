@@ -200,7 +200,9 @@ Start with [README.md](README.md). In short:
   conflict is different. When main no longer merges into your pull
   request, and the Main moved workflow says so in a comment on it, merge
   main in, resolve the conflict and push at once, without asking Tim
-  first. A pull request is never left unable to merge while it waits for
+  first. Right after opening a pull request, check on GitHub that it
+  merges, because main may have moved while the branch was being made.
+  A pull request is never left unable to merge while it waits for
   him to test it, because that is a pull request CI does not run on. The
   resolution is new code, so it is pushed the way a change of your own
   is, its own tests first and `make changed` after, see the tests rule
