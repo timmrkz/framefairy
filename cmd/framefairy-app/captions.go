@@ -127,6 +127,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	source, err := sources.probe(ctx, path)
@@ -147,6 +148,14 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				l, err = e.PreviewCaptions(ctx, dec, dir, kept.drawing, drafts, source, o.RenderSettings(), at, width, height)
 			}
 			if err == nil {
+				// A layer slower than a frame is a pill behind the sound
+				// while the clip plays, and on a customer's machine the log
+				// is the only place that shows it.
+				if took := time.Since(started); source.FPSNum > 0 &&
+					took > time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)) {
+					theLog.line(zerolog.DebugLevel, "captions").Str("video", filepath.Base(path)).
+						Int64("ms", took.Milliseconds()).Msg("a caption layer took longer than a frame")
+				}
 				// What the layer shows, which the caption box over it shows.
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")

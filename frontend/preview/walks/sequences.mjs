@@ -519,8 +519,10 @@
 //                      browser paints reads the pill libass drew off the
 //                      canvas: where a pill is drawn, the caption box
 //                      lights a word and its frame stands on the pill,
-//                      its middle within 3 px of the pill's, and where no
-//                      pill is drawn no word is lit
+//                      across within 3 px of the pill's middle and down
+//                      inside it, and where no pill is drawn no word is
+//                      lit. At most one paint in twenty shows the layer of
+//                      a frame before, and never for two frames on end
 //   ["walk the words with the frame on the pill", n]
 //                      from the clip's first frame, Shift and the right
 //                      arrow n times, and on every frame the browser paints
@@ -4969,10 +4971,17 @@ for (const seq of toWalk) {
         if (wrong) break;
         const off = frames.find((f) => framesOffPill(f, "now"));
         const lit = new Set(frames.filter((f) => f.pill).map((f) => `${Math.round(f.pill.y)}:${f.now?.text}`));
+        const behind = laggingFrames(frames);
         console.log(`    ${frames.length} frames painted, ${frames.filter((f) => f.pill).length} with a pill, ${lit.size} words lit`);
+        console.log(`    ${behind.late} of ${behind.painted} painted with captions not their own, at most ${behind.ms.toFixed(0)} ms on end`);
         if (off) wrong = framesOffPill(off, "now");
         else if (frames.filter((f) => f.pill).length < fps) wrong = `only ${frames.length} frames were read while it played`;
         else if (lit.size < 3) wrong = `the play lit only ${lit.size} words, it never went from one caption to the next`;
+        // The caption box follows the layer on screen, so a layer that
+        // comes late takes the pill and the box behind the sound together,
+        // and nothing else here sees it.
+        else if (behind.late > behind.painted / 20) wrong = `${behind.late} of ${behind.painted} paints showed captions not their own, more than one in twenty`;
+        else if (behind.ms >= 2000 / fps) wrong = `the captions were not the frame's own for ${behind.ms.toFixed(0)} ms on end, two frames or more`;
         break;
       }
       case "walk the words with the frame on the pill": {
@@ -5021,15 +5030,26 @@ for (const seq of toWalk) {
         // once the word's bounce has settled: the pill grows into the room
         // there is, so in its bounce it can grow more on one side than the
         // other, and the frame is where it rests.
+        // A word stays lit until the next one starts.
         const settled = (w) => w.start + 0.18 + 2 / fps;
         const length = pieces.reduce((n, p) => n + p.end - p.start, 0);
         const words = (state.captions ?? [])
-          .flatMap((c) => c.lines.flatMap((l) => l.words))
-          .filter((w) => settled(w) < w.end - 1 / fps && w.start > 0.6 && w.end < length - 0.6)
+          .flatMap((c) => {
+            const ws = c.lines.flatMap((l) => l.words);
+            return ws.map((w, i) => ({ ...w, lit: i + 1 < ws.length ? ws[i + 1].start : c.end }));
+          })
+          .filter((w) => w.start > 0.6 && w.lit < length - 0.6)
+          .map((w) => ({ ...w, rests: settled(w) < w.lit - 1 / fps }))
+          // The words whose bounce settles first, then words in their bounce.
+          .sort((a, b) => Number(b.rests) - Number(a.rests))
           .slice(0, arg);
+        if (words.filter((w) => w.rests).length < 2) {
+          wrong = `only ${words.filter((w) => w.rests).length} words are lit long enough for their bounce to settle`;
+          break;
+        }
         const report = [];
         for (const w of words) {
-          const at = into(Math.max((w.start + w.end) / 2, settled(w)));
+          const at = into(w.rests ? Math.max((w.start + w.lit) / 2, settled(w)) : (w.start + w.lit) / 2);
           if (at === null) continue;
           if (!(await seekTo(page, at, fps))) {
             wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
@@ -5085,8 +5105,11 @@ for (const seq of toWalk) {
           const down = mid(frame.t, frame.b) - mid(pill.t, pill.b);
           const wider = frame.r - frame.l - (pill.r - pill.l);
           const lower = frame.b - frame.t - (pill.b - pill.t);
-          report.push(`"${text}": ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
-          if (Math.abs(across) > 1.5 || Math.abs(down) > 1.5 || Math.abs(wider) > 2 || lower > 2) {
+          report.push(`"${text}"${w.rests ? "" : " in its bounce"}: ${across.toFixed(1)} px across, ${down.toFixed(1)} px down, ${wider.toFixed(1)} px wider, ${lower.toFixed(1)} px taller`);
+          // A word lit too briefly for its bounce to settle is read in its
+          // bounce, where the pill stands round the frame.
+          const inside = frame.t >= pill.t - 1.5 && frame.b <= pill.b + 1.5;
+          if (Math.abs(across) > 1.5 || Math.abs(wider) > 2 || (w.rests ? Math.abs(down) > 1.5 || lower > 2 : !inside)) {
             wrong = `the frame round "${text}" stands ${across.toFixed(1)} px across and ${down.toFixed(1)} px down from the middle of its pill, and is ${(frame.r - frame.l).toFixed(1)}x${(frame.b - frame.t).toFixed(1)} px round a pill of ${(pill.r - pill.l).toFixed(1)}x${(pill.b - pill.t).toFixed(1)}`;
             break;
           }
@@ -5653,6 +5676,8 @@ async function watchPills(page) {
       window.__pillWatch.frames.push({
         at: Number(document.querySelector(".screen").dataset.playhead),
         pictured: window.__pictured?.(),
+        t: performance.now(),
+        late: window.__captionLayers?.late ?? false,
         now: frame(box.querySelector(".word.now")),
         keyed: frame(box.querySelector(".word.keyed")),
         pill: l === Infinity ? null : { x: (l + r) / 2 / sx, y: (y0 + (t + bt) / 2) / sy, t: (y0 + t) / sy, b: (y0 + bt) / sy },
@@ -5671,6 +5696,24 @@ async function watchPills(page) {
 // the lit word's, "now", or the keyboard's, "keyed", or null. A lit word
 // stands on the pill, and where a pill is drawn a word is lit. The
 // keyboard's frame, where there is one, stands on the pill too.
+// How long the video preview showed captions not their own, read off
+// what watchPills saw: the paints made with the layer of a frame before,
+// the frame's own still on its way, out of all, and the longest time they
+// went on one after another, in milliseconds.
+function laggingFrames(frames) {
+  let late = 0;
+  let since = null;
+  let most = 0;
+  for (const f of frames) {
+    if (f.late) {
+      late++;
+      since ??= f.t;
+      most = Math.max(most, f.t - since);
+    } else since = null;
+  }
+  return { painted: frames.length, late, ms: most };
+}
+
 function framesOffPill(f, which) {
   const word = f[which];
   const where = `at ${f.at.toFixed(3)} s, frame ${f.pictured} on the video preview`;

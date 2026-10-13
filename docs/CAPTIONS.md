@@ -192,15 +192,21 @@ before, with the keyboard's frame already round the next, which Tim saw on
   `cmd/framefairy-app/captions_test.go` asks the route for them.
 - The walk "the frame round a word in the caption box is the pill libass
   draws" puts the playhead in five words and reads the pill off the
-  canvas: the frame round the lit word stands on it within 1.5 pixels.
-  The browser's own layout stood 5.5 pixels off.
+  canvas: the frame round the lit word stands on it within 1.5 pixels,
+  once its bounce has settled, and inside it in its bounce, which grows
+  more on one side where another line is near. The browser's own layout
+  stood 5.5 pixels off.
 - The walk "the frame round a word stays on the pill while the clip
   plays" plays three seconds over the end of a caption and reads the pill
   off the canvas on every frame the browser paints: where a pill is drawn
-  a word is lit and its frame stands on the pill within 3 pixels, and
-  where none is drawn no word is lit. The caption box that followed the
-  playhead put the frame on the next caption's first word, 64 pixels off
-  the pill.
+  a word is lit and its frame stands on the pill, within 3 pixels across
+  and inside it down, and where none is drawn no word is lit. The caption
+  box that followed the playhead put the frame on the next caption's
+  first word, 64 pixels off the pill. The caption box follows the layer,
+  so a layer that comes late takes the box and the pill behind the sound
+  together, and the walk counts that too: at most one paint in twenty
+  with the layer of a frame before, and never for two frames on end. The
+  app logs a layer that takes longer than a frame to draw.
 - The walk "the keyboard's frame goes from word to word with the pill"
   makes every caption layer come 120 ms late and presses Shift and the
   right arrow eight times. On every frame painted after each press, the
