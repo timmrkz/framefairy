@@ -1994,8 +1994,13 @@ or walks across the picture. Plan row 3.26, the design is in
   crop glides from each to the next over the whole time between them,
   starting and settling gently, the way a camera operator pans. The
   tempo is where the keyframes are: two far apart are a slow drift, and
-  two a frame apart are an instant move. No glide crosses a cut, and a
-  keyframe moves only the crop of its own shot.
+  two a frame apart are an instant move. A keyframe moves only the crop
+  of its own shot, and a glide goes on across a cut by the time the
+  short plays, so a keyframe before a cut and one after it glide from one
+  to the other the way they would were the cut a moment of the clip, and
+  nothing jumps at the cut. A glide used to stop at a cut, so those two
+  did not glide at all, found by Tim. A part turned with Rotate is
+  another shot, so its crop still starts at its cut.
 - **Dragging the crop frame places the crop, and nothing else.** With the
   playhead on a keyframe it moves that keyframe. Anywhere else it moves
   the crop of the whole shot, every keyframe of it by the same distance,

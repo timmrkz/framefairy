@@ -207,34 +207,60 @@ func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
 	}
 }
 
-// A mark steers the pieces of its own camera angle in its own part: a
-// glide never crosses a cut, nor carries one shot's framing to another.
-// A mark in a cut steers nothing, and comes back with its piece.
-func TestACropMarkSteersItsAngleInItsPart(t *testing.T) {
+// A mark steers the pieces of its own camera angle across the whole clip,
+// cuts and all, never another shot's framing. Across a cut the glide goes
+// on by the clip's clock, the time the short plays, so a piece is steered
+// by the marks of its angle placed where they fall on its own stretch of
+// the video as if the cuts were not there. A mark in a cut steers nothing,
+// and comes back with its piece. Found by Tim: a keyframe before a cut and
+// one after it did not glide at all, plan row 2.238.
+func TestACropMarkSteersItsAngleAcrossTheClip(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{10.2, 100}, CropMark{10.8, 200}, CropMark{11.6, 500}, CropMark{13.6, 50})
 	c := loadedClip(t, fsys, path)
+	// The pieces run 10 to 11.1 and 13 to 14 in one angle, with 11.1 to 12
+	// in another and the cut 12 to 13 between. 13.6 is 2.6 s into the clip,
+	// which is 12.6 on the first piece's stretch, and 10.2 is 0.2 s into it,
+	// which is 11.2 on the last piece's.
 	want := [][]CropMark{
-		{{10.2, 100}, {10.8, 200}},
+		{{10.2, 100}, {10.8, 200}, {12.6, 50}},
 		{{11.6, 500}},
-		{{13.6, 50}},
+		{{11.2, 100}, {11.8, 200}, {13.6, 50}},
 	}
-	for i, seg := range c.Segments {
-		if len(seg.Marks) != len(want[i]) {
-			t.Fatalf("piece %d is steered by %v, not %v", i, seg.Marks, want[i])
-		}
-		for j := range want[i] {
-			if seg.Marks[j] != want[i][j] {
-				t.Errorf("piece %d is steered by %v, not %v", i, seg.Marks, want[i])
+	steered := func(c Clip) {
+		t.Helper()
+		for i, seg := range c.Segments {
+			if len(seg.Marks) != len(want[i]) {
+				t.Fatalf("piece %d is steered by %v, not %v", i, seg.Marks, want[i])
+			}
+			for j := range want[i] {
+				if math.Abs(seg.Marks[j].At-want[i][j].At) > 1e-6 || seg.Marks[j].X != want[i][j].X {
+					t.Errorf("piece %d is steered by %v, not %v", i, seg.Marks, want[i])
+				}
 			}
 		}
 	}
+	steered(c)
 	if len(c.CropMarks) != 4 {
 		t.Errorf("the clip has the keyframes %v", c.CropMarks)
 	}
 
+	// The glide is one across the cut: the first frame after it is where
+	// the glide of the first piece would be 2 s into the clip, 12.0 on its
+	// stretch, not where it would be a second later in the video, which is
+	// how long the cut is.
+	first, last := c.Segments[0], c.Segments[2]
+	before := at25.CropAt(first, first.End-0.04, 152, 480)
+	after := at25.CropAt(last, last.Start, 152, 480)
+	if before == 200 || after == 50 {
+		t.Errorf("the crop stands still either side of the cut, at %.1f and %.1f", before, after)
+	}
+	if want := at25.CropAt(first, 12.0, 152, 480); math.Abs(after-want) > 1e-9 {
+		t.Errorf("after the cut the crop stands at %.3f, the glide from before it is at %.3f", after, want)
+	}
+
 	// The cut taken out of the clip's middle: the pieces of the first
-	// angle now meet across it, so its two parts are one and glide on.
+	// angle now meet across it, and the marks are where they are.
 	reshape(t, fsys, path, Gesture{Kind: "join", From: 12.5})
 	c = loadedClip(t, fsys, path)
 	for _, seg := range c.Segments {
@@ -357,9 +383,9 @@ func TestACropMarkMovedWithItsAngleStaysInThePicture(t *testing.T) {
 	const cropW, most = 608, 1312
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{10.2, 1000}, CropMark{10.8, 1300}, CropMark{13.6, 100})
-	// The angle's other part has one mark, so its crop stands at 100.
-	// Dragged to the right edge there, every mark moves 1212.
-	if err := SetCrop(fsys, path, "01", 13.2, most, src, cropW); err != nil {
+	// After the last mark the crop stands where it is, at 100. Dragged to
+	// the right edge there, every mark moves 1212.
+	if err := SetCrop(fsys, path, "01", 13.8, most, src, cropW); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range loadedClip(t, fsys, path).CropMarks {

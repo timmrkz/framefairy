@@ -639,6 +639,12 @@
 //   ["keyframes", n]  the engine has n keyframes on the clip, at as many
 //                      left edges, and the clip timeline draws n
 //                      diamonds, each 16 px wide
+//   ["glides across the cut"]
+//                      with the playhead put on a frame between the clip's
+//                      first keyframe and its first cut, and on one between
+//                      the cut and its last keyframe, after it, the crop
+//                      frame stands where the glide puts it, on its way
+//                      from the one keyframe to the other
 //   ["glides"]         with the playhead put by a click on the clip
 //                      timeline on the first keyframe, a quarter, half
 //                      and three quarters of the way to the next and on
@@ -1589,6 +1595,23 @@ export const sequences = [
       ["under the hand", "crop"],
       ["remove mark", "crop"],
       ["keyframes", 1],
+    ],
+  },
+  {
+    // Found by Tim: a keyframe before a cut and the next one after it did
+    // not glide, the crop stood still on both sides. Plan row 2.238.
+    name: "a keyframe before a cut glides to one after it",
+    steps: [
+      ["add", 30, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["keyframe at", 0.2],
+      ["keyframe at", 0.8],
+      ["drag crop", 400],
+      ["keyframes", 2],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["glides across the cut"],
     ],
   },
   {
@@ -6017,6 +6040,60 @@ for (const seq of toWalk) {
         else if (shapes.some((c) => !c.startsWith("M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59")))
           wrong = `a keyframe is not drawn as a diamond: ${shapes.join(", ")}`;
         else if (sizes.some((w) => w !== 18)) wrong = `a keyframe is ${sizes.join(", ")} px wide, not 18 px like a thumbnail, found too small by Tim on #192`;
+        break;
+      }
+      case "glides across the cut": {
+        // The first keyframe before the clip's first cut and the last after
+        // it: on a frame between the first and the cut, and on one between
+        // the cut and the last, the crop frame stands where the glide puts
+        // it, on its way from the one to the other.
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const src = await ask(page, "Source", on.path);
+        const [p, q] = entry?.segments ?? [];
+        const marks = entry?.cropMarks ?? [];
+        const a = marks.find((m) => p && m.at >= p.start && m.at < p.end);
+        const b = marks.findLast((m) => q && m.at >= q.start && m.at < q.end);
+        if (!a || !b) {
+          wrong = "the clip has no keyframe either side of its cut";
+          break;
+        }
+        await filmedOnScreen(page);
+        const crop = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.crop));
+        const problems = [];
+        const seen = [];
+        for (const [piece, at] of [
+          [p, a.at + 0.7 * (p.end - a.at)],
+          [q, q.start + 0.3 * (b.at - q.start)],
+        ]) {
+          // Half a frame in, so the click lands in the frame meant.
+          const t = Math.floor(at * src.fps) / src.fps + 0.5 / src.fps;
+          const g = await handles(page);
+          await page.mouse.click(await xOf(page, t), high(g.track));
+          await settle(page);
+          const came = await page
+            .waitForFunction(
+              (fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps),
+              src.fps,
+              { polling: 50, timeout: 5000 },
+            )
+            .then(() => true, () => false);
+          if (!came) {
+            problems.push(`no frame came for ${t.toFixed(3)} s`);
+            continue;
+          }
+          const k = await filmedOnScreen(page);
+          const got = await crop();
+          seen.push(got);
+          const want = (piece.marks ?? []).length ? glideOf(piece.marks, src)(k) : NaN;
+          if (got !== want) problems.push(`on frame ${k} the crop frame stands at ${got}, the glide puts it at ${want}`);
+        }
+        const [ax, bx] = [a.x - (a.x % 2), b.x - (b.x % 2)];
+        const between = (v) => (v - ax) * (v - bx) < 0;
+        if (!problems.length && !seen.every(between)) {
+          problems.push(`either side of the cut the crop frame stands at ${seen.join(" and ")}, not on its way from ${ax} to ${bx}`);
+        }
+        if (problems.length) wrong = problems.join("; ");
         break;
       }
       case "glides":
