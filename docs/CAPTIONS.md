@@ -60,11 +60,13 @@ asked for with `bounce=1` and `ahead`, so many frames of the short on
 from the frame paused on, or back below nought. `/frames/captions` says
 which in `X-Caption-Pop`, "<behind> <ahead>", from
 `CaptionDrawing.PopFrames`: from the word's first frame, at rest, where a
-step lands, see `intoWord`, through the peak to the first frame no larger
-than the short draws the word on the frame paused on. So the bounce ends
-on the frame as the short shows it, at rest, and a word lit for one
-frame, which the short shows at its peak, rises to its peak and stays
-there. The layer before the step stays while the frames of the bounce
+step lands, see `intoWord`, through the peak and back to rest. Every word
+bounces the same, and the last frame of the bounce, at rest, stays over
+the frame until the playhead moves or the captions change. A word the
+short lights for one frame shows at its peak there, and still comes to
+rest after a word step: Tim wanted the bounce the same for every word,
+without exception, even where that is not the frame the short shows.
+The layer before the step stays while the frames of the bounce
 are on their way. Nothing bounces while the clip plays, where the frames
 pop by themselves, or when the Mac is set to reduce motion. `Replay` and
 `CaptionLayers.sought` in `lib/frames/captions.ts`.
@@ -247,8 +249,8 @@ before, with the keyboard's frame already round the next, which Tim saw on
   `TestAWordStepBouncesEveryWordWhole` in `engine/pop_test.go`, and "the
   bounce after a word step" in `captions.test.ts`: a word step bounces
   its word over the still frame, a word of one frame and of three too,
-  and ends on the frame's own layer, and any other step shows the frame
-  alone, see above. The walk "a step onto a word pops it over the paused
+  and comes to rest, and any other step shows the frame alone, see
+  above. The walk "a step onto a word pops it over the paused
   frame" steps six words on and back with Shift and the arrows, each
   bouncing to 115 % and back, then forty frames over four words with the
   right arrow, over which nothing is played.

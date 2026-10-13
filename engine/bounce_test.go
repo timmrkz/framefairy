@@ -455,7 +455,12 @@ func TestThePillAtRestNeverReachesAnotherLine(t *testing.T) {
 // letters and touches the other line. Read off where libass puts
 // the words, for Tim's caption and for that one. A pill stopped short word
 // by word jumped as it walked along the line, from "ist" to "es" by 14
-// pixels.
+// pixels. And each pill stands round the middle of its line, as far over
+// it as under it: stopped short on one side only, the pills of the top
+// line stood high over their words and those of the bottom line low under
+// them, and Tim saw "so'n" pushed up in its pill and "einem" down. The
+// line is measured by its capitals and tall letters, not by accents over
+// capitals, which put the middle of every pill high over its words.
 //
 // On the real disk: libass, through ffmpeg, measures where the words are.
 func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
@@ -471,10 +476,15 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 	style := ResolveStyle(nil)
 	size := pyround(style.Size)
 	clear := math.Round(float64(size) * lineClear)
-	for _, second := range []string{"Leute", "Ägypten"} {
+	for _, second := range []string{"Leute", "Ägypten", ""} {
 		words := []Cue{
 			{0.10, 0.40, "Ganz"}, {0.40, 0.80, "wichtig."}, {0.80, 1.00, "So."}, {1.00, 1.30, "Für"},
 			{1.30, 1.80, second}, {1.80, 2.10, "ist"}, {2.10, 2.40, "es"},
+		}
+		if second == "" {
+			second = "Regenschirm."
+			words = []Cue{{0.10, 0.40, "so'n"}, {0.40, 0.80, "Typen"}, {0.80, 1.00, "mit"}, {1.00, 1.20, "so"},
+				{1.20, 1.50, "einem"}, {1.50, 2.40, "Regenschirm."}}
 		}
 		clip := Clip{ID: "01", Segments: []Segment{{Start: 0, End: 2.6}}}
 		laid := ClipCaptions(clip, &Transcript{Words: words, Language: "de"}, style)
@@ -491,7 +501,25 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 			inkTop, inkBottom := L.lineInk(r)
 			for _, k := range line {
 				left, top, right, bottom := L.pill(k, size)
-				rows = append(rows, fmt.Sprintf("%-9s %4.0f to %4.0f", L.words[k], top, bottom))
+				rows = append(rows, fmt.Sprintf("%-12s %4.0f to %4.0f", L.words[k], top, bottom))
+				// Round the line's reach and any letter of it that reaches
+				// further, unless the other line leaves its letters no more
+				// than lineClear.
+				reach := L.reach[r]
+				high, low := math.Min(float64(reach.top), float64(inkTop)), math.Max(float64(reach.bottom), float64(inkBottom))
+				over, under := high-top, bottom-low
+				pressed := float64(inkTop)-top < clear+0.5 || bottom-float64(inkBottom+1) < clear+0.5
+				// A word of small letters only stands in the middle of its
+				// pill. "so" stood 45 pixels under its top and 26 over its
+				// bottom.
+				if b := L.boxes[k]; L.words[k] == "so" {
+					if over, under := float64(b.top)-top, bottom-float64(b.bottom); math.Abs(over-under) > 0.15*float64(size) {
+						t.Errorf("%s: %q stands %.0f pixels under the top of its pill and %.0f over its bottom", second, L.words[k], over, under)
+					}
+				}
+				if math.Abs(over-under) > 1 && !pressed {
+					t.Errorf("%s: the pill of %q reaches %.0f pixels over its line and %.0f under it", second, L.words[k], over, under)
+				}
 				first := line[0]
 				_, firstTop, _, firstBottom := L.pill(first, size)
 				if top != firstTop || bottom != firstBottom {

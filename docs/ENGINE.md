@@ -815,11 +815,18 @@ so Tim saw the pill move up or down and the word not at all, plan row
 reads the pop back from a short and holds the word and its pill to
 `popScales` on every frame, in width and height, around one centre.
 
-At rest the pill is as tall as its line, from the top of the tallest
-letter the face draws to the bottom of the deepest, with 0.10 of the size
-over that above and below, the same for every word on the line. The line
-is measured by drawing `ÉÅÁgjpqy` on it, `pillLines`, since libass gives
-every line of a face the same height. The pill used to open from 0.08
+At rest the pill is as tall as its line, from the top of the capitals and
+the tall letters the face draws to the bottom of the deepest, with 0.10 of
+the size over that above and below, the same for every word on the line.
+The line is measured by drawing `Hbdfhklgjpqy` on it, `pillLines`, since
+libass gives every line of a face the same height. A line with a letter
+that reaches further, an accent over a capital, makes room for it too.
+Measured with accents, as `ÉÅÁgjpqy` once was, every pill stood high over
+its words, and stopped short of the other line on one side only, the
+pills of the top line of two stood high and those of the bottom line low,
+which Tim saw. Whatever a pill gives up on one side to keep off the other
+line, it gives up on the other too, so it stays round the middle of its
+line. The pill used to open from 0.08
 inside its rest on every side and to reach only 0.10 past the tallest
 letter of the words themselves, so the first frame of a word, where a
 click on the word puts the playhead, showed it hugging the letters, which

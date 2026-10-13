@@ -64,10 +64,8 @@ func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
 
 // PopFrames says which frames of the bounce a paused video preview plays
 // after a word step, for the word on screen to bounce: from the word's
-// first frame, at rest, where a step lands, to the first frame from the
-// peak on no larger than the short draws on the frame paused on, so the
-// bounce ends on the frame as the short shows it. None past the bounce or
-// with no word lit.
+// first frame, at rest, where a step lands, to the frame it is at rest
+// again on. None past the bounce or with no word lit.
 func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
@@ -85,14 +83,11 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 		// "Ich" lights at 0.5 s, frame 15 of the short, the frame at
 		// 10.5 s of the episode: its whole pop, seven frames to rest.
 		{15, 0, 7},
-		// A frame in: from the word's first frame, and on to the first
-		// frame past the peak no larger.
+		// A frame in: from the word's first frame, and on to rest.
 		{16, 1, 6},
-		// Two frames in.
-		{17, 2, 4},
-		// On the peak, and a frame past it: up to the frame.
-		{19, 4, 0},
-		{20, 5, 0},
+		// On the peak, and a frame past it.
+		{19, 4, 3},
+		{20, 5, 2},
 		// Past the pop.
 		{23, 0, 0},
 		// "war" lights at 1.21 s, between frames 36 and 37: its first
@@ -114,14 +109,14 @@ func TestPopFramesCountsTheFramesOfThePop(t *testing.T) {
 	}
 }
 
-// A word step bounces its word from rest through its peak however briefly
-// the short lights it. A word of one frame, which the short shows at its
-// peak, rises from rest to the peak, where the frame stands. A word of
-// three frames, which the short pops in three, bounces in all seven and
-// comes to rest. A word long enough for its pop bounces in the short's own
-// frames, with the short's own captions. Tim wanted a step from word to
-// word to bounce, a word of one frame too, and a step from frame to frame
-// to show the short's frames alone.
+// A word step bounces its word from rest through its peak and back to
+// rest however briefly the short lights it, every word the same. A word of
+// one frame, which the short shows at its peak, bounces in seven frames
+// like any other and comes to rest, though its frame in the short does
+// not. A word long enough for its pop bounces in the short's own frames,
+// with the short's own captions. Tim wanted a step from word to word to
+// bounce every word alike, without exception, and a step from frame to
+// frame to show the short's frames alone.
 func TestAWordStepBouncesEveryWordWhole(t *testing.T) {
 	source := SourceInfo{FPSNum: 30, FPSDen: 1, Duration: 60}
 	d := &CaptionDrawing{
@@ -139,7 +134,7 @@ func TestAWordStepBouncesEveryWordWhole(t *testing.T) {
 		ahead  int
 		scales string
 	}{
-		{"ja", 15, 4, "[1.000 1.057 1.106 1.139 1.150]"},
+		{"ja", 15, 7, "[1.000 1.057 1.106 1.139 1.150 1.130 1.075 1.000]"},
 		{"so", 16, 7, "[1.000 1.057 1.106 1.139 1.150 1.130 1.075 1.000]"},
 		{"eben", 18, 7, "[1.000 1.057 1.106 1.139 1.150 1.130 1.075 1.000]"},
 	} {
@@ -158,8 +153,8 @@ func TestAWordStepBouncesEveryWordWhole(t *testing.T) {
 		if got := fmt.Sprintf("%.3f", scales); got != c.scales {
 			t.Errorf("%q bounces %s, want %s", c.word, got, c.scales)
 		}
-		if last, own := scales[len(scales)-1], d.PopScale(source, at(c.frame), 0); math.Abs(last-own) > 1e-9 {
-			t.Errorf("%q ends its bounce at %.3f, and the short shows it at %.3f", c.word, last, own)
+		if last := scales[len(scales)-1]; last != 1 {
+			t.Errorf("%q ends its bounce at %.3f, not at rest", c.word, last)
 		}
 	}
 	if b := d.Bouncing(source, at(18)); b != d {

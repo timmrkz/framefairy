@@ -5908,16 +5908,14 @@ for (const seq of toWalk) {
           grew = Math.max(grew, most / least);
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
-          // back to rest, however briefly the short lights it. Tim saw it
-          // stop grown, a frame into the word, with the frame round it at
-          // rest, and some words grow by a few pixels on one frame. A word
-          // the short lights for one frame stands at its peak there, and
-          // its bounce ends at the peak, on the frame as the short shows it.
-          const ends = Math.abs(last.pill.w - least) <= 1.5 || last.pill.w >= least * 1.13;
+          // back to rest, however briefly the short lights it, every word
+          // alike. Tim saw it stop grown, a frame into the word, with the
+          // frame round it at rest, and some words grow by a few pixels on
+          // one frame, and then a word of one frame stop at its peak.
           if (most < least * 1.13) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
-          } else if (Math.abs(widths[0] - least) > 1.5 || !ends) {
-            wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest or at its peak`;
+          } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
+            wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
           }
         }
         console.log(`    ${report.join(", ")}`);

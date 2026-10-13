@@ -161,12 +161,11 @@ func (d *CaptionDrawing) Bouncing(source SourceInfo, at float64) *CaptionDrawing
 // the frame of the episode that starts at, paused on it after a word step,
 // see Bouncing, counted from the frame of the short that shows it: from
 // behind frames before it, the word's first frame, at rest, to ahead
-// frames after it, the first frame from the peak on that is no larger than
-// the short draws the word on the frame paused on. So the bounce ends on
-// the frame as the short shows it, at rest where a step lands on a word,
-// and at its peak for a word of one frame, which the short shows at its
-// peak. None where no word is lit, past the bounce, or where the short
-// has no frames to count.
+// frames after it, the frame the bounce is at rest again on. Every word
+// bounces the same, from rest through its peak and back to rest, a word of
+// one frame too, though the short shows that one at its peak: Tim wanted
+// the bounce the same for every word, without exception. None where no
+// word is lit, past the bounce, or where the short has no frames to count.
 func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead int) {
 	if source.FPSNum <= 0 || source.FPSDen <= 0 {
 		return 0, 0
@@ -177,22 +176,8 @@ func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead
 	}
 	first, scales := source.wordPop(from, to)
 	k, _ := source.shortFrame(d.Clip, at)
-	j := int(k - first)
-	peak := 0
-	for i, s := range scales {
-		if s > scales[peak] {
-			peak = i
-		}
-	}
-	own := d.PopScale(source, at, 0)
-	end := -1
-	for i := peak; i < len(scales); i++ {
-		if scales[i] <= own {
-			end = i
-			break
-		}
-	}
-	if j < 0 || end < 0 || j > end {
+	j, end := int(k-first), len(scales)-1
+	if j < 0 || j > end {
 		return 0, 0
 	}
 	return j, end - j

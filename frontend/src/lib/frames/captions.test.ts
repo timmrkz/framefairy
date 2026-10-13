@@ -354,18 +354,18 @@ describe("the bounce after a word step", () => {
     vi.advanceTimersByTime(34);
     expect(red(1.5)).toBe(51);
     vi.advanceTimersByTime(34);
+    // The last frame of the bounce, at rest, stays over the frame, every
+    // word alike, though the short may show the frame otherwise.
     expect(red(1.5)).toBe(52);
-    expect(layers.popping).toBe(true);
-    vi.advanceTimersByTime(34);
-    expect(red(1.5)).toBe(102);
     expect(layers.popping).toBe(false);
+    expect(layers.busy).toBe(false);
+    vi.advanceTimersByTime(340);
+    expect(red(1.5)).toBe(52);
     expect(layers.stats.popped).toBe(1);
-    // Drawn again on the same frame, nothing bounces.
-    expect(red(1.5)).toBe(102);
     // A word step that stays on its frame, then an arrow alone: nothing
-    // bounces.
+    // bounces, and the frame shows its own layer.
     layers.sought(true);
-    expect(red(1.5)).toBe(102);
+    expect(red(1.5)).toBe(52);
     layers.sought(false);
     lit = 3;
     red(1.54);

@@ -142,11 +142,17 @@ func (l wordsLaid) pill(k, size int) (left, top, right, bottom float64) {
 
 // lineBand is how far down the pills of line r reach at rest, the same for
 // every word of the line, so the pill keeps its height as it goes from
-// word to word: the line's reach with pillPadY above and below, but never
+// word to word: the line's reach, and any letter of the line that reaches
+// further, with pillPadY above and below, but never
 // nearer than lineClear to a letter of the line above or below, over the
 // whole width of the line. Where the letters of the two lines come so near
 // that this leaves the line's own letters less than lineClear of room, the
 // pill keeps that room and touches the other line instead.
+//
+// What one side gives up, the other gives up too, so the pill stays round
+// the middle of its line: stopped short at one side only, the pills of the
+// top line of two stood high over their words and the pills of the bottom
+// line low under them, and Tim saw the words pushed up and down in them.
 //
 // libass stands the lines of a caption as close as the face is tall, so a
 // pill of the whole line and its room reached into the tail of a "g" on
@@ -158,15 +164,19 @@ func (l wordsLaid) lineBand(r, size int) (top, bottom float64) {
 	padY := math.Round(float64(size) * pillPadY)
 	clear := math.Round(float64(size) * lineClear)
 	line := l.reach[r]
-	top, bottom = float64(line.top)-padY, float64(line.bottom)+padY
 	inkTop, inkBottom := l.lineInk(r)
+	high, low := math.Min(float64(line.top), inkTop), math.Max(float64(line.bottom), inkBottom)
+	top, bottom = high-padY, low+padY
 	if above, ok := l.nearestInk(r, r-1, size); ok {
 		top = math.Max(top, math.Min(above+1+clear, inkTop-clear))
 	}
 	if below, ok := l.nearestInk(r, r+1, size); ok {
 		bottom = math.Min(bottom, math.Max(below-clear, inkBottom+1+clear))
 	}
-	return top, bottom
+	mid := (high + low) / 2
+	half := math.Min(mid-top, bottom-mid)
+	top, bottom = math.Ceil(mid-half), math.Floor(mid+half)
+	return math.Min(top, inkTop-clear), math.Max(bottom, inkBottom+1+clear)
 }
 
 // lineInk is the highest and the lowest row of the ink of the words of

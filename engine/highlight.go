@@ -74,9 +74,10 @@ func (c Caption) Cue() Cue { return Cue{c.Start, c.End, c.Text} }
 // second.
 //
 // At rest the pill leaves room all round its word: as tall as the line,
-// from the top of the tallest letter the face draws to the bottom of the
-// deepest, with pillPadY over that, the same for every word of the line
-// whatever its letters. Where another line of the caption stands over or
+// from the top of the capitals and the tall letters the face draws to the
+// bottom of the deepest, and over any letter of the line that reaches
+// further, an accent on a capital, with pillPadY over that, the same for
+// every word of the line whatever its letters. Where another line of the caption stands over or
 // under it, the pills of its line rest short of that line's letters, all
 // at one height, see wordsLaid.lineBand.
 // ---------------------------------------------------------------------------
@@ -96,9 +97,13 @@ const (
 	// another line of its caption, as a share of the caption size, see
 	// wordsLaid.lineBand.
 	lineClear = 0.04
-	// lineReach is the tallest and the deepest letters a line can hold,
-	// whose ink says how tall the line is, see pillLines.
-	lineReach = "ÉÅÁgjpqy"
+	// lineReach is the capitals, the tall letters and the deepest letters
+	// of a line, whose ink says how tall the line is, see pillLines. An
+	// accent over a capital reaches higher, and only a line that has one
+	// makes room for it, see wordsLaid.lineBand: measured with accents, the
+	// pill of every line stood high over its words, "so'n" twice as far
+	// under its top as over its bottom, which Tim saw.
+	lineReach = "Hbdfhklgjpqy"
 )
 
 // popScales is the scale of a word lit for lit frames of a short of fps
@@ -175,8 +180,8 @@ func (s SourceInfo) wordPop(from, to int) (first int64, scales []float64) {
 // so many lines is: the tallest and the deepest letters the face draws,
 // lineReach, on that line alone. libass gives every line of a face the
 // same height, whatever its letters, so a line's pill is the same height
-// for every word on it, a word of small letters as much as a word with an
-// accent or a tail.
+// for every word on it, a word of small letters as much as a word with a
+// tail.
 func pillLines(rows int) []string {
 	words := make([]string, rows)
 	lines := make([][]int, rows)

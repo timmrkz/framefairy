@@ -247,8 +247,12 @@ type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, numb
 // rest through its peak, however briefly the short lights it: libass
 // draws the frames of its bounce on the Go side, see
 // engine.CaptionDrawing.Bouncing, and they are played over the still
-// picture one each frame of the short, ending on the frame's own layer,
-// which looks as the last of them leaves it, see engine.PopFrames. Every
+// picture one each frame of the short, see engine.PopFrames. Every word
+// bounces the same and comes to rest, and the last of them stays over the
+// frame until the playhead moves or the captions change, a word the short
+// shows at its peak on its one frame too: Tim wanted the bounce the same
+// for every word, without exception, even where that is not the frame the
+// short shows. Every
 // other way of coming to stand on a frame, an arrow alone, a click, a
 // drag, shows the frame as the short shows it and nothing over it. Tim
 // saw the pop the short burns in played again over every frame he
@@ -257,12 +261,14 @@ type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, numb
 // bounce its word, a word of one frame too.
 // Before is the layer given before the step, which stays while the frames
 // of the bounce are on their way: the frame's own layer shows a word of one
-// frame at its peak, and the bounce starts at rest.
+// frame at its peak, and the bounce starts at rest. Done once the last of
+// them is shown, which then stays.
 type Replay = {
   key: string;
   layers: (Layer | null)[];
   shown: number;
   before: Layer | null;
+  done: boolean;
   timer?: ReturnType<typeof setTimeout>;
 };
 
@@ -312,7 +318,7 @@ export class CaptionLayers {
 
   // Whether a bounce is being played over a paused frame, for the walks.
   get popping(): boolean {
-    return this.replay !== null;
+    return this.replay !== null && !this.replay.done;
   }
 
   // Whether a layer is on its way or a bounce is being played, for the
@@ -320,7 +326,7 @@ export class CaptionLayers {
   // A walk that held the video preview to the short read a frame of the
   // bounce over the frame it stepped to.
   get busy(): boolean {
-    return this.going.size > 0 || this.waiting !== null || this.replay !== null;
+    return this.going.size > 0 || this.waiting !== null || this.popping;
   }
 
   // Whether the frame on screen was drawn with a layer not its own, the
@@ -357,7 +363,7 @@ export class CaptionLayers {
   // the one given last. Null with no captions to draw.
   at(frame: number, size: [number, number]): Layer | null {
     const want = this.wanted(frame, size);
-    if (want?.key !== this.replay?.key) this.stop();
+    if (want?.key !== this.replay?.key || !this.still?.paused()) this.stop();
     if (!want) return null;
     const have = this.kept.get(want.key);
     if (have) {
@@ -387,7 +393,7 @@ export class CaptionLayers {
   // own.
   private play(want: Wanted, have: Layer, pop: Pop, before: Layer | null) {
     const { key, ask, frame, size } = want;
-    const replay: Replay = { key, layers: [], shown: -1, before };
+    const replay: Replay = { key, layers: [], shown: -1, before, done: false };
     this.replay = replay;
     this.stats.popped++;
     const frames = Array.from({ length: pop.behind + pop.ahead + 1 }, (_, n) => n - pop.behind);
@@ -419,7 +425,7 @@ export class CaptionLayers {
       const next = () => {
         if (this.replay !== replay) return;
         replay.shown++;
-        if (replay.shown >= replay.layers.length) this.replay = null;
+        if (replay.shown >= replay.layers.length - 1) replay.done = true;
         else replay.timer = setTimeout(next, step);
         this.came();
       };
