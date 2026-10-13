@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -239,8 +240,8 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 			// The work folder is made by adding a video, never here: one
 			// deleted outside the app while the video preview still asked
 			// for captions was written back, and the video stayed.
-			if _, err := os.Stat(work); err != nil {
-				return "", fmt.Errorf("%w: %w", ErrNoWorkFolder, err)
+			if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
+				return "", err
 			}
 			if err := writeWhole(dir, file, track); err != nil {
 				return "", err
@@ -254,12 +255,30 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	})
 }
 
-// writeWhole writes data to file in dir through a name of its own, so a
-// reader, libass above all, never finds it half written.
-func writeWhole(dir, file string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+// foldersIn makes the folders of path inside the work folder work, one at
+// a time, and never work itself. A folder made with everything above it
+// brought back a work folder deleted in Finder while the video preview
+// still asked for captions, when the deletion and the write crossed, and
+// the video stayed in the list.
+func foldersIn(work, path string) error {
+	at := work
+	for _, part := range strings.Split(filepath.Clean(path), string(filepath.Separator)) {
+		at = filepath.Join(at, part)
+		if err := os.Mkdir(at, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%w: %w", ErrNoWorkFolder, err)
+			}
+			return err
+		}
 	}
+	return nil
+}
+
+// writeWhole writes data to file in dir through a name of its own, so a
+// reader, libass above all, never finds it half written. dir is there
+// already, and is never made here: a folder gone under the write stays
+// gone, see foldersIn.
+func writeWhole(dir, file string, data []byte) error {
 	tmp, err := os.CreateTemp(dir, filepath.Base(file)+".*"+partial)
 	if err != nil {
 		return err

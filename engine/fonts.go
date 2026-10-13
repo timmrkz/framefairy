@@ -15,6 +15,8 @@ package engine
 
 import (
 	"embed"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -89,8 +91,10 @@ func InstallFont(dir, name string) error {
 	if !ok {
 		return nil
 	}
+	// Inside dir, which is there, and never dir itself, so a folder that
+	// went under it stays gone, see foldersIn.
 	target := filepath.Join(dir, FontsFolder)
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	if err := os.Mkdir(target, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
 	}
 	for _, file := range []string{font.File, font.Licence} {

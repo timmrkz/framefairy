@@ -565,3 +565,41 @@ func TestACaptionFileIsNeverWrittenIntoAWorkFolderThatIsGone(t *testing.T) {
 		t.Errorf("the work folder was written back: %v", err)
 	}
 }
+
+// What writes a caption file or its face never makes the work folder,
+// whatever happens to it between a look and the write. A folder made
+// with everything above it brought back a work folder deleted while the
+// video preview still asked for captions, which CI's walk caught as the
+// deletion and the write crossed.
+//
+// On the real disk: the caption files are for libass, which reads them
+// from the disk.
+func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
+	t.Parallel()
+	work := filepath.Join(t.TempDir(), "folge.framefairy")
+	dir := filepath.Join(work, PreviewCaptionsFolder)
+	if err := foldersIn(work, PreviewCaptionsFolder); !errors.Is(err, ErrNoWorkFolder) {
+		t.Errorf("the folders in a work folder that is gone gave %v", err)
+	}
+	if err := writeWhole(dir, filepath.Join(dir, "a.ass"), []byte("[Script Info]\n")); err == nil {
+		t.Errorf("a caption file was written into a folder that is gone")
+	}
+	if err := InstallFont(dir, DefaultFont); err == nil {
+		t.Errorf("a face was written into a folder that is gone")
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Fatalf("the work folder was written back: %v", err)
+	}
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
+		t.Fatal(err)
+	}
+	if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
+		t.Errorf("the folders made twice gave %v", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Errorf("the folders in the work folder were not made: %v", err)
+	}
+}
