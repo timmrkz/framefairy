@@ -23,33 +23,29 @@ import (
 // decoder from the caption file the render burns in, see
 // engine.Engine.PreviewCaptions and docs/CAPTIONS.md:
 //
-//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&ahead=<frames>][&bounce=1][&typing=<caption> <word>][&<drafts>]
+//	/frames/captions?path=<episode>&track=<track>&at=<seconds>&w=<width>&h=<height>[&part=word|rest][&typing=<caption> <word>][&<drafts>]
 //	                                 the captions of a view, by its track,
 //	                                 on the frame of the episode that starts
 //	                                 at, at width by height, as a
 //	                                 framewire.Layer, with the caption and
 //	                                 the word it shows in the header
 //	                                 X-Caption-Showing, "<caption> <word>",
-//	                                 see engine.CaptionShowing, in
+//	                                 see engine.CaptionShowing, and in
 //	                                 X-Caption-Scale how large the pill of
 //	                                 that word is drawn on it, 1 at rest,
-//	                                 see engine.PopScale, and in
-//	                                 X-Caption-Pop which frames of the
-//	                                 bounce the video preview plays over
-//	                                 it, paused after a word step,
-//	                                 "<behind> <ahead>", so many before it
-//	                                 to so many after it, see
-//	                                 engine.PopFrames. With ahead, the
-//	                                 captions of the frame of the short so
-//	                                 many frames after it, or before it
-//	                                 below nought. With bounce, those of
-//	                                 the bounce of its word, see
-//	                                 engine.CaptionDrawing.Bouncing,
-//	                                 which is how the frames of a bounce
-//	                                 are asked for. With typing, the caption
-//	                                 without the ink of that word, which
-//	                                 the caption box draws as it is typed,
-//	                                 see engine.CaptionDrawing.Typing
+//	                                 see engine.PopScale. With part, only
+//	                                 the word being spoken with its pill,
+//	                                 or all but those, at rest, which the
+//	                                 video preview bounces the word with
+//	                                 after a word step, see
+//	                                 engine.CaptionDrawing.Lifted, the
+//	                                 word with the curve in the header
+//	                                 X-Caption-Bounce, "<ms> <rise>
+//	                                 <peak>", see engine.BounceCurve. With
+//	                                 typing, the caption without the ink
+//	                                 of that word, which the caption box
+//	                                 draws as it is typed, see
+//	                                 engine.CaptionDrawing.Typing
 //
 //	/frames/captions/words?path=<episode>&track=<track>[&<drafts>]
 //	                                 where the words of a view stand in the
@@ -63,10 +59,6 @@ import (
 // highlightOpacity, the switches textOn, boxOn and highlightOn, 0 or 1,
 // and y, where the captions sit, as SetCaptionsHeight takes it. Each is
 // checked as the edit that saves it checks it.
-
-// popAheadMost is the most frames ahead or behind a layer is asked for: a
-// pop lasts 220 ms, which is 27 frames at 120 a second.
-const popAheadMost = 30
 
 // captionTracks are the drawings of the caption views the interface was
 // given lately, by their tracks, each with the episode it belongs to. A
@@ -141,13 +133,10 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 	at, err := strconv.ParseFloat(q.Get("at"), 64)
 	width, _ := strconv.Atoi(q.Get("w"))
 	height, _ := strconv.Atoi(q.Get("h"))
-	ahead := 0
-	if q.Has("ahead") {
-		if ahead, err = strconv.Atoi(q.Get("ahead")); err == nil && (ahead < -popAheadMost || ahead > popAheadMost) {
-			err = fmt.Errorf("ahead is %d frames", ahead)
-		}
+	part := q.Get("part")
+	if part != "" && part != engine.LiftWord && part != engine.LiftRest {
+		err = fmt.Errorf("part is %q", engine.Scrub(part, 20))
 	}
-	bounce := q.Get("bounce") == "1"
 	// The word being typed in the caption box, which libass leaves out.
 	typing := engine.CaptionShowing{Caption: -1, Word: -1}
 	if err == nil && q.Has("typing") {
@@ -181,13 +170,10 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			// the episode's work folder.
 			var dir string
 			dir, err = engine.SafeChild(engine.WorkDir(path), filepath.Join("captions", "preview"))
-			drawing := kept.drawing.Typing(typing)
-			if bounce {
-				drawing = drawing.Bouncing(source, at)
-			}
+			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l framewire.Layer
 			if err == nil {
-				l, err = e.PreviewCaptions(ctx, dec, dir, drawing, drafts, source, o.RenderSettings(), at, ahead, width, height)
+				l, err = e.PreviewCaptions(ctx, dec, dir, drawing, drafts, source, o.RenderSettings(), at, width, height)
 			}
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound
@@ -202,11 +188,17 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				showing := kept.drawing.Showing(source, at)
 				w.Header().Set("Content-Type", "application/octet-stream")
 				w.Header().Set("X-Caption-Showing", fmt.Sprintf("%d %d", showing.Caption, showing.Word))
-				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(drawing.PopScale(source, at, ahead), 'f', 4, 64))
-				if ahead == 0 && !bounce {
-					behind, ahead := kept.drawing.PopFrames(source, at)
-					w.Header().Set("X-Caption-Pop", fmt.Sprintf("%d %d", behind, ahead))
+				// A part is drawn at rest, and the word comes with the
+				// curve the video preview bounces it by.
+				scale := 1.0
+				if part == "" {
+					scale = drawing.PopScale(source, at)
 				}
+				if part == engine.LiftWord {
+					length, rise, peak := engine.BounceCurve()
+					w.Header().Set("X-Caption-Bounce", fmt.Sprintf("%g %g %g", length, rise, peak))
+				}
+				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(scale, 'f', 4, 64))
 				_, _ = w.Write(l.Body())
 				return
 			}

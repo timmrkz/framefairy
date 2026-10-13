@@ -1146,9 +1146,10 @@
   // captions itself, except while a word is being corrected: what is typed
   // is not captions yet, so the caption box draws it, and the picture's
   // captions wait until it is saved.
-  // Paused, a word the picture lands on pops over the still frame, see
-  // Replay in lib/frames/captions.ts.
-  const layers = new CaptionLayers(() => queue?.repaint(), { paused: () => paused, frameLength: () => oneFrame });
+  // Paused, the word a word step lands on bounces over the still frame,
+  // the screen redrawing it on each of its own frames, see Lift in
+  // lib/frames/captions.ts.
+  const layers = new CaptionLayers(() => queue?.repaint(), { paused: () => paused });
   // For the walks, which wait until the captions over the frame are drawn.
   (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
   // While a word is typed, libass draws the caption without it and the

@@ -449,3 +449,74 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 		}
 	}
 }
+
+// After a word step the video preview lays the rest of the caption over
+// the frame and the word with its pill over that, and scales the word by
+// itself, see CaptionDrawing.Lifted. At rest the two together are the
+// caption the short shows, pixel for pixel near enough, over black and
+// over white, so the bounce starts and ends on the caption as it is. The
+// word alone is its pill and its ink, and the rest has neither. The bounce
+// played from libass's frames at the video's rate stuttered, which Tim saw.
+//
+// On the real disk: ffmpeg measures the captions, and the decoder reads
+// the episode and the caption files.
+func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	ffmpeg := builtFFmpeg(program)
+	if _, err := os.Stat(ffmpeg); err != nil {
+		ffmpegtest.Unusable(t, "the ffmpeg built beside the decoder is not at %s", ffmpeg)
+	}
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e.FFmpeg, e.FFprobe = ffmpeg, filepath.Join(filepath.Dir(ffmpeg), "ffprobe")
+	dir := t.TempDir()
+	source := filepath.Join(dir, "episode.mkv")
+	if out, err := exec.Command(ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=3",
+		"-c:v", "ffv1", source).CombinedOutput(); err != nil {
+		t.Fatalf("making the test episode: %s %s", err, out)
+	}
+	info, err := e.Probe(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := info.OnFrames(Clip{ID: "01", Slug: "lift", Segments: []Segment{{Start: 0, End: 2.5}}})
+	tr := &Transcript{Words: []Cue{{0.2, 0.6, "Das"}, {0.6, 1.6, "respektvoll"}, {1.6, 2.0, "ist."}}, Language: "de"}
+	d := captionsView(Plan{}, clip, tr, nil).Drawing()
+	dec := NewEpisodeFrames(program, source)
+	defer dec.Close()
+	const w, h = 270, 480
+	rs := RenderSettings{OutW: 540, OutH: 960, ScaleUp: true}
+	captions := filepath.Join(dir, "captions")
+	// Well after "respektvoll" has popped, at rest.
+	at := 1.3
+	layer := func(dd *CaptionDrawing) framewire.Layer {
+		t.Helper()
+		l, err := e.PreviewCaptions(ctx, dec, captions, dd, nil, info, rs, at, w, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	whole, rest, word := layer(d), layer(d.Lifted(LiftRest)), layer(d.Lifted(LiftWord))
+	if word.W == 0 || rest.W == 0 {
+		t.Fatalf("the word is %dx%d and the rest %dx%d", word.W, word.H, rest.W, rest.H)
+	}
+	if word.W >= whole.W*2/3 {
+		t.Errorf("the word alone is %d wide, of a caption %d wide", word.W, whole.W)
+	}
+	for _, shade := range []byte{0, 255} {
+		picture := bytes.Repeat([]byte{shade}, w*h*3)
+		apart := over(over(picture, w, rest), w, word)
+		mean, most := lumaDiff(over(picture, w, whole), apart)
+		if mean > 0.05 || most > 40 {
+			t.Errorf("over %d the word and the rest are %.3f apart on average, %d at most, from the caption", shade, mean, most)
+		}
+	}
+	if d.Laid[0].Lift != "" {
+		t.Errorf("lifting a part changed the captions it was made from")
+	}
+}

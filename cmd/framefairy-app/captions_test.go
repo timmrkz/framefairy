@@ -48,19 +48,9 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	if rec.Code != http.StatusOK || l.W == 0 || l.H == 0 || l.X+l.W > 270 || l.Y+l.H > 480 {
 		t.Fatalf("the captions answered %d %q, a layer at %d,%d of %dx%d", rec.Code, rec.Body.String(), l.X, l.Y, l.W, l.H)
 	}
-	// Which frames of the short to play over it, paused, for its word to
-	// pop, and those frames, asked for by how far ahead or behind they are.
+	// How large the pill of the word is drawn on it.
 	if s, err := strconv.ParseFloat(rec.Header().Get("X-Caption-Scale"), 64); err != nil || s < 1 || s > 1.2 {
 		t.Errorf("the captions say the pill is drawn at %q", rec.Header().Get("X-Caption-Scale"))
-	}
-	var behind, after int
-	if n, err := fmt.Sscanf(rec.Header().Get("X-Caption-Pop"), "%d %d", &behind, &after); err != nil || n != 2 ||
-		behind < 0 || after < 0 || behind > popAheadMost || after > popAheadMost {
-		t.Errorf("the captions say %q frames pop", rec.Header().Get("X-Caption-Pop"))
-	}
-	ahead := url.Values{}
-	for k, v := range ask {
-		ahead[k] = v
 	}
 	// With the word being typed left out.
 	typing := url.Values{}
@@ -71,11 +61,23 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	if rec, l := draw(typing); rec.Code != http.StatusOK || l.W == 0 {
 		t.Errorf("with a word being typed the captions answered %d with a layer %dx%d", rec.Code, l.W, l.H)
 	}
-	for _, n := range []string{"2", "-1"} {
-		ahead.Set("ahead", n)
-		if rec, l := draw(ahead); rec.Code != http.StatusOK || l.W == 0 || rec.Header().Get("X-Caption-Pop") != "" {
-			t.Errorf("%s frames ahead the captions answered %d with a layer %dx%d and pop %q",
-				n, rec.Code, l.W, l.H, rec.Header().Get("X-Caption-Pop"))
+	// The word with its pill and the rest apart, at rest, which the video
+	// preview bounces the word with after a word step: the word is a part
+	// of the caption.
+	part := url.Values{}
+	for k, v := range ask {
+		part[k] = v
+	}
+	for _, p := range []string{"word", "rest"} {
+		part.Set("part", p)
+		rec, pl := draw(part)
+		if rec.Code != http.StatusOK || pl.W == 0 || pl.W > l.W || rec.Header().Get("X-Caption-Scale") != "1.0000" {
+			t.Errorf("the %s apart answered %d with a layer %dx%d of %dx%d at %q", p, rec.Code, pl.W, pl.H, l.W, l.H,
+				rec.Header().Get("X-Caption-Scale"))
+		}
+		// Only the word says how it bounces.
+		if bounce := rec.Header().Get("X-Caption-Bounce"); (p == "word") != (bounce == "220 0.55 1.15") {
+			t.Errorf("the %s apart says it bounces by %q", p, bounce)
 		}
 	}
 	// Lower on the picture where the captions are drafted lower.
@@ -101,9 +103,7 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 		"another path":   {"path": {"/not/mine.mp4"}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}},
 		"no size":        {"path": {mine}, "track": {view.Track}, "at": {"10.2"}},
 		"no colour":      {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "text": {"red"}},
-		"too far ahead":  {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"31"}},
-		"too far behind": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"-31"}},
-		"ahead nothing":  {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "ahead": {"x"}},
+		"no such part":   {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "part": {"box"}},
 		"typing nothing": {"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"270"}, "h": {"480"}, "typing": {"x"}},
 	} {
 		if rec, _ := draw(q); rec.Code == http.StatusOK {

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,7 +54,7 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 // is in it, with the faces it needs beside it. A style with the captions
 // off draws nothing, as the render burns nothing in.
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir string, d *CaptionDrawing,
-	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, ahead, width, height int) (framewire.Layer, error) {
+	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
 	style := d.drafted(drafts)
 	resolved := ResolveStyle(style)
 	if len(d.Laid) == 0 || !resolved.Text {
@@ -70,7 +69,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, dir st
 		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
 	}
 	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
-		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.captionMomentAhead(d.Clip, at, ahead))
+		File: file, Fonts: filepath.Join(dir, FontsFolder)}, source.CaptionMoment(d.Clip, at))
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -100,12 +99,11 @@ func (d *CaptionDrawing) popping(m int64) (from, to int, ok bool) {
 }
 
 // PopScale is the scale libass draws the pill of the word lit on the frame
-// of the short ahead frames after the one that shows the frame of the
-// episode that starts at, 1 at rest, see popScales. The caption box grows
-// the frame round the word by it, so the frame stays on the pill's edge
-// through the pop, as it did when the browser drew both.
-func (d *CaptionDrawing) PopScale(source SourceInfo, at float64, ahead int) float64 {
-	m := source.captionMomentAhead(d.Clip, at, ahead)
+// of the episode that starts at, 1 at rest, see popScales. The caption box
+// grows the frame round the word by it, so the frame stays on the pill's
+// edge through the pop, as it did when the browser drew both.
+func (d *CaptionDrawing) PopScale(source SourceInfo, at float64) float64 {
+	m := source.CaptionMoment(d.Clip, at)
 	from, to, ok := d.popping(m)
 	if !ok {
 		return 1
@@ -118,69 +116,24 @@ func (d *CaptionDrawing) PopScale(source SourceInfo, at float64, ahead int) floa
 	return scales[j]
 }
 
-// Bouncing is d as the video preview bounces the word lit on the frame of
-// the episode that starts at, when a word step lands on it: the caption of
-// that word alone, the word lit for as long as its whole pop takes, and
-// the words after it later by as much. So it pops from rest through its
-// peak and back however briefly the short lights it, a word of one frame
-// too. d itself where no word is lit there, or where the short lights it
-// long enough already, and then the bounce is the short's own frames.
-//
-// The bounce is how the video preview shows a step from word to word, and
-// nothing the short shows. Tim saw the pop the short burns in played again
-// over every frame he stepped to, the arrow keys included, two animations
-// mixed into one, and wanted a step from frame to frame to show only the
-// short's frames and a step from word to word to bounce its word.
-func (d *CaptionDrawing) Bouncing(source SourceInfo, at float64) *CaptionDrawing {
-	m := source.CaptionMoment(d.Clip, at)
-	from, to, ok := d.popping(m)
-	if !ok {
+// Lifted is d with only part of it drawn, LiftWord or LiftRest, at rest:
+// the word being spoken with its pill, or all of the captions but those.
+// After a word step the video preview lays the rest over the frame and
+// the word over that, and scales the word itself, smoothly at the screen's
+// own rate, as an app animates a layer it has drawn once. That bounce is
+// how the video preview shows a step from word to word, and nothing the
+// short shows: the short's own pop is in its frames, which a step from
+// frame to frame shows alone. Tim saw the two mixed into one, and a bounce
+// played from libass's frames at the video's rate stutter.
+func (d *CaptionDrawing) Lifted(part string) *CaptionDrawing {
+	if part != LiftWord && part != LiftRest {
 		return d
 	}
-	// A whole pop needs its frames, one more to rest on, and the frame the
-	// word may light in the middle of.
-	g := source.popGrid()
-	frame := float64(g.FPSDen) * 1000 / float64(g.FPSNum)
-	need := from + int(math.Ceil((popLength+2*frame)/10))
-	if to >= need {
-		return d
+	laid := slices.Clone(d.Laid)
+	for i := range laid {
+		laid[i].Lift = part
 	}
-	later := float64(need-to) / 100
-	on := ShowingAt(d.Laid, m)
-	c := d.Laid[on.Caption]
-	c.Words = slices.Clone(c.Words)
-	for k := on.Word + 1; k < len(c.Words); k++ {
-		c.Words[k].Start += later
-		c.Words[k].End += later
-	}
-	c.End += later
-	return &CaptionDrawing{Laid: []LaidCaption{c}, Style: d.Style, Clip: d.Clip}
-}
-
-// PopFrames is which frames of the bounce the video preview plays over
-// the frame of the episode that starts at, paused on it after a word step,
-// see Bouncing, counted from the frame of the short that shows it: from
-// behind frames before it, the word's first frame, at rest, to ahead
-// frames after it, the frame the bounce is at rest again on. Every word
-// bounces the same, from rest through its peak and back to rest, a word of
-// one frame too, though the short shows that one at its peak: Tim wanted
-// the bounce the same for every word, without exception. None where no
-// word is lit, past the bounce, or where the short has no frames to count.
-func (d *CaptionDrawing) PopFrames(source SourceInfo, at float64) (behind, ahead int) {
-	if source.FPSNum <= 0 || source.FPSDen <= 0 {
-		return 0, 0
-	}
-	from, to, ok := d.Bouncing(source, at).popping(source.CaptionMoment(d.Clip, at))
-	if !ok {
-		return 0, 0
-	}
-	first, scales := source.wordPop(from, to)
-	k, _ := source.shortFrame(d.Clip, at)
-	j, end := int(k-first), len(scales)-1
-	if j < 0 || j > end {
-		return 0, 0
-	}
-	return j, end - j
+	return &CaptionDrawing{Laid: laid, Style: d.Style, Clip: d.Clip}
 }
 
 // PreviewWordFrames is where the words of d stand in the short the render

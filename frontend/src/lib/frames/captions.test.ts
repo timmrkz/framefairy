@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CaptionLayers, laidPart, readLayer, readPop, readShowing, turned, unturned, type Layer, type Over } from "./captions";
+import {
+  bounceScale,
+  CaptionLayers,
+  laidPart,
+  readBounce,
+  readLayer,
+  readShowing,
+  turned,
+  unturned,
+  type Layer,
+  type Over,
+} from "./captions";
 
 // A pixel of 10 bits a colour, red lowest, as the Go side sends every frame.
 const word = (r: number, g: number, b: number) => (r | (g << 10) | (b << 20)) >>> 0;
@@ -277,7 +288,6 @@ describe("the layers of the captions", () => {
 describe("the bounce after a word step", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.useRealTimers();
   });
 
   function body(red: number): ArrayBuffer {
@@ -289,108 +299,211 @@ describe("the bounce after a word step", () => {
   }
 
   // The Go side: a frame's own layer is red 100 plus the word it lights,
-  // with a bounce from a frame behind it to two ahead, and the frame of
-  // the bounce so many frames ahead is red 50 and that many.
-  function goSide(word: () => number) {
+  // drawn at scale, and the rest of the caption apart is red 20 and the
+  // word apart red 30, with the curve it bounces by.
+  function goSide(word: () => number, scale: () => string) {
     const asked: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       asked.push(url);
       const q = new URLSearchParams(url.split("?")[1]);
-      if (q.get("bounce") === "1") return new Response(body(50 + Number(q.get("ahead") ?? 0)), { headers: { "X-Caption-Showing": `0 ${word()}` } });
-      return new Response(body(100 + word()), { headers: { "X-Caption-Showing": `0 ${word()}`, "X-Caption-Pop": "1 2" } });
+      const showing = { "X-Caption-Showing": `0 ${word()}` };
+      if (q.get("part") === "rest") return new Response(body(20), { headers: { ...showing, "X-Caption-Scale": "1.0000" } });
+      if (q.get("part") === "word")
+        return new Response(body(30), { headers: { ...showing, "X-Caption-Scale": "1.0000", "X-Caption-Bounce": "220 0.55 1.15" } });
+      return new Response(body(100 + word()), { headers: { ...showing, "X-Caption-Scale": scale() } });
     });
     return asked;
   }
 
+  // The screen's frames, one at a time, at the moment given.
+  function screen() {
+    let waiting: [number, FrameRequestCallback][] = [];
+    let n = 0;
+    vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => {
+      waiting.push([++n, f]);
+      return n;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      waiting = waiting.filter(([k]) => k !== id);
+    });
+    return {
+      frame(ms: number) {
+        const now = waiting;
+        waiting = [];
+        now.forEach(([, f]) => f(ms));
+      },
+      get waiting() {
+        return waiting.length;
+      },
+    };
+  }
+
+  // Lets every answer on its way come.
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
   // Tim saw the pop the short burns in played again over every frame he
   // stepped to, the arrow keys included, and wanted a step from word to
   // word to bounce its word and a step from frame to frame to show only
-  // the short's frames.
-  it("bounces the word a word step lands on, from the word's first frame, and shows only the frame after any other step", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
-    // Lets every answer on its way come, without moving the clock.
-    const flush = async () => {
-      for (let i = 0; i < 10; i++) await new Promise((r) => (globalThis as unknown as { setImmediate: (f: () => void) => void }).setImmediate(() => r(undefined)));
-    };
+  // the short's frames. Then he found the bounce laggy, the short's frames
+  // of the pop played at 25 a second, and wanted it the same for every
+  // word, a word of one frame too.
+  it("bounces the word a word step lands on at the screen's rate, and shows only the frame after any other step", async () => {
     let lit = 0;
-    const asked = goSide(() => lit);
+    let scale = "1.0000";
+    const asked = goSide(
+      () => lit,
+      () => scale,
+    );
+    const s = screen();
     let paused = true;
     let came = 0;
-    const layers = new CaptionLayers(() => came++, { paused: () => paused, frameLength: () => 1 / 30 });
+    const layers = new CaptionLayers(() => came++, { paused: () => paused });
     layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
-    const red = (at: number) => layers.at(at, [10, 20])?.pixels[0];
+    const at = (t: number) => layers.at(t, [10, 20]);
     // The first frame shows its own layer, and nothing bounces.
-    red(1.0);
+    at(1.0);
     await flush();
     expect(came).toBe(1);
-    expect(red(1.0)).toBe(100);
-    await flush();
-    expect(red(1.0)).toBe(100);
+    expect(at(1.0)?.pixels[0]).toBe(100);
     expect(layers.popping).toBe(false);
     // An arrow alone onto another word shows its frame and nothing over it.
     layers.sought(false);
     lit = 1;
-    red(1.04);
+    at(1.04);
     await flush();
-    expect(red(1.04)).toBe(101);
-    await flush();
-    expect(red(1.04)).toBe(101);
+    expect(at(1.04)?.pixels[0]).toBe(101);
+    expect(at(1.04)?.lift).toBeUndefined();
     expect(layers.stats.popped).toBe(0);
-    // A word step bounces the word it lands on. The layer before stays
-    // while the frames of the bounce are on their way.
+    // A word step lifts the word it lands on out of its caption. The
+    // frame's own layer, at rest, stays while the parts are on their way.
     layers.sought(true);
     lit = 2;
-    red(1.5);
+    at(1.5);
     await flush();
-    expect(red(1.5)).toBe(101);
+    expect(at(1.5)?.pixels[0]).toBe(102);
     expect(layers.popping).toBe(true);
+    expect(layers.busy).toBe(true);
     await flush();
-    expect(red(1.5)).toBe(49);
-    const bounce = asked.filter((a) => a.includes("bounce=1"));
-    expect(bounce.map((a) => new URLSearchParams(a.split("?")[1]).get("ahead"))).toEqual(["-1", "0", "1", "2"]);
-    expect(new URLSearchParams(bounce[0].split("?")[1]).get("at")).toBe("1.500000");
-    vi.advanceTimersByTime(34);
-    expect(red(1.5)).toBe(50);
-    vi.advanceTimersByTime(34);
-    expect(red(1.5)).toBe(51);
-    vi.advanceTimersByTime(34);
-    // The last frame of the bounce, at rest, stays over the frame, every
-    // word alike, though the short may show the frame otherwise.
-    expect(red(1.5)).toBe(52);
+    const parts = asked.filter((a) => a.includes("part="));
+    expect(parts.map((a) => new URLSearchParams(a.split("?")[1]).get("part")).sort()).toEqual(["rest", "word"]);
+    expect(new URLSearchParams(parts[0].split("?")[1]).get("at")).toBe("1.500000");
+    expect(parts.some((a) => a.includes("ahead") || a.includes("bounce"))).toBe(false);
+    // The rest over the frame, the word over that, at rest until the
+    // screen's first frame.
+    let l = at(1.5)!;
+    expect(l.pixels[0]).toBe(20);
+    expect(l.lift?.layer.pixels[0]).toBe(30);
+    expect(l.lift?.scale).toBe(1);
+    expect(l.showing).toEqual({ caption: 0, word: 2 });
+    // Then one scale for each frame of the screen, by its clock: up to its
+    // peak a little past the middle, and back to rest.
+    const scales: number[] = [];
+    for (let ms = 1000; s.waiting; ms += 1000 / 60) {
+      s.frame(ms);
+      scales.push(at(1.5)!.lift!.scale);
+    }
+    expect(scales.length).toBeGreaterThanOrEqual(13);
+    expect(scales[0]).toBe(1);
+    expect(Math.max(...scales)).toBeGreaterThan(1.149);
+    expect(scales[scales.length - 1]).toBe(1);
+    const top = scales.indexOf(Math.max(...scales));
+    scales.slice(1, top + 1).forEach((v, k) => expect(v).toBeGreaterThan(scales[k]));
+    scales.slice(top + 1).forEach((v, k) => expect(v).toBeLessThan(scales[top + k]));
+    expect(at(1.5)!.scale).toBe(1);
+    expect(layers.stats.bounced).toBe(scales.length);
+    // At rest it stays over the frame, every word alike, though the short
+    // may show the frame otherwise.
     expect(layers.popping).toBe(false);
     expect(layers.busy).toBe(false);
-    vi.advanceTimersByTime(340);
-    expect(red(1.5)).toBe(52);
+    expect(at(1.5)?.lift?.layer.pixels[0]).toBe(30);
     expect(layers.stats.popped).toBe(1);
-    // A word step that stays on its frame, then an arrow alone: nothing
-    // bounces, and the frame shows its own layer.
-    layers.sought(true);
-    expect(red(1.5)).toBe(52);
+    // A draft changed over that frame lifts the word again at rest, with
+    // no bounce.
+    layers.set({ path: "/v.mp4", track: "abc", drafts: { text: "#ffffff" } });
+    expect(at(1.5)?.lift?.scale).toBe(1);
+    await flush();
+    at(1.5);
+    await flush();
+    expect(at(1.5)?.lift?.layer.pixels[0]).toBe(30);
+    expect(s.waiting).toBe(0);
+    expect(layers.stats.popped).toBe(1);
+    // An arrow alone: nothing bounces, and the frame shows its own layer.
     layers.sought(false);
     lit = 3;
-    red(1.54);
+    at(1.54);
     await flush();
-    expect(red(1.54)).toBe(103);
-    expect(layers.stats.popped).toBe(1);
-    // A step away stops a bounce.
+    expect(at(1.54)?.pixels[0]).toBe(103);
+    expect(at(1.54)?.lift).toBeUndefined();
+    // A word of one frame, which the short shows at its peak: the layer
+    // before stays while the parts come, and the bounce starts at rest.
     layers.sought(true);
     lit = 4;
-    red(1.6);
+    scale = "1.1500";
+    at(1.6);
     await flush();
-    red(1.6);
+    expect(at(1.6)?.pixels[0]).toBe(103);
+    await flush();
+    s.frame(5000);
+    expect(at(1.6)?.lift?.scale).toBe(1);
+    s.frame(5100);
+    expect(at(1.6)?.lift?.scale).toBeGreaterThan(1.1);
     expect(layers.popping).toBe(true);
+    // A step away puts the word back at once.
     layers.sought(false);
-    red(1.64);
+    scale = "1.0000";
+    at(1.64);
     expect(layers.popping).toBe(false);
+    expect(s.waiting).toBe(0);
     expect(layers.stats.popped).toBe(2);
     // Playing, nothing bounces over the frames.
     paused = false;
     layers.sought(true);
     lit = 5;
-    red(2.0);
+    at(2.0);
     await flush();
-    expect(red(2.0)).toBe(105);
+    expect(at(2.0)?.pixels[0]).toBe(105);
     expect(layers.stats.popped).toBe(2);
+  });
+
+  it("follows one curve, at rest at either end and at its peak a little past the middle", () => {
+    const b = readBounce("220 0.55 1.15")!;
+    expect(b).toEqual({ length: 220, rise: 0.55, peak: 1.15 });
+    expect(bounceScale(-5, b)).toBe(1);
+    expect(bounceScale(0, b)).toBe(1);
+    expect(bounceScale(121, b)).toBeCloseTo(1.15, 9);
+    expect(bounceScale(220, b)).toBe(1);
+    expect(bounceScale(500, b)).toBe(1);
+    expect(bounceScale(60, b)).toBeGreaterThan(1.05);
+    for (const bad of [null, "", "220", "0 0.5 1.1", "220 1.5 1.1", "220 0.5 3"]) expect(readBounce(bad)).toBeUndefined();
+  });
+
+  it("lays the word over the rest, grown round its middle", () => {
+    // A frame of 8 by 8, grey, shown at its size, the rest one dark pixel
+    // in the corner and the word a white square of 2 by 2 in the middle.
+    const data = frame(8, 8, 512);
+    const white = Array.from({ length: 4 }, () => [255, 255, 255, 255]).flat();
+    const word: Layer = { x: 3, y: 3, w: 2, h: 2, pixels: new Uint8Array(white) };
+    const rest = layer(0, 0, 1, 1, [0, 0, 0, 255]);
+    const at = (scale: number) => {
+      const o: Over = { layer: { ...rest, lift: { layer: word, scale } }, size: [8, 8], left: 0, width: 1, turn: 0 };
+      return pixelsOf(laidOver(data, 8, 8, o)).map((p) => p[0]);
+    };
+    // At rest: the word on its own four pixels, the rest in its corner.
+    const still = at(1);
+    still.forEach((v, i) => {
+      const [x, y] = [i % 8, Math.floor(i / 8)];
+      expect(v).toBe(x === 0 && y === 0 ? 0 : x >= 3 && x < 5 && y >= 3 && y < 5 ? 1023 : 512);
+    });
+    // Twice as large, it reaches a pixel further each way, sampled between
+    // its pixels, and is as bright in its middle.
+    const grown = at(2);
+    expect(grown[3 * 8 + 3]).toBe(1023);
+    expect(grown[2 * 8 + 2]).toBeGreaterThan(600);
+    expect(grown[2 * 8 + 4]).toBeGreaterThan(still[2 * 8 + 4]);
+    expect(grown[0]).toBe(0);
+    expect(grown[7 * 8 + 7]).toBe(512);
   });
 });
 
@@ -404,12 +517,7 @@ describe("what a layer shows", () => {
     expect(readShowing("1.5 0")).toBeUndefined();
   });
 
-  it("reads the frames of a pop off its header, and nothing for one it cannot read", () => {
-    expect(readPop("1 3")).toEqual({ behind: 1, ahead: 3 });
-    expect(readPop("0 0")).toEqual({ behind: 0, ahead: 0 });
-    expect(readPop("2")).toBeUndefined();
-    expect(readPop("-1 2")).toBeUndefined();
-    expect(readPop(null)).toBeUndefined();
+  it("is nothing for words where numbers should be", () => {
     expect(readShowing("one two")).toBeUndefined();
   });
 });

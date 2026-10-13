@@ -106,6 +106,15 @@ const (
 	lineReach = "Hbdfhklgjpqy"
 )
 
+// BounceCurve is the pop as the video preview plays it after a word step,
+// at the screen's own rate rather than on the frames of a short, see
+// CaptionDrawing.Lifted: the same curve, length long in milliseconds,
+// rising like a sine for the share rise of it to peak and settling like a
+// cosine back to rest.
+func BounceCurve() (length, rise, peak float64) {
+	return popLength, popRise, popPeak
+}
+
 // popScales is the scale of a word lit for lit frames of a short of fps
 // frames a second, frame by frame from its first: at rest on the first,
 // popPeak on one frame, at rest again by its last, eased in and out like a
@@ -338,7 +347,8 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			full.left, full.right = min(full.left, b.left), max(full.right, b.right)
 			full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
 		}
-		if drawBox {
+		whole, word := c.Lift == "", c.Lift == LiftWord
+		if drawBox && !word {
 			shape := roundedRect(ax+float64(full.left)-padX, ay+float64(full.top)-padY,
 				ax+float64(full.right)+padX, ay+float64(full.bottom)+padY, radius)
 			add(0, start, end, "Box", fmt.Sprintf(
@@ -347,7 +357,9 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 
 		begins := wordBegins(c, start, end)
 		all := func(j int) bool { return !c.Hidden[j] }
-		add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
+		if !word {
+			add(2, start, begins[0], "Caption", "{"+anchor+"}"+taggedText(L.words, L.lines, all, shown))
+		}
 
 		for k := range L.words {
 			from := begins[k]
@@ -369,8 +381,10 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			pill := roundedRect(0, 0, w, h, pillRadius(h, radius))
 
 			// The line with the active word hidden, so nothing else moves.
-			add(2, from, to, "Caption", "{"+anchor+"}"+
-				taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
+			if !word {
+				add(2, from, to, "Caption", "{"+anchor+"}"+
+					taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
+			}
 
 			// The pill, and the active word alone over it, both at one
 			// scale around one centre, one scale a frame. The word is the
@@ -389,6 +403,14 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 			// frame starts in to the hundredth the next starts in, so the
 			// frame shows exactly that scale. Before the first frame, and
 			// after the pop, the word is at rest.
+			// A part of the caption is drawn at rest, and the word only
+			// with the word, see LaidCaption.Lift.
+			if !whole {
+				if word {
+					at(1, from, to)
+				}
+				continue
+			}
 			first, scales := source.wordPop(from, to)
 			grid := source.popGrid()
 			edge := func(j int) int {

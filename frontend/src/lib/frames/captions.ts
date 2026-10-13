@@ -14,11 +14,12 @@
 // full range, see framewire.Layer. A moment with no captions is a box of
 // nothing.
 // A layer from the Go side also says which captions it was drawn from,
-// track, and what it shows of them, showing.
-// And which frames of the bounce the video preview plays over the frame,
-// paused after a word step, pop, so many before its own and so many
-// after, see Replay, and how large the pill of its word is drawn, scale,
-// 1 at rest, which the frame round the word grows by.
+// track, and what it shows of them, showing, and how large the pill of
+// its word is drawn, scale, 1 at rest, which the frame round the word
+// grows by.
+// After a word step a layer carries the word apart, lift, which the screen
+// lays over the rest scaled by scale round the middle of its box, see
+// Lift.
 export type Layer = {
   x: number;
   y: number;
@@ -27,13 +28,32 @@ export type Layer = {
   pixels: Uint8Array;
   track?: string;
   showing?: Showing;
-  pop?: Pop;
   scale?: number;
+  lift?: { layer: Layer; scale: number };
 };
 
-// Frames of the bounce before a frame and after it, as the Go side says it
-// in the header X-Caption-Pop, "<behind> <ahead>", see engine.PopFrames.
-export type Pop = { behind: number; ahead: number };
+// How the video preview bounces a word after a word step: so many
+// milliseconds from rest to rest, rising for the share rise of them to
+// peak, as the Go side says it in the header X-Caption-Bounce,
+// "<ms> <rise> <peak>", see engine.BounceCurve. The pop the short burns in
+// has the same shape, laid out on its frames.
+export type Bounce = { length: number; rise: number; peak: number };
+
+export function readBounce(header: string | null): Bounce | undefined {
+  const [length, rise, peak] = (header ?? "").split(" ").map(Number);
+  return length > 0 && rise > 0 && rise < 1 && peak >= 1 && peak < 2 ? { length, rise, peak } : undefined;
+}
+
+// The scale of the word t milliseconds into its bounce: at rest before
+// and after, eased up like a sine to peak and back down like a cosine,
+// the curve of engine.popScales, here at any moment rather than on frames.
+export function bounceScale(t: number, b: Bounce): number {
+  if (!(t > 0) || t >= b.length) return 1;
+  const top = b.rise * b.length;
+  return t < top
+    ? 1 + (b.peak - 1) * Math.sin(((Math.PI / 2) * t) / top)
+    : 1 + (b.peak - 1) * Math.cos(((Math.PI / 2) * (t - top)) / (b.length - top));
+}
 
 // What a layer shows: the caption, by its place among the captions of the
 // view, and the word of it being spoken, counted across its lines, each
@@ -48,13 +68,6 @@ export type Showing = { caption: number; word: number };
 export function readShowing(header: string | null): Showing | undefined {
   const [caption, word] = (header ?? "").split(" ").map(Number);
   return Number.isInteger(caption) && Number.isInteger(word) ? { caption, word } : undefined;
-}
-
-// The frames of a pop, from the header X-Caption-Pop, nothing when it is
-// missing or not two counts.
-export function readPop(header: string | null): Pop | undefined {
-  const m = /^(\d+) (\d+)$/.exec(header ?? "");
-  return m ? { behind: Number(m[1]), ahead: Number(m[2]) } : undefined;
 }
 
 // How large the pill is drawn, from the header X-Caption-Scale, at rest
@@ -138,13 +151,30 @@ export function inkBox(o: Over): [number, number, number, number] {
   ];
 }
 
+// The box in the picture as shown, in shares, that the word lifted out of
+// a layer covers at its scale: its own box grown round its middle, with a
+// pixel of the word more on each side, which sampling between its pixels
+// reaches. Null for no word lifted.
+export function liftBox(o: Over): [number, number, number, number] | null {
+  const lift = o.layer.lift;
+  if (!lift || !lift.layer.w || !lift.layer.h) return null;
+  const [u0, v0, u1, v1] = inkBox({ ...o, layer: lift.layer });
+  const [mu, mv] = [(u0 + u1) / 2, (v0 + v1) / 2];
+  const [pu, pv] = [(u1 - u0) / lift.layer.w, (v1 - v0) / lift.layer.h];
+  const s = lift.scale;
+  return [mu - (mu - u0 + pu) * s, mv - (mv - v0 + pv) * s, mu + (u1 - mu + pu) * s, mv + (v1 - mv + pv) * s];
+}
+
 // The part of a frame drawn at width by height that the layer's ink falls
 // on, with the layer laid over it, as the screen without WebGPU draws it:
 // at each pixel drawn, the frame sampled between its four nearest pixels
 // and the pixel of the layer that falls there taken whole, the way the
-// shader samples them, see screen.ts. The frame is 10 bits a colour with
-// red lowest, see framewire.Picture, and so is the part. Null where the ink
-// falls on nothing drawn.
+// shader samples them, see screen.ts. A word lifted out of the layer is
+// laid over that, scaled round the middle of its box and sampled between
+// its four nearest pixels, nothing beyond its edge, as the shader samples
+// it. The frame is 10 bits a colour with red lowest, see
+// framewire.Picture, and so is the part. Null where the ink falls on
+// nothing drawn.
 export function laidPart(
   data: Uint8Array,
   fw: number,
@@ -154,13 +184,24 @@ export function laidPart(
   o: Over,
 ): { x: number; y: number; w: number; h: number; data: Uint8Array } | null {
   const l = o.layer;
-  if (!l.w || !l.h || !fw || !fh || !w || !h) return null;
+  const lifted = liftBox(o);
+  if (!fw || !fh || !w || !h || (!(l.w && l.h) && !lifted)) return null;
   const frame = new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4);
   const [u0, v0, u1, v1] = inkBox(o);
-  // The part drawn that the box falls on, turned back.
+  // The part drawn that the boxes fall on, turned back.
   const corners = [
-    [u0, v0],
-    [u1, v1],
+    ...(l.w && l.h
+      ? [
+          [u0, v0],
+          [u1, v1],
+        ]
+      : []),
+    ...(lifted
+      ? [
+          [lifted[0], lifted[1]],
+          [lifted[2], lifted[3]],
+        ]
+      : []),
   ].map(([u, v]) => unturned(u, v, o.turn));
   const xs = corners.map((c) => c[0] * w);
   const ys = corners.map((c) => c[1] * h);
@@ -173,6 +214,14 @@ export function laidPart(
   const out = new Uint32Array(pw * (y1 - y0));
   const colour = (x: number, y: number, c: number) =>
     (frame[Math.min(fh - 1, Math.max(0, y)) * fw + Math.min(fw - 1, Math.max(0, x))] >>> (10 * c)) & 1023;
+  // The word lifted out: its box at rest, its middle and its scale.
+  const lift = l.lift && lifted ? l.lift : null;
+  const [lu0, lv0, lu1, lv1] = lift ? inkBox({ ...o, layer: lift.layer }) : [0, 0, 1, 1];
+  const [mu, mv] = [(lu0 + lu1) / 2, (lv0 + lv1) / 2];
+  // A pixel of the word, nothing beyond its edge.
+  const texel = (x: number, y: number, c: number) =>
+    lift && x >= 0 && y >= 0 && x < lift.layer.w && y < lift.layer.h ? lift.layer.pixels[(y * lift.layer.w + x) * 4 + c] : 0;
+  const laid = [0, 0, 0, 0];
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const u = (x + 0.5) / w;
@@ -187,16 +236,30 @@ export function laidPart(
       const [du, dv] = turned(u, v, o.turn);
       const pu = (du - u0) / (u1 - u0);
       const pv = (dv - v0) / (v1 - v0);
-      const inside = pu >= 0 && pu < 1 && pv >= 0 && pv < 1;
+      const inside = l.w > 0 && l.h > 0 && pu >= 0 && pu < 1 && pv >= 0 && pv < 1;
       const at = inside ? (Math.floor(pv * l.h) * l.w + Math.floor(pu * l.w)) * 4 : -1;
       const keep = inside ? (255 - l.pixels[at + 3]) / 255 : 1;
+      // The word lifted out, between its four nearest pixels.
+      if (lift) {
+        const qx = ((mu + (du - mu) / lift.scale - lu0) / (lu1 - lu0)) * lift.layer.w - 0.5;
+        const qy = ((mv + (dv - mv) / lift.scale - lv0) / (lv1 - lv0)) * lift.layer.h - 0.5;
+        const jx = Math.floor(qx);
+        const jy = Math.floor(qy);
+        const gx = qx - jx;
+        const gy = qy - jy;
+        for (let c = 0; c < 4; c++)
+          laid[c] =
+            (texel(jx, jy, c) * (1 - gx) + texel(jx + 1, jy, c) * gx) * (1 - gy) +
+            (texel(jx, jy + 1, c) * (1 - gx) + texel(jx + 1, jy + 1, c) * gx) * gy;
+      }
       let word = 0;
       for (let c = 0; c < 3; c++) {
         const f =
           (colour(ix, iy, c) * (1 - fx) + colour(ix + 1, iy, c) * fx) * (1 - fy) +
           (colour(ix, iy + 1, c) * (1 - fx) + colour(ix + 1, iy + 1, c) * fx) * fy;
-        const laid = inside ? (l.pixels[at + c] * 1023) / 255 : 0;
-        word |= Math.min(1023, Math.round(laid + f * keep)) << (10 * c);
+        let under = (inside ? (l.pixels[at + c] * 1023) / 255 : 0) + f * keep;
+        if (lift) under = (laid[c] * 1023) / 255 + (under * (255 - laid[3])) / 255;
+        word |= Math.min(1023, Math.round(under)) << (10 * c);
       }
       out[(y - y0) * pw + x - x0] = word >>> 0;
     }
@@ -242,34 +305,52 @@ const AGAIN = 250;
 // A layer asked for: the ask it belongs to, the frame and the size.
 type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
 
-// The bounce played over a paused frame after a word step. Shift and an
-// arrow step from word to word, and the word stepped to bounces, from
-// rest through its peak, however briefly the short lights it: libass
-// draws the frames of its bounce on the Go side, see
-// engine.CaptionDrawing.Bouncing, and they are played over the still
-// picture one each frame of the short, see engine.PopFrames. Every word
-// bounces the same and comes to rest, and the last of them stays over the
-// frame until the playhead moves or the captions change, a word the short
-// shows at its peak on its one frame too: Tim wanted the bounce the same
-// for every word, without exception, even where that is not the frame the
-// short shows. Every
+// The bounce after a word step. Shift and an arrow step from word to word,
+// and the word stepped to bounces, from rest through its peak and back to
+// rest, every word alike, a word the short shows at its peak on its one
+// frame too: Tim wanted the bounce the same for every word, without
+// exception, even where that is not the frame the short shows. Every
 // other way of coming to stand on a frame, an arrow alone, a click, a
 // drag, shows the frame as the short shows it and nothing over it. Tim
 // saw the pop the short burns in played again over every frame he
 // stepped to, two animations mixed into one, and wanted a step from frame
 // to frame to show only the short's frames and a step from word to word to
-// bounce its word, a word of one frame too.
-// Before is the layer given before the step, which stays while the frames
-// of the bounce are on their way: the frame's own layer shows a word of one
-// frame at its peak, and the bounce starts at rest. Done once the last of
-// them is shown, which then stays.
-type Replay = {
+// bounce its word.
+//
+// The two are two paths that share nothing but the shape of the curve.
+// The pop the short burns in is libass's, on the short's frames, see
+// engine.popScales, and the video preview shows it as it shows any frame.
+// The bounce after a word step is the app's own: libass draws the word
+// with its pill apart from the rest of the caption, both once and at
+// rest, see engine.CaptionDrawing.Lifted, and the screen lays the rest
+// over the frame and the word over that, scaled round its middle, at the
+// screen's own rate, see screen.ts. That is how the Mac animates a layer,
+// drawn once and moved by the GPU. The bounce was the short's own frames
+// of the pop before, drawn on the Go side one by one and shown one each
+// frame of the short, 25 a second on Tim's episode and stepped by a
+// timer, and Tim found it laggy.
+//
+// A lift is the word lifted out of the frame at key, rest and word once
+// they have come. Bouncing is whether it bounces once they are there,
+// start when it began, by the clock of the screen's frames, and scale
+// where it is now. Done once it is back at rest, where it then stays,
+// over the frame, until the playhead moves or the video preview plays.
+// Before is the layer given before the step, shown while the parts are on
+// their way: the frame's own layer shows a word of one frame at its peak,
+// and the bounce starts at rest.
+type Lift = {
   key: string;
-  layers: (Layer | null)[];
-  shown: number;
+  frame: number;
+  size: [number, number];
+  rest: Layer | null;
+  word: Layer | null;
+  bounce?: Bounce;
   before: Layer | null;
+  bouncing: boolean;
+  start: number;
+  scale: number;
   done: boolean;
-  timer?: ReturnType<typeof setTimeout>;
+  tick: number;
 };
 
 // Whether the person asked the system for less motion, which the bounce
@@ -278,14 +359,15 @@ function calm(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// What the layers need to know of the video preview to play a bounce: whether
-// it is paused, and how long a frame of the short lasts, in seconds.
-export type Still = { paused(): boolean; frameLength(): number };
+// What the layers need to know of the video preview to bounce a word:
+// whether it is paused.
+export type Still = { paused(): boolean };
 
 // The layers of the captions of the video preview, asked for each frame
 // of the episode by the moment it starts, at a size. A frame on its way to
 // the screen asks ahead, coming, so its layer is there when it is drawn.
-// came is told when a layer that was not there for a frame drawn comes.
+// came is told when a layer that was not there for a frame drawn comes,
+// and on every frame of the screen while a word bounces.
 export class CaptionLayers {
   private ask: CaptionAsk | null = null;
   private askKey = "";
@@ -301,13 +383,14 @@ export class CaptionLayers {
   // newer draft is on its way, so the captions never blink off in between.
   // Another clip's captions never stay.
   private last: Layer | null = null;
-  // For the walks: how many layers were asked for and how many a frame
-  // was drawn with that was not its own yet.
-  readonly stats = { asked: 0, late: 0, popped: 0 };
-  // The bounce being played over the frame paused on, and the frame on
-  // screen when a word step asked for one, which the next frame other than
-  // it bounces on. Null when the last step was no word step.
-  private replay: Replay | null = null;
+  // For the walks: how many layers were asked for, how many a frame was
+  // drawn with that was not its own yet, how many words bounced, and how
+  // many times the screen drew a bounce.
+  readonly stats = { asked: 0, late: 0, popped: 0, bounced: 0 };
+  // The word lifted out of the frame paused on, and the frame on screen
+  // when a word step asked for a bounce, which the next frame other than it
+  // bounces on. Null when the last step was no word step.
+  private lift: Lift | null = null;
   private shownAt = NaN;
   private bounceFrom: number | null = null;
 
@@ -316,17 +399,16 @@ export class CaptionLayers {
     private still?: Still,
   ) {}
 
-  // Whether a bounce is being played over a paused frame, for the walks.
+  // Whether a word is bouncing, or about to once its parts are there, for
+  // the walks.
   get popping(): boolean {
-    return this.replay !== null && !this.replay.done;
+    return this.lift !== null && this.lift.bouncing && !this.lift.done;
   }
 
-  // Whether a layer is on its way or a bounce is being played, for the
-  // walks: until neither, the screen may not show the frame's own layer.
-  // A walk that held the video preview to the short read a frame of the
-  // bounce over the frame it stepped to.
+  // Whether a layer is on its way or a word bounces, for the walks: until
+  // neither, the screen may not show what it shows next.
   get busy(): boolean {
-    return this.going.size > 0 || this.waiting !== null || this.popping;
+    return this.going.size > 0 || this.waiting !== null || this.popping || (this.lift !== null && !this.lift.word);
   }
 
   // Whether the frame on screen was drawn with a layer not its own, the
@@ -363,41 +445,60 @@ export class CaptionLayers {
   // the one given last. Null with no captions to draw.
   at(frame: number, size: [number, number]): Layer | null {
     const want = this.wanted(frame, size);
-    if (want?.key !== this.replay?.key || !this.still?.paused()) this.stop();
+    const lift = this.lift;
+    // The word stays lifted only over the frame it was lifted from,
+    // paused. New captions over that frame, a word corrected or the style
+    // changed, lift it again at rest.
+    if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) this.drop();
     if (!want) return null;
     const have = this.kept.get(want.key);
-    if (have) {
-      const before = this.last;
-      this.last = have;
-      this.shownAt = frame;
-      // The frame a word step came to. New captions over the same frame,
-      // after a word was corrected or the style changed, are no step.
-      if (this.bounceFrom !== null && frame !== this.bounceFrom) {
-        this.bounceFrom = null;
-        const pop = have.pop;
-        if (have.showing && have.showing.word >= 0 && pop && pop.behind + pop.ahead > 0 && this.still?.paused() && !calm())
-          this.play(want, have, pop, before);
-      }
-      const r = this.replay;
-      if (!r) return have;
-      return r.shown < 0 ? (r.before ?? have) : (r.layers[r.shown] ?? have);
+    if (!have) {
+      this.stats.late++;
+      this.waiting = want;
+      this.fetch(want);
+      return this.lift ? this.lifted(this.lift) : this.last;
     }
-    this.stats.late++;
-    this.waiting = want;
-    this.fetch(want);
-    return this.last;
+    const before = this.last;
+    this.last = have;
+    this.shownAt = frame;
+    // The frame a word step came to.
+    if (this.bounceFrom !== null && frame !== this.bounceFrom) {
+      this.bounceFrom = null;
+      if (have.showing && have.showing.word >= 0 && this.still?.paused())
+        this.raise(want, have.scale === 1 ? have : before, !calm());
+    } else if (this.lift && this.lift.key !== want.key) this.raise(want, this.lifted(this.lift), false);
+    return this.lift ? (this.lifted(this.lift) ?? have) : have;
   }
 
-  // The bounce over the frame of want, whose own layer is have: its layers
-  // asked for all at once, then shown one a frame, ending on the frame's
-  // own.
-  private play(want: Wanted, have: Layer, pop: Pop, before: Layer | null) {
+  // What the screen lays over the frame of a lift: the rest with the word
+  // over it at its scale, or before while they are on their way.
+  private lifted(lift: Lift): Layer | null {
+    if (!lift.rest || !lift.word) return lift.before;
+    return { ...lift.rest, scale: lift.scale, lift: { layer: lift.word, scale: lift.scale } };
+  }
+
+  // The word of the frame of want lifted out of its caption, the two parts
+  // asked for at once, and bounced once both are there, or held at rest.
+  private raise(want: Wanted, before: Layer | null, bounce: boolean) {
     const { key, ask, frame, size } = want;
-    const replay: Replay = { key, layers: [], shown: -1, before, done: false };
-    this.replay = replay;
-    this.stats.popped++;
-    const frames = Array.from({ length: pop.behind + pop.ahead + 1 }, (_, n) => n - pop.behind);
-    const asked = frames.map((n) =>
+    const showing = this.kept.get(key)?.showing;
+    this.drop();
+    const lift: Lift = {
+      key,
+      frame,
+      size,
+      rest: null,
+      word: null,
+      before,
+      bouncing: bounce,
+      start: NaN,
+      scale: 1,
+      done: !bounce,
+      tick: 0,
+    };
+    this.lift = lift;
+    if (bounce) this.stats.popped++;
+    const part = (part: "word" | "rest") =>
       fetch(
         `/frames/captions?${new URLSearchParams({
           path: ask.path,
@@ -405,40 +506,57 @@ export class CaptionLayers {
           at: frame.toFixed(6),
           w: String(size[0]),
           h: String(size[1]),
-          ahead: String(n),
-          bounce: "1",
+          part,
           ...(ask.typing ? { typing: ask.typing } : {}),
           ...ask.drafts,
         })}`,
       )
         .then(async (r) => {
           const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
-          if (layer) layer.scale = readScale(r.headers.get("X-Caption-Scale"));
+          if (layer) {
+            layer.track = ask.track;
+            layer.showing = showing;
+            if (part === "word") lift.bounce = readBounce(r.headers.get("X-Caption-Bounce"));
+          }
           return layer;
         })
-        .catch(() => null),
-    );
-    void Promise.all(asked).then((layers) => {
-      if (this.replay !== replay) return;
-      replay.layers = layers.map((l) => l && { ...l, track: ask.track, showing: have.showing });
-      const step = Math.max(1, (this.still?.frameLength() ?? 1 / 30) * 1000);
-      const next = () => {
-        if (this.replay !== replay) return;
-        replay.shown++;
-        if (replay.shown >= replay.layers.length - 1) replay.done = true;
-        else replay.timer = setTimeout(next, step);
+        .catch(() => null);
+    void Promise.all([part("rest"), part("word")]).then(([rest, word]) => {
+      if (this.lift !== lift) return;
+      if (!rest || !word) {
+        // Without its parts the frame shows its own layer.
+        this.lift = null;
+        this.came();
+        return;
+      }
+      lift.rest = rest;
+      lift.word = word;
+      if (!lift.bouncing || !lift.bounce || typeof requestAnimationFrame !== "function") {
+        lift.done = true;
+        this.came();
+        return;
+      }
+      // The bounce, one scale for each frame of the screen, by the clock
+      // of that frame, drawn in the same frame it is worked out for.
+      const step = (now: number) => {
+        if (this.lift !== lift) return;
+        if (Number.isNaN(lift.start)) lift.start = now;
+        lift.scale = bounceScale(now - lift.start, lift.bounce!);
+        lift.done = now - lift.start >= lift.bounce!.length;
+        if (lift.done) lift.scale = 1;
+        else lift.tick = requestAnimationFrame(step);
+        this.stats.bounced++;
         this.came();
       };
-      next();
+      lift.tick = requestAnimationFrame(step);
     });
   }
 
-  // The bounce over a paused frame stopped, by a move to another frame, a
-  // play, or another ask.
-  private stop() {
-    if (!this.replay) return;
-    clearTimeout(this.replay.timer);
-    this.replay = null;
+  // The word put back, by a move to another frame, a play, or another ask.
+  private drop() {
+    if (!this.lift) return;
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.lift.tick);
+    this.lift = null;
   }
 
   // A frame that starts at frame is on its way to the screen.
@@ -467,7 +585,6 @@ export class CaptionLayers {
         if (layer) {
           layer.track = ask.track;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
-          layer.pop = readPop(r.headers.get("X-Caption-Pop"));
           layer.scale = readScale(r.headers.get("X-Caption-Scale"));
         }
         return layer;

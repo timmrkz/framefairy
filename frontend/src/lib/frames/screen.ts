@@ -10,7 +10,7 @@
 // way the render burns them into the short before anything shows it, see
 // captions.ts.
 
-import { laidPart, inkBox, quarters, type Over } from "./captions";
+import { laidPart, inkBox, quarters, type Layer, type Over } from "./captions";
 import { lift, lightOfPixel, srgb, toSDR, wgsl, type Light } from "./light";
 import { Picture } from "./picture";
 
@@ -80,6 +80,10 @@ class FlatScreen implements Screen {
   // The frame as 8-bit colours, HDR cut at white, as an SDR screen shows
   // it.
   private sdr: ImageData | null = null;
+  // The pixels the frame at its own size was made from, which a frame
+  // drawn again over the same pixels, as a bounce does, does not make
+  // again.
+  private made: Uint8Array | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const g = canvas.getContext("2d", { alpha: false });
@@ -96,14 +100,17 @@ class FlatScreen implements Screen {
     const d = frame?.data;
     const at = frame && d && fit(c.width, c.height, frame.width, frame.height);
     if (!at) return;
-    if (this.own.width !== frame.width || this.own.height !== frame.height) {
-      this.own.width = frame.width;
-      this.own.height = frame.height;
+    if (this.made !== d || this.own.width !== frame.width || this.own.height !== frame.height) {
+      if (this.own.width !== frame.width || this.own.height !== frame.height) {
+        this.own.width = frame.width;
+        this.own.height = frame.height;
+      }
+      if (this.sdr?.width !== frame.width || this.sdr.height !== frame.height)
+        this.sdr = new ImageData(frame.width, frame.height);
+      toSDR(frame.light, d, this.sdr.data);
+      this.ownG.putImageData(this.sdr, 0, 0);
+      this.made = d;
     }
-    if (this.sdr?.width !== frame.width || this.sdr.height !== frame.height)
-      this.sdr = new ImageData(frame.width, frame.height);
-    toSDR(frame.light, d, this.sdr.data);
-    this.ownG.putImageData(this.sdr, 0, 0);
     this.g.drawImage(this.own, at.x, at.y, at.w, at.h);
     // The captions, at the canvas's own pixels: the part they fall on
     // drawn again with them laid over it, before its look.
@@ -141,15 +148,26 @@ struct Out {
 // quarter turns clockwise the picture as shown is of the frame, and
 // whether there is a layer at all. Its pixels are each taken whole, the
 // way laidPart takes them, since it is drawn at the size it is shown.
+// After a word step the word is lifted out of it: the box of the word at
+// rest, its size in pixels, the scale it is drawn at round the middle of
+// its box, and whether there is one. Its texture has a clear pixel round
+// it, so sampling between its pixels fades it out at its edge, the way
+// laidPart samples it.
 struct Over {
   box: vec4f,
   fill: vec2f,
   turn: u32,
   on: u32,
+  liftBox: vec4f,
+  liftSize: vec2f,
+  scale: f32,
+  lifted: u32,
 }
 @group(1) @binding(0) var words: texture_2d<f32>;
 @group(1) @binding(1) var<uniform> laid: Over;
 @group(1) @binding(2) var whole: sampler;
+@group(1) @binding(3) var word: texture_2d<f32>;
+@group(1) @binding(4) var soft: sampler;
 ${wgsl}
 fn turned(uv: vec2f, q: u32) -> vec2f {
   if (q == 1u) {
@@ -172,6 +190,13 @@ fn turned(uv: vec2f, q: u32) -> vec2f {
   let l = textureSampleLevel(words, whole, p * laid.fill, 0.0);
   let inside = laid.on == 1u && all(p >= vec2f(0.0)) && all(p < vec2f(1.0));
   c = select(c, l.rgb + c * (1.0 - l.a), inside);
+  let d = turned(o.uv, laid.turn);
+  let mid = (laid.liftBox.xy + laid.liftBox.zw) * 0.5;
+  let q = mid + (d - mid) / max(laid.scale, 1e-3);
+  let t = 1.0 + (q - laid.liftBox.xy) / max(laid.liftBox.zw - laid.liftBox.xy, vec2f(1e-6)) * laid.liftSize;
+  let w = textureSampleLevel(word, soft, t / vec2f(textureDimensions(word)), 0.0);
+  let near = laid.lifted == 1u && all(t >= vec2f(0.5)) && all(t <= laid.liftSize + 1.5);
+  c = select(c, w.rgb + c * (1.0 - w.a), near);
   return vec4f(shown(c, kind), 1);
 }
 `;
@@ -210,11 +235,19 @@ class Painter {
   private texture: GPUTexture | null = null;
   private light: Light = "";
   private binding: GPUBindGroup | null = null;
-  // The layer of captions, in a texture kept while layers fit in it.
+  // The layer of captions, in a texture kept while layers fit in it, and
+  // the word lifted out of it after a word step, in another.
   private wordsSampler: GPUSampler;
+  private wordSampler: GPUSampler;
   private overBuffer: GPUBuffer;
   private words: GPUTexture | null = null;
+  private word: GPUTexture | null = null;
   private overBinding: GPUBindGroup | null = null;
+  // The pixels each texture holds now. A frame drawn again over the same
+  // frame and the same captions, as on every frame of the screen while a
+  // word bounces, writes none of them again: the frame alone is megabytes,
+  // and writing it sixty times a second is a bounce that stutters.
+  private holds: { frame?: Uint8Array; words?: Uint8Array; word?: Uint8Array } = {};
 
   constructor(readonly device: GPUDevice) {
     const module = device.createShaderModule({ code: shader });
@@ -235,51 +268,87 @@ class Painter {
       magFilter: "nearest",
       minFilter: "nearest",
     });
+    this.wordSampler = device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+    });
     this.overBuffer = device.createBuffer({
-      size: 32,
+      size: 64,
       usage: BUFFER.uniform | BUFFER.copyDst,
     });
-    this.wordsFor(1, 1);
+    this.texturesFor(1, 1, 1, 1);
   }
 
-  // The texture the layer of captions is written to, kept while layers
-  // fit in it.
-  private wordsFor(w: number, h: number): GPUTexture {
-    if (this.words && this.words.width >= w && this.words.height >= h) return this.words;
-    this.words?.destroy();
-    this.words = this.device.createTexture({
-      size: [Math.max(w, this.words?.width ?? 1), Math.max(h, this.words?.height ?? 1)],
-      format: "rgba8unorm",
-      usage: TEXTURE.copyDst | TEXTURE.binding,
-    });
+  // The textures the layer of captions and the word lifted out of it are
+  // written to, kept while they fit in them.
+  private texturesFor(w: number, h: number, ww: number, wh: number) {
+    const fits = (t: GPUTexture | null, w: number, h: number) => !!t && t.width >= w && t.height >= h;
+    if (fits(this.words, w, h) && fits(this.word, ww, wh)) return;
+    const grown = (t: GPUTexture | null, w: number, h: number) => {
+      if (fits(t, w, h)) return t!;
+      t?.destroy();
+      return this.device.createTexture({
+        size: [Math.max(w, t?.width ?? 1), Math.max(h, t?.height ?? 1)],
+        format: "rgba8unorm",
+        usage: TEXTURE.copyDst | TEXTURE.binding,
+      });
+    };
+    const words = grown(this.words, w, h);
+    const word = grown(this.word, ww, wh);
+    if (words !== this.words) this.holds.words = undefined;
+    if (word !== this.word) this.holds.word = undefined;
+    this.words = words;
+    this.word = word;
     this.overBinding = this.device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(1),
       entries: [
-        { binding: 0, resource: this.words.createView() },
+        { binding: 0, resource: words.createView() },
         { binding: 1, resource: { buffer: this.overBuffer } },
         { binding: 2, resource: this.wordsSampler },
+        { binding: 3, resource: word.createView() },
+        { binding: 4, resource: this.wordSampler },
       ],
     });
-    return this.words;
   }
 
   // What lies over the frame, written for the shader.
   private lay(over: Over | null) {
     const l = over?.layer;
     const on = !!l && l.w > 0 && l.h > 0;
-    const head = new ArrayBuffer(32);
-    const f = new Float32Array(head, 0, 6);
-    const u = new Uint32Array(head, 24, 2);
+    const lift = over?.layer.lift;
+    const lifted = !!lift && lift.layer.w > 0 && lift.layer.h > 0;
+    const head = new ArrayBuffer(64);
+    const f = new Float32Array(head);
+    const u = new Uint32Array(head);
+    this.texturesFor(on ? l.w : 1, on ? l.h : 1, lifted ? lift.layer.w + 2 : 1, lifted ? lift.layer.h + 2 : 1);
     if (on) {
-      const words = this.wordsFor(l.w, l.h);
-      this.device.queue.writeTexture(
-        { texture: words },
-        l.pixels as Uint8Array<ArrayBuffer>,
-        { bytesPerRow: l.w * 4 },
-        [l.w, l.h],
-      );
+      const words = this.words!;
+      if (this.holds.words !== l.pixels) {
+        this.device.queue.writeTexture(
+          { texture: words },
+          l.pixels as Uint8Array<ArrayBuffer>,
+          { bytesPerRow: l.w * 4 },
+          [l.w, l.h],
+        );
+        this.holds.words = l.pixels;
+      }
       f.set([...inkBox(over), l.w / words.width, l.h / words.height]);
-      u.set([quarters(over.turn), 1]);
+      u.set([quarters(over.turn), 1], 6);
+    }
+    if (lifted) {
+      if (this.holds.word !== lift.layer.pixels) {
+        const [w, h] = [lift.layer.w + 2, lift.layer.h + 2];
+        this.device.queue.writeTexture(
+          { texture: this.word! },
+          bordered(lift.layer) as Uint8Array<ArrayBuffer>,
+          { bytesPerRow: w * 4 },
+          [w, h],
+        );
+        this.holds.word = lift.layer.pixels;
+      }
+      f.set([...inkBox({ ...over!, layer: lift.layer }), lift.layer.w, lift.layer.h, lift.scale], 8);
+      u[6] = quarters(over!.turn);
+      u[15] = 1;
     }
     this.device.queue.writeBuffer(this.overBuffer, 0, head);
   }
@@ -295,6 +364,7 @@ class Painter {
     )
       return this.texture;
     this.texture?.destroy();
+    this.holds.frame = undefined;
     const kind = kinds[light];
     this.texture = this.device.createTexture({
       size: [w, h],
@@ -333,12 +403,15 @@ class Painter {
     if (at) {
       this.lay(over);
       const texture = this.textureFor(frame.width, frame.height, frame.light);
-      this.device.queue.writeTexture(
-        { texture },
-        d as Uint8Array<ArrayBuffer>,
-        { bytesPerRow: frame.width * 4 },
-        [frame.width, frame.height],
-      );
+      if (this.holds.frame !== d) {
+        this.device.queue.writeTexture(
+          { texture },
+          d as Uint8Array<ArrayBuffer>,
+          { bytesPerRow: frame.width * 4 },
+          [frame.width, frame.height],
+        );
+        this.holds.frame = d;
+      }
     }
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -358,9 +431,20 @@ class Painter {
   destroy() {
     this.texture?.destroy();
     this.words?.destroy();
+    this.word?.destroy();
     this.lightBuffer.destroy();
     this.overBuffer.destroy();
   }
+}
+
+// The pixels of a word lifted out of a layer with a clear pixel all round,
+// which the shader samples between, so it fades out at its edge rather than
+// running on into whatever the texture held before.
+function bordered(l: Layer): Uint8Array {
+  const w = l.w + 2;
+  const out = new Uint8Array(w * (l.h + 2) * 4);
+  for (let y = 0; y < l.h; y++) out.set(l.pixels.subarray(y * l.w * 4, (y + 1) * l.w * 4), ((y + 1) * w + 1) * 4);
+  return out;
 }
 
 class GPUScreen implements Screen {
@@ -502,9 +586,11 @@ export async function checkScreen(
 // out here on the processor by light.ts, both as the extended canvas
 // takes it, for the walks to hold one to the other. over is a pixel of a
 // layer of captions laid over it, red, green, blue and alpha with the
-// alpha multiplied in, which the processor lays over it with laidPart.
+// alpha multiplied in, which the processor lays over it with laidPart, and
+// lift a word lifted out of that layer, laid over it grown as at the peak
+// of a bounce.
 export async function checkPixels(
-  pixels: { light: Light; bytes: number[]; over?: number[] }[],
+  pixels: { light: Light; bytes: number[]; over?: number[]; lift?: number[] }[],
 ): Promise<{ gpu: number[][]; cpu: number[][] } | null> {
   const frames = pixels.map(
     (p) =>
@@ -518,10 +604,11 @@ export async function checkPixels(
   );
   // A layer of 2 by 2 over the whole of each frame, the turn of the
   // second quarter, so the turn is gone through too.
-  const overs = pixels.map(({ over }) =>
-    over
+  const square = (p: number[]) => ({ x: 0, y: 0, w: 2, h: 2, pixels: new Uint8Array([...p, ...p, ...p, ...p]) });
+  const overs = pixels.map(({ over, lift }) =>
+    over || lift
       ? {
-          layer: { x: 0, y: 0, w: 2, h: 2, pixels: new Uint8Array([...over, ...over, ...over, ...over]) },
+          layer: { ...square(over ?? [0, 0, 0, 0]), ...(lift ? { lift: { layer: square(lift), scale: 1.15 } } : {}) },
           size: [2, 2] as [number, number],
           left: 0,
           width: 1,

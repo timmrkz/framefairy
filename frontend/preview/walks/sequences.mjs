@@ -4571,8 +4571,11 @@ for (const seq of toWalk) {
           { light: "", bytes: word(512, 512, 512), over: [148, 33, 146, 255], name: "a highlight over standard video" },
           { light: "", bytes: word(512, 512, 512), over: [0, 0, 0, 128], name: "a box at half over standard video", darker: 8 },
           { light: "pq", bytes: word(pqWhite, pqWhite, pqWhite), over: [255, 255, 255, 255], name: "a white caption over PQ" },
+          // A word lifted out of its caption after a word step, laid over
+          // the rest grown to its peak.
+          { light: "", bytes: word(512, 512, 512), over: [0, 0, 0, 128], lift: [148, 33, 146, 255], name: "a word bouncing over a box at half" },
         ];
-        const got = await page.evaluate((p) => window.__checkPixels?.(p) ?? null, pixels.map(({ light, bytes, over }) => ({ light, bytes, over })));
+        const got = await page.evaluate((p) => window.__checkPixels?.(p) ?? null, pixels.map(({ light, bytes, over, lift }) => ({ light, bytes, over, lift })));
         if (!got) {
           console.log("        no WebGPU in this browser, so what the GPU draws is not checked");
           break;
@@ -5875,6 +5878,7 @@ for (const seq of toWalk) {
         for (let k = 0; k < 2 * arg && !wrong; k++) {
           const key = k < arg ? "Shift+ArrowRight" : "Shift+ArrowLeft";
           const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
+          const drawn = await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0);
           const stop = await watchPills(page);
           await page.keyboard.press(key);
           // The pop, if one starts, and its end.
@@ -5902,7 +5906,11 @@ for (const seq of toWalk) {
           const widths = on.map((f) => f.pill.w);
           const least = Math.min(...widths);
           const most = Math.max(...widths);
-          report.push(`"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px` : "did not pop"}`);
+          // How many frames of the screen the bounce was drawn on.
+          const bounced = (await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0)) - drawn;
+          report.push(
+            `"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px over ${bounced} frames` : "did not pop"}`,
+          );
           if (!started) continue;
           popped++;
           grew = Math.max(grew, most / least);
@@ -5912,7 +5920,12 @@ for (const seq of toWalk) {
           // alike. Tim saw it stop grown, a frame into the word, with the
           // frame round it at rest, and some words grow by a few pixels on
           // one frame, and then a word of one frame stop at its peak.
-          if (most < least * 1.13) {
+          // At the screen's rate, not the short's: Tim found the bounce
+          // laggy when it was the short's frames of the pop, 25 a second,
+          // five or six in all.
+          if (bounced < 9) {
+            wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen`;
+          } else if (most < least * 1.13) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;

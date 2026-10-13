@@ -51,24 +51,39 @@ nothing the short shows. Tim saw the pop the short burns in played again
 over every frame he stepped to, the arrow keys included, two animations
 mixed into one, and wanted them apart.
 
-The bounce is libass's too. `CaptionDrawing.Bouncing` is the caption of
-that word alone, with the word lit for as long as its whole pop takes
-and the words after it later by as much, so a word the short lights for
-one frame or three bounces from rest through its peak like any other. A
-word lit long enough bounces in the short's own frames. Its frames are
-asked for with `bounce=1` and `ahead`, so many frames of the short on
-from the frame paused on, or back below nought. `/frames/captions` says
-which in `X-Caption-Pop`, "<behind> <ahead>", from
-`CaptionDrawing.PopFrames`: from the word's first frame, at rest, where a
-step lands, see `intoWord`, through the peak and back to rest. Every word
-bounces the same, and the last frame of the bounce, at rest, stays over
-the frame until the playhead moves or the captions change. A word the
-short lights for one frame shows at its peak there, and still comes to
-rest after a word step: Tim wanted the bounce the same for every word,
-without exception, even where that is not the frame the short shows.
-The layer before the step stays while the frames of the bounce
-are on their way. Nothing bounces while the clip plays, where the frames
-pop by themselves, or when the Mac is set to reduce motion. `Replay` and
+The two are separate paths that share only the shape of the curve. The
+pop in the short is libass's, on the short's frames, `popScales` in
+`engine/highlight.go`, and the video preview shows it as it shows any
+frame. The bounce after a word step is the app's own animation of what
+libass drew. libass draws the word with its pill apart from the rest of
+the caption, both once and at rest: `CaptionDrawing.Lifted` marks every
+caption `LiftWord` or `LiftRest`, and `/frames/captions` gives either
+with `part=word` or `part=rest`, the word with the curve in
+`X-Caption-Bounce`, "<ms> <rise> <peak>", from `BounceCurve`. The screen
+lays the rest over the frame and the word over that, scaled round the
+middle of its box, on every frame of the screen, 60 or 120 a second, by
+the clock of that frame. That is how the Mac animates a layer, drawn once
+and moved by the GPU, see `liftBox` and `laidPart` in
+`lib/frames/captions.ts` and the shader in `screen.ts`. Nothing is
+drawn in the browser: the word is libass's, only scaled. A frame drawn
+again over the same frame and the same captions writes none of its
+pixels to the GPU again, so a bounce costs one small uniform a frame.
+
+Before, the bounce was the short's own frames of the pop, drawn on the Go
+side one by one and shown one each frame of the short, 25 a second on
+Tim's episode and stepped by a timer, and Tim found it laggy.
+
+Every word bounces the same, from rest through 115 % and back in 220
+milliseconds, a word the short lights for one frame too, which the short
+shows at its peak: Tim wanted the bounce the same for every word, without
+exception, even where that is not the frame the short shows. At rest the
+word stays lifted over the frame until the playhead moves or the clip
+plays. The frame's own layer stays while the two parts are on their way,
+or the layer before the step where the frame shows its word grown. At its
+peak the word's pill lies over the letters of the words beside it, where
+in the short those letters are drawn over the pill, for a tenth of a
+second. Nothing bounces while the clip plays, where the frames pop by
+themselves, or when the Mac is set to reduce motion. `Lift` and
 `CaptionLayers.sought` in `lib/frames/captions.ts`.
 
 ## The frame round a word
@@ -244,16 +259,18 @@ before, with the keyboard's frame already round the next, which Tim saw on
   caption of two lines back from a short: the pill at rest keeps 0.04 of
   the size from the letters of the other line, with the lines where
   libass puts them, see ENGINE.md.
-- `TestEveryWordReachesItsPeakOnAFrame`,
-  `TestPopFramesCountsTheFramesOfThePop` and
-  `TestAWordStepBouncesEveryWordWhole` in `engine/pop_test.go`, and "the
-  bounce after a word step" in `captions.test.ts`: a word step bounces
-  its word over the still frame, a word of one frame and of three too,
-  and comes to rest, and any other step shows the frame alone, see
-  above. The walk "a step onto a word pops it over the paused
-  frame" steps six words on and back with Shift and the arrows, each
-  bouncing to 115 % and back, then forty frames over four words with the
-  right arrow, over which nothing is played.
+- `TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest` in
+  `engine/captionlayer_test.go`: the rest with the word laid over it is
+  the caption libass draws whole, at rest. "the bounce after a word
+  step" in `captions.test.ts`: a word step lifts its word and bounces it
+  once on each frame of the screen, up to its peak and back to rest, a
+  word of one frame too, and any other step shows the frame alone, see
+  above. The walk "a step onto a word pops it over the paused frame"
+  steps six words on and back with Shift and the arrows, each bouncing to
+  115 % and back over at least nine frames of the screen, then forty
+  frames over four words with the right arrow, over which nothing is
+  played. "screen light" holds the GPU's word, grown over a box, to
+  `laidPart`'s.
   `TestTheWordFramesRouteSaysWhereLibassPutTheWords` in
   `cmd/framefairy-app/captions_test.go` asks the route for them.
 - The walk "the frame round a word in the caption box is the pill libass

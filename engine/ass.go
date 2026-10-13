@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -318,7 +319,20 @@ type LaidCaption struct {
 	// typed in the caption box, which the browser draws there while
 	// libass draws the rest, see CaptionDrawing.Typing.
 	Hidden map[int]bool `json:",omitempty"`
+	// Lift is the part of the caption drawn, all of it where empty: only
+	// the word being spoken with its pill, LiftWord, or all but those,
+	// LiftRest, both at rest, never popped. The video preview lays the two
+	// over a frame after a word step and scales the word itself, see
+	// CaptionDrawing.Lifted.
+	Lift string `json:",omitempty"`
 }
+
+// The parts of a caption the video preview takes apart for the bounce after
+// a word step, see LaidCaption.Lift.
+const (
+	LiftWord = "word"
+	LiftRest = "rest"
+)
 
 // LayOutCaptions breaks captions into the lines they are drawn in, at the
 // size the style asks for, for words in the given language.
@@ -702,6 +716,8 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 			return track, err
 		}
 	}
+	// Without a pill no word is drawn apart from its caption.
+	laid = slices.DeleteFunc(slices.Clone(laid), func(c LaidCaption) bool { return c.Lift == LiftWord })
 	scale := float64(height) / 1920.0
 	size := max(12, pyround(s.Size*scale))
 	outline := max(1, pyround(s.Outline*scale))
