@@ -5,12 +5,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -92,6 +95,131 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 				t.Fatalf("from %.2f frame %d differs from ffmpeg's by %.2f on average", from, i, d)
 			}
 		}
+	}
+}
+
+// A jump of the playhead is decoded no further than it has to be, plan row
+// 2.243. A jump to a frame a little ahead of where a cursor already is,
+// with no key frame between, goes on decoding from there rather than
+// seeking back to the key frame and decoding it all again. And on the way
+// to the frame asked for, the frames that no other frame is made from and
+// that are shown before it are not decoded at all. The frames handed over
+// are still the ones the ffmpeg program hands over.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	// A key frame every two seconds and two B-frames between the others,
+	// which no frame is made from, the way an export usually has them.
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=8", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	e := NewEngine(NewLog(nil, false, false), disk)
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	var mu sync.Mutex
+	var lines []string
+	dec.heard = func(_ slog.Level, line string) {
+		mu.Lock()
+		lines = append(lines, line)
+		mu.Unlock()
+	}
+
+	collect := func(run func(got func(float64, []byte) error) error) (ats []float64, frames [][]byte) {
+		err := run(func(at float64, data []byte) error {
+			ats, frames = append(ats, at), append(frames, data)
+			if len(ats) == 8 {
+				return errStop
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errStop) {
+			t.Fatal(err)
+		}
+		return ats, frames
+	}
+	grid := gridOf(t, path)
+	// Each stream takes 8 frames and the cursor decodes a few more, so it
+	// stands about half a second past where the stream began.
+	jumps := []struct {
+		from float64
+		how  string
+	}{
+		{0.2, "opened the file"},
+		{1.4, "went on"}, // ahead, before the key frame at 2 s
+		{3.1, "moved"},   // ahead, past the key frame at 2 s
+		{2.4, "moved"},   // behind
+		{4.3, "moved"},   // ahead, past the key frame at 4 s
+		{5.5, "went on"}, // ahead, before the key frame at 6 s
+		{1.92, "moved"},  // behind, 48 frames from its key frame
+	}
+	for _, j := range jumps {
+		wantAts, want := collect(func(got func(float64, []byte) error) error {
+			return e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(j.from)), 160, 90, got)
+		})
+		gotAts, got := collect(func(got func(float64, []byte) error) error {
+			return dec.Stream(context.Background(), grid, j.from, 160, 90, got)
+		})
+		if len(got) != len(want) {
+			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", j.from, len(got), len(want))
+		}
+		for i := range want {
+			if math.Abs(gotAts[i]-wantAts[i]) > 1e-6 {
+				t.Fatalf("from %.2f frame %d starts at %.4f, ffmpeg says %.4f", j.from, i, gotAts[i], wantAts[i])
+			}
+			if d := meanDiff(got[i], want[i]); d > 2 {
+				t.Fatalf("from %.2f frame %d differs from ffmpeg's by %.2f on average", j.from, i, d)
+			}
+		}
+	}
+
+	// What the decoder said of each jump: how it got there, and how many
+	// frames it decoded on the way to the first one handed over.
+	opened := regexp.MustCompile(`picture: (opened the file|moved|went on), at frame \d+, [\d.]+ s, for 160x90`)
+	first := regexp.MustCompile(`picture: first frame (\d+) .*, (\d+) decoded`)
+	type said struct {
+		how     string
+		decoded int
+	}
+	var heard []said
+	for range 100 {
+		mu.Lock()
+		heard = heard[:0]
+		for _, line := range lines {
+			if m := opened.FindStringSubmatch(line); m != nil {
+				heard = append(heard, said{how: m[1], decoded: -1})
+			} else if m := first.FindStringSubmatch(line); m != nil && len(heard) > 0 {
+				heard[len(heard)-1].decoded, _ = strconv.Atoi(m[2])
+			}
+		}
+		mu.Unlock()
+		if len(heard) == len(jumps) && heard[len(heard)-1].decoded >= 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(heard) != len(jumps) {
+		t.Fatalf("the decoder said %d jumps, want %d: %v", len(heard), len(jumps), heard)
+	}
+	for i, j := range jumps {
+		if heard[i].decoded < 0 {
+			t.Errorf("the jump to %.2f s did not say how many frames it decoded", j.from)
+		}
+		if heard[i].how != j.how {
+			t.Errorf("the jump to %.2f s %s, want %s", j.from, heard[i].how, j.how)
+		}
+	}
+	// From the key frame at 0 to 1.92 s are 48 frames, two in three of
+	// them B-frames that nothing is made from: about 16 are needed.
+	if d := heard[6].decoded; d > 30 {
+		t.Errorf("the jump to 1.92 s decoded %d frames to the first, want the B-frames before it skipped", d)
 	}
 }
 

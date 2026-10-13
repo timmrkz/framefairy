@@ -21,6 +21,20 @@ func flushDecoder(dec *astiav.CodecContext) {
 	C.avcodec_flush_buffers((*C.AVCodecContext)(unsafe.Pointer(dec.UnsafePointer())))
 }
 
+// skipNonRef tells the decoder whether to skip the next frames that no
+// other frame is made from, the way mpv and MLT do on the way to the frame
+// a seek is for. go-astiav has no call for it. The h264, HEVC and MPEG-4
+// decoders all skip such a frame before it is decoded, on the graphics
+// chip too.
+func skipNonRef(dec *astiav.CodecContext, skip bool) {
+	ctx := (*C.AVCodecContext)(unsafe.Pointer(dec.UnsafePointer()))
+	if skip {
+		ctx.skip_frame = C.AVDISCARD_NONREF
+	} else {
+		ctx.skip_frame = C.AVDISCARD_DEFAULT
+	}
+}
+
 // copyFrameProps gives dst what src says about itself, its moment and its
 // colour, and not its picture. go-astiav has no call for it either.
 func copyFrameProps(dst, src *astiav.Frame) error {

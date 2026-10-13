@@ -69,9 +69,18 @@ type EpisodeFrames struct {
 	nextID uint32
 	// The cursors kept for the next stream, of picture and of sound: a
 	// cursor reads one stream of the file and stays that kind.
-	idle    [2][]uint32
-	answers map[uint32]chan framewire.Record
-	used    time.Time
+	idle [2][]uint32
+	// Where each kept cursor of picture stands: the grid and size it read
+	// on and the last frame it handed over. A cursor that warmed, failed
+	// or was closed has none.
+	placed map[uint32]place
+	// The cursors of picture whose stream has stopped and that still wait
+	// for the last frames of their batch, where they stood when it stopped,
+	// and what is told when one of them is kept or closed.
+	finishing map[uint32]place
+	finished  *sync.Cond
+	answers   map[uint32]chan framewire.Record
+	used      time.Time
 	// When the picture starts, which says how the sound is read, see
 	// soundSeek, found once.
 	picture      float64
@@ -80,6 +89,20 @@ type EpisodeFrames struct {
 	// the file when a cursor of picture first opened it.
 	light framewire.Light
 }
+
+// place is where a cursor of picture stands, or where a stream wants one:
+// on grid at size w by h, at frame.
+type place struct {
+	grid  framewire.Grid
+	w, h  int
+	frame int
+}
+
+// placeAhead is how far before a stream's first frame a kept cursor may
+// stand, in seconds, to be the one handed to it: the decoder reads on from
+// there rather than seeking, see goOnAhead in framefairy-frames, which it
+// matches.
+const placeAhead = 5.0
 
 // The two kinds of cursor.
 const (
@@ -95,7 +118,8 @@ var ErrFramesClosed = errors.New("the video's decoder was closed")
 // NewEpisodeFrames is the episode's decoder for the episode at path, run
 // from program. Nothing starts until a stream is asked for.
 func NewEpisodeFrames(program, path string) *EpisodeFrames {
-	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{}, used: time.Now()}
+	return &EpisodeFrames{program: program, path: path, answers: map[uint32]chan framewire.Record{},
+		placed: map[uint32]place{}, finishing: map[uint32]place{}, used: time.Now()}
 }
 
 // cursorsKept is how many cursors of picture a decoder keeps open for the
@@ -195,6 +219,7 @@ func (f *EpisodeFrames) start() error {
 	decoderSaid(f.path, slog.LevelDebug, fmt.Sprintf("started, process %d", cmd.Process.Pid))
 	f.cmd, f.in, f.gone = cmd, in, make(chan struct{})
 	f.idle, f.answers, f.nextID = [2][]uint32{}, map[uint32]chan framewire.Record{}, 0
+	f.placed, f.finishing = map[uint32]place{}, map[uint32]place{}
 	gone := f.gone
 	f.warm(gone)
 	// What the decoder says on its error stream, read to its end before
@@ -316,16 +341,47 @@ func (f *EpisodeFrames) refused(ctx context.Context, gone chan struct{}, err err
 }
 
 // take hands a stream a cursor of its kind: one kept from a stream before,
-// or a new one. Under the lock.
-func (f *EpisodeFrames) take(kind int) (uint32, chan framewire.Record) {
+// or a new one. A stream of picture that says where it starts gets the kept
+// cursor that stands closest before it, on its grid and at its size, so
+// the decoder reads on from there instead of seeking back to a key frame
+// and decoding up to it again. A jump a few frames on, or a play after a
+// pause, is then a frame or two of work. Where the closest is a cursor
+// whose stream has just stopped, the playhead it followed jumping, it
+// waits for that cursor to finish the few frames of its batch: the
+// decoder has them to make before it hears anything else on that cursor,
+// and they cost less than a seek. Otherwise it gets the cursor kept last.
+// Under the lock.
+func (f *EpisodeFrames) take(kind int, want *place) (uint32, chan framewire.Record) {
 	var id uint32
-	if n := len(f.idle[kind]); n > 0 {
+	for want != nil {
+		best, stands := -1, -1
+		for i, c := range f.idle[kind] {
+			if p, ok := f.placed[c]; ok && p.before(*want) && p.frame > stands {
+				best, stands = i, p.frame
+			}
+		}
+		later := false
+		for _, p := range f.finishing {
+			later = later || (p.before(*want) && p.frame > stands)
+		}
+		if later {
+			f.wait()
+			continue
+		}
+		if best >= 0 {
+			id = f.idle[kind][best]
+			f.idle[kind] = append(f.idle[kind][:best], f.idle[kind][best+1:]...)
+		}
+		break
+	}
+	if n := len(f.idle[kind]); id == 0 && n > 0 {
 		id = f.idle[kind][n-1]
 		f.idle[kind] = f.idle[kind][:n-1]
-	} else {
+	} else if id == 0 {
 		f.nextID++
 		id = f.nextID
 	}
+	delete(f.placed, id)
 	// Room for the open's answer, a batch and the record that ends it, so
 	// the reader never waits on a stream that has stopped reading.
 	ch := make(chan framewire.Record, ahead+3)
@@ -333,15 +389,53 @@ func (f *EpisodeFrames) take(kind int) (uint32, chan framewire.Record) {
 	return id, ch
 }
 
-// give keeps a cursor for the next stream, or closes it when enough are
-// kept or it failed. Under the lock.
-func (f *EpisodeFrames) give(id uint32, kind int, failed bool) {
+// before tells whether a cursor standing at p can read on to want: on the
+// same grid at the same size, before it and no further than placeAhead.
+func (p place) before(want place) bool {
+	return p.frame >= 0 && p.grid == want.grid && p.w == want.w && p.h == want.h && p.frame < want.frame &&
+		want.grid.At(want.frame)-want.grid.At(p.frame) <= placeAhead
+}
+
+// wait waits for a finishing cursor to be kept or closed. Under the lock,
+// which it lets go of while it waits.
+func (f *EpisodeFrames) wait() {
+	if f.finished == nil {
+		f.finished = sync.NewCond(&f.mu)
+	}
+	f.finished.Wait()
+}
+
+// done says a finishing cursor was kept or closed. Under the lock.
+func (f *EpisodeFrames) done(id uint32, gone chan struct{}) {
+	if f.gone == gone {
+		delete(f.finishing, id)
+	}
+	if f.finished != nil {
+		f.finished.Broadcast()
+	}
+}
+
+// give keeps a cursor for the next stream, standing at at where it is a
+// cursor of picture that handed over a frame, or closes it when it failed.
+// When enough are kept already, the one kept longest is closed instead:
+// the cursor a stream has just let go of stands where the next is likely
+// to start, and a cursor that only warmed stands nowhere. Under the lock.
+func (f *EpisodeFrames) give(id uint32, kind int, failed bool, at *place) {
 	delete(f.answers, id)
-	if !failed && len(f.idle[kind]) < cursorsKept[kind] {
-		f.idle[kind] = append(f.idle[kind], id)
+	if failed {
+		_ = f.send(f.gone, "close %d", id)
 		return
 	}
-	_ = f.send(f.gone, "close %d", id)
+	if len(f.idle[kind]) >= cursorsKept[kind] {
+		old := f.idle[kind][0]
+		f.idle[kind] = f.idle[kind][1:]
+		delete(f.placed, old)
+		_ = f.send(f.gone, "close %d", old)
+	}
+	f.idle[kind] = append(f.idle[kind], id)
+	if at != nil && at.frame >= 0 {
+		f.placed[id] = *at
+	}
 }
 
 // Light is how the episode's picture codes its brightness, standard video
@@ -371,7 +465,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from fl
 		from = 0
 	}
 	first := grid.Holding(from)
-	return f.stream(ctx, pictureCursor, func(id uint32) string {
+	return f.stream(ctx, pictureCursor, &place{grid: grid, w: width, h: height, frame: first}, func(id uint32) string {
 		return framewire.OpenRequest(id, first, width, height, grid)
 	}, got)
 }
@@ -401,14 +495,16 @@ func (f *EpisodeFrames) Sound(ctx context.Context, e *Engine, from float64, rate
 		f.mu.Unlock()
 	}
 	seek, _ := soundSeek(from, picture)
-	return f.stream(ctx, soundCursor, func(id uint32) string {
+	return f.stream(ctx, soundCursor, nil, func(id uint32) string {
 		return fmt.Sprintf("sound %d %.6f %.6f %d %d", id, seek, from, rate, channels)
 	}, got)
 }
 
 // stream runs one stream on a cursor of its kind, opened by the request
-// open makes for the cursor's number.
-func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint32) string,
+// open makes for the cursor's number. A stream of picture says where it
+// starts, want, and the cursor is kept standing at the last frame it
+// handed over.
+func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open func(id uint32) string,
 	got func(at float64, data []byte) error) error {
 	times := previewTimesOf(ctx)
 	f.mu.Lock()
@@ -417,7 +513,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 		return err
 	}
 	f.used = time.Now()
-	id, ch := f.take(kind)
+	id, ch := f.take(kind, want)
 	gone := f.gone
 	err := f.send(gone, "%s", open(id))
 	if err == nil {
@@ -435,20 +531,43 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 	// cursor that failed is closed rather than handed on, since what it
 	// still says about its failure would reach the next stream.
 	pending, failed := true, false
+	// Where the cursor stands: the last frame the decoder handed over,
+	// read or not.
+	var at *place
+	if want != nil {
+		at = &place{grid: want.grid, w: want.w, h: want.h, frame: -1}
+	}
+	stood := func(rec framewire.Record) {
+		if at != nil && rec.Kind == framewire.Frame {
+			at.frame = at.grid.Holding(rec.At)
+		}
+	}
 	finish := func() {
+		if at != nil && pending {
+			f.mu.Lock()
+			if f.gone == gone {
+				f.finishing[id] = *at
+			}
+			f.mu.Unlock()
+		}
 		go func() {
 			for pending {
 				select {
 				case rec := <-ch:
+					stood(rec)
 					pending = rec.Kind == framewire.Frame || rec.Kind == framewire.Opened
 				case <-gone:
+					f.mu.Lock()
+					f.done(id, gone)
+					f.mu.Unlock()
 					return
 				}
 			}
 			f.mu.Lock()
 			if f.gone == gone {
-				f.give(id, kind, failed)
+				f.give(id, kind, failed, at)
 			}
+			f.done(id, gone)
 			f.mu.Unlock()
 		}()
 	}
@@ -469,6 +588,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, open func(id uint3
 				}
 				times.mark(timeOpened)
 			case framewire.Frame:
+				stood(rec)
 				times.mark(timeFirst)
 				if err := got(rec.At, rec.Body); err != nil {
 					finish()

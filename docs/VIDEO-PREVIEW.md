@@ -170,6 +170,27 @@ closed for standing unused.
   them landed a key frame late, and the frame asked for never came. The
   decoder reads the key frame a seek lands on and seeks to the one before
   while it is shown too late. Plan row 2.186.
+- A jump forward that no key frame stands in front of is not a seek. The
+  Go side hands a stream the kept cursor that stands closest before where
+  it starts, on the same grid at the same size and no more than 5 s back,
+  and waits for one whose stream has just stopped to finish the few
+  frames of its batch, because the decoder has to make those first in
+  any case. The decoder then reads on from the frame it is at, by its
+  packets: when a key frame is found shown at the moment asked for or
+  before it, it seeks after all, because decoding from that key frame is
+  less work. A play after a pause and a jump a few frames on are then a
+  frame or two of work, where they were all the frames from the key
+  frame before. About one seek in six in Tim's report of two days was
+  such a jump. When a cursor is let go of and three are kept already,
+  the one kept longest is closed, so the cursor that stands where the
+  playhead was is the one that stays.
+- On the way to the first frame asked for, a cursor of picture does not
+  decode the frames that no other frame is made from, the B-frames of
+  most files, the way ffmpeg's `skip_frame` does with `nonref`. They are
+  never shown, so nothing is lost. A jump 48 frames past a key frame of
+  an MPEG-4 file with two B-frames in three decodes 18 frames where it
+  decoded every one. The log says how many frames a jump decoded on the
+  line of its first frame. Plan row 2.243.
 - It takes requests from the Go side: frames from a moment on at a size,
   sound from a moment on at a rate in so many channels, and stop, see
   `internal/framewire`. A request for a new moment drops what the last one
