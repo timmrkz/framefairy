@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -44,7 +45,7 @@ func memoryLibrary(t testing.TB, names ...string) (*FrameFairy, []string) {
 		}
 		eps = append(eps, ep)
 	}
-	st.episodes = eps
+	st.episodes = slices.Clone(eps)
 	return &FrameFairy{store: st}, eps
 }
 

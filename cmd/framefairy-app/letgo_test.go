@@ -141,3 +141,51 @@ func TestVideosAddedBeforeTheMarkAreMarkedOnceByTheirWork(t *testing.T) {
 		t.Errorf("the library is %v, want %s and not %s", lib, worked, remnant)
 	}
 }
+
+func TestAVideoDeletedWithItsFolderLeavesTheLibrary(t *testing.T) {
+	// Tim deleted two videos from Documents with their folders, and they
+	// stayed with a red lamp, File not found. The folder they were in is
+	// still there, so they were deleted, not taken away on a drive.
+	svc, eps := memoryLibrary(t, "PXL_1.mp4", "PXL_2.mp4", "start.mp4")
+	withJobs(svc)
+	files := svc.store.files
+	both, videoOnly := eps[0], eps[1]
+	for _, p := range []string{both, engine.WorkDir(both), videoOnly} {
+		if err := files.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lib := svc.Library()
+	if listed(lib, both) {
+		t.Errorf("%s, deleted with its folder, is still in the library", both)
+	}
+	// A video moved away whose work is still beside where it was can be
+	// moved back, so it stays and says File not found.
+	if !listed(lib, videoOnly) || !listed(lib, eps[2]) {
+		t.Errorf("the library is %v, want %s and %s still in it", lib, videoOnly, eps[2])
+	}
+}
+
+func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
+	// Tim deleted a video with its folder while it was open, the build
+	// before #218 wrote the chosen clip back, and after the update the app
+	// opened on it, asking the Go side about a video it had just let go.
+	svc, eps := memoryLibrary(t, "PXL_1.mp4", "start.mp4")
+	withJobs(svc)
+	files := svc.store.files
+	gone, stays := eps[0], eps[1]
+	if err := changeChosen(files, stays, func(c *chosen) { c.Opened = 1 }); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{gone, engine.WorkDir(gone)} {
+		if err := files.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := changeChosen(files, gone, func(c *chosen) { c.Opened = 2 }); err != nil {
+		t.Fatal(err)
+	}
+	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
+		t.Errorf("the app opens on %v, want %s and not %s", opened, stays, gone)
+	}
+}

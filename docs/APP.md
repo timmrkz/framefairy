@@ -210,9 +210,11 @@ about the video, the chosen clip and the waveform among other things: Tim
 deleted a folder, opened the video, and a folder was there again with
 nothing of its own in it, plan row 2.247. A folder written back like that is
 deleted again once the video is let go. Videos added before the mark get it
-once, as the app starts, if their folder holds work of its own. A video that
-is not there itself, on a drive taken out, keeps its place and says File not
-found, whatever its folder. With no folder beside it there is nothing to
+once, as the app starts, if their folder holds work of its own. A video deleted
+together with its folder leaves the list the same way, plan row 2.250. Only
+a video whose own folder is gone too, on a drive taken out or in a folder
+moved away, keeps its place and says File not found until it is back, see
+`deletedOutside` in `settings.go`. With no folder beside it there is nothing to
 keep or to throw away, so the box says so and offers one **Remove**.
 
 Anything that cannot be taken back asks in that same box, and nothing else
