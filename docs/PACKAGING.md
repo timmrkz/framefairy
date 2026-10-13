@@ -269,6 +269,14 @@ and then
 again, and the log keeps a warning with all ffmpeg said. HEVC for HDR
 goes the same way. `nextEncoder` in `engine/encode.go`.
 
+The media engine can also hang without a word: on CI's virtual Mac
+VideoToolbox's encoder once made no frame for eight minutes. A render on
+an encoder with another after it in the order that makes no frame for a
+minute is stopped and goes on with the next one the same way, and the
+log says so. The last encoder, `libx264` where there is one, is waited
+for as long as it takes, since there is nothing to go on with.
+`encoderStall` and `stallFor` in `engine/encode.go`.
+
 An HDR episode makes an HDR short, HEVC in 10 bits, see HDR in
 [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md). On the Mac that is
 `hevc_videotoolbox`, which the ffmpeg we ship has. Elsewhere it is

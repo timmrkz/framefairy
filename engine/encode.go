@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"framefairy/internal/framewire"
 )
@@ -341,6 +342,38 @@ func (e *Engine) nextEncoder(ctx context.Context, failed Encoder, light framewir
 	if !failed.failed(said) {
 		return Encoder{}, false
 	}
+	return e.encoderAfter(ctx, failed, light)
+}
+
+// encoderStall is how long a render on an encoder that has another after
+// it may go without a frame before it goes on with that one, see
+// stallFor. VideoToolbox's encoder hung for eight minutes on CI's virtual
+// Mac without a word, in TestProjectSteps on main at 3d55aff, and the
+// render waited for it until the test run was killed. A short is twenty
+// to thirty seconds, and the media engine makes it in a few, so a minute
+// without a single frame is an encoder that has stopped, not one that is
+// slow.
+const encoderStall = time.Minute
+
+// stallFor is how long a render on encoder may go without a frame, or
+// zero for as long as it takes: an encoder with none after it in this
+// system's order, libx264 above all, is waited for, since there is
+// nothing better to go on with.
+func (e *Engine) stallFor(encoder Encoder, light framewire.Light) time.Duration {
+	order := e.order(light != framewire.SDR)
+	at := slices.IndexFunc(order, encoder.is)
+	if at < 0 || at == len(order)-1 {
+		return 0
+	}
+	if e.stall > 0 {
+		return e.stall
+	}
+	return encoderStall
+}
+
+// encoderAfter is the next encoder after the one given in this system's
+// order that this ffmpeg has.
+func (e *Engine) encoderAfter(ctx context.Context, failed Encoder, light framewire.Light) (Encoder, bool) {
 	order := e.order(light != framewire.SDR)
 	at := slices.IndexFunc(order, failed.is)
 	if at < 0 {

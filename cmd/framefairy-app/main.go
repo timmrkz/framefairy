@@ -311,6 +311,9 @@ type FrameFairy struct {
 	link *LicenceLink
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
+	// firstFrame is how long Add waits for a video's first frame,
+	// firstFrameWait unless a test says otherwise, see undecodable.
+	firstFrame time.Duration
 }
 
 // Updates says which build is running, which channel it follows and how far
