@@ -164,7 +164,8 @@ func (e *Engine) PreviewWordFrames(ctx context.Context, d *CaptionDrawing, draft
 
 // Typing is d with word of caption hidden, the word being typed in the
 // caption box: libass draws the rest of the caption where it always
-// does, and the browser draws only what is typed, in the word's place.
+// does, and the browser draws only what is typed, in the word's place,
+// with its pill where the word is lit, which grows with what is typed.
 // When the browser drew the whole caption while a word was typed, it came
 // out larger than libass draws it, and the caption grew as a word was
 // opened and shrank as it was left. d itself when there is no such word.

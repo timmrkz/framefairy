@@ -388,6 +388,14 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 					taggedText(L.words, L.lines, func(j int) bool { return j != k && !c.Hidden[j] }, shown))
 			}
 
+			// The word being typed has neither its ink nor its pill here:
+			// the caption box draws both, the pill growing with what is
+			// typed, see CaptionDrawing.Typing. libass drew the pill at the
+			// word's old size, and Tim saw the word typed run out of it.
+			if c.Hidden[k] {
+				continue
+			}
+
 			// The pill, and the active word alone over it, both at one
 			// scale around one centre, one scale a frame, over the line,
 			// so the words beside them never reach into the pill. The word is the

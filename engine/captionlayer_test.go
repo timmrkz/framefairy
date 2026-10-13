@@ -414,8 +414,9 @@ func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
 
 // A word being typed in the caption box is left out of the captions
 // libass draws, in its place: the caption file is the same file with that
-// word's ink taken away, with the highlight and without, so nothing else
-// of the caption moves. Tim saw the whole caption grow as a word was
+// word's ink taken away, and its pill while it is lit, with the highlight
+// and without, so nothing else of the caption moves. The caption box draws
+// the pill, so it grows with what is typed, which Tim missed. Tim saw the whole caption grow as a word was
 // opened, because the browser drew all of it in its own font.
 //
 // On the real disk: ffmpeg measures the captions to lay out the pills.
@@ -445,9 +446,25 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 		if style == nil && (strings.Contains(string(typing), shown+"respektvoll") || !strings.Contains(string(normal), shown+"respektvoll")) {
 			t.Errorf("highlight %v: the word being typed is drawn, or the word was never drawn:\n%s", style, typing)
 		}
-		want := strings.ReplaceAll(string(normal), shown+"respektvoll", hidden+"respektvoll")
+		// With the highlight, the word's pill and its ink over the pill are
+		// left out while it is lit, because the caption box draws the pill
+		// growing with what is typed, and the line keeps the word hidden.
+		var kept []string
+		for _, line := range strings.SplitAfter(string(normal), "\n") {
+			var layer int
+			var from string
+			if n, _ := fmt.Sscanf(strings.ReplaceAll(line, ",", " "), "Dialogue: %d %s", &layer, &from); n == 2 &&
+				layer >= 3 && from >= "0:00:00.60" && from < "0:00:01.20" {
+				continue
+			}
+			kept = append(kept, line)
+		}
+		want := strings.ReplaceAll(strings.Join(kept, ""), shown+"respektvoll", hidden+"respektvoll")
 		if style == nil && string(typing) != want {
-			t.Errorf("with the highlight the caption file is more than the word's ink apart:\n%s\nnot\n%s", typing, want)
+			t.Errorf("with the highlight the caption file is more than the word's pill and ink apart:\n%s\nnot\n%s", typing, want)
+		}
+		if style == nil && len(kept) == len(strings.SplitAfter(string(normal), "\n")) {
+			t.Errorf("the word's pill was never drawn:\n%s", normal)
 		}
 		if style != nil && !strings.Contains(string(typing), "Das "+hidden+"respektvoll"+shown+" ist.") {
 			t.Errorf("without the highlight the word is not hidden in its place:\n%s", typing)

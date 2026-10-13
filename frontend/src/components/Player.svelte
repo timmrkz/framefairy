@@ -633,6 +633,7 @@
     part: number | null;
     whole: string;
     piece: string;
+    pad?: number;
   } | null>(null);
   // The word a correction is on its way to disk for, so it says it is not
   // settled yet the way everything else in the app does.
@@ -959,6 +960,25 @@
     };
   }
 
+  // How far the pill reaches past the letters of a word on either side, in
+  // ems, so the box a word is typed in is its pill as long as it holds the
+  // word and grows by exactly what is typed. libass makes the pill the
+  // letters' ink and a margin, the browser's box is the letters' advance,
+  // which is a little wider, so the margin is what is left of the pill
+  // around the advance. Read once, as the word is opened, from the pill
+  // and the letters both as the screen shows them, so the pop's scale
+  // drops out. Nothing when the words are not laid out by libass.
+  function sides(node: HTMLElement): number | undefined {
+    if (!laidWords || !node.firstChild) return undefined;
+    const letters = document.createRange();
+    letters.selectNodeContents(node);
+    const pill = node.getBoundingClientRect().width;
+    const style = getComputedStyle(node);
+    const size = parseFloat(style.fontSize) * (pill / parseFloat(style.width));
+    if (!pill || !size) return undefined;
+    return Math.max(0, (pill - letters.getBoundingClientRect().width) / 2 / size);
+  }
+
   // Taking a word takes the picture with it: a caption that moved on under
   // the caret would leave the hand correcting a word that is no longer
   // there.
@@ -971,7 +991,7 @@
     frozen = time;
     frozenDrawn = drawn;
     if (!paused) toggle();
-    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text };
+    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text, pad: sides(node) };
     // The caret is already where the hand put it. It is only moved when
     // what is drawn here is half of the word being corrected: a word split
     // in two is drawn in two halves, and correcting either hands back the
@@ -1199,9 +1219,10 @@
 
   // Where a word stands in the caption box laid out by libass, and the
   // corners of its pill as the engine drew them, see engine.pillRadius,
-  // so the frame round the word has the pill's corners.
+  // so the frame round the word has the pill's corners. Left and width
+  // are the pill's at rest, which a word being typed grows from.
   function wordPlace(laid: { x: number; w: number; top: number }, f: LaidWord): string {
-    return `left: ${((f.x - laid.x) / laid.w) * 100}%; width: ${(f.w / laid.w) * 100}%;
+    return `--left: ${((f.x - laid.x) / laid.w) * 100}%; --width: ${(f.w / laid.w) * 100}%;
       top: ${px(f.top - laid.top)}; height: ${px(f.h)}; line-height: ${px(f.h)};
       border-radius: ${px(f.r)};`;
   }
@@ -1662,7 +1683,9 @@
                     title={said
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
-                    style="--pill: {captions.style.highlightColour};{laidWords?.words[firstOfRow[row] + i]
+                    style="--pill: {captions.style.highlightColour};{fixing?.at === word.start && fixing.pad !== undefined
+                      ? `--pad: ${fixing.pad}em;`
+                      : ''}{laidWords?.words[firstOfRow[row] + i]
                       ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i])
                       : ''}"
                     use:says={[word.text, captions]}
@@ -2019,6 +2042,8 @@
 
   .laid .line span {
     position: absolute;
+    left: var(--left);
+    width: var(--width);
     margin: 0;
     padding: 0;
     font-size: var(--size);
@@ -2073,12 +2098,25 @@
   }
 
   /* Libass draws the caption without the word being typed, and the word
-     is drawn here, in its place, in the caption's colour. The browser
-     drew the whole caption while a word was typed, larger than libass
-     draws it, so the caption grew as a word was opened. */
+     is drawn here, in its place, in the caption's colour, on its pill
+     while it is the word lit. The browser drew the whole caption while a
+     word was typed, larger than libass draws it, so the caption grew as a
+     word was opened. The box is the pill as long as it holds the word,
+     and grows round the pill's middle by what is typed, see sides: with
+     the pill drawn by libass, a word typed longer ran out of it. On a
+     frame of the pop it keeps the frame's scale, so opening the word
+     moves nothing. */
   .laid .line span.fixing {
+    left: calc(var(--left) + var(--width) / 2);
+    width: max-content;
+    min-width: var(--width);
+    padding: 0 var(--pad, 0.14em);
+    translate: -50% 0;
     color: var(--typed);
-    transform: none;
+  }
+
+  .laid .line span.fixing.now {
+    background: var(--pill);
   }
 
 

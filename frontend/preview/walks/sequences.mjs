@@ -16,6 +16,12 @@
 //                      caption without that word's letters while it is
 //                      open and with the rest where they were, and nothing
 //                      pop when it is left
+//   ["grow", word]     walks the playhead with Shift and → until the word
+//                      is lit and a frame on with →, into its pop, clicks
+//                      the word, types after it and leaves it with Escape,
+//                      and sees it open where it stood, at the scale it
+//                      was drawn at, and its box and pill grow round their
+//                      middle by what was typed
 //   ["block", word]    clicks the block on the clip timeline of the caption
 //                      the engine has the word in, which picks it
 //   ["gone", word]     no caption the engine has holds the word
@@ -865,6 +871,13 @@ export const sequences = [
     // was left, and leaving it popped the word lit.
     name: "a word opened in the caption box stays where libass draws it",
     steps: [["open in place", "Jahre"]],
+  },
+  {
+    // Found by Tim on #201: a word typed longer ran out of its pill,
+    // because libass drew the pill at the word's old size, and opening a
+    // word on a frame of its pop is to move nothing.
+    name: "a word typed longer grows its pill round its middle",
+    steps: [["frame", "Jahre"], ["grow", "Jahre"]],
   },
   {
     name: "a word saved empty is removed",
@@ -2912,6 +2925,14 @@ for (const seq of toWalk) {
   let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
+  // Until the captions over the frame are drawn, twice over, so a layer
+  // asked for by the last is drawn too.
+  const settled = async () => {
+    for (let i = 0; i < 2; i++) {
+      await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    }
+  };
 
   for (const [what, ...args] of seq.steps) {
     const arg = args.length > 1 ? args : args[0];
@@ -3171,12 +3192,6 @@ for (const seq of toWalk) {
         // The words where they stand in the caption box, and the white of
         // the letters libass draws on the canvas inside the word and round
         // it, with the word shut, open, and shut again.
-        const settled = async () => {
-          for (let i = 0; i < 2; i++) {
-            await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
-            await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-          }
-        };
         const look = () =>
           page.evaluate((text) => {
             const words = [...document.querySelectorAll(".captions .word")];
@@ -3238,6 +3253,72 @@ for (const seq of toWalk) {
         else if (Math.abs(open.around - shut.around) > shut.around / 20 + 5)
           wrong = `round "${arg}" libass drew ${shut.around} white pixels shut and ${open.around} open: the caption moved`;
         else if (again.popped !== shut.popped) wrong = `leaving "${arg}" popped the word lit`;
+        break;
+      }
+      case "grow": {
+        // The word as the screen shows it: its box, the scale it is
+        // drawn at, whether it is open and lit, the width of its letters
+        // and the colour behind them.
+        const look = () =>
+          page.evaluate(() => {
+            const it = document.querySelector(".captions .word.fixing") ?? window.__growing;
+            if (!it?.isConnected) return null;
+            const r = it.getBoundingClientRect();
+            const letters = document.createRange();
+            letters.selectNodeContents(it);
+            const style = getComputedStyle(it);
+            return {
+              left: r.left,
+              width: r.width,
+              top: r.top,
+              height: r.height,
+              letters: letters.getBoundingClientRect().width,
+              pop: style.getPropertyValue("--pop") || getComputedStyle(it.closest(".captions")).getPropertyValue("--pop"),
+              open: it.classList.contains("fixing"),
+              lit: it.classList.contains("now"),
+              behind: style.backgroundColor,
+            };
+          });
+        const it = word(arg);
+        for (let i = 0; i < 20 && !(await it.evaluate((e) => e.classList.contains("now"))); i++) {
+          await page.keyboard.press("Shift+ArrowRight");
+          await settled();
+        }
+        await page.keyboard.press("ArrowRight");
+        await watch.step("press", s);
+        await it.evaluate((e) => (window.__growing = e));
+        await settled();
+        const shut = await look();
+        await it.click();
+        await watch.step("click", s);
+        await settled();
+        const open = await look();
+        await page.keyboard.press("End");
+        await page.keyboard.type("ungen");
+        await watch.step("type", s);
+        await settled();
+        const typed = await look();
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const mid = (l) => l.left + l.width / 2;
+        const off = (a, b) => ["left", "width", "top", "height"].find((k) => Math.abs(a[k] - b[k]) > 0.6);
+        console.log(
+          `    scale ${shut?.pop}, ${shut?.lit ? "lit" : "not lit"}, ${shut?.width.toFixed(1)} px shut, ${open?.width.toFixed(1)} open, ${typed?.width.toFixed(1)} typed round ${typed?.letters.toFixed(1)} px of letters`,
+        );
+        if (!shut || !open || !typed) wrong = `"${arg}" left the caption box`;
+        else if (!shut.lit || !(Number(shut.pop) > 1)) wrong = `"${arg}" is not lit on a frame of its pop, scale ${shut.pop}`;
+        else if (!open.open) wrong = `"${arg}" did not open`;
+        else if (off(shut, open))
+          wrong = `opening "${arg}" moved its ${off(shut, open)} from ${shut[off(shut, open)].toFixed(1)} to ${open[off(shut, open)].toFixed(1)} px`;
+        else if (typed.width < open.width + (typed.letters - open.letters) - 1.5)
+          wrong = `"${arg}" typed longer by ${(typed.letters - open.letters).toFixed(1)} px of letters grew its box by ${(typed.width - open.width).toFixed(1)} px`;
+        else if (typed.letters > typed.width) wrong = `the letters typed run out of their box, ${typed.letters.toFixed(1)} px in ${typed.width.toFixed(1)}`;
+        else if (Math.abs(mid(typed) - mid(open)) > 0.6)
+          wrong = `"${arg}" grew round ${mid(typed).toFixed(1)} px and not round the middle of its pill at ${mid(open).toFixed(1)}`;
+        else if (Math.abs(typed.top - open.top) > 0.6 || Math.abs(typed.height - open.height) > 0.6)
+          wrong = `typing into "${arg}" moved it up or down`;
+        else if (typed.lit && /rgba\(0, 0, 0, 0\)|transparent/.test(typed.behind))
+          wrong = `"${arg}" is the word lit and has no pill behind what is typed`;
         break;
       }
       case "button": {
