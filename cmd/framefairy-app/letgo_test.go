@@ -165,3 +165,27 @@ func TestAVideoDeletedWithItsFolderLeavesTheLibrary(t *testing.T) {
 		t.Errorf("the library is %v, want %s and %s still in it", lib, videoOnly, eps[2])
 	}
 }
+
+func TestTheAppNeverOpensOnAVideoDeletedOutsideIt(t *testing.T) {
+	// Tim deleted a video with its folder while it was open, the build
+	// before #218 wrote the chosen clip back, and after the update the app
+	// opened on it, asking the Go side about a video it had just let go.
+	svc, eps := memoryLibrary(t, "PXL_1.mp4", "start.mp4")
+	withJobs(svc)
+	files := svc.store.files
+	gone, stays := eps[0], eps[1]
+	if err := changeChosen(files, stays, func(c *chosen) { c.Opened = 1 }); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{gone, engine.WorkDir(gone)} {
+		if err := files.RemoveAll(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := changeChosen(files, gone, func(c *chosen) { c.Opened = 2 }); err != nil {
+		t.Fatal(err)
+	}
+	if opened := svc.Opened(10); slices.Contains(opened, gone) || !slices.Contains(opened, stays) {
+		t.Errorf("the app opens on %v, want %s and not %s", opened, stays, gone)
+	}
+}
