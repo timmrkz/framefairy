@@ -340,18 +340,20 @@ func TestTheVideoPreviewDrawsTheCaptionsSmallerAsTheShortWouldShowThem(t *testin
 	}
 	// A word at rest, one in the middle of its bounce, and the last.
 	const limit = 2.5
-	for _, ms := range []int64{350, 560, 900} {
+	for _, ms := range []int64{350, 550, 900} {
 		want := shrunk(draw(W, H, W, H, ms), W, H, by)
 		if d := alphaDiff(draw(W/by, H/by, W, H, ms), want, W/by, H/by); d > limit {
 			t.Errorf("at %d ms the captions drawn a third as big differ from the short's made a third as big by %.1f", ms, d)
 		}
 	}
-	// The measure tells a frame apart: in the bounce, 20 ms further on, a
-	// frame of a short at 50 frames a second, is more than twice as far off
-	// as the right frame.
-	want := shrunk(draw(W, H, W, H, 560), W, H, by)
-	right := alphaDiff(draw(W/by, H/by, W, H, 560), want, W/by, H/by)
-	if off := alphaDiff(draw(W/by, H/by, W, H, 580), want, W/by, H/by); off < 2*right {
+	// The measure tells a frame apart: in the bounce, the next frame of
+	// the pop, laid out at 30 frames a second without a video to count, is
+	// more than twice as far off as the right frame. Both moments are in
+	// the middle of their frames, away from where one scale gives way to
+	// the next.
+	want := shrunk(draw(W, H, W, H, 550), W, H, by)
+	right := alphaDiff(draw(W/by, H/by, W, H, 550), want, W/by, H/by)
+	if off := alphaDiff(draw(W/by, H/by, W, H, 590), want, W/by, H/by); off < 2*right {
 		t.Errorf("a frame off in the bounce differs by %.1f and the right frame by %.1f, so the measure proves little", off, right)
 	}
 }

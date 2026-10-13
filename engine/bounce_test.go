@@ -584,15 +584,16 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 			if k < len(want) {
 				should = want[k]
 			}
-			// Two pixels of the pill, for the edges libass smooths.
-			if math.Abs(scale-should) > 2.5/rest {
+			// Three pixels of the pill, for the edges libass smooths,
+			// which the Mac's build draws a pixel or two wider.
+			if math.Abs(scale-should) > 3.5/rest {
 				t.Errorf("%s, lit for %d frames, frame %d: the pill is at %.3f, not %.3f", name, len(w.widths), k, scale, should)
 			}
 		}
-		if len(w.widths) >= 2 && math.Abs(top-popPeak) > 2.5/rest {
+		if len(w.widths) >= 2 && math.Abs(top-popPeak) > 3.5/rest {
 			t.Errorf("%s, lit for %d frames, pops to %.3f, not %.2f: %v", name, len(w.widths), top, popPeak, got)
 		}
-		if n := len(w.widths); n >= 3 && math.Abs(w.widths[n-1]/rest-1) > 2.5/rest {
+		if n := len(w.widths); n >= 3 && math.Abs(w.widths[n-1]/rest-1) > 3.5/rest {
 			t.Errorf("%s, lit for %d frames, ends its last frame at %.3f, not at rest: %v", name, n, w.widths[n-1]/rest, got)
 		}
 		t.Logf("%-10s %2d frames: %v", name, len(w.widths), got)
