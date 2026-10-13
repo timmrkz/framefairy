@@ -122,7 +122,7 @@ guesswork.
 | Level | What it is for |
 | --- | --- |
 | `error` | something failed: a decoder that stopped, ffmpeg's errors, a call that failed, an exception in the window |
-| `warn` | something went wrong and the app carried on: the window stood still, a play that has not started after 3 s, a slow call |
+| `warn` | something went wrong and the app carried on: the window stood still, a play that has not started after 3 s, a call slower than 150 ms, an act that took over 150 ms to reach the screen, an edit of the clips that took over 100 ms |
 | `info` | the acts, the app starting, a video opening, a job starting and ending |
 | `debug` | the steps between: a stream opened, a first frame, the sound card's state, a decoder held and let go |
 | `trace` | lines that come with every frame or every pull |
@@ -137,6 +137,27 @@ do it all again. An early version had a **Detailed Log** switch in the
 Help menu for this. Tim took it out: a menu tick that changes nothing
 on screen is a switch nobody can judge, and the one moment it is
 needed is the moment it is too late to tick it.
+
+### Lag
+
+Lag is said where it is felt. An act that took over 150 ms from the hand
+to the first frame drawn after it is a `window` line, which says how much
+of that time the window was still busy with something else before it
+heard the act: most of it means work in the window, little of it means
+work the window waited on. A call to the Go side slower than 150 ms is a
+`window` line `calls: ... took N ms`. An edit of the clips that took over
+100 ms is an `edits` line, `an edit of the clips was slow`, with where its
+time went in ms: `waited` for the edit before it of the same video,
+`before` reading the files as they were, `edit` the edit itself with its
+writes to the disk, and `after` reading them again. A window that
+stood still over 400 ms is said only while the app is in front, because
+WebKit fires the timers of an app behind another once a second at most,
+and that is not the app standing still. Plan row 2.242.
+
+```sh
+# what took long enough to be felt
+jq -c 'select(.msg | test("reach the screen|took [0-9]+ ms|was slow"))' app.log
+```
 
 ## Reading a report
 

@@ -1110,8 +1110,12 @@
     const ratio = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(width * ratio));
     const h = Math.max(1, Math.round(canvas.clientHeight * ratio));
-    canvas.width = w;
-    canvas.height = h;
+    // Told its size only when that changed. Telling a canvas its size
+    // throws its pixels away and makes it new, a picture as wide as the
+    // clip timeline at twice the pixels, and that happened on every step
+    // of a swipe. Plan row 2.242.
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = getComputedStyle(canvas).getPropertyValue("--wave").trim();

@@ -499,7 +499,14 @@ type cursor struct {
 	madeToFail bool
 	sentEOF    bool
 	graphEOF   bool
-	failedWhy  string
+	// Packets of the picture read ahead by a jump that went on, see goOn,
+	// fed to the decoder before the file is read further.
+	queued []*astiav.Packet
+	// When the packet shown latest of those fed since the last seek is
+	// shown, see skipBefore, and how many frames this open decoded.
+	latest        int64
+	decodedInOpen int
+	failedWhy     string
 	// What ffmpeg said about this cursor's objects, under saidMu, and the
 	// keys they are known by: the file and its decoder, and the chain.
 	said      string
@@ -541,6 +548,7 @@ func (c *cursor) free() {
 	if c.pkt != nil {
 		c.pkt.Free()
 	}
+	c.dropQueued()
 	if c.v != nil {
 		c.v.close()
 	}
@@ -576,11 +584,12 @@ func (c *cursor) fail(why string) {
 func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 	c.failedWhy = ""
 	c.asked, c.firstSaid = time.Now(), false
-	c.sentInOpen, c.madeToFail = 0, false
+	c.sentInOpen, c.madeToFail, c.decodedInOpen = 0, false, 0
 	// A cursor that fell back to the processor tries the graphics chip
 	// again at the next open, see toProcessor.
+	reopened := false
 	if c.v != nil && c.fellBack {
-		c.fellBack = false
+		c.fellBack, reopened = false, true
 		if c.d.hardware != nil {
 			if err := c.reopenDecoder(c.d.hardware); err != nil {
 				c.fail(err.Error())
@@ -618,6 +627,11 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 		c.freeGraph()
 	}
 	from := grid.At(frame)
+	if !opened && !reopened && c.goOn(frame, w, h, grid) {
+		c.say(fmt.Sprintf("went on, at frame %d, %.3f s, for %dx%d, %d ms", frame, from, w, h, time.Since(c.asked).Milliseconds()))
+		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(false, c.light)})
+		return
+	}
 	c.grid, c.rank, c.until, c.shown, c.retries = grid, frame, frame, nil, 0
 	if err := c.seek(from + framewire.Hair); err != nil {
 		c.fail(err.Error())
@@ -630,6 +644,78 @@ func (c *cursor) open(frame, w, h int, grid framewire.Grid) {
 	}
 	c.say(fmt.Sprintf("%s, at frame %d, %.3f s, for %dx%d, %d ms", how, frame, from, w, h, time.Since(c.asked).Milliseconds()))
 	c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Opened, Body: framewire.OpenedBody(opened, c.light)})
+}
+
+// goOn takes the cursor to the frame of the grid without a seek, when that
+// decodes no more than a seek would: the frame is at or after the one the
+// cursor hands over next, and no key frame is shown between the frame the
+// cursor decoded last and it. A seek decodes from the key frame shown at
+// or before the frame, which is then no later than where the cursor
+// already is. A drag forward or Shift and an arrow key jumped back to the
+// key frame each time and decoded again what the cursor had just decoded,
+// plan row 2.243. The packets up to the frame are read ahead to see that
+// no key frame comes first, and kept for the decoder, see feed. A frame
+// further ahead than goOnAhead is left to a seek, rather than read ahead
+// to find out.
+func (c *cursor) goOn(frame, w, h int, grid framewire.Grid) bool {
+	if c.v == nil || !c.holding || c.sentEOF || grid != c.grid || w != c.width || h != c.height ||
+		c.graph == nil || frame < c.rank || frame >= grid.Count {
+		return false
+	}
+	if c.shown != nil && frame < c.until {
+		// The picture made last is shown for that frame too.
+		c.rank, c.retries = frame, 0
+		return true
+	}
+	tb := c.v.stream.TimeBase().Float64()
+	at := grid.At(frame) + framewire.Hair + grid.Origin
+	if at-float64(c.held.Pts())*tb > goOnAhead {
+		return false
+	}
+	keyBy := func(p *astiav.Packet) bool {
+		return p.Flags().Has(astiav.PacketFlagKey) && p.Pts() != astiav.NoPtsValue && float64(p.Pts())*tb <= at
+	}
+	for _, p := range c.queued {
+		if keyBy(p) {
+			return false
+		}
+	}
+	for len(c.queued) == 0 || c.queued[len(c.queued)-1].Dts() == astiav.NoPtsValue ||
+		float64(c.queued[len(c.queued)-1].Dts())*tb <= at {
+		p := astiav.AllocPacket()
+		err := c.v.fc.ReadFrame(p)
+		if err != nil {
+			p.Free()
+			if errors.Is(err, astiav.ErrEof) {
+				break
+			}
+			return false
+		}
+		if p.StreamIndex() != c.v.stream.Index() {
+			p.Free()
+			continue
+		}
+		c.queued = append(c.queued, p)
+		if keyBy(p) {
+			return false
+		}
+	}
+	c.rank, c.retries = frame, 0
+	return true
+}
+
+// How far ahead of the frame the cursor decoded last a jump may be and
+// still go on, in seconds: longer than the time between two key frames in
+// almost every video, so the jumps it leaves to a seek are the ones a seek
+// is faster for.
+const goOnAhead = 5.0
+
+// dropQueued lets go of the packets goOn read ahead.
+func (c *cursor) dropQueued() {
+	for _, p := range c.queued {
+		p.Free()
+	}
+	c.queued = c.queued[:0]
 }
 
 // lightOf is the light of the episode's picture, from its transfer tag,
@@ -659,6 +745,8 @@ func (c *cursor) seek(from float64) error {
 	flushDecoder(c.v.dec)
 	c.held.Unref()
 	c.sentEOF, c.holding = false, false
+	c.dropQueued()
+	c.latest = astiav.NoPtsValue
 	return nil
 }
 
@@ -769,7 +857,7 @@ func (c *cursor) next(n int, skip float64) {
 		at := c.grid.At(c.rank)
 		if !c.firstSaid {
 			c.firstSaid = true
-			c.say(fmt.Sprintf("first frame %d at %.3f s, %d ms after the open", c.rank, at, time.Since(c.asked).Milliseconds()))
+			c.say(fmt.Sprintf("first frame %d at %.3f s, %d ms after the open, %d decoded", c.rank, at, time.Since(c.asked).Milliseconds(), c.decodedInOpen))
 		}
 		c.d.answer(framewire.Record{Cursor: c.id, Kind: framewire.Frame, At: at, Body: c.shown})
 		c.rank++
@@ -865,6 +953,7 @@ func (c *cursor) decode() (float64, error) {
 				continue
 			}
 			c.decoded.SetPts(pts)
+			c.decodedInOpen++
 			return float64(pts)*tb - c.grid.Origin, nil
 		case errors.Is(err, astiav.ErrEof):
 			return 0, astiav.ErrEof
@@ -970,30 +1059,64 @@ func (c *cursor) feed() error {
 		return nil
 	}
 	for {
-		err := c.v.fc.ReadFrame(c.pkt)
-		if errors.Is(err, astiav.ErrEof) {
-			c.sentEOF = true
-			return c.v.dec.SendPacket(nil)
-		}
-		if err != nil {
-			return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
-		}
-		if c.pkt.StreamIndex() != c.v.stream.Index() {
-			c.pkt.Unref()
-			continue
+		p := c.pkt
+		if len(c.queued) > 0 {
+			p = c.queued[0]
+			c.queued = append(c.queued[:0], c.queued[1:]...)
+			defer p.Free()
+		} else {
+			err := c.v.fc.ReadFrame(p)
+			if errors.Is(err, astiav.ErrEof) {
+				c.sentEOF = true
+				return c.v.dec.SendPacket(nil)
+			}
+			if err != nil {
+				return c.withSaid(fmt.Errorf("the video could not be read: %w", err))
+			}
+			if p.StreamIndex() != c.v.stream.Index() {
+				p.Unref()
+				continue
+			}
 		}
 		c.sentInOpen++
 		if failAfter > 0 && c.sentInOpen == failAfter && !c.madeToFail {
-			c.pkt.Unref()
+			p.Unref()
 			c.madeToFail = true
 			return errMadeToFail
 		}
-		err = c.v.dec.SendPacket(c.pkt)
-		c.pkt.Unref()
+		if !c.sound {
+			c.skipBefore(p)
+		}
+		err := c.v.dec.SendPacket(p)
+		p.Unref()
 		if err != nil && !errors.Is(err, astiav.ErrEagain) {
 			return c.withSaid(fmt.Errorf("the picture could not be decoded: %w", err))
 		}
 		return nil
+	}
+}
+
+// skipBefore tells the decoder whether to skip the frame of the packet p
+// if no other frame is made from it: when p is shown before a packet fed
+// since the last seek that is itself shown no later than the frame of the
+// grid the cursor hands over next. The frame of the packet shown latest is
+// never skipped, as nothing fed is shown after it, so a frame is decoded
+// that is shown after p's and no later than that frame of the grid, and
+// p's frame is shown for none the cursor still hands over. On the way to
+// the frame a jump asks for, this leaves out the B-frames before it,
+// which an export has two of in every three frames. The frame that holds
+// the moment asked for is never left out. Plan row 2.243.
+func (c *cursor) skipBefore(p *astiav.Packet) {
+	pts := p.Pts()
+	if pts == astiav.NoPtsValue {
+		skipNonRef(c.v.dec, false)
+		return
+	}
+	tb := c.v.stream.TimeBase().Float64()
+	next := c.grid.At(c.rank) + framewire.Hair + c.grid.Origin
+	skipNonRef(c.v.dec, c.latest != astiav.NoPtsValue && pts < c.latest && float64(c.latest)*tb <= next)
+	if c.latest == astiav.NoPtsValue || pts > c.latest {
+		c.latest = pts
 	}
 }
 

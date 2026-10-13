@@ -33,8 +33,9 @@ export function tellTo(fn: (line: string) => void) {
   tell = fn;
 }
 
-// A call slower than this is said, in ms.
-const SLOW = 500;
+// A call slower than this is said, in ms. Low enough to catch what a
+// person feels as the app taking a moment, see SLOWLY in said.ts.
+const SLOW = 150;
 // More calls than this in a second are said, with which they were.
 const MANY = 60;
 let second = 0;

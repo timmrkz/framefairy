@@ -90,6 +90,7 @@
   import { said } from "../lib/said";
   import { pieceHolding, rotated } from "../lib/rotate";
   import { markOn } from "../lib/glide";
+  import { unchanged } from "../lib/unchanged";
 
   let {
     path,
@@ -685,7 +686,7 @@
   const onTheWay = $derived(cardsOnTheWay.cards(arrivingNow, listed.next(), keptRead));
   $effect(() => {
     void onTheWay;
-    if (cardsOnTheWay.unread(listed.next())) void refreshClips();
+    if (cardsOnTheWay.unread(listed.next())) void refreshClips(true);
   });
   // The search the list last counted rows for, and how many of its clips
   // the newest read of the list holds: what it had written when the read
@@ -984,14 +985,23 @@
     clips = clips.map((c) => (c.key === updated.key ? updated : c));
   }
 
-  async function refreshClips() {
+  // The list read again. A read for what a search wrote, found, keeps
+  // every clip the read says is as it was, the very same clip: a search
+  // only adds clips, and a running one reads the list every two seconds.
+  // Each read made every clip a new one, the clip on screen too, and its
+  // captions were asked for and drawn again each time, the clip timeline
+  // and the caption box with them, while nothing about it had changed.
+  // Plan row 2.242. Every other read is for an edit of the clips or of
+  // their captions, and takes them all as new, so the captions of the clip
+  // on screen are read again with them.
+  async function refreshClips(found = false) {
     const ticket = listed.send();
     const written = lastSearch?.written ?? 0;
     try {
       const list = (await api.clips(path)) ?? [];
       if (listed.keep(ticket)) {
         // The list, and the cards of the clips it holds going, in one step.
-        clips = list;
+        clips = found ? unchanged(clips, list) : list;
         readWritten = written;
         keptRead = ticket;
       }
@@ -2249,7 +2259,7 @@
     const found = working?.written ?? 0;
     if (found === foundHeard) return;
     foundHeard = found;
-    if (found > 0) refreshClips().then(() => showFirstFound());
+    if (found > 0) refreshClips(true).then(() => showFirstFound());
   });
 
   // Undo and Redo, from the Edit menu and its keys. A field being typed in,
@@ -2619,7 +2629,7 @@
         // Each clip lands in the plan the moment it is framed, while the
         // model is still writing the next, so the list is read again as
         // the search runs and the first one is put on screen.
-        refreshClips().then(() => showFirstFound());
+        refreshClips(true).then(() => showFirstFound());
       }
     }, 2000);
     return () => clearInterval(timer);
