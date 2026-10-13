@@ -121,10 +121,14 @@ three rules work out the rest:
   just before the move, where the crop already stands, and one just after
   it. Dragging a keyframe along the clip timeline changes when it applies,
   so the tempo is changed by moving a keyframe and never by typing a number.
-- **A cut is always instant, and no glide crosses one.** Each part between
-  cuts has its own keyframes. So the rotate case needs nothing at all: the
-  rotated part begins at the cut over the spin, and its crop is there
-  from its first frame.
+- **A glide goes on across a cut, by the time the short plays.** A cut
+  takes time out of the clip, not out of the glide, so a keyframe before
+  a cut and one after it glide from one to the other with nothing jumping
+  at the cut. A rotated part is another camera angle with keyframes of its
+  own, so the rotate case needs nothing at all: the rotated part begins at
+  the cut over the spin, and its crop is there from its first frame. The
+  first design stopped every glide at a cut, and Tim found a keyframe
+  before a cut and one after it did not glide at all, plan row 2.238.
 
 Later, with 3.28, the engine times a glide by the picture: between two
 keyframes the crop moves when the face it follows moves, and the even glide

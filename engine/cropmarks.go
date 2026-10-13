@@ -20,11 +20,15 @@ import (
 //
 // A mark is a moment of the video, like a thumbnail, and belongs to the
 // camera angle of the piece it lies in, the shot as the analysis framed it
-// and how far it is rotated, see angleOf. The keyframes that steer a piece are
-// those of its angle in its part, the pieces that play straight on between
-// two cuts, so no glide crosses a cut and a shot cut away to and back
-// keeps gliding as if it had been seen. A keyframe a trim or a cut left outside
-// the clip stays in the plan and comes back with its piece.
+// and how far it is rotated, see angleOf. The keyframes that steer a piece
+// are those of its angle in the whole clip, so a shot cut away to and back
+// keeps gliding as if it had been seen, and a glide goes on across a cut by
+// the clip's clock, the time the short plays, with nothing of the time the
+// cut took out. A glide used to stop at a cut, so a keyframe before one and
+// the next after it did not glide at all, found by Tim, plan row 2.238. A
+// rotated part is another angle, so its crop still starts at its cut. A
+// keyframe a trim or a cut left outside the clip stays in the plan and
+// comes back with its piece.
 
 // CropMark is a keyframe, a crop placed by hand on one frame: the moment
 // the frame starts, in seconds of the video, and the left edge of the crop
@@ -104,18 +108,26 @@ func readCropMarks(raw any) []CropMark {
 }
 
 // markedPieces gives each piece of a clip the keyframes that steer it:
-// the keyframes of its camera angle in its part. angles is each piece's angle,
-// as angleOf gives it. A keyframe that lies in no piece steers nothing.
+// the keyframes of its camera angle in the whole clip. angles is each
+// piece's angle, as angleOf gives it. A keyframe that lies in no piece
+// steers nothing. A keyframe is given to a piece at the moment of the video
+// it would be at on that piece's stretch were nothing cut out, the clip's
+// clock read from the piece's start, so the glide, which is worked out on
+// frames of the video, runs across a cut the way the short plays it. In
+// the piece's own part, where nothing is cut out, that is its own moment.
 func markedPieces(segments []Segment, angles []string, marks []CropMark) {
 	if len(marks) == 0 {
 		return
 	}
 	parts := make([]int, len(segments))
+	// Where each piece starts on the clip's clock.
+	into := make([]float64, len(segments))
 	for i := 1; i < len(segments); i++ {
 		parts[i] = parts[i-1]
 		if segments[i].Start-segments[i-1].End > PiecesMeet {
 			parts[i]++
 		}
+		into[i] = into[i-1] + segments[i-1].End - segments[i-1].Start
 	}
 	for _, m := range marks {
 		holder := -1
@@ -128,10 +140,16 @@ func markedPieces(segments []Segment, angles []string, marks []CropMark) {
 		if holder < 0 {
 			continue
 		}
+		onClip := into[holder] + m.At - segments[holder].Start
 		for i := range segments {
-			if parts[i] == parts[holder] && angles[i] == angles[holder] {
-				segments[i].Marks = append(segments[i].Marks, m)
+			if angles[i] != angles[holder] {
+				continue
 			}
+			at := m
+			if parts[i] != parts[holder] {
+				at.At = segments[i].Start + onClip - into[i]
+			}
+			segments[i].Marks = append(segments[i].Marks, at)
 		}
 	}
 }
@@ -479,7 +497,7 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 
 // cropShown is the left edge of the crop a piece of a plan being edited
 // shows on the frame a moment means: gliding over the keyframes of its angle
-// in its part, each kept inside a picture so wide for a crop so wide the
+// in the clip, each kept inside a picture so wide for a crop so wide the
 // way the render keeps it, or the crop of its angle, or nil where it
 // stands in the middle. A width no wider than the crop is a picture not
 // known, and the keyframes are taken as they are.
