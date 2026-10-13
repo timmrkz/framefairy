@@ -252,7 +252,7 @@ func TestThePreviewServesOnlyTheDraftsPictures(t *testing.T) {
 }
 
 // A report holds the draft's pictures in its order, as pictures/1.png and
-// on, and a report made lets go of the draft. Without a video named it
+// on, and a report made lets go of the draft and closes the window. Without a video named it
 // names the video the last act did.
 //
 // On the real disk: the report is a zip on the Desktop, and holds the log
@@ -273,9 +273,17 @@ func TestAReportHoldsThePictures(t *testing.T) {
 	f.Acted(Act{ID: "a1", What: "picked a video", Video: filepath.Join(home, "Movies", "start.mp4")})
 	f.Acted(Act{ID: "r1", What: "clicked Report"})
 	f.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 12, 8)}, {name: "b.png", data: pngOf(t, 8, 12)}})
+	shut := 0
+	f.report.make = func(closed func()) (func(), func()) { return func() {}, func() { shut++; closed() } }
+	f.OpenReport("bugs")
 	path, err := f.ReportProblem("It froze.", "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Finder shows the report, and the window it was made in closes, as
+	// Tim asked.
+	if shut != 1 || f.ReportWindowOpen() {
+		t.Fatalf("after the report the window was closed %d times, open %v", shut, f.ReportWindowOpen())
 	}
 	z, err := zip.OpenReader(path)
 	if err != nil {

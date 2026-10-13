@@ -190,8 +190,10 @@
 //   ["put back", i]    presses Put it back on picture i
 //   ["removed goes"]   the pointer leaves, and the time to put the picture
 //                      back runs out and the grid closes over it
-//   ["report", n]      presses Report and reads the zip it made: what was
-//                      written and n pictures, and the field empty after
+//   ["report", n]      presses Report, which closes the report window and
+//                      says nothing beside the buttons, and reads the zip
+//                      it made: what was written and n pictures, and the
+//                      field empty after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -4299,12 +4301,22 @@ for (const seq of toWalk) {
       case "report": {
         const written = await page.evaluate(() => document.querySelector(".telling").innerText.trim());
         await page.locator("button.report").click();
-        const saved = await page
-          .waitForFunction(() => /Saved on the Desktop as Frame Fairy report/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 15000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!saved) {
-          wrong = `Report said "${await page.evaluate(() => document.querySelector(".words")?.textContent.trim())}"`;
+        // Report closes the window once Finder has the zip, and says
+        // nothing beside the buttons on the way. Tim had a line there.
+        const closed = await (async () => {
+          for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+            const w = await (await fetch(new URL("/report-window", url))).json();
+            if (!w.open) return true;
+          }
+          return false;
+        })();
+        if (!closed) {
+          wrong = `Report left the window open, saying "${await page.evaluate(() => document.querySelector(".words")?.textContent.trim())}"`;
+          break;
+        }
+        const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim());
+        if (said) {
+          wrong = `Report said "${said}" beside the buttons`;
           break;
         }
         const widths = await page.evaluate(() => window.__wide ?? []);

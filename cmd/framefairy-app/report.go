@@ -99,8 +99,8 @@ func homeless(b []byte) []byte {
 	return bytes.ReplaceAll(b, []byte(home), []byte("~"))
 }
 
-// ReportProblem writes a report of a problem to the Desktop and shows it
-// in Finder, with what the person says happened, the pictures they
+// ReportProblem writes a report of a problem to the Desktop, shows it in
+// Finder and closes the report window, with what the person says happened, the pictures they
 // attached and the video that was in front, by its file name only, or
 // without one the video last worked on. It gives the report's path, and
 // lets go of the draft it was made from.
@@ -175,6 +175,9 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 	theLog.line(zerolog.InfoLevel, "report").Int("bytes", buf.Len()).Int("pictures", len(pictures)).Msg("a report of a problem was made")
 	f.report.clear()
 	_ = showReport(path)
+	// Finder has what was made, and the window it was made in has done
+	// its work, as Tim asked.
+	f.report.closeWindow()
 	return path, nil
 }
 

@@ -2663,11 +2663,15 @@ person looks while working.
 
 One field for what happened, and one row under it: **Dictate**, a
 square with the microphone alone, **Attach**, a square with the
-paperclip, and **Report**, which saves one zip file on the Desktop and
-shows it in Finder: what was written, the pictures, the app's log, the
-build and the Mac, and the settings, with the home folder written as ~
-and nothing of a video but its file name. The info mark beside
-**Report** says what goes in.
+paperclip, and **Report**, which saves one zip file on the Desktop,
+shows it in Finder and closes the window: what was written, the
+pictures, the app's log, the build and the Mac, and the settings, with
+the home folder written as ~ and nothing of a video but its file name.
+Beside the buttons there is only what went wrong, and why a recording
+stopped by itself. What the buttons do shows on them, and the info mark
+beside **Report** says how the page works and what goes in a report.
+Tim found standing lines there, Listening and Saved on the Desktop,
+read as news that was not true yet.
 
 The pictures are for screenshots. They come from the paperclip's open
 box, from a drop anywhere on the window, or from a paste into the

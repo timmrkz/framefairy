@@ -17,8 +17,7 @@
 
   let what = $state("");
   let making = $state(false);
-  // The name of the last report made, and why one could not be.
-  let made = $state("");
+  // Why a report could not be made, or pictures attached.
   let problem = $state("");
 
   // Dictate, plan row 2.189, the way dictation on claude.ai works: the
@@ -100,7 +99,6 @@
     for (const id of Object.keys(removed)) if (pictures.some((p) => p.id === id)) delete removed[id];
     if (d.error) {
       problem = d.error.endsWith(".") ? d.error : d.error + ".";
-      made = "";
     }
   }
 
@@ -500,11 +498,15 @@
     making = true;
     problem = "";
     note = "";
+    // Nothing is kept from here: the Go side lets go of the draft and
+    // closes the window, which would otherwise keep the text again as it
+    // went.
+    if (saving) clearTimeout(saving);
+    saving = null;
+    loaded = false;
     try {
-      if (saving) clearTimeout(saving);
-      saving = null;
-      const path = await api.reportProblem(what, "");
-      made = path.split(/[\\/]/).pop() ?? path;
+      // Finder shows the report, and the Go side closes this window.
+      await api.reportProblem(what, "");
       // The report holds it all, and the next one starts empty.
       field.textContent = "";
       what = "";
@@ -514,6 +516,7 @@
       problem = e instanceof Error ? e.message : String(e);
     } finally {
       making = false;
+      loaded = true;
     }
   }
 </script>
@@ -579,21 +582,17 @@
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
+      <!-- Only what went wrong, and why a recording stopped by itself. What
+           the buttons are doing shows on the buttons, and how the page
+           works is in the info mark. Tim found standing lines there read
+           as news that was not true yet. -->
       <div class="words">
         {#if problem}
           <span class="error selectable">{problem}</span>
         {:else if listening && unheard}
           <span class="error selectable">{unheard}</span>
-        {:else if listening}
-          <span>Listening…</span>
-        {:else if hearing}
-          <span>Writing down what you said…</span>
-        {:else if note}
+        {:else if !listening && !hearing && note}
           <span>{note}</span>
-        {:else if made}
-          <span class="selectable">Saved on the Desktop as {made}</span>
-        {:else}
-          <span class="muted">Saved on the Desktop as one zip file</span>
         {/if}
       </div>
       <!-- Beside the button rather than in the card's corner, where it
@@ -601,14 +600,16 @@
            as Tim asked, since what goes in a report is worth seeing
            before it is made. -->
       <span class="ask always">
-        <Info label="What a report holds" side="right">
-          What you write here, the pictures you attach, without what else their files hold, the app's log of what it
-          did, which build this is and what Mac it runs on, and your settings. Never a video, its words or its
-          captions, and your home folder is written as ~. It is saved on the Desktop as one zip file, which Finder
-          shows, and you can look inside before you send it.
+        <Info label="How a report works" side="right">
+          Say what happened with the microphone, or type it. Enter keeps what you said and Escape removes it. Attach
+          screenshots with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each.
+          What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,
+          shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their
+          files hold, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
+          words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
-      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop and shows it in Finder">
+      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
       </button>
