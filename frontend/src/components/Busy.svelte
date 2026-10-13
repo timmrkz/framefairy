@@ -30,7 +30,8 @@
   // seconds, it starts full and runs down to nothing over that time, and
   // says so with onend. There is no beam and no motes then, because
   // nothing is being worked on. It stands still while the pointer or the
-  // keyboard is on the control, so nobody is rushed, and onresume tells
+  // keyboard is on the control, so nobody is rushed, and runs on the
+  // moment the pointer is seen anywhere else, and onresume tells
   // the time left each time it runs on. The control gives it its colour,
   // the same way it does for work, through --lit, --wash-from and
   // --wash-to. Given spent, it starts that many seconds in, for time that
@@ -118,26 +119,51 @@
         onresume?.(left / 1000);
       };
       // Held while the pointer or the keyboard is anywhere on the control.
-      const out = () => {
-        if (!host?.matches(":hover") && !host?.contains(document.activeElement)) go();
+      //
+      // Where the pointer is, is where the page last saw it, not what an
+      // enter and a leave on the control said. WebKit sends the control no
+      // leave when it moves out from under a pointer that stands still, as
+      // a removed clip's row does when the row above it closes, and no
+      // leave comes after that either, wherever the hand goes. The time
+      // stood still for good, under a hand long gone to the clip timeline,
+      // until the hand came back over the row and off it again. Found by
+      // Tim. So every move of the pointer and everything it comes onto,
+      // anywhere in the app, says whether it is on the control.
+      let pointer = !!host?.matches(":hover");
+      const keyboard = () => !!host?.contains(document.activeElement);
+      const settle = () => (pointer || keyboard() ? hold() : go());
+      const moved = (e: PointerEvent) => {
+        const on = e.target instanceof Node && !!host?.contains(e.target);
+        if (on === pointer) return;
+        pointer = on;
+        settle();
+      };
+      // Off the app altogether, which is the one place nothing is then
+      // under the pointer to say so.
+      const gone = (e: PointerEvent) => {
+        if (e.relatedTarget || !pointer) return;
+        pointer = false;
+        settle();
       };
       const leftFocus = (e: FocusEvent) => {
-        if (!host?.contains(e.relatedTarget as Node | null) && !host?.matches(":hover")) go();
+        if (!host?.contains(e.relatedTarget as Node | null) && !pointer) go();
       };
       run();
       timer = window.setTimeout(over, left);
       // A row that appears under the pointer, as a removed clip's row
       // does under the trash can just pressed, starts held.
-      if (host?.matches(":hover")) hold();
-      host?.addEventListener("pointerenter", hold);
-      host?.addEventListener("pointerleave", out);
+      if (pointer) hold();
+      document.addEventListener("pointerover", moved, true);
+      document.addEventListener("pointermove", moved, { capture: true, passive: true });
+      document.addEventListener("pointerout", gone, true);
       host?.addEventListener("focusin", hold);
       host?.addEventListener("focusout", leftFocus);
       return () => {
         clearTimeout(timer);
         fill?.cancel();
-        host?.removeEventListener("pointerenter", hold);
-        host?.removeEventListener("pointerleave", out);
+        document.removeEventListener("pointerover", moved, true);
+        document.removeEventListener("pointermove", moved, true);
+        document.removeEventListener("pointerout", gone, true);
         host?.removeEventListener("focusin", hold);
         host?.removeEventListener("focusout", leftFocus);
       };
