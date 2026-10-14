@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -535,5 +537,67 @@ func TestThePreviewsEngineWritesIntoTheAppsLog(t *testing.T) {
 	has(t, find(lines, "the caption file of the video preview has no pill"), map[string]any{"level": "warn", "from": "captions", "video": "start.mp4"})
 	if find(lines, "measuring") != nil {
 		t.Error("the engine's progress was written")
+	}
+}
+
+// Settings, Advanced shows the app's log, its files with the older ones,
+// their size and their lines, and removes them all, and nothing else in
+// their folder. The next line starts a new log, which says what went.
+// Plan row 2.245.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func TestTheLogCanBeRemovedWhole(t *testing.T) {
+	path, read := testLog(t)
+	dir := filepath.Dir(path)
+	for i := range 4 {
+		theLog.line(zerolog.InfoLevel, "app").Int("i", i).Msg("a line before")
+	}
+	var older bytes.Buffer
+	z := gzip.NewWriter(&older)
+	_, _ = z.Write([]byte("{}\n{}\n{}\n"))
+	_ = z.Close()
+	if err := os.WriteFile(filepath.Join(dir, "app-2026-10-09T10-00-00.000.log.gz"), older.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &FrameFairy{}
+	st := s.AppLog()
+	if st.Path != path || st.Files != 2 || st.Lines != 4+3 || st.Bytes <= int64(older.Len()) {
+		t.Fatalf("the log is %+v, want %s in 2 files with 7 lines", st, path)
+	}
+
+	// Lines keep coming while it is removed, from everywhere at once.
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 200 {
+				theLog.line(zerolog.DebugLevel, "app").Msg("a line while it goes")
+			}
+		})
+	}
+	after, err := s.RemoveAppLog()
+	wg.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app-2026-10-09T10-00-00.000.log.gz")); !os.IsNotExist(err) {
+		t.Fatalf("the older file of the log is still there, %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "notes.txt")); err != nil || string(b) != "mine" {
+		t.Fatalf("a file beside the log that is not the log's went too, %v", err)
+	}
+	if after.Files != 1 || after.Path != path {
+		t.Fatalf("after removing, the log is %+v, want one new file", after)
+	}
+	lines := read()
+	if find(lines, "a line before") != nil {
+		t.Fatal("a line from before is still in the log")
+	}
+	gone := find(lines, "the app's log was removed")
+	// The lines said while it went count too, so at least the seven.
+	if n, _ := gone["lines"].(float64); gone == nil || gone["files"] != float64(2) || n < 7 {
+		t.Fatalf("the new log says %v, want what went", gone)
 	}
 }

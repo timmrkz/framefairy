@@ -189,6 +189,11 @@
 //                      slowly enough to do something while it is
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["app log", "open"]
+//                      the app starts its log, with an older file beside
+//                      the one in use, see /app-log in bridge_test.go
+//   ["app log", n]     Settings, Advanced, opened if it is not, says the
+//                      app's log has n files, and the Go side has as many
 //   ["bugs, the pointer gone"]
 //                      clicks Bugs with the pointer on the sidebar, and
 //                      the app's window loses the focus to the report
@@ -434,8 +439,10 @@
 //                      does not hold it
 //   ["followed", which]
 //                      since "drag edge", the playhead went with the edge:
-//                      it stood in four places or more while the hand
-//                      moved, on frames, and once it let go stands on the
+//                      on frames, the edge stood in two places or more,
+//                      and on each the playhead came onto the edge's frame
+//                      within three animation frames of the edge leaving
+//                      it, and once the hand let go it stands on the
 //                      frame the edge leaves on screen, the clip's or the
 //                      piece's first frame for "start" and "cut to", its
 //                      last for "end" and "cut from", with shift too
@@ -638,7 +645,8 @@
 //                      the line under the build comes to say this head, in
 //                      ten seconds at most, and more somewhere after it
 //   ["no check"]       the line under the build offers no button
-//   ["mark", what]     the line under the build starts with this mark,
+//   ["build mark", what]
+//                      the line under the build starts with this mark,
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
@@ -789,7 +797,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
@@ -1420,6 +1428,23 @@ export const sequences = [
       ["field reads", "input.licence-key", ""],
       ["redo"],
       ["field reads", "input.licence-key", "FF-12"],
+    ],
+  },
+  {
+    // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
+    // removes every file of it, the older one too, after asking. Cancel
+    // leaves it as it was, and the log that follows is the one new file.
+    name: "The app's log is removed whole from Settings, after asking",
+    steps: [
+      ["app log", "open"],
+      ["settings"],
+      ["app log", 2],
+      ["button", "Remove the app's log"],
+      ["button", "Cancel"],
+      ["app log", 2],
+      ["button", "Remove the app's log"],
+      ["button", "Remove them"],
+      ["app log", 1],
     ],
   },
   {
@@ -2670,7 +2695,7 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
       ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
-      ["mark", "triangle, warning"],
+      ["build mark", "triangle, warning"],
       ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
@@ -2688,7 +2713,7 @@ export const sequences = [
       ["follow", "PR #20, conflicts"],
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "PR #20, conflicts"],
-      ["mark", "dot, warning"],
+      ["build mark", "dot, warning"],
       ["warned"],
     ],
   },
@@ -2727,12 +2752,73 @@ function readUpdates() {
     const warn = getComputedStyle(probe).color;
     probe.remove();
     const dot = mark.querySelector(".dot");
-    const shape = dot ? "dot" : mark.querySelector('svg path[d$="Z"]') ? "triangle" : mark.querySelector("svg") ? "check" : "";
+    // The icon by its name, which Lucide puts on the svg. Its outline is
+    // no guide: the triangle's path once ended in Z and no longer does.
+    const shape = dot
+      ? "dot"
+      : mark.querySelector("svg.lucide-triangle-alert")
+        ? "triangle"
+        : mark.querySelector("svg.lucide-check")
+          ? "check"
+          : "";
     const colour = dot ? getComputedStyle(dot).backgroundColor : getComputedStyle(mark).color;
     return colour === warn ? `${shape}, warning` : shape;
   }
 }
 const updatesPage = (page) => page.evaluate(readUpdates);
+
+// How long the page took from a key going down to the first animation
+// frame on which shows holds, in the page's own time. Timed from Node, a
+// press and the polling that waits for its answer are calls to the
+// browser, and on a busy runner each can take a frame or more to arrive:
+// C was once 538 ms "after C" in CI where the page showed the keyframe in
+// a frame or two. The time starts when the page handles the keydown, so
+// it is how long the app took to answer the key, not how long a busy
+// machine took to hand the key over. -1 when it never holds within the
+// timeout.
+async function keyShows(page, key, shows, arg) {
+  await page.evaluate(
+    ([source, arg]) => {
+      const shows = new Function(`return (${source})`)();
+      window.__keyShows = { down: -1, took: -1 };
+      addEventListener("keydown", () => (window.__keyShows.down = performance.now()), { capture: true, once: true });
+      const tick = () => {
+        const k = window.__keyShows;
+        if (k.down < 0) return requestAnimationFrame(tick);
+        if (shows(arg)) k.took = performance.now() - k.down;
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    [shows.toString(), arg],
+  );
+  await page.keyboard.press(key);
+  return page
+    .waitForFunction(() => window.__keyShows.took >= 0, null, { timeout: 3000 })
+    .then(() => page.evaluate(() => Math.round(window.__keyShows.took)), () => -1);
+}
+
+// Reads the edge of that label and the playhead on every animation frame,
+// both in the same frame, until __followWatch is set false: the edge into
+// __edgeSeen, and the two as a pair into __edgeFrames, the edge as NaN on a
+// frame it is not drawn.
+function watchEdge(page, label) {
+  return page.evaluate((label) => {
+    window.__edgeSeen = [];
+    window.__edgeFrames = [];
+    window.__followWatch = true;
+    const tick = () => {
+      if (!window.__followWatch) return;
+      const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
+      const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+      const at = edge ? Number(edge.getAttribute("aria-valuenow")) : NaN;
+      if (edge) window.__edgeSeen.push(at);
+      window.__edgeFrames.push([at, playhead]);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }, label);
+}
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
 // and hands back what it said last.
@@ -3233,6 +3319,17 @@ if (only === "--names") {
   const twice = names.filter((n, i) => names.indexOf(n) !== i);
   if (twice.length) {
     console.log(`two sequences are called ${JSON.stringify(twice[0])}`);
+    process.exit(1);
+  }
+  // Two steps of one name are the same mistake, and a quieter one: the
+  // switch below takes the first case of a name and never reaches the
+  // second, so the walks that meant the second check nothing. Two pull
+  // requests that each add a step can pick the same name, and the steps
+  // are read from this file's own source, as the one switch has them.
+  const steps = [...readFileSync(new URL(import.meta.url), "utf8").matchAll(/^\s*case ("[^"]*"):/gm)].map((m) => JSON.parse(m[1]));
+  const stepTwice = steps.filter((n, i) => steps.indexOf(n) !== i);
+  if (stepTwice.length) {
+    console.log(`two steps are called ${JSON.stringify(stepTwice[0])}`);
     process.exit(1);
   }
   console.log(names.join("\n"));
@@ -3987,19 +4084,7 @@ for (const seq of toWalk) {
           }
           x = (from + to) / 2;
         }
-        await page.evaluate((label) => {
-          window.__followed = [];
-          window.__edgeSeen = [];
-          window.__followWatch = true;
-          const tick = () => {
-            if (!window.__followWatch) return;
-            window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
-            const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
-            if (edge) window.__edgeSeen.push(Number(edge.getAttribute("aria-valuenow")));
-            requestAnimationFrame(tick);
-          };
-          tick();
-        }, edgeLabel[which]);
+        await watchEdge(page, edgeLabel[which]);
         const y = box.y + box.h / 2;
         await page.mouse.move(x, y);
         if (dragShift) await page.keyboard.down("Shift");
@@ -4164,19 +4249,7 @@ for (const seq of toWalk) {
           await page.waitForTimeout(30);
         }
         await page.mouse.up();
-        await page.evaluate((label) => {
-          window.__edgeSeen = [];
-          window.__followed = [];
-          window.__followWatch = true;
-          const tick = () => {
-            if (!window.__followWatch) return;
-            window.__followed.push(Number(document.querySelector(".screen")?.dataset.playhead));
-            const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
-            if (edge) window.__edgeSeen.push(Number(edge.getAttribute("aria-valuenow")));
-            requestAnimationFrame(tick);
-          };
-          tick();
-        }, edgeLabel[which]);
+        await watchEdge(page, edgeLabel[which]);
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + px + (again * i) / 10, y);
@@ -4237,13 +4310,39 @@ for (const seq of toWalk) {
           "cut from": segs[0].end - frame,
           "cut to": segs[1]?.start,
         }[arg];
-        const seen = await page.evaluate(() => window.__followed ?? []);
         const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
-        const places = new Set(seen.map((t) => t.toFixed(3))).size;
-        // On words the edge lands on a few places only, so the count is
+        // Every place the edge stood while it was watched, the playhead
+        // stood on that place's frame too, the edge's own frame for "start"
+        // and "cut to", the one before for "end" and "cut from", within
+        // three animation frames of the edge leaving it. The two are read in
+        // the same frames, so this holds on a machine of any speed. A count
+        // of places did not: an edge taken again at once stands still until
+        // the drag before it is saved (2.259), so on a busy runner it stood
+        // in 2 or 3 places, and a playhead left behind stands in 2 as well.
+        // On words the engine puts the playhead by the words, so this is
         // asked of a drag on frames.
-        if (places < 4 && !dragShift) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
-        else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
+        const frames = (await page.evaluate(() => window.__edgeFrames ?? [])).filter(([e]) => Number.isFinite(e));
+        const onFrame = (a, b) => Math.floor(a / frame + 0.001 / frame) === Math.floor(b / frame + 0.001 / frame);
+        const late = 3;
+        const runs = [];
+        frames.forEach(([e], i) => {
+          if (runs.at(-1)?.edge.toFixed(3) === e.toFixed(3)) runs.at(-1).to = i;
+          else runs.push({ edge: e, from: i, to: i });
+        });
+        const opens = arg === "start" || arg === "cut to";
+        const missed = runs.find(
+          (r) =>
+            r.to + late < frames.length &&
+            !frames.slice(r.from, r.to + late + 1).some(([, p]) => onFrame(p, opens ? r.edge : r.edge - frame)),
+        );
+        if (dragShift) {
+          // Nothing more than where it lands, below.
+        } else if (runs.length < 2) {
+          wrong = `the ${arg} edge stood in ${runs.length ? "one place" : "no place"} while the hand dragged it, which proves nothing`;
+        } else if (missed) {
+          const went = frames.slice(missed.from, missed.to + late + 1).map(([, p]) => p.toFixed(3));
+          wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}`;
+        } else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
         }
         break;
@@ -5017,6 +5116,23 @@ for (const seq of toWalk) {
         await main.mouse.move(750, 400);
         await main.waitForTimeout(400);
         if (!(await shut())) wrong = "the sidebar opened on the next move of the pointer outside it";
+        break;
+      }
+      case "app log": {
+        if (arg === "open") {
+          await fetch(new URL("/app-log?open=1", url));
+          break;
+        }
+        // Advanced reads the log again whenever it opens.
+        const disclose = page.locator("button.disclose");
+        if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
+        const said = arg === 1 ? "1 file," : `${arg} files,`;
+        const card = page.locator(".card", { hasText: "The app's log" });
+        await card.locator(".num", { hasText: said }).waitFor({ timeout: 5000 }).catch(() => {});
+        const shown = ((await card.locator(".num").textContent().catch(() => "")) ?? "").trim();
+        const kept = await (await fetch(new URL("/app-log", url))).json();
+        if (!shown.startsWith(said)) wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
+        else if (kept.files !== arg) wrong = `the app's log has ${kept.files} files on the disk, not ${arg}`;
         break;
       }
       case "windows": {
@@ -6662,7 +6778,7 @@ for (const seq of toWalk) {
         else if (more && !now.more.includes(more)) wrong = `under ${head} it says ${JSON.stringify(now.more)}, not ${JSON.stringify(more)}`;
         break;
       }
-      case "mark": {
+      case "build mark": {
         const now = await updatesComeTo(page, (u) => u.mark === arg);
         if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
         break;
@@ -6742,11 +6858,7 @@ for (const seq of toWalk) {
         await settle(page);
         const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
         const before = await turn();
-        const pressed = Date.now();
-        await page.keyboard.press("r");
-        const took = await page
-          .waitForFunction((b) => Number(document.querySelector(".screen").dataset.turn) !== b, before, { polling: "raf", timeout: 3000 })
-          .then(() => Date.now() - pressed, () => -1);
+        const took = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
         if (took < 0) wrong = `R left the video preview rotated ${before}`;
         else if (took > 300) wrong = `the video preview rotated ${took} ms after R, not at once`;
         await watch.step("press", s);
@@ -6759,15 +6871,12 @@ for (const seq of toWalk) {
         await settle(page);
         const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         const before = await count();
-        const pressed = Date.now();
-        await page.keyboard.press("c");
-        const took = await page
-          .waitForFunction(
-            (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
-            before,
-            { polling: "raf", timeout: 3000 },
-          )
-          .then(() => Date.now() - pressed, () => -1);
+        const took = await keyShows(
+          page,
+          "c",
+          (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
+          before,
+        );
         if (took < 0) wrong = "C put no keyframe on the playhead's frame";
         else if (took > 300) wrong = `the keyframe showed ${took} ms after C, not at once`;
         await watch.step("press", s);

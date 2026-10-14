@@ -69,6 +69,13 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, agai
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });
+  // SLOW=4 runs the page four times slower, the way a busy CI runner does,
+  // to find a walk that counts on a machine being quick. See docs/TESTING.md.
+  const slow = Number(process.env.SLOW);
+  if (slow > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: slow });
+  }
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto(url);

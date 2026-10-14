@@ -72,6 +72,16 @@ export interface TrainingStatus {
   decisions: number;
 }
 
+// The app's log as Settings, Advanced shows it, see LogStatus in
+// applog.go: the file in use, how many files there are with the older
+// ones, and what they hold together. No path while the app keeps no log.
+export interface LogStatus {
+  path: string;
+  files: number;
+  bytes: number;
+  lines: number;
+}
+
 export interface Settings {
   llmModel: string;
   asrModel: string;
@@ -666,6 +676,11 @@ export const api = {
   getSettings: () => call<Settings>("GetSettings"),
   training: () => call<TrainingStatus>("Training"),
   clearTraining: () => call<void>("ClearTraining"),
+  appLog: () => call<LogStatus>("AppLog"),
+  showAppLog: () => call<void>("ShowAppLog"),
+  // Every file of the log goes, and what comes back is the new one, which
+  // holds the line that says so.
+  removeAppLog: () => call<LogStatus>("RemoveAppLog"),
   // What changed in the settings, and only that, see SaveSettings.
   saveSettings: (changed: Partial<Settings>) => call<void>("SaveSettings", changed),
   // How many clips a search looks for and how long they may be. They are
@@ -1087,9 +1102,11 @@ export function languageRow(m: LanguageModel, pickable = false): ModelRow {
 }
 
 // A size in bytes the way a download is always quoted: metric, a thousand
-// bytes to the kilobyte, and never more than one decimal.
+// bytes to the kilobyte, and never more than one decimal. Under a megabyte
+// it is kilobytes, for a file as small as a log.
 export function size(bytes: number): string {
   if (!isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 999_500) return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
 }
