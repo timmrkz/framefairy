@@ -3378,11 +3378,34 @@ for (const seq of toWalk) {
         // Until the frames each word of the new captions is lit on have
         // come, as they have long before a hand gets to a block. Until
         // then a click goes by the words' own times, as it did before.
-        const framed = page.waitForResponse((r) => r.url().includes("/frames/captions/words"), { timeout: 15000 });
-        await drag(page, middle(g.start), high(g.track), (await xOf(page, to)) - (await xOf(page, t.start)), false);
-        await watch.step("trim", s);
-        await framed;
-        await page.waitForTimeout(200);
+        // The drag asks for them for every track it shows on the way, and
+        // the first answer was taken for the saved track's: on a busy
+        // runner a click then landed on a frame lighting no word. So
+        // until every ask is answered and none follows for a moment.
+        const words = (r) => r.url().includes("/frames/captions/words");
+        let asking = 0;
+        let answered = Date.now();
+        const asked = (r) => words(r) && asking++;
+        const came = (r) => {
+          if (!words(r)) return;
+          asking--;
+          answered = Date.now();
+        };
+        page.on("request", asked);
+        page.on("requestfinished", came);
+        page.on("requestfailed", came);
+        try {
+          const framed = page.waitForResponse(words, { timeout: 15000 });
+          await drag(page, middle(g.start), high(g.track), (await xOf(page, to)) - (await xOf(page, t.start)), false);
+          await watch.step("trim", s);
+          await framed;
+          const until = Date.now() + 10000;
+          while ((asking > 0 || Date.now() - answered < 400) && Date.now() < until) await page.waitForTimeout(50);
+        } finally {
+          page.off("request", asked);
+          page.off("requestfinished", came);
+          page.off("requestfailed", came);
+        }
         break;
       }
       case "every block": {
@@ -7042,11 +7065,13 @@ for (const seq of toWalk) {
           // scale is held by "the bounce after a word step" in
           // captions.test.ts. So too the peak: with fewer frames one may
           // land a little off it, 12.7 % of 15 on a machine running six
-          // walks at once, so a word holds that it popped, and the whole
-          // walk that some pop reached the peak.
+          // walks at once, and 8 % of "er" when a busy runner drew no frame
+          // for over 100 ms round its peak, so a word holds that it popped
+          // by 5 %, against the 1 % Tim saw, and the whole walk that some
+          // pop reached the peak.
           if (bounced < 3) {
             wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen`;
-          } else if (most < least * 1.1) {
+          } else if (most < least * 1.05) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
