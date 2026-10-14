@@ -238,7 +238,7 @@ func main() {
 	startProbe(svc)
 	svc.window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
 		leave.closing()
-		svc.report.closeWindow()
+		svc.report.closeWindow("app")
 	})
 	svc.report.make = func(closed func()) (front, shut func()) {
 		return openReportWindow(app, svc.window, svc.report, closed)

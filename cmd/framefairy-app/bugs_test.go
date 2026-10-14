@@ -18,7 +18,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/afero"
 )
@@ -57,12 +60,144 @@ func TestBugsOpensOneReportWindow(t *testing.T) {
 		t.Fatalf("after the window closed, Bugs made %d windows in all, want 2", made)
 	}
 	// The app's window closing takes the report window with it.
-	r.closeWindow()
+	r.closeWindow("app")
 	if shut != 1 || s.ReportWindowOpen() {
 		t.Fatalf("closing the app's window shut the report window %d times, open %v", shut, s.ReportWindowOpen())
 	}
 	if want := []bool{true, false, true, false}; fmt.Sprint(told) != fmt.Sprint(want) {
 		t.Fatalf("the app's window was told %v, want %v", told, want)
+	}
+}
+
+// Two quick clicks on Bugs are two calls at once, each on a goroutine of
+// its own, and still make one window. Found in the review of #217.
+func TestTwoQuickClicksOnBugsMakeOneWindow(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	var made atomic.Int32
+	r.make = func(closed func()) (func(), func()) {
+		made.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		return func() {}, closed
+	}
+	s := &FrameFairy{report: r}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() { s.OpenReport("bugs") })
+	}
+	wg.Wait()
+	if n := made.Load(); n != 1 {
+		t.Fatalf("two quick clicks on Bugs made %d windows", n)
+	}
+	if !s.ReportWindowOpen() {
+		t.Fatal("the window made is not taken for open")
+	}
+}
+
+// A window gone before it was made, closed at once, is not taken for open,
+// or Bugs would bring forward a window that is not there and nothing would
+// open until the app started again. Found in the review of #217.
+func TestAWindowGoneBeforeItWasMadeIsNotOpen(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	made := 0
+	var told []bool
+	r.told = func(open bool) { told = append(told, open) }
+	r.make = func(closed func()) (func(), func()) {
+		made++
+		if made == 1 {
+			closed()
+		}
+		return func() {}, closed
+	}
+	s := &FrameFairy{report: r}
+	s.OpenReport("bugs")
+	if s.ReportWindowOpen() {
+		t.Fatal("a window gone before it was made is taken for open")
+	}
+	s.OpenReport("bugs")
+	if made != 2 || !s.ReportWindowOpen() {
+		t.Fatalf("the next click made %d windows in all, open %v, want 2 and open", made, s.ReportWindowOpen())
+	}
+	if want := []bool{false, true}; fmt.Sprint(told) != fmt.Sprint(want) {
+		t.Fatalf("the app's window was told %v, want %v", told, want)
+	}
+}
+
+// Pictures are decoded before the draft is taken, so while ten are being
+// read, Bugs, the window closing and the text being kept wait for none of
+// them. Found in the review of #217. It holds a decode with decoding, a
+// package variable, so it runs alone.
+func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	s := &FrameFairy{report: r}
+	hold, held := make(chan struct{}), make(chan struct{})
+	was := decoding
+	decoding = func() { close(held); <-hold }
+	defer func() { decoding = was }()
+	done := make(chan ReportDraft)
+	go func() { done <- r.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}}) }()
+	<-held
+	asked := make(chan struct{})
+	go func() {
+		_ = s.ReportWindowOpen()
+		_ = s.SaveReportText("words")
+		close(asked)
+	}()
+	select {
+	case <-asked:
+	case <-time.After(2 * time.Second):
+		close(hold)
+		t.Fatal("the draft waited on a picture being decoded")
+	}
+	close(hold)
+	if d := <-done; len(d.Pictures) != 1 || d.Text != "words" {
+		t.Fatalf("after the decode the draft is %+v", d)
+	}
+}
+
+// A picture dropped or pasted while a report is being made goes into
+// none, and is the start of the next report rather than lost. Found in the
+// review of #217.
+func TestAPictureAttachedWhileAReportIsMadeIsKept(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	s := &FrameFairy{report: r}
+	r.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}, {name: "b.png", data: pngOf(t, 8, 8)}})
+	_ = s.RemovePicture(s.ReportDraft().Pictures[1].ID)
+	_ = s.SaveReportText("it froze")
+	sent, _ := r.reportPictures()
+	r.attach("pasted", []handed{{name: "c.png", data: pngOf(t, 8, 8)}})
+	r.clear(sent)
+	if d := s.ReportDraft(); names(d) != "c.png" || d.Text != "" {
+		t.Fatalf("after the report the draft holds %q and %q, want c.png alone", names(d), d.Text)
+	}
+	if _, pics := r.reportPictures(); len(pics) != 1 {
+		t.Fatalf("the next report would hold %d pictures, want 1", len(pics))
+	}
+}
+
+// Text is cut between two letters, never in the middle of one, when it is
+// kept, read again and put in a report. Found in the review of #217.
+func TestTextIsCutBetweenLetters(t *testing.T) {
+	files := afero.NewMemMapFs()
+	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	long := strings.Repeat("ä", reportWordsMax/2) + "x" + "ä"
+	if err := s.SaveReportText("x" + long); err != nil {
+		t.Fatal(err)
+	}
+	kept := s.ReportDraft().Text
+	if !utf8.ValidString(kept) || len(kept) > reportWordsMax || len(kept) < reportWordsMax-1 {
+		t.Fatalf("the kept text is %d bytes, valid %v", len(kept), utf8.ValidString(kept))
+	}
+	// A draft written by hand, too long, read again.
+	body := fmt.Sprintf(`{"text": %q, "pictures": []}`, "x"+long)
+	if err := afero.WriteFile(files, "/config/report/draft.json", []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s = &FrameFairy{report: newReporting(files, "/config/report")}
+	if read := s.ReportDraft().Text; !utf8.ValidString(read) || len(read) > reportWordsMax {
+		t.Fatalf("the text read again is %d bytes, valid %v", len(read), utf8.ValidString(read))
+	}
+	if got := cut("aä", 2); got != "a" {
+		t.Fatalf("cutting aä at 2 bytes gave %q, want a", got)
 	}
 }
 
@@ -110,7 +245,8 @@ func TestTheDraftOutlivesTheWindowUntilAReportIsMade(t *testing.T) {
 		t.Fatalf("after a restart the draft is %+v", d)
 	}
 
-	s.report.clear()
+	sent, _ := s.report.reportPictures()
+	s.report.clear(sent)
 	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
 		t.Fatalf("after a report the draft is %+v, want it empty", d)
 	}
@@ -133,7 +269,7 @@ func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
 	if d.Error != "" || len(d.Pictures) != 2 {
 		t.Fatalf("a photo and a screenshot gave %+v", d)
 	}
-	pics := r.reportPictures()
+	_, pics := r.reportPictures()
 	if len(pics) != 2 {
 		t.Fatalf("the report holds %d pictures, want 2", len(pics))
 	}
@@ -211,7 +347,8 @@ func TestARemovedPictureCanBePutBack(t *testing.T) {
 	if d := s.RemovePicture(b); names(d) != "a.png c.png" {
 		t.Fatalf("with b removed the draft holds %s", names(d))
 	}
-	if n := len(s.report.reportPictures()); n != 2 {
+	if _, pics := s.report.reportPictures(); len(pics) != 2 {
+		n := len(pics)
 		t.Fatalf("a report would hold %d pictures with one of three removed", n)
 	}
 	if d := s.PutBackPicture(b); names(d) != "a.png b.png c.png" {
@@ -352,7 +489,17 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 	t.Parallel()
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
-	r.make = func(closed func()) (func(), func()) { return func() {}, closed }
+	// How many report windows are open at once, which is never more than
+	// one, however many ask at the same time.
+	var open, most atomic.Int32
+	r.make = func(closed func()) (func(), func()) {
+		n := open.Add(1)
+		for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
+		}
+		time.Sleep(time.Millisecond)
+		var once sync.Once
+		return func() {}, func() { once.Do(func() { open.Add(-1); closed() }) }
+	}
 	s := &FrameFairy{report: r}
 	pic := pngOf(t, 8, 8)
 	var wg sync.WaitGroup
@@ -373,10 +520,10 @@ func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 					s.OpenReport("bugs")
 					_ = s.ReportWindowOpen()
 				case 4:
-					r.closeWindow()
+					r.closeWindow("app")
 					r.sawVideo("/videos/a.mp4")
 				case 5:
-					_ = r.reportPictures()
+					_, _ = r.reportPictures()
 					_ = r.lastVideo()
 				}
 			}
@@ -385,6 +532,9 @@ func TestTheDraftFromSeveralAtOnce(t *testing.T) {
 	wg.Wait()
 	if d := s.ReportDraft(); len(d.Pictures) == 0 || len(d.Pictures) > picturesMax {
 		t.Fatalf("after it all the draft holds %d pictures", len(d.Pictures))
+	}
+	if m := most.Load(); m > 1 {
+		t.Fatalf("%d report windows were open at once", m)
 	}
 }
 

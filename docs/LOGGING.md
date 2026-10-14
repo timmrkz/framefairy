@@ -197,7 +197,9 @@ jq -c 'select(.video == "start.mp4")' app.log
 3. Done. Report a Problem and the zip above, in a window of its own
    that **Bugs** opens since 2.244, with pictures. It is R.8 without
    the address. Its lines are `report`'s: the window opening, brought
-   forward and closed, each picture attached or left out with the
+   forward and closed, with how it closed, `window` for its red button
+   or Cmd+W, `report` once a report is made and `app` with the app's
+   window, each picture attached or left out with the
    reason, removed and put back, a draft kept from before, and the
    report made with how many characters and pictures, never what was
    written.

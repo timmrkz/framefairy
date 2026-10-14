@@ -697,7 +697,7 @@ func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.report.closeWindow()
+	f.report.closeWindow("window")
 	if find(read(), "the recording was dropped") == nil {
 		t.Fatal("the window closed and the recording ran on")
 	}

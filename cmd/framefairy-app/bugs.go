@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
@@ -41,7 +43,24 @@ const (
 	// little over two 6K screens, so a file that claims a picture of a
 	// thousand times the memory is turned away without being read.
 	picturePixelsMax = 50_000_000
+	// The same for a picture of sixteen bits a colour, which takes twice
+	// the memory a pixel.
+	picturePixelsDeepMax = 20_000_000
 )
+
+// cut makes text valid UTF-8 and cuts it to at most max bytes, between two
+// letters, never in the middle of one: a German report cut in half an ä
+// would end in a byte no reader can show.
+func cut(text string, max int) string {
+	text = strings.ToValidUTF8(text, "")
+	if len(text) <= max {
+		return text
+	}
+	for max > 0 && !utf8.RuneStart(text[max]) {
+		max--
+	}
+	return text[:max]
+}
 
 // ReportPicture is one picture attached to a report, known by its id.
 type ReportPicture struct {
@@ -84,6 +103,12 @@ type reporting struct {
 	// The open window: front brings it forward and shut closes it, both
 	// nil while there is none.
 	front, shut func()
+	// making is set while a window is being made, and made counts the
+	// windows made, so the one that closes is known, see open.
+	making bool
+	made   int
+	// Why the window is being closed, when the app closes it, for the log.
+	closing string
 	// make makes the window, which calls closed once it is gone, and
 	// gives what brings it forward and what closes it. Set by main.go.
 	make func(closed func()) (front, shut func())
@@ -126,55 +151,84 @@ func (s *FrameFairy) ReportWindowOpen() bool {
 
 func (r *reporting) open(how string) {
 	r.mu.Lock()
-	front, makeIt := r.front, r.make
-	r.mu.Unlock()
-	if front != nil {
+	if front := r.front; front != nil {
+		r.mu.Unlock()
 		theLog.line(zerolog.InfoLevel, "report").Str("how", how).Msg("the report window is brought forward")
 		front()
 		return
 	}
-	if makeIt == nil {
+	// Wails runs each call on a goroutine of its own, so a double-click on
+	// Bugs asks twice at once. The window is marked as being made before
+	// the lock is let go, and the second ask leaves it to the first, which
+	// brings it forward as it opens.
+	if r.making || r.make == nil {
+		r.mu.Unlock()
 		return
 	}
+	r.making = true
+	r.made++
+	which, makeIt := r.made, r.make
+	r.mu.Unlock()
 	theLog.line(zerolog.InfoLevel, "report").Str("how", how).Msg("the report window opens")
-	var gone sync.Once
+	// Whether this window is gone, kept under r.mu. It can go before make
+	// returns, and then it is never taken for open.
+	gone := false
+	var once sync.Once
 	front, shut := makeIt(func() {
-		gone.Do(func() {
-			r.mu.Lock()
-			r.front, r.shut = nil, nil
-			r.mu.Unlock()
-			theLog.line(zerolog.InfoLevel, "report").Msg("the report window closed")
-			// A recording is the window's, and goes with it. Tim closed
-			// the window with Cmd+W while he talked, and the recording
-			// ran on: the next window took it up again, and every word
-			// he had said came back grey into the text the draft had
-			// kept, with the cursor somewhere in it. What was written
-			// down is in the draft already.
-			if r.stop != nil {
-				r.stop()
-			}
-			if r.told != nil {
-				r.told(false)
-			}
-		})
+		once.Do(func() { r.closed(which, &gone) })
 	})
 	r.mu.Lock()
-	r.front, r.shut = front, shut
+	r.making = false
+	if !gone {
+		r.front, r.shut = front, shut
+	}
 	r.mu.Unlock()
-	if r.told != nil {
+	if !gone && r.told != nil {
 		r.told(true)
 	}
 }
 
-// closeWindow closes the report window, when the app's own window closes:
-// a report window left alone would keep the app running with nothing to
-// work in.
-func (r *reporting) closeWindow() {
+// closed is what happens once the window numbered which is gone, by its
+// red button, Cmd+W, a report or the app's window closing.
+func (r *reporting) closed(which int, gone *bool) {
+	r.mu.Lock()
+	*gone = true
+	// Only the window that is open lets go of it, never one before it.
+	if r.made == which {
+		r.front, r.shut = nil, nil
+	}
+	how := r.closing
+	r.closing = ""
+	r.mu.Unlock()
+	if how == "" {
+		how = "window"
+	}
+	theLog.line(zerolog.InfoLevel, "report").Str("how", how).Msg("the report window closed")
+	// A recording is the window's, and goes with it. Tim closed the window
+	// with Cmd+W while he talked, and the recording ran on: the next
+	// window took it up again, and every word he had said came back grey
+	// into the text the draft had kept, with the cursor somewhere in it.
+	// What was written down is in the draft already.
+	if r.stop != nil {
+		r.stop()
+	}
+	if r.told != nil {
+		r.told(false)
+	}
+}
+
+// closeWindow closes the report window, with why: "report" once a report
+// is made from it, "app" when the app's own window closes, since a report
+// window left alone would keep the app running with nothing to work in.
+func (r *reporting) closeWindow(how string) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	shut := r.shut
+	if shut != nil {
+		r.closing = how
+	}
 	r.mu.Unlock()
 	if shut != nil {
 		shut()
@@ -238,9 +292,7 @@ func (s *FrameFairy) SaveReportText(text string) error {
 	if s.report == nil {
 		return nil
 	}
-	if len(text) > reportWordsMax {
-		text = text[:reportWordsMax]
-	}
+	text = cut(text, reportWordsMax)
 	r := s.report
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -380,16 +432,29 @@ func readSmall(path string) ([]byte, error) {
 }
 
 // attach attaches the pictures it can, in order, and says why it left out
-// the others.
+// the others. The pictures are decoded and written again before the
+// draft is taken, half a second for a 5K screenshot, so a drop of ten
+// keeps nobody waiting: not Bugs, not the window closing, not the text
+// being kept as it is typed.
 func (r *reporting) attach(how string, all []handed) ReportDraft {
+	type read struct {
+		name string
+		pic  ReportPicture
+		body []byte
+		err  error
+	}
+	got := make([]read, len(all))
+	for i, g := range all {
+		got[i].name = tidyName(g.name)
+		got[i].pic, got[i].body, got[i].err = g.picture()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
 	var why []string
 	added := 0
-	for _, g := range all {
-		name := tidyName(g.name)
-		pic, body, err := g.picture()
+	for i, g := range got {
+		name, pic, err := g.name, g.pic, g.err
 		if err == nil && r.count() >= picturesMax {
 			err = fmt.Errorf("would be more than the %d pictures a report takes", picturesMax)
 		}
@@ -398,7 +463,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 			pic.ID = fmt.Sprintf("p%d", r.draft.Next)
 			pic.Name = name
 			if err = r.files.MkdirAll(r.dir, 0o700); err == nil {
-				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), body)
+				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
 			}
 			if err != nil {
 				err = errors.New("could not be kept")
@@ -406,13 +471,13 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 		}
 		if err != nil {
 			why = append(why, name+" "+err.Error())
-			theLog.line(zerolog.WarnLevel, "report").Str("how", how).Str("name", name).Int("bytes", len(g.data)).Err(err).Msg("a picture was left out")
+			theLog.line(zerolog.WarnLevel, "report").Str("how", how).Str("name", name).Int("bytes", len(all[i].data)).Err(err).Msg("a picture was left out")
 			continue
 		}
 		r.draft.Pictures = append(r.draft.Pictures, pic)
 		added++
 		theLog.line(zerolog.InfoLevel, "report").Str("how", how).Str("picture", pic.ID).Str("name", name).
-			Int("bytes", len(g.data)).Int("width", pic.Width).Int("height", pic.Height).Msg("a picture was attached")
+			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).Msg("a picture was attached")
 	}
 	if added > 0 {
 		if err := r.keep(); err != nil {
@@ -422,6 +487,10 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	// A reason starts with the name of the file, as it is written.
 	return r.shown(strings.Join(why, ". "))
 }
+
+// decoding is told each time a picture is about to be decoded. A test
+// puts its own in here, to hold a decode and see that nothing waits on it.
+var decoding = func() {}
 
 // picture decodes a picture handed to the report and writes it again as a
 // PNG of its pixels alone, so nothing else the file held, a photo's place
@@ -440,6 +509,12 @@ func (g handed) picture() (ReportPicture, []byte, error) {
 	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > picturePixelsMax {
 		return ReportPicture{}, nil, errors.New("is too large a picture")
 	}
+	// Sixteen bits a colour takes twice the memory once decoded, so a flat
+	// picture of that kind under 10 MB could swell the app by 400 MB.
+	if deep(cfg.ColorModel) && cfg.Width*cfg.Height > picturePixelsDeepMax {
+		return ReportPicture{}, nil, errors.New("is too large a picture")
+	}
+	decoding()
 	var img image.Image
 	if format == "png" {
 		img, err = png.Decode(bytes.NewReader(g.data))
@@ -457,6 +532,11 @@ func (g handed) picture() (ReportPicture, []byte, error) {
 	return ReportPicture{Width: b.Dx(), Height: b.Dy()}, out.Bytes(), nil
 }
 
+// deep says whether a colour model keeps sixteen bits a colour.
+func deep(m color.Model) bool {
+	return m == color.RGBA64Model || m == color.NRGBA64Model || m == color.Gray16Model
+}
+
 // tidyName is a file name fit for the log and a tile's title: no folder,
 // nothing that is not printable, not too long.
 func tidyName(name string) string {
@@ -470,10 +550,7 @@ func tidyName(name string) string {
 	if name == "." || name == "/" || name == "" {
 		name = "picture"
 	}
-	if len(name) > 120 {
-		name = name[:120]
-	}
-	return name
+	return cut(name, 120)
 }
 
 // sentence starts a reason with a capital letter.
@@ -524,10 +601,7 @@ func (r *reporting) load() {
 	if json.Unmarshal(data, &d) != nil {
 		return
 	}
-	d.Text = strings.ToValidUTF8(d.Text, "")
-	if len(d.Text) > reportWordsMax {
-		d.Text = d.Text[:reportWordsMax]
-	}
+	d.Text = cut(d.Text, reportWordsMax)
 	var kept []ReportPicture
 	for _, p := range d.Pictures {
 		if !pictureID.MatchString(p.ID) {
@@ -573,39 +647,47 @@ func (r *reporting) keep() error {
 var pictureID = regexp.MustCompile(`^p[0-9]{1,9}$`)
 
 // reportPictures gives the pictures that go in a report, in order, as
-// their PNG bytes.
-func (r *reporting) reportPictures() [][]byte {
+// their PNG bytes, and their ids, for clear.
+func (r *reporting) reportPictures() (ids []string, pictures [][]byte) {
 	if r == nil {
-		return nil
+		return nil, nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
-	var out [][]byte
 	for _, p := range r.draft.Pictures {
 		if p.Removed {
 			continue
 		}
 		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+".png")); err == nil {
-			out = append(out, b)
+			ids = append(ids, p.ID)
+			pictures = append(pictures, b)
 		}
 	}
-	return out
+	return ids, pictures
 }
 
 // clear lets go of the draft once a report is made from it, so the next
-// report starts empty.
-func (r *reporting) clear() {
+// report starts empty: the text, the pictures removed from it and the
+// pictures that went into the report, by their ids. A picture dropped or
+// pasted while the report was being made went into none, and stays as
+// the start of the next.
+func (r *reporting) clear(sent []string) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
+	var kept []ReportPicture
 	for _, p := range r.draft.Pictures {
-		_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+		if p.Removed || slices.Contains(sent, p.ID) {
+			_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+			continue
+		}
+		kept = append(kept, p)
 	}
-	r.draft = draftFile{Next: r.draft.Next}
+	r.draft = draftFile{Pictures: kept, Next: r.draft.Next}
 	_ = r.keep()
 }
 

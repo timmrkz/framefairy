@@ -105,13 +105,11 @@ func homeless(b []byte) []byte {
 // without one the video last worked on. It gives the report's path, and
 // lets go of the draft it was made from.
 func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
-	if len(what) > reportWordsMax {
-		what = what[:reportWordsMax]
-	}
+	what = cut(what, reportWordsMax)
 	if video == "" {
 		video = f.report.lastVideo()
 	}
-	pictures := f.report.reportPictures()
+	sent, pictures := f.report.reportPictures()
 	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(what)).Int("pictures", len(pictures)).Msg("a report of a problem is being made")
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
@@ -173,11 +171,11 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 		return "", fmt.Errorf("the report could not be saved: %w", err)
 	}
 	theLog.line(zerolog.InfoLevel, "report").Int("bytes", buf.Len()).Int("pictures", len(pictures)).Msg("a report of a problem was made")
-	f.report.clear()
+	f.report.clear(sent)
 	_ = showReport(path)
 	// Finder has what was made, and the window it was made in has done
 	// its work, as Tim asked.
-	f.report.closeWindow()
+	f.report.closeWindow("report")
 	return path, nil
 }
 

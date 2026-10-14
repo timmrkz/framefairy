@@ -356,7 +356,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// does. See bugs.go.
 	mux.HandleFunc("/report-window", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("close") == "1" {
-			b.d.svc.report.closeWindow()
+			b.d.svc.report.closeWindow("window")
 		}
 		answer(w, map[string]any{
 			"made": b.d.reportMade.Load(), "fronted": b.d.reportFronted.Load(), "open": b.d.svc.ReportWindowOpen(),
