@@ -333,6 +333,9 @@ type FrameFairy struct {
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]
+	// toldOld is the videos whose old corrections.json was said to be
+	// left unread, so it is said once, see oldCorrections.
+	toldOld sync.Map
 	// histories are the undo and redo of each episode, see history.go.
 	histories map[string]*history
 	// link is what became of the last framefairy:// link, waiting for

@@ -868,15 +868,13 @@ func TestThumbnailsInAPlanAreChecked(t *testing.T) {
 func TestTheWordsShownAreTheWordsTheCaptionsLight(t *testing.T) {
 	long := "Donaudampfschifffahrtsgesellschaftskapitänsmütze"
 	fsys, path := writePlanAt(t, `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x",
-	  "segments": [{"start": 10.0, "end": 14.0}],
-	  "words": [[10.2, 12.2, "`+long+`"], [12.5, 13.0, "Und da"]]}]}`)
+	  "segments": [{"start": 10.0, "end": 14.0}], "corrections": {"12500": "Und da"}}]}`)
 	tr := fromStored([]Cue{{10.2, 12.2, long}, {12.5, 13.0, "Und"}}, nil, 0, 0, nil)
-	tr.Correct(map[string]string{wordKey(12.5): "Und da"})
 	loaded, clip, err := planClip(fsys, path, "01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stops := ShowWords(tr.WordsBetween(10, 14), ResolveStyle(captionStyle(loaded, clip, nil)), tr.Language)
+	stops := ShowWords(tr.Of(clip).WordsBetween(10, 14), ResolveStyle(captionStyle(loaded, clip, nil)), tr.Language)
 	view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
 	if err != nil {
 		t.Fatal(err)

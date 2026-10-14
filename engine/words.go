@@ -1,18 +1,21 @@
 package engine
 
 import (
+	"cmp"
+	"maps"
 	"math"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 // The words an episode says, see docs/WORDS.md. There is one list of them,
 // Transcript.Words, and it is made here and nowhere else: the recogniser's
-// words moved onto the sound, with the corrections applied, and a
-// correction that reads as several words split into those words. Every
-// reader gets the same list, the prompt, the edits, the captions and the
-// app alike.
+// words moved onto the sound. The prompt, a search and the app read it as
+// it was heard. A clip reads it through Of, with its own corrections, and
+// a correction that reads as several words is split into those words.
 
 // hear makes the words from what the recogniser heard, moved onto the
 // sound, with no corrections yet.
@@ -20,27 +23,21 @@ func (t *Transcript) hear(raw []Cue) {
 	t.RawWords = raw
 	t.snapped = SnapWords(raw, t.Frames, t.Start, t.Floor)
 	t.Correct(nil)
+	t.Language = wordsLanguage(t.Words)
 }
 
-// Correct makes the words again with an episode's corrections, keyed by the
-// millisecond a word starts, as corrections.json keeps them. A word
-// corrected to nothing is removed: it stays among the words heard, so it
-// can be corrected again, and is left out of the words said.
+// Correct makes the words again with a clip's corrections, keyed by the
+// millisecond a word starts, see Clip.Corrections. A correction says what
+// a word reads, and one that reads as several words splits the word into
+// them. Removing a word is the clip's too, see RemovedWords, and no
+// correction takes a word out. The language stays the episode's, whatever
+// one clip spells.
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
-	t.removedAs = nil
-	for i, w := range t.snapped {
-		if text, ok := corrections[wordKey(w.Start)]; ok {
+	for _, w := range t.snapped {
+		if text, ok := corrections[wordKey(w.Start)]; ok && strings.TrimSpace(text) != "" {
 			w.Text = text
-			// A word removed keeps what it read then, behind the mark.
-			if was, gone := strings.CutPrefix(text, removedMark); gone {
-				w.Text = ""
-				if t.removedAs == nil {
-					t.removedAs = map[int]string{}
-				}
-				t.removedAs[i] = was
-			}
 		}
 		heard = append(heard, w)
 		if strings.TrimSpace(w.Text) == "" {
@@ -49,50 +46,128 @@ func (t *Transcript) Correct(corrections map[string]string) {
 		words = append(words, splitWord(w)...)
 	}
 	t.HeardWords, t.Words = heard, words
-	t.Language = wordsLanguage(words)
+	t.fixes = maps.Clone(corrections)
 }
 
-// captionWords are the words with the words removed among them, with no
-// text, in the order they were said. A removed word is not shown, but the
-// captions still know it was said, see Captions.
+// Of is the words as a clip has them: what was heard, with the clip's own
+// corrections. Every clip reads its words through here, its captions, its
+// edges and the edits of its words alike, so a word corrected in one clip
+// reads as it was heard in every other, and in a clip made again where a
+// removed one was. A clip with no corrections reads the episode's words
+// as they are, and nothing is copied.
 //
-// A removed word carries what it read when it was removed, or what the
-// recogniser heard when that is not known, behind removedMark, so the
-// captions are laid out as they were before it went: a word taken out
-// takes out the word and changes no caption. What the recogniser heard
-// alone was not enough: a word corrected to a short one and then removed
-// took the room of the long one it had been, and words moved. A walk
-// found it.
-func (t *Transcript) captionWords() []Cue {
-	return t.captionWordsIn(math.Inf(-1), math.Inf(1))
+// A clip's captions are laid out through here on every pointer move on an
+// edge, two or three times, so only the words a clip corrects are made
+// again, see correctFew. Making every word of the episode again took 13 ms
+// and 6 MB a time for four hours of words.
+func (t *Transcript) Of(clip Clip) *Transcript {
+	if maps.Equal(t.fixes, clip.Corrections) || (len(t.fixes) == 0 && len(clip.Corrections) == 0) {
+		return t
+	}
+	own := *t
+	if len(t.fixes) > 0 || !own.correctFew(clip.Corrections) {
+		own.Correct(clip.Corrections)
+	}
+	return &own
 }
 
-// captionWordsIn is captionWords for the words that touch from to to alone,
-// which is all a clip's captions read, see nearClip. A clip's captions were
-// made from every word of the episode, copied whenever a word had been
-// removed: 1 MB for every pointer move on an edge of a clip of an episode
-// of four hours.
-func (t *Transcript) captionWordsIn(from, to float64) []Cue {
-	out := between(t.Words, from, to)
-	n := len(out)
-	for i, w := range t.HeardWords {
-		if w.End <= from || w.Start >= to || strings.TrimSpace(w.Text) != "" {
+// correctFew is Correct for a transcript that has no corrections yet: the
+// words are copied, and only the ones the corrections name are made
+// again, in their place. It says false, and changes nothing, when the
+// words are not laid out the way it expects, and Correct makes them all.
+func (t *Transcript) correctFew(corrections map[string]string) bool {
+	type fix struct {
+		i    int
+		text string
+	}
+	fixes := make([]fix, 0, len(corrections))
+	for key, text := range corrections {
+		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		if len(out) == n {
-			out = append([]Cue(nil), out...)
+		ms, err := strconv.ParseInt(key, 10, 64)
+		if err != nil {
+			return false
 		}
-		if was, ok := t.removedAs[i]; ok {
-			w.Text = removedMark + was
-		} else if i < len(t.snapped) {
-			w.Text = removedMark + strings.Join(strings.Fields(t.snapped[i].Text), " ")
+		at := float64(ms) / 1000
+		i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= at-0.0006 })
+		for i < len(t.HeardWords) && wordKey(t.HeardWords[i].Start) != key && t.HeardWords[i].Start < at+0.0006 {
+			i++
 		}
-		out = append(out, w)
+		if i >= len(t.HeardWords) || wordKey(t.HeardWords[i].Start) != key {
+			// Correct keeps no correction of a word that is not there.
+			continue
+		}
+		if i+1 < len(t.HeardWords) && wordKey(t.HeardWords[i+1].Start) == key {
+			return false
+		}
+		fixes = append(fixes, fix{i, text})
 	}
-	if len(out) != n {
-		sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start })
+	slices.SortFunc(fixes, func(a, b fix) int { return cmp.Compare(a.i, b.i) })
+	heard := slices.Clone(t.HeardWords)
+	words := make([]Cue, 0, len(t.Words)+len(fixes))
+	from := 0
+	for _, f := range fixes {
+		was := t.HeardWords[f.i]
+		// The words a heard word makes stand together, the first where it
+		// starts, see splitWord.
+		at := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= was.Start })
+		n := 0
+		if strings.TrimSpace(was.Text) != "" {
+			n = max(len(strings.Fields(was.Text)), 1)
+		}
+		if at < from || at+n > len(t.Words) || (n > 0 && t.Words[at].Start != was.Start) {
+			return false
+		}
+		words = append(words, t.Words[from:at]...)
+		heard[f.i].Text = f.text
+		words = append(words, splitWord(heard[f.i])...)
+		from = at + n
+	}
+	words = append(words, t.Words[from:]...)
+	t.HeardWords, t.Words = heard, words
+	t.fixes = maps.Clone(corrections)
+	return true
+}
+
+// captionWordsIn is the words a clip's captions are laid out from: the
+// words said that touch from to to, which is all a clip's captions read,
+// see nearClip, with the ones the clip removed among them, their text
+// behind removedMark. A removed word is not shown, but the captions still
+// know it was said and what it reads, so they are laid out as they were
+// before it went: a word taken out takes out the word and changes no
+// caption, see Captions.
+//
+// A clip's captions were made from every word of the episode, copied
+// whenever a word had been removed: 1 MB for every pointer move on an
+// edge of a clip of an episode of four hours.
+func (t *Transcript) captionWordsIn(removed RemovedWords, from, to float64) []Cue {
+	out := between(t.Words, from, to)
+	if len(removed) == 0 {
+		return out
+	}
+	copied := false
+	for i, w := range out {
+		if !removed.hides(t, w) {
+			continue
+		}
+		if !copied {
+			out, copied = append([]Cue(nil), out...), true
+		}
+		out[i].Text = removedMark + w.Text
 	}
 	return out
+}
+
+// clipCaptionWords is captionWordsIn for a clip, the words its captions
+// can need.
+func (t *Transcript) clipCaptionWords(clip Clip) []Cue {
+	t = t.Of(clip)
+	if len(clip.Segments) == 0 {
+		return t.captionWordsIn(clip.RemovedWords, math.Inf(-1), math.Inf(1))
+	}
+	return t.captionWordsIn(clip.RemovedWords, clip.Segments[0].Start-captionReach,
+		clip.Segments[len(clip.Segments)-1].End+captionReach)
 }
 
 // between is the words, in the order they were said, that touch from to
@@ -286,11 +361,7 @@ func HoldsWord(start, end float64, w Cue) bool {
 // app alike: from the words the clip says, in the clip's style, hyphenated
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
-	said := t.captionWords()
-	if len(clip.Segments) > 0 {
-		said = t.captionWordsIn(clip.Segments[0].Start-captionReach,
-			clip.Segments[len(clip.Segments)-1].End+captionReach)
-	}
-	captions := Captions(clip, said, max(8, int(s.MaxChars)), TooWide(s))
+	t = t.Of(clip)
+	captions := Captions(clip, t.clipCaptionWords(clip), max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }

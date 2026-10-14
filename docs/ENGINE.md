@@ -1488,6 +1488,6 @@ Everything else is in `engine/`:
   filelock_unix.go a lock every program of ours takes before it edits a
                 plan or a transcript. filelock_windows.go keeps none yet
   frames.go     deleting everything made for an episode
-  corrections.go word corrections for captions
+  corrections.go what a clip corrects and removes of the words heard
   training.go   training records of plans and decisions
 ```

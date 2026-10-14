@@ -373,7 +373,7 @@ const (
 // as a third line under the words around it. alone may be nil.
 //
 // A word with no text, or with its text behind removedMark, is a word
-// removed, see Transcript.Correct. It is not shown, but it was still said,
+// the clip removed, see RemovedWords. It is not shown, but it was still said,
 // so the captions are laid out as if it were there, and then it is left
 // out of them: the time it holds is no pause, the room it took on a line
 // is still taken, and a sentence it ended still ends there. Taking a word
@@ -627,7 +627,7 @@ func shownMiddle(w Cue, length float64) float64 {
 }
 
 // removedMark comes before the text of a word removed, in the words the
-// captions are laid out from, see Transcript.captionWords. No correction
+// captions are laid out from, see Transcript.captionWordsIn. No correction
 // has it, since Scrub takes control characters out of every one, and no
 // recogniser writes one. A word that did would be hidden and nothing more.
 const removedMark = "\x00"

@@ -88,9 +88,9 @@ result is reused until the video file changes.
 
 Captions are always made from the episode's words, see
 [WORDS.md](WORDS.md), and words are corrected in the app, in the caption
-box over the picture. A correction is kept for the episode in
-`logs/corrections.json`, and every clip that says the word says it
-corrected, from the command line too. Run the same command again, without
+box over the picture. A correction is kept with the clip it was made in,
+in its plan entry, and that clip says the word corrected, from the
+command line too. Run the same command again, without
 `--replan`, and the clips are rendered with the corrected words. Add
 `--clip 01` to render only that one.
 
