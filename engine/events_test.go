@@ -727,6 +727,38 @@ func TestACorrectedWordCanHoldSeveralWords(t *testing.T) {
 	}
 }
 
+// Several words typed into a short word are all shown, however little of
+// its time each one gets. Tim typed four words into a word two frames
+// long, and the captions lost the words given less than a frame's share
+// of it, wordTouch, as if a cut had only grazed them. The frames they
+// stood in then showed no caption at all, and the words he had typed were
+// gone when he came back to them.
+func TestEveryWordTypedIntoAShortWordIsShown(t *testing.T) {
+	clip := Clip{Segments: []Segment{{Start: 10, End: 12}}}
+	tr := fromStored([]Cue{{10, 10.4, "hat"}, {10.4, 10.48, "er"}, {10.48, 10.8, "mich"}}, nil, 0, 0, nil)
+	tr.Correct(map[string]string{wordKey(10.4): "er hat es dann"})
+	captions := Captions(clip, tr.Words, 40, nil)
+	var said []string
+	for _, c := range captions {
+		for _, w := range c.Words {
+			said = append(said, w.Text)
+		}
+	}
+	if got := strings.Join(said, " "); got != "hat er hat es dann mich" {
+		t.Errorf("the captions say %q", got)
+	}
+	// Both frames of the word show a caption, at 25 frames a second.
+	for _, frame := range []float64{0.4, 0.44} {
+		shown := false
+		for _, c := range captions {
+			shown = shown || (frame >= c.Start && frame < c.End)
+		}
+		if !shown {
+			t.Errorf("the frame at %.2f s shows no caption: %+v", frame, captions)
+		}
+	}
+}
+
 // A word added by hand reaches the captions, and taking it away again
 // reaches them too.
 //

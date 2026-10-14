@@ -499,6 +499,11 @@
 //                      and then written, and on every animation frame from
 //                      then on, playing and paused, the playhead was on it:
 //                      the clip timeline did not dim it
+//   ["captions drawn"] once the layers have come, the picture shows the
+//                      letters of a caption
+//   ["one pill", word] the word opened while another is lit sits on the
+//                      colour of the pill libass draws round it lit, with no
+//                      ring of another shade round it
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -1078,6 +1083,13 @@ export const sequences = [
     steps: [["frame", "Jahre"], ["grow", "Jahre"]],
   },
   {
+    // Found by Tim on #201: a word opened while another was lit was typed
+    // on the dark box, and the lit one on its pill inside a lighter ring.
+    // Every word typed sits on the one pill libass draws, lit or not.
+    name: "a word typed sits on the pill libass draws, lit or not",
+    steps: [["one pill", "Jahre"]],
+  },
+  {
     name: "a word saved empty is removed",
     steps: [
       ["click", "Jahre"],
@@ -1144,6 +1156,44 @@ export const sequences = [
       ["press", "Backspace"],
       ["box", "Ich war vielleicht sechs Jahre alt,"],
       ["same", "start"],
+    ],
+  },
+  {
+    // Found by Tim on #201: several words typed into one and saved with
+    // Enter left the picture with no captions, and corrections made
+    // before were gone when he went back. A word typed into a short word
+    // gets less than a frame of its time, and the engine left such a
+    // word out of the captions. "Q" gets 12 ms of "war".
+    name: "several words typed into one keep the captions in the picture and the corrections before",
+    steps: [
+      ["click", "sechs"],
+      ["press", "End"],
+      ["type", " eins zwei drei"],
+      ["press", "Enter"],
+      ["captions drawn"],
+      ["holds", "drei"],
+      ["click", "war"],
+      ["press", "End"],
+      ["type", " Q Schulhofgeschichten"],
+      ["press", "Enter"],
+      ["captions drawn"],
+      ["holds", "Q"],
+      ["holds", "Schulhofgeschichten"],
+      ["holds", "drei"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Shift+ArrowRight"],
+      ["press", "Enter"],
+      ["type", "sieben acht neun"],
+      ["press", "Enter"],
+      ["captions drawn"],
+      ["press", "Shift+ArrowRight"],
+      ["captions drawn"],
+      ["press", "Shift+ArrowLeft"],
+      ["press", "Shift+ArrowLeft"],
+      ["captions drawn"],
+      ["holds", "neun"],
+      ["holds", "Q"],
+      ["holds", "drei"],
     ],
   },
   {
@@ -3862,6 +3912,52 @@ for (const seq of toWalk) {
           wrong = `"${arg}" opened stands from row ${typed.top} to ${typed.bottom}, where libass drew it from ${drawn.top} to ${drawn.bottom}`;
         break;
       }
+      case "one pill": {
+        // The colour of the pill libass draws round the word lit, and the
+        // colour behind its letters opened while the next word is lit.
+        const it = word(arg);
+        for (let i = 0; i < 20 && !(await it.evaluate((e) => e.classList.contains("now"))); i++) {
+          await page.keyboard.press("Shift+ArrowRight");
+          await settled();
+        }
+        await watch.step("press", s);
+        await settled();
+        const box = async () => {
+          const r = await it.boundingBox();
+          return r && { left: r.x + 1, top: r.y + 1, width: r.width - 2, height: r.height - 2 };
+        };
+        const shut = await box();
+        const lit = shut && (await letters(shut));
+        await page.keyboard.press("Shift+ArrowRight");
+        await watch.step("press", s);
+        await settled();
+        await it.click();
+        await watch.step("click", s);
+        await settled();
+        await it.evaluate((e) => (e.style.caretColor = "transparent"));
+        const open = await box();
+        // The whole box, its edge where a ring would be drawn included.
+        const typed = open && (await letters({ ...open, left: open.left - 1, top: open.top - 1, width: open.width + 2, height: open.height + 2 }));
+        const state = await it.evaluate((e) => ({
+          open: e.classList.contains("fixing"),
+          lit: e.classList.contains("now"),
+          shadow: getComputedStyle(e).boxShadow,
+        }));
+        await it.evaluate((e) => (e.style.caretColor = ""));
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        console.log(`    lit on ${lit?.pill}, typed unlit on ${typed?.pill}, ring ${state.shadow}`);
+        const rgb = (c) => (c ?? "").split(",").map(Number);
+        const unlike = (a, b) => rgb(a).length !== 3 || rgb(a).some((v, i) => Math.abs(v - rgb(b)[i]) > 4);
+        if (!lit?.pill) wrong = `libass drew no pill round "${arg}" lit`;
+        else if (!state.open || state.lit) wrong = `"${arg}" is ${state.open ? "" : "not "}open and ${state.lit ? "" : "not "}lit`;
+        else if (!typed) wrong = `the letters typed into "${arg}" were not found on screen`;
+        else if (unlike(lit.pill, typed.pill))
+          wrong = `"${arg}" typed unlit sits on ${typed.pill || "no colour"}, and libass's pill is ${lit.pill}`;
+        else if (/rgb|color\(/.test(state.shadow.replaceAll("rgba(0, 0, 0, 0)", "")))
+          wrong = `"${arg}" typed has a ring round its pill, ${state.shadow}`;
+        break;
+      }
       case "grow": {
         // The word as the screen shows it: its box, the scale it is
         // drawn at, whether it is open and lit, the width of its letters
@@ -6399,6 +6495,30 @@ for (const seq of toWalk) {
         else if (ats[0] < second - 1e-6 || ats[0] > second + 1) {
           wrong = `the play went on from ${ats[0].toFixed(3)}, not from ${second.toFixed(3)} where the hand let go`;
         }
+        break;
+      }
+      case "captions drawn": {
+        // The letters libass draws on the canvas, under the caption box,
+        // once the layers asked for have come.
+        await settled();
+        await page.waitForTimeout(300);
+        await settled();
+        const white = await page.evaluate(() => {
+          const canvas = document.querySelector(".screen canvas");
+          if (!canvas?.width) return 0;
+          const c = document.createElement("canvas");
+          c.width = canvas.width;
+          c.height = canvas.height;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(canvas, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          let n = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) n++;
+          return n;
+        });
+        const box = (await shown(page)).map((w) => w.text).join(" ");
+        console.log(`    ${white} white pixels on the canvas under "${box}"`);
+        if (white < 100) wrong = `the picture shows no captions, ${white} white pixels, under the caption box "${box}"`;
         break;
       }
       case "box": {

@@ -502,7 +502,11 @@ whatever it was, so trimming the end over the last word made the caption
 before it stay to the end, and Tim saw two captions turn into one.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
 estimated. A clip says a word, and captions it, when it holds more than a
-frame of the word's sound, `HoldsWord` in `engine/lines.go`. So dragging an
+frame of the word's sound, or all of it, `HoldsWord` in `engine/words.go`.
+All of it counts however short the word is: several words typed into a
+short word share its time, and one may get less than a frame. The
+captions left those out, so the words Tim typed were gone and the frames
+they stood in showed no caption. So dragging an
 edge back over a word brings its caption in at the word's last sound, the
 first of it the edge reaches, and a word an edge cuts into is shown from
 the clip's first frame. A word a cut parts is captioned once, in the piece

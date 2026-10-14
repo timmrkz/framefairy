@@ -196,6 +196,15 @@ the caption grow as a word was opened and shrink as it was left. Only
 before libass has said where the words stand does the browser still draw
 the whole caption while a word is typed.
 
+The word typed sits on a pill in the highlight colour, whether it is the
+word lit or not, and wears no frame. A word not lit was typed on the dark
+box of the caption, and the frame round a lit word, in the app's lighter
+purple, read as a second shade of the pill, so Tim saw three colours where
+there is one. The caret says the word is open. With the highlight off the
+word typed wears the frame and no pill, since there is no pill to match.
+The walk "a word typed sits on the pill libass draws, lit or not" holds
+the colour behind the letters typed to libass's pill and finds no ring.
+
 While the word typed is the word lit, libass leaves out its pill too, and
 the caption box draws the pill behind the letters typed. It is libass's
 pill as long as it holds the word: its height, its corners, and its width,

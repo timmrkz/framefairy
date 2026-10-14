@@ -1628,6 +1628,7 @@
       <div
         class="captions"
         class:typing={!!fixing}
+        class:highlighted={!!captions.style.highlight}
         class:laid={!!laidWords}
         style:--pop={showing?.scale ?? 1}
         style="{laidWords
@@ -2030,21 +2031,24 @@
     --frame: var(--accent-hi);
   }
 
-  /* The word being corrected wears the frame and nothing else. A
-     background would be a second pill, in the app's colour, on a word that
-     is not the one being spoken, and it would take the pill off the word
-     that is: correcting the spoken word swapped the colour the render
-     burns in for the app's accent, which is the caption saying something
-     about itself that is not true. What the picture shows stays what the
-     render will show, and the frame is the only thing the interface adds.
-
-     It is the hover frame twice over, which is the whole difference
-     between the two. After Enter the word goes back to the frame of the
-     two it had before it was opened: the one under the pointer, or the
-     keyboard's, which stays on it while the playhead does. */
+  /* With the highlight off the word being corrected wears the hover
+     frame twice over, which is the whole difference between the two.
+     After Enter the word goes back to the frame of the two it had before
+     it was opened: the one under the pointer, or the keyboard's, which
+     stays on it while the playhead does. */
   .word.fixing {
     --frame-width: calc(2 * var(--hair));
     --frame: var(--accent-hi);
+  }
+
+  /* With the highlight on, the word being corrected is a pill in the
+     highlight colour, whether or not it is the word lit, and wears no
+     frame. Tim asked for one colour behind the letters typed: a word not
+     lit was typed on the dark box of the caption, which read as a black
+     field, and the frame round a lit word, in the app's lighter purple,
+     read as a second shade of the pill. The caret says the word is open. */
+  .highlighted .word.fixing {
+    --frame: transparent;
   }
 
   /* The words where libass put them, see laidWords: the caption box is
@@ -2141,7 +2145,7 @@
     color: var(--typed);
   }
 
-  .laid .line span.fixing.now {
+  .highlighted.laid .line span.fixing {
     background: var(--pill);
   }
 
