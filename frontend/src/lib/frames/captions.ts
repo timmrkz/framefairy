@@ -375,6 +375,8 @@ type Lift = {
   scale: number;
   done: boolean;
   tick: number;
+  // Calls off the two parts once the word is put back.
+  off: AbortController;
 };
 
 // Whether the person asked the system for less motion, which the bounce
@@ -400,7 +402,11 @@ export class CaptionLayers {
   private ask: CaptionAsk | null = null;
   private askKey = "";
   private kept = new Map<string, Layer>();
-  private going = new Set<string>();
+  // The layers on their way, each with what calls it off once it is no
+  // longer wanted: a draft or a track that changed, a seek. Every ask
+  // that is not called off holds one of the GOING slots, and every draft
+  // is a caption file on the Go side, found by the second review.
+  private going = new Map<string, AbortController>();
   // The layers that did not come and were asked for again.
   private again = new Set<string>();
   // The frame drawn whose layer is not there yet, asked for once one on
@@ -468,6 +474,7 @@ export class CaptionLayers {
     if (key !== this.askKey) {
       this.waiting = null;
       this.again.clear();
+      this.callOff(() => true);
     }
     this.ask = ask;
     this.askKey = key;
@@ -484,6 +491,23 @@ export class CaptionLayers {
   // word step, and after anything else does not.
   sought(wordStep: boolean) {
     this.bounceFrom = wordStep ? this.shownAt : null;
+    // Playing, the frames that were coming are ahead of where the playhead
+    // was, not where it went. The frame on screen waiting for its own
+    // stays asked for, until another is drawn in its place. Paused, what
+    // is on its way is the frame next to it, which a step may still want.
+    if (this.still?.paused() !== false) return;
+    const waiting = this.waiting?.key;
+    this.callOff((key) => key !== waiting);
+  }
+
+  // Calls off the layers on their way that which picks, so their slots go
+  // to the ones wanted now.
+  private callOff(which: (key: string) => boolean) {
+    for (const [key, off] of this.going) {
+      if (!which(key)) continue;
+      off.abort();
+      this.going.delete(key);
+    }
   }
 
   // The layer of the frame that starts at frame, or while it is on its way
@@ -543,6 +567,7 @@ export class CaptionLayers {
       scale: 1,
       done: !bounce,
       tick: 0,
+      off: new AbortController(),
     };
     this.lift = lift;
     if (bounce) this.stats.popped++;
@@ -558,6 +583,7 @@ export class CaptionLayers {
           ...(ask.typing ? { typing: ask.typing } : {}),
           ...ask.drafts,
         })}`,
+        { signal: lift.off.signal },
       )
         .then(async (r) => {
           const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
@@ -610,6 +636,7 @@ export class CaptionLayers {
   private drop() {
     if (!this.lift) return;
     if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.lift.tick);
+    this.lift.off.abort();
     this.lift = null;
   }
 
@@ -622,7 +649,8 @@ export class CaptionLayers {
   private fetch(want: Wanted) {
     const { key, ask, frame, size } = want;
     if (this.going.has(key) || this.going.size >= GOING) return;
-    this.going.add(key);
+    const off = new AbortController();
+    this.going.set(key, off);
     this.stats.asked++;
     const q = new URLSearchParams({
       path: ask.path,
@@ -634,7 +662,7 @@ export class CaptionLayers {
       ...ask.drafts,
     });
     let why = "";
-    void fetch(`/frames/captions?${q}`)
+    void fetch(`/frames/captions?${q}`, { signal: off.signal })
       .then(async (r) => {
         const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
         if (layer) {
@@ -650,6 +678,8 @@ export class CaptionLayers {
         return null;
       })
       .then((layer) => {
+        // Called off: its slot is free already, and nothing waits for it.
+        if (off.signal.aborted) return;
         this.going.delete(key);
         const w = this.waiting;
         if (layer) {

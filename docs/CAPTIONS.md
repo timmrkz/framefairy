@@ -171,6 +171,16 @@ of clip drops the last layer, `clip` on `CaptionAsk`, so the old clip's
 captions never stand over the new one, and what a frame waits for is asked for with the ask it was
 drawn with, never the next one's.
 
+At most three layers are on their way at once. An ask no longer wanted
+is called off, so its place goes to the one wanted now: every ask on its
+way when a draft, the track or the clip changes, the frames that were
+coming when the playhead is put elsewhere while playing, all but the
+frame on screen, and the two parts of a lifted word once it is put back.
+Before, they kept their places until they came, a colour dragged across
+the wheel waited for three caption files nobody would see, and every one
+of them was made on the Go side. A request called off is no line in the
+app's log.
+
 ## The caption box
 
 The caption box over the picture stays: it is what the hand takes hold of

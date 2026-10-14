@@ -270,14 +270,14 @@ describe("the layers of the captions", () => {
     layers.coming(1.08, [10, 20]);
     layers.at(1.12, [10, 20]);
     expect(asked.length).toBe(3);
-    // Another clip is chosen before any came: what waited is not asked for
-    // with the new clip's track, nor kept up over it.
+    // Another clip is chosen before any came: the three are called off,
+    // and what waited is not asked for with the new clip's track, nor kept
+    // up over it, even when the answers come after all.
     layers.set({ path: "/v.mp4", clip: "b", track: "two", drafts: {} });
-    answer.shift()!();
-    await vi.waitFor(() => expect(layers.busy).toBe(true));
-    answer.shift()!();
-    answer.shift()!();
-    await vi.waitFor(() => expect(layers.busy).toBe(false));
+    expect(layers.busy).toBe(false);
+    for (const a of answer.splice(0)) a();
+    await new Promise((done) => setTimeout(done, 10));
+    expect(layers.busy).toBe(false);
     expect(asked.length).toBe(3);
     expect(asked.every((a) => new URLSearchParams(a.split("?")[1]).get("track") === "one")).toBe(true);
     expect(layers.at(1.0, [10, 20])).toBeNull();
@@ -651,5 +651,88 @@ describe("what a layer shows", () => {
 
   it("is nothing for words where numbers should be", () => {
     expect(readShowing("one two")).toBeUndefined();
+  });
+});
+
+describe("asks no longer wanted", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A fetch that is answered never and fails once it is called off, as the
+  // browser's does.
+  function hanging() {
+    const asked: { url: string; signal?: AbortSignal }[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      asked.push({ url, signal: init?.signal ?? undefined });
+      return new Promise((_, failed) =>
+        init?.signal?.addEventListener("abort", () => failed(new DOMException("called off", "AbortError"))),
+      );
+    });
+    return asked;
+  }
+
+  it("are called off when a draft changes, and the new one is asked for at once", () => {
+    const asked = hanging();
+    const layers = new CaptionLayers(() => {});
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: { text: "#ff0000" } });
+    layers.coming(1.0, [10, 20]);
+    layers.coming(1.04, [10, 20]);
+    layers.at(1.08, [10, 20]);
+    expect(asked.length).toBe(3);
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: { text: "#00ff00" } });
+    expect(asked.map((a) => a.signal?.aborted)).toEqual([true, true, true]);
+    layers.at(1.08, [10, 20]);
+    expect(asked.length).toBe(4);
+    expect(asked[3].url).toContain("text=%2300ff00");
+  });
+
+  it("are called off by a seek while playing, all but the frame on screen", () => {
+    const asked = hanging();
+    let paused = false;
+    const layers = new CaptionLayers(() => {}, { paused: () => paused });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    layers.coming(1.04, [10, 20]);
+    layers.coming(1.08, [10, 20]);
+    layers.sought(false);
+    expect(asked.map((a) => a.signal?.aborted)).toEqual([false, true, true]);
+    // Paused, the frame next to the one on screen stays asked for.
+    paused = true;
+    layers.coming(1.04, [10, 20]);
+    layers.sought(false);
+    expect(asked[3].signal?.aborted).toBe(false);
+  });
+
+  it("are called off for both parts of a word put back", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    // A frame's own layer comes at once and shows a word. The two parts of
+    // a lifted word never come.
+    const parts: AbortSignal[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (url.includes("part=")) {
+        parts.push(init!.signal!);
+        return new Promise(() => {});
+      }
+      const b = new ArrayBuffer(8 + 4);
+      [0, 0, 1, 1].forEach((n, i) => new DataView(b).setUint16(2 * i, n, true));
+      return new Response(b, { headers: { "X-Caption-Showing": "0 1", "X-Caption-Scale": "1.0000" } });
+    });
+    const flush = async () => {
+      for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    await flush();
+    layers.at(1.0, [10, 20]);
+    // A word step to the next frame lifts its word.
+    layers.sought(true);
+    layers.at(1.04, [10, 20]);
+    await flush();
+    layers.at(1.04, [10, 20]);
+    expect(parts.length).toBe(2);
+    // A move to another frame puts the word back before its parts came.
+    layers.at(1.08, [10, 20]);
+    expect(parts.map((p) => p.aborted)).toEqual([true, true]);
   });
 });
