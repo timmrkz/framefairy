@@ -48,3 +48,61 @@ func TestCaptionsRequestsAndLayers(t *testing.T) {
 		t.Error("a layer short of its pixels was read")
 	}
 }
+
+// What comes back from the decoder is read only when its box and its
+// pixels agree: a body short of its box, short of its pixels or with
+// pixels to spare is refused, whatever the box says.
+func TestALayerIsReadOnlyWhole(t *testing.T) {
+	box := func(x, y, w, h uint16, pixels int) []byte {
+		b := Layer{X: int(x), Y: int(y), W: int(w), H: int(h)}.Head()
+		return append(b, make([]byte, pixels)...)
+	}
+	for _, c := range []struct {
+		name string
+		body []byte
+		ok   bool
+	}{
+		{"nothing", nil, false},
+		{"half a box", []byte{1, 0, 2, 0}, false},
+		{"a box of nothing", box(0, 0, 0, 0, 0), true},
+		{"a box of nothing with pixels", box(0, 0, 0, 0, 4), false},
+		{"a pixel", box(3, 4, 1, 1, 4), true},
+		{"a pixel short of a byte", box(3, 4, 1, 1, 3), false},
+		{"a pixel and a byte", box(3, 4, 1, 1, 5), false},
+		{"the largest box with no pixels", box(65535, 65535, 65535, 65535, 0), false},
+		{"2 by 3", box(0, 0, 2, 3, 24), true},
+		{"2 by 3 read as 3 by 3", box(0, 0, 3, 3, 24), false},
+	} {
+		l, err := ReadLayer(c.body)
+		if (err == nil) != c.ok {
+			t.Errorf("%s: read %+v, %v", c.name, l, err)
+		}
+		if err == nil && len(l.Pixels) != l.W*l.H*4 {
+			t.Errorf("%s: %d by %d with %d bytes", c.name, l.W, l.H, len(l.Pixels))
+		}
+	}
+}
+
+// A draw names its cursor and a moment in milliseconds, and nothing
+// else is taken for one.
+func TestADrawIsReadOnlyWhole(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		ok   bool
+	}{
+		{"draw 0 0", true},
+		{"draw 4294967295 1099511627776", true},
+		{"draw 4294967296 1", false},
+		{"draw 1 1099511627777", false},
+		{"draw 1 -1", false},
+		{"draw x 1", false},
+		{"draw 1 1.5", false},
+		{"draw 1 2 3", false},
+		{"drew 1 2", false},
+		{"", false},
+	} {
+		if _, _, ok := ReadDraw(strings.Fields(c.line)); ok != c.ok {
+			t.Errorf("%q was taken: %v", c.line, ok)
+		}
+	}
+}

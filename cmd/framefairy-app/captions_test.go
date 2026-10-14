@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -409,5 +410,52 @@ func TestTheLookOfAVideoThatCannotBeReadIsAskedOnce(t *testing.T) {
 	}
 	if said != 1 {
 		t.Errorf("the warning was said %d times in a drag", said)
+	}
+}
+
+// The drafts of a drag come in the query string, and only what makes a
+// caption file is taken from it: a colour as #rrggbb with an opacity
+// from 0 to 1, a part on or off as 0 or 1, a height snapped to its step.
+// Anything else is refused or left out, so nothing in a query reaches the
+// caption file as anything but a colour, a switch or a number.
+func TestCaptionDraftsTakeOnlyWhatMakesACaption(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		query string
+		want  map[string]any
+		bad   bool
+	}{
+		{"nothing", "", map[string]any{}, false},
+		{"a colour", "text=%23ff0080", map[string]any{"primary": "&H008000FF"}, false},
+		{"a colour half seen", "box=%23000000&boxOpacity=0.5", map[string]any{"back_colour": "&H80000000"}, false},
+		{"an opacity past 1", "highlight=%23942192&highlightOpacity=7", map[string]any{"highlight_colour": "&H00922194"}, false},
+		{"an opacity that is not a number", "text=%23ffffff&textOpacity=x", map[string]any{"primary": "&H00FFFFFF"}, false},
+		{"an opacity of NaN", "text=%23ffffff&textOpacity=NaN", map[string]any{"primary": "&H00FFFFFF"}, false},
+		{"an opacity without end", "text=%23ffffff&textOpacity=Inf", nil, true},
+		{"a colour by name", "text=red", nil, true},
+		{"a colour of three", "text=%23fff", nil, true},
+		{"a colour with a tag", "box=%23{\\b1}0", nil, true},
+		{"a colour and a tag", "highlight=%23ffffff{\\b1}", nil, true},
+		{"switched off and on", "textOn=0&boxOn=1", map[string]any{"text": 0.0, "box": 1.0}, false},
+		{"switched to something else", "textOn=2&boxOn=yes&highlightOn=-1", map[string]any{}, false},
+		{"a height", "y=0.2", map[string]any{"margin_v": engine.SnapCaptionY(0.2)}, false},
+		{"a height without end", "y=Inf", map[string]any{}, false},
+		{"a height that is not a number", "y=NaN", map[string]any{}, false},
+		{"a height far out", "y=1e300", map[string]any{"margin_v": engine.SnapCaptionY(1e300)}, false},
+		{"names it does not know", "font=Comic&size=900&margin_v=-5", map[string]any{}, false},
+	} {
+		q, err := url.ParseQuery(c.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := captionDrafts(q.Get)
+		if (err != nil) != c.bad {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if !c.bad && !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: drafts %v, want %v", c.name, got, c.want)
+		}
 	}
 }
