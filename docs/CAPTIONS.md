@@ -188,6 +188,25 @@ the word, and libass lays the line out again with it, which moves the
 words beside it apart and can break the line in another place. The walk
 "a word typed longer grows its pill round its middle".
 
+The letters typed are drawn in the face as libass draws it. Each face is
+declared to the browser with its own weight, `CaptionFont.Weight`, read
+from its OS/2 table, and bold asks for 700, as libass does. libass
+thickens a face only when bold asks for more than 150 above its weight,
+and a browser thickens any face declared lighter than what is asked. With
+no weight declared every face counted as 400, so on the Mac Inter Black
+was thickened in the caption box and not in the short, and Tim saw the
+word typed larger than the word in the frame behind it. The pill and the
+letters typed wear the look of the frame they lie over, `shownColour` in
+`frontend/src/lib/frames/light.ts`: libass draws the captions into the
+frame and the frame is then given its look, so a colour drawn by the
+browser beside it needs the same look or it stands out. Tim saw the pill
+of the word typed in another purple than the pill round it. The caret is
+the colour of the letters, as in a text field on the Mac, and the
+selection is the Mac's own, `Highlight`, kept just short of opaque so
+WebKit does not thin it with white into the colour of the pill. The walk
+"a word typed longer grows its pill round its middle" holds the letters'
+size and colour and the pill's colour to libass's.
+
 Its words stand where libass put them. `/frames/captions/words` in
 `cmd/framefairy-app/captions.go` answers with where each word of a view
 stands in the short, `engine.WordFrame`, the box its pill takes at rest:

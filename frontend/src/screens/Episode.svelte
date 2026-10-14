@@ -1963,6 +1963,7 @@
             end: f ? f.to : endInEpisode(pieces, word.end),
             text: word.text,
             framed: !!f,
+            cue: i,
           });
         }
       }

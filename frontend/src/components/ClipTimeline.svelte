@@ -1444,11 +1444,18 @@
     return litWord(c.lines ?? [], spokenAt);
   }
 
-  // Where a click on a caption puts the playhead: a frame into its first
-  // word, on the clip's own clock and then in the episode, the same step
-  // the arrow keys take into a word. A word is lit from its start, and a
-  // moment read back through the episode can land a hair before it.
-  function firstWordOf(c: CaptionCue): number | null {
+  // Where a click on a caption puts the playhead: into its first word, the
+  // same step the arrow keys take into a word. That is the first word the
+  // picture lights, on the frames it lights it on, see lit. Read from the
+  // word's own time instead, a first word lit for a single frame was
+  // landed beside that frame, where the caption was not up yet, and the
+  // click showed no caption and the block did not pop. Tim found it, and
+  // shift and an arrow, which walk the lit words, went where the click
+  // should have. While the captions are being reshaped by the hand, the
+  // lit words are the old captions', and the word's own time is read.
+  function firstWordOf(i: number, c: CaptionCue): number | null {
+    const shown = shownCues === captions ? lit.find((w) => w.cue === i) : undefined;
+    if (shown) return intoWord(shown, frame);
     const word = c.lines?.[0]?.words?.[0];
     if (!word || !cuePieces.length) return null;
     return inEpisode(cuePieces, intoWord(word, frame));
@@ -1511,7 +1518,7 @@
     const b = shownBlocks.find((x) => x.i === i);
     if (!b) return null;
     if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
-    return { at: firstWordOf(b.c) ?? b.from, about: "clip" };
+    return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
   // A double-click on an edge moved by hand, or drawn in with its word,

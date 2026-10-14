@@ -11,7 +11,11 @@ export async function installFonts(): Promise<CaptionFont[]> {
   done = true;
   const rules = fonts.map((font) => {
     const name = font.name.replace(/["\\]/g, "");
-    return `@font-face { font-family: "${name}"; font-display: swap;
+    // With the face's own weight, so the browser fakes bold only where
+    // libass does too. Left out, every face counts as 400 and Inter Black
+    // is thickened on screen and not in the short.
+    const weight = Number.isInteger(font.weight) ? font.weight : 400;
+    return `@font-face { font-family: "${name}"; font-weight: ${weight}; font-display: swap;
       src: url("/font?name=${encodeURIComponent(font.name)}") format("truetype"); }`;
   });
   const style = document.createElement("style");

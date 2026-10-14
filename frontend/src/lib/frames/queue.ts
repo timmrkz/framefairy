@@ -33,6 +33,7 @@
 import { AppFrames, AppPictures } from "./app";
 import type { Picture } from "./picture";
 import type { Over } from "./captions";
+import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
@@ -1084,13 +1085,14 @@ export class FrameQueue {
   // What lies over the frames, the captions: asked for each frame as it
   // is drawn, by the moment of the episode it starts at, and told of each
   // frame on its way to the screen a few frames ahead, so what lies over it
-  // can be there when it is drawn. See captions.ts.
-  over: { at(frame: number): Over | null; coming(frame: number): void } | null = null;
+  // can be there when it is drawn, with the light of the frame, which
+  // decides how a colour laid over it is shown. See captions.ts.
+  over: { at(frame: number, light: Light): Over | null; coming(frame: number): void } | null = null;
 
   // The frame on screen, see screen.ts.
   private paint() {
     const s = this.shown;
-    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank)) : null);
+    this.screen?.draw(s?.frame ?? null, s && this.over ? this.over.at(this.shownAt(s.rank), s.frame.light) : null);
   }
 
   // The frame on screen drawn again, for what lies over it has changed.

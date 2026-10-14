@@ -24,6 +24,10 @@
 //                      middle by what was typed
 //   ["block", word]    clicks the block on the clip timeline of the caption
 //                      the engine has the word in, which picks it
+//   ["trim into", s]   drags the clip's start to s seconds before the end of
+//                      the first word of its first caption
+//   ["every block"]    clicks every caption block on the clip timeline in
+//                      turn, and each lights a word of its caption
 //   ["gone", word]     no caption the engine has holds the word
 //   ["fewer", label, n] the engine's captions hold n words fewer than at
 //                      the mark, and as many captions
@@ -727,6 +731,14 @@ export const sequences = [
       ["box", "Ich war sechs Jahre alt,"],
       ["spans", "start"],
     ],
+  },
+  {
+    // Found by Tim on #201: a caption whose first word the picture lights
+    // for a single frame showed nothing when its block was clicked, and
+    // its block did not pop, while shift and an arrow went to that frame.
+    // The clip starting just before the end of a word leaves such a word.
+    name: "every caption block clicked lights a word of its caption",
+    steps: [["trim into", 0.04], ["every block"]],
   },
   {
     name: "delete removes the caption block clicked on the clip timeline",
@@ -2945,6 +2957,49 @@ for (const seq of toWalk) {
   let droppedOther = "";
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
+  // The letters on screen in a box of the page, libass's on the canvas or
+  // the caption box's own, as the box of their near white pixels, in
+  // pixels of the page from the box's corner. Read off a screenshot, since
+  // the page's own text is on no canvas.
+  const letters = async (box) => {
+    const clip = { x: Math.floor(box.left), y: Math.floor(box.top), width: Math.ceil(box.width), height: Math.ceil(box.height) };
+    const shot = (await page.screenshot({ clip })).toString("base64");
+    return page.evaluate(async (data) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${data}`;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity, n = 0;
+      for (let y = 0; y < c.height; y++)
+        for (let x = 0; x < c.width; x++) {
+          const i = (y * c.width + x) * 4;
+          if (d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) {
+            n++;
+            left = Math.min(left, x);
+            right = Math.max(right, x + 1);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y + 1);
+          }
+        }
+      const most = (keep) => {
+        const seen = new Map();
+        for (let i = 0; i < d.length; i += 4)
+          if (keep(d[i], d[i + 1], d[i + 2])) {
+            const k = `${d[i]},${d[i + 1]},${d[i + 2]}`;
+            seen.set(k, (seen.get(k) ?? 0) + 1);
+          }
+        return [...seen].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      };
+      const ink = most((r, g, b) => r > 200 && g > 200 && b > 200);
+      const pill = most((r, g, b) => !(r > 200 && g > 200 && b > 200) && Math.max(r, g, b) - Math.min(r, g, b) > 40);
+      return n ? { left, right, top, bottom, width: right - left, height: bottom - top, n, ink, pill } : null;
+    }, shot);
+  };
   // Until the captions over the frame are drawn, twice over, so a layer
   // asked for by the last is drawn too.
   const settled = async () => {
@@ -2979,6 +3034,43 @@ for (const seq of toWalk) {
         }
         await page.locator(`.clip-timeline .caption[data-first="${cue.first}"]`).first().click();
         await watch.step("block", s);
+        break;
+      }
+      case "trim into": {
+        // The clip's start dragged to a moment arg seconds before the end
+        // of its first word, so what is left of that word is a sliver.
+        const now = await engineState(page, watch.at);
+        const w = now.captions[0].lines[0].words[0];
+        const t = await timeline(page);
+        const g = await handles(page);
+        const to = now.segments[0].start + w.end - arg;
+        await drag(page, middle(g.start), high(g.track), (await xOf(page, to)) - (await xOf(page, t.start)), false);
+        await watch.step("trim", s);
+        break;
+      }
+      case "every block": {
+        // Each caption block clicked in turn, and the caption box read for
+        // the word it lights.
+        const now = await engineState(page, watch.at);
+        const firsts = [...new Set(await page.locator(".clip-timeline .caption").evaluateAll((b) => b.map((x) => x.dataset.first)))];
+        for (const first of firsts) {
+          const cue = now.captions.find((c) => String(c.first) === first);
+          const words = cue?.lines.flatMap((l) => l.words) ?? [];
+          await page.locator(`.clip-timeline .caption[data-first="${first}"]`).first().click();
+          let lit = null;
+          // Until it lights a word of this caption, since the word the last
+          // click lit stays until the frame of this one is drawn.
+          for (let i = 0; i < 30; i++) {
+            lit = await page.evaluate(() => document.querySelector(".captions .word.now")?.textContent ?? null);
+            if (lit && words.some((w) => w.text === lit)) break;
+            await page.waitForTimeout(100);
+          }
+          if (!lit || !words.some((w) => w.text === lit)) {
+            wrong = `a click on the caption block of "${words.map((w) => w.text).join(" ")}" lit ${lit ? `"${lit}"` : "no word"}`;
+            break;
+          }
+        }
+        console.log(`    ${firsts.length} blocks clicked`);
         break;
       }
       case "edge in":
@@ -3309,10 +3401,21 @@ for (const seq of toWalk) {
         await it.evaluate((e) => (window.__growing = e));
         await settled();
         const shut = await look();
+        // Inside the pill, which lies over the words beside it.
+        const around = shut && { left: shut.left + 1, top: shut.top + 1, width: shut.width - 2, height: shut.height - 2 };
+        const drawn = around && (await letters(around));
         await it.click();
         await watch.step("click", s);
         await settled();
         const open = await look();
+        // Without the caret, which is the colour of the letters and would
+        // count as one.
+        await it.evaluate((e) => (e.style.caretColor = "transparent"));
+        const typing = around && (await letters(around));
+        await it.evaluate((e) => (e.style.caretColor = ""));
+        console.log(`    libass's letters ${JSON.stringify(drawn)}, the caption box's ${JSON.stringify(typing)}`);
+        const rgb = (c) => (c ?? "").split(",").map(Number);
+        const unlike = (a, b) => rgb(a).length !== 3 || rgb(a).some((v, i) => Math.abs(v - rgb(b)[i]) > 4);
         await page.keyboard.press("End");
         await page.keyboard.type("ungen");
         await watch.step("type", s);
@@ -3328,6 +3431,15 @@ for (const seq of toWalk) {
         if (!shut || !open || !typed) wrong = `"${arg}" left the caption box`;
         else if (!shut.lit || !(Number(shut.pop) > 1)) wrong = `"${arg}" is not lit on a frame of its pop, scale ${shut.pop}`;
         else if (!open.open) wrong = `"${arg}" did not open`;
+        else if (!drawn || !typing) wrong = `"${arg}" shows no letters ${drawn ? "open" : "shut"}`
+        // The Mac thickened the face in the caption box where libass did not,
+        // and the box was drawn without the look the frame has.
+        else if (Math.abs(drawn.width - typing.width) > 2 || Math.abs(drawn.height - typing.height) > 1)
+          wrong = `"${arg}" opened is ${typing.width} by ${typing.height} px of letters and ${drawn.width} by ${drawn.height} shut`;
+        else if (unlike(drawn.pill, typing.pill))
+          wrong = `"${arg}" opened sits on a pill of ${typing.pill} and the pill shut is ${drawn.pill}`;
+        else if (unlike(drawn.ink, typing.ink))
+          wrong = `"${arg}" opened is written in ${typing.ink} and shut in ${drawn.ink}`;
         else if (off(shut, open))
           wrong = `opening "${arg}" moved its ${off(shut, open)} from ${shut[off(shut, open)].toFixed(1)} to ${open[off(shut, open)].toFixed(1)} px`;
         else if (typed.width < open.width + (typed.letters - open.letters) - 1.5)

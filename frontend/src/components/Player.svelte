@@ -27,6 +27,7 @@
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
   import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
+  import { shownColour, type Light } from "../lib/frames/light";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -1266,9 +1267,24 @@
     return !!clip && place !== "video" && frame + oneFrame > clipStart + 1e-6 && frame < clipEnd - 1e-6;
   }
 
+  // The light of the frame on screen. The colours the browser draws over
+  // it, the box a word is typed in, are shown in its look, see shownColour.
+  let shownLight = $state<Light>("");
+  // The colours of the captions as the frame on screen shows them.
+  const shownCaptions = $derived(
+    captions
+      ? {
+          primary: shownColour(shownLight, captions.style.primary),
+          pill: shownColour(shownLight, captions.style.highlightColour),
+          box: shownColour(shownLight, captions.style.box),
+        }
+      : null,
+  );
+
   // The captions over the frame the canvas draws, and what they show for
   // the caption box, see onScreen.
-  function overAt(frame: number): Over | null {
+  function overAt(frame: number, light: Light): Over | null {
+    if (light !== shownLight) shownLight = light;
     const ask = captionAsk;
     const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
@@ -1612,11 +1628,11 @@
              padding: 0 ${px(captions.style.marginH)};`}
                --size: {px(captions.style.size)};
                font-family: '{captions.style.font}', system-ui, sans-serif;
-               font-weight: {captions.style.bold ? 800 : 500};
+               font-weight: {captions.style.bold ? 700 : 400};
                font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
-               --typed: {captions.style.primary};
-               color: {fixing && !laidWords ? captions.style.primary : 'transparent'}"
+               --typed: {shownCaptions?.primary};
+               color: {fixing && !laidWords ? shownCaptions?.primary : 'transparent'}"
       >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -1624,7 +1640,7 @@
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
-          style="background: {captions.style.boxOn === false || !fixing || laidWords ? 'transparent' : captions.style.box};
+          style="background: {captions.style.boxOn === false || !fixing || laidWords ? 'transparent' : shownCaptions?.box};
                  border-radius: {px(captions.style.radius)};
                  padding: {px(captions.style.padY)} {px(captions.style.padX)}"
           title="Drag the handle up or down to place the captions"
@@ -1683,7 +1699,7 @@
                     title={said
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
-                    style="--pill: {captions.style.highlightColour};{fixing?.at === word.start && fixing.pad !== undefined
+                    style="--pill: {shownCaptions?.pill};{fixing?.at === word.start && fixing.pad !== undefined
                       ? `--pad: ${fixing.pad}em;`
                       : ''}{laidWords?.words[firstOfRow[row] + i]
                       ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i])
@@ -2117,6 +2133,24 @@
 
   .laid .line span.fixing.now {
     background: var(--pill);
+  }
+
+  /* The caret is the colour of the text it stands in, as in a text field
+     on the Mac, so it shows on any pill the text itself shows on. In the
+     accent it was purple on purple. */
+  .word.correctable.fixing {
+    caret-color: var(--typed);
+  }
+
+  /* Selected letters wear the Mac's own selection colour, Highlight, which
+     follows the colour picked in the system settings. WebKit thins an
+     opaque selection colour with white, and over the pill that came out
+     the pill's colour again, so a selection could not be seen. A colour
+     that is not quite opaque is left as it is, hence the 99 percent. The
+     first line is for a webview without color-mix. */
+  .word.correctable::selection {
+    background: rgba(63, 99, 139, 0.99);
+    background: color-mix(in srgb, Highlight 99%, transparent);
   }
 
 

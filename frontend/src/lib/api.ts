@@ -104,6 +104,8 @@ export interface CaptionFont {
   name: string;
   about: string;
   file: string;
+  // How heavy the face says it is, from 100 to 900.
+  weight: number;
 }
 
 export interface Check {
@@ -172,6 +174,8 @@ export interface Word {
   // A word lit on frames of the short, see WordFrame: start is where the
   // first of them starts and end where the last ends, in the episode.
   framed?: boolean;
+  // Which caption of the clip the word is lit in, counted from nought.
+  cue?: number;
 }
 
 // What a hand does to a clip on the clip timeline, see engine/shape.go:

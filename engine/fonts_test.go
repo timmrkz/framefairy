@@ -37,6 +37,9 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 		if font.About == "" {
 			t.Errorf("%s says nothing about itself", font.Name)
 		}
+		if got := weightClass(data); got != font.Weight {
+			t.Errorf("%s is offered as weight %d, the face says %d", font.Name, font.Weight, got)
+		}
 	}
 	if _, ok := FontByName("Comic Sans MS"); ok {
 		t.Error("a face nobody bundled was found")
@@ -127,4 +130,21 @@ func TestTheSubtitleProbeTriesTheBundledFontsFirst(t *testing.T) {
 	if chain != "ass=filename=01_a.ass:fontsdir=fonts" {
 		t.Errorf("the chain reads %q", chain)
 	}
+}
+
+// weightClass reads usWeightClass from the OS/2 table of a TrueType face:
+// the table directory starts at 12, sixteen bytes a table, and the weight is
+// the third field of OS/2, at 4.
+func weightClass(face []byte) int {
+	be := func(b []byte) int { return int(b[0])<<8 | int(b[1]) }
+	tables := be(face[4:6])
+	for i := 0; i < tables; i++ {
+		entry := face[12+16*i:]
+		if string(entry[:4]) != "OS/2" {
+			continue
+		}
+		at := int(entry[8])<<24 | int(entry[9])<<16 | int(entry[10])<<8 | int(entry[11])
+		return be(face[at+4 : at+6])
+	}
+	return 0
 }

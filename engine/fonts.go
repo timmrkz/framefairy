@@ -40,17 +40,23 @@ type CaptionFont struct {
 	About string `json:"about"`
 	// File is the name of the face inside the bundle.
 	File string `json:"file"`
+	// Weight is how heavy the face says it is, the weight class in its own
+	// OS/2 table. The video preview declares it with the face, so a browser
+	// fakes bold exactly where libass does and nowhere else: libass thickens
+	// a face only when bold asks for more than 150 above its weight, and a
+	// browser thickens every face that is declared light enough.
+	Weight int `json:"weight"`
 	// Licence is the licence text that belongs to it.
 	Licence string `json:"-"`
 }
 
 var captionFonts = []CaptionFont{
 	{Name: DefaultFont, About: "plain and very heavy", File: "Inter-Black.ttf",
-		Licence: "LICENSE-Inter.txt"},
+		Weight: 900, Licence: "LICENSE-Inter.txt"},
 	{Name: "Anton", About: "narrow, the usual look of a short", File: "Anton-Regular.ttf",
-		Licence: "LICENSE-Anton.txt"},
+		Weight: 400, Licence: "LICENSE-Anton.txt"},
 	{Name: "Archivo Black", About: "wide and solid", File: "ArchivoBlack-Regular.ttf",
-		Licence: "LICENSE-Archivo.txt"},
+		Weight: 400, Licence: "LICENSE-Archivo.txt"},
 }
 
 // CaptionFonts are the faces the program ships with, in the order they are
