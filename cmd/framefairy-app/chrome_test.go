@@ -117,3 +117,28 @@ func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 		t.Errorf("an app that changed said %d things, wanted 2", said)
 	}
 }
+
+// Each window has a title bar of its own. With the app's window in
+// fullscreen, the report window beside it still has its buttons, and its
+// name stays clear of them. Found in the review of #217, where the report
+// window followed the app's window. It changes measureChrome, a package
+// variable, so it runs alone.
+func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
+	was := measureChrome
+	measureChrome = func(*application.WebviewWindow) chromeRaw {
+		return chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
+	}
+	defer func() { measureChrome = was }()
+	s := &FrameFairy{chrome: &chromeWatch{event: chromeEvent("app")}}
+	s.chrome.set(true)
+	s.reportChrome.Store(&chromeWatch{event: chromeEvent("report")})
+	if got := s.Chrome("app"); got.Right != 0 {
+		t.Fatalf("the app's window in fullscreen gave %+v, want no buttons", got)
+	}
+	if got := s.Chrome("report"); got != (Chrome{Bar: 52, Left: 20, Right: 92, Middle: 26}) {
+		t.Fatalf("the report window beside it gave %+v, want its own buttons", got)
+	}
+	if a, r := chromeEvent("app"), chromeEvent("report"); a != "chrome" || r != "chrome-report" {
+		t.Fatalf("the windows are told on %q and %q", a, r)
+	}
+}

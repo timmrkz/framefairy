@@ -296,6 +296,10 @@ func (p *probe) click(w http.ResponseWriter, r *http.Request) {
 // POST /close?window=report. It answers 404 when no such window is open.
 func (p *probe) close(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("window")
+	if p.svc.app == nil {
+		http.Error(w, "the app is not running", http.StatusServiceUnavailable)
+		return
+	}
 	win, ok := p.svc.app.Window.GetByName(name)
 	if !ok {
 		http.Error(w, "no window called "+name+" is open", http.StatusNotFound)

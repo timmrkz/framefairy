@@ -280,7 +280,8 @@ title bar above the app and this one is an ordinary header.
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
 four numbers in whole pixels, the title bar's height and the left edge,
 right edge and middle of those buttons, and the interface is told again
-on the `chrome` event whenever the answer changes: a resize, either way
+on its window's event whenever the answer changes, `chrome` for the app's
+window and `chrome-report` for the report window, each measured on its own: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
 back, and nothing is measured on the page. The four numbers land on the
@@ -2669,8 +2670,13 @@ Updates, opens Report a Problem in a window of its own, plan row 2.244.
 A window and not a page, so a person can talk about a problem while
 they go through it in the app. It opens beside the app's window where
 the screen has room, and there is one at a time: Bugs while it is open
-brings it forward. Bugs wears the look of the page on screen while the
-window is open. Closing the app's window closes it too. It was in the
+brings it forward, and two quick clicks make one window. Bugs wears the
+look of the page on screen while the window is open, behind the app's
+window too, and not only while it is in front: lit, it says there is a
+report waiting, and a click brings it back. Closing the app's window
+closes it too. The report window has a title bar of its own, measured
+on its own, so with the app's window fullscreen its name still stays
+clear of its own buttons. It was in the
 Help menu before, where Mac apps keep it, and Tim wanted it where a
 person looks while working.
 
@@ -2708,8 +2714,11 @@ under `report/` as it is written, so closing the window, or the app,
 loses nothing. Report lets go of it, and the next report starts empty.
 A recording goes with the window: closing it while somebody talks drops
 the recording, and what was written down by then stays in the draft as
-text. Left running, the next window took it up again, and every word
-already said came back grey into the text the draft had kept.
+text. This is on purpose and not the way Stop ends one, which the first
+design had. Left running, the next window took it up again, and every
+word already said came back grey into the text the draft had kept, Tim
+found. While a report is being made the field takes no typing, and a
+picture dropped or pasted then goes into the next report.
 See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
 `cmd/framefairy-app/bugs.go`.
 

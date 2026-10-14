@@ -189,14 +189,16 @@
 //   ["paste picture"]  pastes a picture into the report's field
 //   ["pictures", n]    the report window shows n pictures
 //   ["picture note", text]
-//                      the line beside the buttons says text
+//                      the line beside the buttons says text, and with ""
+//                      nothing at all
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
 //                      and says Removed, its time standing full while the
 //                      pointer is on it. [i, "key"] presses Delete on the
 //                      tile instead, the pointer standing on it
-//   ["put back", i]    presses Put it back on picture i
+//   ["put back", i]    presses Put it back on picture i, which is back in
+//                      the same frame
 //   ["removed goes"]   the pointer leaves, and the time to put the picture
 //                      back runs out and the grid closes over it
 //   ["report", n]      presses Report, which closes the report window and
@@ -1320,8 +1322,12 @@ export const sequences = [
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
       ["picture note", "notes.txt is not a PNG or JPEG picture"],
+      // A good drop after it takes the old reason away. Found in the
+      // review of #217.
+      ["drop pictures", 1],
+      ["picture note", ""],
       ["paste picture"],
-      ["pictures", 4],
+      ["pictures", 5],
       ["report lines up"],
     ],
   },
@@ -4364,7 +4370,8 @@ for (const seq of toWalk) {
       }
       case "picture note": {
         const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
-        if (!said.includes(arg)) wrong = `the line beside the buttons says "${said}", not "${arg}"`;
+        // "" asks for nothing to be said at all.
+        if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the line beside the buttons says "${said}", not "${arg}"`;
         break;
       }
       case "remove picture": {
@@ -4409,7 +4416,21 @@ for (const seq of toWalk) {
         break;
       }
       case "put back": {
-        await page.locator("li.tile").nth(arg - 1).getByText("Put it back").click();
+        // The picture is back in the same frame as the click, before the
+        // Go side answers, or the grid closes over it for a moment and
+        // the tiles after it jump. Found in the review of #217.
+        const counts = await page.evaluate(async (i) => {
+          const before = document.querySelectorAll("li.tile").length;
+          const button = [...document.querySelectorAll("li.tile")[i - 1].querySelectorAll("button")].find((b) => b.textContent.includes("Put it back"));
+          button.click();
+          await Promise.resolve();
+          await Promise.resolve();
+          return [before, document.querySelectorAll("li.tile").length];
+        }, arg);
+        if (counts[0] !== counts[1]) {
+          wrong = `the grid went from ${counts[0]} tiles to ${counts[1]} on Put it back, before the picture came back`;
+          break;
+        }
         await settle(page);
         break;
       }

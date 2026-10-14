@@ -635,7 +635,7 @@ export const api = {
   licenceText: (name: string) => call<string>("LicenceText", name),
   // Where macOS put the title bar and its buttons, in whole CSS pixels, or
   // zeros where the system draws its own title bar.
-  chrome: () => call<Chrome>("Chrome"),
+  chrome: (window: ChromeWindow) => call<Chrome>("Chrome", window),
   // The clip of an episode that was last worked on, so opening it again
   // opens on the same one. It is the clip's key, or an empty string.
   chosenClip: (path: string) => call<string>("ChosenClip", path),
@@ -874,11 +874,17 @@ export interface Chrome {
   middle: number;
 }
 
-// The app is told again whenever the answer changes: a resize, either
+// The windows with a title bar of their own, each measured on its own:
+// the app's window can be fullscreen while the report window is not.
+export type ChromeWindow = "app" | "report";
+
+// A window is told again whenever the answer changes: a resize, either
 // way through fullscreen, another display, another scale, light or dark,
-// or back from the Dock.
-export function onChrome(fn: (c: Chrome) => void): () => void {
-  return Events.On("chrome", (ev) => fn(ev.data as Chrome));
+// or back from the Dock. The app's window on "chrome", the report window
+// on "chrome-report", see chromeEvent in chrome.go.
+export function onChrome(window: ChromeWindow, fn: (c: Chrome) => void): () => void {
+  const event = window === "app" ? "chrome" : `chrome-${window}`;
+  return Events.On(event, (ev) => fn(ev.data as Chrome));
 }
 
 export interface Undone {

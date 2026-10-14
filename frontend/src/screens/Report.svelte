@@ -114,6 +114,13 @@
     }
   }
 
+  // A drop says what came of it on its own, and one that went well takes
+  // away the reason an earlier one left beside the buttons.
+  function dropped(d: ReportDraft) {
+    if (!d.error) problem = "";
+    took(d);
+  }
+
   async function attach() {
     if (attaching) return;
     attaching = true;
@@ -133,9 +140,28 @@
     api.removePicture(p.id).then(took, (e) => (problem = sentence(e)));
   }
 
+  // The picture is back in its place at once, the way a removed one goes
+  // at once, so nothing closes over it while the Go side answers. Turned
+  // away, at ten pictures, it stands as removed again.
   function putBack(id: string) {
+    const r = removed[id];
+    if (!r) return;
+    pictures = [...pictures, r.picture];
     delete removed[id];
-    api.putBackPicture(id).then(took, (e) => (problem = sentence(e)));
+    const again = () => {
+      if (!pictures.some((p) => p.id === id)) removed[id] = r;
+    };
+    api.putBackPicture(id).then(
+      (d) => {
+        took(d);
+        again();
+      },
+      (e) => {
+        pictures = pictures.filter((p) => p.id !== id);
+        again();
+        problem = sentence(e);
+      },
+    );
   }
 
   // A picture pasted into the field is attached, the way Mail takes one.
@@ -543,7 +569,7 @@
       })
       .catch(() => {})
       .finally(() => (loaded = true));
-    const noDraft = onReportDraft(took);
+    const noDraft = onReportDraft(dropped);
     const leave = () => saveNow();
     window.addEventListener("pagehide", leave);
     return () => {
@@ -594,7 +620,8 @@
           class="telling selectable"
           class:ours
           bind:this={field}
-          contenteditable="plaintext-only"
+          contenteditable={making ? "false" : "plaintext-only"}
+          aria-readonly={making}
           role="textbox"
           tabindex="0"
           aria-multiline="true"

@@ -1347,9 +1347,10 @@ const Answers = {
       // Where macOS put the title bar and its buttons. Zeros stand for the
       // systems that draw their own title bar, which is what a probe sees
       // unless it asks for ?mac, and those numbers are what a 2026 Mac
-      // with the automatic toolbar style answers.
+      // with the automatic toolbar style answers. ?full makes the app's
+      // window fullscreen and leaves the report window as it is.
       case "Chrome":
-        if (location.search.includes("full")) {
+        if (location.search.includes("full") && args[0] !== "report") {
           // Native fullscreen: the title bar is gone and the buttons with
           // it, and the bar keeps the height it had.
           return Promise.resolve({ bar: 52, left: 0, right: 0, middle: 0 });

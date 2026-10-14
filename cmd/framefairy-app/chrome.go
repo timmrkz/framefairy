@@ -46,6 +46,10 @@ type chromeRaw struct {
 type chromeWatch struct {
 	app    *application.App
 	window *application.WebviewWindow
+	// The event the interface of this window is told on, since each window
+	// has a title bar of its own: the app's window can be fullscreen while
+	// the report window beside it is not.
+	event string
 
 	mu sync.Mutex
 	// The bar's height while there is a title bar to measure. In native
@@ -126,17 +130,27 @@ func (c *chromeWatch) publish() {
 	if same || c.app == nil {
 		return
 	}
-	c.app.Event.Emit("chrome", now)
+	c.app.Event.Emit(c.event, now)
 }
 
-// watchChrome follows the furniture for as long as the app is open.
+// chromeEvent is the event a window's furniture is told on: "chrome" for
+// the app's window and "chrome-report" for the report window, see
+// lib/api.ts.
+func chromeEvent(window string) string {
+	if window == "" || window == "app" {
+		return "chrome"
+	}
+	return "chrome-" + window
+}
+
+// watchChrome follows the furniture of a window for as long as it is open.
 //
 // Every event here is one after which AppKit may have laid the title bar
 // out again. Nothing is moved by any of this, so there is nothing that can
 // snap back: the app reads where the buttons went and lays itself out
 // around them.
-func watchChrome(app *application.App, window *application.WebviewWindow) *chromeWatch {
-	c := &chromeWatch{app: app, window: window}
+func watchChrome(app *application.App, window *application.WebviewWindow, name string) *chromeWatch {
+	c := &chromeWatch{app: app, window: window, event: chromeEvent(name)}
 	if window == nil {
 		return c
 	}

@@ -23,7 +23,7 @@
     const noUndo = onUndo((what) => {
       if (typing()) document.execCommand(what);
     });
-    const noChrome = titleBar.follow();
+    const noChrome = titleBar.follow("report");
     return () => {
       noUndo();
       noChrome();

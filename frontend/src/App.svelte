@@ -476,7 +476,7 @@
   onMount(() => {
     jobs.start();
     installFonts().catch(() => {});
-    const noChrome = titleBar.follow();
+    const noChrome = titleBar.follow("app");
     // The app wears the colour it was given before anything is drawn in it.
     api
       .getSettings()

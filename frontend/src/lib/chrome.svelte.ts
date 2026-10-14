@@ -1,4 +1,4 @@
-import { api, onChrome, type Chrome } from "./api";
+import { api, onChrome, type Chrome, type ChromeWindow } from "./api";
 
 // Where macOS put the title bar and its buttons. All zeros away from
 // macOS, where the system draws its own title bar, and then the bar is
@@ -9,8 +9,10 @@ import { api, onChrome, type Chrome } from "./api";
 // again when it changes, and handed over as four numbers it lays itself
 // out from.
 //
-// The app's window and the report window have the same title bar, so
-// both lay their bar out from the same four numbers, see Bar.svelte.
+// The app's window and the report window have the same kind of title
+// bar, so both lay their bar out from four numbers, see Bar.svelte, each
+// from its own: the app's window can be fullscreen while the report
+// window is not.
 class TitleBar {
   chrome = $state<Chrome>({ bar: 0, left: 0, right: 0, middle: 0 });
   // The height is given whenever there is one. Where the buttons are is
@@ -29,13 +31,14 @@ class TitleBar {
     return parts.join("; ");
   });
 
-  // Asks once and follows every change after, and gives what stops it.
-  follow(): () => void {
+  // Asks once for the window this page is in and follows every change
+  // after, and gives what stops it.
+  follow(window: ChromeWindow): () => void {
     api
-      .chrome()
+      .chrome(window)
       .then((c) => (this.chrome = c))
       .catch(() => {});
-    return onChrome((c) => (this.chrome = c));
+    return onChrome(window, (c) => (this.chrome = c));
   }
 }
 
