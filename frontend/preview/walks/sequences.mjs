@@ -298,7 +298,10 @@
 //                      BT.2100's own anchors: HDR's
 //                      reference white is the app's white, its highlights
 //                      are brighter, and a green of BT.2020 lies outside
-//                      BT.709. Says so and checks nothing without WebGPU
+//                      BT.709. A word lifted out and grown by 1.15 and 2
+//                      is held to laidPart's on every pixel, so the GPU
+//                      grows it round its middle. Says so and checks
+//                      nothing without WebGPU
 //   ["play to the end"]
 //                      drags the clip's end to the end of the episode,
 //                      puts the playhead three seconds before it with a
@@ -5598,6 +5601,22 @@ for (const seq of toWalk) {
             if (!(step > 0 && step < 1)) problems.push(`${p.name} is ${step.toFixed(2)} above the one before in 255, not a step of its own below 1`);
           }
         });
+        // A word lifted out and grown, every pixel of it, on the GPU and
+        // by laidPart alike, so the shader grows it round its middle as
+        // the 2D canvas does. Both sample the word between its four
+        // nearest pixels, the GPU's filter in steps of its own.
+        const LIFT_OFF = 0.01;
+        const lifted = await page.evaluate(() => window.__checkLift?.([1.15, 2]) ?? null);
+        let most = 0;
+        lifted?.gpu.forEach((pixels, k) =>
+          pixels.forEach((gpu, i) => {
+            const off = Math.max(...gpu.map((v, c) => Math.abs(v - lifted.cpu[k][i][c])));
+            most = Math.max(most, off);
+            if (!(off < LIFT_OFF))
+              problems.push(`the word grown by ${[1.15, 2][k]} at ${i % 8},${i >> 3}: the GPU gives ${gpu.map((v) => v.toFixed(4))}, laidPart ${lifted.cpu[k][i].map((v) => v.toFixed(4))}`);
+          }),
+        );
+        if (lifted) console.log(`        a word grown on the GPU is at most ${most.toFixed(4)} from laidPart's, over every pixel`);
         if (problems.length) wrong = problems.join("\n");
         break;
       }
@@ -7031,6 +7050,27 @@ for (const seq of toWalk) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
             wrong = `"${last.keyed.text}" popped from a pill ${widths[0].toFixed(1)} px wide to one ${last.pill.w.toFixed(1)} px wide, not from rest, ${least.toFixed(1)} px, back to rest`;
+          } else {
+            // Round its middle, in every direction alike, as Tim asked: the
+            // pill at its largest grew as far up as down and as far left
+            // as right, and in height by the scale it grew in width. A
+            // bounce that grew one way only passed this walk before, found
+            // by the second review. Each edge is read to a whole pixel, so
+            // the two sides of a pill grown round its middle differ by a
+            // pixel or two, 2 up and 1 down here, and a pill grown upward
+            // only by 4, 3 up and 1 in.
+            const rest = on[0].pill;
+            const peak = on[widths.indexOf(most)].pill;
+            const up = rest.t - peak.t;
+            const down = peak.b - rest.b;
+            const left = rest.x - rest.w / 2 - (peak.x - peak.w / 2);
+            const right = peak.x + peak.w / 2 - (rest.x + rest.w / 2);
+            const tall = (rest.b - rest.t) * (peak.w / rest.w - 1);
+            if (Math.abs(up - down) > 2 || Math.abs(left - right) > 2) {
+              wrong = `"${last.keyed.text}" grew ${up.toFixed(1)} px up and ${down.toFixed(1)} down, ${left.toFixed(1)} left and ${right.toFixed(1)} right, not round its middle`;
+            } else if (Math.abs(up + down - tall) > 2) {
+              wrong = `"${last.keyed.text}" grew ${(up + down).toFixed(1)} px in height where its width's scale makes ${tall.toFixed(1)}`;
+            }
           }
         }
         console.log(`    ${report.join(", ")}`);

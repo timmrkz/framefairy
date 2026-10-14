@@ -633,6 +633,59 @@ export async function checkPixels(
   return { gpu, cpu };
 }
 
+// A white word of 2 by 2 in the middle of a grey frame of 8 by 8, lifted
+// out and grown by each scale, drawn whole by the GPU and by laidPart, as
+// the extended canvas takes them, for the walks to hold one to the other
+// pixel by pixel: the word grows round its middle in every direction
+// alike on both. Checked at one middle pixel before, a word grown one way
+// only passed, found by the second review. Null without WebGPU.
+export async function checkLift(scales: number[]): Promise<{ gpu: number[][][]; cpu: number[][][] } | null> {
+  const device = await gpuDevice();
+  if (!device) return null;
+  const grey = (512 | (512 << 10) | (512 << 20)) >>> 0;
+  const bytes = new Uint8Array(new Uint32Array(64).fill(grey).buffer);
+  const frame = new Picture(bytes, 8, 8, 0, "");
+  const white = new Uint8Array(16).fill(255);
+  const overs: Over[] = scales.map((scale) => ({
+    layer: { x: 0, y: 0, w: 1, h: 1, pixels: new Uint8Array(4), lift: { layer: { x: 3, y: 3, w: 2, h: 2, pixels: white }, scale } },
+    size: [8, 8],
+    left: 0,
+    width: 1,
+    turn: 0,
+  }));
+  const painter = new Painter(device);
+  const gpu: number[][][] = [];
+  for (const over of overs) {
+    const drawn = device.createTexture({ size: [8, 8], format: target, usage: TEXTURE.attachment | TEXTURE.copySrc });
+    // A row of a copy is a multiple of 256 bytes.
+    const buffer = device.createBuffer({ size: 256 * 8, usage: BUFFER.mapRead | BUFFER.copyDst });
+    const encoder = device.createCommandEncoder();
+    painter.paint(encoder, drawn.createView(), 8, 8, frame, over);
+    encoder.copyTextureToBuffer({ texture: drawn }, { buffer, bytesPerRow: 256 }, [8, 8]);
+    device.queue.submit([encoder.finish()]);
+    await buffer.mapAsync(1);
+    const h = new Uint16Array(buffer.getMappedRange().slice(0));
+    gpu.push(Array.from({ length: 64 }, (_, i) => [0, 1, 2].map((c) => half(h[(i >> 3) * 128 + (i & 7) * 4 + c]))));
+    buffer.unmap();
+    buffer.destroy();
+    drawn.destroy();
+  }
+  painter.destroy();
+  device.destroy();
+  const cpu = overs.map((over) => {
+    const words = new Uint32Array(64).fill(grey);
+    const part = laidPart(bytes, 8, 8, 8, 8, over);
+    if (part) {
+      const from = new Uint32Array(part.data.buffer);
+      for (let y = 0; y < part.h; y++)
+        for (let x = 0; x < part.w; x++) words[(part.y + y) * 8 + part.x + x] = from[y * part.w + x];
+    }
+    return [...words].map((w) => [w & 1023, (w >>> 10) & 1023, (w >>> 20) & 1023].map((v) => lift(v / 1023)));
+  });
+  return { gpu, cpu };
+}
+
 if (typeof window !== "undefined")
   (window as { __checkPixels?: typeof checkPixels }).__checkPixels =
     checkPixels;
+if (typeof window !== "undefined") (window as { __checkLift?: typeof checkLift }).__checkLift = checkLift;

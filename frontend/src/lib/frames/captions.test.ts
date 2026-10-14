@@ -603,6 +603,25 @@ describe("the bounce after a word step", () => {
     expect(grown[2 * 8 + 4]).toBeGreaterThan(still[2 * 8 + 4]);
     expect(grown[0]).toBe(0);
     expect(grown[7 * 8 + 7]).toBe(512);
+    // Grown round its middle, in every direction alike: the grown word is
+    // the same mirrored left to right and top to bottom, so it reaches as
+    // far up as down and as far left as right. A bounce that grew one way
+    // only passed this test before, found by the second review. The rest's
+    // own pixel in the corner is left out.
+    for (const scale of [1.15, 2]) {
+      const g = at(scale);
+      for (let y = 0; y < 8; y++)
+        for (let x = 0; x < 8; x++)
+          for (const [mx, my] of [
+            [7 - x, y],
+            [x, 7 - y],
+          ]) {
+            if ((x === 0 && y === 0) || (mx === 0 && my === 0)) continue;
+            expect(Math.abs(g[y * 8 + x] - g[my * 8 + mx]), `${scale} at ${x},${y} against ${mx},${my}`).toBeLessThanOrEqual(1);
+          }
+      // And as far across as down.
+      for (let i = 1; i < 7; i++) expect(Math.abs(g[i * 8 + 2] - g[2 * 8 + i])).toBeLessThanOrEqual(1);
+    }
   });
 });
 
