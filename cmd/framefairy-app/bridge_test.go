@@ -20,6 +20,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	"framefairy/engine"
@@ -230,6 +232,7 @@ var outside = map[string]bool{
 	"InstallSpeechModel": true, "InstallLanguageModel": true,
 	"OpenKeysPage": true, "SaveAPIKey": true, "OpenCommit": true,
 	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true,
+	"ShowAppLog": true,
 }
 
 // walkedUpdates are the calls of the Updates page a walk can have answered
@@ -415,6 +418,18 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			conflict = strings.Split(c, ",")
 		}
 		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list, conflict))
+	})
+	// The app's log, which the bridge keeps none of until a walk asks:
+	// with ?open=1 it starts one in the bridge's home with a few lines and
+	// an older file beside it, the way a log that has turned over once
+	// looks. Without it, what the log holds. Settings, Advanced shows it,
+	// and the next walk starts with none again, see reset.
+	mux.HandleFunc("/app-log", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("open") == "1" {
+			answer(w, nil, b.openLog())
+			return
+		}
+		answer(w, theLog.status(), nil)
 	})
 	mux.HandleFunc("/reopen", func(w http.ResponseWriter, r *http.Request) {
 		closed, err := b.reopen()
@@ -1067,6 +1082,8 @@ func (b *bridge) reset() error {
 		return fmt.Errorf("the app did not stop its work in time")
 	}
 	b.d.svc.levels.shutDown()
+	// A log a walk started lives in the home, which goes next.
+	theLog.close()
 	entries, err := os.ReadDir(b.d.home)
 	if err != nil {
 		return err
@@ -1363,4 +1380,27 @@ func TestTheSharesOfTheWalksHoldEveryRunOnce(t *testing.T) {
 	if got := shareOf(t, all, ""); len(got) != len(all) {
 		t.Errorf("with no share, %d runs of %d", len(got), len(all))
 	}
+}
+
+// openLog starts the app's log in the bridge's home, four lines in the
+// file in use and three in an older file beside it, see /app-log.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
+func (b *bridge) openLog() error {
+	dir := filepath.Join(b.d.home, "Logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	var older bytes.Buffer
+	z := gzip.NewWriter(&older)
+	_, _ = z.Write([]byte("{}\n{}\n{}\n"))
+	_ = z.Close()
+	if err := os.WriteFile(filepath.Join(dir, "app-2026-10-09T10-00-00.000.log.gz"), older.Bytes(), 0o600); err != nil {
+		return err
+	}
+	theLog.open(filepath.Join(dir, "app.log"))
+	for i := range 4 {
+		theLog.line(zerolog.InfoLevel, "app").Int("i", i).Msg("a line for the walk")
+	}
+	return nil
 }

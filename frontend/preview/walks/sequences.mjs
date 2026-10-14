@@ -168,6 +168,11 @@
 //                      slowly enough to do something while it is
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
+//   ["app log", "open"]
+//                      the app starts its log, with an older file beside
+//                      the one in use, see /app-log in bridge_test.go
+//   ["app log", n]     Settings, Advanced, opened if it is not, says the
+//                      app's log has n files, and the Go side has as many
 //   ["bugs, the pointer gone"]
 //                      clicks Bugs with the pointer on the sidebar, and
 //                      the app's window loses the focus to the report
@@ -1324,6 +1329,23 @@ export const sequences = [
       ["field reads", "input.licence-key", ""],
       ["redo"],
       ["field reads", "input.licence-key", "FF-12"],
+    ],
+  },
+  {
+    // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
+    // removes every file of it, the older one too, after asking. Cancel
+    // leaves it as it was, and the log that follows is the one new file.
+    name: "The app's log is removed whole from Settings, after asking",
+    steps: [
+      ["app log", "open"],
+      ["settings"],
+      ["app log", 2],
+      ["button", "Remove the app's log"],
+      ["button", "Cancel"],
+      ["app log", 2],
+      ["button", "Remove the app's log"],
+      ["button", "Remove them"],
+      ["app log", 1],
     ],
   },
   {
@@ -4383,6 +4405,23 @@ for (const seq of toWalk) {
         await main.mouse.move(750, 400);
         await main.waitForTimeout(400);
         if (!(await shut())) wrong = "the sidebar opened on the next move of the pointer outside it";
+        break;
+      }
+      case "app log": {
+        if (arg === "open") {
+          await fetch(new URL("/app-log?open=1", url));
+          break;
+        }
+        // Advanced reads the log again whenever it opens.
+        const disclose = page.locator("button.disclose");
+        if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
+        const said = arg === 1 ? "1 file," : `${arg} files,`;
+        const card = page.locator(".card", { hasText: "The app's log" });
+        await card.locator(".num", { hasText: said }).waitFor({ timeout: 5000 }).catch(() => {});
+        const shown = ((await card.locator(".num").textContent().catch(() => "")) ?? "").trim();
+        const kept = await (await fetch(new URL("/app-log", url))).json();
+        if (!shown.startsWith(said)) wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
+        else if (kept.files !== arg) wrong = `the app's log has ${kept.files} files on the disk, not ${arg}`;
         break;
       }
       case "windows": {

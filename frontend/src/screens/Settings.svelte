@@ -35,6 +35,7 @@
     type Settings,
     type SpeechModel,
     type TrainingStatus,
+    type LogStatus,
     type LicenceLink,
     type LicenceState,
     onLicenceLink,
@@ -56,6 +57,11 @@
   // makes the trash can beside them mean anything.
   let training = $state<TrainingStatus>({ dir: "", plans: 0, decisions: 0 });
   let clearing = $state(false);
+  // The app's log, under Advanced: read again whenever Advanced opens, so
+  // it says what the log holds now and not what it held at the start.
+  let appLog = $state<LogStatus>({ path: "", files: 0, bytes: 0, lines: 0 });
+  let removingLog = $state(false);
+  const logFolder = $derived(appLog.path.replace(/[\\/][^\\/]*$/, ""));
   // The models that can be installed, and what the machine can hold. The
   // same lists the setup shows, so one can be added or swapped later
   // without going through the setup again.
@@ -414,6 +420,32 @@
     }
   }
 
+  async function readLog() {
+    try {
+      appLog = await api.appLog();
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
+  async function removeLog() {
+    removingLog = false;
+    try {
+      appLog = await api.removeAppLog();
+    } catch (err) {
+      problem = errorText(err);
+      await readLog();
+    }
+  }
+
+  async function showLog() {
+    try {
+      await api.showAppLog();
+    } catch (err) {
+      problem = errorText(err);
+    }
+  }
+
   async function check() {
     checking = true;
     try {
@@ -587,7 +619,7 @@
     size(language.filter((m) => m.installed).reduce((sum, m) => sum + m.download, 0)),
   );
 
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 
   // The settings are not left while what finds the clips cannot find any:
   // a model chosen and not downloaded, a key missing, nothing chosen. Going
@@ -1122,7 +1154,10 @@
         <button
           class="quiet disclose"
           aria-expanded={advanced}
-          onclick={() => (advanced = !advanced)}
+          onclick={() => {
+            advanced = !advanced;
+            if (advanced) readLog();
+          }}
         >
           <span class="chevron" class:open={advanced}><Icon name="chevron" size={14} /></span>
           <h2>Advanced</h2>
@@ -1160,6 +1195,43 @@
               </span>
               <input type="text" bind:value={settings.trainingDir} placeholder="~/.framefairy/training" spellcheck="false" />
             </label>
+          </div>
+
+          <!-- The app's own log, the file a report takes along. It is the
+               app's and nobody else's, so it can go whole, after asking. -->
+          <div class="card">
+            <div class="item">
+              <div class="words">
+                <span class="head">The app's log</span>
+                {#if appLog.path}
+                  <span class="small muted num">
+                    {plural(appLog.files, "file", "files")}, {size(appLog.bytes) || "empty"}, {plural(appLog.lines, "line", "lines")}
+                  </span>
+                  <span class="small muted selectable path">{appLog.path}</span>
+                {:else}
+                  <span class="small muted">Nothing written yet.</span>
+                {/if}
+              </div>
+              <button
+                class="quiet bin"
+                disabled={!appLog.path}
+                title="Show in folder"
+                aria-label="Show the app's log in folder"
+                onclick={showLog}
+              >
+                <Icon name="folder" />
+              </button>
+              <button
+                class="quiet danger bin"
+                disabled={!appLog.path}
+                title="Remove the log, the older files too"
+                aria-label="Remove the app's log"
+                aria-haspopup="dialog"
+                onclick={() => (removingLog = true)}
+              >
+                <Icon name="trash" />
+              </button>
+            </div>
           </div>
 
           <!-- Everything the check looked at, found or not, for whoever
@@ -1204,6 +1276,19 @@
       {#snippet actions()}
         <button onclick={() => (clearing = false)}>Cancel</button>
         <button class="danger" onclick={clearTraining}>Remove them</button>
+      {/snippet}
+    </Confirm>
+  {/if}
+
+  {#if removingLog}
+    <Confirm title="Remove the app's log?" oncancel={() => (removingLog = false)}>
+      <p>
+        Every file of the log in <b>{logFolder}</b> goes, the older ones too, and nothing else in that
+        folder. The app starts a new log with its next line. This cannot be taken back.
+      </p>
+      {#snippet actions()}
+        <button onclick={() => (removingLog = false)}>Cancel</button>
+        <button class="danger" onclick={removeLog}>Remove them</button>
       {/snippet}
     </Confirm>
   {/if}

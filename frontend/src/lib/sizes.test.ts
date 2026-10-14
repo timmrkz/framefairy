@@ -11,6 +11,11 @@ describe("sizes", () => {
     expect(size(671_239_000)).toBe("671 MB");
     expect(size(15_461_882_265)).toBe("15.5 GB");
     expect(size(1_000_000_000)).toBe("1.0 GB");
+    // A log is smaller than any download, and is never called 0 MB.
+    expect(size(412_300)).toBe("412 KB");
+    expect(size(120)).toBe("1 KB");
+    expect(size(999_499)).toBe("999 KB");
+    expect(size(999_500)).toBe("1 MB");
   });
 
   test("memory counts in 1024s, the way a machine is sold", () => {
