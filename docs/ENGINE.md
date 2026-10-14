@@ -623,7 +623,12 @@ was found later:
   is on a frame's start now, kept to the millisecond, see `PieceOnFrames`
   above. The render takes the clip with each edge on that frame to the
   microsecond, `SourceInfo.OnFrames`, and makes its captions from that
-  same clip, so the two add up to the same.
+  same clip, so the two add up to the same. A caption edge dragged on the
+  clip timeline is moved on that clip's clock too, the one its captions
+  are drawn on: read on the plan's clip, an edge dragged onto the caption
+  beside stopped short of it by the difference between the two, up to a
+  frame for a plan whose pieces are not on frames,
+  `TestAnEdgeIsMovedOnTheClockItIsDrawnOn`.
 
 The sound fades for 15 ms at the clip's two ends and at every cut, which
 keeps a hard cut from clicking, and nowhere else. Two pieces that meet at

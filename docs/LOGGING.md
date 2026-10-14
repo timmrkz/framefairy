@@ -192,6 +192,11 @@ so their lines are counted, not written one by one. Their part is
   lifted word when it did not come once, and says so once for each,
   `captions: a layer did not come` or `captions: the word lifted out did
   not come`, with the reason.
+- A video whose frames cannot be read, on a drive that is not plugged
+  in, is a `warn` once, `the video's frames are not known`. A drag on the
+  clip timeline asks for the captions' look on every step, and the video
+  is asked again only after 5 s, so a drag is not one ffprobe and one
+  warning a step.
 - A panic while drawing the captions or placing their words is an
   `error` with its stack.
 

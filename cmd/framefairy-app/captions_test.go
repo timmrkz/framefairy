@@ -374,3 +374,40 @@ func TestTheCaptionsOfAVideoWhoseFolderIsGoneWriteNothingBack(t *testing.T) {
 		t.Errorf("the video's folder was written back: %v", err)
 	}
 }
+
+// A drag on the clip timeline asks for the captions' look on every step.
+// A video that cannot be read, on a drive that is not plugged in, was
+// asked of ffprobe on every one of them, and every one wrote the same
+// warning. It is asked once and said once, and asked again only after a
+// while, see unprobed.
+func TestTheLookOfAVideoThatCannotBeReadIsAskedOnce(t *testing.T) {
+	// On the real disk: ffprobe is asked for the video, which is not there.
+	// Not parallel: it replaces probeVideo for the whole package.
+	svc, mine, _ := library(t)
+	_, read := testLog(t)
+	plan := filepath.Join(svc.project(mine).LogsDir(), "clips.json")
+	asked := 0
+	was := probeVideo
+	probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
+		asked++
+		return was(ctx, path)
+	}
+	t.Cleanup(func() { probeVideo = was })
+	for range 20 {
+		if look := svc.captionLook(mine, plan); look.Source.FPSNum != 0 {
+			t.Fatalf("a video that is not there has frames: %+v", look.Source)
+		}
+	}
+	if asked != 1 {
+		t.Errorf("the video was asked for %d times in a drag", asked)
+	}
+	said := 0
+	for _, l := range read() {
+		if l["msg"] == "the video's frames are not known, so its captions are timed on the plan's clock" {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("the warning was said %d times in a drag", said)
+	}
+}

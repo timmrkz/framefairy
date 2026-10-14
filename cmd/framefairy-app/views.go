@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -133,13 +134,53 @@ func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
 		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
 		style = plan.CaptionStyle()
 	}
+	return &engine.Look{Style: style, Source: unprobed.source(path)}
+}
+
+// probeVideo reads what the video at path is, its frames among it.
+var probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
+	return sources.probe(ctx, path)
+}
+
+// unprobed keeps the videos whose frames could not be read, a video on a
+// drive that is not plugged in. A drag on the clip timeline asks for the
+// captions' look on every step, and such a video was asked of ffprobe and
+// warned about on every one of them. It is asked again after a while.
+var unprobed = &failedProbes{since: map[string]time.Time{}}
+
+type failedProbes struct {
+	mu    sync.Mutex
+	since map[string]time.Time
+}
+
+// probeAgain is how long a video whose frames could not be read is left
+// before it is asked again.
+const probeAgain = 5 * time.Second
+
+// source is what the video at path is, or nothing while it cannot be
+// read. The first failure of a stretch is said, with the reason.
+func (f *failedProbes) source(path string) engine.SourceInfo {
+	f.mu.Lock()
+	failed, known := f.since[path]
+	f.mu.Unlock()
+	if known && time.Since(failed) < probeAgain {
+		return engine.SourceInfo{}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	source, err := s.probe(ctx, path)
+	source, err := probeVideo(ctx, path)
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err != nil {
-		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+		if !known {
+			theLog.line(zerolog.WarnLevel, "captions").Str("video", filepath.Base(path)).Err(err).
+				Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+		}
+		f.since[path] = time.Now()
+		return engine.SourceInfo{}
 	}
-	return &engine.Look{Style: style, Source: source}
+	delete(f.since, path)
+	return source
 }
 
 // ArrivingCaptions are the captions of a clip on its way, the nth of a

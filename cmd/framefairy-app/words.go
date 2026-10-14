@@ -257,9 +257,11 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	if err != nil {
 		return ClipEntry{}, err
 	}
+	// Taken before the edit, as SetCaptionTime does.
+	look := s.captionLook(path, plan)
 	began := time.Now()
 	err = s.edit(path, func() error {
-		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, s.captionLook(path, plan))
+		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, look)
 	})
 	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
 	line.Float64("word", first).Msg("a caption was removed")

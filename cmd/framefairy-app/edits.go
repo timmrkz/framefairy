@@ -292,11 +292,14 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if err != nil {
 		return ClipEntry{}, err
 	}
+	// The look is taken before the edit, which holds the video's other
+	// edits while it runs, so ffprobe reading the video holds none of them.
+	look := s.captionLook(path, plan)
 	began := time.Now()
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionLook(path, plan))
+		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, look)
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
