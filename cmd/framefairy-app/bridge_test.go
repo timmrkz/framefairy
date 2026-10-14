@@ -1384,6 +1384,8 @@ func TestTheSharesOfTheWalksHoldEveryRunOnce(t *testing.T) {
 
 // openLog starts the app's log in the bridge's home, four lines in the
 // file in use and three in an older file beside it, see /app-log.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
 func (b *bridge) openLog() error {
 	dir := filepath.Join(b.d.home, "Logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
