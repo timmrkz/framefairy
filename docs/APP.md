@@ -2661,6 +2661,14 @@ or decoding on the processor, the caption faces the app carries inside
 itself, and which model files it found. Which decoder a file really went
 through is in the log of its search.
 
+Between the paths and the check is **The app's log**, see
+[LOGGING.md](LOGGING.md): where the file in use is, how many files it has
+with the older ones, their size and their lines, read again whenever
+Advanced opens. The folder button shows it in Finder, the way the
+sidebar's does for a video, and the trash can removes every file of the
+log, the older ones too and nothing else in their folder, after asking.
+The app starts a new log with its next line, which says what went.
+
 What belongs to the episode being worked on is not here: the caption face,
 the size and the height, and how many clips a search looks for and how
 long they may be, all sit in the workspace next to the clip, and what is
