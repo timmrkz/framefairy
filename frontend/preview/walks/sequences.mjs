@@ -427,6 +427,9 @@
 //                      side of where it was pressed from the way the hand
 //                      went
 //   ["moved", which]   since "drag edge", the edge moved by a frame or more
+//   ["kept up", which] since "drag edge twice", the edge stood in four
+//                      places or more while the hand took it again, so it
+//                      went with the hand while the drag before it saved
 //   ["on press", which]
 //                      since "hold on", the playhead had moved while the
 //                      button was still down, onto the frame "followed"
@@ -1136,6 +1139,23 @@ export const sequences = [
       ["followed", "cut from"],
       ["drag edge twice", "end", -30, -30],
       ["moved", "end"],
+      ["followed", "end"],
+    ],
+  },
+  {
+    // An edge taken again while the drag before it is still being saved
+    // goes with the hand. It stood still until the save came back, which a
+    // busy machine made long enough to see (2.259).
+    name: "an edge taken again while the drag before it saves goes with the hand",
+    steps: [
+      ["cut at", 0.5],
+      ["hold", "Reshape", 1000],
+      ["drag edge twice", "cut from", -30, -30],
+      ["kept up", "cut from"],
+      ["followed", "cut from"],
+      ["hold", "Reshape", 1000],
+      ["drag edge twice", "end", -30, -30],
+      ["kept up", "end"],
       ["followed", "end"],
     ],
   },
@@ -3723,6 +3743,22 @@ for (const seq of toWalk) {
         const seen = await page.evaluate(() => window.__edgeSeen ?? []);
         if (!(seen.length && Math.abs(seen.at(-1) - seen[0]) >= frame - 0.001)) {
           wrong = `the ${arg} edge stayed at ${seen[0]?.toFixed(3)} while the hand dragged it`;
+        }
+        break;
+      }
+      case "kept up": {
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        const places = new Set(seen.map((t) => t.toFixed(3))).size;
+        // The two drags are saved in the order they were let go, so the
+        // engine has the edge where the hand left it the second time, the
+        // farthest it went the hand's way, once both saves are done.
+        await settle(page);
+        const segs = (await engineState(page, watch.at)).segments;
+        const saved = { start: segs[0].start, end: segs.at(-1).end, "cut from": segs[0].end, "cut to": segs[1]?.start }[arg];
+        const left = dragPx < 0 ? Math.min(...seen) : Math.max(...seen);
+        if (places < 4) wrong = `the ${arg} edge stood in ${places} places while the hand took it again, it did not go with the hand`;
+        else if (!(Math.abs(saved - left) < 0.002)) {
+          wrong = `the hand left the ${arg} edge at ${left.toFixed(3)} and it was saved at ${saved?.toFixed(3)}`;
         }
         break;
       }
