@@ -162,7 +162,10 @@ A frame on its way to the screen asks for its layer ahead, `coming` in
 come keeps the last one up and is drawn again when its own arrives, so the
 captions never blink off. That holds over a new track of the same clip
 too, which comes with every saved edit and every step of a caption edge
-being dragged. A layer that does not come is not kept: the
+being dragged. A layer is laid by the size it was drawn at, `size` on the
+layer, so while the app is resized the last one is stretched into its
+place until the new size's own comes, and the captions do not jump toward
+the crop's corner. A layer that does not come is not kept: the
 frame keeps the last one up and asks once more a moment later. A change
 of clip drops the last layer, `clip` on `CaptionAsk`, so the old clip's
 captions never stand over the new one, and what a frame waits for is asked for with the ask it was

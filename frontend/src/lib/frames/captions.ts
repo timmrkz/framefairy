@@ -17,6 +17,10 @@
 // track, and what it shows of them, showing, and how large the pill of
 // its word is drawn, scale, 1 at rest, which the frame round the word
 // grows by.
+// It also says the size it was drawn at, size, which its pixels are laid
+// by: while the app is resized, the layer given last stands over a frame
+// of the new size until that size's own layer comes, and divided by the
+// new size it was laid tens of pixels toward the crop's top left.
 // After a word step a layer carries the word apart, lift, which the screen
 // lays over the rest scaled by scale round the middle of its box, see
 // Lift.
@@ -29,6 +33,7 @@ export type Layer = {
   track?: string;
   showing?: Showing;
   scale?: number;
+  size?: [number, number];
   lift?: { layer: Layer; scale: number };
 };
 
@@ -139,9 +144,10 @@ export function quarters(turn: number): number {
   return ((Math.round(-turn / 90) % 4) + 4) % 4;
 }
 
-// The box of the layer's ink in the picture as shown, in shares.
+// The box of the layer's ink in the picture as shown, in shares, by the
+// size the layer was drawn at.
 export function inkBox(o: Over): [number, number, number, number] {
-  const [W, H] = o.size;
+  const [W, H] = o.layer.size ?? o.size;
   const l = o.layer;
   return [
     o.left + (o.width * l.x) / W,
@@ -521,6 +527,7 @@ export class CaptionLayers {
           const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
           if (layer) {
             layer.track = ask.track;
+            layer.size = size;
             layer.showing = showing;
             if (part === "word") lift.bounce = readBounce(r.headers.get("X-Caption-Bounce"));
           }
@@ -590,6 +597,7 @@ export class CaptionLayers {
         const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
         if (layer) {
           layer.track = ask.track;
+          layer.size = size;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
           layer.scale = readScale(r.headers.get("X-Caption-Scale"));
         }

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bounceScale,
   CaptionLayers,
+  inkBox,
   laidPart,
   readBounce,
   readLayer,
@@ -290,6 +291,51 @@ describe("the layers of the captions", () => {
     layers.set({ path: "/v.mp4", clip: "b", track: "three", drafts: {} });
     layers.set(null);
     expect(layers.at(1.0, [10, 20])).toBeNull();
+  });
+});
+
+describe("a layer laid while the app is resized", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Found by the second review: the layer given last, drawn at the old
+  // size, was laid by the new one until its own came, so the captions
+  // jumped toward the crop's top left on every step of a resize.
+  it("is laid by the size it was drawn at, where the new size's own will stand", async () => {
+    const answers: (() => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          const q = new URLSearchParams(url.split("?")[1]);
+          const w = Number(q.get("w"));
+          // The same ink at every size: a quarter in and down, a half
+          // wide and high.
+          const b = new ArrayBuffer(8 + (w / 2) * (w / 2) * 4);
+          const v = new DataView(b);
+          [w / 4, w / 4, w / 2, w / 2].forEach((n, i) => v.setUint16(2 * i, n, true));
+          answers.push(() => resolve(new Response(b)));
+        }),
+    );
+    let came = 0;
+    const layers = new CaptionLayers(() => came++);
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
+    layers.at(1.0, [20, 20]);
+    answers.shift()!();
+    await vi.waitFor(() => expect(came).toBe(1));
+    const own = layers.at(1.0, [20, 20])!;
+    expect(own.size).toEqual([20, 20]);
+    // The app grows: the old layer stays up until the new one comes.
+    const old = layers.at(1.0, [40, 40])!;
+    expect(old).toBe(own);
+    const at = (layer: Layer, size: [number, number]) => inkBox({ layer, size, left: 0.1, width: 0.8, turn: 0 });
+    answers.shift()!();
+    await vi.waitFor(() => expect(came).toBe(2));
+    const grown = layers.at(1.0, [40, 40])!;
+    expect(grown.size).toEqual([40, 40]);
+    expect(at(old, [40, 40])).toEqual(at(grown, [40, 40]));
+    [0.3, 0.25, 0.7, 0.75].forEach((v, i) => expect(at(old, [40, 40])[i]).toBeCloseTo(v, 9));
   });
 });
 
