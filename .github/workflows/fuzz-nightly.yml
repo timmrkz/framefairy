@@ -42,6 +42,19 @@ jobs:
             ~/.cache/go-build
           key: fuzz-v1-${{ runner.os }}-${{ github.sha }}
           restore-keys: fuzz-v1-${{ runner.os }}-
+      # One of the targets is in the app's package, so the fuzzing compiles
+      # it, and that needs GTK and WebKit, as the job fuzz of ci.yml does.
+      # Without them make stopped before fuzzing anything, every night.
+      - id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/apt
+          key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
+          restore-keys: apt-fuzz-
+      - name: System packages
+        timeout-minutes: 10
+        run: sh scripts/ci-packages.sh
       # 600 histories of 400 steps, about a minute on one core while the
       # others fuzz the rest.
       - name: Fuzz
