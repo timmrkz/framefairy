@@ -1188,7 +1188,7 @@
     const asked: Record<string, string> = { ...drafts };
     if (dragCaptions !== null) asked.y = String(dragCaptions);
     const typing = fixing && caption ? `${captions.captions.indexOf(caption)} ${typed}` : undefined;
-    return { path, track: captions.track, drafts: asked, typing };
+    return { path, clip: clip.key, track: captions.track, drafts: asked, typing };
   });
   // The word being typed, counted across the lines of its caption.
   const typed = $derived.by(() => {

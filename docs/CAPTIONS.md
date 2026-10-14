@@ -49,7 +49,10 @@ played over it. A step from word to word, Shift and an arrow, bounces the
 word it lands on, which is how the video preview shows the step and is
 nothing the short shows. Tim saw the pop the short burns in played again
 over every frame he stepped to, the arrow keys included, two animations
-mixed into one, and wanted them apart.
+mixed into one, and wanted them apart. The word that bounces is the one
+on the frame the step lands on, counted from the frame on screen whether
+its layer has come or not, so two quick steps bounce the second word and
+not the one passed over.
 
 The two are separate paths that share only the shape of the curve. The
 pop in the short is libass's, on the short's frames, `popScales` in
@@ -152,10 +155,12 @@ the canvas's own pixels, so the captions are as sharp as the screen.
 A frame on its way to the screen asks for its layer ahead, `coming` in
 `CaptionLayers`, so playing keeps up. A frame shown before its layer has
 come keeps the last one up and is drawn again when its own arrives, so the
-captions never blink off. A layer that does not come is not kept: the
+captions never blink off. That holds over a new track of the same clip
+too, which comes with every saved edit and every step of a caption edge
+being dragged. A layer that does not come is not kept: the
 frame keeps the last one up and asks once more a moment later. A change
-of clip drops the last layer, so the old clip's captions never stand over
-the new one, and what a frame waits for is asked for with the ask it was
+of clip drops the last layer, `clip` on `CaptionAsk`, so the old clip's
+captions never stand over the new one, and what a frame waits for is asked for with the ask it was
 drawn with, never the next one's.
 
 ## The caption box

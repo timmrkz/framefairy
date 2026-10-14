@@ -288,7 +288,10 @@ export async function wordFramesOf(path: string, track: string, signal: AbortSig
 // changing on the way, as /frames/captions takes them.
 // Typing is the word being typed in the caption box, "<caption> <word>",
 // which libass leaves out, see engine.CaptionDrawing.Typing.
-export type CaptionAsk = { path: string; track: string; drafts: Record<string, string>; typing?: string };
+// The captions a frame is drawn with. clip names the clip they belong
+// to: the track changes with every saved edit and every step of a drag,
+// and the layer given last stays up over those, never over another clip.
+export type CaptionAsk = { path: string; clip: string; track: string; drafts: Record<string, string>; typing?: string };
 
 // How many layers are kept, and how many may be on their way at once. A
 // layer is the crop's width by the captions' height, a few hundred
@@ -379,9 +382,9 @@ export class CaptionLayers {
   // its way has come. It carries its own ask, so a layer asked for after
   // the ask changed is never asked for with the new one.
   private waiting: Wanted | null = null;
-  // The layer given last, which stays while the one for a newer frame or a
-  // newer draft is on its way, so the captions never blink off in between.
-  // Another clip's captions never stay.
+  // The layer given last, which stays while the one for a newer frame, a
+  // newer draft or a newer track of the same clip is on its way, so the
+  // captions never blink off in between. Another clip's captions never stay.
   private last: Layer | null = null;
   // For the walks: how many layers were asked for, how many a frame was
   // drawn with that was not its own yet, how many words bounced, and how
@@ -419,7 +422,7 @@ export class CaptionLayers {
 
   set(ask: CaptionAsk | null) {
     const key = ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
-    if (!ask || ask.path !== this.ask?.path || ask.track !== this.ask?.track) this.last = null;
+    if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
     if (key !== this.askKey) {
       this.waiting = null;
       this.again.clear();
@@ -451,6 +454,10 @@ export class CaptionLayers {
     // changed, lift it again at rest.
     if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) this.drop();
     if (!want) return null;
+    // The frame now on screen, whether its own layer is there yet or not,
+    // so a second word step before it came bounces the word it lands on,
+    // not the one it passed over.
+    this.shownAt = frame;
     const have = this.kept.get(want.key);
     if (!have) {
       this.stats.late++;
@@ -460,7 +467,6 @@ export class CaptionLayers {
     }
     const before = this.last;
     this.last = have;
-    this.shownAt = frame;
     // The frame a word step came to.
     if (this.bounceFrom !== null && frame !== this.bounceFrom) {
       this.bounceFrom = null;

@@ -152,7 +152,7 @@ describe("the layers of the captions", () => {
     });
     let came = 0;
     const layers = new CaptionLayers(() => came++);
-    layers.set({ path: "/v.mp4", track: "abc", drafts: { text: "#ffffff" } });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: { text: "#ffffff" } });
     expect(layers.at(1.0, [10, 20])).toBeNull();
     expect(asked[0]).toContain("/frames/captions?");
     const q = new URLSearchParams(asked[0].split("?")[1]);
@@ -205,7 +205,7 @@ describe("the layers of the captions", () => {
       const { asked, answer } = answering((n) => n === 1);
       let came = 0;
       const layers = new CaptionLayers(() => came++);
-      layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+      layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
       expect(layers.at(1.0, [10, 20])).toBeNull();
       answer.shift()!();
       // The failure leaves the frame waiting, and a second ask set for later.
@@ -227,7 +227,7 @@ describe("the layers of the captions", () => {
     try {
       const { asked, answer } = answering((n) => n <= 2);
       const layers = new CaptionLayers(() => {});
-      layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+      layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
       layers.at(1.0, [10, 20]);
       answer.shift()!();
       await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
@@ -248,7 +248,7 @@ describe("the layers of the captions", () => {
   it("never asks for a layer with an ask newer than the frame's, and drops another clip's captions", async () => {
     const { asked, answer } = answering();
     const layers = new CaptionLayers(() => {});
-    layers.set({ path: "/v.mp4", track: "one", drafts: {} });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
     // Three on their way fill the room, so the frame drawn waits for it.
     layers.coming(1.0, [10, 20]);
     layers.coming(1.04, [10, 20]);
@@ -257,7 +257,7 @@ describe("the layers of the captions", () => {
     expect(asked.length).toBe(3);
     // Another clip is chosen before any came: what waited is not asked for
     // with the new clip's track, nor kept up over it.
-    layers.set({ path: "/v.mp4", track: "two", drafts: {} });
+    layers.set({ path: "/v.mp4", clip: "b", track: "two", drafts: {} });
     answer.shift()!();
     await vi.waitFor(() => expect(layers.busy).toBe(true));
     answer.shift()!();
@@ -269,18 +269,26 @@ describe("the layers of the captions", () => {
     expect(new URLSearchParams(asked[3].split("?")[1]).get("track")).toBe("two");
   });
 
-  it("keeps the layer given last up while a draft changes, but not when the clip does", async () => {
+  // Found by the second review: the track changes with every saved edit
+  // and every step of a caption edge being dragged, and the captions
+  // blinked off each time until the new track's layer came.
+  it("keeps the layer given last up while a draft or the track changes, but not when the clip does", async () => {
     const { answer } = answering();
     let came = 0;
     const layers = new CaptionLayers(() => came++);
-    layers.set({ path: "/v.mp4", track: "one", drafts: {} });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
     layers.at(1.0, [10, 20]);
     answer.shift()!();
     await vi.waitFor(() => expect(came).toBe(1));
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
-    layers.set({ path: "/v.mp4", track: "one", drafts: { text: "#ff0000" } });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: { text: "#ff0000" } });
     expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
-    layers.set({ path: "/v.mp4", track: "two", drafts: {} });
+    layers.set({ path: "/v.mp4", clip: "a", track: "two", drafts: {} });
+    expect(layers.at(1.0, [10, 20])?.pixels[0]).toBe(1);
+    layers.set({ path: "/v.mp4", clip: "b", track: "three", drafts: {} });
+    expect(layers.at(1.0, [10, 20])).toBeNull();
+    layers.set({ path: "/v.mp4", clip: "b", track: "three", drafts: {} });
+    layers.set(null);
     expect(layers.at(1.0, [10, 20])).toBeNull();
   });
 });
@@ -360,7 +368,7 @@ describe("the bounce after a word step", () => {
     let paused = true;
     let came = 0;
     const layers = new CaptionLayers(() => came++, { paused: () => paused });
-    layers.set({ path: "/v.mp4", track: "abc", drafts: {} });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
     const at = (t: number) => layers.at(t, [10, 20]);
     // The first frame shows its own layer, and nothing bounces.
     at(1.0);
@@ -421,7 +429,7 @@ describe("the bounce after a word step", () => {
     expect(layers.stats.popped).toBe(1);
     // A draft changed over that frame lifts the word again at rest, with
     // no bounce.
-    layers.set({ path: "/v.mp4", track: "abc", drafts: { text: "#ffffff" } });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: { text: "#ffffff" } });
     expect(at(1.5)?.lift?.scale).toBe(1);
     await flush();
     at(1.5);
@@ -465,6 +473,51 @@ describe("the bounce after a word step", () => {
     await flush();
     expect(at(2.0)?.pixels[0]).toBe(105);
     expect(layers.stats.popped).toBe(2);
+  });
+
+  // Found by the second review: Shift and an arrow pressed twice quickly
+  // bounced the word passed over when its layer came, and the word landed
+  // on sat still.
+  it("bounces the word a second quick word step lands on, not the one it passed over", async () => {
+    const held: { at: string; part: string | null; go: () => void }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          const q = new URLSearchParams(url.split("?")[1]);
+          const at = q.get("at")!;
+          const part = q.get("part");
+          const red = part === "rest" ? 20 : part === "word" ? 30 : 100;
+          const headers: Record<string, string> = { "X-Caption-Showing": "0 1", "X-Caption-Scale": "1.0000" };
+          if (part === "word") headers["X-Caption-Bounce"] = "220 0.55 1.15";
+          held.push({ at, part, go: () => resolve(new Response(body(red), { headers })) });
+        }),
+    );
+    screen();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
+    const at = (t: number) => layers.at(t, [10, 20]);
+    at(1.0);
+    held.shift()!.go();
+    await flush();
+    expect(at(1.0)?.pixels[0]).toBe(100);
+    // Two word steps, the second before the first frame's layer came.
+    // The screen still shows the frame passed over while the one landed on
+    // is decoded, and draws it again when its layer comes.
+    layers.sought(true);
+    at(1.04);
+    layers.sought(true);
+    held.splice(held.findIndex((h) => h.at === "1.040000"), 1)[0].go();
+    await flush();
+    expect(at(1.04)?.pixels[0]).toBe(100);
+    expect(layers.stats.popped).toBe(0);
+    at(1.08);
+    held.splice(held.findIndex((h) => h.at === "1.080000" && !h.part), 1)[0].go();
+    await flush();
+    at(1.08);
+    expect(layers.stats.popped).toBe(1);
+    const parts = held.filter((h) => h.part);
+    expect(parts.map((h) => h.at)).toEqual(["1.080000", "1.080000"]);
   });
 
   it("follows one curve, at rest at either end and at its peak a little past the middle", () => {
