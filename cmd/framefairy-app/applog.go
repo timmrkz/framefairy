@@ -368,6 +368,7 @@ type Act struct {
 func (f *FrameFairy) Acted(a Act) {
 	id := clipped(a.ID, actMax)
 	theLog.act.Store(&id)
+	f.report.sawVideo(a.Video)
 	at := time.Now()
 	if t := time.UnixMilli(int64(a.At)); a.At > 0 && t.Sub(at).Abs() < time.Minute {
 		at = t

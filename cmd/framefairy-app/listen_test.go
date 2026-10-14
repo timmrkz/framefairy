@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
 	"framefairy/asr"
 	"framefairy/engine"
 )
@@ -678,5 +680,60 @@ func TestTheMicrophoneSaysHowLoud(t *testing.T) {
 	}
 	if !heard(func(l float64) bool { return l < 0.2 }, hush(0.1)) {
 		t.Errorf("a quiet room was told as %v", levels)
+	}
+}
+
+// A recording goes with the report window it was started in. Tim closed
+// the window with Cmd+W while he talked, the recording ran on, and the
+// next window took it up again with every word he had said. Plan row
+// 2.244.
+func TestClosingTheReportWindowDropsTheRecording(t *testing.T) {
+	f, read := listenWith(t, tone(30))
+	f.report = newReporting(afero.NewMemMapFs(), "/config/report")
+	f.report.stop = f.CancelListening
+	f.report.make = func(closed func()) (func(), func()) { return func() {}, closed }
+	f.OpenReport("bugs")
+	first, err := f.Listen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.report.closeWindow("window")
+	if find(read(), "the recording was dropped") == nil {
+		t.Fatal("the window closed and the recording ran on")
+	}
+	f.OpenReport("bugs")
+	next, err := f.Listen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == first {
+		t.Fatalf("the next window took up recording %d again", first)
+	}
+	f.CancelListening()
+}
+
+// A recording nobody spoke into is written down as nothing, though the
+// speech model hears words in the hum of a room. Tim pressed Dictate and
+// Stop a few times in a row, said nothing, and was given "yeah yeah".
+// Plan row 2.244.
+func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
+	room := tone(3)
+	for i := range room {
+		room[i] /= 30
+	}
+	f, read := listenWith(t, room)
+	if _, err := f.Listen(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	d, err := f.StopListening()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Said) != 0 {
+		t.Fatalf("the hum of a room was written down as %q", d.Said)
+	}
+	if find(read(), "nobody spoke, so nothing was written down") == nil {
+		t.Fatal("the log does not say nobody spoke")
 	}
 }

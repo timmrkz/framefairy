@@ -34,6 +34,8 @@
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import Pipette from "@lucide/svelte/icons/pipette";
   import Mic from "@lucide/svelte/icons/mic";
+  import Bug from "@lucide/svelte/icons/bug";
+  import Paperclip from "@lucide/svelte/icons/paperclip";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -91,6 +93,10 @@
     pipette: Pipette,
     // Dictate on Report a Problem.
     mic: Mic,
+    // Bugs in the sidebar, the mark issue trackers draw for a bug report,
+    // and the paperclip that attaches pictures to it, as in Mail.
+    report: Bug,
+    attach: Paperclip,
   };
 
   // The marks that are solid wherever people see them, play and pause on

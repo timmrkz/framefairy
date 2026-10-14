@@ -6,12 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
 )
+
+// oneWay is how every name in a report is written.
+var oneWay = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)*$`)
 
 // A report of a problem is one zip on the Desktop, shown in Finder, with
 // what the person wrote, the log with its older files unpacked and the
@@ -72,21 +76,31 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	want := []string{"about.json", "logs/app-2026-10-09T10-00-00.000.log", "logs/app.log", "logs/recent frames.log", "settings.json", "What happened.txt"}
+	want := []string{"about.json", "logs/app-2026-10-09-10-00-00.000.log", "logs/app.log", "logs/recent-frames.log", "settings.json", "what-happened.txt"}
 	sort.Strings(want)
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Errorf("the report holds %v, want %v", names, want)
 	}
-	if got := files["What happened.txt"]; got != "The picture stopped at 46 s in ~/Movies/start.mp4.\n" {
+	// Every name in it is written one way, small letters with a hyphen
+	// between words, the way Tim asked for after the folder Pictures and
+	// What happened.txt stood beside logs and about.json.
+	for _, name := range names {
+		for _, part := range strings.Split(name, "/") {
+			if !oneWay.MatchString(part) {
+				t.Errorf("%s in the report is not written in small letters with hyphens", name)
+			}
+		}
+	}
+	if got := files["what-happened.txt"]; got != "The picture stopped at 46 s in ~/Movies/start.mp4.\n" {
 		t.Errorf("what happened reads %q", got)
 	}
 	if !strings.Contains(files["logs/app.log"], `"path":"~/Movies/start.mp4"`) {
 		t.Errorf("the log in the report does not name the video under ~:\n%s", files["logs/app.log"])
 	}
-	if !strings.Contains(files["logs/recent frames.log"], `"path":"~/Movies/start.mp4","msg":"read n 16 skip 0"`) {
-		t.Errorf("the trace lines kept in memory are not in the report:\n%s", files["logs/recent frames.log"])
+	if !strings.Contains(files["logs/recent-frames.log"], `"path":"~/Movies/start.mp4","msg":"read n 16 skip 0"`) {
+		t.Errorf("the trace lines kept in memory are not in the report:\n%s", files["logs/recent-frames.log"])
 	}
-	if !strings.Contains(files["logs/app-2026-10-09T10-00-00.000.log"], "started yesterday") {
+	if !strings.Contains(files["logs/app-2026-10-09-10-00-00.000.log"], "started yesterday") {
 		t.Error("the older file of the log is not in the report, unpacked")
 	}
 	if !strings.Contains(files["settings.json"], `"outputDir": "~/Shorts"`) {
@@ -100,8 +114,8 @@ func TestAReportHoldsTheLogAndNothingOfTheVideo(t *testing.T) {
 			t.Errorf("%s names the home folder", name)
 		}
 	}
-	if _, ok := unzipped(t, second)["What happened.txt"]; ok {
-		t.Error("a report with nothing written holds an empty What happened.txt")
+	if _, ok := unzipped(t, second)["what-happened.txt"]; ok {
+		t.Error("a report with nothing written holds an empty what-happened.txt")
 	}
 }
 

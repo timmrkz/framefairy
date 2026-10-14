@@ -1,3 +1,22 @@
+<script lang="ts" module>
+  // Where the pointer was last seen in this window, by any move or press.
+  // A control that appears under a pointer standing still is not :hover
+  // until the pointer moves again, see runDown.
+  let seen: { x: number; y: number } | null = null;
+  if (typeof document !== "undefined") {
+    const see = (e: PointerEvent) => (seen = { x: e.clientX, y: e.clientY });
+    document.addEventListener("pointermove", see, { capture: true, passive: true });
+    document.addEventListener("pointerdown", see, { capture: true, passive: true });
+    document.addEventListener("pointerout", (e) => !e.relatedTarget && (seen = null), true);
+  }
+
+  // Whether the pointer stands on node, from where it was last seen.
+  function under(node: Element | null | undefined): boolean {
+    if (!node || !seen) return false;
+    return node.contains(document.elementFromPoint(seen.x, seen.y));
+  }
+</script>
+
 <script lang="ts">
   import { untrack } from "svelte";
 
@@ -129,7 +148,12 @@
       // until the hand came back over the row and off it again. Found by
       // Tim. So every move of the pointer and everything it comes onto,
       // anywhere in the app, says whether it is on the control.
-      let pointer = !!host?.matches(":hover");
+      // A row that appears under the pointer, as a removed picture's tile
+      // does under the bin just pressed, is not :hover until the pointer
+      // moves. The time ran for the moment until it did, and stood still
+      // a little short of full on Tim's Mac. So where the pointer was last
+      // seen says it.
+      let pointer = !!host?.matches(":hover") || under(host);
       const keyboard = () => !!host?.contains(document.activeElement);
       const settle = () => (pointer || keyboard() ? hold() : go());
       const moved = (e: PointerEvent) => {
@@ -151,7 +175,8 @@
       run();
       timer = window.setTimeout(over, left);
       // A row that appears under the pointer, as a removed clip's row
-      // does under the trash can just pressed, starts held.
+      // does under the trash can just pressed, starts held, full, and its
+      // time starts once the pointer leaves it.
       if (pointer) hold();
       document.addEventListener("pointerover", moved, true);
       document.addEventListener("pointermove", moved, { capture: true, passive: true });

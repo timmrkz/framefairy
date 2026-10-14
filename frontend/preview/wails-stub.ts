@@ -906,6 +906,31 @@ const Answers = {
       // Dictate: a recording that hears two sentences a word at a time,
       // settling each at the pause after it, the way listen.go does.
       // ?deaf is a Mac that has not let the app use the microphone.
+      // Bugs and the report window, see bugs.go. ?pictures=N starts with N
+      // pictures attached, and the paperclip attaches one more.
+      case "OpenReport":
+        (window as any).__openedReport = ((window as any).__openedReport ?? 0) + 1;
+        return Promise.resolve(null);
+      case "ReportWindowOpen":
+        return Promise.resolve(false);
+      case "ReportDraft":
+        return Promise.resolve(draftStub());
+      case "SaveReportText":
+        reportDraft.text = String(args[0]);
+        return Promise.resolve(null);
+      case "AttachPictures":
+        return new Promise((done) => setTimeout(() => done(attachStub(1)), 300));
+      case "AttachPasted":
+        return Promise.resolve(attachStub(1));
+      case "RemovePicture":
+        reportDraft.pictures = reportDraft.pictures.filter((p) => p.id !== args[0]);
+        reportGone.add(String(args[0]));
+        return Promise.resolve(draftStub());
+      case "PutBackPicture":
+        reportGone.delete(String(args[0]));
+        reportDraft.pictures.push({ id: String(args[0]), name: `${args[0]}.png`, width: 1728, height: 1117 });
+        reportDraft.pictures.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+        return Promise.resolve(draftStub());
       case "Listen":
         return Promise.resolve(dictateStart());
       case "StopListening":
@@ -1323,9 +1348,10 @@ const Answers = {
       // Where macOS put the title bar and its buttons. Zeros stand for the
       // systems that draw their own title bar, which is what a probe sees
       // unless it asks for ?mac, and those numbers are what a 2026 Mac
-      // with the automatic toolbar style answers.
+      // with the automatic toolbar style answers. ?full makes the app's
+      // window fullscreen and leaves the report window as it is.
       case "Chrome":
-        if (location.search.includes("full")) {
+        if (location.search.includes("full") && args[0] !== "report") {
           // Native fullscreen: the title bar is gone and the buttons with
           // it, and the bar keeps the height it had.
           return Promise.resolve({ bar: 52, left: 0, right: 0, middle: 0 });
@@ -2001,6 +2027,30 @@ function dictateDrop() {
   dict = null;
 }
 
+// The report's draft, as bugs.go keeps it.
+type StubPicture = { id: string; name: string; width: number; height: number };
+const reportDraft: { text: string; pictures: StubPicture[]; next: number } = { text: "", pictures: [], next: 0 };
+const reportGone = new Set<string>();
+function attachStub(n: number) {
+  const left: string[] = [];
+  for (let i = 0; i < n; i++) {
+    if (reportDraft.pictures.length >= 10) {
+      left.push(`Screenshot ${reportDraft.next + 1}.png would be more than the 10 pictures a report takes`);
+      continue;
+    }
+    reportDraft.next++;
+    reportDraft.pictures.push({ id: `p${reportDraft.next}`, name: `Screenshot ${reportDraft.next}.png`, width: 1728, height: 1117 });
+  }
+  return { ...draftStub(), error: left.join(". ") };
+}
+function draftStub() {
+  return { text: reportDraft.text, pictures: reportDraft.pictures.map((p) => ({ ...p })) };
+}
+{
+  const n = Number(new URLSearchParams(location.search).get("pictures") ?? 0);
+  if (n > 0) attachStub(n);
+}
+
 export const Events = {
   // The Go side sends a job event every second while work runs, and an
   // interface that re-subscribes to anything on every one of those events
@@ -2023,10 +2073,11 @@ export const Events = {
       (window as any).__help = () => fn({ data: null });
       return () => delete (window as any).__help;
     }
-    // Report a Problem…, with window.__report().
-    if (name === "report") {
-      (window as any).__report = () => fn({ data: null });
-      return () => delete (window as any).__report;
+    // What a drop on the report window attached, with
+    // window.__dropPictures(n), as bugs.go tells it.
+    if (name === "report-draft") {
+      (window as any).__dropPictures = (n: number) => fn({ data: attachStub(n) });
+      return () => delete (window as any).__dropPictures;
     }
     if (name === "dictation") {
       dictListeners.add(fn);

@@ -5,14 +5,17 @@ package main
 import (
 	"embed"
 	"errors"
+	"image"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -86,6 +89,20 @@ func main() {
 			app.Event.Emit("loudness", n)
 		}
 	})
+	// The report window and its draft, see bugs.go. The draft is kept
+	// beside the settings.
+	svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	svc.report.stop = svc.CancelListening
+	svc.report.told = func(open bool) {
+		if app != nil {
+			app.Event.Emit("report-window", open)
+		}
+	}
+	svc.report.said = func(d ReportDraft) {
+		if app != nil {
+			app.Event.Emit("report-draft", d)
+		}
+	}
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.jobs.restore(st.Episodes())
@@ -126,8 +143,10 @@ func main() {
 		Description: "Turns a long video into vertical shorts",
 		Services:    []application.Service{application.NewService(svc)},
 		Assets: application.AssetOptions{
-			Handler:    interfaceHandler(),
-			Middleware: probeMiddleware(mediaMiddleware(st)),
+			Handler: interfaceHandler(),
+			Middleware: func(next http.Handler) http.Handler {
+				return probeMiddleware(mediaMiddleware(st))(reportMiddleware(svc.report)(next))
+			},
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
@@ -214,13 +233,19 @@ func main() {
 		// each video, which is not the window's to wait on.
 		go func() { app.Event.Emit("dropped", svc.dropFiles(files)) }()
 	})
-	svc.chrome = watchChrome(app, svc.window)
+	svc.chrome = watchChrome(app, svc.window, "app")
 	// Only in the build the checks from outside the app use, see
 	// probe_outside.go.
 	startProbe(svc)
 	svc.window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
 		leave.closing()
+		svc.report.closeWindow("app")
 	})
+	svc.report.make = func(closed func()) (front, shut func()) {
+		return openReportWindow(app, svc.window, svc.report, closed, func(w *application.WebviewWindow) {
+			svc.reportChrome.Store(watchChrome(app, w, "report"))
+		})
+	}
 
 	// A llama-server the last run left behind, because it crashed or was
 	// killed, is stopped before this run loads a model of its own.
@@ -289,8 +314,10 @@ type FrameFairy struct {
 	// the title bar and its buttons, and the watch that follows them.
 	window *application.WebviewWindow
 	chrome *chromeWatch
-	store  *store
-	jobs   *queue
+	// The same for the report window, the one made last, see bugs.go.
+	reportChrome atomic.Pointer[chromeWatch]
+	store        *store
+	jobs         *queue
 	// The loudness of each episode, measured from the moment it is
 	// added, which is the waveform, see levels.go.
 	levels *measuring
@@ -300,7 +327,9 @@ type FrameFairy struct {
 	leave *leaving
 	// The recording for a report, see listen.go.
 	listening listening
-	mu        sync.Mutex
+	// The report window and the draft of a report, see bugs.go.
+	report *reporting
+	mu     sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]
@@ -371,12 +400,66 @@ func (s *FrameFairy) Licences() ([]notices.Notice, error) { return notices.All()
 // into the app can be read this way, whatever name is asked for.
 func (s *FrameFairy) LicenceText(name string) (string, error) { return notices.Text(name) }
 
-// Chrome says where macOS put its own furniture, or all zeros where the
-// system draws its own title bar. The interface asks once and is
-// told again on the "chrome" event whenever the answer changes.
-func (s *FrameFairy) Chrome() Chrome {
-	if s.chrome == nil {
+// Chrome says where macOS put its own furniture in a window, "app" or
+// "report", or all zeros where the system draws its own title bar. The
+// interface asks once and is told again on the window's event, see
+// chromeEvent, whenever the answer changes.
+func (s *FrameFairy) Chrome(window string) Chrome {
+	c := s.chrome
+	if window == "report" {
+		c = s.reportChrome.Load()
+	}
+	if c == nil {
 		return Chrome{}
 	}
-	return s.chrome.measure()
+	return c.measure()
+}
+
+// openReportWindow makes the report window, beside the app's window, with
+// the app's own page showing Report a Problem alone, see main.ts. It gives
+// what brings it forward and what closes it, and calls closed once it is
+// gone. Files dropped on it are attached to the report, see bugs.go.
+func openReportWindow(app *application.App, main *application.WebviewWindow, report *reporting, closed func(), watch func(*application.WebviewWindow)) (front, shut func()) {
+	x, y := 0, 0
+	start := application.WindowCentered
+	if main != nil {
+		b := main.Bounds()
+		at := image.Rect(b.X, b.Y, b.X+b.Width, b.Y+b.Height)
+		work := at
+		if screen, err := main.GetScreen(); err == nil && screen != nil {
+			wa := screen.WorkArea
+			work = image.Rect(wa.X, wa.Y, wa.X+wa.Width, wa.Y+wa.Height)
+		}
+		p := beside(at, work, reportWidth, reportHeight)
+		x, y, start = p.X, p.Y, application.WindowXY
+	}
+	w := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "report",
+		Title:            "Report a Problem",
+		Width:            reportWidth,
+		Height:           reportHeight,
+		MinWidth:         reportMinWidth,
+		MinHeight:        reportMinHeight,
+		InitialPosition:  start,
+		X:                x,
+		Y:                y,
+		BackgroundColour: application.NewRGB(29, 31, 35),
+		URL:              "/?window=report",
+		Mac: application.MacWindow{
+			InvisibleTitleBarHeight: 28,
+			TitleBar:                application.MacTitleBarHidden,
+		},
+		// Pictures dropped anywhere on it are attached, see bugs.go.
+		EnableFileDrop: true,
+	})
+	w.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
+		files := e.Context().DroppedFiles()
+		go report.dropped(files)
+	})
+	w.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { closed() })
+	// Its own title bar, measured on its own, before the page can ask.
+	watch(w)
+	w.Show()
+	w.Focus()
+	return func() { w.Show(); w.Focus() }, func() { w.Close() }
 }
