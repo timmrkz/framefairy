@@ -201,7 +201,8 @@
 //                      and says Removed, its time standing full while the
 //                      pointer is on it. [i, "key"] presses Delete on the
 //                      tile instead, the pointer standing on it
-//   ["put back", i]    presses Put it back on picture i, which is back in
+//   ["put back picture", i]
+//                      presses Put it back on picture i, which is back in
 //                      the same frame
 //   ["removed goes"]   the pointer leaves, and the time to put the picture
 //                      back runs out and the grid closes over it
@@ -1503,7 +1504,7 @@ export const sequences = [
       ["bugs"],
       ["attach", 3],
       ["remove picture", 2],
-      ["put back", 2],
+      ["put back picture", 2],
       ["pictures", 3],
       ["remove picture", [2, "key"]],
       ["removed goes"],
@@ -4537,7 +4538,7 @@ for (const seq of toWalk) {
         await settle(page);
         break;
       }
-      case "put back": {
+      case "put back picture": {
         // The picture is back in the same frame as the click, before the
         // Go side answers, or the grid closes over it for a moment and
         // the tiles after it jump. Found in the review of #217.
