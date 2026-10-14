@@ -286,7 +286,8 @@ func (p *Project) Transcript() (*Transcript, error) {
 }
 
 // SavedTranscript reads the words already heard of an episode, as far as
-// hearing it has got, with its corrections. It never transcribes, and
+// hearing it has got, as they were heard. A clip's corrections are its
+// own, see Transcript.Of. It never transcribes, and
 // returns ErrNoTranscript when there is nothing heard yet.
 func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
 	stamp, err := stampOf(fsys, source)
@@ -303,7 +304,6 @@ func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB 
 	}
 	t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
 	t.Heard = file.heard()
-	t.Correct(LoadCorrections(fsys, logsDir))
 	return t, nil
 }
 
@@ -800,14 +800,13 @@ func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcr
 // where the hand has it, the words it crosses taken out or put back, and
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
-func ShapeCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
+func ShapeCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, overrides map[string]any) (*CaptionsView, error) {
-	work := *t
-	moved, err := moveCaptionEdge(fsys, LoadCorrections(fsys, logsDir), planPath, clipID, word, edge, at, &work, overrides)
+	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, t, overrides)
 	if err != nil {
 		return nil, err
 	}
-	return captionsView(moved.plan, moved.clip, &work, overrides), nil
+	return captionsView(moved.plan, moved.clip, t, overrides), nil
 }
 
 // planClip finds one clip of a plan.
@@ -858,6 +857,7 @@ func ArrivingCaptionsView(fsys afero.Fs, planPath string, u Underway, t *Transcr
 }
 
 func captionsView(plan Plan, clip Clip, t *Transcript, overrides map[string]any) *CaptionsView {
+	t = t.Of(clip)
 	s := ResolveStyle(captionStyle(plan, clip, overrides))
 	laid := ClipCaptions(clip, t, s)
 

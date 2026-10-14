@@ -13,6 +13,10 @@
 //   ["block", word]    clicks the block on the clip timeline of the caption
 //                      the engine has the word in, which picks it
 //   ["gone", word]     no caption the engine has holds the word
+//   ["holds", word]    a caption the engine has holds the word
+//   ["clips with", [word, n]]
+//                      n clips of the episode on screen, of those not
+//                      removed, have a caption with this very word
 //   ["fewer", label, n] the engine's captions hold n words fewer than at
 //                      the mark, and as many captions
 //   ["blocks"]         the clip timeline draws a block for every caption the
@@ -265,6 +269,11 @@
 //                      and then on to that share
 //   ["remove clip"]    presses the bin of the clip on screen in the clip
 //                      list, and waits until the Go side has it removed
+//   ["put back"]       presses Put it back on the row of the clip removed
+//                      last, and waits until the Go side has it back
+//   ["make here", key] presses "i" or "o", Mark In or Mark Out, with the
+//                      playhead where it is, and waits until the clip made
+//                      is written and chosen
 //   ["asks none", name, seconds]
 //                      the interface asks the Go side nothing of this name
 //                      for so many seconds
@@ -678,6 +687,98 @@ export const sequences = [
       ["blocks"],
       ["redo"],
       ["same", "removed"],
+    ],
+  },
+  {
+    // Tim removed a caption block, removed its clip with the bin, and
+    // while its row still offered it back pressed I where the playhead
+    // was. The clip came back, and the caption he had removed was still
+    // gone from it: a removed word was kept for the whole video, so every
+    // clip over it lost it. Now it is the clip's, and goes with it, and the
+    // clip put back has it removed as it was. Plan row 2.249.
+    name: "a caption removed, then its clip removed and made again with I, has the caption again",
+    steps: [
+      ["block", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["blocks"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["holds", "Schulhof"],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a caption removed, then its clip removed and put back, is still removed",
+    steps: [
+      ["block", "Schulhof"],
+      ["press", "Backspace"],
+      ["mark", "removed"],
+      ["remove clip"],
+      ["put back"],
+      ["same", "removed"],
+      ["gone", "Schulhof"],
+      ["blocks"],
+    ],
+  },
+  {
+    // A word removed in the caption box is the clip's too, and goes with
+    // it.
+    name: "a word removed, then its clip removed and made again with I, has the word again",
+    steps: [
+      ["frame", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["holds", "Schulhof"],
+      ["blocks"],
+    ],
+  },
+  {
+    // Plan row 2.249, Tim chose: a spelling fix is the clip's, and goes
+    // with it.
+    name: "a word corrected, then its clip removed and made again with I, reads as it was heard",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["gone", "Schulhoff"],
+      ["holds", "Schulhof"],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a word corrected in one clip reads as it was heard in another clip over it",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["put back"],
+      ["clips with", ["Schulhoff", 1]],
+      ["clips with", ["Schulhof", 1]],
+    ],
+  },
+  {
+    name: "a word removed in one clip is still shown in another clip over it",
+    steps: [
+      ["frame", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["put back"],
+      ["clips with", ["Schulhof", 1]],
     ],
   },
   {
@@ -2715,6 +2816,8 @@ for (const seq of toWalk) {
   // of the last "play from", and the clip the engine had then.
   let played = null;
   let made = null;
+  // The clip "remove clip" removed last, for "put back".
+  let removedLast = null;
   let loopEnd = null;
   // Whether the last "drag edge" held shift.
   let dragShift = false;
@@ -2949,6 +3052,25 @@ for (const seq of toWalk) {
         if (moved.length) {
           wrong = `captions beside the one with "${text}" changed: ${moved.map(span).join(" ")}\nthen ${was.captions.map(span).join(" ")}\nnow  ${now.captions.map(span).join(" ")}`;
         }
+        break;
+      }
+      case "holds": {
+        const now = await engineState(page, watch.at);
+        if (!now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
+          wrong = `no caption has "${arg}"\n${describe(marks.start ?? now, now)}`;
+        }
+        break;
+      }
+      case "clips with": {
+        const [word, n] = arg;
+        const path = await episodeOn(page);
+        const bare = (text) => text.replace(/[^\p{L}\p{N}]/gu, "");
+        let have = 0;
+        for (const c of (await ask(page, "Clips", path)).filter((c) => !c.rejected)) {
+          const view = await ask(page, "Captions", path, c.plan, c.id);
+          if (view.captions.some((cap) => cap.lines.some((l) => l.words.some((w) => bare(w.text) === word)))) have++;
+        }
+        if (have !== n) wrong = `${have} clips have "${word}", not ${n}`;
         break;
       }
       case "gone": {
@@ -4906,7 +5028,37 @@ for (const seq of toWalk) {
           gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
         }
         if (!gone) wrong = "the bin left the clip in the list";
+        removedLast = on;
         await watch.step("remove clip", s);
+        break;
+      }
+      case "put back": {
+        const on = removedLast;
+        const back = page.locator("aside ol button.back", { hasText: "Put it back" }).first();
+        await back.click();
+        let kept = false;
+        for (let i = 0; i < 50 && !kept; i++) {
+          await page.waitForTimeout(100);
+          kept = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && !c.rejected);
+        }
+        if (!kept) wrong = "Put it back left the clip removed";
+        await watch.step("put back", s);
+        break;
+      }
+      case "make here": {
+        const path = await episodeOn(page);
+        const was = (await ask(page, "Clips", path)).map((c) => c.key);
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press(arg);
+        let found = null;
+        for (let t = 0; t < 30000 && !found; t += 250) {
+          await page.waitForTimeout(250);
+          const on = await chosen(page);
+          const key = on && (await ask(page, "Clips", path)).find((c) => c.plan === on.plan && c.id === on.clip)?.key;
+          if (key && !was.includes(key)) found = on;
+        }
+        if (!found) wrong = `${arg} made no clip that was chosen`;
+        await watch.step("wait", s);
         break;
       }
       case "asks none": {

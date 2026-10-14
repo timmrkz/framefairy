@@ -198,7 +198,7 @@ func TestTranscriptNames(t *testing.T) {
 	// The app keeps a transcript in memory while these files stay as they
 	// were, so every file a read of it touches has to be named here.
 	files := TranscriptFiles("/a/logs")
-	want := []string{"/a/logs/words.json", "/a/logs/words.frames", "/a/logs/corrections.json"}
+	want := []string{"/a/logs/words.json", "/a/logs/words.frames"}
 	if len(files) != len(want) {
 		t.Fatalf("files %v", files)
 	}

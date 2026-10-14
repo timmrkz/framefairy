@@ -52,6 +52,7 @@
     oncropmark,
     oncaptiony,
     onword,
+    onremoveword,
     locked = false,
     strip,
     paused = $bindable(true),
@@ -96,6 +97,10 @@
     // captions in the video preview are where words are corrected, so this
     // is the one hand that reaches out of the picture.
     onword?: (start: number, text: string) => Promise<void>;
+    // Removes one word from this clip's captions alone, by the moment it
+    // was spoken and which of the words a correction made of it it is, or
+    // all of it with null. Every other clip still shows it.
+    onremoveword?: (start: number, part: number | null) => Promise<void>;
     // True while this clip is being rendered. What is being written into a
     // file cannot be changed while it is written, so its words are only
     // there to read until it is done, the way they were while they were
@@ -903,7 +908,7 @@
     const key = goneKey(said);
     gone = new Set([...gone, key]);
     try {
-      await onword?.(said.start, withPart(said, ""));
+      await onremoveword?.(said.start, said.part);
     } catch {
       // The workspace says what went wrong, and the word comes back.
       const back = new Set(gone);

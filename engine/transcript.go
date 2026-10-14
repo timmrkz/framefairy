@@ -109,12 +109,12 @@ func TranscriptName(window *Window) string {
 	return fmt.Sprintf("words-%d-%d.json", int(window.Start), int(window.End))
 }
 
-// TranscriptFiles are the files a whole-episode transcript is read from,
-// corrections included. What the app keeps in memory is only the current
+// TranscriptFiles are the files a whole-episode transcript is read from.
+// What the app keeps in memory is only the current
 // transcript while none of them has changed underneath it.
 func TranscriptFiles(logsDir string) []string {
 	words := filepath.Join(logsDir, TranscriptName(nil))
-	return []string{words, framesPath(words), correctionsPath(logsDir)}
+	return []string{words, framesPath(words)}
 }
 
 func framesPath(jsonPath string) string {
@@ -416,8 +416,9 @@ const ModelName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 // words at the ends is left out, see addHeard.
 const hearingPad = 3.0
 
-// LoadTranscript returns the words for a window of the episode, with the
-// episode's corrections applied, the same words the app reads. What of the
+// LoadTranscript returns the words for a window of the episode as they
+// were heard, the same words the app reads. A clip's corrections are its
+// own, see Transcript.Of. What of the
 // window the transcript has not heard yet is heard first and added to it,
 // so no part of the audio is ever heard twice. The transcript is one file
 // for the whole episode, whatever parts of it were heard, see TranscriptName.
@@ -427,7 +428,6 @@ func (e *Engine) LoadTranscript(ctx context.Context, source string, window Windo
 	if err != nil {
 		return nil, err
 	}
-	t.Correct(LoadCorrections(e.Files, logsDir))
 	return t, nil
 }
 

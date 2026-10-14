@@ -949,10 +949,15 @@ bubble scrolled by those eight pixels.
     Chromium, on Windows and in the preview, a clicked button kept it, and
     Enter then pressed the button again instead of opening a word: a click
     on Highlight and then Enter switched the highlight back on.
-  - The correction applies to every clip with that word, because it belongs
-    to the episode and not to the clip. It is kept in
-    `<episode>.framefairy/logs/corrections.json` and applied every time the
-    transcript is read.
+  - **A correction belongs to the clip it is typed in.** It is kept in the
+    clip's plan entry, `corrections`, against the word the recogniser
+    heard, and the clip's words are made with it, `Transcript.Of` in
+    `engine/words.go`. Every other clip over the same word reads it as it
+    was heard, a search and the model read what was heard, and a clip
+    removed and made again where it was starts from what was heard. Tim
+    chose this: everything done to a clip goes with it. Corrections used to
+    be kept for the whole episode in `logs/corrections.json`, which is no
+    longer read, so the corrections made before are gone.
   - **A correction may hold more than one word.** Where the recogniser heard
     one word and two were said, writing both splits the word it measured
     between them, so the captions break and highlight them one by one.
@@ -969,16 +974,25 @@ bubble scrolled by those eight pixels.
     forward delete key alike, removes the word in the frame, and a word
     typed empty and saved is removed the same way. The word leaves the
     caption box with the key, before the engine has answered, and comes
-    back if the engine refuses. A removal is a correction to nothing,
-    kept in `corrections.json` like any other, so the word is gone from
-    the transcript, the captions and the render, and Cmd+Z brings it
-    back. A word removed then corrected again comes back with the new
-    text. Delete in a word open for typing is the field's own and takes
+    back if the engine refuses. A removal is the clip's, not the
+    episode's: it is kept in the clip's plan entry, `removed_words`, by
+    the moment the word was heard, so the word is gone from this clip's
+    captions and its render, and Cmd+Z brings it back. One of the words a
+    correction made, like a word typed in beside another, is taken out of
+    what the correction reads instead, so the words after it close up. The episode still says it, so every other clip
+    shows it, a search and the model read it, and a clip removed and made
+    again where it was has it, see `RemovedWords` in
+    `engine/removedwords.go`. It used to be a correction to nothing in
+    `corrections.json`, kept for the whole episode: Tim removed a caption,
+    removed its clip, made it again with I where it had been, and the
+    caption was still gone. A word
+    removed then corrected again comes back with the new text. Delete in a word open for typing is the field's own and takes
     out letters. The caption the word stood in stays as it was, with the
     word gone from it: the captions are laid out as if the word were still
     there, reading what it read when it was removed, and then it is left
-    out, see `Captions` in `engine/lines.go`. What it read is kept with the
-    removal in `corrections.json`, behind a mark no typed word can have. The
+    out, see `Captions` in `engine/lines.go`. A removal changes nothing a
+    word reads, so the word keeps what it read, behind a mark no typed
+    word can have, in the words the captions are laid out from. The
     time it held is no pause, the room it took on its line stays taken, so
     no word of the next caption is pulled up into it, and no other caption
     moves. A caption whose first or last word it was draws in to the words
@@ -1007,8 +1021,9 @@ bubble scrolled by those eight pixels.
     for that word, and a frame stepped with an arrow means nothing is
     picked any more. Found by Tim. The engine finds
     the caption by the moment its first word starts, `RemoveCaption` in
-    `engine/corrections.go`, and a word typed back afterwards comes back as
-    any removed word does.
+    `engine/corrections.go`, and removes its words from the clip as
+    removing each would, so the caption goes with the clip, and a word
+    typed back afterwards comes back as any removed word does.
   - **Putting a word back:** Cmd+Z, or type it into the word beside it,
     "das" made "das ein". Both end the same way: the word is back where
     it was heard, with its own time, lit while it is said, and no
@@ -2752,8 +2767,9 @@ speech model took, never what they were, see [LOGGING.md](LOGGING.md).
   Windows and `~/.config/FrameFairy` on Linux.
 - **Everything about an episode:** next to it in `<episode>.framefairy/`, the
   same folder the command line uses. See [CLI.md](CLI.md#run).
-- **Word corrections:** in `<episode>.framefairy/logs/corrections.json`. They
-  change what captions show, never the stored transcript.
+- **Word corrections and removed words:** in each clip's plan entry,
+  `corrections` and `removed_words`. They change what that clip's
+  captions show, never the stored transcript or another clip.
 - **Training records:** in `<episode>.framefairy/training/`. The app writes them
   and shows nothing about them. See [TRAINING.md](TRAINING.md).
 - **The app's own log:** `~/Library/Logs/Frame Fairy/app.log` on macOS,

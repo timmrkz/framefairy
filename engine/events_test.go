@@ -432,74 +432,65 @@ func TestWordCorrections(t *testing.T) {
 	path := filepath.Join(logs, "clips.json")
 	_ = afero.WriteFile(fsys, path, []byte(plan), 0o644)
 
-	if err := SetWordText(fsys, logs, 10.0004, "  Tippfehler ", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.0004, "  Tippfehler ", tr); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ := LoadClips(fsys, path)
-	one, two := Said(clips[0], tr.Words), Said(clips[1], tr.Words)
+	one, two := Said(clips[0], tr.Of(clips[0]).Words), Said(clips[1], tr.Of(clips[1]).Words)
 	if len(one) != 2 || one[0].Text != "Tippfehler" || len(two) != 1 || two[0].Text != "drei" {
 		t.Errorf("clip words %v %v", one, two)
 	}
-	// A transcript read again from what the recogniser heard takes the
-	// correction from corrections.json.
-	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(fsys, logs))
-	if again.Words[0].Text != "Tippfehler" {
-		t.Errorf("the correction was not kept: %v", again.Words)
+	// The video says what was heard, and a clip over the same word that
+	// was not corrected in it reads it as heard.
+	if tr.Words[0].Text != "Tipfeler" {
+		t.Errorf("the video was corrected: %v", tr.Words)
 	}
 	// A trim keeps the fix, because the clip reads its words from the
-	// transcript.
+	// transcript with its corrections.
 	if err := TrimClip(fsys, path, "01", 10, 12.4, tr, 0.1, ToWords); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ = LoadClips(fsys, path)
-	if said := Said(clips[0], tr.Words); len(said) == 0 || said[0].Text != "Tippfehler" {
+	if said := Said(clips[0], tr.Of(clips[0]).Words); len(said) == 0 || said[0].Text != "Tippfehler" {
 		t.Errorf("trim lost the correction: %v", said)
 	}
-	if err := SetWordText(fsys, logs, 99, "x", tr); err == nil {
+	if err := SetWordText(fsys, path, "01", 99, "x", tr); err == nil {
 		t.Errorf("a word that does not exist was accepted")
 	}
 }
 
-// A word corrected to nothing is removed. The clip no longer says it and
-// the captions no longer show it, and it is still the word heard there, so
-// correcting it again brings it back, and so does reading the transcript
-// again from what the recogniser heard.
-func TestAWordCorrectedToNothingIsRemoved(t *testing.T) {
+// A word corrected to nothing is removed from its clip. The clip's
+// captions no longer show it, and the video still says it, so a search
+// and every other clip still have it. Correcting it again brings it back.
+func TestAWordCorrectedToNothingIsRemovedFromItsClip(t *testing.T) {
 	fsys := afero.NewMemMapFs()
-	dir := memDir(t, fsys)
-	logs := filepath.Join(dir, "ep.framefairy", "logs")
-	_ = fsys.MkdirAll(logs, 0o755)
+	_, path := oneClipPlan(t, fsys, 9.9, 12.5)
 	words := []Cue{{10, 10.5, "äh"}, {10.6, 11, "zwei"}, {12, 12.4, "drei"}}
 	tr := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	clip := Clip{Segments: []Segment{{Start: 9.9, End: 12.5}}}
-	said := func() string {
-		var out []string
-		for _, w := range Said(clip, tr.Words) {
-			out = append(out, w.Text)
-		}
-		return strings.Join(out, " ")
-	}
 
-	if err := SetWordText(fsys, logs, 10.2, "  ", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.2, "  ", tr); err != nil {
 		t.Fatal(err)
 	}
-	if got := said(); got != "zwei drei" {
-		t.Errorf("after removing, the clip says %q", got)
+	if got := shownWords(t, fsys, path, tr); got != "zwei drei" {
+		t.Errorf("after removing, the clip shows %q", got)
 	}
-	if w, ok := tr.HeardAt(10.2); !ok || w.Text != "" {
+	if len(tr.Words) != 3 {
+		t.Errorf("the video says %v", tr.Words)
+	}
+	if w, ok := tr.HeardAt(10.2); !ok || w.Text != "äh" {
 		t.Errorf("the word heard there is %+v, %v", w, ok)
 	}
-	again := fromStored(append([]Cue(nil), words...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(fsys, logs))
-	if len(again.Words) != 2 || again.Words[0].Text != "zwei" {
-		t.Errorf("the removal was not kept: %v", again.Words)
+	if c := clipByID(t, fsys, path, "01"); len(c.Corrections) != 0 {
+		t.Errorf("removing a word corrected it: %v", c.Corrections)
 	}
-	if err := SetWordText(fsys, logs, 10.2, "ja", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.2, "ja", tr); err != nil {
 		t.Fatal(err)
 	}
-	if got := said(); got != "ja zwei drei" {
-		t.Errorf("after correcting it again, the clip says %q", got)
+	if got := shownWords(t, fsys, path, tr); got != "ja zwei drei" {
+		t.Errorf("after correcting it again, the clip shows %q", got)
+	}
+	if c := clipByID(t, fsys, path, "01"); len(c.RemovedWords) != 0 {
+		t.Errorf("the clip still removes %v", c.RemovedWords)
 	}
 }
 
@@ -512,11 +503,11 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	heard := []Cue{{60, 60.4, "wurde"}, {60.45, 61, "irgendein"}, {61.05, 61.4, "Typ"},
 		{61.45, 62.1, "auf"}, {62.15, 62.4, "dem"}, {62.45, 63, "Schulhof."},
 		{64, 64.4, "Und"}, {64.45, 64.9, "dann"}}
-	clip := Clip{Segments: []Segment{{Start: 59.9, End: 65}}}
+	_, path := oneClipPlan(t, fsys, 59.9, 65)
 	style := ResolveStyle(nil)
 	laid := func(tr *Transcript) string {
 		var out []string
-		for _, c := range ClipCaptions(clip, tr, style) {
+		for _, c := range ClipCaptions(clipByID(t, fsys, path, "01"), tr, style) {
 			var words []string
 			for _, w := range c.Words {
 				words = append(words, w.Text)
@@ -527,15 +518,25 @@ func TestRemovingAWordLeavesItsCaptionWhole(t *testing.T) {
 	}
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
 	before := laid(tr)
-	logs := filepath.Join(memDir(t, fsys), "logs")
-	_ = fsys.MkdirAll(logs, 0o755)
-	if err := SetWordText(fsys, logs, 61.7, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 61.7, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "Typ auf dem", "Typ dem", 1)
 	if got := laid(tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
+}
+
+// laidOf is a clip's captions as Captions lays them out, at 33 characters a
+// line, each with when it is up and what it reads.
+func laidOf(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
+	t.Helper()
+	clip := clipByID(t, fsys, path, "01")
+	var out []string
+	for _, c := range Captions(clip, tr.clipCaptionWords(clip), 33, nil) {
+		out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
+	}
+	return strings.Join(out, " ")
 }
 
 // The room a removed word took on its line stays taken, so the first word
@@ -547,83 +548,64 @@ func TestRemovingAWordPullsNoWordUp(t *testing.T) {
 	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 60.7, "auf"},
 		{60.75, 60.9, "dem"}, {60.95, 61.4, "Schulhof"}, {61.45, 61.9, "irgendein"},
 		{61.95, 62.2, "Typ"}}
-	clip := Clip{Segments: []Segment{{Start: 59.9, End: 63}}}
-	laid := func(tr *Transcript) string {
-		var out []string
-		for _, c := range Captions(clip, tr.captionWords(), 33, nil) {
-			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
-		}
-		return strings.Join(out, " ")
-	}
+	_, path := oneClipPlan(t, fsys, 59.9, 63)
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	before := laid(tr)
+	before := laidOf(t, fsys, path, tr)
 	if !strings.Contains(before, "Schulhof]") {
 		t.Fatalf("the test needs a break after Schulhof: %s", before)
 	}
-	logs := filepath.Join(memDir(t, fsys), "logs")
-	_ = fsys.MkdirAll(logs, 0o755)
-	if err := SetWordText(fsys, logs, 60.6, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 60.6, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
-	if got := laid(tr); got != want {
+	if got := laidOf(t, fsys, path, tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
 	// A caption whose first word is removed appears with the word after,
 	// the way it does when its left edge is dragged in over the word, and
 	// the caption before it still goes when it did. Tim asked for the two
 	// to end the same.
-	if err := SetWordText(fsys, logs, 61.5, "", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 61.5, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want = strings.Replace(want, "[1.55-2.70 irgendein Typ]", "[2.05-2.70 Typ]", 1)
-	if got := laid(tr); got != want {
+	if got := laidOf(t, fsys, path, tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
 }
 
-// A word corrected and then removed keeps the room of what it read when
-// it was removed, not of what the recogniser heard. Found by a walk:
-// "vielleicht" corrected to "auf" and removed took ten letters' room again,
-// and the caption overflowed.
+// A word corrected and then removed keeps the room of what it reads, not
+// of what the recogniser heard. Found by a walk: "vielleicht" corrected to
+// "auf" and removed took ten letters' room again, and the caption
+// overflowed.
 func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	heard := []Cue{{60, 60.2, "als"}, {60.25, 60.5, "mich"}, {60.55, 61.2, "vielleicht"},
 		{61.25, 61.4, "dem"}, {61.45, 61.9, "Schulhof"}, {61.95, 62.4, "irgendein"},
 		{62.45, 62.7, "Typ"}}
-	clip := Clip{Segments: []Segment{{Start: 59.9, End: 63}}}
-	laid := func(tr *Transcript) string {
-		var out []string
-		for _, c := range Captions(clip, tr.captionWords(), 33, nil) {
-			out = append(out, fmt.Sprintf("[%.2f-%.2f %s]", c.Start, c.End, c.Text))
-		}
-		return strings.Join(out, " ")
-	}
-	logs := filepath.Join(memDir(t, fsys), "logs")
-	_ = fsys.MkdirAll(logs, 0o755)
+	_, path := oneClipPlan(t, fsys, 59.9, 63)
 	tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	if err := SetWordText(fsys, logs, 60.8, "auf", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 60.8, "auf", tr); err != nil {
 		t.Fatal(err)
 	}
-	before := laid(tr)
-	if err := SetWordText(fsys, logs, 60.8, "", tr); err != nil {
+	before := laidOf(t, fsys, path, tr)
+	if err := SetWordText(fsys, path, "01", 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
 	want := strings.Replace(before, "mich auf dem", "mich dem", 1)
-	if got := laid(tr); got != want {
+	if got := laidOf(t, fsys, path, tr); got != want {
 		t.Errorf("captions\n got %s\nwant %s", got, want)
 	}
-	// And read again from the file, the same.
+	// And read again from what was heard, the same.
 	again := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
-	again.Correct(LoadCorrections(fsys, logs))
-	if got := laid(again); got != want {
+	if got := laidOf(t, fsys, path, again); got != want {
 		t.Errorf("read again\n got %s\nwant %s", got, want)
 	}
-	// Removed a second time, it keeps what it read the first time.
-	if err := SetWordText(fsys, logs, 60.8, "", tr); err != nil {
+	// Removed a second time, it is the same.
+	if err := SetWordText(fsys, path, "01", 60.8, "", tr); err != nil {
 		t.Fatal(err)
 	}
-	if got := laid(tr); got != want {
+	if got := laidOf(t, fsys, path, tr); got != want {
 		t.Errorf("removed again\n got %s\nwant %s", got, want)
 	}
 }
@@ -632,44 +614,50 @@ func TestARemovedWordKeepsTheRoomItHad(t *testing.T) {
 // where it was heard, the same as an undo would put it: its own time, so
 // it is lit while it is said, and no correction left on either word.
 func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
-	fsys := afero.NewMemMapFs()
 	heard := []Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}, {11.5, 12, "echtes"}}
 	for _, c := range []struct {
-		name   string
-		remove []float64
-		at     float64
-		text   string
-		want   string
-		fixes  map[string]string
+		name    string
+		remove  []float64
+		at      float64
+		text    string
+		want    string
+		fixes   map[string]string
+		removed string
 	}{
-		{"after", []float64{11.2}, 10.6, "das ein", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
-		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}},
-		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}},
-		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}},
-		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{"10500": removedMark + "das"}},
-		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es", "11000": removedMark + "ein"}},
+		{"after", []float64{11.2}, 10.6, "das ein", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}, "[]"},
+		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}, "[]"},
+		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}, "[]"},
+		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}, "[]"},
+		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{}, "[10500]"},
+		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es"}, "[11000]"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			logs := filepath.Join(memDir(t, fsys), "logs")
-			_ = fsys.MkdirAll(logs, 0o755)
+			fsys := afero.NewMemMapFs()
+			_, path := oneClipPlan(t, fsys, 9.9, 12.1)
 			tr := fromStored(append([]Cue(nil), heard...), nil, 0, 0, nil)
 			for _, at := range c.remove {
-				if err := SetWordText(fsys, logs, at, "", tr); err != nil {
+				if err := SetWordText(fsys, path, "01", at, "", tr); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := SetWordText(fsys, logs, c.at, c.text, tr); err != nil {
+			if err := SetWordText(fsys, path, "01", c.at, c.text, tr); err != nil {
 				t.Fatal(err)
 			}
+			clip := clipByID(t, fsys, path, "01")
 			var got []string
-			for _, w := range tr.Words {
-				got = append(got, fmt.Sprintf("%s@%g", w.Text, math.Round(w.Start*10)/10))
+			for _, w := range tr.clipCaptionWords(clip) {
+				if _, gone := removedText(w.Text); !gone {
+					got = append(got, fmt.Sprintf("%s@%g", w.Text, math.Round(w.Start*10)/10))
+				}
 			}
 			if strings.Join(got, " ") != c.want {
 				t.Errorf("words\n got %s\nwant %s", strings.Join(got, " "), c.want)
 			}
-			if fixes := LoadCorrections(fsys, logs); !maps.Equal(fixes, c.fixes) {
+			if fixes := clip.Corrections; !maps.Equal(fixes, c.fixes) && len(fixes)+len(c.fixes) > 0 {
 				t.Errorf("corrections %v, want %v", fixes, c.fixes)
+			}
+			if removed := fmt.Sprint(clip.RemovedWords.list()); removed != c.removed {
+				t.Errorf("the clip removes %s, want %s", removed, c.removed)
 			}
 		})
 	}
@@ -680,8 +668,8 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 // so the caption box can correct or remove one without the other.
 func TestTheWordsOfOneCorrectionSayWhichTheyAre(t *testing.T) {
 	tr := fromStored([]Cue{{10, 10.4, "weil"}, {10.5, 10.8, "das"}, {11, 11.4, "ein"}}, nil, 0, 0, nil)
-	tr.Correct(map[string]string{wordKey(10): "weil es", wordKey(11): ""})
-	clip := Clip{Segments: []Segment{{Start: 9.9, End: 11.5}}}
+	clip := Clip{Segments: []Segment{{Start: 9.9, End: 11.5}}, RemovedWords: RemovedWords{wordKey(11): true},
+		Corrections: map[string]string{wordKey(10): "weil es"}}
 	view := captionsView(Plan{}, clip, tr, nil)
 	var got []string
 	for _, c := range view.Captions {
@@ -762,7 +750,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return Captions(clips[0], tr.Words, 40, nil)
+		return Captions(clips[0], tr.Of(clips[0]).Words, 40, nil)
 	}
 	said := func() []Cue {
 		var out []Cue
@@ -778,7 +766,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// A word is added: what was heard as one word was two.
-	if err := SetWordText(fsys, logs, 10.5, "was wo", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.5, "was wo", tr); err != nil {
 		t.Fatalf("adding a word: %v", err)
 	}
 	added := said()
@@ -805,7 +793,7 @@ func TestAnAddedWordReachesTheCaptions(t *testing.T) {
 	}
 
 	// Taking it away again is the same correction the other way.
-	if err := SetWordText(fsys, logs, 10.5, "was", tr); err != nil {
+	if err := SetWordText(fsys, path, "01", 10.5, "was", tr); err != nil {
 		t.Fatalf("taking the word away: %v", err)
 	}
 	gone := said()

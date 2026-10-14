@@ -286,9 +286,9 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if at < 0 {
 		at = math.NaN()
 	}
-	p := s.project(path)
-	// Read fresh, as SetWord does: an edit works on the words themselves.
-	t, err := p.Transcript()
+	// The words it reads are the ones kept: moving a caption changes the
+	// clip, the words it removes included, and never what the video says.
+	t, err := s.words(path)
 	if err != nil {
 		return ClipEntry{}, err
 	}
@@ -296,13 +296,13 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
 	// to the words: a caption that ended up other than the person meant is
 	// read back from these.
-	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
 	line = line.Str("edge", edge).Float64("word", word)
 	if math.IsNaN(at) {
 		line = line.Bool("reset", true)
@@ -333,8 +333,7 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	p := s.project(path)
-	return engine.ShapeCaptionTime(s.store.files, p.LogsDir(), plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	return engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionOverrides(plan))
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a

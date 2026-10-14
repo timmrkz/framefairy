@@ -60,23 +60,22 @@ const (
 // Transcript is everything one pass over the audio produced.
 type Transcript struct {
 	// Words is what the episode says, see engine/words.go: the words on
-	// the episode clock, snapped to the sound, with the corrections applied
-	// and split. It is the one list of them.
+	// the episode clock, snapped to the sound. It is the one list of them.
+	// Of gives a clip's, with its own corrections applied and split.
 	Words []Cue
 	// RawWords are the words as the recogniser timed them, which is what
 	// is stored.
 	RawWords []Cue
-	// HeardWords are the recogniser's words snapped to the sound, with the
-	// corrections applied but not split: one for each word the recogniser
-	// heard, which is what a correction is kept against.
+	// HeardWords are the recogniser's words snapped to the sound, not
+	// split: one for each word the recogniser heard, which is what a
+	// correction is kept against. In a clip's words, see Of, they carry
+	// its corrections.
 	HeardWords []Cue
 	// Language is what the words are in, as ISO 639-1, read off them once.
 	Language string
 	snapped  []Cue
-	// removedAs is, for each heard word removed, what it read when it was
-	// removed, by its place in HeardWords. The captions are laid out with
-	// it, see captionWords.
-	removedAs map[int]string
+	// fixes are the corrections the words were made with, see Of.
+	fixes map[string]string
 	// Loudness in dB every FrameSeconds, starting at Start.
 	Frames []float32
 	Start  float64
