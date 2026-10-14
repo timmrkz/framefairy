@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -128,6 +130,87 @@ func (l *appLog) files() []string {
 	older, _ := filepath.Glob(filepath.Join(filepath.Dir(path), base+"-*"))
 	sort.Strings(older)
 	return append(older, path)
+}
+
+// LogStatus is the app's log as Settings, Advanced shows it: where the
+// file in use is, how many files there are with the older ones, and how
+// much they hold together. Plan row 2.245.
+type LogStatus struct {
+	Path  string `json:"path"`
+	Files int    `json:"files"`
+	Bytes int64  `json:"bytes"`
+	Lines int    `json:"lines"`
+}
+
+// status counts the log's files, their bytes on the disk and their lines,
+// the older ones unpacked to count them.
+func (l *appLog) status() LogStatus {
+	files := l.files()
+	if len(files) == 0 {
+		return LogStatus{}
+	}
+	st := LogStatus{Path: files[len(files)-1]}
+	for _, path := range files {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		st.Files++
+		st.Bytes += info.Size()
+		if data, err := readLog(path); err == nil {
+			st.Lines += bytes.Count(data, []byte("\n"))
+		}
+	}
+	return st
+}
+
+// remove removes every file of the log, the older ones too, and the next
+// line starts a new one. Only the log's own files go, the ones files
+// gives, never anything else in its folder.
+func (l *appLog) remove() (LogStatus, error) {
+	was := l.status()
+	files := l.files()
+	l.mu.Lock()
+	var failed error
+	for _, path := range files {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) && failed == nil {
+			failed = err
+		}
+	}
+	// Closed only once its file is gone, and lumberjack opens a new one
+	// with the next line. Closed first, a line said in between opened the
+	// file again, which was then removed under it, and every line after
+	// went into a file that was no longer there.
+	if l.file != nil {
+		_ = l.file.Close()
+	}
+	l.mu.Unlock()
+	return was, failed
+}
+
+// AppLog is the app's log for Settings, Advanced.
+func (s *FrameFairy) AppLog() LogStatus { return theLog.status() }
+
+// ShowAppLog shows the file of the log in use in Finder.
+func (s *FrameFairy) ShowAppLog() error {
+	path := theLog.status().Path
+	if path == "" {
+		return errors.New("the app keeps no log yet")
+	}
+	return showInFolder(path)
+}
+
+// RemoveAppLog removes every file of the app's log, after Settings asked
+// first, and gives the log as it is then: the one line that says so.
+func (s *FrameFairy) RemoveAppLog() (LogStatus, error) {
+	was, err := theLog.remove()
+	line := theLog.line(zerolog.InfoLevel, "app").Int("files", was.Files).Int64("bytes", was.Bytes).Int("lines", was.Lines)
+	if err != nil {
+		line.Err(err).Msg("the app's log could not be removed whole")
+		return theLog.status(), fmt.Errorf("the log could not be removed whole: %w", err)
+	}
+	line.Msg("the app's log was removed")
+	return theLog.status(), nil
 }
 
 // byLevel sends the trace lines to memory and every other line to the file.
