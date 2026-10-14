@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
@@ -601,5 +602,109 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		t.Errorf("the folders in the work folder were not made: %v", err)
+	}
+}
+
+// A request of the video preview that is called off while it makes a
+// caption file leaves the others that wait for the same file their
+// answer. The file was made in the context of the request that came
+// first, and every other got its "context canceled" with its own still
+// live, answered 500, found by the second review 20 times out of 20. And
+// a request called off while it waits stops waiting.
+func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
+	t.Parallel()
+	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	started, release := make(chan struct{}), make(chan struct{})
+	build := func(ctx context.Context) (string, error) {
+		close(started)
+		<-release
+		return "a.ass", ctx.Err()
+	}
+	// A request that comes after the file is made makes it again, since no
+	// file of that name is there, and gets it as well.
+	again := func(ctx context.Context) (string, error) { return "a.ass", ctx.Err() }
+
+	first, cancelFirst := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := c.once(first, "k", build)
+		firstDone <- err
+	}()
+	<-started
+	type answer struct {
+		file string
+		err  error
+	}
+	other := make(chan answer, 1)
+	go func() {
+		file, err := c.once(context.Background(), "k", again)
+		other <- answer{file, err}
+	}()
+	leaving, cancelLeaving := context.WithCancel(context.Background())
+	leftDone := make(chan error, 1)
+	go func() {
+		_, err := c.once(leaving, "k", again)
+		leftDone <- err
+	}()
+
+	cancelFirst()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Errorf("the request called off gave %v", err)
+	}
+	cancelLeaving()
+	if err := <-leftDone; !errors.Is(err, context.Canceled) {
+		t.Errorf("a waiting request called off gave %v", err)
+	}
+	// The others wait while the file is made, which takes a moment.
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	if got := <-other; got.err != nil || got.file != "a.ass" {
+		t.Errorf("a live request waiting for the file got %q, %v", got.file, got.err)
+	}
+}
+
+// The first caption file written into a folder in a run removes what an
+// earlier run left half written, but not the file another build is
+// writing beside it at that moment, for other captions: removed, its
+// rename failed, and so did the request that asked for it. The first word
+// step after the app starts asks for two at once, the word and the rest.
+//
+// On the real disk: the half written files are files of the folder libass
+// reads its caption files from.
+func TestTheFirstCaptionFileLeavesAnotherBuildsFileAlone(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	building := filepath.Join(dir, "b.ass.123"+partial)
+	left := filepath.Join(dir, "c.ass.456"+partial)
+	for _, f := range []string{building, left} {
+		if err := os.WriteFile(f, []byte("[Script"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	long := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(left, long, long); err != nil {
+		t.Fatal(err)
+	}
+	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	c.written(dir, filepath.Join(dir, "a.ass"))
+	if _, err := os.Stat(building); err != nil {
+		t.Errorf("the file another build is writing was removed: %v", err)
+	}
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Errorf("the file a run that ended left half written stayed: %v", err)
+	}
+}
+
+// The caption files kept in a folder are those used last, not written
+// last: a colour dragged across the wheel wrote a file for every colour,
+// and removed the one the clip on screen shows.
+func TestTheCaptionFilesKeptAreTheOnesUsedLast(t *testing.T) {
+	t.Parallel()
+	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	dir := "/nowhere"
+	c.dirs[dir] = []string{"/nowhere/a.ass", "/nowhere/b.ass", "/nowhere/c.ass"}
+	c.used("/nowhere/a.ass")
+	if got := c.dirs[dir]; !slices.Equal(got, []string{"/nowhere/b.ass", "/nowhere/c.ass", "/nowhere/a.ass"}) {
+		t.Errorf("after a was used the folder keeps %v", got)
 	}
 }

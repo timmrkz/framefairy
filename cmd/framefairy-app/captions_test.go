@@ -290,6 +290,29 @@ func TestTheCaptionsRouteAnswersManyAtOnce(t *testing.T) {
 		}
 	})
 	wg.Wait()
+	// A colour never asked for before, so its caption file is made while
+	// two ask for it, and the first is called off as it is made, a little
+	// later each time, so some land while it is made. The second answered
+	// 500 "context canceled" before, found by the second review, here 2 in
+	// 40.
+	for i := range 40 {
+		q := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.20"}, "w": {"270"}, "h": {"480"},
+			"text": {fmt.Sprintf("#%02x8040", 16+i)}}
+		ctx, cancel := context.WithCancel(context.Background())
+		rec := httptest.NewRecorder()
+		var both sync.WaitGroup
+		both.Go(func() {
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil).WithContext(ctx))
+		})
+		time.Sleep(100 * time.Microsecond)
+		both.Go(func() { handler.ServeHTTP(rec, httptest.NewRequest("GET", "/frames/captions?"+q.Encode(), nil)) })
+		time.Sleep(time.Duration(100*(i+1)) * time.Microsecond)
+		cancel()
+		both.Wait()
+		if rec.Code != http.StatusOK {
+			t.Errorf("a new colour asked for while the first ask was called off answered %d %s", rec.Code, rec.Body.String())
+		}
+	}
 	left, err := filepath.Glob(filepath.Join(engine.WorkDir(mine), "captions", "preview", "*.part*"))
 	if err != nil || len(left) != 0 {
 		t.Errorf("half written caption files were left: %v %v", left, err)

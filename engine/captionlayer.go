@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"framefairy/internal/framewire"
 )
@@ -219,7 +220,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
-	return previewTracks.once(key, func() (string, error) {
+	return previewTracks.once(ctx, key, func(ctx context.Context) (string, error) {
 		track, err := e.CaptionTrack(ctx, d.Laid, outW, outH, style, source)
 		if err != nil {
 			return "", err
@@ -298,7 +299,7 @@ func writeWhole(dir, file string, data []byte) error {
 
 // trackCache keeps which caption file the captions of a view in a style
 // were written to, and the files written into each folder, of which it
-// keeps the latest few hundred: a colour dragged across the wheel writes
+// keeps the few hundred used last: a colour dragged across the wheel writes
 // one for every colour it passes. What a folder held before the app
 // started counts too, so the files do not pile up from one run to the
 // next.
@@ -321,45 +322,74 @@ var previewTracks = &trackCache{files: map[string]string{}, making: map[string]*
 
 const previewTracksKept = 256
 
+// previewTrackLimit is how long the making of one caption file may take,
+// ffmpeg's measurement of its words included.
+const previewTrackLimit = 10 * time.Second
+
 // once gives the file kept for key, or makes it with build, once however
 // many ask for it together. A file that went away is made again, and a
 // failure is not kept, so the next request tries again.
-func (c *trackCache) once(key string, build func() (string, error)) (string, error) {
+//
+// build runs in a context of its own, not of the request that came
+// first: when that one was called off, every request waiting for the same
+// file failed with its "context canceled", their own still live. Each
+// request waits only as long as its own context lets it.
+func (c *trackCache) once(ctx context.Context, key string, build func(context.Context) (string, error)) (string, error) {
 	c.mu.Lock()
 	if file, ok := c.files[key]; ok {
 		c.mu.Unlock()
 		if _, err := os.Stat(file); err == nil {
+			c.used(file)
 			return file, nil
 		}
 		c.mu.Lock()
 	}
-	if m, ok := c.making[key]; ok {
-		c.mu.Unlock()
-		<-m.done
+	m, ok := c.making[key]
+	if !ok {
+		m = &making{done: make(chan struct{})}
+		c.making[key] = m
+		go func() {
+			bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTrackLimit)
+			defer cancel()
+			file, err := build(bctx)
+			c.mu.Lock()
+			m.file, m.err = file, err
+			delete(c.making, key)
+			if err == nil {
+				if len(c.files) >= 4*previewTracksKept {
+					clear(c.files)
+				}
+				c.files[key] = file
+			}
+			c.mu.Unlock()
+			close(m.done)
+		}()
+	}
+	c.mu.Unlock()
+	select {
+	case <-m.done:
 		return m.file, m.err
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
-	m := &making{done: make(chan struct{})}
-	c.making[key] = m
-	c.mu.Unlock()
-
-	m.file, m.err = build()
-
-	c.mu.Lock()
-	delete(c.making, key)
-	if m.err == nil {
-		if len(c.files) >= 4*previewTracksKept {
-			clear(c.files)
-		}
-		c.files[key] = m.file
-	}
-	c.mu.Unlock()
-	close(m.done)
-	return m.file, m.err
 }
 
-// written notes a file written into dir, and removes the oldest beyond
-// what is kept, those of earlier runs first, and anything left half
-// written by a run that ended.
+// used moves a file kept to the end of its folder's list, so the files
+// removed beyond what is kept are those used least lately, never the one
+// the clip on screen shows.
+func (c *trackCache) used(file string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	dir := filepath.Dir(file)
+	files := c.dirs[dir]
+	if i := slices.Index(files, file); i >= 0 {
+		c.dirs[dir] = append(slices.Delete(files, i, i+1), file)
+	}
+}
+
+// written notes a file written into dir, and removes those used least
+// lately beyond what is kept, those of earlier runs first, and anything
+// left half written by a run that ended.
 func (c *trackCache) written(dir, file string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -367,9 +397,10 @@ func (c *trackCache) written(dir, file string) {
 	if !seen {
 		files = earlierTracks(dir, file)
 	}
-	if !slices.Contains(files, file) {
-		files = append(files, file)
+	if i := slices.Index(files, file); i >= 0 {
+		files = slices.Delete(files, i, i+1)
 	}
+	files = append(files, file)
 	for len(files) > previewTracksKept {
 		os.Remove(files[0])
 		files = files[1:]
@@ -378,7 +409,10 @@ func (c *trackCache) written(dir, file string) {
 }
 
 // earlierTracks are the caption files in dir other than file, oldest
-// first. What is left half written is removed.
+// first. What is left half written by a run that ended is removed. A file
+// half written a moment ago is another build's, which runs beside this
+// one for other captions, and stays: removed, its rename failed and so
+// did the request that asked for it.
 func earlierTracks(dir, file string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -394,7 +428,9 @@ func earlierTracks(dir, file string) []string {
 		switch {
 		case !entry.Type().IsRegular() || path == file:
 		case strings.HasSuffix(entry.Name(), partial):
-			os.Remove(path)
+			if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > previewTrackLimit {
+				os.Remove(path)
+			}
 		case strings.HasSuffix(entry.Name(), ".ass"):
 			if info, err := entry.Info(); err == nil {
 				found = append(found, dated{path, info.ModTime().UnixNano()})

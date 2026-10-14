@@ -126,10 +126,15 @@ written once, under a name made from what it is drawn from, in
 `<episode>.framefairy/captions/preview/`, with its fonts beside it. Many
 frames ask for the same file at the same time while a clip plays, so it
 is made once however many ask, and the others wait for it, see
-`trackCache.once`. It is written whole under a name of its own and then
+`trackCache.once`. It is made in a context of its own, with a limit of
+its own, so an ask called off leaves the others waiting their answer, and
+each ask waits only as long as it is wanted. It is written whole under a
+name of its own and then
 renamed into place, so no ask reads half a file. A file that could not be
 made is not remembered, so the next ask tries again. The folder keeps the
-256 used last and removes the rest, those of earlier runs first. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
+256 used last and removes the rest, those of earlier runs first, and what
+an earlier run left half written. A file half written a moment ago is
+another ask's, made beside it, and stays. The caption file is never what makes the work folder: a folder without its mark gets no caption file, and one gone by the moment the file is written gets none either, `ErrNoWorkFolder`. The folders the file and its face go in are made one at a time inside the work folder, `foldersIn`, and never with everything above them, so a deletion that crosses the write leaves the folder gone, which CI's run of that walk caught. The video preview went on asking for captions after Tim's folder was deleted in Finder, and wrote the folder back before the app let the video go, which main's walk for 2.247 found on #201.
 
 The decoder draws the file twice, over black and over white, and takes
 colour and coverage from the two, `framewire.Layer`: red, green and blue
