@@ -179,11 +179,13 @@ func (r *reporting) open(how string) {
 	})
 	r.mu.Lock()
 	r.making = false
-	if !gone {
+	// Read once, under the lock: closed writes it under the lock too.
+	open := !gone
+	if open {
 		r.front, r.shut = front, shut
 	}
 	r.mu.Unlock()
-	if !gone && r.told != nil {
+	if open && r.told != nil {
 		r.told(true)
 	}
 }
