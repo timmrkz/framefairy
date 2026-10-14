@@ -226,6 +226,23 @@ func TestThePillLeavesRoomRoundItsWord(t *testing.T) {
 			}
 		}
 	}
+	// The baseline the word being typed is set on is the one libass set
+	// the word on: the bottom of "Das", which has no tail. Tim saw a word
+	// he opened drop by a few pixels on #201, set by the browser in the
+	// middle of its pill.
+	f := frames[24]
+	l, r, top, bottom := box(f)
+	ink := -1
+	for y := top; y <= bottom; y++ {
+		for x := l; x <= r; x++ {
+			if isInk(f, x, y) {
+				ink = y
+			}
+		}
+	}
+	if base := frames0[0][0].Base*h - bounceTop; math.Abs(base-float64(ink+1)) > 1 {
+		t.Errorf("Das: the word frame's baseline is at %.1f, libass set the word on %d", base, ink+1)
+	}
 }
 
 // The word being spoken and its pill pop together: on every frame both

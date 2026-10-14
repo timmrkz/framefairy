@@ -1,7 +1,10 @@
 // The canvas of the video preview. Where the webview has WebGPU it is a
-// WebGPU canvas in the extended mode, half floats in which 1.0 is the
-// white of the screen and brighter values are brighter light, so an HDR
-// episode can shine on an HDR screen, see docs/VIDEO-PREVIEW.md, HDR.
+// WebGPU canvas of half floats in which 1.0 is the white of the screen.
+// For an HDR episode it is in the extended mode, where brighter values
+// are brighter light, so it can shine on an HDR screen, see
+// docs/VIDEO-PREVIEW.md, HDR. Standard video has nothing above white, and
+// its canvas is in the standard mode, the one the rest of the app is
+// drawn in.
 // Where it has none it is a 2D canvas, which ends at white. Either way a
 // frame is drawn as large as the canvas allows, in its own shape, in the
 // middle, on whole pixels, and black around it. The frames are ffmpeg's
@@ -452,6 +455,8 @@ class GPUScreen implements Screen {
   onRestored?: () => void;
   private painter!: Painter;
   private complained = false;
+  // The mode the canvas is in, for the light of the frame drawn last.
+  private mode: GPUCanvasToneMappingMode = "standard";
 
   private constructor(
     private canvas: HTMLCanvasElement,
@@ -473,13 +478,7 @@ class GPUScreen implements Screen {
   }
 
   private setUp(device: GPUDevice) {
-    this.ctx.configure({
-      device,
-      format: target,
-      colorSpace: "srgb",
-      alphaMode: "opaque",
-      toneMapping: { mode: "extended" },
-    });
+    this.configure(device);
     this.painter = new Painter(device);
     device.onuncapturederror = (e) => this.complain(e.error.message);
     // A GPU can be lost, to sleep or to a driver that restarts. The
@@ -494,6 +493,24 @@ class GPUScreen implements Screen {
     });
   }
 
+  // The extended mode only for HDR. On the Mac a canvas in it turns the
+  // screen's HDR on, and macOS then greys all ordinary white, which Tim's
+  // colour test saw, see docs/VIDEO-PREVIEW.md. A screenshot takes the
+  // canvas darker than the rest of the window by however much the screen
+  // has to spare: on #201 the white of the captions came out 188 and 209
+  // of 255 in two of Tim's pictures, beside the box a word is typed in at
+  // 255, and he saw the colours of the two differ. Standard video has
+  // nothing above white, so it has no reason to turn HDR on.
+  private configure(device: GPUDevice) {
+    this.ctx.configure({
+      device,
+      format: target,
+      colorSpace: "srgb",
+      alphaMode: "opaque",
+      toneMapping: { mode: this.mode },
+    });
+  }
+
   private complain(what: string) {
     if (this.complained) return;
     this.complained = true;
@@ -505,6 +522,11 @@ class GPUScreen implements Screen {
     if (!c.width || !c.height) return;
     try {
       const device = this.painter.device;
+      const mode = frame ? (frame.light ? "extended" : "standard") : this.mode;
+      if (mode !== this.mode) {
+        this.mode = mode;
+        this.configure(device);
+      }
       const encoder = device.createCommandEncoder();
       this.painter.paint(
         encoder,

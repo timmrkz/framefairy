@@ -1,10 +1,14 @@
 package engine
 
 import (
+	"bytes"
+	"context"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 // What libass shows at a moment is read off the times the caption file
@@ -149,5 +153,79 @@ func TestWordsLitIsWhatEachFrameShows(t *testing.T) {
 	// The word too short to fall on a frame of its own is lit on none.
 	if got := lit[1][2]; got != [2]float64{-1, -1} {
 		t.Errorf(`"als", lit for 20 ms between two frames, is lit from %.3f to %.3f s, on no frame was wanted`, got[0], got[1])
+	}
+}
+
+// The box round a caption leaves as much room over the pills of its first
+// line as under the pills of its last, and is as tall for a caption with
+// no tall or deep letter as for one with them. Tim saw the pill of "Und"
+// touch the bottom of its box with room over it on #201: the box hugged
+// the letters and the pill reached down for a tail the word did not have.
+//
+// On the real disk: ffmpeg's libass measures the words in a folder of
+// its own.
+func TestTheBoxStandsEvenlyRoundItsPills(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	if _, err := e.SubtitleFilter(ctx); err != nil {
+		ffmpegtest.Unusable(t, "this ffmpeg cannot burn captions in: %v", err)
+	}
+	caption := func(start float64, texts ...string) LaidCaption {
+		var words []Cue
+		for i, text := range texts {
+			words = append(words, Cue{start + float64(i)*0.5, start + float64(i+1)*0.5, text})
+		}
+		return LaidCaption{Caption: Caption{Start: start, End: start + float64(len(texts))*0.5, Words: words},
+			Lines: [][]Cue{words}}
+	}
+	laid := []LaidCaption{caption(0, "Und"), caption(2, "jung"), caption(4, "so", "einem")}
+	track, err := e.CaptionTrack(ctx, laid, shortW, shortH, nil, SourceInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := e.WordFrames(ctx, laid, shortW, shortH, nil, "")
+	if len(frames) != len(laid) {
+		t.Fatalf("word frames for %d captions, not %d", len(frames), len(laid))
+	}
+	// The box of each caption, top and bottom, from its drawing.
+	var boxes [][2]float64
+	for _, line := range strings.Split(string(track), "\n") {
+		if !strings.HasPrefix(line, "Dialogue: 0,") || !strings.Contains(line, ",Box,") {
+			continue
+		}
+		end := strings.Index(line, `{\p0}`)
+		shape := line[strings.LastIndex(line[:end], "}")+1 : end]
+		fields := strings.Fields(shape)
+		top, bottom := math.Inf(1), math.Inf(-1)
+		for i := 0; i < len(fields); i++ {
+			if _, err := strconv.ParseFloat(fields[i], 64); err != nil {
+				continue
+			}
+			y, _ := strconv.ParseFloat(fields[i+1], 64)
+			top, bottom = math.Min(top, y), math.Max(bottom, y)
+			i++
+		}
+		boxes = append(boxes, [2]float64{top, bottom})
+	}
+	if len(boxes) != len(laid) {
+		t.Fatalf("%d boxes drawn for %d captions", len(boxes), len(laid))
+	}
+	for i, c := range laid {
+		top, bottom := math.Inf(1), math.Inf(-1)
+		for _, f := range frames[i] {
+			top, bottom = math.Min(top, f.Y*shortH), math.Max(bottom, (f.Y+f.H)*shortH)
+		}
+		over, under := top-boxes[i][0], boxes[i][1]-bottom
+		t.Logf("%q: the box leaves %.0f pixels over its pills and %.0f under them", c.Words[0].Text, over, under)
+		if math.Abs(over-under) > 1 {
+			t.Errorf("%q: the box leaves %.0f pixels over its pills and %.0f under them", c.Words[0].Text, over, under)
+		}
+		if h, first := boxes[i][1]-boxes[i][0], boxes[0][1]-boxes[0][0]; math.Abs(h-first) > 1 {
+			t.Errorf("%q: the box is %.0f pixels high, and %.0f round %q", c.Words[0].Text, h, first, laid[0].Words[0].Text)
+		}
 	}
 }

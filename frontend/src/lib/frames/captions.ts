@@ -275,12 +275,22 @@ export function laidPart(
 
 // Where libass put a word of the captions: the box its pill takes at
 // rest, as shares of the short's width and height from its top left
-// corner, and the radius of its corners as a share of the height. And
+// corner, the radius of its corners as a share of the height, and the
+// baseline of its line as a share of the height from the top. And
 // when the picture lights it, from and to on the episode's clock, from the
 // start of the first frame libass draws it lit on to the end of the last,
 // -1 for a word lit on no frame. See engine.WordFrame and
 // /frames/captions/words.
-export type WordFrame = { x: number; y: number; w: number; h: number; r: number; from: number; to: number };
+export type WordFrame = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+  base: number;
+  from: number;
+  to: number;
+};
 
 // The word frames of the captions of a track, each caption's words in
 // their order, or null where the Go side cannot say, see WordFrame.

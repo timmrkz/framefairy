@@ -16,14 +16,16 @@ import (
 // docs/CAPTIONS.md.
 
 // wordsLaid is where libass puts the words of one caption: each word's
-// ink, and each line's reach, see pillLines, both from the caption's
-// anchor, the middle of its bottom edge.
+// ink, each line's reach, see pillLines, and the ink of a capital on each
+// line, see baseLines, all from the caption's anchor, the middle of its
+// bottom edge.
 type wordsLaid struct {
 	words  []string
 	lines  [][]int
 	lineOf []int
 	boxes  []*inkBox
 	reach  []*inkBox
+	caps   []*inkBox
 }
 
 // layWords measures where libass puts every word of the captions, drawn
@@ -56,6 +58,7 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 			blocks = append(blocks, taggedText(words, lines, func(j int) bool { return j == k }, shownTag("")))
 		}
 		blocks = append(blocks, pillLines(len(lines))...)
+		blocks = append(blocks, baseLines(len(lines))...)
 	}
 	boxes, ok := e.measureMany(ctx, blocks, s, width, size)
 	if !ok {
@@ -67,8 +70,9 @@ func (e *Engine) layWords(ctx context.Context, captions []LaidCaption, s Style, 
 		n, rows := len(layouts[i].words), len(layouts[i].lines)
 		layouts[i].boxes = boxes[at : at+n]
 		layouts[i].reach = boxes[at+n : at+n+rows]
-		at += n + rows
-		for _, b := range boxes[at-n-rows : at] {
+		layouts[i].caps = boxes[at+n+rows : at+n+2*rows]
+		at += n + 2*rows
+		for _, b := range boxes[at-n-2*rows : at] {
 			if b == nil {
 				e.Log.Detail("a caption word could not be measured, the highlight is off for this clip")
 				return nil, false
@@ -179,6 +183,28 @@ func (l wordsLaid) lineBand(r, size int) (top, bottom float64) {
 	return math.Min(top, inkTop-clear), math.Max(bottom, inkBottom+1+clear)
 }
 
+// extent is the box the whole caption takes: its ink across, and down
+// from the top of its first line's reach, or a letter that reaches higher,
+// to the bottom of its last line's reach, or a letter that reaches lower.
+// It is the same height for every caption of as many lines, and the pills
+// of its first and last lines stand in it with as much room over them as
+// under them, see lineBand.
+func (l wordsLaid) extent() inkBox {
+	full := inkBox{math.MaxInt32, math.MaxInt32, math.MinInt32, math.MinInt32}
+	for _, b := range l.boxes {
+		full.left, full.right = min(full.left, b.left), max(full.right, b.right)
+		full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
+	}
+	last := len(l.lines) - 1
+	full.top = min(full.top, l.reach[0].top)
+	full.bottom = max(full.bottom, l.reach[last].bottom)
+	return full
+}
+
+// baseline is the row the letters of line r stand on, from the caption's
+// anchor: the bottom edge of the ink of a capital on it.
+func (l wordsLaid) baseline(r int) float64 { return float64(l.caps[r].bottom + 1) }
+
 // lineInk is the highest and the lowest row of the ink of the words of
 // line r.
 func (l wordsLaid) lineInk(r int) (top, bottom float64) {
@@ -230,6 +256,11 @@ type WordFrame struct {
 	H float64 `json:"h"`
 	// R is the radius of its corners, as a share of the short's height.
 	R float64 `json:"r"`
+	// Base is the baseline of its line, where its letters stand, as a
+	// share of the short's height from its top. The word being typed is
+	// set on it, so its letters stand where libass drew them, see
+	// docs/CAPTIONS.md.
+	Base float64 `json:"base"`
 	// From and To are when the picture lights the word, on the episode's
 	// clock: from the start of the first frame of the clip libass draws it
 	// lit on to the end of the last, see WordsLit. Both -1 for a word lit
@@ -260,7 +291,8 @@ func (e *Engine) WordFrames(ctx context.Context, laid []LaidCaption, width, heig
 			left, top, right, bottom := l.pill(k, size)
 			out[i][k] = WordFrame{X: (ax + left) / float64(width), Y: (ay + top) / float64(height),
 				W: (right - left) / float64(width), H: (bottom - top) / float64(height),
-				R: pillRadius(bottom-top, radius) / float64(height)}
+				R:    pillRadius(bottom-top, radius) / float64(height),
+				Base: (ay + l.baseline(l.lineOf[k])) / float64(height)}
 		}
 	}
 	return out

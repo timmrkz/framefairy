@@ -228,11 +228,20 @@ func (s SourceInfo) popSpans(from, to int) []popSpan {
 // same height, whatever its letters, so a line's pill is the same height
 // for every word on it, a word of small letters as much as a word with a
 // tail.
-func pillLines(rows int) []string {
+func pillLines(rows int) []string { return lineBlocks(rows, lineReach) }
+
+// baseLines are the blocks that find where each line of a caption of so
+// many lines stands: a capital H on that line alone, whose ink ends on
+// the line's baseline, see wordsLaid.baseline.
+func baseLines(rows int) []string { return lineBlocks(rows, "H") }
+
+// lineBlocks are blocks of a caption of so many lines with text on one
+// line of each and nothing on the others.
+func lineBlocks(rows int, text string) []string {
 	words := make([]string, rows)
 	lines := make([][]int, rows)
 	for r := range rows {
-		words[r] = lineReach
+		words[r] = text
 		lines[r] = []int{r}
 	}
 	out := make([]string, rows)
@@ -378,12 +387,14 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 		if end <= start {
 			continue
 		}
-		// Extent of the whole caption.
-		full := inkBox{math.MaxInt32, math.MaxInt32, math.MinInt32, math.MinInt32}
-		for _, b := range L.boxes {
-			full.left, full.right = min(full.left, b.left), max(full.right, b.right)
-			full.top, full.bottom = min(full.top, b.top), max(full.bottom, b.bottom)
-		}
+		// Extent of the whole caption: its ink across, and down from the
+		// top of its first line's reach to the bottom of its last, the
+		// rows the pills of those lines stand round, see lineBand. Round
+		// the ink alone, a caption with no tall or deep letter had a box
+		// that hugged its letters while its pill reached down for a tail
+		// it did not have, and Tim saw the pill of "Und" touch the bottom
+		// of the box with room over it on #201.
+		full := L.extent()
 		whole, word := c.Lift == "", c.Lift == LiftWord
 		if drawBox && !word {
 			shape := roundedRect(ax+float64(full.left)-padX, ay+float64(full.top)-padY,

@@ -14,8 +14,9 @@
 //                      clicks the word and leaves it with Escape, and sees
 //                      no word of the caption box move, libass draw the
 //                      caption without that word's letters while it is
-//                      open and with the rest where they were, and nothing
-//                      pop when it is left
+//                      open and with the rest where they were, its letters
+//                      on the rows libass drew them on, and nothing pop
+//                      when it is left
 //   ["grow", word]     walks the playhead with Shift and → until the word
 //                      is lit and a frame on with →, into its pop, clicks
 //                      the word, types after it and leaves it with Escape,
@@ -3824,10 +3825,23 @@ for (const seq of toWalk) {
           wrong = `"${arg}" is not in the caption box`;
           break;
         }
+        // The rows of the word's letters on screen, libass's while it is
+        // shut and the browser's while it is open, without the caret.
+        const b = await word(arg).boundingBox();
+        const place = b && { left: b.x, top: b.y, width: b.width, height: b.height };
+        const inked = async () => {
+          await word(arg).evaluate((e) => (e.style.caretColor = "transparent"));
+          const got = await letters(place);
+          await word(arg).evaluate((e) => (e.style.caretColor = ""));
+          return got;
+        };
+        const drawn = await inked();
         await word(arg).click();
         await watch.step("click", s);
         await settled();
         const open = await look();
+        const typed = await inked();
+        console.log(`    letters from row ${drawn?.top} to ${drawn?.bottom} shut, ${typed?.top} to ${typed?.bottom} open`);
         await page.keyboard.press("Escape");
         await settled();
         const again = await look();
@@ -3841,6 +3855,11 @@ for (const seq of toWalk) {
         else if (Math.abs(open.around - shut.around) > shut.around / 20 + 5)
           wrong = `round "${arg}" libass drew ${shut.around} white pixels shut and ${open.around} open: the caption moved`;
         else if (again.popped !== shut.popped) wrong = `leaving "${arg}" popped the word lit`;
+        // Found by Tim on #201: the word opened dropped a few pixels,
+        // set in the middle of its pill rather than on libass's baseline.
+        else if (!drawn || !typed) wrong = `the letters of "${arg}" were not found on screen`;
+        else if (Math.abs(typed.top - drawn.top) > 1 || Math.abs(typed.bottom - drawn.bottom) > 1)
+          wrong = `"${arg}" opened stands from row ${typed.top} to ${typed.bottom}, where libass drew it from ${drawn.top} to ${drawn.bottom}`;
         break;
       }
       case "grow": {
@@ -5756,6 +5775,15 @@ for (const seq of toWalk) {
           }),
         );
         if (lifted) console.log(`        a word grown on the GPU is at most ${most.toFixed(4)} from laidPart's, over every pixel`);
+        // The canvas of standard video is in the standard mode, the one
+        // the rest of the app is drawn in. In the extended mode it turned
+        // the Mac's HDR on, and Tim's pictures on #201 showed the captions
+        // on the canvas darker than the box a word is typed in.
+        const mode = await page.evaluate(
+          () => document.querySelector(".screen canvas")?.getContext("webgpu")?.getConfiguration?.()?.toneMapping?.mode ?? null,
+        );
+        console.log(`        the canvas of the bridge's standard video is in the ${mode} mode`);
+        if (mode && mode !== "standard") problems.push(`the canvas of standard video is in the ${mode} mode`);
         if (problems.length) wrong = problems.join("\n");
         break;
       }

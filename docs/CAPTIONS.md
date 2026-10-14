@@ -242,6 +242,30 @@ word stands in its middle, wherever the captions are dragged. The
 browser laid the words out in its own font before, and Tim saw the frame
 stand off its word on #201.
 
+The letters typed stand on the baseline libass set the word on. Each
+word frame carries it, `base`, the bottom of the ink of a capital H on
+the word's line, measured with the rest, `baseLines` in
+`engine/highlight.go`. The word being typed is trimmed to the top of a
+capital and its baseline, `text-box: trim-both cap alphabetic`, and its
+top padding puts the baseline on `base`. The browser put the line in the
+middle of the pill's height before, where the face's own ascent and
+descent decide where the letters stand. On the Mac that was a few pixels
+lower than libass, and Tim saw a word drop as he opened it on #201. The
+walk "a word opened in the caption box stays where libass draws it"
+holds the rows of the letters typed to the rows libass drew them on. In
+the cloud's Chromium the two agreed before too, so the walk holds the
+place, and the Mac is where the drop was.
+
+With the highlight on, the box round the caption is measured from the
+top of its first line's reach to the bottom of its last, the rows the
+pills of those lines stand round, and the ink across, `wordsLaid.extent`
+in `engine/wordframes.go`. Round the ink alone it hugged a caption with no
+tall or deep letter while the pill reached down for a tail the word did
+not have, and Tim saw the pill of "Und" touch the bottom of its box with
+room over it on #201. Now every caption of as many lines has a box of
+one height, and it leaves as much room over its pills as under them,
+`TestTheBoxStandsEvenlyRoundItsPills`.
+
 The frame round the lit word grows with its pill. Every layer says how
 large libass draws the pill of its word on that frame, `X-Caption-Scale`
 from `CaptionDrawing.PopScale`, and the caption box scales the word's

@@ -1207,9 +1207,9 @@
   // the caption box, from the line the captions stand on, as shares of
   // the short: x and w of its width, top and h of its height, top down
   // from the line. Nothing while the words of this caption are not known
-  // yet. While a word is typed, it is drawn here in its place, see
-  // captionAsk.
-  type LaidWord = { x: number; w: number; top: number; h: number; r: number };
+  // yet. While a word is typed, it is drawn here in its place, on the
+  // baseline libass set it on, base, see captionAsk.
+  type LaidWord = { x: number; w: number; top: number; h: number; r: number; base: number };
   const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
     if (!caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}` || !wordFrames.frames)
       return null;
@@ -1219,7 +1219,7 @@
     // The line the captions were measured standing on, which the caption
     // box stands on wherever it is dragged.
     const line = 1 - captions.style.marginV;
-    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h, r: f.r }));
+    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h, r: f.r, base: f.base - line }));
     const x = Math.min(...words.map((f) => f.x));
     const top = Math.min(...words.map((f) => f.top));
     const w = Math.max(...words.map((f) => f.x + f.w)) - x;
@@ -1230,11 +1230,12 @@
   // Where a word stands in the caption box laid out by libass, and the
   // corners of its pill as the engine drew them, see engine.pillRadius,
   // so the frame round the word has the pill's corners. Left and width
-  // are the pill's at rest, which a word being typed grows from.
+  // are the pill's at rest, which a word being typed grows from, and base
+  // is how far down the pill its letters stand, which it is set on.
   function wordPlace(laid: { x: number; w: number; top: number }, f: LaidWord): string {
     return `--left: ${((f.x - laid.x) / laid.w) * 100}%; --width: ${(f.w / laid.w) * 100}%;
-      top: ${px(f.top - laid.top)}; height: ${px(f.h)}; line-height: ${px(f.h)};
-      border-radius: ${px(f.r)};`;
+      --base: ${px(f.base - f.top)}; top: ${px(f.top - laid.top)}; height: ${px(f.h)};
+      line-height: ${px(f.h)}; border-radius: ${px(f.r)};`;
   }
 
   // Everything the captions over a frame are worked out from, so a change
@@ -2142,6 +2143,19 @@
 
   .laid .line span.fixing.now {
     background: var(--pill);
+  }
+
+  /* The letters typed stand on the baseline libass set the word on. In
+     the middle of the pill's height, where the browser puts a line, they
+     stood a few pixels lower than libass draws them, and Tim saw a word
+     drop as he opened it. The box is trimmed to the top of a capital and
+     the baseline, and its top padding puts the baseline where the engine
+     measured it, see engine.WordFrame. */
+  @supports (text-box: trim-both cap alphabetic) {
+    .laid .line span.fixing {
+      padding-top: calc(var(--base) - 1cap);
+      text-box: trim-both cap alphabetic;
+    }
   }
 
   /* The caret is the colour of the text it stands in, as in a text field
