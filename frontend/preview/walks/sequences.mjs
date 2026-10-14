@@ -168,15 +168,80 @@
 //                      slowly enough to do something while it is
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
-//   ["menu", "report"] picks Help → Report a Problem… in the menu bar
+//   ["bugs, the pointer gone"]
+//                      clicks Bugs with the pointer on the sidebar, and
+//                      the app's window loses the focus to the report
+//                      window with no word of the pointer leaving, as on
+//                      a Mac. The sidebar closes then, stays closed when
+//                      the focus comes back to the button, and the next
+//                      move of the pointer outside leaves it closed
+//   ["bugs"]           clicks Bugs in the sidebar, which has the app open
+//                      the report window or bring it forward, and opens
+//                      the report window as a second page if none is open,
+//                      where the steps after it act. See bugs.go
+//   ["windows", made, fronted]
+//                      the app has made so many report windows and
+//                      brought one forward so many times, and Bugs is lit
+//                      while one is open
+//   ["close report"]   closes the report window, the way Cmd+W does, and
+//                      goes back to the app's window
+//   ["attach", n]      presses the paperclip with n pictures waiting in
+//                      the open box
+//   ["drop pictures", n, other]
+//                      drops n pictures on the report window, and a file of
+//                      text named other with them when there is one
+//   ["paste picture"]  pastes a picture into the report's field
+//   ["pictures", n]    the report window shows n pictures
+//   ["picture note", text]
+//                      the line beside the buttons says text, and with ""
+//                      nothing at all
+//   ["remove picture", i]
+//                      points at picture i, from 1, sees its bin and no
+//                      other, and presses it. The picture keeps its place
+//                      and says Removed, its time standing full while the
+//                      pointer is on it. [i, "key"] presses Delete on the
+//                      tile instead, the pointer standing on it
+//   ["put back picture", i]
+//                      presses Put it back on picture i, which is back in
+//                      the same frame
+//   ["removed goes"]   the pointer leaves, and the time to put the picture
+//                      back runs out and the grid closes over it
+//   ["report", n]      presses Report, which closes the report window and
+//                      says nothing beside the buttons, and reads the zip
+//                      it made: what was written and n pictures, and the
+//                      field empty after
+//   ["pictures fit"]   every picture is drawn whole in its tile, in its
+//                      middle, reaching both sides or top and bottom
+//   ["report at end"]  the report's field is scrolled to its end
+//   ["report scroll", n]
+//                      turns the wheel over the report's field by n
+//                      pixels, down for more than 0
+//   ["report follows"] more is said, and the field follows it: the words
+//                      being said are in view, at its end when they end
+//                      the report
+//   ["report stays"]   more is said, and the field stays where the last
+//                      "report scroll" put it
+//   ["caret at words"] the cursor is drawn right after the words being
+//                      said, the field's own hidden
+//   ["caret elsewhere"]
+//                      clicks into the report's first line, and the field
+//                      shows its own cursor there again
+//   ["report lines up"]
+//                      the microphone, the paperclip and Report are one
+//                      height, the two are square, the tiles are one size
+//                      on whole pixels with a space between them, and the
+//                      row keeps its width while Report is pressed
 //   ["write", text, n] types text into the report's field and puts the
-//                      cursor n characters in
+//                      cursor n characters in, or at its end for "end"
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
 //                      and "escape" Escape, and "ends" presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
+//                      It hears two notes going up once the microphone is
+//                      open, and two going down when it stops, however
+//                      it stops.
 //                      "start" only starts it, "hearing" waits for more
 //                      to be heard, "settled" waits for words
 //                      before a pause to be settled, and a recording
@@ -1201,7 +1266,7 @@ export const sequences = [
     // stops.
     name: "Dictate writes what is said while it is said, where the cursor was, and undo takes it back",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "button"],
       ["report reads", "It * froze."],
@@ -1217,7 +1282,7 @@ export const sequences = [
     // typed alone.
     name: "While dictating, undo and redo are about what was typed",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "start"],
       ["type", "X"],
@@ -1238,7 +1303,7 @@ export const sequences = [
     // removes it.
     name: "Enter keeps what was dictated and Escape removes it",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "enter"],
       ["report reads", "It * froze."],
@@ -1268,7 +1333,7 @@ export const sequences = [
     // they are, and what is heard after comes after them.
     name: "A click in the words being heard puts the cursor there while dictating",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "start"],
       ["click heard"],
@@ -1285,7 +1350,7 @@ export const sequences = [
     // goes after them, and what is said next goes after what was typed.
     name: "What is said after typing at the end of a dictation comes after the typing",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "start"],
       ["dictate", "settled"],
@@ -1303,7 +1368,7 @@ export const sequences = [
     // types, and Enter keeps all of it, in order.
     name: "Typing elsewhere while dictating keeps every word, in order",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "start"],
       ["dictate", "settled"],
@@ -1318,13 +1383,164 @@ export const sequences = [
     ],
   },
   {
+    // Plan row 2.244. Tim asked for one report window at a time: Bugs
+    // opens it, Bugs again brings it forward, and once it is closed Bugs
+    // opens a new one. Bugs is lit while it is open.
+    name: "Bugs opens one report window and brings it back",
+    steps: [
+      ["windows", 0, 0],
+      ["bugs"],
+      ["windows", 1, 0],
+      ["bugs"],
+      ["windows", 1, 1],
+      ["close report"],
+      ["windows", 1, 1],
+      ["bugs"],
+      ["windows", 2, 1],
+    ],
+  },
+  {
+    // Plan row 2.244. Closing the report window loses nothing: what was
+    // written and the pictures are there when Bugs opens it again.
+    name: "What is written and attached stays when the report window closes",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", 2],
+      ["attach", 1],
+      ["pictures", 1],
+      ["close report"],
+      ["bugs"],
+      ["report reads", "It froze."],
+      ["pictures", 1],
+    ],
+  },
+  {
+    // Plan row 2.244. Pictures come from the paperclip's box, a drop on
+    // the window and a paste into the field, and a file that is not a
+    // picture is left out with the reason. Everything lines up.
+    name: "Pictures come from the paperclip, a drop and a paste, and what is not one is left out",
+    steps: [
+      ["bugs"],
+      ["attach", 1],
+      ["drop pictures", 2, "notes.txt"],
+      ["picture note", "notes.txt is not a PNG or JPEG picture"],
+      // A good drop after it takes the old reason away. Found in the
+      // review of #217.
+      ["drop pictures", 1],
+      ["picture note", ""],
+      ["paste picture"],
+      ["pictures", 5],
+      ["report lines up"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim attached screenshots of every shape: tall ones
+    // showed only a strip of their middle, and a small tall one showed
+    // nothing at all. Every picture is drawn whole, in the middle of its
+    // tile and as large as it lets it be.
+    name: "Pictures of every shape are drawn whole in their tiles",
+    steps: [
+      ["bugs"],
+      ["drop pictures", "446x738 152x338 1492x190 142x104 786x504 380x1766"],
+      ["pictures", 6],
+      ["pictures fit"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim ended a dictation at the end of a long report
+    // with Enter and with the microphone, and the microphone left the
+    // field scrolled half a line up where Enter kept its end in view.
+    // Both keep the end of what was said in view.
+    name: "Stop and Enter both leave the end of a long report in view",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen", "end"],
+      ["dictate", "button"],
+      ["report at end"],
+      ["dictate", "enter"],
+      ["report at end"],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim scrolled up to read while he talked, and the
+    // field pulled him back down with every word. It follows the words
+    // the way a terminal follows its output, until scrolled away from
+    // them and again once back at them. And the cursor stood at the front
+    // of the last line while the words ran on.
+    name: "While dictating the field follows the words until scrolled away, like a terminal",
+    steps: [
+      ["bugs"],
+      ["write", "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen", "end"],
+      ["dictate", "start"],
+      ["report follows"],
+      ["caret at words"],
+      ["report scroll", -120],
+      ["report stays"],
+      ["report scroll", 5000],
+      ["report follows"],
+      ["caret elsewhere"],
+      ["dictate", "button"],
+    ],
+  },
+  {
+    // Plan row 2.244. A report takes ten pictures, and the eleventh is
+    // left out with the reason.
+    name: "A report takes ten pictures and says why it leaves out the eleventh",
+    steps: [
+      ["bugs"],
+      ["drop pictures", 10],
+      ["pictures", 10],
+      ["attach", 1],
+      ["picture note", "would be more than the 10 pictures a report takes"],
+      ["pictures", 10],
+    ],
+  },
+  {
+    // Plan row 2.244. The bin on a picture removes it, the picture keeps
+    // its place and offers itself back, and once its time runs out the
+    // grid closes over it.
+    name: "A removed picture can be put back, and then the grid closes over it",
+    steps: [
+      ["bugs"],
+      ["attach", 3],
+      ["remove picture", 2],
+      ["put back picture", 2],
+      ["pictures", 3],
+      ["remove picture", [2, "key"]],
+      ["removed goes"],
+      ["pictures", 2],
+    ],
+  },
+  {
+    // Plan row 2.244. Tim clicked Bugs, and the sidebar stayed open behind
+    // the report window until he clicked back into the app and moved the
+    // pointer.
+    name: "Bugs leaves the sidebar closed once the report window has the focus",
+    steps: [["bugs, the pointer gone"]],
+  },
+  {
+    // Plan row 2.244. Report makes one zip with what was written and the
+    // pictures, and the next report starts empty.
+    name: "Report makes one zip with the pictures, and the next report starts empty",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", 0],
+      ["attach", 2],
+      ["report lines up"],
+      ["report", 2],
+      ["close report"],
+      ["bugs"],
+      ["pictures", 0],
+    ],
+  },
+  {
     // Plan row 2.189. Tim talked past the longest a recording can be and
     // lost what he said after it, with nothing to say why. A recording
     // nobody talks into stops by itself, keeps every word as Stop would,
     // and says why under the field. The bridge's waits 8 s.
     name: "Dictation nobody talks into stops by itself and keeps what was said",
     steps: [
-      ["menu", "report"],
+      ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "ends"],
       ["report reads", "It * froze."],
@@ -2799,7 +3015,13 @@ if (exact && !toWalk.length) {
 
 for (const seq of toWalk) {
   const began = performance.now();
-  const { browser, page, errors } = await open(url);
+  const opened = await open(url);
+  const { browser, errors } = opened;
+  // The page the steps act on: the app's window, or the report window
+  // once Bugs opened it. The watch keeps to the app's window.
+  let page = opened.page;
+  const main = page;
+  let reportPage = null;
   const at = await chosen(page);
   const watch = new Watch(page, at, errors);
   await watch.start();
@@ -4089,11 +4311,386 @@ for (const seq of toWalk) {
         });
         break;
       }
-      case "menu":
-        await page.evaluate((m) => window.__menu(m), arg);
+      case "bugs": {
+        await fromSidebar(main, () => main.locator("aside button.bugs").click());
+        if (!reportPage) {
+          reportPage = await browser.newPage({ viewport: { width: 560, height: 640 } });
+          reportPage.on("pageerror", (e) => errors.push(String(e)));
+          // Every note the window plays, with its pitch and whether the
+          // microphone was open then, for the dictate step's sounds.
+          await reportPage.addInitScript(() => {
+            window.__notes = [];
+            const start = OscillatorNode.prototype.start;
+            OscillatorNode.prototype.start = function (...a) {
+              window.__notes.push({ f: this.frequency.value, open: document.querySelector("button.dictate")?.getAttribute("aria-label") === "Stop" });
+              return start.apply(this, a);
+            };
+          });
+          await reportPage.goto(new URL("?window=report", url).toString());
+        } else {
+          await reportPage.bringToFront();
+        }
+        page = reportPage;
         await page.locator("button.dictate").waitFor();
         await settle(page);
         break;
+      }
+      case "bugs, the pointer gone": {
+        page = main;
+        await main.mouse.move(20, 500);
+        await main.waitForTimeout(400);
+        const shut = () => main.evaluate(() => !document.querySelector("aside")?.classList.contains("open"));
+        if (await shut()) {
+          wrong = "the sidebar did not open under the pointer";
+          break;
+        }
+        // Clicked from the page, so the pointer stays where it is: on a Mac
+        // the report window comes up and the app's window hears nothing
+        // more of the pointer.
+        await main.evaluate(() => {
+          document.querySelector("aside button.bugs").click();
+          window.dispatchEvent(new FocusEvent("blur"));
+        });
+        await main.waitForTimeout(400);
+        if (!(await shut())) {
+          wrong = "the sidebar stayed open once the report window had the focus";
+          break;
+        }
+        // The focus comes back to the button that was clicked.
+        await main.evaluate(() => {
+          window.dispatchEvent(new FocusEvent("focus"));
+          document.querySelector("aside button.bugs").focus();
+        });
+        await main.waitForTimeout(400);
+        if (!(await shut())) {
+          wrong = "the sidebar opened when the app's window had the focus again";
+          break;
+        }
+        await main.mouse.move(750, 400);
+        await main.waitForTimeout(400);
+        if (!(await shut())) wrong = "the sidebar opened on the next move of the pointer outside it";
+        break;
+      }
+      case "windows": {
+        const [made, fronted] = arg;
+        const w = await (await fetch(new URL("/report-window", url))).json();
+        if (w.made !== made || w.fronted !== fronted) {
+          wrong = `the app made ${w.made} report windows and brought one forward ${w.fronted} times, not ${made} and ${fronted}`;
+          break;
+        }
+        const lit = await main.evaluate(() => document.querySelector("aside button.bugs")?.classList.contains("current"));
+        if (lit !== w.open) wrong = `Bugs is ${lit ? "" : "not "}lit while the report window is ${w.open ? "open" : "closed"}`;
+        break;
+      }
+      case "close report": {
+        // What was typed is kept a moment after the last key.
+        await page.waitForTimeout(600);
+        await fetch(new URL("/report-window?close=1", url));
+        await reportPage?.close();
+        reportPage = null;
+        page = main;
+        await main.waitForFunction(() => !document.querySelector("aside button.bugs")?.classList.contains("current"), null, { timeout: 5000 }).catch(() => {});
+        break;
+      }
+      case "attach": {
+        const before = await page.locator("li.tile").count();
+        for (let i = 0; i < arg; i++) await fetch(new URL("/pick-picture", url));
+        await page.locator("button.attach").click();
+        const grew = await page
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n || document.querySelector(".words .error"), before + arg, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!grew) wrong = `the paperclip attached nothing, ${before} pictures before and after`;
+        await settle(page);
+        break;
+      }
+      case "drop pictures": {
+        const [n, other] = Array.isArray(arg) ? arg : [arg];
+        // A number of pictures, or their shapes, "446x738".
+        const shapes = typeof n === "string" ? n.split(" ") : Array(n).fill("");
+        const files = [];
+        for (const shape of shapes) {
+          const [w, h] = shape.split("x");
+          files.push(await (await fetch(new URL(`/pick-picture?box=0${w ? `&w=${w}&h=${h}` : ""}`, url))).json());
+        }
+        if (other) files.push(await (await fetch(new URL(`/pick-picture?box=0&kind=text&name=${encodeURIComponent(other)}`, url))).json());
+        const before = await page.locator("li.tile").count();
+        wrong = await dropOn(page, files);
+        if (wrong) break;
+        await page
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length, { timeout: 10000 })
+          .catch(() => (wrong = `a drop of ${shapes.length} pictures left ${before} on the report window`));
+        await settle(page);
+        break;
+      }
+      case "paste picture": {
+        const before = await page.locator("li.tile").count();
+        await page.locator(".telling").click();
+        await page.evaluate(async () => {
+          const c = document.createElement("canvas");
+          c.width = 64;
+          c.height = 40;
+          const g = c.getContext("2d");
+          g.fillStyle = "#942192";
+          g.fillRect(0, 0, 64, 40);
+          const blob = await new Promise((done) => c.toBlob(done, "image/png"));
+          const data = new DataTransfer();
+          data.items.add(new File([blob], "image.png", { type: "image/png" }));
+          document.querySelector(".telling").dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+        });
+        await page
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + 1, { timeout: 10000 })
+          .catch(() => (wrong = "a pasted picture was not attached"));
+        await settle(page);
+        break;
+      }
+      case "pictures": {
+        const n = await page.evaluate(() => document.querySelectorAll("li.tile figure img").length);
+        if (n !== arg) wrong = `the report window shows ${n} pictures, not ${arg}`;
+        // Each one is the picture the Go side kept, loaded and shown.
+        const unseen = await page.evaluate(() => [...document.querySelectorAll("li.tile figure img")].filter((i) => !i.complete || i.naturalWidth === 0).length);
+        if (!wrong && unseen) wrong = `${unseen} of the pictures did not load`;
+        break;
+      }
+      case "pictures fit": {
+        // Every picture is drawn whole in its tile, in its middle, and as
+        // large as the tile lets it be: it reaches both sides or the top
+        // and the bottom. Tim saw tall pictures cut off and small ones
+        // standing in a corner.
+        await page.waitForFunction(() => [...document.querySelectorAll("li.tile figure img")].every((i) => i.complete && i.naturalWidth), null, { timeout: 10000 }).catch(() => {});
+        const bad = await page.evaluate(() =>
+          [...document.querySelectorAll("li.tile figure")].flatMap((fig) => {
+            const img = fig.querySelector("img");
+            const f = fig.getBoundingClientRect();
+            const inner = { l: f.left + fig.clientLeft, t: f.top + fig.clientTop, w: fig.clientWidth, h: fig.clientHeight };
+            const b = img.getBoundingClientRect();
+            const fit = getComputedStyle(img).objectFit;
+            const s = fit === "contain" ? Math.min(b.width / img.naturalWidth, b.height / img.naturalHeight) : b.width / img.naturalWidth;
+            const w = img.naturalWidth * s;
+            const h = img.naturalHeight * s;
+            const l = b.left + (b.width - w) / 2;
+            const t = b.top + (b.height - h) / 2;
+            const name = `${img.naturalWidth}x${img.naturalHeight}`;
+            const out = [];
+            if (l < inner.l - 0.5 || t < inner.t - 0.5 || l + w > inner.l + inner.w + 0.5 || t + h > inner.t + inner.h + 0.5) out.push(`${name} is cut off, drawn ${Math.round(w)}x${Math.round(h)} in a tile of ${inner.w}x${inner.h}`);
+            else if (Math.abs(w - inner.w) > 1 && Math.abs(h - inner.h) > 1) out.push(`${name} is drawn ${Math.round(w)}x${Math.round(h)}, short of its tile of ${inner.w}x${inner.h} both ways`);
+            else if (Math.abs(l + w / 2 - (inner.l + inner.w / 2)) > 1 || Math.abs(t + h / 2 - (inner.t + inner.h / 2)) > 1) out.push(`${name} is not in the middle of its tile`);
+            return out;
+          }),
+        );
+        if (bad.length) wrong = bad.join(", ");
+        break;
+      }
+      case "report at end": {
+        // The field shows the end of what is in it, down to its padding.
+        const m = await page.evaluate(() => {
+          const f = document.querySelector(".telling");
+          return [f.scrollTop, f.scrollHeight - f.clientHeight];
+        });
+        if (m[1] <= 0) wrong = "the report is not long enough to scroll";
+        else if (Math.abs(m[0] - m[1]) > 1) wrong = `the report is scrolled to ${m[0]} px, not to its end at ${m[1]} px`;
+        break;
+      }
+      case "picture note": {
+        const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
+        // "" asks for nothing to be said at all.
+        if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the line beside the buttons says "${said}", not "${arg}"`;
+        break;
+      }
+      case "remove picture": {
+        // By Delete on the tile under a pointer that stands still, with
+        // "key", the way a Mac draws a row that comes up under it: not
+        // under the pointer until the pointer moves.
+        const [i, how] = [arg].flat();
+        const tile = page.locator("li.tile").nth(i - 1);
+        await tile.hover();
+        await page.waitForTimeout(150);
+        const shown = await page.evaluate(() => [...document.querySelectorAll("li.tile .bin")].map((b) => getComputedStyle(b).opacity));
+        if (shown[i - 1] !== "1" || shown.filter((o) => o === "1").length !== 1) {
+          wrong = `pointing at picture ${i} the bins stand at ${shown.join(", ")}`;
+          break;
+        }
+        const id = await tile.getAttribute("data-id");
+        if (how === "key") {
+          await tile.locator("figure").focus();
+          await page.keyboard.press("Delete");
+        } else await tile.locator(".bin").click();
+        // The tile says Removed in the frame of the click.
+        const gone = await page.evaluate((id) => {
+          const g = document.querySelector(`li.tile[data-id="${id}"] .gone`);
+          return g ? getComputedStyle(g).animationName : null;
+        }, id);
+        if (gone === null) wrong = `picture ${i} did not say Removed in its place`;
+        // It says so where the picture was, with nothing sliding in. Tim
+        // saw a swipe across the tile.
+        else if (gone !== "none") wrong = `picture ${i} says Removed with the animation ${gone}`;
+        if (wrong) break;
+        // The pointer is still on it, so its time has not started: the
+        // fill stands full until the pointer leaves. Tim saw it run for a
+        // moment and stop a little short of full.
+        await page.waitForTimeout(500);
+        const fill = await page.evaluate((id) => {
+          const run = document.querySelector(`li.tile[data-id="${id}"] .gone .run`);
+          const box = run?.parentElement?.getBoundingClientRect();
+          return run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null;
+        }, id);
+        if (fill === null || fill > 0.001) wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it`;
+        await settle(page);
+        break;
+      }
+      case "put back picture": {
+        // The picture is back in the same frame as the click, before the
+        // Go side answers, or the grid closes over it for a moment and
+        // the tiles after it jump. Found in the review of #217.
+        const counts = await page.evaluate(async (i) => {
+          const before = document.querySelectorAll("li.tile").length;
+          const button = [...document.querySelectorAll("li.tile")[i - 1].querySelectorAll("button")].find((b) => b.textContent.includes("Put it back"));
+          button.click();
+          await Promise.resolve();
+          await Promise.resolve();
+          return [before, document.querySelectorAll("li.tile").length];
+        }, arg);
+        if (counts[0] !== counts[1]) {
+          wrong = `the grid went from ${counts[0]} tiles to ${counts[1]} on Put it back, before the picture came back`;
+          break;
+        }
+        await settle(page);
+        break;
+      }
+      case "removed goes": {
+        await page.mouse.move(5, 5);
+        const went = await page
+          .waitForFunction(() => !document.querySelector("li.tile .gone"), null, { timeout: 15000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!went) wrong = "a removed picture still stands in its place after its time";
+        break;
+      }
+      case "report": {
+        const written = await page.evaluate(() => document.querySelector(".telling").innerText.trim());
+        await page.locator("button.report").click();
+        // Report closes the window once Finder has the zip, and says
+        // nothing beside the buttons on the way. Tim had a line there.
+        const closed = await (async () => {
+          for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+            const w = await (await fetch(new URL("/report-window", url))).json();
+            if (!w.open) return true;
+          }
+          return false;
+        })();
+        if (!closed) {
+          wrong = `Report left the window open, saying "${await page.evaluate(() => document.querySelector(".words")?.textContent.trim())}"`;
+          break;
+        }
+        const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim());
+        if (said) {
+          wrong = `Report said "${said}" beside the buttons`;
+          break;
+        }
+        const widths = await page.evaluate(() => window.__wide ?? []);
+        if (kept.reportWide && widths.some((w) => w !== kept.reportWide)) {
+          wrong = `Report changed its width while it worked: ${kept.reportWide} px, then ${widths.join(", ")}`;
+          break;
+        }
+        const names = await (await fetch(new URL("/report-made", url))).json();
+        const pictures = names.filter((n) => /\/pictures\/\d+\.png$/.test(n)).length;
+        if (pictures !== arg) wrong = `the report holds ${pictures} pictures, not ${arg}: ${names.join(", ")}`;
+        else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
+        const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+        if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
+        break;
+      }
+      case "report scroll": {
+        const box = await page.locator(".telling").boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
+        await page.mouse.wheel(0, arg);
+        // Read as soon as the wheel has turned, before the next words come.
+        kept.scrolledTo = await page.locator(".telling").evaluate(
+          (f, was) => new Promise((done) => {
+            const read = () => (f.scrollTop !== was ? done(f.scrollTop) : requestAnimationFrame(read));
+            requestAnimationFrame(read);
+            setTimeout(() => done(f.scrollTop), 1000);
+          }),
+          was,
+        );
+        if (arg < 0 && kept.scrolledTo >= was) wrong = `the wheel did not scroll the field up, it is at ${kept.scrolledTo} px`;
+        break;
+      }
+      case "report follows":
+      case "report stays": {
+        const was = await page.locator(".telling").evaluate((f) => f.innerText);
+        const more = await page
+          .waitForFunction((was) => document.querySelector(".telling").innerText !== was, was, { timeout: 10000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!more) {
+          wrong = "nothing more was said";
+          break;
+        }
+        await page.waitForTimeout(100);
+        const m = await page.locator(".telling").evaluate((f) => {
+          const mark = f.querySelector(".hearing")?.getBoundingClientRect();
+          const box = f.getBoundingClientRect();
+          return {
+            top: f.scrollTop,
+            end: f.scrollHeight - f.clientHeight,
+            seen: !!mark && mark.bottom <= box.bottom + 1 && mark.top >= box.top - 1,
+          };
+        });
+        if (what === "report stays") {
+          if (m.top !== kept.scrolledTo) wrong = `the field moved to ${m.top} px while more was said, from ${kept.scrolledTo} px where it was scrolled to`;
+        } else if (!m.seen) wrong = "the words being said are out of view";
+        else if (Math.abs(m.top - m.end) > 1) wrong = `the field is at ${m.top} px, not at its end, ${m.end} px`;
+        break;
+      }
+      case "caret at words": {
+        const c = await page.locator(".telling").evaluate((f) => {
+          const mark = f.querySelector(".hearing");
+          return { ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor, bar: mark ? getComputedStyle(mark).borderRightWidth : "" };
+        });
+        if (!c.ours || c.bar !== "1px" || c.caret !== "rgba(0, 0, 0, 0)") wrong = `the cursor is not drawn after the words being said: ${JSON.stringify(c)}`;
+        break;
+      }
+      case "caret elsewhere": {
+        const box = await page.locator(".telling").boundingBox();
+        await page.locator(".telling").evaluate((f) => (f.scrollTop = 0));
+        await page.mouse.click(box.x + 20, box.y + 12);
+        await page.waitForTimeout(200);
+        const c = await page.locator(".telling").evaluate((f) => ({ ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor }));
+        if (c.ours || c.caret === "rgba(0, 0, 0, 0)") wrong = `the field hides its cursor after a click into its first line: ${JSON.stringify(c)}`;
+        break;
+      }
+      case "report lines up": {
+        const m = await page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect();
+          const tiles = [...document.querySelectorAll("li.tile")].map((t) => t.getBoundingClientRect());
+          const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap"));
+          const control = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h"));
+          return { mic: r("button.dictate"), clip: r("button.attach"), report: r("button.report"), tiles, gap, control };
+        });
+        const problems = [];
+        for (const [name, b] of [["the microphone", m.mic], ["the paperclip", m.clip], ["Report", m.report]]) {
+          if (b.height !== m.control) problems.push(`${name} is ${b.height} px high, not ${m.control}`);
+        }
+        if (m.mic.width !== m.mic.height || m.clip.width !== m.clip.height) problems.push("the microphone or the paperclip is not square");
+        const t0 = m.tiles[0];
+        for (const [i, t] of m.tiles.entries()) {
+          if (t.width !== t0.width || t.height !== t0.height) problems.push(`picture ${i + 1} is ${t.width} by ${t.height}, the first ${t0.width} by ${t0.height}`);
+          for (const v of [t.x, t.y, t.width, t.height]) if (v !== Math.round(v)) problems.push(`picture ${i + 1} stands between pixels, at ${v}`);
+          const next = m.tiles[i + 1];
+          if (next && next.y === t.y && next.x - (t.x + t.width) !== m.gap) problems.push(`the space after picture ${i + 1} is ${next.x - (t.x + t.width)} px, not ${m.gap}`);
+        }
+        const wide = m.report.width;
+        await page.evaluate(() => {
+          window.__wide = [];
+          const b = document.querySelector("button.report");
+          new MutationObserver(() => window.__wide.push(b.getBoundingClientRect().width)).observe(b, { childList: true, subtree: true, characterData: true });
+        });
+        if (problems.length) wrong = problems.join("\n");
+        kept.reportWide = wide;
+        break;
+      }
       case "write": {
         const [text, at] = arg;
         await page.locator(".telling").click();
@@ -4101,7 +4698,10 @@ for (const seq of toWalk) {
         await page.evaluate((n) => {
           const field = document.querySelector(".telling");
           const at = document.createRange();
-          at.setStart(field.firstChild, n);
+          if (n === "end") {
+            at.selectNodeContents(field);
+            at.collapse(false);
+          } else at.setStart(field.firstChild, n);
           getSelection().removeAllRanges();
           getSelection().addRange(at);
         }, at);
@@ -4128,10 +4728,10 @@ for (const seq of toWalk) {
           if (!settled) wrong = "nothing said was settled";
           break;
         }
-        const running = (await button.textContent()).trim() === "Stop";
+        const running = (await button.getAttribute("aria-label")) === "Stop";
         if (!running) await button.click();
         // Stop the moment it is pressed, see the rules on a click.
-        const said = (await button.textContent()).trim();
+        const said = await button.getAttribute("aria-label");
         if (!running && said !== "Stop") {
           wrong = `Dictate says "${said}" the frame after it was pressed, not Stop`;
           break;
@@ -4155,6 +4755,13 @@ for (const seq of toWalk) {
           wrong = "the microphone did not move while it heard a voice";
           break;
         }
+        // Two notes going up say the microphone is open, while it is.
+        const up = await page.evaluate(() => window.__notes.slice(-2));
+        if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
+          wrong = `the microphone opened without the start sound, it played ${JSON.stringify(up)}`;
+          break;
+        }
+        kept.notes = await page.evaluate(() => window.__notes.length);
         await watch.step("hearing", s);
         if (arg === "start") {
           kept.dictating = await page.locator(".telling").evaluate((f) => f.innerText);
@@ -4175,10 +4782,14 @@ for (const seq of toWalk) {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
         }
-        await page.waitForFunction(() => document.querySelector("button.dictate")?.textContent.trim() === "Dictate", null, {
+        await page.waitForFunction(() => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate", null, {
           timeout: 20000,
         });
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
+        // Two notes going down say it stopped, however it stopped, and
+        // only those two.
+        const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);
+        if (down.length !== 2 || down[0].f <= down[1].f) wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
         await watch.step("dictate", s);
         break;
       }

@@ -7,8 +7,8 @@ and R.8, the report a customer sends.
 
 ## What a customer does
 
-Nothing beforehand. A customer who runs into a problem picks **Help →
-Report a Problem…**, and the app writes one file with everything we need.
+Nothing beforehand. A customer who runs into a problem clicks **Bugs**
+in the sidebar, and the app writes one file with everything we need.
 They send it to us. The steps are below, and they do not ask the customer
 to switch anything on first or to do the same thing again.
 
@@ -25,16 +25,27 @@ disk free is a cap, not a switch. The log is at most 10 MB of lines in
 use and three older files compressed beside it, a few MB more. That
 holds many hours of work. It is never more, whatever happens.
 
-The page has one field, for what happened, and **Make Report**. The
-report is one zip file on the Desktop, shown in Finder:
+The report window has one field, for what happened, screenshots
+attached under it, and **Report**. The report is one zip file on the
+Desktop, shown in Finder:
 
-- what the person wrote
-- the log and its older files, unpacked
+- what the person wrote, `what-happened.txt`
+- the pictures attached, as `pictures/1.png` and on, each written again
+  as PNG so nothing else the file held travels
+- the log and its older files, unpacked, in `logs/`
 - the trace lines of the last while, which are kept in memory, see
-  Levels below
+  Levels below, `logs/recent-frames.log`
 - the build, the macOS version, the chip, the memory, the run of the
-  app, and the file name of the video that was in front
-- the settings, which hold no keys: those are in the keychain
+  app, and the file name of the video that was in front, `about.json`
+- the settings, which hold no keys: those are in the keychain,
+  `settings.json`
+
+Every name inside the zip is written one way, in small letters with a
+hyphen between words, an older file of the log too:
+`app-2026-10-09-10-00-00.000.log`. Tim found `Pictures` and
+`What happened.txt` beside `logs` and `about.json`. Only the zip and the
+folder in it are called `Frame Fairy report` and the time, the way macOS
+names a screenshot, since that is the name a person sees on the Desktop.
 
 It never holds the video, its transcript or its captions. That leaves
 out the jobs folder of a video too, since what a search sent the model
@@ -42,7 +53,7 @@ is the video's words. A search's start and end, and why it failed, are
 in the log. Paths under the
 home folder are written as `~`, so the Mac's user name does not travel.
 The customer sees what is in it before sending: Finder shows the zip, and
-the zip holds plain text.
+the zip holds plain text and the pictures they attached.
 
 Where reports are sent is still open, see R.8. Until there is an address,
 the customer attaches the zip to an email.
@@ -130,7 +141,7 @@ guesswork.
 Everything from `debug` up is always written, see above. `trace` lines
 go to memory instead of the file: the last 8000, about an hour of a
 play, a few MB at most. A report carries them as
-`logs/recent frames.log`. A play that stutters is found by the pattern
+`logs/recent-frames.log`. A play that stutters is found by the pattern
 over every frame, and that is exactly what happened just before the
 person reported it, so nobody has to switch anything on beforehand and
 do it all again. An early version had a **Detailed Log** switch in the
@@ -183,8 +194,15 @@ jq -c 'select(.video == "start.mp4")' app.log
    window tells the Go side at once, so the Go side's lines carry the
    act the person is at, and a job keeps the act that asked for it
    however long it runs. Its start and end are lines of `jobs`.
-3. Done. Help → Report a Problem…, the page and the zip above. It is
-   R.8 without the address.
+3. Done. Report a Problem and the zip above, in a window of its own
+   that **Bugs** opens since 2.244, with pictures. It is R.8 without
+   the address. Its lines are `report`'s: the window opening, brought
+   forward and closed, with how it closed, `window` for its red button
+   or Cmd+W, `report` once a report is made and `app` with the app's
+   window, each picture attached or left out with the
+   reason, removed and put back, a draft kept from before, and the
+   report made with how many characters and pictures, never what was
+   written.
 4. Under way, plan row 2.189. **Dictate** beside the field: the person
    says what happened, and the speech model on the machine writes it
    into the field while they talk, to be corrected there, see Report a

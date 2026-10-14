@@ -148,7 +148,11 @@ The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
 pointer still on it. Hovering opens it again once the pointer has left and
-come back. Closed, it leaves room for the settings column of the workspace,
+come back. It closes when the app's window loses the focus, as it does
+to the report window Bugs opens, since a Mac tells the window nothing
+of the pointer going then, and the next move of the pointer says where
+it is. Only the keyboard going into it opens it, not the focus coming
+back to the button last clicked. Closed, it leaves room for the settings column of the workspace,
 which is exactly what it covers when it opens. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
@@ -261,7 +265,7 @@ taken and the log keeps a warning.
 
 A bar runs across the top of the app. It holds the close, minimise and zoom
 buttons on macOS, it is what the app is dragged by, and it says what is on
-screen: the name of the episode, or **Settings**, **Updates**, **Acknowledgements** or **Report a Problem**. No screen
+screen: the name of the episode, or **Settings**, **Updates** or **Acknowledgements**, and in the report window **Report a Problem**. No screen
 writes its own name below it, and the sidebar opens under it, so the name is
 always there to read.
 
@@ -276,7 +280,8 @@ title bar above the app and this one is an ordinary header.
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
 four numbers in whole pixels, the title bar's height and the left edge,
 right edge and middle of those buttons, and the interface is told again
-on the `chrome` event whenever the answer changes: a resize, either way
+on its window's event whenever the answer changes, `chrome` for the app's
+window and `chrome-report` for the report window, each measured on its own: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
 back, and nothing is measured on the page. The four numbers land on the
@@ -1341,7 +1346,14 @@ bubble scrolled by those eight pixels.
       the keyboard is on the row, so the time to change your mind is seen
       and nobody is rushed. It runs on the moment the pointer is seen
       anywhere else, also when the row moved away from under a pointer
-      that stood still, which WebKit never reports. Nothing above or
+      that stood still, which WebKit never reports. A row that appears
+      under the pointer, as it does under the trash can just pressed,
+      starts held and full, and its time starts once the pointer leaves:
+      WebKit does not count it as under the pointer until the pointer
+      moves, so the time ran for a moment and stopped a little short of
+      full, Tim found. Where the pointer was last seen says it. The
+      pictures of a report wear the same row and the same time, see
+      Report a Problem. Nothing above or
       below it moves while it is there, and when it goes the list closes
       over it. Every clip removed has its own row and its own ten seconds:
       removing another, or putting one back, leaves the others as they
@@ -2668,19 +2680,78 @@ the licence asks to be said and to the licence's own text. The list is built int
 
 ### Report a Problem
 
-In the Help menu too, where Mac apps keep it. One field for what happened
-and **Make Report**, which saves one zip file on the Desktop and shows it
-in Finder: what was written, the app's log, the build and the Mac, and
-the settings, with the home folder written as ~ and nothing of a video
-but its file name. The info mark beside **Make Report** says what goes in.
-See [LOGGING.md](LOGGING.md) and `cmd/framefairy-app/report.go`.
+**Bugs**, with a bug, at the foot of the sidebar between Settings and
+Updates, opens Report a Problem in a window of its own, plan row 2.244.
+A window and not a page, so a person can talk about a problem while
+they go through it in the app. It opens beside the app's window where
+the screen has room, and there is one at a time: Bugs while it is open
+brings it forward, and two quick clicks make one window. Bugs wears the
+look of the page on screen while the window is open, behind the app's
+window too, and not only while it is in front: lit, it says there is a
+report waiting, and a click brings it back. Closing the app's window
+closes it too. The report window has a title bar of its own, measured
+on its own, so with the app's window fullscreen its name still stays
+clear of its own buttons. It was in the
+Help menu before, where Mac apps keep it, and Tim wanted it where a
+person looks while working.
+
+One field for what happened, and one row under it: **Dictate**, a
+square with the microphone alone, **Attach**, a square with the
+paperclip, and **Report**, which saves one zip file on the Desktop,
+shows it in Finder and closes the window: what was written, the
+pictures, the app's log, the build and the Mac, and the settings, with
+the home folder written as ~ and nothing of a video but its file name.
+Beside the buttons there is only what went wrong, and why a recording
+stopped by itself. What the buttons do shows on them, and the info mark
+beside **Report** says how the page works and what goes in a report.
+Tim found standing lines there, Listening and Saved on the Desktop,
+read as news that was not true yet.
+
+The pictures are for screenshots. They come from the paperclip's open
+box, from a drop anywhere on the window, or from a paste into the
+field. PNG or JPEG, ten at most and 10 MB each, and each one is
+decoded and written again as PNG, so nothing the file held besides the
+picture travels, a place or a camera among it. A file that is not a
+picture, or is too big, or would make an eleventh, is left out and the
+line under the field says which and why. They show under the card in a
+grid of three, four once the window is wide, every tile the same size
+on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
+tile under the pointer, or on Delete with the tile focused, and the
+tile then says Removed with **Put it back** for a moment before the
+grid closes over it, the look the clip list uses, `Removed.svelte`.
+The bin is the quiet trash can of every list, with no box of its own,
+and a shade falls from its corner so it reads on any picture, while the
+tile's edge lifts. On a solid grey square it looked pasted on, Tim
+found.
+
+What is written and attached is a draft, kept in the app's folder
+under `report/` as it is written, so closing the window, or the app,
+loses nothing. Report lets go of it, and the next report starts empty.
+A recording goes with the window: closing it while somebody talks drops
+the recording, and what was written down by then stays in the draft as
+text. This is on purpose and not the way Stop ends one, which the first
+design had. Left running, the next window took it up again, and every
+word already said came back grey into the text the draft had kept, Tim
+found. While a report is being made the field takes no typing, and a
+picture dropped or pasted then goes into the next report.
+See [LOGGING.md](LOGGING.md), `cmd/framefairy-app/report.go` and
+`cmd/framefairy-app/bugs.go`.
 
 **Dictate**, at the left of the same row, is for saying what happened
 rather than typing it, plan row 2.189, the way dictation on claude.ai
 works. Pressed, it says **Stop** and wears the beam while the app
 listens, and the words appear where the cursor was while they are said,
-grey and slanted until they are kept, and the field keeps its last line
-in view. The microphone in the button grows and shrinks with the voice it
+grey and slanted until they are kept. Nothing is written down until the
+microphone has been as loud as a voice, 10 dB over a quiet room, since
+the speech model hears words in a room where nobody speaks: Tim pressed
+Dictate and Stop a few times without a word and was given "yeah yeah".
+The field follows the words the
+way a terminal follows its output: they stay in view as they come, until
+the person scrolls away to read, and then the field stays where they put
+it until they scroll back to the words. The cursor stands right after
+the words while nobody has put it elsewhere, drawn there by the end of
+the words themselves, since WebKit drew it at the front of the last line
+while the words ran on. The microphone in the button grows and shrinks with the voice it
 hears, about ten times a second, and wears the accent while it listens,
 so the person sees they are heard. The
 beam stays the sign that it listens, because running work shows the beam
@@ -2710,7 +2781,14 @@ and Escape removes everything said since Dictate was pressed. It also
 stops by itself, keeping what was said, after 2 minutes without a word
 or once a recording is 10 minutes long, and says why under the field
 where the problem would be. Stop pressed while it does that gets every
-word all the same. The field
+word all the same. Two short notes going up sound once the microphone is
+open, and the same two going down when it stops, however it stops, so a
+person talking while they look at the workspace hears that they are
+heard and that it is over. macOS Dictation, Siri and the Google
+Assistant do the same, so the pair needs no learning. They are two soft
+sine notes a fifth apart, E5 and B5, made in the window with Web Audio
+rather than played from a file, see `frontend/src/lib/chime.ts`, plan
+row 2.244. The field
 is a `contenteditable` of plain text rather than a textarea, because a
 textarea cannot show some of its words grey.
 The app records, not the window, through malgo, see

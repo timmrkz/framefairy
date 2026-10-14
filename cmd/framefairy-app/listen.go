@@ -147,6 +147,9 @@ type recording struct {
 	// whether the recording is as long as it may be.
 	peak float64
 	full atomic.Bool
+	// voiced says whether the microphone was ever as loud as a voice,
+	// listenVoice. Until it was, nobody spoke, and nothing is written down.
+	voiced atomic.Bool
 	// over is closed once the recording is written down or dropped.
 	over chan struct{}
 	// ended is closed when the person stops, kept says whether what they
@@ -182,9 +185,19 @@ func (r *recording) heard(samples []float32) {
 		power += float64(s) * float64(s)
 	}
 	if len(samples) > 0 {
-		r.peak = max(r.peak, 10*math.Log10(power/float64(len(samples))+1e-20))
+		db := 10 * math.Log10(power/float64(len(samples))+1e-20)
+		r.peak = max(r.peak, db)
+		if db >= listenVoice {
+			r.voiced.Store(true)
+		}
 	}
 }
+
+// listenVoice is how loud the microphone has to be, in dB, for somebody to
+// be speaking into it: 10 dB over a quiet room, see loudness. The speech
+// model hears words in a room where nobody speaks. Tim pressed Dictate and
+// Stop a few times in a row, said nothing, and was given "yeah yeah".
+const listenVoice = -45.0
 
 // loudness is how loud the microphone was since it was last asked, from
 // 0 at -55 dB, a quiet room, to 1 at -15 dB, a raised voice.
@@ -400,10 +413,14 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			continue
 		}
 		passed = len(samples)
-		cut := engine.Settled(samples[settled:])
-		began := time.Now()
-		before, now := heardAround(rec, samples, settled, settled+cut)
-		r.paced(time.Since(began), len(samples)-max(settled-listenAround, 0), every)
+		// The speech model is not asked until somebody speaks.
+		cut, before, now := 0, "", ""
+		if r.voiced.Load() {
+			cut = engine.Settled(samples[settled:])
+			began := time.Now()
+			before, now = heardAround(rec, samples, settled, settled+cut)
+			r.paced(time.Since(began), len(samples)-max(settled-listenAround, 0), every)
+		}
 		changed := false
 		if cut > 0 {
 			if before != "" {
@@ -535,6 +552,10 @@ func (l *listening) finish(r *recording, rec engine.Recognizer, said []string, s
 	if silent(samples) {
 		r.line(zerolog.WarnLevel).Float64("seconds", seconds).Msg("the microphone gave only silence")
 		return writtenDown{err: errors.New(heardNothing())}
+	}
+	if !r.voiced.Load() {
+		r.line(zerolog.InfoLevel).Float64("seconds", math.Round(seconds*10)/10).Msg("nobody spoke, so nothing was written down")
+		return writtenDown{}
 	}
 	hearing := time.Now()
 	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {

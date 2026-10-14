@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,6 +60,7 @@ type state struct {
 		Mark     string `json:"mark"`
 	} `json:"page"`
 	Searches []search `json:"searches"`
+	Windows  []string `json:"windows"`
 	Problem  string   `json:"problem"`
 }
 
@@ -180,6 +183,27 @@ var done = map[string]func(m *mac, args []string) error{
 	},
 	"waiting": func(m *mac, a []string) error {
 		return m.check(func(s state) bool { return s.Licence.Waiting == (a[0] == "yes") })
+	},
+	"windows": func(m *mac, a []string) error {
+		want := strings.Split(a[0], ", ")
+		return m.check(func(s state) bool {
+			have := slices.Clone(s.Windows)
+			slices.Sort(have)
+			slices.Sort(want)
+			return slices.Equal(have, want)
+		})
+	},
+	"close": func(m *mac, a []string) error {
+		resp, err := client.Post(probe+"/close?window="+url.QueryEscape(a[0]), "text/plain", nil)
+		if err != nil {
+			return err
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			return errors.New(strings.TrimSpace(string(b)))
+		}
+		return nil
 	},
 	"start":           (*mac).start,
 	"add video":       (*mac).addVideo,

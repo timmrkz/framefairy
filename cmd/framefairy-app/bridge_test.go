@@ -17,11 +17,16 @@ package main
 // side tells the interface comes as server-sent events on /events.
 
 import (
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"math"
 	"net"
@@ -34,6 +39,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -223,7 +229,7 @@ var outside = map[string]bool{
 	"Updates": true, "FollowChannel": true, "CheckForUpdates": true, "RestartToUpdate": true,
 	"InstallSpeechModel": true, "InstallLanguageModel": true,
 	"OpenKeysPage": true, "SaveAPIKey": true, "OpenCommit": true,
-	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true, "ReportProblem": true,
+	"Reveal": true, "ChooseFolder": true, "Chrome": true, "StayOpen": true,
 }
 
 // walkedUpdates are the calls of the Updates page a walk can have answered
@@ -333,6 +339,42 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.bus.send("dropped", dropped)
 		answer(w, dropped, nil)
 	})
+	// Files dropped on the report window, which bugs.go attaches and
+	// tells the window of, what WindowFilesDropped does on it in main.go.
+	mux.HandleFunc("/drop-report", func(w http.ResponseWriter, r *http.Request) {
+		var files []string
+		if err := json.NewDecoder(r.Body).Decode(&files); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		b.d.svc.report.dropped(files)
+		answer(w, nil, nil)
+	})
+	// The report window, which Bugs opens and the walk opens as a second
+	// page on ?window=report: how many the app made and brought forward,
+	// whether one is open, and with ?close=1 it closes, the way Cmd+W
+	// does. See bugs.go.
+	mux.HandleFunc("/report-window", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("close") == "1" {
+			b.d.svc.report.closeWindow("window")
+		}
+		answer(w, map[string]any{
+			"made": b.d.reportMade.Load(), "fronted": b.d.reportFronted.Load(), "open": b.d.svc.ReportWindowOpen(),
+		}, nil)
+	})
+	// A picture of w by h pixels, for the paperclip's box to hand over
+	// next, or with &box=0 only made, for a walk to drop. With
+	// &kind=text it is a file of text named like a picture.
+	mux.HandleFunc("/pick-picture", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		path, err := b.pickPicture(q.Get("name"), q.Get("w"), q.Get("h"), q.Get("kind") == "text", q.Get("box") != "0")
+		answer(w, path, err)
+	})
+	// What the last report on the bridge's Desktop holds, by name.
+	mux.HandleFunc("/report-made", func(w http.ResponseWriter, r *http.Request) {
+		names, err := lastReport(filepath.Join(b.d.home, "Desktop"))
+		answer(w, names, err)
+	})
 	// A file of sound alone, named like a video, which Add has to leave
 	// out: the episode's decoder finds no picture in it.
 	mux.HandleFunc("/pick-sound", func(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +421,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		answer(w, closed, err)
 	})
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mediaMiddleware(b.d.svc.store)(http.FileServer(http.Dir(dist))).ServeHTTP(w, r)
+		mediaMiddleware(b.d.svc.store)(reportMiddleware(b.d.svc.report)(http.FileServer(http.Dir(dist)))).ServeHTTP(w, r)
 	}))
 	return mux
 }
@@ -614,6 +656,13 @@ func openBridge(t *testing.T) *bridge {
 	// 2 minutes, long after every sequence that stops it by hand.
 	d.quiet = 8 * time.Second
 	d.start(d.svc.store)
+	// A report goes on the bridge's own Desktop and is shown nowhere.
+	reportFolder = func() string {
+		desk := filepath.Join(d.home, "Desktop")
+		_ = os.MkdirAll(desk, 0o755)
+		return desk
+	}
+	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		holds: map[string]time.Duration{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
@@ -883,6 +932,80 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	return path, nil
 }
 
+// pickPicture makes a picture of w by h pixels in the bridge's home, a
+// PNG with a gradient so it is not empty, or a file of text named like a
+// picture, and has the paperclip's box hand it over next when box.
+//
+// On the real disk: the open box and a drop hand over paths on the disk.
+func (b *bridge) pickPicture(name, w, h string, text, box bool) (string, error) {
+	width, _ := strconv.Atoi(w)
+	height, _ := strconv.Atoi(h)
+	if width <= 0 || height <= 0 {
+		width, height = 320, 200
+	}
+	if name == "" {
+		b.mu.Lock()
+		b.made++
+		name = fmt.Sprintf("Screenshot %d.png", b.made)
+		b.mu.Unlock()
+	}
+	dir := filepath.Join(b.d.home, "pictures")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, filepath.Base(name))
+	var data []byte
+	if text {
+		data = []byte("not a picture\n")
+	} else {
+		img := image.NewRGBA(image.Rect(0, 0, width, height))
+		for y := range height {
+			for x := range width {
+				img.Set(x, y, color.RGBA{uint8(255 * x / width), uint8(255 * y / height), 146, 255})
+			}
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err != nil {
+			return "", err
+		}
+		data = buf.Bytes()
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", err
+	}
+	if box {
+		b.d.pictureMu.Lock()
+		b.d.pictures = append(b.d.pictures, path)
+		b.d.pictureMu.Unlock()
+	}
+	return path, nil
+}
+
+// lastReport names what the newest report in dir holds.
+//
+// On the real disk: a report is a zip on the Desktop.
+func lastReport(dir string) ([]string, error) {
+	zips, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
+	if len(zips) == 0 {
+		return []string{}, nil
+	}
+	sort.Slice(zips, func(i, j int) bool {
+		a, _ := os.Stat(zips[i])
+		c, _ := os.Stat(zips[j])
+		return a.ModTime().Before(c.ModTime())
+	})
+	z, err := zip.OpenReader(zips[len(zips)-1])
+	if err != nil {
+		return nil, err
+	}
+	defer z.Close()
+	names := []string{}
+	for _, f := range z.File {
+		names = append(names, f.Name)
+	}
+	return names, nil
+}
+
 // pickSound makes a file of sound with no picture, named like a video,
 // and has the Add button's box hand it over next.
 func (b *bridge) pickSound() (string, error) {
@@ -935,6 +1058,11 @@ func (b *bridge) reset() error {
 	b.picks = nil
 	clear(b.holds)
 	b.mu.Unlock()
+	b.d.pictureMu.Lock()
+	b.d.pictures = nil
+	b.d.pictureMu.Unlock()
+	b.d.reportMade.Store(0)
+	b.d.reportFronted.Store(0)
 	if !b.d.svc.jobs.shutDown() {
 		return fmt.Errorf("the app did not stop its work in time")
 	}

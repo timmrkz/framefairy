@@ -3,18 +3,16 @@
   import {
     api,
     clock,
-    onChrome,
     onEpisodeChanged,
     onDropped,
     onAcknowledgements,
-    onReport,
+    onReportWindow,
     onUndo,
     onShowUpdates,
     onLicenceLink,
     onUpdates,
     type UpdateState,
     onQuit,
-    type Chrome,
     type EpisodeStatus,
     type Added,
     errorText,
@@ -22,6 +20,9 @@
   import { jobs, nav, shell } from "./lib/state.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
+  import Bar from "./components/Bar.svelte";
+  import Landing from "./components/Landing.svelte";
+  import { titleBar } from "./lib/chrome.svelte";
   import Confirm from "./components/Confirm.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
@@ -30,7 +31,6 @@
   import Episode from "./screens/Episode.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Acknowledgements from "./screens/Acknowledgements.svelte";
-  import Report from "./screens/Report.svelte";
   import UpdatesScreen from "./screens/Updates.svelte";
   import Setup from "./screens/Setup.svelte";
   import { said } from "./lib/said";
@@ -60,6 +60,25 @@
       near = true;
       asking = true;
     }
+  }
+
+  // Another window taking the focus takes the pointer with it, the report
+  // window above all, which Bugs opens. The app's window hears nothing of
+  // the pointer going, so the sidebar it was on stayed open until Tim
+  // clicked back in and moved. It closes when the app's window loses the
+  // focus, and the next move of the pointer, once it is back, says where
+  // the pointer is.
+  function away() {
+    if (sorting) return;
+    near = false;
+    asking = true;
+  }
+
+  // Only the keyboard going into the sidebar opens it. Focus that comes
+  // back to the button last clicked, when the app's window has the focus
+  // again, is not the person reaching for the sidebar.
+  function focusIn(e: FocusEvent) {
+    if ((e.target as Element).matches?.(":focus-visible")) near = true;
   }
 
   function pointerMoved(e: PointerEvent) {
@@ -233,13 +252,14 @@
     if (nav.view.name === "settings") return "Settings";
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
-    if (nav.view.name === "report") return "Report a Problem";
     return "Frame Fairy";
   });
 
   // Whether a newer build of the app is ready, which the rail marks on
   // Settings, where the restart is. See docs/UPDATES.md.
   let update = $state<UpdateState | null>(null);
+  // Whether the report window is open, which lights Bugs.
+  let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
   let problem = $state("");
 
@@ -441,29 +461,6 @@
     button.blur();
   }
 
-  // Where macOS put the title bar and its buttons. All zeros away from
-  // macOS, where the system draws its own title bar, and then the bar is
-  // an ordinary header and the stylesheet keeps its own numbers.
-  //
-  // Nothing here works a size out from a measurement of the page. This is
-  // the one thing the stylesheet cannot know, asked for once and told
-  // again when it changes, and handed over as four numbers it lays itself
-  // out from.
-  let chrome = $state<Chrome>({ bar: 0, left: 0, right: 0, middle: 0 });
-  // The height is given whenever there is one. Where the buttons are is
-  // given only when there are buttons, so that in native fullscreen, where
-  // macOS takes them away, the stylesheet falls back to centring the name
-  // in the bar rather than being told to centre it on nothing.
-  const shellStyle = $derived.by(() => {
-    const parts: string[] = [];
-    if (chrome.bar > 0) parts.push(`--bar-h: ${chrome.bar}px`);
-    if (chrome.right > 0) {
-      parts.push(`--lights-l: ${chrome.left}px`);
-      parts.push(`--lights-r: ${chrome.right}px`);
-      parts.push(`--lights-y: ${chrome.middle}px`);
-    }
-    return parts.join("; ");
-  });
 
   // A key from a link that waits goes to the settings, once the setup of a
   // new copy is out of the way.
@@ -479,11 +476,7 @@
   onMount(() => {
     jobs.start();
     installFonts().catch(() => {});
-    api
-      .chrome()
-      .then((c) => (chrome = c))
-      .catch(() => {});
-    const noChrome = onChrome((c) => (chrome = c));
+    const noChrome = titleBar.follow("app");
     // The app wears the colour it was given before anything is drawn in it.
     api
       .getSettings()
@@ -511,19 +504,19 @@
     window.addEventListener("focus", comeBack);
     const noDropped = onDropped(took);
     const noAcknowledgements = onAcknowledgements(() => nav.go({ name: "acknowledgements" }));
-    // The video in front goes with the report by its name, whatever page
-    // the menu was picked on, so a second pick keeps the first one's.
     // Undo and Redo in the Edit menu go to the workspace in front, which
-    // hands them to a field being typed in. Elsewhere, on Report a
-    // Problem and in the settings, no workspace is in front, so the
-    // field's own undo answers here, or Cmd+Z in it would do nothing.
+    // hands them to a field being typed in. Elsewhere, in the settings,
+    // no workspace is in front, so the field's own undo answers here, or
+    // Cmd+Z in it would do nothing.
     const noUndo = onUndo((what) => {
       if (nav.view.name !== "episode" && typing()) document.execCommand(what);
     });
-    const noReport = onReport(() => {
-      const v = nav.view;
-      nav.go({ name: "report", video: v.name === "episode" ? v.path : v.name === "report" ? v.video : undefined });
-    });
+    // Bugs is lit while the report window is open, see bugs.go.
+    const noReport = onReportWindow((open) => (reporting = open));
+    api
+      .reportWindowOpen()
+      .then((open) => (reporting = open))
+      .catch(() => {});
     // An event can arrive before the answer to the asking, and is then
     // the newer of the two, see the Updates page.
     let told = false;
@@ -576,31 +569,10 @@
   });
 </script>
 
-<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} />
+<svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} onblur={away} />
 
-<div class="shell" style={shellStyle}>
-  <!-- The bar across the top: the close, minimise and zoom buttons, and
-       the name of what is on screen beside them. It is the whole width of
-       the app, so the sidebar opens under it and never covers the name. -->
-  <!-- The bar is the title bar. macOS lays that out and puts its three
-       buttons on its middle, and the app takes the height it was given
-       rather than asking for one.
-       This used to say that nothing the app can set moves those buttons,
-       which is false and cost a great deal: Electron apps move them and
-       VS Code does, and chrome_darwin.go already holds the handle, since
-       it asks the app's window for standardWindowButton: and reads the
-       frame.
-       What was really wrong was asking for a toolbar, which makes the bar
-       taller and makes macOS inset the buttons to centre them in it. See
-       the WebviewWindowOptions in main.go.
-       Then the buttons are on the bar's middle because the bar is what
-       they were centred in. The name goes in a box whose middle is their
-       middle, which is the same thing said the other way round. Where the
-       system draws its own title bar there is nothing to agree with and
-       the stylesheet keeps its own numbers. -->
-  <header class="bar">
-    <span class="name"><span class="what">{title}</span></span>
-  </header>
+<div class="shell" style={titleBar.style}>
+  <Bar {title} />
 
   <div class="body" class:alone={settingUp !== false}>
   {#if settingUp === null}
@@ -621,7 +593,7 @@
     class:open
     onpointerenter={() => (near = true)}
     onpointerleave={() => (near = false)}
-    onfocusin={() => (near = true)}
+    onfocusin={focusIn}
     onfocusout={() => (near = false)}
   >
     <div class="head row">
@@ -702,6 +674,13 @@
         <Icon name="sliders" />
         <span class="label">Settings</span>
       </button>
+      <!-- Report a Problem, in a window of its own, one at a time, so a
+           person can talk about a problem while going through it here.
+           Lit while that window is open. Plan row 2.244. -->
+      <button class="quiet nav bugs" class:current={reporting} onclick={() => api.openReport("bugs").catch(() => {})} title="Report a problem">
+        <Icon name="report" />
+        <span class="label">Bugs</span>
+      </button>
       <!-- The build that is running, which is also the way to its updates.
            It says which build this is, so a report from testing always
            names what was tested. -->
@@ -767,8 +746,6 @@
       <SettingsScreen />
     {:else if nav.view.name === "acknowledgements"}
       <Acknowledgements />
-    {:else if nav.view.name === "report"}
-      <Report video={nav.view.video} />
     {:else if !placed || !libraryRead}
       <!-- Where the app was left is on its way. -->
     {:else if !episodes.length}
@@ -790,11 +767,8 @@
   {/if}
   </div>
 
-  <!-- Where a video dragged over the app would land: all of it. The
-       runtime puts file-drop-target-active on the page while a file is
-       held over it, so this is lit for exactly as long as a drop would
-       add something, and nothing here has to follow the drag. -->
-  <div class="landing frame" aria-hidden="true"></div>
+  <!-- Where a video dragged over the app would land: all of it. -->
+  <Landing />
 
   {#if leaving}
     <!-- Over everything, the moment the key is heard. A click or Escape
@@ -854,25 +828,6 @@
 </div>
 
 <style>
-  /* The frame of what is chosen, round the whole app with a gap to its
-     edge, the way the crop sits in the video preview, and the wash of a
-     chosen clip inside it. The gap keeps the frame's corners clear of the
-     app's own rounded corners. Over the workspace and under the question
-     about quitting, and never in the way of the pointer. */
-  .landing {
-    position: fixed;
-    inset: var(--gap);
-    z-index: 999;
-    pointer-events: none;
-    background: var(--accent-wash);
-    opacity: 0;
-    transition: opacity 120ms;
-  }
-
-  :global(:root.file-drop-target-active) .landing {
-    opacity: 1;
-  }
-
   /* Cmd+Q heard. The dim is the one a box over the workspace brings,
      Confirm.svelte, so the app looks the same whenever it is waiting on
      an answer. The words are the size of a box's title. */
@@ -912,91 +867,6 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-  }
-
-  /* The bar belongs to the app as a whole: it is what you drag the app
-     by, it holds the close, minimise and zoom buttons on macOS, and it
-     says what is on screen. */
-  /* Exactly as tall as the title bar macOS laid out, which the shell sets
-     from what macOS answers, or the token where the system draws its own
-     bar. The line at the foot is drawn inside that height rather than
-     under it, so the bar is the title bar and nothing else.
-     The line was taken out once and put back. Read off VS Code and
-     Terminal: both draw one under their title bar, and VS Code's is
-     brighter against its own bar than ours is against ours. It was never
-     what made the app look unlike theirs. */
-  .bar {
-    position: relative;
-    flex: none;
-    height: var(--bar-h);
-    box-shadow: inset 0 -1px var(--line);
-    background: var(--ink-1);
-    --wails-draggable: drag;
-  }
-
-  /* The name stands in a box that reaches from the top of the bar to as
-     far below the buttons' middle as that middle is below the top, so the
-     middle of the box is the middle of the buttons. It starts one space
-     after the last of them. Nothing is moved by a transform, so nothing
-     is put on a compositing surface of its own and the whole pixel rule
-     holds. Where there are no buttons in the page the box is the
-     bar, and the name is centred in it. */
-  .bar .name {
-    position: absolute;
-    top: 0;
-    left: calc(var(--lights-r, 0px) + var(--gap));
-    right: var(--gap);
-    height: calc(2 * var(--lights-y, calc(var(--bar-h) / 2)));
-    display: flex;
-    align-items: center;
-    overflow: hidden;
-  }
-
-  /* The name itself. Two things have to be true of it at once and they
-     pull against each other.
-
-     A line box keeps room below the baseline for the letters that go
-     there and room above the capitals that no capital uses, and there is
-     more of the first than of the second, so a name centred by its line
-     box reads high. Trimming the box to the capitals and the baseline is
-     what puts the letters themselves on the middle.
-
-     But the box that is trimmed is also the box that is clipped, and the
-     name is clipped so a long one ends in an ellipsis rather than running
-     under the sidebar. Trimmed and clipped together is what cut the tail
-     off the y in YouTube.mp4.
-
-     So the box is trimmed to the capitals and then padded back out. The
-     padding is even, so the middle of the box is still the middle of the
-     capitals, and it is deeper than any letter goes, so nothing is cut.
-     Clipping happens at the padding, which is the whole of the name
-     again. */
-  .bar .what {
-    min-width: 0;
-    font-size: var(--size-m);
-    font-weight: 600;
-    line-height: 1;
-    text-box: trim-both cap alphabetic;
-    padding: 6px 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Where the browser cannot trim a text box there is nothing to pad back
-     out, and a plain line box centred on the buttons is a small fraction
-     high rather than wrong. */
-  @supports not (text-box: trim-both cap alphabetic) {
-    .bar .what {
-      line-height: normal;
-      padding: 0;
-    }
-  }
-
-  /* Where the system draws its own title bar the name keeps the left of
-     the bar, because there is nothing at the left to make room for. */
-  .shell:not([style*="--lights-r"]) .bar .name {
-    left: var(--gap);
   }
 
   .body {
