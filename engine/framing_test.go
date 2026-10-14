@@ -186,6 +186,41 @@ func stuckFFmpeg(t *testing.T, always bool) string {
 	return path
 }
 
+// A system decoder that never gives the one frame framing first asks it
+// for is ended, and the framing goes on with the processor decoding. On
+// CI's virtual Mac VideoToolbox hung there four times between 10 and 13
+// October, and the search waited on it until the test run was killed at
+// ten minutes, in TestNewAndCancelInEitherOrder and the engine's tests
+// alike. Not parallel: it shortens frameLimit, a package variable.
+func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
+	was := frameLimit
+	frameLimit = 300 * time.Millisecond
+	t.Cleanup(func() { frameLimit = was })
+
+	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e.FFmpeg = stuckFFmpeg(t, false)
+	began := time.Now()
+	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("asking which decoder is used took %s", took)
+	}
+	if used != "the processor" {
+		t.Errorf("the decoder used is %q, want the processor", used)
+	}
+	if !e.softDecode.Load() {
+		t.Error("the system's decoder is still used after it hung")
+	}
+
+	// A frame pulled for comparing two cameras is ended the same way.
+	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e.FFmpeg = stuckFFmpeg(t, false)
+	began = time.Now()
+	e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("pulling one frame took %s", took)
+	}
+}
+
 // An ffmpeg that stops working while it looks for camera switches is
 // ended, and the switches are looked for again with the processor
 // decoding. The first macOS test run with ffmpeg 7.1.5 had one hang there

@@ -3992,11 +3992,22 @@ for (const seq of toWalk) {
         // The playhead read on every animation frame from the press, for a
         // press on the track first and then for the thing held, so "at
         // once" is a number: no more frames than the track takes.
+        //
+        // The frames are counted from the press as the page has it, not
+        // from when the watch began. Moving the pointer and pressing it are
+        // two calls to the browser, and on a busy runner either can take a
+        // frame or two to arrive, so counted from the watch the same app
+        // took 2 frames for the track and 4 for the mark, at random.
         const at = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
         const watchFrames = () =>
           page.evaluate(() => {
             window.__pressed = [];
+            window.__pressedAt = -1;
             window.__pressWatch = true;
+            addEventListener("pointerdown", () => (window.__pressedAt = window.__pressed.length), {
+              capture: true,
+              once: true,
+            });
             const tick = () => {
               if (!window.__pressWatch) return;
               window.__pressed.push(Number(document.querySelector(".screen")?.dataset.playhead));
@@ -4004,10 +4015,12 @@ for (const seq of toWalk) {
             };
             requestAnimationFrame(tick);
           });
+        // The frames from the press on, the first of them the first painted
+        // after it.
         const seen = () =>
           page.evaluate(() => {
             window.__pressWatch = false;
-            return window.__pressed;
+            return window.__pressedAt < 0 ? [] : window.__pressed.slice(window.__pressedAt);
           });
         const g = await handles(page);
         const caption = (edge) =>
@@ -4081,11 +4094,8 @@ for (const seq of toWalk) {
         else if (!same(held.at, want)) {
           wrong = `the playhead stood at ${held.at.toFixed(3)} with the button down on the ${arg}, not on its frame at ${want.toFixed(3)}`;
         } else if (held.trackFrames < 0) wrong = "a press on the track did not move the playhead";
-        // A frame of the screen either way: the two presses are timed apart,
-        // and a runner busy with other walks drew the one on the caption's
-        // edge a frame later than the one on the track, 3 against 2, while
-        // a playhead that waits for anything waits many.
-        else if (on > held.trackFrames + 1) {
+        else if (on < 0) wrong = `the playhead came onto the ${arg} only after 150 ms`;
+        else if (on > held.trackFrames) {
           wrong = `the playhead came onto the ${arg} ${on} frames after the press, a press on the track takes ${held.trackFrames}`;
         }
         break;
