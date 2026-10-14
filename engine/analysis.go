@@ -54,11 +54,21 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 	if flags := e.decodeFlags(); flags != nil {
 		args := append([]string{"-hide_banner", "-loglevel", "verbose"}, flags...)
 		args = append(args, "-ss", fixed(at, 3), "-i", path, "-an", "-frames:v", "1", "-f", "null", "-")
-		said := run(ctx, "", e.FFmpeg, args...)
+		probeCtx, cancel := context.WithTimeout(ctx, frameLimit)
+		said := run(probeCtx, "", e.FFmpeg, args...)
+		cancel()
 		if ctx.Err() != nil {
 			return ""
 		}
 		used = decoderIn(said.Stderr)
+		if probeCtx.Err() != nil {
+			// A system decoder that does not give one frame in that time
+			// has stopped working. VideoToolbox on CI's virtual Mac did,
+			// and the framing waited on it until the test run was killed.
+			e.softDecode.Store(true)
+			e.Log.Warn("the system's video decoder gave no frame in %s, decoding on the processor from now on", frameLimit)
+			used = "the processor"
+		}
 	}
 	if _, known := e.decoders.LoadOrStore(path, used); !known {
 		e.Log.Info("framing decodes video on %s", used)
@@ -123,6 +133,11 @@ func decoderIn(stderr string) string {
 	}
 	return DecoderName(words[0])
 }
+
+// frameLimit is how long decoding a single frame may take before the
+// system's decoder is taken to have stopped working: far past the second
+// an honest decode takes, of any file. Tests make it shorter.
+var frameLimit = 15 * time.Second
 
 // shotLimit is how long finding the camera switches of a span of so many
 // seconds may take before it is ended: a minute, and four times the span on
@@ -287,7 +302,11 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 			"-ss", fixed(start, 3), "-t", fixed(duration, 3), "-i", path,
 			"-vf", fmt.Sprintf("fps=%s,scale=%d:%d,format=gray", fixed(rate, 4), width, height),
 			"-frames:v", strconv.Itoa(frames), "-f", "rawvideo", "-")
-		raw, _ := runBytes(ctx, "", e.FFmpeg, args...)
+		// A system decoder that hangs gives nothing, and is gone round
+		// below like one that failed.
+		pullCtx, cancel := context.WithTimeout(ctx, time.Duration(frames)*frameLimit)
+		defer cancel()
+		raw, _ := runBytes(pullCtx, "", e.FFmpeg, args...)
 		return raw
 	}
 	flags := e.decodeFlags()

@@ -999,7 +999,10 @@ runs out of time as well, the span is framed without switches, with a
 warning, rather than the clip failing. Which decoder does the work is found
 once per episode file, by decoding one frame the way framing does and
 reading what ffmpeg says, and written to the log as `framing decodes
-video on VideoToolbox` or `on the processor`. The crop
+video on VideoToolbox` or `on the processor`. A single frame has 15 s,
+`frameLimit`, there and wherever framing pulls one frame: VideoToolbox
+has given none and said nothing on a virtual Mac, and a system decoder
+that misses the limit is gone round on the processor from then on. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
