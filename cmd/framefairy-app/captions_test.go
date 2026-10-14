@@ -131,6 +131,12 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 			t.Errorf("%s was answered", name)
 		}
 	}
+	// A size the wire to the decoder cannot carry is the ask's fault, and
+	// is refused before the decoder is asked for it.
+	big := url.Values{"path": {mine}, "track": {view.Track}, "at": {"10.2"}, "w": {"7680"}, "h": {"7680"}}
+	if rec, _ := draw(big); rec.Code != http.StatusBadRequest {
+		t.Errorf("captions at 7680x7680 answered %d, want %d", rec.Code, http.StatusBadRequest)
+	}
 }
 
 // The caption box frames each word where libass put it, and asks where

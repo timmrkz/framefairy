@@ -164,9 +164,26 @@
 }
 
 /* One pixel of the screen, the thinnest line that is still sharp: a
-   point of CSS on most screens and half of one on a Retina screen. */
+   point of CSS on most screens, half of one on a Retina screen, and the
+   share of one that is a pixel at the scales Windows and Linux offer in
+   between, 125, 150 and 175 percent. */
 :root {
   --hair: 1px;
+}
+@media (min-resolution: 1.25dppx) {
+  :root {
+    --hair: 0.8px;
+  }
+}
+@media (min-resolution: 1.5dppx) {
+  :root {
+    --hair: calc(1px / 1.5);
+  }
+}
+@media (min-resolution: 1.75dppx) {
+  :root {
+    --hair: calc(1px / 1.75);
+  }
 }
 @media (min-resolution: 2dppx) {
   :root {
@@ -607,7 +624,11 @@ input[type="password"] {
 
 /* The pop the pill makes behind the word being spoken in the caption
    box while a word is typed, a little under its size, a little over and
-   back, the way the render bounces it. The caption block on the clip timeline that stands
+   back. It is not the render's bounce, which goes from rest to 115 % and
+   back and which the video preview shows from libass's own frames. This
+   one starts under its size because what it answers is a key pressed,
+   and it is over in a fifth of a second so the next key is not kept
+   waiting. The caption block on the clip timeline that stands
    for the caption shown makes the same one, so it is one animation. A
    block is long and low, so the same share of its size is two pixels of
    height and reads as nothing. It asks for more of the pop in height and

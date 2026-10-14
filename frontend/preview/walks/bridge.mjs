@@ -368,6 +368,7 @@ async function overlayReader(page) {
         shade: !!screen?.querySelector(".crop"),
         captions: !!screen?.querySelector(".captions"),
         late: !!window.__captionLayers?.late,
+        t: performance.now(),
       };
     };
   });

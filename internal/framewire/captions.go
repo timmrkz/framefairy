@@ -109,11 +109,16 @@ const LayerHead = 8
 
 // Body is the layer as a record's body.
 func (l Layer) Body() []byte {
-	b := make([]byte, LayerHead+len(l.Pixels))
+	return append(l.Head(), l.Pixels...)
+}
+
+// Head is the box a layer's body starts with, which a writer can send
+// ahead of the pixels rather than copy them in behind it.
+func (l Layer) Head() []byte {
+	b := make([]byte, LayerHead, LayerHead+len(l.Pixels))
 	for i, v := range []int{l.X, l.Y, l.W, l.H} {
 		binary.LittleEndian.PutUint16(b[2*i:], uint16(v))
 	}
-	copy(b[LayerHead:], l.Pixels)
 	return b
 }
 

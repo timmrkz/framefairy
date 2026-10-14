@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
+	"framefairy/internal/framewire"
 )
 
 // The captions of the video preview, drawn by libass in the episode's
@@ -147,7 +148,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			err = fmt.Errorf("typing is %q", q.Get("typing"))
 		}
 	}
-	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || width < 1 || height < 1 || width > 7680 || height > 7680 {
+	if err != nil || math.IsNaN(at) || math.IsInf(at, 0) || !framewire.LayerFits(width, height) {
 		http.Error(w, "captions need a moment, a width and a height", http.StatusBadRequest)
 		return
 	}
@@ -206,7 +207,11 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 					w.Header().Set("X-Caption-Bounce", fmt.Sprintf("%g %g %g", length, rise, peak))
 				}
 				w.Header().Set("X-Caption-Scale", strconv.FormatFloat(scale, 'f', 4, 64))
-				_, _ = w.Write(l.Body())
+				// The box and then the pixels as they came from the
+				// decoder, so a layer is not copied once more to be sent.
+				if _, err := w.Write(l.Head()); err == nil {
+					_, _ = w.Write(l.Pixels)
+				}
 				return
 			}
 		}
