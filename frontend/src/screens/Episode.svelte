@@ -1541,11 +1541,9 @@
     const ticket = words.send();
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
-      // Other clips with the same word changed too.
-      const read = listed.send();
-      const list = (await api.clips(path)) ?? [];
-      if (!words.keep(ticket) || !listed.keep(read)) return;
-      clips = list.map((c) => (c.key === updated.key ? updated : c));
+      // A correction is the clip's own, so no other clip changed.
+      if (!words.keep(ticket)) return;
+      putClip(updated);
     } catch (err) {
       words.keep(ticket);
       problem = errorText(err);
@@ -1553,23 +1551,26 @@
     }
   }
 
-  // A caption removed whole is many words at once, and the same as a word
-  // removed for everything after it, so it takes the same ticket.
-  async function removeCaption(clip: ClipEntry, first: number) {
+  // A word removed, or a caption removed whole, is removed from this clip
+  // alone, so only this clip changes. It takes the same ticket as a word
+  // corrected, which it comes after in the caption box.
+  async function removeWords(clip: ClipEntry, remove: () => Promise<ClipEntry>) {
     problem = "";
     const ticket = words.send();
     try {
-      const updated = await api.removeCaption(path, clip.plan, clip.id, first);
-      const read = listed.send();
-      const list = (await api.clips(path)) ?? [];
-      if (!words.keep(ticket) || !listed.keep(read)) return;
-      clips = list.map((c) => (c.key === updated.key ? updated : c));
+      const updated = await remove();
+      if (!words.keep(ticket)) return;
+      putClip(updated);
     } catch (err) {
       words.keep(ticket);
       problem = errorText(err);
       throw err;
     }
   }
+  const removeWord = (clip: ClipEntry, start: number, part: number | null) =>
+    removeWords(clip, () => api.removeWord(path, clip.plan, clip.id, start, part ?? -1));
+  const removeCaption = (clip: ClipEntry, first: number) =>
+    removeWords(clip, () => api.removeCaption(path, clip.plan, clip.id, first));
 
   async function setCrop(clip: ClipEntry, at: number, left: number) {
     problem = "";
@@ -3038,6 +3039,7 @@
           oncropmark={(from, to, x) => (current ? setCropMark(current, from, to, x) : Promise.resolve())}
           oncaptiony={(y) => setCaptionsHeight(y)}
           onword={(start, text) => (current ? setWord(current, start, text) : Promise.resolve())}
+          onremoveword={(start, part) => (current ? removeWord(current, start, part) : Promise.resolve())}
           locked={renderingCurrent}
           oncaptionmoved={(y) => {
             captionsWere = null;

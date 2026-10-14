@@ -126,6 +126,7 @@ func Reshape(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, k
 // they land, and where the playhead goes while it is made.
 func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) (
 	pieceChange, float64, error) {
+	t = t.Of(clip)
 	if !isFinite(g.From) || !isFinite(g.To) {
 		return nil, -1, renderErr("a gesture has to say where, in numbers")
 	}

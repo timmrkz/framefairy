@@ -2,7 +2,6 @@ package engine
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
 	"sort"
@@ -14,8 +13,8 @@ import (
 // ---------------------------------------------------------------------------
 // Undo
 //
-// Everything a person does to an episode's clips lands in one of two kinds
-// of file: its plans, and its word corrections. So an edit is remembered as
+// Everything a person does to an episode's clips lands in its plans, the
+// words a clip corrects and removes included. So an edit is remembered as
 // those files before it and after it, and undoing it puts back what it
 // changed.
 //
@@ -23,7 +22,7 @@ import (
 // a plan while the app edits the clips already in it, and putting back
 // the whole plan from before an edit would take away every clip that landed
 // since. So the two copies are compared, and what differs between them, a
-// clip, a field of the plan, a corrected word, is put back one by one. If
+// clip or a field of the plan, is put back one by one. If
 // any of those has changed again since, by another edit or by a search, it
 // is left alone and the undo says so rather than writing over it.
 // ---------------------------------------------------------------------------
@@ -44,13 +43,13 @@ type Snapshot struct {
 	files   map[string]fileState
 }
 
-// editableFiles are an episode's plans and its word corrections.
+// editableFiles are an episode's plans.
 func editableFiles(fsys afero.Fs, logsDir string) []string {
 	var paths []string
 	for _, p := range PlanSummaries(fsys, logsDir) {
 		paths = append(paths, p.Path)
 	}
-	return append(paths, correctionsPath(logsDir))
+	return paths
 }
 
 // TakeSnapshot reads the files an edit of the episode in logsDir can
@@ -122,10 +121,6 @@ func (c *Change) LeaveOutNewClips() *Change {
 	}
 	var kept []string
 	for _, path := range c.paths {
-		if path == correctionsPath(c.logsDir) {
-			kept = append(kept, path)
-			continue
-		}
 		was, now := c.before[path], c.after[path]
 		if !was.there {
 			// A plan that appeared: a search wrote its first clip.
@@ -227,7 +222,7 @@ func (c *Change) apply(from, to map[string]fileState) (ClipRef, error) {
 		if err := c.applyOne(path, from[path], to[path], false); err != nil {
 			return shown, err
 		}
-		if shown.ID == "" && path != correctionsPath(c.logsDir) {
+		if shown.ID == "" {
 			if ids := changedClips(from[path], to[path]); len(ids) > 0 {
 				shown = ClipRef{Plan: path, ID: ids[0]}
 			}
@@ -237,9 +232,6 @@ func (c *Change) apply(from, to map[string]fileState) (ClipRef, error) {
 }
 
 func (c *Change) applyOne(path string, from, to fileState, dryRun bool) error {
-	if path == correctionsPath(c.logsDir) {
-		return applyCorrections(c.fsys, path, from, to, dryRun)
-	}
 	return applyPlan(c.fsys, path, from, to, dryRun)
 }
 
@@ -533,68 +525,4 @@ func recordRestored(fsys afero.Fs, planPath string, ids []string, from, to *plan
 			_ = RecordDecision(fsys, planPath, id, DecisionEdited, nil)
 		}
 	}
-}
-
-// applyCorrections puts back the corrected words an edit changed, word by
-// word.
-func applyCorrections(fsys afero.Fs, path string, from, to fileState, dryRun bool) error {
-	words := func(state fileState) (map[string]string, error) {
-		if !state.there {
-			return map[string]string{}, nil
-		}
-		var file correctionsFile
-		if err := json.Unmarshal(state.body, &file); err != nil {
-			return nil, err
-		}
-		if file.Words == nil {
-			file.Words = map[string]string{}
-		}
-		return file.Words, nil
-	}
-	trainingMu.Lock()
-	defer trainingMu.Unlock()
-	src, err := words(from)
-	if err != nil {
-		return err
-	}
-	dst, err := words(to)
-	if err != nil {
-		return err
-	}
-	cur, err := words(readState(fsys, path))
-	if err != nil {
-		return err
-	}
-	var keys []string
-	for _, m := range []map[string]string{src, dst} {
-		for k := range m {
-			a, okA := src[k]
-			b, okB := dst[k]
-			if (okA != okB || a != b) && !contains(keys, k) {
-				keys = append(keys, k)
-			}
-		}
-	}
-	for _, k := range keys {
-		a, okA := src[k]
-		c, okC := cur[k]
-		if okA != okC || a != c {
-			return ErrChangedSince
-		}
-	}
-	if dryRun || len(keys) == 0 {
-		return nil
-	}
-	for _, k := range keys {
-		if b, ok := dst[k]; ok {
-			cur[k] = b
-		} else {
-			delete(cur, k)
-		}
-	}
-	body, err := marshalNoEscape(correctionsFile{Version: 1, Words: cur})
-	if err != nil {
-		return err
-	}
-	return WriteAtomic(fsys, path, append(body, '\n'))
 }

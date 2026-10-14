@@ -340,6 +340,67 @@ func TestEditsAreLogged(t *testing.T) {
 	}
 }
 
+// An edit of a clip's words says how many words the clip corrects and
+// removes once it is made, and never which, so a word that came back or a
+// fix that went is read from the log. A video that still has the
+// corrections of the whole video from before 2.249 says so once, with how
+// many words they were.
+func TestAnEditOfAClipsWordsSaysHowManyItChanges(t *testing.T) {
+	svc, mine, plan := anEpisodeWithAPlan(t)
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei"}, {11.0, 11.4, "drei"}})
+	old := filepath.Join(svc.project(mine).LogsDir(), "corrections.json")
+	if err := afero.WriteFile(svc.store.files, old, []byte(`{"10100": "Einz", "10500": ""}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, read := testLog(t)
+	ctx := context.Background()
+	if _, err := svc.Captions(mine, plan, "01"); err != nil {
+		t.Fatal(err)
+	}
+	// The answers describe the clip for the interface, which needs the
+	// video read, and this one is not a video. The edits are made either
+	// way, and logged before.
+	_, _ = svc.SetWord(ctx, mine, plan, "01", 10.5, "zwo")
+	_, _ = svc.RemoveWord(ctx, mine, plan, "01", 11.0, -1)
+	_, _ = svc.RemoveWord(ctx, mine, plan, "01", 11.0, -1)
+	if _, err := svc.Captions(mine, plan, "01"); err != nil {
+		t.Fatal(err)
+	}
+	lines := read()
+	has(t, find(lines, "a word was corrected"), map[string]any{"level": "info", "clip": "01", "word": 10.5,
+		"removed": false, "corrections": 1, "removed_words": 0})
+	var removedLines []map[string]any
+	for _, l := range lines {
+		if l["msg"] == "a word was removed" {
+			removedLines = append(removedLines, l)
+		}
+	}
+	if len(removedLines) != 2 {
+		t.Fatalf("%d lines say a word was removed: %v", len(removedLines), lines)
+	}
+	// The second removes nothing more, and says so by its counts.
+	for _, l := range removedLines {
+		has(t, l, map[string]any{"level": "info", "word": 11.0, "part": -1, "corrections": 1, "removed_words": 1})
+	}
+	var told []map[string]any
+	for _, l := range lines {
+		if s, _ := l["msg"].(string); strings.HasPrefix(s, "the corrections of the whole video") {
+			told = append(told, l)
+		}
+	}
+	if len(told) != 1 {
+		t.Fatalf("the old corrections were told of %d times: %v", len(told), lines)
+	}
+	has(t, told[0], map[string]any{"level": "info", "video": "ep.mp4", "words": 2})
+	for _, l := range lines {
+		for _, word := range []string{"eins", "Einz", "zwei", "zwo", "drei"} {
+			if strings.Contains(fmt.Sprint(l), word) {
+				t.Errorf("a line holds %q: %v", word, l)
+			}
+		}
+	}
+}
+
 // heardEpisode gives an episode of the library a transcript of these
 // words, as far as seconds, the way a transcription leaves it.
 func heardEpisode(t *testing.T, svc *FrameFairy, path string, seconds float64, words [][3]any) {

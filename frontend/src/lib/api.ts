@@ -750,8 +750,13 @@ export const api = {
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
-  // Removes the words of one caption from the captions, the caption known
-  // by the moment its first word starts in the episode.
+  // Removes one word from the captions of one clip alone, the word heard
+  // at start, or one of the words a correction made of it, part counted
+  // from nought, or all of it with part below nought.
+  removeWord: (path: string, plan: string, clip: string, start: number, part: number) =>
+    call<ClipEntry>("RemoveWord", path, plan, clip, start, part),
+  // Removes the words of one caption from the captions of one clip alone,
+  // the caption known by the moment its first word starts in the episode.
   removeCaption: (path: string, plan: string, clip: string, first: number) =>
     call<ClipEntry>("RemoveCaption", path, plan, clip, first),
   // When a caption appears or goes, where the words are a little off from

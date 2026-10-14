@@ -190,6 +190,10 @@ func lockFile(fsys afero.Fs, path string) func() {
 	}
 }
 
+// errUnchanged is what a change to a plan says when it changes nothing,
+// so the plan is not written and keeps its revision.
+var errUnchanged = errors.New("the plan is unchanged")
+
 func editPlan(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
 	defer lockFile(fsys, path)()
 	return editPlanLocked(fsys, path, change)
@@ -219,6 +223,9 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 		}
 	}
 	if err := change(top, clips); err != nil {
+		if errors.Is(err, errUnchanged) {
+			return nil
+		}
 		return err
 	}
 	revision := 0
@@ -1046,19 +1053,13 @@ type CaptionEdit struct {
 // where the timing of the words is a little off from what is heard. word
 // is when that word starts in the episode, edge is "start" or "end", and at
 // is when the caption should appear or go, also in the episode. A time that
-// is not a number puts the caption back where its words put it. logsDir is
-// where the corrections are kept, and look how the captions are made, see
-// Look. It makes the change ShapeCaptionTime shows
+// is not a number puts the caption back where its words put it. look is
+// how the captions are made, see Look. It makes the change ShapeCaptionTime shows
 // while the hand moves, see moveCaptionEdge, and says what it did to the
 // words, for the app's log.
-func SetCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float64, edge string, at float64,
+func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
 	t *Transcript, look *Look) (CaptionEdit, error) {
-	var moved captionEdge
-	err := changeWords(fsys, logsDir, t, func(corrections map[string]string, work *Transcript) error {
-		var err error
-		moved, err = moveCaptionEdge(fsys, corrections, planPath, clipID, word, edge, at, work, look)
-		return err
-	})
+	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, t, look)
 	if err != nil {
 		return moved.done, err
 	}
@@ -1068,6 +1069,8 @@ func SetCaptionTime(fsys afero.Fs, logsDir, planPath, clipID string, word float6
 		if err != nil {
 			return err
 		}
+		putCorrections(c, moved.clip.Corrections)
+		putRemovedWords(c, moved.clip.RemovedWords)
 		times, _ := c.values[keyCaptionTimes].(*object)
 		if times == nil {
 			times = newObject()
@@ -1110,8 +1113,8 @@ type captionEdge struct {
 // moveCaptionEdge works out what moving the edge of a caption does, the
 // one thing both ShapeCaptionTime and SetCaptionTime ask, so what is drawn
 // while the hand moves is what is saved when it lets go. The words of the
-// caption the edge crosses go, or come back, see trimCaption, in
-// corrections and in t, which are a copy for it to change.
+// caption the edge crosses go from the clip, or come back, see
+// trimCaption, in the clip it hands back.
 //
 // An edge put back, at not a number, is where all its words put it: the
 // words taken out at that edge come back, by a drag or in the caption box
@@ -1127,7 +1130,7 @@ type captionEdge struct {
 // break in other places when the face or the size changes, and a word stays
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
-func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, clipID string, word float64, edge string,
+func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge string,
 	at float64, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
@@ -1156,6 +1159,11 @@ func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, cli
 		return captionEdge{}, renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
 	out := captionEdge{plan: plan, clip: clip, at: math.NaN()}
+	corrections := maps.Clone(clip.Corrections)
+	if corrections == nil {
+		corrections = map[string]string{}
+	}
+	removed := clip.RemovedWords.clone()
 	if !reset {
 		to := ClipTime(clip, at)
 		if edge == "start" && i > 0 && to < laid[i-1].End {
@@ -1164,9 +1172,7 @@ func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, cli
 		if edge == "end" && i+1 < len(laid) && to > laid[i+1].Start {
 			to, at = laid[i+1].Start, EpisodeTime(clip, laid[i+1].Start)
 		}
-		if out.done, err = trimCaption(corrections, clip, laid[i], edge, to, t); err != nil {
-			return out, err
-		}
+		out.done, err = trimCaption(corrections, removed, clip, laid[i], edge, to, t)
 		out.at = roundTo(at, 3)
 	} else {
 		// Put back where all its words put it, the ones taken out at that
@@ -1175,10 +1181,18 @@ func moveCaptionEdge(fsys afero.Fs, corrections map[string]string, planPath, cli
 		if edge == "start" {
 			past = -1
 		}
-		if out.done, err = trimCaption(corrections, clip, laid[i], edge, past, t); err != nil {
-			return out, err
-		}
+		out.done, err = trimCaption(corrections, removed, clip, laid[i], edge, past, t)
 	}
+	if err != nil {
+		return captionEdge{}, err
+	}
+	if len(removed) == 0 {
+		removed = nil
+	}
+	if len(corrections) == 0 {
+		corrections = nil
+	}
+	out.clip.RemovedWords, out.clip.Corrections = removed, corrections
 	times := maps.Clone(clip.CaptionTimes)
 	if times == nil {
 		times = map[string]CaptionTime{}
