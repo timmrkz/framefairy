@@ -736,7 +736,10 @@ export const sequences = [
     // Found by Tim on #201: a caption whose first word the picture lights
     // for a single frame showed nothing when its block was clicked, and
     // its block did not pop, while shift and an arrow went to that frame.
-    // The clip starting just before the end of a word leaves such a word.
+    // The clip's start dragged near the end of the first word lands it on
+    // the frame before "war", which starts in the middle of the clip's
+    // first frame, so the first frame shows its caption with no word lit
+    // and a click a frame into "war" by its own time landed there.
     name: "every caption block clicked lights a word of its caption",
     steps: [["trim into", 0.04], ["every block"]],
   },
@@ -3044,8 +3047,14 @@ for (const seq of toWalk) {
         const t = await timeline(page);
         const g = await handles(page);
         const to = now.segments[0].start + w.end - arg;
+        // Until the frames each word of the new captions is lit on have
+        // come, as they have long before a hand gets to a block. Until
+        // then a click goes by the words' own times, as it did before.
+        const framed = page.waitForResponse((r) => r.url().includes("/frames/captions/words"), { timeout: 15000 });
         await drag(page, middle(g.start), high(g.track), (await xOf(page, to)) - (await xOf(page, t.start)), false);
         await watch.step("trim", s);
+        await framed;
+        await page.waitForTimeout(200);
         break;
       }
       case "every block": {
