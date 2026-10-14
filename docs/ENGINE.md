@@ -792,7 +792,12 @@ run the effect before and after the syllable's own time. Each frame holds its sc
 hundredth of a second its frame starts in, so libass draws exactly that
 scale on that frame, in the short and in the video preview alike. A frame
 lands on the word at its own size wherever a click or a step lands, and
-the frames after it pop.
+the frames after it pop. Above 100 fps two frames can start in one
+hundredth, and libass draws the second's scale on both, since an event
+of no length draws nothing. `popSpans` writes the caption file and
+`PopScale` reads the same spans, so what the video preview says of a
+frame is what libass draws on it at any rate, read back from a short at
+25, 29.97 and 120 fps.
 
 Before, the pop was a curve in milliseconds, CSS's ease-out over 220 ms,
 written as 20 ms pieces, and libass sampled it wherever the frames fell.

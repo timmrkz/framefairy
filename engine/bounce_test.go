@@ -36,11 +36,13 @@ const bounceTop, bounceRows = 1400, 400
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func shortRows(t *testing.T, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
-	return shortRowsAt(t, bounceFPS, words, end, top, rows)
+	return shortRowsAt(t, fmt.Sprint(bounceFPS), words, end, top, rows)
 }
 
+// shortRowsAt takes the rate as ffmpeg does, "25" or "30000/1001".
+//
 // On the real disk: ffmpeg renders the short and the test reads it back.
-func shortRowsAt(t *testing.T, fps int, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
+func shortRowsAt(t *testing.T, rate string, words []Cue, end float64, top, rows int) (e *Engine, info SourceInfo, laid []LaidCaption, frames [][]byte) {
 	t.Helper()
 	ctx := context.Background()
 	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -53,7 +55,7 @@ func shortRowsAt(t *testing.T, fps int, words []Cue, end float64, top, rows int)
 	source := filepath.Join(t.TempDir(), "episode.mp4")
 	long := math.Ceil(end) + 1
 	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=%g", fps, long),
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%s:d=%g", rate, long),
 		"-f", "lavfi", "-i", fmt.Sprintf("anullsrc=r=48000:cl=stereo:d=%g", long),
 		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", source).CombinedOutput(); err != nil {
 		t.Fatalf("making the test episode: %s %s", err, out)
@@ -569,14 +571,28 @@ func TestEveryPillOfALineIsOneHeightAndClearOfTheOther(t *testing.T) {
 // rise and snap back, "so" and "einem" grow on one frame, and "so'n" not
 // at all: the pop was a curve in milliseconds, and where the frames fell
 // on it was chance.
+// At 29.97 fps too, where frames start between hundredths of a second and
+// the caption file rounds them to the hundredth: read back from libass
+// only at 25 and 50 fps before, where every frame starts on a whole
+// hundredth, found by the second review.
 //
 // On the real disk: ffmpeg renders the short and the test reads it back.
 func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 	t.Parallel()
-	const fps = 25
+	for _, rate := range []string{"25", "30000/1001"} {
+		t.Run(strings.ReplaceAll(rate, "/", " in "), func(t *testing.T) {
+			t.Parallel()
+			everyWordPops(t, rate)
+		})
+	}
+}
+
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func everyWordPops(t *testing.T, rate string) {
 	words := []Cue{{0.40, 0.48, "Das"}, {0.48, 0.60, "ist"}, {0.60, 0.64, "ja"},
 		{0.64, 0.76, "so"}, {0.76, 0.96, "ein"}, {0.96, 1.24, "gutes"}, {1.24, 1.64, "ja"}}
-	_, _, _, frames := shortRowsAt(t, fps, words, 1.64, bounceTop, bounceRows)
+	_, info, _, frames := shortRowsAt(t, rate, words, 1.64, bounceTop, bounceRows)
+	fps := float64(info.FPSNum) / float64(info.FPSDen)
 	pill := pillColour(t, ResolveStyle(nil))
 
 	// The frames each word is lit on, by where its pill stands: a word's
@@ -632,5 +648,109 @@ func TestEveryWordOfAShortPopsOnItsFrames(t *testing.T) {
 			t.Errorf("%s, lit for %d frames, ends its last frame at %.3f, not at rest: %v", name, n, w.widths[n-1]/rest, got)
 		}
 		t.Logf("%-10s %2d frames: %v", name, len(w.widths), got)
+	}
+}
+
+// At 120 fps two frames of the short can start in one hundredth of a
+// second, the caption file's step, and libass draws the second's scale on
+// both. PopScale says what libass draws on every frame all the same, read
+// back from a short: it said the first's before, on 3240 frames of 3
+// seconds of words in the second review's simulation.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestPopScaleIsWhatLibassDrawsAbove100Fps(t *testing.T) {
+	t.Parallel()
+	words := []Cue{{0.10, 0.30, "Das"}, {0.30, 0.42, "ist"}, {0.42, 0.70, "gut"}}
+	_, info, laid, frames := shortRowsAt(t, "120", words, 0.70, bounceTop, bounceRows)
+	d := &CaptionDrawing{Laid: laid, Clip: info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 0.70}}})}
+	pill := pillColour(t, ResolveStyle(nil))
+	fps := float64(info.FPSNum) / float64(info.FPSDen)
+	// Each word by where its pill stands, which keeps its middle through
+	// its pop, and its width at rest from its first frame. That frame may
+	// share its hundredth with the next and show the next one's scale,
+	// 1.018 here, so its width is taken by the scale PopScale says.
+	middle, rest := -100.0, 0.0
+	checked, grown := 0, 0
+	for k, f := range frames {
+		l, r, _, _ := pillBox(f, pill, bounceRows)
+		if r < 0 {
+			continue
+		}
+		scale := d.PopScale(info, float64(k)/fps)
+		if x := float64(l+r) / 2; math.Abs(x-middle) > 4 {
+			middle, rest = x, float64(r-l+1)/scale
+			continue
+		}
+		drawn := float64(r-l+1) / rest
+		if math.Abs(drawn-scale) > 3.5/rest {
+			t.Errorf("frame %d at %.4f s: libass draws the pill at %.3f, PopScale says %.3f", k, float64(k)/fps, drawn, scale)
+		}
+		checked++
+		if scale > 1.01 {
+			grown++
+		}
+	}
+	if checked < 60 || grown < 30 {
+		t.Errorf("only %d frames were checked, %d of them grown", checked, grown)
+	}
+}
+
+// WordsLit is what a rendered short lights, frame for frame: which word's
+// pill each frame shows, and that a frame before the captions shows none.
+// Held only to Showing before, through the same moments, which proved the
+// frames were counted one way and not that libass shows that, found by
+// the second review. "so" is lit for 20 ms between two frames and on
+// none.
+//
+// On the real disk: ffmpeg renders the short and the test reads it back.
+func TestWordsLitIsWhatTheShortLights(t *testing.T) {
+	t.Parallel()
+	words := []Cue{{0.30, 0.62, "Ich"}, {0.62, 0.64, "so"}, {0.64, 1.02, "war"}, {1.02, 1.50, "da"}}
+	_, info, laid, frames := shortRowsAt(t, "25", words, 1.60, bounceTop, bounceRows)
+	clip := info.OnFrames(Clip{ID: "01", Slug: "bounce", Segments: []Segment{{Start: 0, End: 1.60}}})
+	d := &CaptionDrawing{Laid: laid, Clip: clip}
+	lit := d.WordsLit(info)
+	pill := pillColour(t, ResolveStyle(nil))
+	first, _ := info.pieceFrames(clip.Segments[0].Start, clip.Segments[0].End)
+	none, changes := 0, 0
+	was := CaptionShowing{-1, -1}
+	middle := -100.0
+	for k, f := range frames {
+		at := info.keptAt(first + int64(k))
+		want := CaptionShowing{-1, -1}
+		for i := range lit {
+			for w, span := range lit[i] {
+				if at >= span[0] && at < span[1] {
+					want = CaptionShowing{i, w}
+				}
+			}
+		}
+		l, r, _, _ := pillBox(f, pill, bounceRows)
+		if (r < 0) != (want.Word < 0) {
+			t.Errorf("frame %d at %.3f s shows a pill %v, WordsLit has caption %d word %d there", k, at, r >= 0, want.Caption, want.Word)
+		}
+		if r < 0 {
+			none++
+			middle, was = -100, want
+			continue
+		}
+		// A new word lit is a pill somewhere else, on the frame WordsLit
+		// says it begins, and on no other.
+		x := float64(l+r) / 2
+		moved := math.Abs(x-middle) > 4
+		if k > 0 && moved != (want != was) {
+			t.Errorf("frame %d at %.3f s: the pill moved %v, WordsLit goes from caption %d word %d to caption %d word %d",
+				k, at, moved, was.Caption, was.Word, want.Caption, want.Word)
+		}
+		if moved {
+			changes++
+		}
+		middle, was = x, want
+	}
+	if none == 0 || changes != 3 {
+		t.Errorf("%d frames without a pill and %d words lit, not some and 3", none, changes)
+	}
+	if got := lit[0][1]; got != [2]float64{-1, -1} {
+		t.Errorf(`"so", lit for 20 ms between two frames, is lit from %.3f to %.3f s, on no frame was wanted`, got[0], got[1])
 	}
 }

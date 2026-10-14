@@ -18,7 +18,7 @@ import (
 // belong to its neighbours. The same number of frames always pops the
 // same way.
 func TestEveryWordReachesItsPeakOnAFrame(t *testing.T) {
-	for _, fps := range []float64{24, 25, 30000.0 / 1001, 30, 50, 60} {
+	for _, fps := range []float64{24, 25, 30000.0 / 1001, 30, 50, 60, 120} {
 		for lit := 1; lit <= 20; lit++ {
 			s := popScales(lit, fps)
 			if len(s) > lit {

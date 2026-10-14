@@ -121,19 +121,21 @@ func (d *CaptionDrawing) popping(m int64) (from, to int, ok bool) {
 // PopScale is the scale libass draws the pill of the word lit on the frame
 // of the episode that starts at, 1 at rest, see popScales. The caption box
 // grows the frame round the word by it, so the frame stays on the pill's
-// edge through the pop, as it did when the browser drew both.
+// edge through the pop, as it did when the browser drew both. It reads the
+// spans the caption file is written with, popSpans, at the moment libass
+// reads on the frame.
 func (d *CaptionDrawing) PopScale(source SourceInfo, at float64) float64 {
 	m := source.CaptionMoment(d.Clip, at)
 	from, to, ok := d.popping(m)
 	if !ok {
 		return 1
 	}
-	first, scales := source.wordPop(from, to)
-	j := source.popGrid().frameOf(m) - first
-	if j < 0 || j >= int64(len(scales)) {
-		return 1
+	for _, span := range source.popSpans(from, to) {
+		if int64(span.from)*10 <= m && m < int64(span.to)*10 {
+			return span.scale
+		}
 	}
-	return scales[j]
+	return 1
 }
 
 // Lifted is d with only part of it drawn, LiftWord or LiftRest, at rest:

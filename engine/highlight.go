@@ -187,6 +187,41 @@ func (s SourceInfo) wordPop(from, to int) (first int64, scales []float64) {
 	return first, popScales(lit, float64(g.FPSNum)/float64(g.FPSDen))
 }
 
+// popSpan is a stretch of hundredths of a second of the short in which
+// the pill of a word is drawn at one scale.
+type popSpan struct {
+	from, to int
+	scale    float64
+}
+
+// popSpans is the pop of a word lit from from to to, hundredths of a
+// second of the short, as the caption file writes it: at rest until its
+// first frame, each frame's scale from the hundredth its frame starts in
+// to the hundredth the next starts in, and at rest after the pop. Spans of
+// no length are left out, since libass draws nothing for them: above 100
+// fps two frames can start in one hundredth, and the first of them shows
+// the second's scale. PopScale reads the same spans, so what it says is
+// what libass draws on every frame.
+func (s SourceInfo) popSpans(from, to int) []popSpan {
+	first, scales := s.wordPop(from, to)
+	grid := s.popGrid()
+	edge := func(j int) int {
+		return min(to, max(from, int(grid.shortMoment(first+int64(j))/10)))
+	}
+	var spans []popSpan
+	add := func(scale float64, a, b int) {
+		if b > a {
+			spans = append(spans, popSpan{a, b, scale})
+		}
+	}
+	add(1, from, edge(0))
+	for j, scale := range scales {
+		add(scale, edge(j), edge(j+1))
+	}
+	add(1, edge(len(scales)), to)
+	return spans
+}
+
 // pillLines are the blocks that measure how tall each line of a caption of
 // so many lines is: the tallest and the deepest letters the face draws,
 // lineReach, on that line alone. libass gives every line of a face the
@@ -422,16 +457,9 @@ func (e *Engine) highlighted(ctx context.Context, captions []LaidCaption,
 				}
 				continue
 			}
-			first, scales := source.wordPop(from, to)
-			grid := source.popGrid()
-			edge := func(j int) int {
-				return min(to, max(from, int(grid.shortMoment(first+int64(j))/10)))
+			for _, span := range source.popSpans(from, to) {
+				at(span.scale, span.from, span.to)
 			}
-			at(1, from, edge(0))
-			for j, scale := range scales {
-				at(scale, edge(j), edge(j+1))
-			}
-			at(1, edge(len(scales)), to)
 		}
 	}
 
