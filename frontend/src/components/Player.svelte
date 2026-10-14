@@ -1175,7 +1175,11 @@
   // Paused, the word a word step lands on bounces over the still frame,
   // the screen redrawing it on each of its own frames, see Lift in
   // lib/frames/captions.ts.
-  const layers = new CaptionLayers(() => queue?.repaint(), { paused: () => paused });
+  const layers = new CaptionLayers(
+    () => queue?.repaint(),
+    { paused: () => paused },
+    (text, video) => said(text, { level: "warn", video }),
+  );
   // For the walks, which wait until the captions over the frame are drawn.
   (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
   // While a word is typed, libass draws the caption without it and the

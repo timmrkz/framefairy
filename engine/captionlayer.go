@@ -55,6 +55,9 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 type CaptionLayer struct {
 	framewire.Layer
 	Scale float64
+	// Drew is how long the decoder took to draw it, without the wait for
+	// the caption file or for the decoder.
+	Drew time.Duration
 }
 
 // PreviewCaptions draws the captions of d over the frame of the episode
@@ -80,6 +83,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
 		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
 	}
+	drew := time.Now()
 	l, err := dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
 		File: track.file, Fonts: filepath.Join(filepath.Dir(track.file), FontsFolder)}, source.CaptionMoment(d.Clip, at))
 	// The frame round the word grows only with a pill that does: the
@@ -89,7 +93,7 @@ func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work s
 	if track.pill {
 		scale = d.PopScale(source, at)
 	}
-	return CaptionLayer{l, scale}, err
+	return CaptionLayer{l, scale, time.Since(drew)}, err
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -239,9 +243,15 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
 	return previewTracks.once(ctx, key, func(ctx context.Context) (previewFile, error) {
+		started := time.Now()
 		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source)
 		if err != nil {
 			return previewFile{}, err
+		}
+		// Kept for the rest of the run, so it says once why it has no
+		// pill, after the lines that say what could not be measured.
+		if !pill && ResolveStyle(style).Highlight {
+			e.Log.Warn("the caption file of the video preview has no pill, the words could not be measured")
 		}
 		// A measurement cut short leaves a track without its pill, which
 		// would be kept as the real one.
@@ -270,6 +280,7 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 		if err := InstallFont(dir, font); err != nil {
 			return previewFile{}, err
 		}
+		e.Log.Detail("made the caption file %s of the video preview in %d ms", filepath.Base(file), time.Since(started).Milliseconds())
 		return previewFile{file, pill}, nil
 	})
 }

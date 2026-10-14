@@ -340,7 +340,9 @@ before, with the keyboard's frame already round the next, which Tim saw on
   so a layer that comes late takes the box and the pill behind the sound
   together, and the walk counts that too: at most one paint in twenty
   with the layer of a frame before, and never for two frames on end. The
-  app logs a layer that takes longer than a frame to draw.
+  app counts the layers that take longer than a frame to draw and says
+  them in one line once the frames stop, see Captions in
+  [LOGGING.md](LOGGING.md).
 - The walk "the keyboard's frame goes from word to word with the pill"
   makes every caption layer come 120 ms late and presses Shift and the
   right arrow eight times. On every frame painted after each press, the

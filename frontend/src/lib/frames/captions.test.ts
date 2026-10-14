@@ -226,21 +226,35 @@ describe("the layers of the captions", () => {
   it("gives up on a layer that fails twice, and asks again when the frame is drawn again", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {
-      const { asked, answer } = answering((n) => n <= 2);
-      const layers = new CaptionLayers(() => {});
+      const { asked, answer } = answering((n) => n <= 4);
+      // What the layers say in the app's log, see said.ts. A failed
+      // answer said nothing before, found by the second review.
+      const told: string[] = [];
+      const layers = new CaptionLayers(
+        () => {},
+        undefined,
+        (text, video) => told.push(`${video}: ${text}`),
+      );
       layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
       layers.at(1.0, [10, 20]);
       answer.shift()!();
       await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      expect(told).toEqual([]);
       vi.advanceTimersByTime(300);
       expect(asked.length).toBe(2);
       answer.shift()!();
       await vi.waitFor(() => expect(layers.busy).toBe(false));
       expect(vi.getTimerCount()).toBe(0);
       expect(asked.length).toBe(2);
+      expect(told).toEqual(["/v.mp4: captions: a layer did not come, Error: gone"]);
       // Nothing was kept, so the next draw of the frame asks once more.
       expect(layers.at(1.0, [10, 20])).toBeNull();
       expect(asked.length).toBe(3);
+      // Given up on again for the same reason, it is not said again.
+      answer.shift()!();
+      await vi.waitFor(() => expect(layers.busy).toBe(false));
+      expect(asked.length).toBe(3);
+      expect(told.length).toBe(1);
     } finally {
       vi.useRealTimers();
     }

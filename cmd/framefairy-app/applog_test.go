@@ -158,9 +158,18 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(make([]byte, 2048))
 	})
-	serve("/frames/captions?path=/videos/start.mp4&at=1.6&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
-	})
+	// The same failure for the same video again, once a frame: written
+	// once, and counted after. It wrote two lines a frame before, found by
+	// the second review. failures is the package's own, so it is cleared
+	// for this test, which nothing else runs beside.
+	failures.mu.Lock()
+	clear(failures.last)
+	failures.mu.Unlock()
+	for _, at := range []string{"1.6", "1.64", "1.68"} {
+		serve("/frames/captions?path=/videos/start.mp4&at="+at+"&w=270&h=480", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
+		})
+	}
 	serve("/frames/hold?path=/videos/start.mp4", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the video's decoder could not start", http.StatusInternalServerError)
 	})
@@ -179,8 +188,11 @@ func TestFramesRequestsAreLogged(t *testing.T) {
 	has(t, find(lines, "captions at 1.6"), map[string]any{
 		"level": "warn", "video": "start.mp4", "status": 500, "said": "the captions could not be drawn",
 	})
-	if find(lines, "captions at 1.5") != nil {
-		t.Error("a caption layer that came as it should was written to the file")
+	if find(lines, "captions at 1.64") != nil || find(lines, "captions at 1.68") != nil {
+		t.Error("the same failure of the captions was written again straight after")
+	}
+	if find(lines, "captions at 1.5") != nil || strings.Contains(string(theLog.recent.all()), "captions at 1.5") {
+		t.Error("a caption layer that came as it should was written, to the file or to memory")
 	}
 	if kept := string(theLog.recent.all()); strings.Contains(kept, `\u0000`) {
 		t.Errorf("the memory holds the bytes of a caption layer: %s", kept)
@@ -483,4 +495,45 @@ func TestASlowEditSaysWhereItsTimeWent(t *testing.T) {
 		t.Errorf("the second edit does not say it waited for the first: %v", waited)
 	}
 	has(t, waited, map[string]any{"level": "warn", "from": "edits", "video": "ep.mp4"})
+}
+
+// The caption layers of a stretch of playing are said in one line once
+// the video asks for none for a while: how many were drawn, how many
+// slower than a frame, and the slowest. A line for every slow layer was
+// most of the log while a clip played, found by the second review.
+func TestCaptionLayersAreSaidOnceAStretch(t *testing.T) {
+	_, read := testLog(t)
+	tally := &layerTally{byVideo: map[string]*tally{}}
+	frame := 40 * time.Millisecond
+	for _, drew := range []time.Duration{10, 30, 55, 20} {
+		tally.add("/videos/start.mp4", drew*time.Millisecond, frame)
+	}
+	tally.mu.Lock()
+	tally.byVideo["/videos/start.mp4"].quiet.Stop()
+	tally.mu.Unlock()
+	tally.said("/videos/start.mp4")
+	has(t, find(read(), "caption layers drawn"), map[string]any{
+		"level": "debug", "from": "captions", "video": "start.mp4", "drawn": 4, "slow": 1, "slowest_ms": 55,
+	})
+	if len(tally.byVideo) != 0 {
+		t.Errorf("the stretch said is still counted: %v", tally.byVideo)
+	}
+}
+
+// What the engine says while it draws the video preview's captions goes
+// into the app's log under the video: that the words could not be
+// measured and the caption file has no pill above all, which went nowhere
+// before, found by the second review.
+func TestThePreviewsEngineWritesIntoTheAppsLog(t *testing.T) {
+	_, read := testLog(t)
+	log := previewLog("/videos/start.mp4")
+	log.Detail("could not measure the caption words, the highlight is off for this clip")
+	log.Warn("the caption file of the video preview has no pill, the words could not be measured")
+	log.Progress("measuring")
+	lines := read()
+	has(t, find(lines, "could not measure the caption words"), map[string]any{"level": "debug", "from": "captions", "video": "start.mp4"})
+	has(t, find(lines, "the caption file of the video preview has no pill"), map[string]any{"level": "warn", "from": "captions", "video": "start.mp4"})
+	if find(lines, "measuring") != nil {
+		t.Error("the engine's progress was written")
+	}
 }

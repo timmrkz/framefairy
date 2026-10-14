@@ -170,6 +170,31 @@ and that is not the app standing still. Plan row 2.242.
 jq -c 'select(.msg | test("reach the screen|took [0-9]+ ms|was slow"))' app.log
 ```
 
+### Captions
+
+The captions of the video preview come as a layer for every frame shown,
+so their lines are counted, not written one by one. Their part is
+`captions`.
+
+- The layers drawn are one line once the frames stop for 2 s: `caption
+  layers drawn, those slower than a frame counted`, with `drawn`, `slow`
+  and `slowest_ms`. It is `debug` when any layer was slower than a frame
+  and `trace` when none was.
+- A request for a layer that fails is a `warn` once, with its status and
+  what the Go side answered. The same failure again within 10 s is not
+  written, and the next line about it says how many times it came
+  since. A layer that comes is no line at all.
+- What the preview's engine says while it makes a caption file goes into
+  the same log: how long the file took, why the words could not be
+  measured, with ffmpeg's exit code, and a file with no pill while the
+  highlight is on, which is a `warn`.
+- The window gives up on a layer when it did not come twice, and on the
+  lifted word when it did not come once, and says so once for each,
+  `captions: a layer did not come` or `captions: the word lifted out did
+  not come`, with the reason.
+- A panic while drawing the captions or placing their words is an
+  `error` with its stack.
+
 ## Reading a report
 
 The log is JSON lines, read with [jq](https://jqlang.org). For example:

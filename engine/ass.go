@@ -491,21 +491,25 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 
 	tmp, err := os.MkdirTemp("", "framefairy-")
 	if err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	defer os.RemoveAll(tmp)
 	name := "measure.ass"
 	if err := os.WriteFile(filepath.Join(tmp, name),
 		[]byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	// Measuring has to use the same face as the render, or the pills behind
 	// the words come out the wrong size.
 	if err := InstallFont(tmp, s.Font); err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	template, err := e.SubtitleFilter(ctx)
 	if err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	chain := subtitleChain(template, name)
@@ -515,6 +519,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 		"-filter_complex", "[0:v]"+chain+",format=gray[v]",
 		"-map", "[v]", "-frames:v", "1", "-f", "rawvideo", "-")
 	if code != 0 || len(raw) < width*height {
+		e.Log.Detail("measuring the captions: ffmpeg ended with %d and drew %d of %d bytes", code, len(raw), width*height)
 		return nil, false
 	}
 

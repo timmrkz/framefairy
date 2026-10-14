@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"sync"
@@ -119,7 +120,8 @@ func (t *tracks) used(track string) {
 func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Msg("drawing the captions failed")
+			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
+				Msg("drawing the captions failed")
 			http.Error(w, "the captions could not be drawn", http.StatusInternalServerError)
 		}
 	}()
@@ -154,7 +156,6 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	started := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	source, err := sources.probe(ctx, path)
@@ -164,7 +165,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 		if err == nil {
 			// The short's size as the render takes it, which is what the
 			// caption file is laid out at.
-			e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
+			e := engine.NewEngine(previewLog(path), st.files)
 			o := jobOptions(st, e)
 			drawing := kept.drawing.Typing(typing).Lifted(part)
 			var l engine.CaptionLayer
@@ -185,11 +186,10 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			if err == nil {
 				// A layer slower than a frame is a pill behind the sound
 				// while the clip plays, and on a customer's machine the log
-				// is the only place that shows it.
-				if took := time.Since(started); source.FPSNum > 0 &&
-					took > time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)) {
-					theLog.line(zerolog.DebugLevel, "captions").Str("video", filepath.Base(path)).
-						Int64("ms", took.Milliseconds()).Msg("a caption layer took longer than a frame")
+				// is the only place that shows it. Counted, and said once
+				// the clip stops asking, see layerTally.
+				if source.FPSNum > 0 {
+					layers.add(path, l.Drew, time.Duration(float64(time.Second)*float64(source.FPSDen)/float64(source.FPSNum)))
 				}
 				// What the layer shows, which the caption box over it shows.
 				showing := kept.drawing.Showing(source, at)
@@ -211,8 +211,8 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			}
 		}
 	}
+	// The app's log says it once, with the reason, see logged.
 	if r.Context().Err() == nil {
-		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the captions could not be drawn")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -223,7 +223,8 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
-			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Msg("placing the caption words failed")
+			theLog.line(zerolog.ErrorLevel, "captions").Str("panic", fmt.Sprint(v)).Str("stack", string(debug.Stack())).
+				Msg("placing the caption words failed")
 			http.Error(w, "the caption words could not be placed", http.StatusInternalServerError)
 		}
 	}()
@@ -243,13 +244,13 @@ func (p *previews) serveWordFrames(st *store, w http.ResponseWriter, r *http.Req
 	defer cancel()
 	source, err := sources.probe(ctx, path)
 	if err != nil {
+		// The app's log says it once, with the reason, see logged.
 		if r.Context().Err() == nil {
-			theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the caption words could not be placed")
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
-	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
+	e := engine.NewEngine(previewLog(path), st.files)
 	frames := e.PreviewWordFrames(ctx, kept.drawing, drafts, source, jobOptions(st, e).RenderSettings())
 	if frames == nil {
 		frames = [][]engine.WordFrame{}
@@ -291,4 +292,89 @@ func captionDrafts(get func(string) string) (map[string]any, error) {
 		drafts["margin_v"] = engine.SnapCaptionY(y)
 	}
 	return drafts, nil
+}
+
+// previewLog is the log of the engine that draws the video preview's
+// captions, which writes into the app's log under the video: that the
+// words could not be measured and the caption file has no pill, that a
+// caption file was made and how long it took. It went nowhere before, and
+// a caption file without its pill was then kept for the rest of the run
+// with nothing to say why.
+func previewLog(path string) *engine.Log {
+	log := engine.NewLog(io.Discard, false, false)
+	video := filepath.Base(path)
+	log.SetSink(func(ev engine.Event) {
+		level := zerolog.DebugLevel
+		switch ev.Kind {
+		case engine.EventWarn:
+			level = zerolog.WarnLevel
+		case engine.EventError:
+			level = zerolog.ErrorLevel
+		case engine.EventInfo, engine.EventOK, engine.EventDetail:
+		default:
+			return
+		}
+		theLog.line(level, "captions").Str("video", video).Msg(ev.Text)
+	})
+	return log
+}
+
+// layerTally counts the caption layers drawn for each video and those
+// slower than a frame, and says so in one line once a video has asked for
+// none for a while, the end of a stretch of playing or stepping. A line
+// for every layer slower than a frame was most of the log while a clip
+// played, and the report's memory of the last lines held minutes rather
+// than the hour it is sized for.
+type layerTally struct {
+	mu      sync.Mutex
+	byVideo map[string]*tally
+}
+
+type tally struct {
+	drawn, slow int
+	worst       time.Duration
+	quiet       *time.Timer
+}
+
+var layers = &layerTally{byVideo: map[string]*tally{}}
+
+// layersQuiet is how long a video asks for no layer before its stretch
+// is said to have ended.
+const layersQuiet = 2 * time.Second
+
+// add counts a layer of the video at path the decoder drew in drew, of a
+// short whose frames last frame.
+func (lt *layerTally) add(path string, drew, frame time.Duration) {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+	t := lt.byVideo[path]
+	if t == nil {
+		t = &tally{}
+		lt.byVideo[path] = t
+		t.quiet = time.AfterFunc(layersQuiet, func() { lt.said(path) })
+	} else {
+		t.quiet.Reset(layersQuiet)
+	}
+	t.drawn++
+	if drew > frame {
+		t.slow++
+	}
+	t.worst = max(t.worst, drew)
+}
+
+// said writes the line of a stretch that ended and starts the next.
+func (lt *layerTally) said(path string) {
+	lt.mu.Lock()
+	t := lt.byVideo[path]
+	delete(lt.byVideo, path)
+	lt.mu.Unlock()
+	if t == nil || t.drawn == 0 {
+		return
+	}
+	level := zerolog.TraceLevel
+	if t.slow > 0 {
+		level = zerolog.DebugLevel
+	}
+	theLog.line(level, "captions").Str("video", filepath.Base(path)).Int("drawn", t.drawn).Int("slow", t.slow).
+		Int64("slowest_ms", t.worst.Milliseconds()).Msg("caption layers drawn, those slower than a frame counted")
 }

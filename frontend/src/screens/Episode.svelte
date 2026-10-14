@@ -1984,7 +1984,7 @@
     const key = track ? `${path}\n${track}` : "";
     if (!key || untrack(() => wordFrames?.key) === key) return;
     const off = new AbortController();
-    void wordFramesOf(path, track!, off.signal)
+    void wordFramesOf(path, track!, off.signal, (text, video) => said(text, { level: "warn", video }))
       .then((frames) => {
         if (!off.signal.aborted) wordFrames = { key, frames };
       })

@@ -284,9 +284,24 @@ export type WordFrame = { x: number; y: number; w: number; h: number; r: number;
 
 // The word frames of the captions of a track, each caption's words in
 // their order, or null where the Go side cannot say, see WordFrame.
-export async function wordFramesOf(path: string, track: string, signal: AbortSignal): Promise<WordFrame[][] | null> {
+export async function wordFramesOf(
+  path: string,
+  track: string,
+  signal: AbortSignal,
+  tell?: Tell,
+): Promise<WordFrame[][] | null> {
   const r = await fetch(`/frames/captions/words?${new URLSearchParams({ path, track })}`, { signal });
-  return r.ok ? ((await r.json()) as WordFrame[][] | null) : null;
+  if (r.ok) return (await r.json()) as WordFrame[][] | null;
+  tell?.(`captions: where the words stand did not come, ${await failure(r)}`, path);
+  return null;
+}
+
+// Why an answer brought no layer: its status and what the Go side said,
+// or that it could not be read.
+async function failure(r: Response): Promise<string> {
+  if (r.ok) return "an answer that could not be read";
+  const text = await r.text().catch(() => "");
+  return `${r.status}${text.trim() ? ` ${text.trim().slice(0, 120)}` : ""}`;
 }
 
 // What the video preview asks the captions of: the episode, the captions
@@ -372,6 +387,10 @@ function calm(): boolean {
 // whether it is paused.
 export type Still = { paused(): boolean };
 
+// How the layers say in the app's log that one was given up on, see
+// lib/said.ts, which the tests leave out.
+export type Tell = (text: string, video: string) => void;
+
 // The layers of the captions of the video preview, asked for each frame
 // of the episode by the moment it starts, at a size. A frame on its way to
 // the screen asks ahead, coming, so its layer is there when it is drawn.
@@ -406,7 +425,24 @@ export class CaptionLayers {
   constructor(
     private came: () => void,
     private still?: Still,
+    private tell?: Tell,
   ) {}
+
+  // What was said of layers given up on, so each failure is said once for
+  // each video, not once a frame.
+  private told = new Set<string>();
+
+  // Says that the layer of what, or a part of it, was given up on and why:
+  // the interface turned every failed answer into no layer and said
+  // nothing, so a frame without its captions left no trace, found by the
+  // second review.
+  private gaveUp(ask: CaptionAsk, what: string, why: string) {
+    const key = `${ask.path}\n${what}\n${why}`;
+    if (!this.tell || this.told.has(key)) return;
+    if (this.told.size > 64) this.told.clear();
+    this.told.add(key);
+    this.tell(`captions: ${what} did not come, ${why}`, ask.path);
+  }
 
   // Whether a word is bouncing, or about to once its parts are there, for
   // the walks.
@@ -530,14 +566,19 @@ export class CaptionLayers {
             layer.size = size;
             layer.showing = showing;
             if (part === "word") lift.bounce = readBounce(r.headers.get("X-Caption-Bounce"));
-          }
+          } else why = await failure(r);
           return layer;
         })
-        .catch(() => null);
+        .catch((e) => {
+          why = String(e);
+          return null;
+        });
+    let why = "";
     void Promise.all([part("rest"), part("word")]).then(([rest, word]) => {
       if (this.lift !== lift) return;
       if (!rest || !word) {
         // Without its parts the frame shows its own layer.
+        this.gaveUp(ask, "the word lifted out", why);
         this.lift = null;
         this.came();
         return;
@@ -592,6 +633,7 @@ export class CaptionLayers {
       ...(ask.typing ? { typing: ask.typing } : {}),
       ...ask.drafts,
     });
+    let why = "";
     void fetch(`/frames/captions?${q}`)
       .then(async (r) => {
         const layer = r.ok ? readLayer(await r.arrayBuffer()) : null;
@@ -600,10 +642,13 @@ export class CaptionLayers {
           layer.size = size;
           layer.showing = readShowing(r.headers.get("X-Caption-Showing"));
           layer.scale = readScale(r.headers.get("X-Caption-Scale"));
-        }
+        } else why = await failure(r);
         return layer;
       })
-      .catch(() => null)
+      .catch((e) => {
+        why = String(e);
+        return null;
+      })
       .then((layer) => {
         this.going.delete(key);
         const w = this.waiting;
@@ -620,7 +665,10 @@ export class CaptionLayers {
             setTimeout(() => {
               if (this.waiting?.key === key) this.fetch(this.waiting);
             }, AGAIN);
-          } else this.waiting = null;
+          } else {
+            this.waiting = null;
+            this.gaveUp(ask, "a layer", why);
+          }
           return;
         }
         // The frame drawn without its own layer is drawn again once it

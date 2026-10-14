@@ -415,6 +415,49 @@ func (r *recorded) Write(b []byte) (int, error) {
 // Unwrap lets http.ResponseController reach the writer underneath.
 func (r *recorded) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// repeatedFailures keeps the failures of the captions said lately, by
+// video and reason, so one that goes on is written once a while and
+// counted in between.
+type repeatedFailures struct {
+	mu   sync.Mutex
+	last map[string]*repeat
+}
+
+type repeat struct {
+	at    time.Time
+	count int
+}
+
+var failures = &repeatedFailures{last: map[string]*repeat{}}
+
+// failuresQuiet is how long the same failure is counted rather than
+// written again.
+const failuresQuiet = 10 * time.Second
+
+// seen notes a failure of the video at path for reason, and gives -1
+// while it is counted, or how many times it came since it was last
+// written, once it is to be written again.
+func (f *repeatedFailures) seen(path, reason string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := path + "\x00" + reason
+	r := f.last[key]
+	now := time.Now()
+	if r != nil && now.Sub(r.at) < failuresQuiet {
+		r.count++
+		return -1
+	}
+	if len(f.last) > 256 {
+		clear(f.last)
+	}
+	before := 0
+	if r != nil {
+		before = r.count
+	}
+	f.last[key] = &repeat{at: now}
+	return before
+}
+
 // A pull of frames slower than this is a debug line, and so is every one
 // that ended its stream or was the first of its stream. The others are
 // trace lines, see appLog.
@@ -463,12 +506,24 @@ func logged(w http.ResponseWriter, r *http.Request, serve func(http.ResponseWrit
 			what += ", the video ended"
 		}
 	case "/frames/captions":
-		// One for every frame drawn while a clip plays. A layer slower
-		// than a frame says so in a line of its own, see captions.go.
+		// One for every frame drawn while a clip plays, so a layer drawn
+		// is counted, not written, and said for a stretch of playing at
+		// a time, see layerTally in captions.go. A failure is written
+		// once with its reason, and the same failure again for the same
+		// video is counted until it has not come for a while: the
+		// interface asks once a frame, and a lasting failure wrote
+		// twice the frame rate a second.
 		if !failed {
-			level = zerolog.TraceLevel
+			return
+		}
+		repeated := failures.seen(q.Get("path"), fmt.Sprintf("%d %s", rec.status, rec.body))
+		if repeated < 0 {
+			return
 		}
 		what = fmt.Sprintf("captions at %s", q.Get("at"))
+		if repeated > 0 {
+			what += fmt.Sprintf(", %d times more since it was last said", repeated)
+		}
 		if a := q.Get("ahead"); a != "" {
 			what += " ahead " + a
 		}
