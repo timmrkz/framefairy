@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -268,6 +269,12 @@ func FuzzLoadClips(f *testing.F) {
 		` "rotations": [{"to": 0.5, "deg": 90}, {"from": 1, "deg": 45.5}]}]}`)
 	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1, "crop_x": 8}, {"start": 1, "end": 2}],` +
 		` "crop_marks": [{"at": 0.5, "x": 10}, {"at": "0.6", "x": 4}, {"at": 1.5, "x": 1.5}, {"at": 0.5}, 3, null]}]}`)
+	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
+		` "corrections": {"100": "zwei Worte", "-1": "a", "01": "b", "1e3": "c", "99999999999999": "d",` +
+		` "200": 7, "300": "a\u0007b", "400": " ja", "500": "` + strings.Repeat("x", 61) + `"},` +
+		` "removed_words": ["100", "-1", "01", "1e3", 200, "100/1", null, "99999999999999"]}]}`)
+	f.Add(`{"clips": [{"id": "01", "segments": [{"start": 0, "end": 1}],` +
+		` "corrections": ["100", "ja"], "removed_words": {"100": true}}]}`)
 	f.Add(`{"clips": []}`)
 	f.Fuzz(func(t *testing.T, body string) {
 		plan, clips, err := LoadClips(writePlanAt(t, body))
@@ -295,6 +302,22 @@ func FuzzLoadClips(f *testing.F) {
 					t.Fatalf("segment %v-%v", seg.Start, seg.End)
 				}
 			}
+			if len(clip.Corrections) > maxCorrections || len(clip.RemovedWords) > maxRemovedWords {
+				t.Fatalf("%d corrections and %d removed words", len(clip.Corrections), len(clip.RemovedWords))
+			}
+			for key, text := range clip.Corrections {
+				if !canonicalMillisecond(key) {
+					t.Fatalf("a correction is kept against %q", key)
+				}
+				if clean, err := CleanWordText(text); err != nil || clean != text {
+					t.Fatalf("a correction reads %q", text)
+				}
+			}
+			for key := range clip.RemovedWords {
+				if !canonicalMillisecond(key) {
+					t.Fatalf("a removed word is kept as %q", key)
+				}
+			}
 			if len(clip.Thumbnails) > MaxThumbnails {
 				t.Fatalf("%d thumbnails", len(clip.Thumbnails))
 			}
@@ -305,6 +328,13 @@ func FuzzLoadClips(f *testing.F) {
 			}
 		}
 	})
+}
+
+// canonicalMillisecond says whether a key is a millisecond of an episode
+// written the one way it is written.
+func canonicalMillisecond(key string) bool {
+	ms, err := strconv.ParseInt(key, 10, 64)
+	return err == nil && ms >= 0 && ms <= MaxEpisodeSeconds*1000 && strconv.FormatInt(ms, 10) == key
 }
 
 func TestCropWindowAndClamp(t *testing.T) {

@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -246,4 +248,71 @@ func shownWordsOf(t *testing.T, fsys afero.Fs, path, id string, tr *Transcript) 
 		out = append(out, cueWords(c))
 	}
 	return strings.Join(out, " ")
+}
+
+// longHeard is n words heard one after the other, a third of a second
+// each, about four hours for 40,000.
+func longHeard(n int) []Cue {
+	heard := make([]Cue, n)
+	for i := range heard {
+		at := float64(i) / 3
+		heard[i] = Cue{Start: at, End: at + 0.3, Text: fmt.Sprintf("wort%d", i)}
+	}
+	return heard
+}
+
+// The words of a clip are its own corrections over what was heard,
+// whichever way they are made: only the corrected words made again, or
+// every word.
+func TestAClipsWordsAreTheSameMadeInPlaceOrWhole(t *testing.T) {
+	t.Parallel()
+	heard := longHeard(400)
+	heard[7].Text = "zwei worte"
+	heard[9].Text = " "
+	tr := fromStored(heard, nil, 0, 0, nil)
+	for seed := range int64(40) {
+		rng := rand.New(rand.NewPCG(uint64(seed), 1))
+		corrections := map[string]string{}
+		for range rng.IntN(12) {
+			w := tr.HeardWords[rng.IntN(len(tr.HeardWords))]
+			corrections[wordKey(w.Start)] = []string{"ja", "na ja", "so ist das", "Typ"}[rng.IntN(4)]
+		}
+		if rng.IntN(4) == 0 {
+			corrections[wordKey(tr.HeardWords[9].Start)] = "da"
+		}
+		fast := tr.Of(Clip{Corrections: corrections})
+		whole := *tr
+		whole.Correct(corrections)
+		if !slices.Equal(fast.HeardWords, whole.HeardWords) || !slices.Equal(fast.Words, whole.Words) {
+			t.Fatalf("seed %d: made in place, the words differ from the words made whole", seed)
+		}
+		if fast.Language != tr.Language {
+			t.Errorf("seed %d: the clip's words are in %q, the video's in %q", seed, fast.Language, tr.Language)
+		}
+		if len(tr.fixes) != 0 || tr.HeardWords[7].Text != "zwei worte" {
+			t.Fatalf("seed %d: the video's words changed", seed)
+		}
+	}
+}
+
+// A clip with a correction copies the words of the video and makes again
+// only the one it corrects. It made every word again, on every pointer
+// move on its edges.
+func TestAClipWithACorrectionMakesOnlyThatWordAgain(t *testing.T) {
+	tr := fromStored(longHeard(40000), nil, 0, 0, nil)
+	clip := Clip{Corrections: map[string]string{wordKey(tr.HeardWords[20000].Start): "zwei Worte"}}
+	if got := tr.Of(clip).Words[20001].Text; got != "Worte" {
+		t.Fatalf("the corrected word reads %q", got)
+	}
+	if allocs := testing.AllocsPerRun(20, func() { tr.Of(clip) }); allocs > 32 {
+		t.Errorf("a clip with one correction took %.0f allocations, want a few", allocs)
+	}
+}
+
+func BenchmarkAClipWithACorrection(b *testing.B) {
+	tr := fromStored(longHeard(40000), nil, 0, 0, nil)
+	clip := Clip{Corrections: map[string]string{wordKey(tr.HeardWords[20000].Start): "zwei Worte"}}
+	for b.Loop() {
+		tr.Of(clip)
+	}
 }

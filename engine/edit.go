@@ -190,6 +190,10 @@ func lockFile(fsys afero.Fs, path string) func() {
 	}
 }
 
+// errUnchanged is what a change to a plan says when it changes nothing,
+// so the plan is not written and keeps its revision.
+var errUnchanged = errors.New("the plan is unchanged")
+
 func editPlan(fsys afero.Fs, path string, change func(top *object, clips []*object) error) error {
 	defer lockFile(fsys, path)()
 	return editPlanLocked(fsys, path, change)
@@ -219,6 +223,9 @@ func editPlanLocked(fsys afero.Fs, path string, change func(top *object, clips [
 		}
 	}
 	if err := change(top, clips); err != nil {
+		if errors.Is(err, errUnchanged) {
+			return nil
+		}
 		return err
 	}
 	revision := 0

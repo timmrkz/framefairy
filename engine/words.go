@@ -1,19 +1,21 @@
 package engine
 
 import (
+	"cmp"
 	"maps"
 	"math"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 // The words an episode says, see docs/WORDS.md. There is one list of them,
 // Transcript.Words, and it is made here and nowhere else: the recogniser's
-// words moved onto the sound, with the corrections applied, and a
-// correction that reads as several words split into those words. Every
-// reader gets the same list, the prompt, the edits, the captions and the
-// app alike.
+// words moved onto the sound. The prompt, a search and the app read it as
+// it was heard. A clip reads it through Of, with its own corrections, and
+// a correction that reads as several words is split into those words.
 
 // hear makes the words from what the recogniser heard, moved onto the
 // sound, with no corrections yet.
@@ -21,13 +23,15 @@ func (t *Transcript) hear(raw []Cue) {
 	t.RawWords = raw
 	t.snapped = SnapWords(raw, t.Frames, t.Start, t.Floor)
 	t.Correct(nil)
+	t.Language = wordsLanguage(t.Words)
 }
 
 // Correct makes the words again with a clip's corrections, keyed by the
 // millisecond a word starts, see Clip.Corrections. A correction says what
 // a word reads, and one that reads as several words splits the word into
 // them. Removing a word is the clip's too, see RemovedWords, and no
-// correction takes a word out.
+// correction takes a word out. The language stays the episode's, whatever
+// one clip spells.
 func (t *Transcript) Correct(corrections map[string]string) {
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
@@ -42,7 +46,6 @@ func (t *Transcript) Correct(corrections map[string]string) {
 		words = append(words, splitWord(w)...)
 	}
 	t.HeardWords, t.Words = heard, words
-	t.Language = wordsLanguage(words)
 	t.fixes = maps.Clone(corrections)
 }
 
@@ -52,13 +55,79 @@ func (t *Transcript) Correct(corrections map[string]string) {
 // reads as it was heard in every other, and in a clip made again where a
 // removed one was. A clip with no corrections reads the episode's words
 // as they are, and nothing is copied.
+//
+// A clip's captions are laid out through here on every pointer move on an
+// edge, two or three times, so only the words a clip corrects are made
+// again, see correctFew. Making every word of the episode again took 13 ms
+// and 6 MB a time for four hours of words.
 func (t *Transcript) Of(clip Clip) *Transcript {
 	if maps.Equal(t.fixes, clip.Corrections) || (len(t.fixes) == 0 && len(clip.Corrections) == 0) {
 		return t
 	}
 	own := *t
-	own.Correct(clip.Corrections)
+	if len(t.fixes) > 0 || !own.correctFew(clip.Corrections) {
+		own.Correct(clip.Corrections)
+	}
 	return &own
+}
+
+// correctFew is Correct for a transcript that has no corrections yet: the
+// words are copied, and only the ones the corrections name are made
+// again, in their place. It says false, and changes nothing, when the
+// words are not laid out the way it expects, and Correct makes them all.
+func (t *Transcript) correctFew(corrections map[string]string) bool {
+	type fix struct {
+		i    int
+		text string
+	}
+	fixes := make([]fix, 0, len(corrections))
+	for key, text := range corrections {
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		ms, err := strconv.ParseInt(key, 10, 64)
+		if err != nil {
+			return false
+		}
+		at := float64(ms) / 1000
+		i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= at-0.0006 })
+		for i < len(t.HeardWords) && wordKey(t.HeardWords[i].Start) != key && t.HeardWords[i].Start < at+0.0006 {
+			i++
+		}
+		if i >= len(t.HeardWords) || wordKey(t.HeardWords[i].Start) != key {
+			// Correct keeps no correction of a word that is not there.
+			continue
+		}
+		if i+1 < len(t.HeardWords) && wordKey(t.HeardWords[i+1].Start) == key {
+			return false
+		}
+		fixes = append(fixes, fix{i, text})
+	}
+	slices.SortFunc(fixes, func(a, b fix) int { return cmp.Compare(a.i, b.i) })
+	heard := slices.Clone(t.HeardWords)
+	words := make([]Cue, 0, len(t.Words)+len(fixes))
+	from := 0
+	for _, f := range fixes {
+		was := t.HeardWords[f.i]
+		// The words a heard word makes stand together, the first where it
+		// starts, see splitWord.
+		at := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= was.Start })
+		n := 0
+		if strings.TrimSpace(was.Text) != "" {
+			n = max(len(strings.Fields(was.Text)), 1)
+		}
+		if at < from || at+n > len(t.Words) || (n > 0 && t.Words[at].Start != was.Start) {
+			return false
+		}
+		words = append(words, t.Words[from:at]...)
+		heard[f.i].Text = f.text
+		words = append(words, splitWord(heard[f.i])...)
+		from = at + n
+	}
+	words = append(words, t.Words[from:]...)
+	t.HeardWords, t.Words = heard, words
+	t.fixes = maps.Clone(corrections)
+	return true
 }
 
 // captionWordsIn is the words a clip's captions are laid out from: the

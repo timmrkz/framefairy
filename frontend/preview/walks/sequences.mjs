@@ -14,6 +14,9 @@
 //                      the engine has the word in, which picks it
 //   ["gone", word]     no caption the engine has holds the word
 //   ["holds", word]    a caption the engine has holds the word
+//   ["clips with", [word, n]]
+//                      n clips of the episode on screen, of those not
+//                      removed, have a caption with this very word
 //   ["fewer", label, n] the engine's captions hold n words fewer than at
 //                      the mark, and as many captions
 //   ["blocks"]         the clip timeline draws a block for every caption the
@@ -730,6 +733,52 @@ export const sequences = [
       ["make here", "i"],
       ["holds", "Schulhof"],
       ["blocks"],
+    ],
+  },
+  {
+    // Plan row 2.249, Tim chose: a spelling fix is the clip's, and goes
+    // with it.
+    name: "a word corrected, then its clip removed and made again with I, reads as it was heard",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["gone", "Schulhoff"],
+      ["holds", "Schulhof"],
+      ["blocks"],
+    ],
+  },
+  {
+    name: "a word corrected in one clip reads as it was heard in another clip over it",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["put back"],
+      ["clips with", ["Schulhoff", 1]],
+      ["clips with", ["Schulhof", 1]],
+    ],
+  },
+  {
+    name: "a word removed in one clip is still shown in another clip over it",
+    steps: [
+      ["frame", "Schulhof"],
+      ["press", "Backspace"],
+      ["gone", "Schulhof"],
+      ["remove clip"],
+      ["make here", "i"],
+      ["put back"],
+      ["clips with", ["Schulhof", 1]],
     ],
   },
   {
@@ -3010,6 +3059,18 @@ for (const seq of toWalk) {
         if (!now.captions.some((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(arg))))) {
           wrong = `no caption has "${arg}"\n${describe(marks.start ?? now, now)}`;
         }
+        break;
+      }
+      case "clips with": {
+        const [word, n] = arg;
+        const path = await episodeOn(page);
+        const bare = (text) => text.replace(/[^\p{L}\p{N}]/gu, "");
+        let have = 0;
+        for (const c of (await ask(page, "Clips", path)).filter((c) => !c.rejected)) {
+          const view = await ask(page, "Captions", path, c.plan, c.id);
+          if (view.captions.some((cap) => cap.lines.some((l) => l.words.some((w) => bare(w.text) === word)))) have++;
+        }
+        if (have !== n) wrong = `${have} clips have "${word}", not ${n}`;
         break;
       }
       case "gone": {

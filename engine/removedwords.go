@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"cmp"
+	"maps"
 	"slices"
 	"strconv"
 )
@@ -58,15 +58,7 @@ func readRemovedWords(raw any) RemovedWords {
 // word starts, so a plan reads the same whatever order they were removed
 // in.
 func (r RemovedWords) list() []any {
-	keys := make([]string, 0, len(r))
-	for key := range r {
-		keys = append(keys, key)
-	}
-	slices.SortFunc(keys, func(a, b string) int {
-		am, _ := strconv.ParseInt(a, 10, 64)
-		bm, _ := strconv.ParseInt(b, 10, 64)
-		return cmp.Compare(am, bm)
-	})
+	keys := slices.SortedFunc(maps.Keys(r), byMillisecond)
 	out := make([]any, len(keys))
 	for i, key := range keys {
 		out[i] = key

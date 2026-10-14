@@ -59,10 +59,11 @@ type Piece = { start: number; end: number; cropX: number; moved: boolean };
 // moment the clip list is read again.
 const held = (): Record<string, Piece[]> => ((window as any).__pieces ??= {});
 
-// The corrections, kept the same way the cuts are: the Go side writes them
-// down for the whole episode, so a word corrected once stays corrected
-// however often the clip is read again.
-const fixed = (): Record<string, string> => ((window as any).__fixed ??= {});
+// The corrections, kept the same way the cuts are, for each clip: the Go
+// side writes them down in the clip's plan entry, so a word corrected once
+// stays corrected in that clip however often it is read again, and every
+// other clip reads it as it was heard.
+const fixed = (id: string): Record<string, string> => (((window as any).__fixed ??= {})[id] ??= {});
 const said = (start: number) => start.toFixed(3);
 
 const pieces = (n: number, start: number): Piece[] =>
@@ -293,9 +294,9 @@ const cuesOf = (segments: { start: number; end: number }[], id = "") => {
     segments,
     words: allWords()
       .filter((w) => segments.some((p) => holds(p, w)))
-      .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
-      // A word corrected to nothing is removed, the way Transcript.Correct
-      // leaves it out.
+      .map((w) => ({ ...w, text: fixed(id)[said(w.start)] ?? w.text }))
+      // A word corrected to nothing is removed, a stand-in for the words
+      // the engine's clip does not show, see RemovedWords.
       .filter((w) => w.text !== ""),
   };
   // Each word also keeps when it starts in the episode, which is what a
@@ -1573,9 +1574,8 @@ const Answers = {
           },
         ]);
       }
-      // A correction belongs to the episode and is applied to every clip
-      // that holds the word, which here is every clip that reads it back
-      // through fixed().
+      // A correction belongs to the clip it is typed in, and every other
+      // clip reads the word as it was heard, see fixed().
       case "SetCaptionStyle":
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error("that face is not installed"));
@@ -1609,7 +1609,8 @@ const Answers = {
         const all = allWords();
         const i = all.findIndex((w) => said(w.start) === said(Number(args[3])));
         const put = new Map<number, string>([[i, text]]);
-        const reads = (j: number) => (fixed()[said(all[j].start)] ?? all[j].text).split(" ").filter(Boolean);
+        const own = fixed(String(args[2]));
+        const reads = (j: number) => (own[said(all[j].start)] ?? all[j].text).split(" ").filter(Boolean);
         const gone = (j: number) => j >= 0 && j < all.length && reads(j).length === 0;
         const was = i >= 0 ? reads(i) : [];
         const now = text.split(" ").filter(Boolean);
@@ -1631,23 +1632,24 @@ const Answers = {
         }
         for (const [j, says] of put) {
           const key = j >= 0 ? said(all[j].start) : said(Number(args[3]));
-          if (j >= 0 && says === all[j].text) delete fixed()[key];
-          else fixed()[key] = says;
+          if (j >= 0 && says === all[j].text) delete own[key];
+          else own[key] = says;
         }
         return Promise.resolve(clipOf(String(args[2])));
       }
       case "RemoveWord": {
-        // A stand-in: here the word is gone from every clip that reads it
-        // back through fixed(), where the engine removes it from the one
-        // clip alone, see engine.RemoveWord.
+        // A stand-in: here the word is corrected to nothing in the one
+        // clip, where the engine keeps it in the clip's removed words with
+        // its room, see engine.RemoveWord.
         if (location.search.includes("refuse")) {
           return Promise.reject(new Error("there is no word at 0:57"));
         }
         const key = said(Number(args[3]));
         const word = allWords().find((w) => said(w.start) === key);
-        const reads = (fixed()[key] ?? word?.text ?? "").split(" ").filter(Boolean);
+        const own = fixed(String(args[2]));
+        const reads = (own[key] ?? word?.text ?? "").split(" ").filter(Boolean);
         const part = Number(args[4]);
-        fixed()[key] = part < 0 ? "" : reads.filter((_, i) => i !== part).join(" ");
+        own[key] = part < 0 ? "" : reads.filter((_, i) => i !== part).join(" ");
         return Promise.resolve(clipOf(String(args[2])));
       }
       case "Waveform": {
@@ -1728,11 +1730,8 @@ const Answers = {
       }
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve([]);
-        return Promise.resolve(
-          words(Number(args[1]), Number(args[2]))
-            .map((w) => ({ ...w, text: fixed()[said(w.start)] ?? w.text }))
-            .filter((w) => w.text !== ""),
-        );
+        // What the video says, as it was heard, the way the Go side answers.
+        return Promise.resolve(words(Number(args[1]), Number(args[2])));
       // Removing waits for the episode's work to stop, which takes a
       // moment while a search runs. Every call is counted, so a probe can
       // see whether a second click sent a second removal.

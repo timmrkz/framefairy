@@ -286,7 +286,8 @@ func (p *Project) Transcript() (*Transcript, error) {
 }
 
 // SavedTranscript reads the words already heard of an episode, as far as
-// hearing it has got, with its corrections. It never transcribes, and
+// hearing it has got, as they were heard. A clip's corrections are its
+// own, see Transcript.Of. It never transcribes, and
 // returns ErrNoTranscript when there is nothing heard yet.
 func SavedTranscript(fsys afero.Fs, source, logsDir, modelDir string, silenceDB *float64) (*Transcript, error) {
 	stamp, err := stampOf(fsys, source)

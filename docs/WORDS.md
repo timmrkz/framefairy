@@ -24,7 +24,8 @@ before a fix reached them.
 
 ## The model
 
-There are two levels, and each is worked out in one function.
+There are three levels, and each is worked out in one function. What a
+clip leaves out stands beside them.
 
 **What is said**, `Transcript.Words`. The recogniser's words, moved onto
 the sound (`SnapWords`). Everything that reads the episode reads these:

@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
 
 	"framefairy/engine"
 )
@@ -47,7 +52,46 @@ func (s *FrameFairy) transcript(p *engine.Project) (*engine.Transcript, error) {
 		}
 		stamp += fmt.Sprintf("|%d,%d", info.Size(), info.ModTime().UnixNano())
 	}
-	return s.said.get(p.Source, stamp, p.Transcript)
+	return s.said.get(p.Source, stamp, func() (*engine.Transcript, error) {
+		s.oldCorrections(p)
+		return p.Transcript()
+	})
+}
+
+// oldCorrections says once, at info, that a video still has the
+// corrections.json a version before 2.249 kept for the whole video, and
+// how many words it held. Corrections and removed words are a clip's now,
+// and the file is left where it is and unread, so a report of a fix gone
+// after the update explains itself. It never says what the words read.
+func (s *FrameFairy) oldCorrections(p *engine.Project) {
+	file := filepath.Join(p.LogsDir(), "corrections.json")
+	data, err := afero.ReadFile(p.Files, file)
+	if err != nil {
+		return
+	}
+	if _, told := s.toldOld.LoadOrStore(file, true); told {
+		return
+	}
+	var words map[string]any
+	_ = json.Unmarshal(data, &words)
+	theLog.line(zerolog.InfoLevel, "edits").Str("video", filepath.Base(p.Source)).Int("words", len(words)).
+		Msg("the corrections of the whole video from before are left unread")
+}
+
+// wordCounts adds to the line of an edit of a clip's words how many words
+// the clip corrects and how many it removes once the edit is made, never
+// which, so a word come back or a fix gone is read from the log alone.
+func (s *FrameFairy) wordCounts(line *zerolog.Event, plan, clipID string) *zerolog.Event {
+	_, clips, err := engine.LoadClips(s.store.files, plan)
+	if err != nil {
+		return line
+	}
+	for _, c := range clips {
+		if c.ID == clipID {
+			return line.Int("corrections", len(c.Corrections)).Int("removed_words", len(c.RemovedWords))
+		}
+	}
+	return line
 }
 
 // keptTranscripts is how many episodes' transcripts are kept, the same as
@@ -166,7 +210,7 @@ func (s *FrameFairy) SetWord(ctx context.Context, path, plan, clipID string, sta
 		return engine.SetWordText(s.store.files, plan, clipID, start, text, t)
 	})
 	// Where the word is and whether it was removed, never what it reads.
-	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
 	line.Float64("word", start).Bool("removed", strings.TrimSpace(text) == "").Msg("a word was corrected")
 	if err != nil {
 		return ClipEntry{}, err
@@ -193,7 +237,7 @@ func (s *FrameFairy) RemoveWord(ctx context.Context, path, plan, clipID string, 
 		return engine.RemoveWord(s.store.files, plan, clipID, start, part, t)
 	})
 	// Where the word is and which of its words, never what it reads.
-	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
 	line.Float64("word", start).Int("part", part).Msg("a word was removed")
 	if err != nil {
 		return ClipEntry{}, err
@@ -217,7 +261,7 @@ func (s *FrameFairy) RemoveCaption(ctx context.Context, path, plan, clipID strin
 	err = s.edit(path, func() error {
 		return engine.RemoveCaption(s.store.files, plan, clipID, first, t, s.captionOverrides(plan))
 	})
-	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err)
+	line := s.wordCounts(editLine(editLevel(err), path, clipID, time.Since(began)).Err(err), plan, clipID)
 	line.Float64("word", first).Msg("a caption was removed")
 	if err != nil {
 		return ClipEntry{}, err

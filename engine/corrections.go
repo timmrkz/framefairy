@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -39,10 +40,13 @@ func readCorrections(raw any) map[string]string {
 		return nil
 	}
 	out := map[string]string{}
-	for key, value := range fields {
+	// The first by when the word starts, so a plan with too many keeps the
+	// same ones every time it is read.
+	for _, key := range slices.SortedFunc(maps.Keys(fields), byMillisecond) {
 		if len(out) == maxCorrections {
 			break
 		}
+		value := fields[key]
 		ms, err := strconv.ParseInt(key, 10, 64)
 		if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != key {
 			continue
@@ -61,6 +65,15 @@ func readCorrections(raw any) map[string]string {
 	return out
 }
 
+// byMillisecond orders keys of words, the millisecond each starts, by when
+// they start, and keys that read as the same number by their text, so the
+// order is the same every time.
+func byMillisecond(a, b string) int {
+	am, _ := strconv.ParseInt(a, 10, 64)
+	bm, _ := strconv.ParseInt(b, 10, 64)
+	return cmp.Or(cmp.Compare(am, bm), cmp.Compare(a, b))
+}
+
 // putCorrections keeps the corrections of a clip in its plan entry, and
 // keeps no key for a clip with none.
 func putCorrections(c *object, corrections map[string]string) {
@@ -68,14 +81,8 @@ func putCorrections(c *object, corrections map[string]string) {
 		c.remove(keyCorrections)
 		return
 	}
-	keys := slices.Sorted(maps.Keys(corrections))
-	slices.SortFunc(keys, func(a, b string) int {
-		am, _ := strconv.ParseInt(a, 10, 64)
-		bm, _ := strconv.ParseInt(b, 10, 64)
-		return int(am - bm)
-	})
 	fixes := newObject()
-	for _, key := range keys {
+	for _, key := range slices.SortedFunc(maps.Keys(corrections), byMillisecond) {
 		fixes.set(key, corrections[key])
 	}
 	c.set(keyCorrections, fixes)
@@ -182,8 +189,12 @@ func editClipWords(fsys afero.Fs, planPath, clipID string,
 			corrections = map[string]string{}
 		}
 		removed := readRemovedWords(c.values[keyRemovedWords]).clone()
+		hadCorrections, hadRemoved := maps.Clone(corrections), removed.clone()
 		if err := change(corrections, removed); err != nil {
 			return err
+		}
+		if maps.Equal(corrections, hadCorrections) && maps.Equal(removed, hadRemoved) {
+			return errUnchanged
 		}
 		putCorrections(c, corrections)
 		putRemovedWords(c, removed)
