@@ -156,9 +156,14 @@ for each part, and they run against the bridge.
     SEED=12 STEPS=60 node frontend/preview/walks/words.mjs
 
 `BRIDGE_URL` says where the bridge is, `http://127.0.0.1:8123/` unless
-set. The bridge puts the episode back the way it was first searched
-before every walk, `POST /reset`, so a walk starts from the same place
-every time.
+set. `SLOW=4` runs the page four times slower, through Chromium's own CPU
+throttle, the way a busy CI runner does, to find a walk that counts on
+the machine being quick. It slows the page `open` makes, not a window
+the page opens, like the one Bugs opens for a report, and not the
+browser's calls from Node, so a walk that times a gesture from Node is
+found by putting a wait between the calls instead. The bridge puts the
+episode back the way it was first searched before every walk,
+`POST /reset`, so a walk starts from the same place every time.
 
 ### How a walk picks its steps
 
@@ -353,7 +358,9 @@ down and the engine's jobs beside it.
 
 `SEQUENCE` walks the one sequence of that name and no other, and
 `--names` lists them all, one name a line, which is how `make walks`
-hands them out, see Where they run.
+hands them out, see Where they run. It fails when two sequences or two
+steps have one name, because the steps are cases of one `switch`, which
+takes the first of a name and never reaches the second.
 
 A sequence is a named list of steps and of what has to come of them,
 written as data at the top of the file, so a case found by hand is kept
