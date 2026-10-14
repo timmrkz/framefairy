@@ -94,7 +94,7 @@ func TestTheVideoPreviewsCaptionFileIsTheShorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	preview, err := os.ReadFile(file)
+	preview, err := os.ReadFile(file.file)
 	if err != nil {
 		t.Fatal(err)
 	}

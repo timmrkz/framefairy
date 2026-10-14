@@ -17,7 +17,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"framefairy/engine"
-	"framefairy/internal/framewire"
 )
 
 // The captions of the video preview, drawn by libass in the episode's
@@ -168,7 +167,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 			e := engine.NewEngine(engine.NewLog(io.Discard, false, false), st.files)
 			o := jobOptions(st, e)
 			drawing := kept.drawing.Typing(typing).Lifted(part)
-			var l framewire.Layer
+			var l engine.CaptionLayer
 			// A video whose folder was deleted outside the app is let go
 			// as the app comes back to the front, see letGoOfRemoved, and
 			// until then its captions write nothing into a folder that is
@@ -200,7 +199,7 @@ func (p *previews) serveCaptions(st *store, w http.ResponseWriter, r *http.Reque
 				// curve the video preview bounces it by.
 				scale := 1.0
 				if part == "" {
-					scale = drawing.PopScale(source, at)
+					scale = l.Scale
 				}
 				if part == engine.LiftWord {
 					length, rise, peak := engine.BounceCurve()

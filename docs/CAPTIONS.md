@@ -236,7 +236,12 @@ The frame round the lit word grows with its pill. Every layer says how
 large libass draws the pill of its word on that frame, `X-Caption-Scale`
 from `CaptionDrawing.PopScale`, and the caption box scales the word's
 frame by it round the pill's middle, so the frame stays on the pill's
-edge through the pop, as it did when the browser drew both.
+edge through the pop, as it did when the browser drew both. Where no
+pill is drawn, with the highlight off or when the words could not be
+measured and the caption file is plain, every layer says 1, and the frame
+stays still over a word that does not move. With the highlight off, the
+box round the caption is measured with the word being typed in it, so it
+keeps its size while a word is typed.
 
 Each word frame also carries the radius of the pill's corners, `r`, from
 `pillRadius` in `engine/wordframes.go`, the one rule the highlight draws

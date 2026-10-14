@@ -274,7 +274,9 @@ func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
 		errs := make([]error, 6)
 		for i := range files {
 			wg.Go(func() {
-				files[i], errs[i] = e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+				var made previewFile
+				made, errs[i] = e.previewTrack(ctx, work, d, d.Style, ResolveStyle(d.Style).Font, SourceInfo{}, 540, 960)
+				files[i] = made.file
 			})
 		}
 		wg.Wait()
@@ -417,8 +419,9 @@ func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
 // libass draws, in its place: the caption file is the same file with that
 // word's ink taken away, and its pill while it is lit, with the highlight
 // and without, so nothing else of the caption moves. The caption box draws
-// the pill, so it grows with what is typed, which Tim missed. Tim saw the whole caption grow as a word was
-// opened, because the browser drew all of it in its own font.
+// the pill, so it grows with what is typed, which Tim missed. Tim saw the
+// whole caption grow as a word was opened, because the browser drew all
+// of it in its own font.
 //
 // On the real disk: ffmpeg measures the captions to lay out the pills.
 func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
@@ -467,8 +470,12 @@ func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
 		if style == nil && len(kept) == len(strings.SplitAfter(string(normal), "\n")) {
 			t.Errorf("the word's pill was never drawn:\n%s", normal)
 		}
-		if style != nil && !strings.Contains(string(typing), "Das "+hidden+"respektvoll"+shown+" ist.") {
-			t.Errorf("without the highlight the word is not hidden in its place:\n%s", typing)
+		// Without the highlight the caption file is the same file with the
+		// word hidden, its box too. The box was measured without the word,
+		// 72 pixels narrower, and the words after it got the text's alpha
+		// on their outline and shadow, found by the second review.
+		if style != nil && string(typing) != strings.Replace(string(normal), "respektvoll", hidden+"respektvoll"+`{\r}`, 1) {
+			t.Errorf("without the highlight the word is not hidden in its place, and only that:\n%s\nnot\n%s", typing, normal)
 		}
 	}
 }
@@ -521,7 +528,7 @@ func TestTheWordLiftedOutAndTheRestAreTheCaptionAtRest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return l
+		return l.Layer
 	}
 	whole, rest, word := layer(d), layer(d.Lifted(LiftRest)), layer(d.Lifted(LiftWord))
 	if word.W == 0 || rest.W == 0 {
@@ -613,16 +620,16 @@ func TestWritingCaptionsNeverMakesTheWorkFolder(t *testing.T) {
 // a request called off while it waits stops waiting.
 func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 	t.Parallel()
-	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	c := newTrackCache()
 	started, release := make(chan struct{}), make(chan struct{})
-	build := func(ctx context.Context) (string, error) {
+	build := func(ctx context.Context) (previewFile, error) {
 		close(started)
 		<-release
-		return "a.ass", ctx.Err()
+		return previewFile{file: "a.ass"}, ctx.Err()
 	}
 	// A request that comes after the file is made makes it again, since no
 	// file of that name is there, and gets it as well.
-	again := func(ctx context.Context) (string, error) { return "a.ass", ctx.Err() }
+	again := func(ctx context.Context) (previewFile, error) { return previewFile{file: "a.ass"}, ctx.Err() }
 
 	first, cancelFirst := context.WithCancel(context.Background())
 	firstDone := make(chan error, 1)
@@ -632,13 +639,13 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 	}()
 	<-started
 	type answer struct {
-		file string
+		made previewFile
 		err  error
 	}
 	other := make(chan answer, 1)
 	go func() {
-		file, err := c.once(context.Background(), "k", again)
-		other <- answer{file, err}
+		made, err := c.once(context.Background(), "k", again)
+		other <- answer{made, err}
 	}()
 	leaving, cancelLeaving := context.WithCancel(context.Background())
 	leftDone := make(chan error, 1)
@@ -658,8 +665,8 @@ func TestACaptionFileOutlivesTheRequestThatAskedFirst(t *testing.T) {
 	// The others wait while the file is made, which takes a moment.
 	time.Sleep(20 * time.Millisecond)
 	close(release)
-	if got := <-other; got.err != nil || got.file != "a.ass" {
-		t.Errorf("a live request waiting for the file got %q, %v", got.file, got.err)
+	if got := <-other; got.err != nil || got.made.file != "a.ass" {
+		t.Errorf("a live request waiting for the file got %q, %v", got.made.file, got.err)
 	}
 }
 
@@ -685,7 +692,7 @@ func TestTheFirstCaptionFileLeavesAnotherBuildsFileAlone(t *testing.T) {
 	if err := os.Chtimes(left, long, long); err != nil {
 		t.Fatal(err)
 	}
-	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	c := newTrackCache()
 	c.written(dir, filepath.Join(dir, "a.ass"))
 	if _, err := os.Stat(building); err != nil {
 		t.Errorf("the file another build is writing was removed: %v", err)
@@ -700,7 +707,7 @@ func TestTheFirstCaptionFileLeavesAnotherBuildsFileAlone(t *testing.T) {
 // and removed the one the clip on screen shows.
 func TestTheCaptionFilesKeptAreTheOnesUsedLast(t *testing.T) {
 	t.Parallel()
-	c := &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+	c := newTrackCache()
 	dir := "/nowhere"
 	c.dirs[dir] = []string{"/nowhere/a.ass", "/nowhere/b.ass", "/nowhere/c.ass"}
 	c.used("/nowhere/a.ass")

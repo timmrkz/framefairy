@@ -49,6 +49,14 @@ func (d *CaptionDrawing) name() string {
 var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "highlight",
 	"text", "box", "margin_v"}
 
+// CaptionLayer is a layer of captions the video preview lays over a
+// frame, and how far the pill of its lit word is grown, 1 at rest and
+// where no pill is drawn, see PopScale.
+type CaptionLayer struct {
+	framewire.Layer
+	Scale float64
+}
+
 // PreviewCaptions draws the captions of d over the frame of the episode
 // that starts at at, at width by height, as the short shows them on that
 // frame made that size: drafts on top of their style, laid out the way
@@ -58,22 +66,30 @@ var CaptionDrafts = []string{"primary", "back_colour", "highlight_colour", "high
 // with the faces it needs beside it. A style with the captions off draws
 // nothing, as the render burns nothing in.
 func (e *Engine) PreviewCaptions(ctx context.Context, dec *EpisodeFrames, work string, d *CaptionDrawing,
-	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (framewire.Layer, error) {
+	drafts map[string]any, source SourceInfo, rs RenderSettings, at float64, width, height int) (CaptionLayer, error) {
 	style := d.drafted(drafts)
 	resolved := ResolveStyle(style)
 	if len(d.Laid) == 0 || !resolved.Text {
-		return framewire.Layer{}, nil
+		return CaptionLayer{Scale: 1}, nil
 	}
-	file, err := e.previewTrack(ctx, work, d, style, resolved.Font, source, rs.OutW, rs.OutH)
+	track, err := e.previewTrack(ctx, work, d, style, resolved.Font, source, rs.OutW, rs.OutH)
 	if err != nil {
-		return framewire.Layer{}, err
+		return CaptionLayer{}, err
 	}
 	shortW, shortH := rs.OutW, rs.OutH
 	if piece := source.PieceShowing(d.Clip, at); piece >= 0 {
 		shortW, shortH = rs.FrameSize(source, d.Clip.Segments[piece])
 	}
-	return dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
-		File: file, Fonts: filepath.Join(filepath.Dir(file), FontsFolder)}, source.CaptionMoment(d.Clip, at))
+	l, err := dec.Captions(ctx, framewire.Captions{Width: width, Height: height, ShortW: shortW, ShortH: shortH,
+		File: track.file, Fonts: filepath.Join(filepath.Dir(track.file), FontsFolder)}, source.CaptionMoment(d.Clip, at))
+	// The frame round the word grows only with a pill that does: the
+	// highlight may be off, or the words could not be measured and the
+	// caption file has none.
+	scale := 1.0
+	if track.pill {
+		scale = d.PopScale(source, at)
+	}
+	return CaptionLayer{l, scale}, err
 }
 
 // Showing is what libass shows of the captions of d on the frame of the
@@ -211,29 +227,29 @@ var ErrNoWorkFolder = errors.New("the video's folder is gone")
 // trackCache.once, because two writing one file each found it gone under
 // them or half written.
 func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawing, style map[string]any,
-	font string, source SourceInfo, outW, outH int) (string, error) {
+	font string, source SourceInfo, outW, outH int) (previewFile, error) {
 	// The folder by where it really leads, which must be inside the work
 	// folder.
 	dir, err := SafeChild(work, PreviewCaptionsFolder)
 	if err != nil {
-		return "", err
+		return previewFile{}, err
 	}
 	key := fmt.Sprintf("%s\x00%s\x00%+v\x00%s\x00%d/%d\x00%dx%d", dir, d.name(), style, source.Light(),
 		source.FPSNum, source.FPSDen, outW, outH)
-	return previewTracks.once(ctx, key, func(ctx context.Context) (string, error) {
-		track, err := e.CaptionTrack(ctx, d.Laid, outW, outH, style, source)
+	return previewTracks.once(ctx, key, func(ctx context.Context) (previewFile, error) {
+		track, pill, err := e.captionTrack(ctx, d.Laid, outW, outH, style, source)
 		if err != nil {
-			return "", err
+			return previewFile{}, err
 		}
 		// A measurement cut short leaves a track without its pill, which
 		// would be kept as the real one.
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return previewFile{}, err
 		}
 		sum := sha256.Sum256(track)
 		file, err := SafeChild(dir, hex.EncodeToString(sum[:12])+".ass")
 		if err != nil {
-			return "", err
+			return previewFile{}, err
 		}
 		// The name is made from what is in it, so a file of that name
 		// already holds it.
@@ -242,17 +258,17 @@ func (e *Engine) previewTrack(ctx context.Context, work string, d *CaptionDrawin
 			// deleted outside the app while the video preview still asked
 			// for captions was written back, and the video stayed.
 			if err := foldersIn(work, PreviewCaptionsFolder); err != nil {
-				return "", err
+				return previewFile{}, err
 			}
 			if err := writeWhole(dir, file, track); err != nil {
-				return "", err
+				return previewFile{}, err
 			}
 		}
 		previewTracks.written(dir, file)
 		if err := InstallFont(dir, font); err != nil {
-			return "", err
+			return previewFile{}, err
 		}
-		return file, nil
+		return previewFile{file, pill}, nil
 	})
 }
 
@@ -305,20 +321,31 @@ func writeWhole(dir, file string, data []byte) error {
 // next.
 type trackCache struct {
 	mu     sync.Mutex
-	files  map[string]string
+	files  map[string]previewFile
 	making map[string]*making
 	dirs   map[string][]string
+}
+
+// previewFile is a caption file of the video preview, and whether it
+// draws the pill of the lit word.
+type previewFile struct {
+	file string
+	pill bool
 }
 
 // making is a caption file on its way, which the requests that ask for it
 // meanwhile wait for.
 type making struct {
 	done chan struct{}
-	file string
+	made previewFile
 	err  error
 }
 
-var previewTracks = &trackCache{files: map[string]string{}, making: map[string]*making{}, dirs: map[string][]string{}}
+func newTrackCache() *trackCache {
+	return &trackCache{files: map[string]previewFile{}, making: map[string]*making{}, dirs: map[string][]string{}}
+}
+
+var previewTracks = newTrackCache()
 
 const previewTracksKept = 256
 
@@ -334,13 +361,13 @@ const previewTrackLimit = 10 * time.Second
 // first: when that one was called off, every request waiting for the same
 // file failed with its "context canceled", their own still live. Each
 // request waits only as long as its own context lets it.
-func (c *trackCache) once(ctx context.Context, key string, build func(context.Context) (string, error)) (string, error) {
+func (c *trackCache) once(ctx context.Context, key string, build func(context.Context) (previewFile, error)) (previewFile, error) {
 	c.mu.Lock()
-	if file, ok := c.files[key]; ok {
+	if made, ok := c.files[key]; ok {
 		c.mu.Unlock()
-		if _, err := os.Stat(file); err == nil {
-			c.used(file)
-			return file, nil
+		if _, err := os.Stat(made.file); err == nil {
+			c.used(made.file)
+			return made, nil
 		}
 		c.mu.Lock()
 	}
@@ -351,15 +378,15 @@ func (c *trackCache) once(ctx context.Context, key string, build func(context.Co
 		go func() {
 			bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTrackLimit)
 			defer cancel()
-			file, err := build(bctx)
+			made, err := build(bctx)
 			c.mu.Lock()
-			m.file, m.err = file, err
+			m.made, m.err = made, err
 			delete(c.making, key)
 			if err == nil {
 				if len(c.files) >= 4*previewTracksKept {
 					clear(c.files)
 				}
-				c.files[key] = file
+				c.files[key] = made
 			}
 			c.mu.Unlock()
 			close(m.done)
@@ -368,9 +395,9 @@ func (c *trackCache) once(ctx context.Context, key string, build func(context.Co
 	c.mu.Unlock()
 	select {
 	case <-m.done:
-		return m.file, m.err
+		return m.made, m.err
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return previewFile{}, ctx.Err()
 	}
 }
 

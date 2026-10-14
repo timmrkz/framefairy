@@ -52,6 +52,27 @@ func TestTheCaptionsRouteDrawsAViewsCaptions(t *testing.T) {
 	if s, err := strconv.ParseFloat(rec.Header().Get("X-Caption-Scale"), 64); err != nil || s < 1 || s > 1.2 {
 		t.Errorf("the captions say the pill is drawn at %q", rec.Header().Get("X-Caption-Scale"))
 	}
+	// The frame round the word grows with a pill that does, and stays
+	// still where no pill is drawn: with the highlight off it grew to 1.15
+	// over a word that did not move, found by the second review.
+	popped := url.Values{}
+	for k, v := range ask {
+		popped[k] = v
+	}
+	grown := ""
+	for at := 10.0; at < 12 && grown == ""; at += 0.02 {
+		popped.Set("at", fmt.Sprintf("%.2f", at))
+		if rec, _ := draw(popped); rec.Header().Get("X-Caption-Scale") > "1.0100" {
+			grown = popped.Get("at")
+		}
+	}
+	if grown == "" {
+		t.Fatalf("no frame from 10 s to 12 s says its pill is grown")
+	}
+	popped.Set("highlightOn", "0")
+	if rec, _ := draw(popped); rec.Code != http.StatusOK || rec.Header().Get("X-Caption-Scale") != "1.0000" {
+		t.Errorf("at %s with the highlight off the captions say the pill is drawn at %q", grown, rec.Header().Get("X-Caption-Scale"))
+	}
 	// With the word being typed left out.
 	typing := url.Values{}
 	for k, v := range ask {

@@ -403,8 +403,11 @@ func cueText(line []Cue) string {
 
 // assText is the lines of a caption as one ASS text, with the hard spaces
 // that pad a caption when no box is drawn, its hidden words with no ink
-// and the others as shown.
-func (l LaidCaption) assText(pad int, shown string) string {
+// and the others as shown. A hidden word is closed by going back to the
+// style, `{\r}`, which keeps each of the text's own alphas: one alpha for
+// all gave the words after it the text's alpha on their outline, shadow
+// and box.
+func (l LaidCaption) assText(pad int) string {
 	spaces := strings.Repeat(`\h`, pad)
 	rows := make([]string, len(l.Lines))
 	n := 0
@@ -417,7 +420,7 @@ func (l LaidCaption) assText(pad int, shown string) string {
 		for p, c := range line {
 			parts[p] = EscapeASSText(c.Text)
 			if l.Hidden[n] {
-				parts[p] = hidden + parts[p] + shown
+				parts[p] = hidden + parts[p] + `{\r}`
 			}
 			n++
 		}
@@ -709,11 +712,20 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 // starts on. See docs/CAPTIONS.md.
 func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
 	overrides map[string]any, source SourceInfo) ([]byte, error) {
+	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source)
+	return track, err
+}
+
+// captionTrack is CaptionTrack, and whether it draws the pill of the lit
+// word: not with the highlight off, nor when the words could not be
+// measured and the captions are drawn plain instead.
+func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
+	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
 	s := ResolveStyle(overrides).inLight(source.Light())
 	if s.Highlight {
 		track, err := e.highlighted(ctx, laid, width, height, s, source)
 		if track != nil || err != nil {
-			return track, err
+			return track, track != nil, err
 		}
 	}
 	// Without a pill no word is drawn apart from its caption.
@@ -725,9 +737,15 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	marginH := pyround(s.MarginH * scale)
 	marginV := pyround(s.MarginV * scale)
 
+	// The box is measured round the whole caption, the word being typed
+	// included, so it keeps its size while a word is typed. Measured from
+	// what is drawn, it left the typed word out, 72 pixels narrower.
 	blocks := make([]string, len(laid))
+	whole := make([]string, len(laid))
 	for i, c := range laid {
-		blocks[i] = c.assText(0, shownTag(s.Primary))
+		blocks[i] = c.assText(0)
+		c.Hidden = nil
+		whole[i] = c.assText(0)
 	}
 
 	// Measured once, and one caption that cannot be measured sends the whole
@@ -735,7 +753,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	// appears.
 	var boxes []*inkBox
 	if s.Radius > 0 && s.BorderStyle == 4 {
-		inks, ok := e.measureMany(ctx, blocks, s, width, size)
+		inks, ok := e.measureMany(ctx, whole, s, width, size)
 		if ok {
 			for _, box := range inks {
 				if box == nil {
@@ -765,7 +783,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 	if boxes == nil {
 		for _, c := range laid {
 			events = append(events, fmt.Sprintf("Dialogue: 0,%s,%s,Caption,,0,0,0,,%s",
-				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad, shownTag(s.Primary))))
+				SecondsToASS(c.Start), SecondsToASS(c.End), c.assText(s.Pad)))
 		}
 	} else {
 		padX := float64(pyround(s.BoxPadX * scale))
@@ -794,7 +812,7 @@ func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, he
 				start, end, blocks[i]))
 		}
 	}
-	return []byte(header + strings.Join(events, "\n") + "\n"), nil
+	return []byte(header + strings.Join(events, "\n") + "\n"), false, nil
 }
 
 // matrix is how libass turns the colours into the short's: BT.709's for
