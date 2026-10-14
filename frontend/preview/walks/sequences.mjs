@@ -410,8 +410,9 @@
 //                      does not hold it
 //   ["followed", which]
 //                      since "drag edge", the playhead went with the edge:
-//                      it stood in four places or more while the hand
-//                      moved, on frames, and once it let go stands on the
+//                      it stood in as many places as the edge did while
+//                      the hand moved, on frames, four of them at most,
+//                      and once it let go stands on the
 //                      frame the edge leaves on screen, the clip's or the
 //                      piece's first frame for "start" and "cut to", its
 //                      last for "end" and "cut from", with shift too
@@ -2556,6 +2557,34 @@ const updatesPage = (page) => page.evaluate(readUpdates);
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
 // and hands back what it said last.
+// How long the page took from a key going down to the first animation
+// frame on which shows holds, in the page's own time. Timed from Node, a
+// press and the polling that waits for its answer are calls to the
+// browser, and on a busy runner each can take a frame or more to arrive:
+// C was once 538 ms "after C" in CI where the page showed the keyframe in
+// a frame or two. -1 when it never holds within the timeout.
+async function keyShows(page, key, shows, arg) {
+  await page.evaluate(
+    ([source, arg]) => {
+      const shows = new Function(`return (${source})`)();
+      window.__keyShows = { down: -1, took: -1 };
+      addEventListener("keydown", () => (window.__keyShows.down = performance.now()), { capture: true, once: true });
+      const tick = () => {
+        const k = window.__keyShows;
+        if (k.down < 0) return requestAnimationFrame(tick);
+        if (shows(arg)) k.took = performance.now() - k.down;
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    [shows.toString(), arg],
+  );
+  await page.keyboard.press(key);
+  return page
+    .waitForFunction(() => window.__keyShows.took >= 0, null, { timeout: 3000 })
+    .then(() => page.evaluate(() => Math.round(window.__keyShows.took)), () => -1);
+}
+
 async function updatesComeTo(page, ok) {
   let now = await updatesPage(page);
   for (let i = 0; i < 100 && !ok(now); i++) {
@@ -3738,9 +3767,17 @@ for (const seq of toWalk) {
         const seen = await page.evaluate(() => window.__followed ?? []);
         const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
         const places = new Set(seen.map((t) => t.toFixed(3))).size;
-        // On words the edge lands on a few places only, so the count is
-        // asked of a drag on frames.
-        if (places < 4 && !dragShift) wrong = `the playhead stood in ${places} places while the ${arg} edge was dragged, it did not go with it`;
+        // The playhead stands wherever the edge stood, so the places are
+        // counted against the edge's. A count of its own asked how quick
+        // the machine is: an edge taken again at once waits for the drag
+        // before it to be saved, and where the save took longer than the
+        // drag, as on a busy CI runner, the edge stood in 3 places and the
+        // playhead went with it to all 3. On words the edge lands on a few
+        // places only, so the count is asked of a drag on frames.
+        const edgePlaces = new Set((await page.evaluate(() => window.__edgeSeen ?? [])).map((t) => t.toFixed(3))).size;
+        if (places < Math.min(edgePlaces, 4) && !dragShift) {
+          wrong = `the playhead stood in ${places} places while the ${arg} edge stood in ${edgePlaces}, it did not go with it`;
+        }
         else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
         }
@@ -6074,11 +6111,7 @@ for (const seq of toWalk) {
         await settle(page);
         const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
         const before = await turn();
-        const pressed = Date.now();
-        await page.keyboard.press("r");
-        const took = await page
-          .waitForFunction((b) => Number(document.querySelector(".screen").dataset.turn) !== b, before, { polling: "raf", timeout: 3000 })
-          .then(() => Date.now() - pressed, () => -1);
+        const took = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
         if (took < 0) wrong = `R left the video preview rotated ${before}`;
         else if (took > 300) wrong = `the video preview rotated ${took} ms after R, not at once`;
         await watch.step("press", s);
@@ -6091,15 +6124,12 @@ for (const seq of toWalk) {
         await settle(page);
         const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         const before = await count();
-        const pressed = Date.now();
-        await page.keyboard.press("c");
-        const took = await page
-          .waitForFunction(
-            (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
-            before,
-            { polling: "raf", timeout: 3000 },
-          )
-          .then(() => Date.now() - pressed, () => -1);
+        const took = await keyShows(
+          page,
+          "c",
+          (b) => document.querySelectorAll(".clip-timeline .cropdot").length > b && !!document.querySelector(".clip-timeline .cropdot.here"),
+          before,
+        );
         if (took < 0) wrong = "C put no keyframe on the playhead's frame";
         else if (took > 300) wrong = `the keyframe showed ${took} ms after C, not at once`;
         await watch.step("press", s);
