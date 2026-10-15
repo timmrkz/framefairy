@@ -774,7 +774,7 @@ export class FrameQueue {
     if (JSON.stringify([copy, !loop]) !== this.wantedKey) return false;
     if (this.vplan && this.built) {
       if (loop) this.built.loopOn();
-      else this.built.loopOff(this.reached);
+      else this.built.loopOff(Math.max(this.reached, this.sounded()));
       if (loop) {
         // A play that had worked out its end works on past it, the sound
         // too, and a stretch on the sound card stopped at the end plays
@@ -1336,6 +1336,18 @@ export class FrameQueue {
       now + 1000 / 60,
     );
     return this.m0 / this.sampleRate + (heard - this.c0);
+  }
+
+  // How far on the program the sound card has played, heard or about to
+  // be: what it has played can no longer be stopped. The loop switched off
+  // ends the play at the end of the time through this is in, not the one
+  // the playhead is in. The playhead moves on only with the page's frames,
+  // so on a busy machine the sound had crossed the clip's end while the
+  // playhead still stood before it, the stop came too late, and a moment
+  // of the clip's start was heard after its end. Plan row 2.253.
+  private sounded(): number {
+    if (this.c0 === null) return this.reached;
+    return this.m0 / this.sampleRate + (this.audio.currentTime - this.c0);
   }
 
   // The page's frames stop while the app is behind another window, and with
