@@ -200,7 +200,10 @@ closed for standing unused.
   and while paused decoding the frames on either side of the playhead
   before they are asked for. The interface keeps the frames it was given,
   which covers a step back, so this waits until the marks say it is
-  needed, with plan row 2.157.
+  needed, with plan row 2.157. Plan row 2.269 proposes the order to
+  decode them in: the frame after and the frame before the playhead,
+  then the next word and the word before, the way Shift and an arrow
+  walk.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.
