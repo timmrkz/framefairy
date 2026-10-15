@@ -49,9 +49,16 @@ export default defineConfig({
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
     strictPort: true,
   },
+  // Vite warns about a chunk over 500 kB because a web page downloads it.
+  // The app reads its interface from its own binary, so the size of one
+  // chunk costs nothing the warning is about, and the build fails on any
+  // warning. The bundle passed 500 kB with the bounce after a word step.
+  // The limit stays, at twice that, to catch a library pulled in by
+  // mistake.
   build: {
     outDir: "../cmd/framefairy-app/dist/app",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
   },
   plugins: [svelte(), notices()],
 });

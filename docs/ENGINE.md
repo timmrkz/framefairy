@@ -502,7 +502,11 @@ whatever it was, so trimming the end over the last word made the caption
 before it stay to the end, and Tim saw two captions turn into one.
 Moving words onto a clip's timeline is plain arithmetic, so nothing is
 estimated. A clip says a word, and captions it, when it holds more than a
-frame of the word's sound, `HoldsWord` in `engine/lines.go`. So dragging an
+frame of the word's sound, or all of it, `HoldsWord` in `engine/words.go`.
+All of it counts however short the word is: several words typed into a
+short word share its time, and one may get less than a frame. The
+captions left those out, so the words Tim typed were gone and the frames
+they stood in showed no caption. So dragging an
 edge back over a word brings its caption in at the word's last sound, the
 first of it the edge reaches, and a word an edge cuts into is shown from
 the clip's first frame. A word a cut parts is captioned once, in the piece
@@ -623,7 +627,12 @@ was found later:
   is on a frame's start now, kept to the millisecond, see `PieceOnFrames`
   above. The render takes the clip with each edge on that frame to the
   microsecond, `SourceInfo.OnFrames`, and makes its captions from that
-  same clip, so the two add up to the same.
+  same clip, so the two add up to the same. A caption edge dragged on the
+  clip timeline is moved on that clip's clock too, the one its captions
+  are drawn on: read on the plan's clip, an edge dragged onto the caption
+  beside stopped short of it by the difference between the two, up to a
+  frame for a plan whose pieces are not on frames,
+  `TestAnEdgeIsMovedOnTheClockItIsDrawnOn`.
 
 The sound fades for 15 ms at the clip's two ends and at every cut, which
 keeps a hard cut from clicking, and nowhere else. Two pieces that meet at
@@ -768,10 +777,99 @@ frame, see docs/TESTING.md.
 
 ## The bouncing word
 
-The word being spoken sits on a reddish purple pill and bounces: word and
-pill grow for 80 ms and settle back over 100 ms, around the word's own
-centre, while every other word stays exactly where it is. The word stays lit
-until the next word starts.
+The word being spoken sits on a reddish purple pill and pops towards the
+viewer: the word and its pill are one thing that grows by one scale,
+around one centre, the middle of the pill, in every direction alike, to
+115 % and back, while every other word stays exactly where it is. The word
+stays lit until the next word starts. It is the karaoke "grow" of
+Aegisub's templates: a word set on its own centre and scaled up and back
+down.
+
+The pop is laid out on the frames of the short, because the frames are
+all anybody sees, `popScales` in `engine/highlight.go`. A word starts at
+rest on its first frame, reaches 115 % on a frame of its own, and is back
+at rest by its last frame, eased like a sine on either side of the peak,
+in no more than 220 ms. At 25 fps a long word pops 1.0, 1.075, 1.13,
+1.15, 1.13, 1.075, 1.0. A word lit for fewer frames pops in the frames it
+has: three frames are rest, 1.15, rest, two are rest and 1.15, and a word
+lit for one frame stands at 115 % on that frame. The frame before it
+still belongs to the word before and the frame after it to the word
+after, so the rise and the settle are the hand-over between them. That
+is how karaoke effects deal with a syllable too short for its effect:
+`retime("presyl")` and `retime("postsyl")` in Aegisub's kara-templater
+run the effect before and after the syllable's own time. Each frame holds its scale from the
+hundredth of a second its frame starts in, so libass draws exactly that
+scale on that frame, in the short and in the video preview alike. A frame
+lands on the word at its own size wherever a click or a step lands, and
+the frames after it pop. Above 100 fps two frames can start in one
+hundredth, and libass draws the second's scale on both, since an event
+of no length draws nothing. `popSpans` writes the caption file and
+`PopScale` reads the same spans, so what the video preview says of a
+frame is what libass draws on it at any rate, read back from a short at
+25, 29.97 and 120 fps.
+
+Before, the pop was a curve in milliseconds, CSS's ease-out over 220 ms,
+written as 20 ms pieces, and libass sampled it wherever the frames fell.
+Tim's recording of a caption at 25 fps showed "Typen" pop fully, "mit"
+rise and snap back, "so" and "einem" grow on one frame and settle at
+once: whether the peak landed on a frame was chance, a short word was cut
+on its way up, and the ease-out dropped most of the way in one frame
+after the peak. `TestEveryWordOfAShortPopsOnItsFrames` in
+`engine/bounce_test.go` reads every word of a 25 fps short with words lit
+for 1 to 10 frames back frame by frame and holds each to `popScales`, and
+`TestEveryWordReachesItsPeakOnAFrame` in `engine/pop_test.go` holds the
+rule at 24 to 60 fps for every number of frames. At its peak a long word
+and its pill reach over the space to the next word for a frame or two,
+as in every caption tool. The pill and its word lie over the words
+beside them, a layer of their own coming forward, so no letter reaches
+into the pill: libass draws the line on layer 2, the pill on 3 and the
+word on 4. Tim saw the next word's letters drawn over the pill at its
+peak. `TestThePillAndItsWordLieOverTheLine` in `engine/pop_test.go`.
+
+#201 had made the bounce a few pixels in height only, the pill stretched
+up or down to keep off the other line and the word grown 3 pixels a side,
+so Tim saw the pill move up or down and the word not at all, plan row
+2.211. `TestTheWordAndItsPillPopTogether` in `engine/bounce_test.go`
+reads the pop back from a short and holds the word and its pill to
+`popScales` on every frame, in width and height, around one centre.
+
+At rest the pill is as tall as its line, from the top of the capitals and
+the tall letters the face draws to the bottom of the deepest, with 0.10 of
+the size over that above and below, the same for every word on the line.
+The line is measured by drawing `Hbdfhklgjpqy` on it, `pillLines`, since
+libass gives every line of a face the same height. A line with a letter
+that reaches further, an accent over a capital, makes room for it too.
+Measured with accents, as `ÉÅÁgjpqy` once was, every pill stood high over
+its words, and stopped short of the other line on one side only, the
+pills of the top line of two stood high and those of the bottom line low,
+which Tim saw. Whatever a pill gives up on one side to keep off the other
+line, it gives up on the other too, so it stays round the middle of its
+line. The pill used to open from 0.08
+inside its rest on every side and to reach only 0.10 past the tallest
+letter of the words themselves, so the first frame of a word, where a
+click on the word puts the playhead, showed it hugging the letters, which
+Tim saw on #201. `TestThePillLeavesRoomRoundItsWord` reads the pill back
+from a short, and holds it to at least 0.10 of the size of room round its
+word on its first frame and at rest.
+
+libass stands the lines of a caption as close as the face is tall, so
+a pill of the whole line and its room reaches into the letters of the
+line above or below. The lines stay where libass puts them. The pills of
+a line stop instead, all at one height so the pill keeps its height as it
+walks along the line: never nearer than 0.04 of the size to the ink of the
+other line over the width of the line, `wordsLaid.lineBand` in
+`engine/wordframes.go`. Where the letters of the two lines are nearer
+than that leaves room for, the tail of a "g" over the dots of an "Ä", the
+pill keeps 0.04 of the size over its own letters and touches the other
+line. For the few frames of its pop the pill grows over the other line
+like it grows over the words beside it. Tim saw the "g" of
+"wichtig" stand in the pill of "Leute" on the line under it on #201. The
+lines moved apart for it for a while, which he did not want, and then the
+pill stopped short word by word and jumped as it walked along a line.
+`TestThePillAtRestNeverReachesAnotherLine` reads his caption back from a
+short and holds the pill at rest clear of the other line's letters.
+`TestEveryPillOfALineIsOneHeightAndClearOfTheOther` holds the rule on
+where libass puts the words, for his caption and for the one with "Ä".
 
 To place the pill, the tool renders each caption once per word with only that
 word visible, which gives the exact position of every word in the finished

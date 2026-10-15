@@ -443,8 +443,15 @@ const wordTouch = 0.02
 // brings its caption in at the word's last sound, the first of it the edge
 // reaches. It used to take the word's middle, and a long word stayed
 // uncaptioned for half its length while it was plainly heard.
+//
+// A piece that holds the whole of a word says it, however short it is.
+// wordTouch is for an edge that grazes a word, and a word a correction
+// made several shares its time out among them, so a short word typed into
+// a word two frames long gets less than a frame. The captions left such a
+// word out, and the frames it stood in showed none.
 func HoldsWord(start, end float64, w Cue) bool {
-	return math.Min(end, w.End)-math.Max(start, w.Start) > wordTouch
+	held := math.Min(end, w.End) - math.Max(start, w.Start)
+	return held > wordTouch || (held > 0 && w.Start >= start && w.End <= end)
 }
 
 // ClipCaptions makes a clip's captions, laid out in the lines they are

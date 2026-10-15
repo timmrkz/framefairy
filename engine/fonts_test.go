@@ -37,6 +37,9 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 		if font.About == "" {
 			t.Errorf("%s says nothing about itself", font.Name)
 		}
+		if got := weightClass(data); got != font.Weight {
+			t.Errorf("%s is offered as weight %d, the face says %d", font.Name, font.Weight, got)
+		}
 	}
 	if _, ok := FontByName("Comic Sans MS"); ok {
 		t.Error("a face nobody bundled was found")
@@ -44,6 +47,35 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 	// What a plan gets without saying anything has to be one of ours.
 	if _, ok := FontByName(ResolveStyle(nil).Font); !ok {
 		t.Errorf("the default face %q is not bundled", ResolveStyle(nil).Font)
+	}
+}
+
+// libass thickens a face only where the bold asks for more than 150 above
+// the face's own weight, by an em over 64, and the video preview draws the
+// word typed the same way, see Thickening. Found by Tim: Archivo Black, a
+// face of weight 400, was thickened by libass for bold captions and faked
+// bold another way by the Mac, and the word typed was lighter and narrower.
+func TestTheFacesLibassThickensAreKnown(t *testing.T) {
+	for _, c := range []struct {
+		font    string
+		bold    float64
+		weight  int
+		thicken bool
+	}{
+		{"Inter Black", 1, 900, false},
+		{"Archivo Black", 1, 400, true},
+		{"Archivo Black", -1, 400, true},
+		{"Archivo Black", 0, 400, false},
+		{"Archivo Black", 550, 400, false},
+		{"Archivo Black", 551, 400, true},
+		{"Anton", 1, 400, true},
+		{"Comic Sans MS", 1, 400, true},
+		{"Comic Sans MS", 0, 400, false},
+	} {
+		weight, thicken := Thickening(c.font, c.bold)
+		if weight != c.weight || (thicken != 0) != c.thicken || (thicken != 0 && thicken != 1.0/64) {
+			t.Errorf("%s at bold %g is weight %d thickened by %g, want weight %d thickened %t", c.font, c.bold, weight, thicken, c.weight, c.thicken)
+		}
 	}
 }
 
@@ -127,4 +159,21 @@ func TestTheSubtitleProbeTriesTheBundledFontsFirst(t *testing.T) {
 	if chain != "ass=filename=01_a.ass:fontsdir=fonts" {
 		t.Errorf("the chain reads %q", chain)
 	}
+}
+
+// weightClass reads usWeightClass from the OS/2 table of a TrueType face:
+// the table directory starts at 12, sixteen bytes a table, and the weight is
+// the third field of OS/2, at 4.
+func weightClass(face []byte) int {
+	be := func(b []byte) int { return int(b[0])<<8 | int(b[1]) }
+	tables := be(face[4:6])
+	for i := 0; i < tables; i++ {
+		entry := face[12+16*i:]
+		if string(entry[:4]) != "OS/2" {
+			continue
+		}
+		at := int(entry[8])<<24 | int(entry[9])<<16 | int(entry[10])<<8 | int(entry[11])
+		return be(face[at+4 : at+6])
+	}
+	return 0
 }

@@ -139,8 +139,9 @@
     // Puts the playhead at a moment. A gesture about the clip itself, an
     // edge, a trim or a caption, says so, and the playhead is then on the
     // clip whatever the moment, and a step while the episode plays on the
-    // video says that, see placeOf in lib/playhead.ts.
-    onseek: (t: number, about?: About) => void;
+    // video says that, see placeOf in lib/playhead.ts. A step from word to
+    // word says so, and the word it lands on bounces in the video preview.
+    onseek: (t: number, about?: About, wordStep?: boolean) => void;
     // The hand has taken hold of the playhead, or let go of it, so a play
     // can wait under the hand, see hold in Player.svelte.
     onhold?: (held: boolean) => void;
@@ -186,7 +187,7 @@
     // The captions as the engine has them with a caption edge where the
     // hand is, so the caption box in the video preview follows the drag.
     // Null once the captions have come back with it saved.
-    oncaptionshape?: (cues: CaptionCue[] | null) => void;
+    oncaptionshape?: (shape: { cues: CaptionCue[]; track?: string } | null) => void;
     // A caption block clicked and then removed with delete, known by the
     // moment its first word starts in the episode. It throws when the
     // caption could not be removed, and the block comes back.
@@ -194,7 +195,7 @@
     // The clip as a drag of an edge or a cut has it, its pieces and the
     // captions the engine made for them, or null when no drag is shaping
     // it. The video preview shows the same clip as the timeline on the way.
-    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[] } | null) => void;
+    onshape?: (shape: { cues: CaptionCue[]; pieces: { start: number; end: number }[]; track?: string } | null) => void;
     // The clip's thumbnails, the moments of the episode the render takes a
     // picture of the short at. Each is a mark along the foot of the track.
     thumbnails?: number[];
@@ -413,6 +414,7 @@
   let shaped = $state<null | {
     pieces: { start: number; end: number }[];
     cues: CaptionCue[];
+    track?: string;
     held: CaptionCue[];
   }>(null);
   let nextGesture: Gesture | null = null;
@@ -470,7 +472,7 @@
     try {
       const answer = await api.shape(path, asked.plan, asked.id, g);
       if (mine === shapeFor && clip?.key === asked.key && answer) {
-        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], held };
+        shaped = { pieces: answer.pieces, cues: answer.captions?.captions ?? [], track: answer.captions?.track, held };
       }
       // The playhead goes with the edge being dragged, so it is on the
       // clip, even a hair outside the pieces drawn so far. Not while the
@@ -933,7 +935,7 @@
     const back = event.key === "ArrowLeft";
     event.preventDefault();
     const through = playing && dimmed;
-    const put = (t: number) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined);
+    const put = (t: number, wordStep = false) => onseek(Math.max(0, Math.min(t, duration)), through ? "video" : undefined, wordStep);
     if (!event.shiftKey) {
       put(time + Math.max(frame, 1 / 240) * (back ? -1 : 1));
       return;
@@ -955,14 +957,14 @@
     const walk = lit.length && !through && insideClip(drawnPieces, time, step) ? lit : words;
     const to = wordStep(walk, time, back, step);
     if (to !== null) {
-      put(to);
+      put(to, true);
       return;
     }
     // Out of words. With loop on, the clip comes round the way a play of
     // it does: past its last word is its first word, and before its first
     // its last. Without, at its ends is the clip beside it, because the
     // words go on even where this clip does not.
-    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step));
+    if (walk === lit && looping) put(intoWord(back ? lit[lit.length - 1] : lit[0], step), true);
     else if (walk === lit) onwalkclip?.(back);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }
@@ -1272,7 +1274,7 @@
       const answer = await api.shapeCaptionTime(path, asked.plan, asked.id, q.word, q.edge, q.at);
       if (mine === capFor && clip?.key === asked.key && capDraft && answer) {
         capShaped = answer.captions ?? [];
-        oncaptionshape?.(capShaped);
+        oncaptionshape?.({ cues: capShaped, track: answer.track });
       }
     } catch {
       // An edge the engine says no to shows the last answer it gave.
@@ -1295,7 +1297,7 @@
   // The clip as a gesture shapes it goes to the video preview too, so it
   // shows the same clip as the timeline while the hand moves.
   $effect(() => {
-    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces } : null);
+    onshape?.(shapedShown && shaped ? { cues: shaped.cues, pieces: shaped.pieces, track: shaped.track } : null);
   });
   const shownCues = $derived(shapedShown && shaped ? shaped.cues : captions);
   // The captions are put in the episode by the pieces they were made for.
@@ -1469,11 +1471,18 @@
     return litWord(c.lines ?? [], spokenAt);
   }
 
-  // Where a click on a caption puts the playhead: a frame into its first
-  // word, on the clip's own clock and then in the episode, the same step
-  // the arrow keys take into a word. A word is lit from its start, and a
-  // moment read back through the episode can land a hair before it.
-  function firstWordOf(c: CaptionCue): number | null {
+  // Where a click on a caption puts the playhead: into its first word, the
+  // same step the arrow keys take into a word. That is the first word the
+  // picture lights, on the frames it lights it on, see lit. Read from the
+  // word's own time instead, a first word lit for a single frame was
+  // landed beside that frame, where the caption was not up yet, and the
+  // click showed no caption and the block did not pop. Tim found it, and
+  // shift and an arrow, which walk the lit words, went where the click
+  // should have. While the captions are being reshaped by the hand, the
+  // lit words are the old captions', and the word's own time is read.
+  function firstWordOf(i: number, c: CaptionCue): number | null {
+    const shown = shownCues === captions ? lit.find((w) => w.cue === i) : undefined;
+    if (shown) return intoWord(shown, frame);
     const word = c.lines?.[0]?.words?.[0];
     if (!word || !cuePieces.length) return null;
     return inEpisode(cuePieces, intoWord(word, frame));
@@ -1536,7 +1545,7 @@
     const b = shownBlocks.find((x) => x.i === i);
     if (!b) return null;
     if (onremovecaption && !locked && b.c.first !== undefined) picked = b.c.first;
-    return { at: firstWordOf(b.c) ?? b.from, about: "clip" };
+    return { at: firstWordOf(b.i, b.c) ?? b.from, about: "clip" };
   }
 
   // A double-click on an edge moved by hand, or drawn in with its word,
@@ -2351,8 +2360,8 @@
      The caption the video preview is showing wears the highlight colour
      over its box, the pill over the box the way the short draws it, each
      as see-through as it is set to be, so it shows two colours, the
-     highlight and the words. It bounces into place with the same pop the
-     pill makes in the video preview.
+     highlight and the words. It bounces into place with the pop in
+     app.css.
 
      A block is drawn a pixel short of its time at each end, so two
      captions that meet show a gap. */

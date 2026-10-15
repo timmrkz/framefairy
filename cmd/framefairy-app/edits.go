@@ -292,11 +292,14 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if err != nil {
 		return ClipEntry{}, err
 	}
+	// The look is taken before the edit, which holds the video's other
+	// edits while it runs, so ffprobe reading the video holds none of them.
+	look := s.captionLook(path, plan)
 	began := time.Now()
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, look)
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
@@ -333,7 +336,9 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	return engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionOverrides(plan))
+	view, err := engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionLook(path, plan))
+	captionTracks.keep(path, view)
+	return view, err
 }
 
 // ResetCrop brings back the automatic crop for the shot at a moment of a
@@ -373,8 +378,12 @@ func (s *FrameFairy) Shape(path, plan, clipID string, g engine.Gesture) (*engine
 		return nil, err
 	}
 	g.Frames = s.frames(context.Background(), path)
-	return engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
-		s.captionOverrides(plan))
+	view, err := engine.ShapeClipView(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause,
+		s.captionLook(path, plan))
+	if err == nil {
+		captionTracks.keep(path, view.Captions)
+	}
+	return view, err
 }
 
 // Reshape makes the change a gesture on the clip timeline showed while the

@@ -76,6 +76,7 @@
   } from "../lib/removed";
   import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
   import { holdAhead } from "../lib/frames/queue";
+  import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
@@ -1084,8 +1085,8 @@
   // Putting the playhead somewhere is a jump, not a drift, so the clip
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
-  function seekTo(t: number, about?: About) {
-    player?.seek(t, about);
+  function seekTo(t: number, about?: About, wordStep = false) {
+    player?.seek(t, about, wordStep);
     timeline?.fit(t);
   }
 
@@ -1597,6 +1598,10 @@
   // The captions of the selected clip, as the render will draw them. Every
   // edit replaces the clip, so this follows along by itself.
   let captions = $state<CaptionsView | null>(null);
+  // The clip the captions above are of. Until a clip just chosen has its
+  // own, the video preview draws none rather than the last clip's at the
+  // new clip's moments.
+  let captionsOf = $state<string | null>(null);
 
   // Whether the workspace has the episode on it: the window on the range
   // picker, a picture on the canvas, the clip timeline drawn and the
@@ -1666,7 +1671,7 @@
   // The captions as the engine has them while a caption edge is dragged on
   // the clip timeline. The caption box in the video preview follows it on
   // the way, so what is seen while dragging is what will be saved.
-  let captionShape = $state<NonNullable<CaptionsView["captions"]> | null>(null);
+  let captionShape = $state<{ cues: NonNullable<CaptionsView["captions"]>; track?: string } | null>(null);
   // A colour being picked is drawn in the video preview while it is picked,
   // and saved when the hand lets go of it.
   let colourDraft = $state<{
@@ -1698,6 +1703,7 @@
   let reshaped = $state<{
     cues: NonNullable<CaptionsView["captions"]>;
     pieces: { start: number; end: number }[];
+    track?: string;
   } | null>(null);
   // Each piece keeps the framing of the piece it came from, the way the
   // engine keeps it when the edit lands.
@@ -1723,8 +1729,8 @@
   const shownCaptions = $derived.by(() => {
     if (!captions) return captions;
     let view = captions;
-    if (reshaped) view = { ...view, captions: reshaped.cues, pieces: reshaped.pieces };
-    if (captionShape) view = { ...view, captions: captionShape };
+    if (reshaped) view = { ...view, captions: reshaped.cues, track: reshaped.track, pieces: reshaped.pieces };
+    if (captionShape) view = { ...view, captions: captionShape.cues, track: captionShape.track };
     if (colourDraft) {
       view = {
         ...view,
@@ -1740,6 +1746,32 @@
       };
     }
     return view;
+  });
+  // The colours and switches being drafted, as the video preview asks the
+  // Go side to draw them, see lib/frames/captions.ts. Only what is being
+  // changed: the rest is drawn as it is saved.
+  const captionDrafts = $derived.by(() => {
+    const d = colourDraft;
+    const out: Record<string, string> = {};
+    if (!d) return out;
+    for (const [name, css] of [
+      ["text", d.primary],
+      ["box", d.box],
+      ["highlight", d.highlight],
+    ] as const) {
+      if (css === undefined) continue;
+      const c = splitColour(css);
+      out[name] = c.hex;
+      out[`${name}Opacity`] = String(c.alpha);
+    }
+    for (const [name, on] of [
+      ["textOn", d.textOn],
+      ["boxOn", d.boxOn],
+      ["highlightOn", d.highlightOn],
+    ] as const) {
+      if (on !== undefined) out[name] = on ? "1" : "0";
+    }
+    return out;
   });
   // The colours as the controls show them.
   const textSplit = $derived(splitColour(shownCaptions?.style.primary ?? ""));
@@ -1908,22 +1940,65 @@
   // Reading the caption is what makes both right at once, and it will go
   // on being right, because it is the same list either way: whatever
   // lights up is what these keys walk.
+  //
+  // And each word is where the picture lights it, by the frames the engine
+  // reads it lit on, see WordFrame. A caption's times are on the clip's
+  // clock, and a piece of the short starts on the frame nearest its
+  // start, so a word walked to by its own time was now and then not lit
+  // yet on the frame the walk landed on, while the keyboard's frame was
+  // already round it. A word lit on no frame is not walked to. By the
+  // words' own times only until the frames are known.
   const lit = $derived.by(() => {
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
+    const frames = captions.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
     const out: Word[] = [];
-    for (const cue of captions.captions) {
+    for (const [i, cue] of captions.captions.entries()) {
+      let k = 0;
       for (const line of cue.lines) {
         for (const word of line.words) {
+          const f = frames?.[i]?.[k++];
+          if (f && f.from < 0) continue;
           out.push({
-            start: inEpisode(pieces, word.start),
-            end: endInEpisode(pieces, word.end),
+            start: f ? f.from : inEpisode(pieces, word.start),
+            end: f ? f.to : endInEpisode(pieces, word.end),
             text: word.text,
+            framed: !!f,
+            cue: i,
           });
         }
       }
     }
     return out;
+  });
+  // Where libass puts each word of the captions shown and when the picture
+  // lights it, see WordFrame, asked for once for each track: what the hand
+  // drafts moves no word but for the height, and the height is the caption
+  // box's own. A drag of an edge makes new captions on every step, so an
+  // ask the captions moved on from is called off, and the Go side stops
+  // measuring for it. The video preview places the words of the caption
+  // box by them, and lit walks by them.
+  //
+  // Nothing is asked while the hand still shapes the clip or a caption on
+  // the clip timeline: nobody walks or types into captions that change on
+  // every step, and the captions the hand leaves are asked for once it
+  // has let go and they are saved. Asked on every step, they held a
+  // connection to the Go side beside the video preview's three layers,
+  // and on a busy machine the answers to the drag queued behind them, so
+  // an edge taken again while the drag before it saved stood still.
+  let wordFrames = $state<{ key: string; frames: WordFrame[][] | null } | null>(null);
+  $effect(() => {
+    if (reshaped || captionShape) return;
+    const track = shownCaptions?.track;
+    const key = track ? `${path}\n${track}` : "";
+    if (!key || untrack(() => wordFrames?.key) === key) return;
+    const off = new AbortController();
+    void wordFramesOf(path, track!, off.signal, (text, video) => said(text, { level: "warn", video }))
+      .then((frames) => {
+        if (!off.signal.aborted) wordFrames = { key, frames };
+      })
+      .catch(() => {});
+    return () => off.abort();
   });
   let fonts = $state<CaptionFont[]>([]);
 
@@ -2352,7 +2427,9 @@
     api
       .captions(path, clip.plan, clip.id)
       .then((view) => {
-        if (!dropped) captions = view;
+        if (dropped) return;
+        captions = view;
+        captionsOf = clip.key;
       })
       .catch(() => {
         if (!dropped) captions = null;
@@ -2507,10 +2584,12 @@
   $effect(() => {
     const want = landOn;
     if (!want || current?.key !== want.key || !lit.length) return;
+    // Where the picture lights the words, once the engine has said.
+    if (captions?.track && wordFrames?.key !== `${path}\n${captions.track}`) return;
     landOn = null;
     const word = want.last ? lit[lit.length - 1] : lit[0];
     const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
-    seekTo(at);
+    seekTo(at, undefined, true);
     // The word landed on is the keyboard's word, as any word walked to is.
     untrack(() => player?.keyAt(at));
   });
@@ -2960,7 +3039,9 @@
           bind:frameStart={shownStart}
           sleeping={away}
           bind:time
-          captions={shownCaptions}
+          captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}
+          {wordFrames}
+          drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
           oncrop={(at, left) => (current ? setCrop(current, at, left) : Promise.resolve())}
           onresetcrop={(at) => (current ? resetCrop(current, at) : Promise.resolve())}
@@ -3059,7 +3140,7 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about) => player?.seek(t, about)}
+        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
@@ -3092,7 +3173,7 @@
         oncaptiontime={(word, edge, at) =>
           current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
         onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
-        oncaptionshape={(cues) => (captionShape = cues)}
+        oncaptionshape={(shape) => (captionShape = shape)}
         onshape={(next) => (reshaped = next)}
       />
       <!-- One row under the clip up close, so the range picker and the

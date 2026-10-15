@@ -394,7 +394,15 @@ not yet for a canvas, as far as can be found:
   Linux's webview has nothing of the kind yet.
 
 So the video preview draws on a WebGPU canvas, for every file, and asks
-for the extended mode:
+for the extended mode for HDR. Standard video has nothing above white,
+and its canvas is in the standard mode, the one the rest of the app is
+drawn in. In the extended mode it turned the Mac's HDR on for every
+video, which greys all ordinary white, and a screenshot then took the
+canvas darker than the rest of the window by however much the screen had
+to spare. On #201 the white of the captions came out 188 and 209 of 255
+in two of Tim's pictures, beside the box a word is typed in at 255. The
+walk "the GPU draws standard video with QuickTime's look, a step for
+every value, and HDR as BT.2100's light" checks the mode. For HDR:
 
 - ffmpeg turns each frame of HDR into red, green and blue with 10 bits
   each, from the file's own range and matrix, and leaves it in the file's

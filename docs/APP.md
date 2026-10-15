@@ -918,13 +918,27 @@ bubble scrolled by those eight pixels.
   does, takes the caret and any highlighted letters out of it, and lets the
   captions follow the picture again. A click on the video preview lands on
   the crop frame, which refuses the pointer so it can be dragged, so the
-  word used to keep the caret while the video played. The frame and the caret belong to the interface and not to the
+  word used to keep the caret while the video played. Moving the playhead
+  any other way ends it the same way, since the word is corrected at the
+  moment it was opened at: a click on a thumbnail's camera or a keyframe's
+  diamond takes no focus, and the word used to stay open with the caption
+  held on the old moment while the frame moved on. The frame and the caret belong to the interface and not to the
   render: nothing of them is ever burned into a short, and **the frame is
   all the interface adds**. A word being corrected takes no background of
   its own. One would read as a second highlight pill, in the app's colour,
   on a word nobody is speaking, and on the word that is being spoken it
-  would take away the colour the render really burns in. The picture goes
-  on showing what the render will show while a word in it is being typed.
+  would take away the colour the render really burns in. The captions in the picture are drawn by libass
+  from the short's own caption file, see [CAPTIONS.md](CAPTIONS.md), and
+  the caption box over them draws nothing until a word is opened. Then it
+  shows the words itself, the letters typed included, until the word is
+  saved. Until then each word of the caption box stands where libass drew
+  it, on the pill it draws behind the word at rest, so the frame round a
+  word is the edge of its pill, with the pill's corners. The caption box
+  holds the caption and the word of the frame on screen, not of the
+  playhead, so while a clip plays the frame and the pill go on to the
+  next word on the same frame. Shift and the arrows walk to the frame where
+  the picture lights the next word, and the keyboard's frame comes with the
+  pill, never before it.
   - **From the keyboard:** Shift and the arrows walk the playhead from
     word to word, and the word walked to wears the same frame the pointer
     puts on a word. Enter opens that word with the whole of it selected,
@@ -1635,7 +1649,10 @@ bubble scrolled by those eight pixels.
       the gesture, and saves nothing until the hand lets go. They used to wait for the hand to let go, so a drag showed
       the old captions over the new clip. After letting go they stay until
       the saved clip's captions come back, which are the same, so nothing
-      jumps.
+      jumps. Letting go first waits for the engine's answer to where the
+      hand let go, so on a busy machine, where the answers come late, the
+      playhead still ends on the edge and not where an earlier answer put
+      it, see plan row 2.237.
     - Click an edge to put the playhead exactly on it, which is how a clip
       is started over. While it plays, a click on an edge does nothing to
       the play.
@@ -2159,7 +2176,7 @@ moved by hand, on the clip timeline.
   leave the words out, which put a dragged edge only where the words left
   put it, about where it already stood: Tim dragged a right edge in and
   double-clicked twice, and the second time nothing moved.
-- **The caption box in the video preview follows the drag**, so what is
+- **The captions in the video preview follow the drag**, so what is
   seen while dragging is what is saved.
 - **A block is its caption in the short's colours**: the box colour, as
   see-through as the box is set to be, over the waveform the way the box
@@ -2171,8 +2188,8 @@ moved by hand, on the clip timeline.
   colour. At rest the bar is a hairline and under the pointer it is
   thicker. The caption the video preview is showing wears the highlight
   colour over its box, with its own opacity, the pill the spoken word
-  wears, and pops with the same animation that pill makes in the video
-  preview, on every word as the pill does, so walking the words with shift
+  wears, and pops as that pill
+  bounces, on every word as the pill does, so walking the words with shift
   and the arrow keys pops the pill and the block together. It pops when
   the playhead comes to a new word and never because an edge is dragged:
   while one is, the block is lit as the caption is saved, and a word is
