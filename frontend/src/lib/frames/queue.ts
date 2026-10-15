@@ -1123,12 +1123,20 @@ export class FrameQueue {
 
   // The frame drawn is the one that holds the moment it is given, the
   // playhead unless said otherwise.
+  //
+  // A seek made while it waits for the video to be read is newer, and the
+  // still gives way to it. It took a ticket of its own after the wait, which
+  // made the newer seek's own stale, and the still then put the playhead
+  // back where it had been asked for: a drag that left the playhead on an
+  // edge for a moment kept it there, a frame off the edge's frame.
   private async still(at: number, holds = at) {
+    const asked = this.ticket;
     try {
       await this.ready;
     } catch {
       return;
     }
+    if (asked !== this.ticket || this.closed) return;
     const ticket = ++this.ticket;
     const slot = this.slots[0];
     this.release(slot);
