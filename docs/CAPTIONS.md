@@ -200,10 +200,14 @@ The word typed sits on a pill in the highlight colour, whether it is the
 word lit or not, and wears no frame. A word not lit was typed on the dark
 box of the caption, and the frame round a lit word, in the app's lighter
 purple, read as a second shade of the pill, so Tim saw three colours where
-there is one. The caret says the word is open. With the highlight off the
+there is one. The caret says the word is open, and the word wears no
+focus ring either: the ring every other control wears stood a pixel off
+the pill, and the caption's box showed through between the two as a dark
+line. With the highlight off the
 word typed wears the frame and no pill, since there is no pill to match.
 The walk "a word typed sits on the pill libass draws, lit or not" holds
-the colour behind the letters typed to libass's pill and finds no ring.
+the colour behind the letters typed to libass's pill and finds no ring
+and no focus ring.
 
 While the word typed is the word lit, libass leaves out its pill too, and
 the caption box draws the pill behind the letters typed. It is libass's

@@ -503,7 +503,7 @@
 //                      letters of a caption
 //   ["one pill", word] the word opened while another is lit sits on the
 //                      colour of the pill libass draws round it lit, with no
-//                      ring of another shade round it
+//                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -3942,11 +3942,12 @@ for (const seq of toWalk) {
           open: e.classList.contains("fixing"),
           lit: e.classList.contains("now"),
           shadow: getComputedStyle(e).boxShadow,
+          outline: `${getComputedStyle(e).outlineStyle} ${getComputedStyle(e).outlineWidth}`,
         }));
         await it.evaluate((e) => (e.style.caretColor = ""));
         await page.keyboard.press("Escape");
         await watch.step("press", s);
-        console.log(`    lit on ${lit?.pill}, typed unlit on ${typed?.pill}, ring ${state.shadow}`);
+        console.log(`    lit on ${lit?.pill}, typed unlit on ${typed?.pill}, ring ${state.shadow}, outline ${state.outline}`);
         const rgb = (c) => (c ?? "").split(",").map(Number);
         const unlike = (a, b) => rgb(a).length !== 3 || rgb(a).some((v, i) => Math.abs(v - rgb(b)[i]) > 4);
         if (!lit?.pill) wrong = `libass drew no pill round "${arg}" lit`;
@@ -3956,6 +3957,9 @@ for (const seq of toWalk) {
           wrong = `"${arg}" typed unlit sits on ${typed.pill || "no colour"}, and libass's pill is ${lit.pill}`;
         else if (/rgb|color\(/.test(state.shadow.replaceAll("rgba(0, 0, 0, 0)", "")))
           wrong = `"${arg}" typed has a ring round its pill, ${state.shadow}`;
+        // The focus ring the app gives a control, a pixel off the pill,
+        // which left a dark line between the two.
+        else if (!state.outline.startsWith("none")) wrong = `"${arg}" typed has a focus ring round its pill, ${state.outline}`;
         break;
       }
       case "grow": {

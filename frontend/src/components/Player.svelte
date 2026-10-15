@@ -2051,6 +2051,15 @@
     --frame: transparent;
   }
 
+  /* A word in the caption box wears no focus ring. The frame says which
+     word the keyboard is on and the caret that it is open, and the ring
+     every other control wears, app.css, stood a pixel off the pill, so
+     Tim saw a dark line round the word typed, the caption's box showing
+     through between the two. */
+  .word:focus-visible {
+    outline: none;
+  }
+
   /* The words where libass put them, see laidWords: the caption box is
      the box round all of them, and each word is placed in it on the pill
      libass draws behind it at rest, so the frame round a word is the
