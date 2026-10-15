@@ -1594,10 +1594,15 @@ bubble scrolled by those eight pixels.
       frame, where an edge reaches over it and would leave it with no way
       to be taken hold of.
     - **An edge can be taken again at once.** The edges stay while the
-      last drag is saved, and a drag that starts then waits for the save
-      and goes on from the edge as saved. They used to go for as long as
-      the save took, so pressing an edge again straight after letting go
-      moved the playhead instead, found by Tim.
+      last drag is saved. The same edge taken again goes with the hand
+      from where it was let go before that save is back, and the two are
+      saved in the order they were let go. Another edge waits for the
+      save and goes on from the clip as saved, because the engine answers
+      a gesture against the clip as saved. The edges used to go for as
+      long as the save took, so pressing an edge again straight after
+      letting go moved the playhead instead, found by Tim. And the same
+      edge used to wait too, standing still under the hand on a busy
+      machine (2.259).
     - **The last press owns the playhead.** Every press takes it, and an
       answer the engine gives for an earlier one no longer moves it, so a
       click on an edge followed at once by a click on the track leaves the

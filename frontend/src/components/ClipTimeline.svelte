@@ -507,20 +507,44 @@
       return;
     }
     saving = true;
+    const key = edgeOf(g);
+    pending = pending === "" || pending === key ? key : "*";
+    unsent++;
+    const before = saved;
     const run = (async () => {
+      // Saved in the order they were let go, so an edge taken again while
+      // the drag before it saves lands where the hand left it last.
+      await before;
       await idle();
+      unsent--;
       await reshape(g, [heldAt, leftAt]);
     })();
-    saved = run.then(tick, tick);
+    const done = run.then(tick, tick);
+    saved = done;
+    void done.then(() => {
+      if (saved === done) pending = "";
+    });
     await run;
   }
 
   // The last gesture saved, and the clip it hands back drawn. The next
-  // press on an edge waits for it, so its gesture starts from the clip as
-  // saved. The edges stay where a hand can take them while it saves: they
-  // were taken off the page, and a press on an edge just let go of went to
-  // the playhead standing on it, found by Tim.
+  // press on another edge waits for it, so its gesture starts from the
+  // clip as saved. The edges stay where a hand can take them while it
+  // saves: they were taken off the page, and a press on an edge just let
+  // go of went to the playhead standing on it, found by Tim.
   let saved: Promise<void> = Promise.resolve();
+  // Which edge the saves on their way are of, "" when none is, "*" when
+  // they are of more than one. The engine shapes a gesture against the
+  // clip as saved, and a gesture says where its own edge goes and nothing
+  // else, so the same edge taken again is answered right before the drag
+  // before it is saved. It went with the hand from the start instead of
+  // standing still until the save came back, which on a busy machine was
+  // long enough to see (2.259). Another edge would be answered with the
+  // first one back where it was, so it waits.
+  let pending = "";
+  // Saves let go of and not yet sent, which keep the timeline saving.
+  let unsent = 0;
+  const edgeOf = (g: Gesture) => (g.kind === "move" ? `move ${g.index}` : `${g.kind} ${g.edge}`);
 
   // A click on a cut's button moves no playhead, so it stays where it is.
   async function reshape(g: Gesture, playhead: [number, number] = [time, time]) {
@@ -529,7 +553,7 @@
     try {
       await onreshape(g, playhead);
     } finally {
-      saving = false;
+      saving = unsent > 0;
     }
   }
 
@@ -594,17 +618,19 @@
   // where the playhead goes, see edgePlayhead in engine/shape.go, and shift
   // puts the edge on words, read on every move, so letting go of shift
   // part way through goes back to frames.
-  function gestureGrip(make: (delta: number, shift: boolean) => Gesture | null) {
-    let ready = false;
+  function gestureGrip(key: string, make: (delta: number, shift: boolean) => Gesture | null) {
+    let ready = pending === "" || pending === key;
     let last: [number, boolean] | null = null;
     const go = (delta: number, shift: boolean) => {
       const g = make(delta, shift);
       if (g) shape(g);
     };
-    const started = saved.then(() => {
-      ready = true;
-      if (last) go(...last);
-    });
+    const started = ready
+      ? Promise.resolve()
+      : saved.then(() => {
+          ready = true;
+          if (last) go(...last);
+        });
     return {
       drag(delta: number, shift: boolean) {
         last = [delta, shift];
@@ -631,15 +657,18 @@
   // back where the clip was found.
   function edgeGrip(edge: "start" | "end"): Grip | null {
     if (!clip || locked || !onreshape) return null;
+    // From where the edge is drawn when it is pressed, which is where the
+    // drag before it left it, saved or on its way.
+    const was = edge === "start" ? start : end;
     return {
-      at: playing ? null : edgeFrame(edge === "start" ? start : end, edge === "start"),
+      at: playing ? null : edgeFrame(was, edge === "start"),
       about: "clip",
       twice: () => void resetEdge(edge),
-      ...gestureGrip((delta, shift) => ({
+      ...gestureGrip(`trim ${edge}`, (delta, shift) => ({
         kind: "trim",
         edge,
         index: 0,
-        from: (edge === "start" ? first : last) + delta,
+        from: was + delta,
         to: 0,
         toWords: shift,
       })),
@@ -656,10 +685,8 @@
       at: playing ? null : edgeFrame(side === "from" ? drawn.from : drawn.to, side === "to"),
       about: "clip",
       twice: () => void removeCut(index),
-      ...gestureGrip((delta, shift) => {
-        const from = segments[index]?.end;
-        const to = segments[index + 1]?.start;
-        if (from === undefined || to === undefined) return null;
+      ...gestureGrip(`move ${index}`, (delta, shift) => {
+        const { from, to } = drawn;
         const t = (side === "from" ? from : to) + delta;
         return {
           kind: "move",

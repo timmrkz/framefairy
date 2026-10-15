@@ -172,12 +172,20 @@
       const leftFocus = (e: FocusEvent) => {
         if (!host?.contains(e.relatedTarget as Node | null) && !pointer) go();
       };
-      run();
-      timer = window.setTimeout(over, left);
       // A row that appears under the pointer, as a removed clip's row
       // does under the trash can just pressed, starts held, full, and its
-      // time starts once the pointer leaves it.
-      if (pointer) hold();
+      // time starts once the pointer leaves it. Held before the clock
+      // starts, not stopped just after: finding the pointer lays the page
+      // out, and on a busy machine that took long enough to come off the
+      // time, so the fill stood a hair short of full under the hand.
+      if (pointer) {
+        held = true;
+        stand();
+      } else {
+        since = performance.now();
+        run();
+        timer = window.setTimeout(over, left);
+      }
       document.addEventListener("pointerover", moved, true);
       document.addEventListener("pointermove", moved, { capture: true, passive: true });
       document.addEventListener("pointerout", gone, true);
