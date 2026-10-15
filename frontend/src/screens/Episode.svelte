@@ -1978,8 +1978,17 @@
   // ask the captions moved on from is called off, and the Go side stops
   // measuring for it. The video preview places the words of the caption
   // box by them, and lit walks by them.
+  //
+  // Nothing is asked while the hand still shapes the clip or a caption on
+  // the clip timeline: nobody walks or types into captions that change on
+  // every step, and the captions the hand leaves are asked for once it
+  // has let go and they are saved. Asked on every step, they held a
+  // connection to the Go side beside the video preview's three layers,
+  // and on a busy machine the answers to the drag queued behind them, so
+  // an edge taken again while the drag before it saved stood still.
   let wordFrames = $state<{ key: string; frames: WordFrame[][] | null } | null>(null);
   $effect(() => {
+    if (reshaped || captionShape) return;
     const track = shownCaptions?.track;
     const key = track ? `${path}\n${track}` : "";
     if (!key || untrack(() => wordFrames?.key) === key) return;

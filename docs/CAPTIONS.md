@@ -253,7 +253,13 @@ box places each word on that box, from the line the captions stand on,
 so the frame round a word under the hand is the edge of its pill and the
 word stands in its middle, wherever the captions are dragged. The
 browser laid the words out in its own font before, and Tim saw the frame
-stand off its word on #201.
+stand off its word on #201. They are not asked for while the hand still
+shapes the clip or a caption on the clip timeline, only for the captions
+it leaves, see `wordFrames` in `Episode.svelte`. Asked on every step of
+a drag, they held a connection to the Go side beside the video
+preview's layers, and on a busy machine the drag's own answers waited
+behind them: the walk "an edge taken again while the drag before it
+saves goes with the hand" saw the edge stand still.
 
 The letters typed stand on the baseline libass set the word on. Each
 word frame carries it, `base`, the bottom of the ink of a capital H on
