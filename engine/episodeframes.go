@@ -88,6 +88,9 @@ type EpisodeFrames struct {
 	// How the picture's brightness is coded, as the decoder found it in
 	// the file when a cursor of picture first opened it.
 	light framewire.Light
+	// The cursor of captions, one at a time, see Captions.
+	captionsMu sync.Mutex
+	captions   *captionsCursor
 }
 
 // place is where a cursor of picture stands, or where a stream wants one:
@@ -650,4 +653,97 @@ func (f *EpisodeFrames) Close() {
 		_ = cmd.Process.Kill()
 		<-gone
 	}
+}
+
+// captionsCursor is the decoder's cursor of captions: the caption file it
+// holds open, at a size, see Captions.
+type captionsCursor struct {
+	id   uint32
+	ch   chan framewire.Record
+	gone chan struct{}
+	// The file and fonts and size it holds open.
+	held string
+}
+
+// Captions is the captions of a caption file drawn by libass at a size,
+// at ms milliseconds of the short, see SourceInfo.CaptionMoment: the layer
+// the video preview lays over a frame, see framewire.Layer. The file is
+// the one the render burns in, made by Engine.CaptionTrack, and the faces
+// it names are in its folder of fonts. A file is held open until another
+// is asked for, so the frames of a clip each only draw.
+func (f *EpisodeFrames) Captions(ctx context.Context, captions framewire.Captions, ms int64) (framewire.Layer, error) {
+	if !framewire.LayerFits(captions.Width, captions.Height) || !framewire.LayerFits(captions.ShortW, captions.ShortH) {
+		return framewire.Layer{}, fmt.Errorf("captions cannot be drawn %d by %d of %d by %d",
+			captions.Width, captions.Height, captions.ShortW, captions.ShortH)
+	}
+	f.captionsMu.Lock()
+	defer f.captionsMu.Unlock()
+	f.mu.Lock()
+	if err := f.start(); err != nil {
+		f.mu.Unlock()
+		return framewire.Layer{}, err
+	}
+	f.used = time.Now()
+	c := f.captions
+	if c == nil || c.gone != f.gone {
+		f.nextID++
+		c = &captionsCursor{id: f.nextID, ch: make(chan framewire.Record, 2), gone: f.gone}
+		f.answers[c.id] = c.ch
+		f.captions = c
+	}
+	held := fmt.Sprintf("%+v", captions)
+	var err error
+	if c.held != held {
+		c.held = ""
+		err = f.send(c.gone, "%s", framewire.CaptionsRequest(c.id, captions))
+	}
+	if err == nil {
+		err = f.send(c.gone, "%s", framewire.DrawRequest(c.id, ms))
+	}
+	if err != nil {
+		if why := f.ended(c.gone); why != nil {
+			err = why
+		}
+		f.mu.Unlock()
+		return framewire.Layer{}, err
+	}
+	f.mu.Unlock()
+	wait := func() (framewire.Record, error) {
+		select {
+		case rec := <-c.ch:
+			if rec.Kind == framewire.Failed {
+				return rec, errors.New(string(rec.Body))
+			}
+			return rec, nil
+		case <-c.gone:
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return framewire.Record{}, f.ended(c.gone)
+		case <-ctx.Done():
+			// The answers still on their way would be read as the next
+			// draw's, so the cursor is let go of and the next draw opens
+			// one of its own.
+			f.mu.Lock()
+			if f.captions == c {
+				f.captions = nil
+				delete(f.answers, c.id)
+				_ = f.send(c.gone, "close %d", c.id)
+			}
+			f.mu.Unlock()
+			return framewire.Record{}, ctx.Err()
+		}
+	}
+	if c.held != held {
+		if _, err := wait(); err != nil {
+			// A draw follows a captions that failed, and fails too.
+			_, _ = wait()
+			return framewire.Layer{}, err
+		}
+		c.held = held
+	}
+	rec, err := wait()
+	if err != nil {
+		return framewire.Layer{}, err
+	}
+	return framewire.ReadLayer(rec.Body)
 }

@@ -46,6 +46,16 @@ describe("wordStep", () => {
     expect(lit(wordStep(said, 10.45, true, frame))).toBe("Und");
   });
 
+  // A word lit on frames of the short is entered in the middle of its first
+  // frame, which shows it at rest before its pop. A frame in, Tim saw the
+  // pill stay grown after the pop played over the paused frame.
+  test("enters a framed word in the middle of its first frame", () => {
+    const framed = said.map((w) => ({ ...w, framed: true }));
+    expect(wordStep(framed, 9, false, frame)).toBeCloseTo(10.02, 9);
+    expect(wordStep(framed, 10.2, false, frame)).toBeCloseTo(10.52, 9);
+    expect(wordStep(framed, 13.5, true, frame)).toBeCloseTo(10.52, 9);
+  });
+
   test("never lands on a word's edge", () => {
     for (const at of [9, 10.2, 10.7, 12]) {
       const to = wordStep(said, at, false, frame);

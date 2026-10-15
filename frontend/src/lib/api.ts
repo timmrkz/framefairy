@@ -114,6 +114,8 @@ export interface CaptionFont {
   name: string;
   about: string;
   file: string;
+  // How heavy the face says it is, from 100 to 900.
+  weight: number;
 }
 
 export interface Check {
@@ -179,6 +181,11 @@ export interface Word {
   said?: number;
   whole?: string;
   part?: number;
+  // A word lit on frames of the short, see WordFrame: start is where the
+  // first of them starts and end where the last ends, in the episode.
+  framed?: boolean;
+  // Which caption of the clip the word is lit in, counted from nought.
+  cue?: number;
 }
 
 // What a hand does to a clip on the clip timeline, see engine/shape.go:
@@ -293,6 +300,11 @@ export interface CaptionStyle {
   // The size the caption style asks for, which is what the control shows.
   chosenSize: number;
   bold: boolean;
+  // How libass draws the face at that bold, see engine.Thickening: the
+  // face's own weight, which the browser draws it at, and how much libass
+  // grows every letter, as a share of the em.
+  weight?: number;
+  thicken?: number;
   marginV: number;
   marginH: number;
   padX: number;
@@ -313,6 +325,10 @@ export type CaptionSwitch = "text" | "box" | "highlight";
 export interface CaptionsView {
   captions: CaptionCue[] | null;
   style: CaptionStyle;
+  // What the captions were made from, by name: the video preview asks the
+  // Go side to draw them by it, the way the render burns them in, see
+  // lib/frames/captions.ts.
+  track?: string;
   // The clip's pieces the captions were made for, whose clock they are on.
   // A clip that was changed has its new pieces before its new captions, and
   // the captions are put in the episode by these until those arrive.
@@ -1185,12 +1201,20 @@ export function snapCaptionY(y: number): number {
 // same frame and the right word is lit. A word shorter than two frames is
 // entered by half of itself.
 //
+// A word lit on frames of the short, framed, is known by the frames
+// themselves, so there is no edge to keep away from: it is entered in the
+// middle of its first frame. That frame shows it at rest, before its pop,
+// and the video preview plays the whole pop over it, see
+// engine.popScales. A frame in, the paused frame caught the pop
+// on its way up and the pill stayed grown after it.
+//
 // Null means there is nowhere to go: no words heard here yet, or the
 // playhead is already before the first or past the last of them.
 // Where the playhead goes to stand on a word: a frame in, never on the
-// edge. A word shorter than two frames is entered by half of itself.
-export function intoWord(word: { start: number; end: number }, frame: number): number {
-  return Math.min(word.start + frame, (word.start + word.end) / 2);
+// edge, or the middle of its first frame when it is framed. A word shorter
+// than two frames is entered by half of itself.
+export function intoWord(word: { start: number; end: number; framed?: boolean }, frame: number): number {
+  return Math.min(word.start + (word.framed ? frame / 2 : frame), (word.start + word.end) / 2);
 }
 
 export function wordStep(words: Word[], at: number, back: boolean, frame: number): number | null {

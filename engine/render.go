@@ -47,6 +47,30 @@ type RenderSettings struct {
 	Rate float64
 }
 
+// RenderSettings are the choices a render makes with these options. Whatever
+// is held to what a render makes takes them from here, the video preview's
+// captions among them, see Engine.PreviewCaptions.
+func (o Options) RenderSettings() RenderSettings {
+	rs := RenderSettings{OutW: o.Width, OutH: o.Height, CRF: o.CRF,
+		Preset: o.Preset, AudioBitrate: o.AudioBitrate, ScaleUp: !o.NoUpscale}
+	if o.Preview {
+		rs.OutW, rs.OutH = o.Width/2, o.Height/2
+		rs.CRF, rs.Preset = 30, "veryfast"
+	}
+	return rs
+}
+
+// FrameSize is the size of the short's frames for a piece: the size asked
+// for, or the crop's own where the render does not make it larger. The
+// captions are laid out at the size asked for either way, and libass
+// draws them on frames of this size.
+func (rs RenderSettings) FrameSize(source SourceInfo, seg Segment) (int, int) {
+	if rs.ScaleUp {
+		return rs.OutW, rs.OutH
+	}
+	return CropWindow(source.Rotated(seg.Rotate), rs.OutW, rs.OutH)
+}
+
 // BuildFilterGraph makes one filter chain per segment, each reading its own
 // seeked input.
 //
@@ -84,10 +108,7 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		if source.Light() != framewire.SDR {
 			pixels, deep = "yuv420p10le", "yuv444p10le"
 		}
-		outW, outH := cropW, cropH
-		if rs.ScaleUp {
-			outW, outH = rs.OutW, rs.OutH
-		}
+		outW, outH := rs.FrameSize(source, seg)
 		chain = append(chain, source.cropFilters(seg, cropW, cropH, cropY, upright.Width, outW, outH, "flags="+flags, deep)...)
 		chain = append(chain, "fps="+source.FPSString(), "format="+pixels, "setsar=1")
 		if tags := source.colourParams(); tags != "" {
@@ -165,26 +186,8 @@ func (e *Engine) buildCommand(ctx context.Context, clip Clip, sourcePath string,
 	if err != nil {
 		return nil, err
 	}
-	abs, err := filepath.Abs(sourcePath)
-	if err != nil {
-		abs = sourcePath
-	}
-	cmd := []string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"}
-	for _, seg := range clip.Segments {
-		// -ss before -i seeks rather than decoding up to the point, and -t
-		// limits how much is read. Both are input options on purpose. The
-		// sound is read again from a little earlier, see soundLead.
-		cut := source.cutOf(seg)
-		if cut.fromKey {
-			cmd = append(cmd, "-noaccurate_seek", "-ss", cut.seek, "-an", "-i", abs)
-		} else {
-			cmd = append(cmd, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs)
-		}
-		if cut.soundSeek != "" {
-			cmd = append(cmd, "-ss", cut.soundSeek)
-		}
-		cmd = append(cmd, "-t", cut.soundRead, "-vn", "-i", abs)
-	}
+	cmd := append([]string{e.FFmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y"},
+		pieceInputs(clip, sourcePath, source)...)
 	light := source.Light()
 	cmd = append(cmd,
 		"-filter_complex", graph,
@@ -205,6 +208,32 @@ func (e *Engine) buildCommand(ctx context.Context, clip Clip, sourcePath string,
 		cmd = append(cmd, "-"+tag[0], tag[1])
 	}
 	return append(cmd, outPath), nil
+}
+
+// pieceInputs are the inputs of BuildFilterGraph's graph, each piece's
+// picture and then its sound, read from the episode at sourcePath.
+func pieceInputs(clip Clip, sourcePath string, source SourceInfo) []string {
+	abs, err := filepath.Abs(sourcePath)
+	if err != nil {
+		abs = sourcePath
+	}
+	var args []string
+	for _, seg := range clip.Segments {
+		// -ss before -i seeks rather than decoding up to the point, and -t
+		// limits how much is read. Both are input options on purpose. The
+		// sound is read again from a little earlier, see soundLead.
+		cut := source.cutOf(seg)
+		if cut.fromKey {
+			args = append(args, "-noaccurate_seek", "-ss", cut.seek, "-an", "-i", abs)
+		} else {
+			args = append(args, "-ss", cut.seek, "-t", cut.read, "-an", "-i", abs)
+		}
+		if cut.soundSeek != "" {
+			args = append(args, "-ss", cut.soundSeek)
+		}
+		args = append(args, "-t", cut.soundRead, "-vn", "-i", abs)
+	}
+	return args
 }
 
 // pieceCut is how one piece of a clip is read from the episode: where the
@@ -613,7 +642,7 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 		if err != nil {
 			return "", err
 		}
-		if err := e.writeASS(ctx, cues, assPath, rs.OutW, rs.OutH, style, source.Light()); err != nil {
+		if err := e.writeASS(ctx, cues, assPath, rs.OutW, rs.OutH, style, source); err != nil {
 			return "", err
 		}
 		// The face travels with the program, so the render never depends on
@@ -723,6 +752,92 @@ func (e *Engine) renderShort(ctx context.Context, clip Clip, sourcePath string,
 	return outPath, nil
 }
 
+// CaptionMoment is the moment libass draws the captions at on the frame
+// of a clip's short that shows the episode's moment at, in milliseconds,
+// as the render hands it over: the short's frames one after another, each
+// piece as many as it cuts, see pieceFrames, from nought on the grid of
+// the rate, and each frame's start in microseconds put on by half a
+// millisecond and cut down, see BuildFilterGraph. The video preview draws
+// a frame's captions at it, so they are the short's on every frame, the
+// bounce included. A clip is on frames, see OnFrames. Without a rate it
+// is the moment on the clip's clock.
+func (s SourceInfo) CaptionMoment(clip Clip, at float64) int64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return int64(math.Round(ClipTime(clip, at) * 1000))
+	}
+	k, _ := s.shortFrame(clip, at)
+	return s.shortMoment(k)
+}
+
+// shortMoment is the moment libass draws the captions at on frame k of a
+// short, from nought, see CaptionMoment.
+func (s SourceInfo) shortMoment(k int64) int64 {
+	us := int64(math.Round(float64(k) * float64(s.FPSDen) * 1_000_000 / float64(s.FPSNum)))
+	return (us + 500) / 1000
+}
+
+// PieceShowing is the piece of a clip whose frames the short shows for
+// the frame of the episode that holds at, see shortFrame, or -1 for a clip
+// of no pieces.
+func (s SourceInfo) PieceShowing(clip Clip, at float64) int {
+	if len(clip.Segments) == 0 {
+		return -1
+	}
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		for i, seg := range clip.Segments {
+			if at < seg.End {
+				return i
+			}
+		}
+		return len(clip.Segments) - 1
+	}
+	_, piece := s.shortFrame(clip, at)
+	return piece
+}
+
+// shortFrame is the frame of the short, from nought, that shows the frame
+// of the episode that holds at, and the piece it is in: a frame in a cut
+// shows as the first frame after it, and one before or after the clip as
+// its first or last.
+func (s SourceInfo) shortFrame(clip Clip, at float64) (int64, int) {
+	holds := s.frameHolding(at)
+	var k int64
+	for i, seg := range clip.Segments {
+		first, end := s.pieceFrames(seg.Start, seg.End)
+		if holds < end {
+			return k + max(0, holds-first), i
+		}
+		k += end - first
+	}
+	// After the clip, its last frame.
+	return max(0, k-1), len(clip.Segments) - 1
+}
+
+// thumbnailSeek is where ffmpeg is sent for the frame of a short that
+// holds a moment of it, see frameHolding, the frame the video preview
+// shows there. ffmpeg keeps the first frame that starts at or after where
+// it was sent, and a moment is marked in the middle of its frame, so sent
+// to the moment it took the frame after. Sent half a frame before the
+// frame starts, it takes that frame and no rounding moves it. A moment on
+// or after the last frame takes the last frame, because a seek past the
+// end of a file finds nothing to show.
+func (s SourceInfo) thumbnailSeek(at float64) float64 {
+	if s.FPSNum <= 0 || s.FPSDen <= 0 {
+		return math.Max(0, math.Min(at, s.Duration-0.05))
+	}
+	k := min(s.frameHolding(at), int64(s.Grid().Count)-1)
+	return math.Max(0, s.frameBegins(k)-0.5/s.FPS())
+}
+
+// thumbnailColours turns a frame of a short into the colours of a JPEG.
+// A short keeps its colours the way its episode does, BT.709 for HD video,
+// and a JPEG is read by JFIF, full range and BT.601, by every reader there
+// is. Only the range turned, the picture came out darker than the short,
+// the caption purple most of all. ffmpeg reads the frame's own matrix from
+// its tags, and its default where the short has none, the same default
+// the video preview's decoder takes, see makeGraph.
+const thumbnailColours = "scale=out_color_matrix=bt601:out_range=full,format=yuvj420p"
+
 // thumbnailName is how the pictures of a short are called, beside it:
 // <name>-1.jpg, <name>-2.jpg and on, in time order.
 func thumbnailName(basename string, n int) string {
@@ -732,9 +847,12 @@ func thumbnailName(basename string, n int) string {
 // WriteThumbnails takes a picture of a short that was just written at each
 // of its clip's thumbnails and puts them beside it, as <name>-1.jpg and on.
 // A picture is a frame of the short itself, so it is exactly what the short
-// shows at that moment, crop and captions included. Pictures of an earlier
-// render that are no longer asked for are removed, so the folder holds what
-// the plan asks for and nothing else.
+// shows at that moment, crop and captions included: the frame that holds
+// the moment, the one the video preview showed where it was marked, see
+// thumbnailSeek, in the colours a player shows the short in, see
+// thumbnailColours. Pictures of an earlier render that are no longer asked
+// for are removed, so the folder holds what the plan asks for and nothing
+// else.
 func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) error {
 	dir := filepath.Dir(short)
 	// Named after the short, not the clip, so a short with a number in a
@@ -753,6 +871,13 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 			}
 		}
 	}
+	if len(clip.Thumbnails) == 0 {
+		return nil
+	}
+	frames, err := e.Probe(ctx, short)
+	if err != nil {
+		return err
+	}
 	for i, at := range clip.Thumbnails {
 		path, err := SafeChild(dir, thumbnailName(stem, i+1))
 		if err != nil {
@@ -760,13 +885,11 @@ func (e *Engine) WriteThumbnails(ctx context.Context, clip Clip, short string) e
 		}
 		// Where the moment falls in the short, which is a different clock
 		// from the episode's once anything was cut out before it.
-		// A moment on the very last frame is held a little inside, because
-		// a seek to the end of a file finds nothing after it to show.
-		t := math.Max(0, math.Min(ClipTime(clip, at), clip.Duration()-0.05))
+		t := frames.thumbnailSeek(ClipTime(clip, at))
 		tmp := path + partial + ".jpg"
 		res := run(ctx, "", e.FFmpeg, "-hide_banner", "-loglevel", "error", "-y",
-			"-ss", fixed(t, 3), "-i", short, "-frames:v", "1", "-update", "1",
-			"-vf", "scale=out_range=full,format=yuvj420p", "-q:v", "2", tmp)
+			"-ss", fixed(t, 6), "-i", short, "-frames:v", "1", "-update", "1",
+			"-vf", thumbnailColours, "-q:v", "2", tmp)
 		if ctx.Err() != nil {
 			os.Remove(tmp)
 			return ctx.Err()

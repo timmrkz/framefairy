@@ -386,8 +386,9 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/model", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		b.d.model.hangs(q.Get("hang") == "1")
+		// How it answers first, so what it held answers that way.
 		b.d.model.fails(q.Get("fail") == "1")
+		b.d.model.hangs(q.Get("hang") == "1")
 		answer(w, nil, nil)
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
