@@ -239,7 +239,10 @@ browser beside it needs the same look or it stands out. Tim saw the pill
 of the word typed in another purple than the pill round it. The caret is
 the colour of the letters, as in a text field on the Mac, and the
 selection is the Mac's own, `Highlight`, kept just short of opaque so
-WebKit does not thin it with white into the colour of the pill. The walk
+WebKit does not thin it with white into the colour of the pill. Nothing
+of the word is drawn outside its pill, `overflow: clip`, since a
+selection is as tall as the face's line and stood over the pill, the
+walk "the letters selected in a word typed stay in its pill". The walk
 "a word typed longer grows its pill round its middle" holds the letters'
 size and colour and the pill's colour to libass's.
 

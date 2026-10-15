@@ -509,6 +509,9 @@
 //                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
+//   ["selection in the pill"]
+//                      the word open, all its letters selected paint
+//                      nothing outside its pill, above it or under it
 //   ["no caret"]       no word of the caption box holds the keyboard or the
 //                      selection, where WebKit would draw a caret
 //   ["same", label]    the engine's captions and pieces are what they were
@@ -1093,6 +1096,12 @@ export const sequences = [
     // Every word typed sits on the one pill libass draws, lit or not.
     name: "a word typed sits on the pill libass draws, lit or not",
     steps: [["one pill", "Jahre"]],
+  },
+  {
+    // Found by Tim: the selection's blue reached over the pill, since a
+    // selection is as tall as the face's line and the pill is not.
+    name: "the letters selected in a word typed stay in its pill",
+    steps: [["click", "Jahre"], ["selection in the pill"]],
   },
   {
     // Found by Tim: a word opened with Enter and left for Report a problem
@@ -6573,6 +6582,54 @@ for (const seq of toWalk) {
       case "box": {
         const box = s.map((w) => w.text).join(" ");
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;
+        break;
+      }
+      case "selection in the pill": {
+        // The strips over and under the pill as far as the letters' line
+        // reaches, shot with the caret alone and again with every letter
+        // selected: what the selection paints there is outside the pill.
+        const open = page.locator(".captions .word.fixing");
+        const box = await open.evaluate((e) => {
+          const pill = e.getBoundingClientRect();
+          const r = document.createRange();
+          r.selectNodeContents(e);
+          const line = r.getBoundingClientRect();
+          return { left: pill.left, width: pill.width, top: pill.top, bottom: pill.bottom, over: line.top, under: line.bottom };
+        });
+        const strips = [
+          { x: box.left, y: Math.min(box.over, box.top - 6), width: box.width, height: box.top - 1 - Math.min(box.over, box.top - 6) },
+          { x: box.left, y: box.bottom + 1, width: box.width, height: Math.max(box.under, box.bottom + 6) - box.bottom - 1 },
+        ].filter((c) => c.height >= 1);
+        const shoot = async () => Promise.all(strips.map(async (clip) => (await page.screenshot({ clip })).toString("base64")));
+        await open.evaluate((e) => (e.style.caretColor = "transparent"));
+        const before = await shoot();
+        await page.keyboard.press("ControlOrMeta+A");
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const after = await shoot();
+        await open.evaluate((e) => (e.style.caretColor = ""));
+        const changed = await page.evaluate(async ([before, after]) => {
+          const read = async (shot) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${shot}`;
+            await img.decode();
+            const c = document.createElement("canvas");
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.drawImage(img, 0, 0);
+            return g.getImageData(0, 0, c.width, c.height).data;
+          };
+          let n = 0;
+          for (let k = 0; k < before.length; k++) {
+            const [a, b] = [await read(before[k]), await read(after[k])];
+            for (let i = 0; i < a.length; i += 4) {
+              if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 24) n++;
+            }
+          }
+          return n;
+        }, [before, after]);
+        console.log(`        the letters' line reaches ${(box.top - box.over).toFixed(1)} px over the pill and ${(box.under - box.bottom).toFixed(1)} px under it`);
+        if (changed) wrong = `the selection painted ${changed} pixels outside the pill`;
         break;
       }
       case "no caret": {

@@ -2155,6 +2155,10 @@
     padding: 0 var(--pad, 0.14em);
     translate: -50% 0;
     color: var(--typed);
+    /* Nothing of the word is drawn outside its pill. A selection is as
+       tall as the face's line, which reaches past the pill, and Tim saw
+       its blue stand over the pill in square corners. */
+    overflow: clip;
   }
 
   .highlighted.laid .line span.fixing {
