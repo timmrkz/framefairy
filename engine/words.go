@@ -22,21 +22,42 @@ import (
 func (t *Transcript) hear(raw []Cue) {
 	t.RawWords = raw
 	t.snapped = SnapWords(raw, t.Frames, t.Start, t.Floor)
+	t.keys, t.byKey = nil, nil
+	if len(raw) == len(t.snapped) {
+		t.keys = make([]string, len(raw))
+		t.byKey = make(map[string]int, len(raw))
+		for i, w := range raw {
+			t.keys[i] = wordKey(w.Start)
+			t.byKey[t.keys[i]] = i
+		}
+	}
 	t.Correct(nil)
 	t.Language = wordsLanguage(t.Words)
 }
 
 // Correct makes the words again with a clip's corrections, keyed by the
-// millisecond a word starts, see Clip.Corrections. A correction says what
-// a word reads, and one that reads as several words splits the word into
-// them. Removing a word is the clip's too, see RemovedWords, and no
-// correction takes a word out. The language stays the episode's, whatever
-// one clip spells.
+// heard word they correct, see heardIndex and Clip.Corrections. A
+// correction says what a word reads, and one that reads as several words
+// splits the word into them. Removing a word is the clip's too, see
+// RemovedWords, and no correction takes a word out. The language stays
+// the episode's, whatever one clip spells.
 func (t *Transcript) Correct(corrections map[string]string) {
+	fixes := make(map[int]string, len(corrections))
+	for key, text := range corrections {
+		i, ok := t.heardIndex(key)
+		if !ok || strings.TrimSpace(text) == "" {
+			continue
+		}
+		// A word kept by its own key and by the key from before, see
+		// heardIndex, reads what its own key says.
+		if _, twice := fixes[i]; !twice || key == t.keyAt(i) {
+			fixes[i] = text
+		}
+	}
 	heard := make([]Cue, 0, len(t.snapped))
 	words := make([]Cue, 0, len(t.snapped))
-	for _, w := range t.snapped {
-		if text, ok := corrections[wordKey(w.Start)]; ok && strings.TrimSpace(text) != "" {
+	for i, w := range t.snapped {
+		if text, ok := fixes[i]; ok {
 			w.Text = text
 		}
 		heard = append(heard, w)
@@ -81,26 +102,20 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 		text string
 	}
 	fixes := make([]fix, 0, len(corrections))
+	seen := make(map[int]bool, len(corrections))
 	for key, text := range corrections {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		ms, err := strconv.ParseInt(key, 10, 64)
-		if err != nil {
-			return false
-		}
-		at := float64(ms) / 1000
-		i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= at-0.0006 })
-		for i < len(t.HeardWords) && wordKey(t.HeardWords[i].Start) != key && t.HeardWords[i].Start < at+0.0006 {
-			i++
-		}
-		if i >= len(t.HeardWords) || wordKey(t.HeardWords[i].Start) != key {
+		i, ok := t.heardIndex(key)
+		if !ok || i >= len(t.HeardWords) {
 			// Correct keeps no correction of a word that is not there.
 			continue
 		}
-		if i+1 < len(t.HeardWords) && wordKey(t.HeardWords[i+1].Start) == key {
+		if seen[i] || (i+1 < len(t.HeardWords) && t.HeardWords[i+1].Start == t.HeardWords[i].Start) {
 			return false
 		}
+		seen[i] = true
 		fixes = append(fixes, fix{i, text})
 	}
 	slices.SortFunc(fixes, func(a, b fix) int { return cmp.Compare(a.i, b.i) })
@@ -128,6 +143,82 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 	t.HeardWords, t.Words = heard, words
 	t.fixes = maps.Clone(corrections)
 	return true
+}
+
+// A correction and a removed word are kept against the heard word they
+// are about, by the millisecond the recogniser heard it start, which
+// nothing moves. They used to be kept by the millisecond it starts once it
+// is moved onto the sound, which the silence setting moves: a change of the
+// setting moved words, and the corrections and removed words of every clip
+// over them no longer met their words, without a word said. Plan row 2.254.
+
+// keyAt is the key the i-th heard word is kept by.
+func (t *Transcript) keyAt(i int) string {
+	if i < len(t.keys) {
+		return t.keys[i]
+	}
+	return wordKey(t.snapped[i].Start)
+}
+
+// heardIndex is which heard word a key is about. A key that is the start
+// of no heard word is one from before 2.254, the start of a word moved
+// onto the sound, and is read that way, with the silence setting of now,
+// which is the one it was most likely kept with.
+func (t *Transcript) heardIndex(key string) (int, bool) {
+	if i, ok := t.byKey[key]; ok {
+		return i, true
+	}
+	ms, err := strconv.ParseInt(key, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	at := float64(ms) / 1000
+	i := sort.Search(len(t.snapped), func(i int) bool { return t.snapped[i].Start >= at-0.0006 })
+	for ; i < len(t.snapped) && t.snapped[i].Start < at+0.0006; i++ {
+		if wordKey(t.snapped[i].Start) == key {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// keyOf is the key of a heard word, one of HeardWords.
+func (t *Transcript) keyOf(heard Cue) string {
+	i := sort.Search(len(t.snapped), func(i int) bool { return t.snapped[i].Start >= heard.Start-0.0005 })
+	if i < len(t.snapped) && math.Abs(t.snapped[i].Start-heard.Start) < 0.0005 {
+		return t.keyAt(i)
+	}
+	return wordKey(heard.Start)
+}
+
+// rekeyCorrections is a clip's corrections, each kept by the key of the
+// word it corrects, so a key from before 2.254 is written again the way
+// keys are kept now. A key of a word this transcript does not hold is
+// kept as it is.
+func (t *Transcript) rekeyCorrections(corrections map[string]string) map[string]string {
+	out := make(map[string]string, len(corrections))
+	for key, text := range corrections {
+		own := key
+		if i, ok := t.heardIndex(key); ok {
+			own = t.keyAt(i)
+		}
+		if _, twice := out[own]; !twice || key == own {
+			out[own] = text
+		}
+	}
+	return out
+}
+
+// rekeyRemoved is rekeyCorrections for the words a clip does not show.
+func (t *Transcript) rekeyRemoved(removed RemovedWords) RemovedWords {
+	out := make(RemovedWords, len(removed))
+	for key := range removed {
+		if i, ok := t.heardIndex(key); ok {
+			key = t.keyAt(i)
+		}
+		out[key] = true
+	}
+	return out
 }
 
 // captionWordsIn is the words a clip's captions are laid out from: the

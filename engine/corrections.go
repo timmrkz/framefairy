@@ -15,8 +15,8 @@ import (
 )
 
 // Word corrections are kept with the clip they are typed in, in its plan
-// entry, keyed by the millisecond the word heard starts, see
-// Clip.Corrections. They change what that clip's captions show and never
+// entry, keyed by the millisecond the recogniser heard the word start, see
+// Clip.Corrections and heardIndex. They change what that clip's captions show and never
 // the stored transcript or another clip, so the model's prompts stay the
 // same, the recogniser's own output is never lost, and a clip removed and
 // made again starts from what was heard. They used to be kept for the
@@ -113,7 +113,7 @@ func SetWordText(fsys afero.Fs, planPath, clipID string, at float64, text string
 	if strings.TrimSpace(Scrub(text, 200)) == "" {
 		return RemoveWord(fsys, planPath, clipID, at, -1, t)
 	}
-	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+	return editClipWords(fsys, planPath, clipID, t, func(corrections map[string]string, removed RemovedWords) error {
 		// A copy, so the words read by everything else stay as they were.
 		work := *t.Of(Clip{Corrections: corrections})
 		return correctWord(corrections, removed, at, text, &work)
@@ -128,7 +128,7 @@ func SetWordText(fsys afero.Fs, planPath, clipID string, at float64, text string
 // so the captions keep the room it took, see Captions, and an undo or
 // typing it back in beside its neighbour puts it back.
 func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t *Transcript) error {
-	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+	return editClipWords(fsys, planPath, clipID, t, func(corrections map[string]string, removed RemovedWords) error {
 		work := *t.Of(Clip{Corrections: corrections})
 		heard, ok := work.HeardAt(at)
 		if !ok {
@@ -155,7 +155,7 @@ func RemoveWord(fsys afero.Fs, planPath, clipID string, at float64, part int, t 
 // change, and heard is one of its heard words.
 func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, parts map[int]bool,
 	t *Transcript) error {
-	if removed.removesHeard(heard) {
+	if removed.removesHeard(t, heard) {
 		return nil
 	}
 	var kept []string
@@ -167,7 +167,7 @@ func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, p
 		}
 	}
 	if len(kept) == 0 {
-		removed.take(heard)
+		removed.take(t, heard)
 		return nil
 	}
 	return correctWord(corrections, removed, heard.Start, strings.Join(kept, " "), t)
@@ -176,19 +176,18 @@ func dropWords(corrections map[string]string, removed RemovedWords, heard Cue, p
 // editClipWords changes what a clip's words read and which it does not
 // show, and writes both to its plan entry, nothing when the change fails
 // or changes nothing. Both are read from the plan as it is under its lock,
-// so two edits one after the other each see the other's.
-func editClipWords(fsys afero.Fs, planPath, clipID string,
+// so two edits one after the other each see the other's. They are handed
+// to the change kept by the keys of t's words, see rekeyCorrections, so a
+// clip edited once keeps no key from before 2.254.
+func editClipWords(fsys afero.Fs, planPath, clipID string, t *Transcript,
 	change func(corrections map[string]string, removed RemovedWords) error) error {
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
 			return err
 		}
-		corrections := maps.Clone(readCorrections(plainValue(c.values[keyCorrections])))
-		if corrections == nil {
-			corrections = map[string]string{}
-		}
-		removed := readRemovedWords(c.values[keyRemovedWords]).clone()
+		corrections := t.rekeyCorrections(readCorrections(plainValue(c.values[keyCorrections])))
+		removed := t.rekeyRemoved(readRemovedWords(c.values[keyRemovedWords]))
 		hadCorrections, hadRemoved := maps.Clone(corrections), removed.clone()
 		if err := change(corrections, removed); err != nil {
 			return err
@@ -229,17 +228,17 @@ func correctWord(corrections map[string]string, removed RemovedWords, at float64
 	i := sort.Search(len(t.HeardWords), func(i int) bool { return t.HeardWords[i].Start >= word.Start })
 	// A word the clip removed whole and corrected again is shown again
 	// with what it now reads.
-	if removed.removesHeard(word) {
-		removed.forget(word)
+	if removed.removesHeard(t, word) {
+		removed.forget(t, word)
 	}
-	gone := func(j int) bool { return j >= 0 && j < len(t.HeardWords) && removed.removesHeard(t.HeardWords[j]) }
+	gone := func(j int) bool { return j >= 0 && j < len(t.HeardWords) && removed.removesHeard(t, t.HeardWords[j]) }
 	for j, says := range putBack(t.HeardWords, i, text, gone) {
 		if j != i {
-			removed.forget(t.HeardWords[j])
+			removed.forget(t, t.HeardWords[j])
 		}
 		// A word that reads as the recogniser heard it again keeps no
 		// correction, so a word put back is the word it was before.
-		key := wordKey(t.HeardWords[j].Start)
+		key := t.keyAt(j)
 		if j < len(t.snapped) && says == strings.Join(strings.Fields(t.snapped[j].Text), " ") {
 			delete(corrections, key)
 		} else {
@@ -352,7 +351,7 @@ func RemoveCaption(fsys afero.Fs, planPath, clipID string, first float64, t *Tra
 	if len(words) == 0 {
 		return renderErr("the caption at %s has no words to remove", HMS(first))
 	}
-	return editClipWords(fsys, planPath, clipID, func(corrections map[string]string, removed RemovedWords) error {
+	return editClipWords(fsys, planPath, clipID, t, func(corrections map[string]string, removed RemovedWords) error {
 		work := *t.Of(Clip{Corrections: corrections})
 		return dropShown(corrections, removed, words, &work)
 	})
@@ -473,7 +472,7 @@ func trimCaption(corrections map[string]string, removed RemovedWords, clip Clip,
 	}
 	for _, w := range back {
 		if heard, ok := t.HeardAt(w.Start); ok {
-			removed.forget(heard)
+			removed.forget(t, heard)
 		}
 	}
 	var words []shownWord
