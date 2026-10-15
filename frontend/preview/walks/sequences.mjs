@@ -3227,7 +3227,7 @@ for (const seq of toWalk) {
   // still held it.
   let movedHeld = false;
   // What the press that took the edge again landed on, the grips under
-  // it, said if the playhead did not go with the edge (2.267).
+  // it, said if the playhead did not go with the edge (2.271).
   let pressedOn = "";
   let held = null;
   let wrong = null;
