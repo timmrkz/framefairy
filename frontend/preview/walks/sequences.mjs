@@ -4770,6 +4770,21 @@ for (const seq of toWalk) {
           break;
         }
         const id = await tile.getAttribute("data-id");
+        // What the page hears of the pointer and the focus from the press
+        // on, said if the time runs, since a runner's Chromium has made it
+        // run where this machine's does not (2.263).
+        await page.evaluate(() => {
+          const name = (n) => (n instanceof Element ? `${n.tagName.toLowerCase()}.${[...n.classList].join(".")}${n.isConnected ? "" : " gone"}` : String(n));
+          window.__heardPointer = [];
+          const t0 = performance.now();
+          for (const type of ["pointerover", "pointerout", "pointermove", "pointerdown", "pointerup", "focusin", "focusout"]) {
+            document.addEventListener(
+              type,
+              (e) => window.__heardPointer.push(`${Math.round(performance.now() - t0)} ms ${type} ${name(e.target)}${e.relatedTarget ? ` from ${name(e.relatedTarget)}` : ""}${"clientX" in e ? ` at ${e.clientX},${e.clientY}` : ""}`),
+              true,
+            );
+          }
+        });
         if (how === "key") {
           await tile.locator("figure").focus();
           await page.keyboard.press("Delete");
@@ -4793,7 +4808,10 @@ for (const seq of toWalk) {
           const box = run?.parentElement?.getBoundingClientRect();
           return run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null;
         }, id);
-        if (fill === null || fill > 0.001) wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it`;
+        if (fill === null || fill > 0.001) {
+          const heard = await page.evaluate(() => window.__heardPointer.slice(0, 12).join(", "));
+          wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it, the page heard ${heard}`;
+        }
         await settle(page);
         break;
       }
