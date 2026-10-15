@@ -414,8 +414,10 @@ export function soundChunks(body: Uint8Array, channels: number): Float32Array {
 interface Pictures {
   readonly state: string;
   readonly decodeQueueSize: number;
-  // first is the rank of the first frame the run draws.
-  decode(timestamp: number, key: boolean, data: Uint8Array, rank: number, wanted: boolean, first: number): void;
+  // first is the rank of the first frame the run draws. place says the
+  // frame is the one that holds the playhead, the frame of a still or the
+  // first of a cue, rather than one read ahead of it, see AppFrames.frame.
+  decode(timestamp: number, key: boolean, data: Uint8Array, rank: number, wanted: boolean, first: number, place?: boolean): void;
   flush(): Promise<void>;
   // Drops everything, ready for a key frame.
   reset(): void;
@@ -844,6 +846,16 @@ export class FrameQueue {
   // end itself it is the clip's last frame, the one that holds the moment
   // a frame before the end, where a play of the clip stops and the short
   // ends, see end.
+  //
+  // The first frame of the play is the one the play's own plan starts
+  // with, worked out the way the cue works it out. Worked out apart, from
+  // where the playhead lands on the program, a playhead a hair before the
+  // end of a piece was inside it here and in the cut for the plan, which
+  // takes a piece that short as none. So the cue put up the first frame
+  // after the cut. A drag of a cut's left edge leaves the playhead on the
+  // edge just before the piece ends there, at every step, and the video
+  // preview flickered between the edge's frame and the one after the cut.
+  // Found by Tim on youtube.mp4, plan row 2.270.
   private settle(at: number) {
     const ticket = this.ticket;
     this.ready.then(
@@ -852,9 +864,11 @@ export class FrameQueue {
         const s = this.video!.samples;
         const program = this.program;
         const p0 = program.place(at);
-        const there = p0 < program.length ? program.locate(p0) : null;
+        const plan = new VideoPlan(s, this.video!.frame, program, p0);
+        plan.extend(p0 + this.video!.frame);
+        const first = plan.need(0);
         const last = program.pieces[program.pieces.length - 1];
-        if (there && rankAt(s, there.at) === rankAt(s, at)) this.start(at, true);
+        if (first && first.rank === rankAt(s, at)) this.start(at, true);
         else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
@@ -1133,7 +1147,8 @@ export class FrameQueue {
       if (ticket !== this.ticket || slot.decoder.state !== "configured") return;
       const ts = stamp(0, s.pts[i] / s.timescale);
       slot.fed.set(ts, s.rank[i]);
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, s.rank[i], s.rank[i] === feed.rank, feed.rank);
+      const holds = s.rank[i] === feed.rank;
+      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, s.rank[i], holds, feed.rank, holds);
     }
     try {
       await slot.decoder.flush();
@@ -1539,6 +1554,9 @@ export class FrameQueue {
     const plan = this.vplan;
     if (!run || !plan || slot.decoder.state !== "configured") return;
     const s = this.video!.samples;
+    // The frame that holds the moment the play starts from. Every other
+    // frame is read ahead of it.
+    const first = plan.need(0);
     while (slot.next <= run.last) {
       const busy = slot.decoder.decodeQueueSize;
       const hungry = busy === 0 && slot.ready.length === 0;
@@ -1549,7 +1567,8 @@ export class FrameQueue {
       slot.fed.set(ts, rank);
       const wanted = rank >= slot.firstRank && rank <= run.lastRank;
       if (wanted) slot.coming++;
-      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, rank, wanted, slot.firstRank);
+      const place = wanted && first?.run === run.id && first.rank === rank;
+      slot.decoder.decode(ts, s.key[i] === 1, NO_DATA, rank, wanted, slot.firstRank, place);
       slot.next++;
     }
     // Everything fed. Once no later piece can carry the run on, the decoder
