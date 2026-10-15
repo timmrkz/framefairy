@@ -240,7 +240,10 @@ behind it. Then Tim saw a word typed in Archivo Black, a face of weight
 400 that libass thickens for bold captions, lighter and narrower than
 libass draws it, since the Mac faked the bold its own way. The walk "a
 word typed in a face libass thickens is as heavy as libass draws it"
-holds the pixels of its letters to libass's. The pill and the
+holds its letters to libass's in size and reads how they are drawn: the
+face's own weight, no bold faked and the stroke libass's. The pixels of
+letters are no measure of weight across machines: CI draws Inter Black,
+which nothing thickens, a tenth heavier than a cloud session does. The pill and the
 letters typed wear the look of the frame they lie over, `shownColour` in
 `frontend/src/lib/frames/light.ts`: libass draws the captions into the
 frame and the frame is then given its look, so a colour drawn by the

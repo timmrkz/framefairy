@@ -511,6 +511,11 @@
 //   ["open", word]     this word is open for typing
 //   ["font", name]     picks this face in the captions column, and waits
 //                      for the captions drawn in it
+//   ["thickened as libass", word]
+//                      the word opened is drawn at its face's own weight
+//                      with no bold the browser fakes, and its letters
+//                      grown by an em over 64 where libass thickens the
+//                      face, see engine.Thickening
 //   ["selection in the pill"]
 //                      the word open, all its letters selected paint
 //                      nothing outside its pill, above it or under it
@@ -1097,7 +1102,7 @@ export const sequences = [
     // thickens for bold captions, the word typed was narrower and lighter
     // than libass draws it.
     name: "a word typed in a face libass thickens is as heavy as libass draws it",
-    steps: [["font", "Archivo Black"], ["frame", "Jahre"], ["grow", "Jahre"]],
+    steps: [["font", "Archivo Black"], ["frame", "Jahre"], ["grow", "Jahre"], ["thickened as libass", "Jahre"]],
   },
   {
     // Found by Tim on #201: a word opened while another was lit was typed
@@ -4077,10 +4082,6 @@ for (const seq of toWalk) {
         // and the box was drawn without the look the frame has.
         else if (Math.abs(drawn.width - typing.width) > 2 || Math.abs(drawn.height - typing.height) > 1)
           wrong = `"${arg}" opened is ${typing.width} by ${typing.height} px of letters and ${drawn.width} by ${drawn.height} shut`;
-        // As heavy: the browser faked the bold of a face libass thickens
-        // its own way, see engine.Thickening.
-        else if (Math.abs(typing.n - drawn.n) > 0.08 * drawn.n)
-          wrong = `"${arg}" opened has ${typing.n} pixels of letters and ${drawn.n} shut, so it is ${typing.n > drawn.n ? "heavier" : "lighter"} than libass draws it`;
         else if (unlike(drawn.pill, typing.pill))
           wrong = `"${arg}" opened sits on a pill of ${typing.pill} and the pill shut is ${drawn.pill}`;
         else if (unlike(drawn.ink, typing.ink))
@@ -6603,6 +6604,42 @@ for (const seq of toWalk) {
         await watch.step("click", s);
         await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
         await settled();
+        break;
+      }
+      case "thickened as libass": {
+        // Read off the word opened, since the pixels of letters differ from
+        // one machine's rendering to another's more than the bold does:
+        // Chromium faked the bold of Archivo Black 18 % heavier than
+        // libass, the Mac 16 % lighter, and CI draws Inter Black, which
+        // nothing thickens, 10 % heavier than here.
+        await word(arg).click();
+        await watch.step("click", s);
+        const look = await page.evaluate(async () => {
+          const it = document.querySelector(".captions .word.fixing");
+          if (!it) return null;
+          const style = getComputedStyle(it);
+          const face = style.fontFamily.split(",")[0].replace(/["']/g, "").trim();
+          const fonts = await fetch("/call", { method: "POST", body: JSON.stringify({ name: "Fonts", args: [] }) })
+            .then((r) => r.json())
+            .catch(() => null);
+          return {
+            face,
+            weight: Number(style.fontWeight),
+            synthesis: style.fontSynthesis || style.getPropertyValue("font-synthesis"),
+            stroke: parseFloat(style.webkitTextStrokeWidth),
+            size: parseFloat(style.fontSize),
+            declared: (fonts ?? []).find((f) => f.name === face)?.weight,
+          };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        console.log(`    ${JSON.stringify(look)}`);
+        if (!look) wrong = `"${arg}" did not open`;
+        else if (!/none/.test(look.synthesis)) wrong = `the browser may fake a bold of its own, font-synthesis is "${look.synthesis}"`;
+        else if (look.declared !== undefined && look.weight !== look.declared)
+          wrong = `"${arg}" is drawn at weight ${look.weight} and ${look.face} is a face of ${look.declared}`;
+        else if (Math.abs(look.stroke - look.size / 64) > 0.01)
+          wrong = `"${arg}" is grown by ${look.stroke} px and libass grows ${look.face} at ${look.size} px by ${(look.size / 64).toFixed(3)}`;
         break;
       }
       case "selection in the pill": {
