@@ -370,7 +370,11 @@ now. A drag on a cut's edge used to start the play again on every step,
 which stuttered. Loop switched on or off changes only where the play
 ends, never what plays: the picture stops at that end and the sound
 stops there too, in the silence the clip fades out to, however often L
-is pressed on the way.
+is pressed on the way. The end is that of the time through the sound
+is in, not the playhead: the playhead moves on with the page's frames,
+so on a busy machine L can come after the sound has crossed the clip's
+end and before the playhead has, and the play then ends after one more
+time through rather than a moment into the clip's start.
 
 The sound goes on while the app is behind another window. macOS stops the
 page's animation frames there, and the frames are what fed the sound, a

@@ -427,9 +427,10 @@
 //                      side of where it was pressed from the way the hand
 //                      went
 //   ["moved", which]   since "drag edge", the edge moved by a frame or more
-//   ["kept up", which] since "drag edge twice", the edge stood in four
-//                      places or more while the hand took it again, so it
-//                      went with the hand while the drag before it saved
+//   ["kept up", which] since "drag edge twice", the edge moved while the
+//                      hand took it again and still held it, so it went
+//                      with the hand while the drag before it saved, and
+//                      the edge was saved where the hand left it last
 //   ["on press", which]
 //                      since "hold on", the playhead had moved while the
 //                      button was still down, onto the frame "followed"
@@ -443,6 +444,19 @@
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
 //                      drawn was older than the one before it
+//   ["loop through the end", seconds]
+//                      puts the playhead so many seconds before the clip's
+//                      end, plays, switches the loop on with L at once and
+//                      lets it run round the end and three seconds into
+//                      the next time through, then asks that from half a
+//                      second after it came round the video preview shows
+//                      the frame of the playhead, give or take two
+//   ["loop off as the sound crosses the end"]
+//                      puts the playhead near the clip's end, plays it with
+//                      the loop on, holds the page 250 ms as the playhead
+//                      comes to the end and presses L in that moment, and
+//                      asks that the sound had crossed the end, the loop is
+//                      off and the play ends ahead of the sound card
 //   ["stopped at its end"]
 //                      since "loop off near the end", the presses of L
 //                      started no play over, the sound did not click,
@@ -654,13 +668,15 @@
 //                      lies on its side
 //   ["keyframe at", share]
 //                      puts the playhead in the clip, this share of the
-//                      way along it, with a click on the clip timeline, and
+//                      way along it, with a click on the clip timeline,
+//                      waits for the video preview to show that frame, and
 //                      presses C, and the clip timeline has to show a crop
 //                      mark lit on the playhead's frame within 300 ms,
 //                      before a held answer comes
 //   ["thumbnail at", share]
 //                      puts the playhead in the clip, this share of the
-//                      way along it, with a click on the clip timeline, and
+//                      way along it, with a click on the clip timeline,
+//                      waits for the video preview to show that frame, and
 //                      presses T, and the engine has a thumbnail more
 //   ["under the hand", kind]
 //                      moves the pointer onto the first "thumbnail" or
@@ -1149,11 +1165,11 @@ export const sequences = [
     name: "an edge taken again while the drag before it saves goes with the hand",
     steps: [
       ["cut at", 0.5],
-      ["hold", "Reshape", 1000],
+      ["hold", "Reshape", 3000],
       ["drag edge twice", "cut from", -30, -30],
       ["kept up", "cut from"],
       ["followed", "cut from"],
-      ["hold", "Reshape", 1000],
+      ["hold", "Reshape", 3000],
       ["drag edge twice", "end", -30, -30],
       ["kept up", "end"],
       ["followed", "end"],
@@ -2360,6 +2376,25 @@ export const sequences = [
     ],
   },
   {
+    // Tim switched the loop on early in a clip with a cut, let it run, and
+    // at the end the sound went round while the video preview stood on the
+    // clip's last frame (2.264).
+    name: "a clip looped from early on goes round its end, the picture with the sound",
+    steps: [
+      ["cut at", 0.85],
+      ["loop through the end", 8],
+    ],
+  },
+  {
+    // The loop switched off with L as the sound crosses the clip's end,
+    // while the page is held and the playhead has not caught up, ends the
+    // play where the sound is, after one more time through. It ended the
+    // play at the end the sound had just crossed, and the clip's start was
+    // heard for a moment after it, on a busy machine (2.253).
+    name: "loop switched off as the sound crosses the clip's end ends the play ahead of the sound",
+    steps: [["loop off as the sound crosses the end"]],
+  },
+  {
     // Tim pressed the clip timeline while the clip played, to get a drag
     // ready, and the play ran on from the press at once, away from the
     // hand. A press holds the play under the hand, like a nail, until the
@@ -2658,6 +2693,30 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
+}
+
+// Waits up to five seconds for the video preview to show the frame that
+// holds the playhead, by where the app says the frame shown begins, and
+// says whether it did. T and C put a mark on the frame shown, the frame a
+// person sees, and on a busy machine the picture comes a moment after the
+// playhead.
+async function shownOnPlayhead(page) {
+  const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+  return page
+    .waitForFunction(
+      ([fps, start]) => {
+        const screen = document.querySelector(".screen");
+        const at = Number(screen?.dataset.playhead);
+        const shown = Number(screen?.dataset.shown);
+        // The frame that holds the playhead, one that begins a millisecond
+        // or less after it included, see frameAt in lib/flow.ts.
+        const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+        return Number.isFinite(shown) && Math.abs(shown - begins) < 0.5 / fps;
+      },
+      [fps, videoStart],
+      { polling: 50, timeout: 5000 },
+    )
+    .then(() => true, () => false);
 }
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
@@ -3162,6 +3221,9 @@ for (const seq of toWalk) {
   let dragShift = false;
   const edgeLabel = { start: "Clip start", end: "Clip end", "cut from": "Where cut 1 starts", "cut to": "Where cut 1 ends" };
   let dragPx = 0;
+  // Whether the edge "drag edge twice" took again moved while the hand
+  // still held it.
+  let movedHeld = false;
   let held = null;
   let wrong = null;
   // The video and the other file dropped last.
@@ -3748,7 +3810,6 @@ for (const seq of toWalk) {
       }
       case "kept up": {
         const seen = await page.evaluate(() => window.__edgeSeen ?? []);
-        const places = new Set(seen.map((t) => t.toFixed(3))).size;
         // The two drags are saved in the order they were let go, so the
         // engine has the edge where the hand left it the second time, the
         // farthest it went the hand's way, once both saves are done.
@@ -3756,7 +3817,7 @@ for (const seq of toWalk) {
         const segs = (await engineState(page, watch.at)).segments;
         const saved = { start: segs[0].start, end: segs.at(-1).end, "cut from": segs[0].end, "cut to": segs[1]?.start }[arg];
         const left = dragPx < 0 ? Math.min(...seen) : Math.max(...seen);
-        if (places < 4) wrong = `the ${arg} edge stood in ${places} places while the hand took it again, it did not go with the hand`;
+        if (!movedHeld) wrong = `the ${arg} edge stood where the drag before let it go while the hand took it again, it did not go with the hand`;
         else if (!(Math.abs(saved - left) < 0.002)) {
           wrong = `the hand left the ${arg} edge at ${left.toFixed(3)} and it was saved at ${saved?.toFixed(3)}`;
         }
@@ -3789,6 +3850,13 @@ for (const seq of toWalk) {
           await page.mouse.move(x + px + (again * i) / 10, y);
           await page.waitForTimeout(30);
         }
+        // The hand stays down until the edge has left where the first drag
+        // let it go, for up to two seconds, so a busy machine slow to
+        // answer the drag is waited for and an edge that waits for the
+        // save before it is seen standing.
+        movedHeld = await page
+          .waitForFunction(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1, null, { timeout: 2000, polling: "raf" })
+          .then(() => true, () => false);
         await page.mouse.up();
         await watch.step("drag edge twice", s);
         await page.evaluate(() => (window.__followWatch = false));
@@ -4017,6 +4085,108 @@ for (const seq of toWalk) {
         });
         loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
         await settle(page);
+        break;
+      }
+      case "loop through the end": {
+        // Played with the loop switched on early, before the play works
+        // out the next time through, and left to run on through the
+        // clip's end into its start. Tim saw the sound go round while the
+        // video preview stood on the clip's last frame (2.264).
+        const segs = (await engineState(page, watch.at)).segments;
+        const start = segs[0].start;
+        const end = segs.at(-1).end;
+        const fps = await rate(page);
+        await seekTo(page, end - arg, fps);
+        await preview(page, 1 / fps);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(300);
+        await page.keyboard.press("l");
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            window.__played.push([performance.now(), at, window.__pictured()]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        // Round the end and three seconds into the next time through.
+        const wrapped = await page
+          .waitForFunction(
+            ([start, end]) => {
+              const p = window.__played;
+              const i = p.findIndex(([, at]) => at > end - 1);
+              return i >= 0 && p.slice(i).some(([, at]) => at > start + 3 && at < end - 2);
+            },
+            [start, end],
+            { timeout: (arg + 10) * 1000, polling: 100 },
+          )
+          .then(() => true, () => false);
+        const played = await page.evaluate(() => {
+          window.__playWatch = false;
+          return window.__played;
+        });
+        await page.keyboard.press("Space");
+        await page.keyboard.press("l");
+        await settle(page);
+        if (!wrapped) {
+          wrong = `the playhead did not go round the clip's end, it got to ${Math.max(...played.map(([, at]) => at)).toFixed(3)}`;
+          break;
+        }
+        // From half a second after the playhead came round, the picture
+        // shows the frame that holds the playhead, give or take two.
+        const i = played.findIndex(([, at]) => at > end - 1);
+        const round = i + played.slice(i).findIndex(([, at]) => at < end - 2);
+        const after = played.slice(round).filter(([t]) => t > played[round][0] + 500);
+        const off = after.find(([, at, n]) => !(n >= 0) || Math.abs(n / fps - at) > 2.5 / fps);
+        if (off) {
+          wrong = `${(off[0] - played[round][0]).toFixed(0)} ms after the playhead came round to ${played[round][1].toFixed(3)}, it stood at ${off[1].toFixed(3)} and the video preview showed ${off[2] >= 0 ? (off[2] / fps).toFixed(3) : "nothing it could read"}`;
+        }
+        break;
+      }
+      case "loop off as the sound crosses the end": {
+        // The playhead moves on with the page's frames, and the sound card
+        // plays on its own clock. A busy machine holds the page for a
+        // moment as the sound crosses the clip's end, and L comes in that
+        // moment, before the playhead has caught up. The loop off ends the
+        // play at the end of the time through the sound is in, never at an
+        // end the sound card has already played past.
+        const end = (await engineState(page, watch.at)).segments.at(-1).end;
+        const g = await handles(page);
+        await page.mouse.click(middle(g.end) - 80, high(g.track));
+        await settle(page);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(300);
+        await page.keyboard.press("l");
+        await page
+          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - 0.03, { timeout: 30000, polling: "raf" })
+          .catch(() => {});
+        const r = await page.evaluate(async () => {
+          const q = window.__frameQueue;
+          const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
+          const t = performance.now();
+          while (performance.now() - t < 250) {}
+          const crossed = q.c0 !== null && sounded() >= q.program.length;
+          document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
+          // The loop is switched by the page's next microtasks, not its
+          // next frame.
+          await Promise.resolve();
+          await new Promise((done) => setTimeout(done, 0));
+          return { crossed, loop: q.program.loop, ends: q.program.end, sounded: sounded() };
+        });
+        await page.keyboard.press("Space");
+        await settle(page);
+        if (!r.crossed) wrong = "the sound had not crossed the clip's end when L came";
+        else if (r.loop) wrong = "L did not switch the loop off";
+        else if (!(r.ends > r.sounded)) {
+          wrong = `the play was ended ${((r.sounded - r.ends) * 1000).toFixed(0)} ms behind the sound, which had played on into the clip's start`;
+        }
         break;
       }
       case "press while playing": {
@@ -4678,6 +4848,21 @@ for (const seq of toWalk) {
           break;
         }
         const id = await tile.getAttribute("data-id");
+        // What the page hears of the pointer and the focus from the press
+        // on, said if the time runs, since a runner's Chromium has made it
+        // run where this machine's does not (2.263).
+        await page.evaluate(() => {
+          const name = (n) => (n instanceof Element ? `${n.tagName.toLowerCase()}.${[...n.classList].join(".")}${n.isConnected ? "" : " gone"}` : String(n));
+          window.__heardPointer = [];
+          const t0 = performance.now();
+          for (const type of ["pointerover", "pointerout", "pointermove", "pointerdown", "pointerup", "focusin", "focusout"]) {
+            document.addEventListener(
+              type,
+              (e) => window.__heardPointer.push(`${Math.round(performance.now() - t0)} ms ${type} ${name(e.target)}${e.relatedTarget ? ` from ${name(e.relatedTarget)}` : ""}${"clientX" in e ? ` at ${e.clientX},${e.clientY}` : ""}`),
+              true,
+            );
+          }
+        });
         if (how === "key") {
           await tile.locator("figure").focus();
           await page.keyboard.press("Delete");
@@ -4701,7 +4886,10 @@ for (const seq of toWalk) {
           const box = run?.parentElement?.getBoundingClientRect();
           return run && box ? -new DOMMatrix(getComputedStyle(run).transform).m41 / box.width : null;
         }, id);
-        if (fill === null || fill > 0.001) wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it`;
+        if (fill === null || fill > 0.001) {
+          const heard = await page.evaluate(() => window.__heardPointer.slice(0, 12).join(", "));
+          wrong = `picture ${i}'s time ran out by ${Math.round((fill ?? 1) * 1000) / 10} % with the pointer still on it, the page heard ${heard}`;
+        }
         await settle(page);
         break;
       }
@@ -6238,6 +6426,12 @@ for (const seq of toWalk) {
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
         await settle(page);
+        // C puts the keyframe on the frame the video preview shows, so it
+        // is pressed once that is the playhead's frame, see thumbnail at.
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         const before = await count();
         const took = await keyShows(
@@ -6306,6 +6500,14 @@ for (const seq of toWalk) {
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
         await settle(page);
+        // T makes a thumbnail of the frame the video preview shows, the
+        // frame a person sees, so it is pressed once that is the playhead's
+        // frame. Pressed before, on a loaded machine, T took the thumbnail
+        // off the frame still shown from the step before (2.261).
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         await page.keyboard.press("t");
         await watch.step("press", s);
         await settle(page);
