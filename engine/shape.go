@@ -136,7 +136,7 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	// The words an edge lands on are the words the captions show, halves
 	// of a hyphenated word and all, see ShowWords.
 	stops := func(from, to float64) []Cue {
-		s := ResolveStyle(captionStyle(plan, clip, nil))
+		s := ResolveStyle(captionStyle(plan, clip))
 		return ShowWords(t.WordsBetween(from-60, to+60), s, t.Language)
 	}
 	first := clip.Segments[0].Start
@@ -351,7 +351,7 @@ func (g Gesture) landEnd(words []Cue, goes []float64, at, keepPause float64) flo
 // at, into it, and the block shrank under the edge. Only an end inside a
 // piece is one: a caption a cut cuts short goes where the cut is.
 func captionsGo(plan Plan, clip Clip, t *Transcript) []float64 {
-	s := ResolveStyle(captionStyle(plan, clip, nil))
+	s := ResolveStyle(captionStyle(plan, clip))
 	var ends []float64
 	for _, c := range ClipCaptions(clip, t, s) {
 		at := EpisodeTime(clip, c.End)

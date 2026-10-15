@@ -89,6 +89,8 @@ docs/
   UPDATES.md          how the app updates itself, to the next release and,
                       while it is being made, to any pull request
   THUMBNAILS.md       the thumbnail of a short: spec, not built yet
+  CAPTIONS.md         captions drawn once by libass, in the video preview,
+                      the thumbnails and the short
   VIDEO-PREVIEW.md    the video preview on one engine, ffmpeg: spec, not built yet
   THIRD_PARTY.md      licences of everything included
 ```

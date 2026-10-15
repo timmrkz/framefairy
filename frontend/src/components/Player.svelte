@@ -16,14 +16,18 @@
   // the playhead on the selected clip it jumps the clip's cuts and stops
   // where the clip ends, and on the video it plays the episode straight on.
   // While the playhead is on the clip and inside it, its captions are drawn
-  // inside the crop the way the render will burn them in. On the video the
-  // video preview shows the video and nothing else.
+  // inside the crop the way the render will burn them in: by libass, from
+  // the short's own caption file, laid over each frame before it is shown,
+  // see lib/frames/captions.ts. On the video the video preview shows the
+  // video and nothing else.
   import { onMount, untrack, type Snippet } from "svelte";
   import { said } from "../lib/said";
-  import { insideClip, litWord, wordInEpisode, type Piece } from "../lib/flow";
+  import { insideClip, wordInEpisode, type Piece } from "../lib/flow";
   import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type About, type Place, type Playhead } from "../lib/playhead";
   import { FrameQueue, type Shown } from "../lib/frames/queue";
   import { movieOf } from "../lib/frames/movie";
+  import { CaptionLayers, quarters, type CaptionAsk, type Over, type Showing, type WordFrame } from "../lib/frames/captions";
+  import { shownColour, type Light } from "../lib/frames/light";
   import Info from "./Info.svelte";
   import {
     captionYStep,
@@ -44,6 +48,8 @@
     clip,
     making,
     captions = null,
+    wordFrames = null,
+    drafts = {},
     time = $bindable(0),
     onplayclip,
     oncaptionmoved,
@@ -72,6 +78,13 @@
     making?: string;
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
+    // Where libass puts each word of the captions of a track, see
+    // WordFrame, null while they are on their way or cannot be said.
+    wordFrames?: { key: string; frames: WordFrame[][] | null } | null;
+    // What the hand is changing of their colours and switches on the way,
+    // as /frames/captions takes it, see cmd/framefairy-app/captions.go.
+    // Only what is being changed: the rest is the captions' own.
+    drafts?: Record<string, string>;
     time?: number;
     // While the workspace has not yet decided where the playhead opens,
     // on the clip it opens on, nothing is drawn: the episode's first
@@ -224,6 +237,7 @@
     const woken = slept;
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
+    q.over = { at: overAt, coming: comingAt };
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
@@ -390,8 +404,13 @@
   // across the clip's edge while playing was lost: the new program started
   // the play again from where it was, the queue said so at once, that set
   // the playhead back, and the seek after it went to the playhead.
-  export function seek(t: number, about?: About) {
+  //
+  // A step from word to word bounces the word it lands on over the frame,
+  // and any other way of getting there shows the frame alone, see
+  // CaptionLayers.sought.
+  export function seek(t: number, about?: About, wordStep = false) {
     const at = Math.max(0, Math.min(t, source.duration));
+    layers.sought(wordStep);
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
     if (!queue) return;
@@ -573,12 +592,23 @@
   // 3.26.
   const cropLeft = $derived.by(() => {
     if (!clip || cropped < 0 || !picture.width || !picture.cropWidth) return null;
-    const gliding =
-      place !== "video"
-        ? glidingLeft(clip.segments[cropped]?.marks, frameAt, source.fps, source.videoStart ?? 0, picture.cropWidth, picture.width)
-        : null;
-    return gliding ?? clip.cropLefts[cropped] ?? (picture.width - picture.cropWidth) / 2;
+    return leftOn(clip, cropped, frameAt, picture, place !== "video");
   });
+
+  // The left edge of the crop of a piece on the frame that starts at a
+  // moment, in pixels of the picture, gliding or standing still.
+  function leftOn(
+    c: ClipEntry,
+    at: number,
+    frame: number,
+    pic: { width: number; cropWidth: number },
+    glides: boolean,
+  ): number {
+    const gliding = glides
+      ? glidingLeft(c.segments[at]?.marks, frame, source.fps, source.videoStart ?? 0, pic.cropWidth, pic.width)
+      : null;
+    return gliding ?? c.cropLefts[at] ?? (pic.width - pic.cropWidth) / 2;
+  }
 
   // The crop's left edge as the video preview shows it now, which a crop
   // mark put on this frame keeps.
@@ -609,6 +639,7 @@
     part: number | null;
     whole: string;
     piece: string;
+    pad?: number;
   } | null>(null);
   // The word a correction is on its way to disk for, so it says it is not
   // settled yet the way everything else in the app does.
@@ -619,6 +650,32 @@
   let frozen = $state(0);
   const shown = $derived(fixing ? frozen : time);
 
+  // What the layer on screen shows, see Showing in lib/frames/captions.ts:
+  // the caption and the word libass drew on the frame the canvas shows,
+  // for the captions of a track. The caption box shows them, so it changes
+  // caption and word on the frame the picture does, playing or paused. A
+  // word being corrected keeps what was on screen when it was opened.
+  // And how large libass draws the pill of that word on the frame, 1 at
+  // rest, which the frame round the word grows by, so it stays on the
+  // pill's edge through the pop, as it did when the browser drew both.
+  let drawn = $state<(Showing & { track: string; scale: number }) | null>(null);
+  let frozenDrawn = $state<(Showing & { track: string; scale: number }) | null>(null);
+  function onScreen(track: string | null, showing: Showing | undefined, scale = 1) {
+    const now = track && showing ? { track, ...showing, scale } : null;
+    if (
+      now?.track === drawn?.track &&
+      now?.caption === drawn?.caption &&
+      now?.word === drawn?.word &&
+      now?.scale === drawn?.scale
+    )
+      return;
+    drawn = now;
+  }
+  const showing = $derived.by(() => {
+    const d = fixing ? frozenDrawn : drawn;
+    return d && captions?.track === d.track ? d : null;
+  });
+
   // The caption standing at the playhead, with the word being spoken. The
   // engine hands over the lines and the look, so nothing about captions is
   // decided twice. None on the video: the episode playing on through the
@@ -626,16 +683,19 @@
   const caption = $derived.by(() => {
     if (!clip || !captions?.captions?.length || place === "video") return null;
     if (shown < clipStart - 0.05 || shown > clipEnd + 0.05) return null;
+    if (showing) return captions.captions[showing.caption] ?? null;
     const at = inClipTime(shown);
     return captions.captions.find((c) => at >= c.start && at < c.end) ?? null;
   });
 
   const spoken = $derived(inClipTime(shown));
 
-  // The word lit, counted across the caption's lines, by the rule the
-  // render and the clip timeline go by. firstOfRow is where each line's
-  // words begin in that count.
-  const lit = $derived(caption ? litWord(caption.lines ?? [], spoken) : -1);
+  // The word lit, counted across the caption's lines: the one the layer on
+  // screen lights, and none until a layer of these captions has come. The
+  // playhead's word lit here while the picture drew no captions yet, after
+  // a clip was picked or an edit landed, which is a second say in what is
+  // lit. firstOfRow is where each line's words begin in that count.
+  const lit = $derived(!caption || !showing ? -1 : showing.word);
   const firstOfRow = $derived.by(() => {
     const out: number[] = [];
     let n = 0;
@@ -653,7 +713,15 @@
   // keyboard: it stays on a word saved with Enter, and goes with anything
   // else, see forget, and when the playhead leaves the word, the clip
   // playing among them.
-  let keyed = $state<{ start: number; end: number } | null>(null);
+  // Its frame shows on the frame the picture lights the word on, see
+  // showing: a walk moves the playhead at once, but the picture lights the
+  // word only once the frame there and its captions are on screen, and the
+  // frame went to the next word a frame or more before the pill did, which
+  // Tim saw on #201.
+  // A word is the keyboard's while the picture lights it: from and to, on
+  // the episode's clock, see WordFrame, or by its own time on the clip's
+  // clock where those are not known.
+  let keyed = $state<{ start: number; end: number; from?: number; to?: number } | null>(null);
   // When Shift and an arrow were pressed. The next move of the playhead is
   // the walk landing, and its word becomes the keyboard's word.
   let walked = 0;
@@ -662,15 +730,56 @@
   // the word does.
   const give = 0.05;
   $effect(() => {
-    const at = spoken;
+    const at = shown;
     untrack(() => {
       if (walked && Date.now() - walked < 1000) {
         walked = 0;
-        const word = wordAt(at);
-        keyed = word ? { start: word.start, end: word.end } : null;
+        keyed = keyOf(at);
         return;
       }
-      if (keyed && (at < keyed.start - give || at >= keyed.end + give)) keyed = null;
+      if (!keyed) return;
+      const out =
+        keyed.from !== undefined && keyed.to !== undefined
+          ? at < keyed.from - give || at >= keyed.to
+          : inClipTime(at) < keyed.start - give || inClipTime(at) >= keyed.end + give;
+      if (out) keyed = null;
+    });
+  });
+
+  // The word the picture lights at a moment of the episode, as the
+  // keyboard's word, by when the engine says each word is lit, see
+  // WordFrame, in whichever caption it is: the caption box may still hold
+  // the caption before while the picture there is on its way. By the
+  // word's own time where those are not known. Shift and an arrow walk to
+  // where the picture lights a word, see lit in Episode.svelte, so the
+  // keyboard's word is the word walked to.
+  function keyOf(at: number): { start: number; end: number; from?: number; to?: number } | null {
+    const frames = captions?.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
+    if (frames) {
+      for (const [i, cue] of (captions?.captions ?? []).entries()) {
+        const words = (cue.lines ?? []).flatMap((line) => line.words);
+        for (const [k, word] of words.entries()) {
+          const f = frames[i]?.[k];
+          if (f && f.from >= 0 && at >= f.from - give && at < f.to) return { start: word.start, end: word.end, from: f.from, to: f.to };
+        }
+      }
+    }
+    const word = wordAt(inClipTime(at));
+    return word ? { start: word.start, end: word.end } : null;
+  }
+
+  // A word is corrected at the moment it was opened at, and a correction
+  // ends when the playhead leaves that moment, however it is moved: the
+  // word lets go of the caret the way a click elsewhere takes it, which
+  // saves what was typed, and the captions follow the playhead again. A
+  // click on a thumbnail's camera or a keyframe's diamond moves the
+  // playhead without taking the focus, so the word stayed open and the
+  // caption stayed on the old moment while the frame moved on, which Tim
+  // saw on #201.
+  $effect(() => {
+    const at = time;
+    untrack(() => {
+      if (fixing && Math.abs(at - frozen) > give) endCorrection();
     });
   });
 
@@ -681,8 +790,7 @@
   // it put the playhead, and that word takes the frame.
   export function keyAt(t: number) {
     walked = 0;
-    const word = wordAt(inClipTime(t));
-    keyed = word ? { start: word.start, end: word.end } : null;
+    keyed = keyOf(t);
   }
 
   // A colour taken from the picture, for the captions column's colour
@@ -858,6 +966,25 @@
     };
   }
 
+  // How far the pill reaches past the letters of a word on either side, in
+  // ems, so the box a word is typed in is its pill as long as it holds the
+  // word and grows by exactly what is typed. libass makes the pill the
+  // letters' ink and a margin, the browser's box is the letters' advance,
+  // which is a little wider, so the margin is what is left of the pill
+  // around the advance. Read once, as the word is opened, from the pill
+  // and the letters both as the screen shows them, so the pop's scale
+  // drops out. Nothing when the words are not laid out by libass.
+  function sides(node: HTMLElement): number | undefined {
+    if (!laidWords || !node.firstChild) return undefined;
+    const letters = document.createRange();
+    letters.selectNodeContents(node);
+    const pill = node.getBoundingClientRect().width;
+    const style = getComputedStyle(node);
+    const size = parseFloat(style.fontSize) * (pill / parseFloat(style.width));
+    if (!pill || !size) return undefined;
+    return Math.max(0, (pill - letters.getBoundingClientRect().width) / 2 / size);
+  }
+
   // Taking a word takes the picture with it: a caption that moved on under
   // the caret would leave the hand correcting a word that is no longer
   // there.
@@ -868,8 +995,9 @@
   ) {
     if (!said || !correctable) return;
     frozen = time;
+    frozenDrawn = drawn;
     if (!paused) toggle();
-    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text };
+    fixing = { at: word.start, said: said.start, part: said.part, whole: said.text, piece: word.text, pad: sides(node) };
     // The caret is already where the hand put it. It is only moved when
     // what is drawn here is half of the word being corrected: a word split
     // in two is drawn in two halves, and correcting either hands back the
@@ -918,6 +1046,13 @@
   }
 
   async function dropWord(node: HTMLElement, word: { start: number; text: string }, said: Heard | null) {
+    // However the word is left, it lets go of the caret. WebKit keeps the
+    // selection in a field the keyboard has left and draws the caret
+    // there, and the keys then typed into a word nobody had opened. Tim
+    // found the caret blinking in a word after Report a problem took the
+    // keyboard from it, when only Enter and Escape let go of it.
+    const selected = window.getSelection();
+    if (selected?.rangeCount && node.contains(selected.anchorNode)) selected.removeAllRanges();
     const was = fixing;
     fixing = null;
     if (!was) return;
@@ -990,14 +1125,10 @@
   }
 
   // A word let go of with Enter or Escape keeps the keyboard's frame, since
-  // the playhead is still on it, and gives up the caret. The caret went on
-  // blinking in a word already saved: WebKit keeps the selection in a field
-  // the keyboard has left, and draws the caret where it is.
+  // the playhead is still on it, and gives up the caret, see dropWord.
   function letGo(node: HTMLElement) {
     keyed = { start: Number(node.dataset.at), end: Number(node.dataset.to) };
     node.blur();
-    const selected = window.getSelection();
-    if (selected?.rangeCount && node.contains(selected.anchorNode)) selected.removeAllRanges();
   }
 
   // Enter opens the word at the playhead for correcting, the way Enter
@@ -1035,6 +1166,152 @@
   // The frame the captions sit in: the crop, or the whole preview when there
   // is none to place them in.
   const box = $derived(crop ?? { left: 0, width: 100 });
+
+  // The captions in the picture are the short's: libass draws them on the
+  // Go side from the caption file the render burns in, for each frame at
+  // the moment the short shows it, and the screen lays them over the frame
+  // before it gives it its look, see lib/frames/captions.ts. The caption
+  // box above is what the hand takes hold of, and draws nothing of the
+  // captions itself, except while a word is being corrected: what is typed
+  // is not captions yet, so the caption box draws it, and the picture's
+  // captions wait until it is saved.
+  // Paused, the word a word step lands on bounces over the still frame,
+  // the screen redrawing it on each of its own frames, see Lift in
+  // lib/frames/captions.ts.
+  const layers = new CaptionLayers(
+    () => queue?.repaint(),
+    { paused: () => paused },
+    (text, video) => said(text, { level: "warn", video }),
+  );
+  // For the walks, which wait until the captions over the frame are drawn.
+  (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
+  // While a word is typed, libass draws the caption without it and the
+  // caption box draws only what is typed, where libass puts the word, see
+  // typed. Before libass knows where the words stand, the caption box
+  // draws the whole caption itself.
+  const captionAsk = $derived.by((): CaptionAsk | null => {
+    if (!clip || !captions?.track || !captions.captions?.length || captions.style.text === false) return null;
+    if (fixing && (!laidWords || typed < 0)) return null;
+    const asked: Record<string, string> = { ...drafts };
+    if (dragCaptions !== null) asked.y = String(dragCaptions);
+    const typing = fixing && caption ? `${captions.captions.indexOf(caption)} ${typed}` : undefined;
+    return { path, clip: clip.key, track: captions.track, drafts: asked, typing };
+  });
+  // The word being typed, counted across the lines of its caption.
+  const typed = $derived.by(() => {
+    if (!fixing) return -1;
+    for (const [row, line] of rows.entries()) {
+      const i = line.findIndex(({ word }) => word.start === fixing!.at);
+      if (i >= 0) return firstOfRow[row] + i;
+    }
+    return -1;
+  });
+  // The words of the caption shown where libass put them, each as a box in
+  // the caption box, from the line the captions stand on, as shares of
+  // the short: x and w of its width, top and h of its height, top down
+  // from the line. Nothing while the words of this caption are not known
+  // yet. While a word is typed, it is drawn here in its place, on the
+  // baseline libass set it on, base, see captionAsk.
+  type LaidWord = { x: number; w: number; top: number; h: number; r: number; base: number };
+  const laidWords = $derived.by((): { words: LaidWord[]; x: number; w: number; top: number; h: number } | null => {
+    if (!caption || !captions?.track || wordFrames?.key !== `${path}\n${captions.track}` || !wordFrames.frames)
+      return null;
+    const frames = wordFrames.frames[(captions.captions ?? []).indexOf(caption)];
+    const count = (caption.lines ?? []).reduce((n, line) => n + line.words.length, 0);
+    if (!frames || frames.length !== count || !count) return null;
+    // The line the captions were measured standing on, which the caption
+    // box stands on wherever it is dragged.
+    const line = 1 - captions.style.marginV;
+    const words = frames.map((f) => ({ x: f.x, w: f.w, top: f.y - line, h: f.h, r: f.r, base: f.base - line }));
+    const x = Math.min(...words.map((f) => f.x));
+    const top = Math.min(...words.map((f) => f.top));
+    const w = Math.max(...words.map((f) => f.x + f.w)) - x;
+    const h = Math.max(...words.map((f) => f.top + f.h)) - top;
+    return { words, x, w, top, h };
+  });
+
+  // Where a word stands in the caption box laid out by libass, and the
+  // corners of its pill as the engine drew them, see engine.pillRadius,
+  // so the frame round the word has the pill's corners. Left and width
+  // are the pill's at rest, which a word being typed grows from, and base
+  // is how far down the pill its letters stand, which it is set on.
+  function wordPlace(laid: { x: number; w: number; top: number }, f: LaidWord): string {
+    return `--left: ${((f.x - laid.x) / laid.w) * 100}%; --width: ${(f.w / laid.w) * 100}%;
+      --base: ${px(f.base - f.top)}; top: ${px(f.top - laid.top)}; height: ${px(f.h)};
+      line-height: ${px(f.h)}; border-radius: ${px(f.r)};`;
+  }
+
+  // Everything the captions over a frame are worked out from, so a change
+  // to any of them draws the frame on screen again.
+  $effect(() => {
+    layers.set(captionAsk);
+    void [place, dragLeft, clip, source];
+    untrack(() => queue?.repaint());
+  });
+
+  // The crop of the frame that starts at a moment: how far it is turned,
+  // and where the crop stands and how wide it is, as shares of the picture
+  // as shown. The same rule as the crop frame's, worked out for the frame
+  // itself, since it is asked for as the frame is drawn, before the
+  // workspace hears which frame that is.
+  function framingOf(frame: number): { turn: number; left: number; width: number } | null {
+    if (!clip) return null;
+    const turn = rotationAt(clip.rotations, frame);
+    const held = pieceHolding(clip.segments, frame);
+    const at = held >= 0 ? held : piece;
+    const pic = pictureOf(source, turn);
+    if (at < 0 || !pic.width || !pic.cropWidth) return null;
+    const left = dragLeft ?? leftOn(clip, at, frame, pic, true);
+    return { turn, left: left / pic.width, width: pic.cropWidth / pic.width };
+  }
+
+  // The size the captions of a frame are drawn at: the crop as the screen
+  // shows it, in device pixels.
+  function layerSize(f: { turn: number; width: number }): [number, number] | null {
+    const [cw, ch] = pixels;
+    const [w, h] = quarters(f.turn) % 2 ? [ch, cw] : [cw, ch];
+    const size: [number, number] = [Math.round(f.width * w), h];
+    return size[0] >= 1 && size[1] >= 1 ? size : null;
+  }
+
+  // Whether the frame that starts at a moment is a frame of the short:
+  // the playhead is on the clip, and the frame holds a moment of it.
+  function framesClip(frame: number): boolean {
+    return !!clip && place !== "video" && frame + oneFrame > clipStart + 1e-6 && frame < clipEnd - 1e-6;
+  }
+
+  // The light of the frame on screen. The colours the browser draws over
+  // it, the box a word is typed in, are shown in its look, see shownColour.
+  let shownLight = $state<Light>("");
+  // The colours of the captions as the frame on screen shows them.
+  const shownCaptions = $derived(
+    captions
+      ? {
+          primary: shownColour(shownLight, captions.style.primary),
+          pill: shownColour(shownLight, captions.style.highlightColour),
+          box: shownColour(shownLight, captions.style.box),
+        }
+      : null,
+  );
+
+  // The captions over the frame the canvas draws, and what they show for
+  // the caption box, see onScreen.
+  function overAt(frame: number, light: Light): Over | null {
+    if (light !== shownLight) shownLight = light;
+    const ask = captionAsk;
+    const f = ask && framesClip(frame) ? framingOf(frame) : null;
+    const size = f && layerSize(f);
+    const layer = ask && size ? layers.at(frame, size) : null;
+    onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
+    return f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+  }
+
+  function comingAt(frame: number) {
+    if (!captionAsk || !framesClip(frame)) return;
+    const f = framingOf(frame);
+    const size = f && layerSize(f);
+    if (size) layers.coming(frame, size);
+  }
 
   // A share of the height of the video preview, as the stylesheet works it
   // out: .screen is a container, and 100cqh is its height in the same pass
@@ -1356,14 +1633,24 @@
     {#if caption && captions && captions.style.text !== false}
       <div
         class="captions"
-        style="left: {box.left}%; width: {box.width}%;
-               bottom: max({px(captionY / 1920 - captions.style.padY)}, 0px);
-               padding: 0 {px(captions.style.marginH)};
+        class:typing={!!fixing}
+        class:highlighted={!!captions.style.highlight}
+        class:laid={!!laidWords}
+        style:--pop={showing?.scale ?? 1}
+        style="{laidWords
+          ? `left: calc(${box.left}% + ${laidWords.x * box.width}%); width: ${laidWords.w * box.width}%;
+             bottom: ${px(captionY / 1920 - laidWords.top - laidWords.h)}; height: ${px(laidWords.h)};`
+          : `left: ${box.left}%; width: ${box.width}%;
+             bottom: max(${px(captionY / 1920 - captions.style.padY)}, 0px);
+             padding: 0 ${px(captions.style.marginH)};`}
+               --size: {px(captions.style.size)};
                font-family: '{captions.style.font}', system-ui, sans-serif;
-               font-weight: {captions.style.bold ? 800 : 500};
+               font-weight: {captions.style.weight ?? (captions.style.bold ? 700 : 400)};
+               --thicken: {captions.style.thicken ?? 0};
                font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
-               color: {captions.style.primary}"
+               --typed: {shownCaptions?.primary};
+               color: {fixing && !laidWords ? shownCaptions?.primary : 'transparent'}"
       >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -1371,7 +1658,7 @@
           class:draggable={!!oncaptiony}
           class:waiting={savingWord !== null}
           class:holding={dragCaptions !== null}
-          style="background: {captions.style.boxOn === false ? 'transparent' : captions.style.box};
+          style="background: {captions.style.boxOn === false || !fixing || laidWords ? 'transparent' : shownCaptions?.box};
                  border-radius: {px(captions.style.radius)};
                  padding: {px(captions.style.padY)} {px(captions.style.padX)}"
           title="Drag the handle up or down to place the captions"
@@ -1419,7 +1706,7 @@
                     class="word"
                     class:correctable={!!said}
                     class:fixing={fixing?.at === word.start}
-                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start}
+                    class:keyed={!!keyed && !fixing && !!said && keyed.start === word.start && !!showing && firstOfRow[row] + i === lit}
                     class:now={captions.style.highlight && firstOfRow[row] + i === lit}
                     contenteditable={said ? "plaintext-only" : null}
                     spellcheck="false"
@@ -1430,7 +1717,11 @@
                     title={said
                       ? "Click to correct this word. Enter saves it, Escape leaves it, and delete removes it. Two words split it in two"
                       : null}
-                    style="--pill: {captions.style.highlightColour}"
+                    style="--pill: {shownCaptions?.pill};{fixing?.at === word.start && fixing.pad !== undefined
+                      ? `--pad: ${fixing.pad}em;`
+                      : ''}{laidWords?.words[firstOfRow[row] + i]
+                      ? wordPlace(laidWords, laidWords.words[firstOfRow[row] + i])
+                      : ''}"
                     use:says={[word.text, captions]}
                     onfocusin={(e) => takeWord(e.currentTarget, word, said)}
                     onfocusout={(e) => dropWord(e.currentTarget, word, said)}
@@ -1659,13 +1950,26 @@
     bottom: 0;
   }
 
-  /* The captions, drawn where the render burns them into the crop. */
+  /* The caption box, where the render burns the captions into the crop.
+     The captions themselves are in the picture, drawn by libass, so the box
+     is see-through and draws only what is the interface's: the frame round
+     a word and the handle. While a word is being corrected it draws the
+     words itself, see typing. */
   .captions {
     position: absolute;
     z-index: 3;
     display: flex;
     justify-content: center;
     pointer-events: none;
+    /* The letters are as heavy as libass draws them: the face at its own
+       weight, never a bold the browser fakes, grown by the share of the em
+       libass grows them by, see engine.Thickening. A stroke round each
+       letter in its own colour grows it half the width on either side and
+       leaves the advances alone, as libass does. The Mac faked the bold of
+       Archivo Black its own way, and Tim saw the word typed lighter and
+       narrower than libass draws it. */
+    font-synthesis: none;
+    -webkit-text-stroke-width: calc(var(--size) * var(--thicken, 0));
   }
 
   /* The box is as wide as its widest line and no wider, exactly like the
@@ -1722,29 +2026,89 @@
     pointer-events: auto;
     cursor: text;
     caret-color: var(--accent-hi);
-    outline: 1px solid transparent;
+    /* The frame stands across the pill's edge, a pixel of the screen out
+       and one in. libass draws the edge where it falls, between two
+       pixels as often as not, and the row it half covers comes out half
+       dark, while the browser puts a frame on whole pixels. As an outline
+       round the outside of the box, that row showed between the frame
+       and the pill or just inside the frame, and Tim saw the pill a pixel
+       short at the top or the bottom. Across the edge, the frame covers
+       that row wherever it falls. An outline cannot be moved by half a
+       point, its offset is rounded, so the frame is a shadow. */
+    --frame: transparent;
+    --frame-width: var(--hair);
+    box-shadow:
+      0 0 0 var(--frame-width) var(--frame),
+      inset 0 0 0 var(--frame-width) var(--frame);
   }
 
   .word.correctable:hover,
   .word.keyed {
-    outline-color: var(--accent-hi);
+    --frame: var(--accent-hi);
   }
 
-  /* The word being corrected wears the frame and nothing else. A
-     background would be a second pill, in the app's colour, on a word that
-     is not the one being spoken, and it would take the pill off the word
-     that is: correcting the spoken word swapped the colour the render
-     burns in for the app's accent, which is the caption saying something
-     about itself that is not true. What the picture shows stays what the
-     render will show, and the frame is the only thing the interface adds.
-
-     It is the hover frame twice over, which is the whole difference
-     between the two. After Enter the word goes back to the frame of the
-     two it had before it was opened: the one under the pointer, or the
-     keyboard's, which stays on it while the playhead does. */
+  /* With the highlight off the word being corrected wears the hover
+     frame twice over, which is the whole difference between the two.
+     After Enter the word goes back to the frame of the two it had before
+     it was opened: the one under the pointer, or the keyboard's, which
+     stays on it while the playhead does. */
   .word.fixing {
-    outline-width: 2px;
-    outline-color: var(--accent-hi);
+    --frame-width: calc(2 * var(--hair));
+    --frame: var(--accent-hi);
+  }
+
+  /* With the highlight on, the word being corrected is a pill in the
+     highlight colour, whether or not it is the word lit, and wears no
+     frame. Tim asked for one colour behind the letters typed: a word not
+     lit was typed on the dark box of the caption, which read as a black
+     field, and the frame round a lit word, in the app's lighter purple,
+     read as a second shade of the pill. The caret says the word is open. */
+  .highlighted .word.fixing {
+    --frame: transparent;
+  }
+
+  /* A word in the caption box wears no focus ring. The frame says which
+     word the keyboard is on and the caret that it is open, and the ring
+     every other control wears, app.css, stood a pixel off the pill, so
+     Tim saw a dark line round the word typed, the caption's box showing
+     through between the two. */
+  .word:focus-visible {
+    outline: none;
+  }
+
+  /* The words where libass put them, see laidWords: the caption box is
+     the box round all of them, and each word is placed in it on the pill
+     libass draws behind it at rest, so the frame round a word is the
+     pill's edge and the word stands in its middle. The spaces between the
+     words take no room, since the words are placed and not laid out. */
+  .captions.laid {
+    display: block;
+  }
+
+  .laid .box {
+    width: 100%;
+    height: 100%;
+    font-size: 0;
+  }
+
+  .laid .line {
+    display: contents;
+  }
+
+  .laid .line span {
+    position: absolute;
+    left: var(--left);
+    width: var(--width);
+    margin: 0;
+    padding: 0;
+    font-size: var(--size);
+  }
+
+  /* The word being spoken is framed on its pill, which libass grows round
+     its middle in the pop, so the frame grows with it, by the scale the
+     layer on screen says, see onScreen. At rest it is 1. */
+  .laid .line span.now {
+    transform: scale(var(--pop, 1));
   }
 
   /* The steps the caption line snaps to, shown while it is dragged. */
@@ -1777,15 +2141,72 @@
 
   /* The pop is in app.css, because the caption block on the clip timeline
      makes the same one. */
-  .line span.now {
+  .typing:not(.laid) .line span.now {
     background: var(--pill);
     animation: pop 0.22s ease-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .line span.now {
+    .typing:not(.laid) .line span.now {
       animation: none;
     }
+  }
+
+  /* Libass draws the caption without the word being typed, and the word
+     is drawn here, in its place, in the caption's colour, on its pill
+     while it is the word lit. The browser drew the whole caption while a
+     word was typed, larger than libass draws it, so the caption grew as a
+     word was opened. The box is the pill as long as it holds the word,
+     and grows round the pill's middle by what is typed, see sides: with
+     the pill drawn by libass, a word typed longer ran out of it. On a
+     frame of the pop it keeps the frame's scale, so opening the word
+     moves nothing. */
+  .laid .line span.fixing {
+    left: calc(var(--left) + var(--width) / 2);
+    width: max-content;
+    min-width: var(--width);
+    padding: 0 var(--pad, 0.14em);
+    translate: -50% 0;
+    color: var(--typed);
+    /* Nothing of the word is drawn outside its pill. A selection is as
+       tall as the face's line, which reaches past the pill, and Tim saw
+       its blue stand over the pill in square corners. */
+    overflow: clip;
+  }
+
+  .highlighted.laid .line span.fixing {
+    background: var(--pill);
+  }
+
+  /* The letters typed stand on the baseline libass set the word on. In
+     the middle of the pill's height, where the browser puts a line, they
+     stood a few pixels lower than libass draws them, and Tim saw a word
+     drop as he opened it. The box is trimmed to the top of a capital and
+     the baseline, and its top padding puts the baseline where the engine
+     measured it, see engine.WordFrame. */
+  @supports (text-box: trim-both cap alphabetic) {
+    .laid .line span.fixing {
+      padding-top: calc(var(--base) - 1cap);
+      text-box: trim-both cap alphabetic;
+    }
+  }
+
+  /* The caret is the colour of the text it stands in, as in a text field
+     on the Mac, so it shows on any pill the text itself shows on. In the
+     accent it was purple on purple. */
+  .word.correctable.fixing {
+    caret-color: var(--typed);
+  }
+
+  /* Selected letters wear the Mac's own selection colour, Highlight, which
+     follows the colour picked in the system settings. WebKit thins an
+     opaque selection colour with white, and over the pill that came out
+     the pill's colour again, so a selection could not be seen. A colour
+     that is not quite opaque is left as it is, hence the 99 percent. The
+     first line is for a webview without color-mix. */
+  .word.correctable::selection {
+    background: rgba(63, 99, 139, 0.99);
+    background: color-mix(in srgb, Highlight 99%, transparent);
   }
 
 

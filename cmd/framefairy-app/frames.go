@@ -132,6 +132,10 @@ func (p *previews) serve(st *store, w http.ResponseWriter, r *http.Request) {
 			skip = 0
 		}
 		writeFrames(w, r, s, min(max(n, 1), 16), skip)
+	case "/frames/captions":
+		p.serveCaptions(st, w, r)
+	case "/frames/captions/words":
+		p.serveWordFrames(st, w, r)
 	case "/frames/close":
 		p.close(q.Get("id"))
 		w.WriteHeader(http.StatusNoContent)
