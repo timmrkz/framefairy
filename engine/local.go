@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/afero"
@@ -225,6 +226,41 @@ func contextFor(promptChars, maxTokens int) int {
 	}
 	return size
 }
+
+// localStall is how long llama-server may send nothing before the ask is
+// given up on. It speaks all the time while it works: a word of how far it
+// has read the prompt after every batch of it, then every token of its
+// thought and of its answer. So two minutes of silence is a server that hangs,
+// and a search waiting on it waits for good, with every video's
+// transcription held up behind it, see lanes.go in the app. The client has
+// no timeout of its own, because a whole answer takes minutes. Plan row
+// 2.224. A variable so a test can make it short.
+var localStall = 2 * time.Minute
+
+// stallWatch calls its function once nothing has been read for a while.
+type stallWatch struct {
+	*time.Timer
+	after time.Duration
+}
+
+func watchStall(after time.Duration, gaveUp func()) *stallWatch {
+	return &stallWatch{Timer: time.AfterFunc(after, gaveUp), after: after}
+}
+
+// reader is r, and every read that brings something starts the wait again.
+func (w *stallWatch) reader(r io.Reader) io.Reader {
+	return readerFunc(func(p []byte) (int, error) {
+		n, err := r.Read(p)
+		if n > 0 {
+			w.Reset(w.after)
+		}
+		return n, err
+	})
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 
 var localClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -534,6 +570,7 @@ type chatMessage struct {
 func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages []chatMessage,
 	units, count, maxTokens int, logDir, promptFile string, listen *Listener) (*localAnswer, error) {
 	url := strings.TrimRight(m.URL, "/")
+	var stalled atomic.Bool
 	if url == "" {
 		// A model loaded while the transcript was still on its way is used
 		// as it is. The search lets go of it when it is done, and it stops.
@@ -551,7 +588,15 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if err != nil {
 			return nil, err
 		}
-		defer release(m.Keep)
+		// A server that stopped answering is let go of at once, so it is
+		// stopped and the next search loads one that works.
+		defer func() {
+			if stalled.Load() {
+				release(0)
+				return
+			}
+			release(m.Keep)
+		}()
 		url = held
 	}
 	listen.part(partReading)
@@ -614,23 +659,42 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		_ = afero.WriteFile(e.Files, filepath.Join(logDir, promptFile), []byte(strings.Join(turns, "\n\n")), 0o644)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	// The ask ends when the search does, and when the server has sent
+	// nothing for localStall, see watchStall.
+	asking, stop := context.WithCancel(ctx)
+	defer stop()
+	request, err := http.NewRequestWithContext(asking, http.MethodPost,
 		url+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("content-type", "application/json")
 	authorize(request, url)
+	gaveUp := func() error {
+		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
+			"so it was stopped. Search again to start it afresh.", fixed(localStall.Seconds(), 0))
+	}
+	watch := watchStall(localStall, func() {
+		stalled.Store(true)
+		e.Log.Warn("the local model sent nothing for %s seconds, so it is given up on",
+			fixed(localStall.Seconds(), 0))
+		stop()
+	})
+	defer watch.Stop()
 
 	started := time.Now()
 	response, err := localClient.Do(request)
 	if err != nil {
+		if stalled.Load() {
+			return nil, gaveUp()
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, renderErr("the local model did not answer: %s", Scrub(err.Error(), 200))
 	}
 	defer response.Body.Close()
+	watch.Reset(localStall)
 	if response.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		// A refusal is kept to read. An answer is kept in the saved reply,
@@ -652,8 +716,11 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		}
 		return nil, renderErr("the local model reported an error: %s", Scrub(message, 400))
 	}
-	answer, err := readLocalStream(response.Body, listen)
+	answer, err := readLocalStream(watch.reader(response.Body), listen)
 	if err != nil {
+		if stalled.Load() {
+			return nil, gaveUp()
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
