@@ -569,9 +569,17 @@ export class AppPictures {
     });
   }
 
+  // A flushed decoder starts again with the next run it is fed, from that
+  // run's first frame, the way a VideoDecoder after a flush does. Kept on
+  // from the run before, a run that came after it on the same decoder
+  // with lower ranks, the clip's start the next time through a loop, was
+  // held back for good waiting for a rank after the last run's end. The
+  // sound went round and the video preview stood on the clip's last
+  // frame, found by Tim (2.264).
   private settle() {
     if (this.asked > 0 || !this.flushes.length) return;
     this.putOut(true);
+    this.next = -1;
     const was = this.flushes;
     this.flushes = [];
     for (const f of was) f.done();

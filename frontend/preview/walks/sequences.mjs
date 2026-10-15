@@ -444,6 +444,13 @@
 //                      no hand were there: the playhead never went back nor
 //                      stood still for longer than 150 ms, and no frame
 //                      drawn was older than the one before it
+//   ["loop through the end", seconds]
+//                      puts the playhead so many seconds before the clip's
+//                      end, plays, switches the loop on with L at once and
+//                      lets it run round the end and three seconds into
+//                      the next time through, then asks that from half a
+//                      second after it came round the video preview shows
+//                      the frame of the playhead, give or take two
 //   ["loop off as the sound crosses the end"]
 //                      puts the playhead near the clip's end, plays it with
 //                      the loop on, holds the page 250 ms as the playhead
@@ -2369,6 +2376,16 @@ export const sequences = [
     ],
   },
   {
+    // Tim switched the loop on early in a clip with a cut, let it run, and
+    // at the end the sound went round while the video preview stood on the
+    // clip's last frame (2.264).
+    name: "a clip looped from early on goes round its end, the picture with the sound",
+    steps: [
+      ["cut at", 0.85],
+      ["loop through the end", 8],
+    ],
+  },
+  {
     // The loop switched off with L as the sound crosses the clip's end,
     // while the page is held and the playhead has not caught up, ends the
     // play where the sound is, after one more time through. It ended the
@@ -4068,6 +4085,67 @@ for (const seq of toWalk) {
         });
         loopEnd = { end, fps: await rate(page), starts: q.starts - starts, ...q };
         await settle(page);
+        break;
+      }
+      case "loop through the end": {
+        // Played with the loop switched on early, before the play works
+        // out the next time through, and left to run on through the
+        // clip's end into its start. Tim saw the sound go round while the
+        // video preview stood on the clip's last frame (2.264).
+        const segs = (await engineState(page, watch.at)).segments;
+        const start = segs[0].start;
+        const end = segs.at(-1).end;
+        const fps = await rate(page);
+        await seekTo(page, end - arg, fps);
+        await preview(page, 1 / fps);
+        if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
+          await page.keyboard.press("Space");
+        }
+        await page.waitForTimeout(300);
+        await page.keyboard.press("l");
+        await page.evaluate(() => {
+          window.__played = [];
+          window.__playWatch = true;
+          const tick = () => {
+            if (!window.__playWatch) return;
+            const at = Number(document.querySelector(".screen")?.dataset.playhead);
+            window.__played.push([performance.now(), at, window.__pictured()]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        // Round the end and three seconds into the next time through.
+        const wrapped = await page
+          .waitForFunction(
+            ([start, end]) => {
+              const p = window.__played;
+              const i = p.findIndex(([, at]) => at > end - 1);
+              return i >= 0 && p.slice(i).some(([, at]) => at > start + 3 && at < end - 2);
+            },
+            [start, end],
+            { timeout: (arg + 10) * 1000, polling: 100 },
+          )
+          .then(() => true, () => false);
+        const played = await page.evaluate(() => {
+          window.__playWatch = false;
+          return window.__played;
+        });
+        await page.keyboard.press("Space");
+        await page.keyboard.press("l");
+        await settle(page);
+        if (!wrapped) {
+          wrong = `the playhead did not go round the clip's end, it got to ${Math.max(...played.map(([, at]) => at)).toFixed(3)}`;
+          break;
+        }
+        // From half a second after the playhead came round, the picture
+        // shows the frame that holds the playhead, give or take two.
+        const i = played.findIndex(([, at]) => at > end - 1);
+        const round = i + played.slice(i).findIndex(([, at]) => at < end - 2);
+        const after = played.slice(round).filter(([t]) => t > played[round][0] + 500);
+        const off = after.find(([, at, n]) => !(n >= 0) || Math.abs(n / fps - at) > 2.5 / fps);
+        if (off) {
+          wrong = `${(off[0] - played[round][0]).toFixed(0)} ms after the playhead came round to ${played[round][1].toFixed(3)}, it stood at ${off[1].toFixed(3)} and the video preview showed ${off[2] >= 0 ? (off[2] / fps).toFixed(3) : "nothing it could read"}`;
+        }
         break;
       }
       case "loop off as the sound crosses the end": {
