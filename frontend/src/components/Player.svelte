@@ -1559,7 +1559,9 @@
   <!-- data-playhead says where the playhead is. Nothing on screen reads
        it: it is there so a probe can follow the playhead across a cut on
        every frame, the way the caption words say their moments. data-crop
-       is the crop's left edge in pixels of the picture, for the same. -->
+       is the crop's left edge in pixels of the picture, for the same, and
+       data-shown where the frame on the picture begins, the frame a mark
+       is put on. -->
   <!-- The viewer: as wide as the middle column and as tall as the picture
        may be, black, with the picture in the middle of it. The columns
        beside it take their width from the app's width alone, so on an app
@@ -1576,6 +1578,7 @@
     class:sideways={turn % 180 !== 0}
     bind:this={screen}
     data-playhead={time}
+    data-shown={frameStart}
     data-turn={turn}
     data-crop={crop?.inside ? (dragLeft ?? cropLeft) : null}
     style="--turn: {-turn}deg"
