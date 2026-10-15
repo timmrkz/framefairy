@@ -6,7 +6,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 
 	"framefairy/internal/framewire"
 )
@@ -312,7 +314,25 @@ func CaptionRoom(s Style) float64 {
 type LaidCaption struct {
 	Caption
 	Lines [][]Cue
+	// Hidden are the words, counted across the lines from nought, drawn
+	// with no ink and in their place, with their pill: the word being
+	// typed in the caption box, which the browser draws there while
+	// libass draws the rest, see CaptionDrawing.Typing.
+	Hidden map[int]bool `json:",omitempty"`
+	// Lift is the part of the caption drawn, all of it where empty: only
+	// the word being spoken with its pill, LiftWord, or all but those,
+	// LiftRest, both at rest, never popped. The video preview lays the two
+	// over a frame after a word step and scales the word itself, see
+	// CaptionDrawing.Lifted.
+	Lift string `json:",omitempty"`
 }
+
+// The parts of a caption the video preview takes apart for the bounce after
+// a word step, see LaidCaption.Lift.
+const (
+	LiftWord = "word"
+	LiftRest = "rest"
+)
 
 // LayOutCaptions breaks captions into the lines they are drawn in, at the
 // size the style asks for, for words in the given language.
@@ -382,12 +402,29 @@ func cueText(line []Cue) string {
 }
 
 // assText is the lines of a caption as one ASS text, with the hard spaces
-// that pad a caption when no box is drawn.
+// that pad a caption when no box is drawn, its hidden words with no ink
+// and the others as shown. A hidden word is closed by going back to the
+// style, `{\r}`, which keeps each of the text's own alphas: one alpha for
+// all gave the words after it the text's alpha on their outline, shadow
+// and box.
 func (l LaidCaption) assText(pad int) string {
 	spaces := strings.Repeat(`\h`, pad)
 	rows := make([]string, len(l.Lines))
+	n := 0
 	for i, line := range l.Lines {
-		rows[i] = spaces + EscapeASSText(cueText(line)) + spaces
+		if len(l.Hidden) == 0 {
+			rows[i] = spaces + EscapeASSText(cueText(line)) + spaces
+			continue
+		}
+		parts := make([]string, len(line))
+		for p, c := range line {
+			parts[p] = EscapeASSText(c.Text)
+			if l.Hidden[n] {
+				parts[p] = hidden + parts[p] + `{\r}`
+			}
+			n++
+		}
+		rows[i] = spaces + strings.Join(parts, " ") + spaces
 	}
 	return strings.Join(rows, `\N`)
 }
@@ -454,21 +491,25 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 
 	tmp, err := os.MkdirTemp("", "framefairy-")
 	if err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	defer os.RemoveAll(tmp)
 	name := "measure.ass"
 	if err := os.WriteFile(filepath.Join(tmp, name),
 		[]byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	// Measuring has to use the same face as the render, or the pills behind
 	// the words come out the wrong size.
 	if err := InstallFont(tmp, s.Font); err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	template, err := e.SubtitleFilter(ctx)
 	if err != nil {
+		e.Log.Detail("measuring the captions: %s", err)
 		return nil, false
 	}
 	chain := subtitleChain(template, name)
@@ -478,6 +519,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 		"-filter_complex", "[0:v]"+chain+",format=gray[v]",
 		"-map", "[v]", "-frames:v", "1", "-f", "rawvideo", "-")
 	if code != 0 || len(raw) < width*height {
+		e.Log.Detail("measuring the captions: ffmpeg ended with %d and drew %d of %d bytes", code, len(raw), width*height)
 		return nil, false
 	}
 
@@ -532,31 +574,94 @@ func bandSlot(block string, size int) int {
 }
 
 // measureMany measures any number of blocks, a frame at a time, so a clip
-// with many words stays inside the height one frame can have.
+// with many words stays inside the height one frame can have. A block
+// measured before in the same face, size and width is not measured again,
+// see measured, so the caption file of a clip is made again in a moment
+// whenever the video preview needs it in another colour or place.
 func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
-	var out []*inkBox
-	for start := 0; start < len(blocks); {
+	out := make([]*inkBox, len(blocks))
+	var missing []int
+	// Only a face the program carries is the same file whatever its name
+	// finds, see measureKey. One left to the machine is measured each time.
+	_, keep := FontByName(s.Font)
+	for i, block := range blocks {
+		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
+			out[i] = box
+		} else {
+			missing = append(missing, i)
+		}
+	}
+	for start := 0; start < len(missing); {
 		end, height := start, 0
-		for end < len(blocks) {
-			slot := bandSlot(blocks[end], size)
+		for end < len(missing) {
+			slot := bandSlot(blocks[missing[end]], size)
 			if end > start && height+slot > 15000 {
 				break
 			}
 			height += slot
 			end++
 		}
-		boxes, ok := e.measureASS(ctx, blocks[start:end], s, width, size)
+		batch := make([]string, 0, end-start)
+		for _, i := range missing[start:end] {
+			batch = append(batch, blocks[i])
+		}
+		boxes, ok := e.measureASS(ctx, batch, s, width, size)
 		if !ok {
 			return nil, false
 		}
-		out = append(out, boxes...)
+		for k, i := range missing[start:end] {
+			out[i] = boxes[k]
+			if boxes[k] != nil && keep {
+				measured.put(measureKey(blocks[i], s, width, size), boxes[k])
+			}
+		}
 		start = end
 	}
 	return out, true
 }
 
-// roundedRect is an ASS drawing command for a rectangle with bezier corners.
+// measureKey is what a block's ink depends on.
+// The face is known by its name, which is enough for a face the program
+// carries, see fontBundle: one name is always the same file. A face left
+// to the machine is not kept, see measureMany.
+func measureKey(block string, s Style, width, size int) string {
+	return fmt.Sprintf("%s\x00%d\x00%v\x00%d\x00%s", s.Font, size, s.Bold, width, block)
+}
+
+// inkCache keeps the ink of blocks measured before, up to a few thousand,
+// and forgets them all when it is full: the blocks of the clips open now
+// are measured again at once.
+type inkCache struct {
+	mu    sync.Mutex
+	boxes map[string]inkBox
+}
+
+var measured = &inkCache{boxes: map[string]inkBox{}}
+
+func (c *inkCache) get(key string) (*inkBox, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	box, ok := c.boxes[key]
+	return &box, ok
+}
+
+func (c *inkCache) put(key string, box *inkBox) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.boxes) >= 4096 {
+		clear(c.boxes)
+	}
+	c.boxes[key] = *box
+}
+
+// quarterArc is how far along a side, as a share of the radius, the
+// handles of a cubic Bézier curve reach for it to follow a quarter of a
+// circle closest: 4/3·(√2−1).
+const quarterArc = 0.5523
+
+// roundedRect is an ASS drawing command for a rectangle with rounded
+// corners.
 func roundedRect(x0, y0, x1, y1, radius float64) string {
 	radius = math.Max(0, math.Min(radius, math.Min((x1-x0)/2, (y1-y0)/2)))
 	f := func(v float64) string { return fixed(v, 0) }
@@ -564,17 +669,23 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 		return fmt.Sprintf("m %s %s l %s %s l %s %s l %s %s",
 			f(x0), f(y0), f(x1), f(y0), f(x1), f(y1), f(x0), f(y1))
 	}
-	r := radius
+	// Each corner is a quarter of a circle of the radius, the way a
+	// browser rounds a corner: a curve whose handles reach 0.5523 of the
+	// radius along the sides, see quarterArc. Both handles on the corner
+	// itself drew a corner much sharper than the radius said, and the
+	// frame round a word in the caption box, rounded by the browser,
+	// stood round a pill with other corners.
+	r, c := radius, radius*(1-quarterArc)
 	return strings.Join([]string{
 		fmt.Sprintf("m %s %s", f(x0+r), f(y0)),
 		fmt.Sprintf("l %s %s", f(x1-r), f(y0)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y0), f(x1), f(y0), f(x1), f(y0+r)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x1-c), f(y0), f(x1), f(y0+c), f(x1), f(y0+r)),
 		fmt.Sprintf("l %s %s", f(x1), f(y1-r)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y1), f(x1), f(y1), f(x1-r), f(y1)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x1), f(y1-c), f(x1-c), f(y1), f(x1-r), f(y1)),
 		fmt.Sprintf("l %s %s", f(x0+r), f(y1)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y1), f(x0), f(y1), f(x0), f(y1-r)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x0+c), f(y1), f(x0), f(y1-c), f(x0), f(y1-r)),
 		fmt.Sprintf("l %s %s", f(x0), f(y0+r)),
-		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y0), f(x0), f(y0), f(x0+r), f(y0)),
+		fmt.Sprintf("b %s %s %s %s %s %s", f(x0), f(y0+c), f(x0+c), f(y0), f(x0+r), f(y0)),
 	}, " ")
 }
 
@@ -582,20 +693,48 @@ func roundedRect(x0, y0, x1, y1, radius float64) string {
 // captions laid out in lines, see ClipCaptions.
 func (e *Engine) WriteASS(ctx context.Context, laid []LaidCaption, path string,
 	width, height int, overrides map[string]any) error {
-	return e.writeASS(ctx, laid, path, width, height, overrides, framewire.SDR)
+	return e.writeASS(ctx, laid, path, width, height, overrides, SourceInfo{})
 }
 
-// writeASS is WriteASS for a short of standard video or of HDR, whose
-// captions are drawn at the reference white, see inLight.
+// writeASS is WriteASS for a short of the episode source: of standard
+// video or of HDR, whose captions are drawn at the reference white, see
+// inLight, and on its frames, see popScales.
 func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
-	width, height int, overrides map[string]any, light framewire.Light) error {
-	s := ResolveStyle(overrides).inLight(light)
+	width, height int, overrides map[string]any, source SourceInfo) error {
+	track, err := e.CaptionTrack(ctx, laid, width, height, overrides, source)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, track, 0o644)
+}
+
+// CaptionTrack is the caption file of a short width by height, from its
+// captions laid out in lines and their style: what libass draws, in the
+// short, in its thumbnails and in the video preview alike. It is the only
+// place a caption's look is decided, so nothing that draws captions can
+// look different from the short. The source gives the light the captions
+// are drawn in and the frames the short has, which the pop of a word
+// starts on. See docs/CAPTIONS.md.
+func (e *Engine) CaptionTrack(ctx context.Context, laid []LaidCaption, width, height int,
+	overrides map[string]any, source SourceInfo) ([]byte, error) {
+	track, _, err := e.captionTrack(ctx, laid, width, height, overrides, source)
+	return track, err
+}
+
+// captionTrack is CaptionTrack, and whether it draws the pill of the lit
+// word: not with the highlight off, nor when the words could not be
+// measured and the captions are drawn plain instead.
+func (e *Engine) captionTrack(ctx context.Context, laid []LaidCaption, width, height int,
+	overrides map[string]any, source SourceInfo) ([]byte, bool, error) {
+	s := ResolveStyle(overrides).inLight(source.Light())
 	if s.Highlight {
-		done, err := e.writeHighlighted(ctx, laid, path, width, height, s)
-		if done || err != nil {
-			return err
+		track, err := e.highlighted(ctx, laid, width, height, s, source)
+		if track != nil || err != nil {
+			return track, track != nil, err
 		}
 	}
+	// Without a pill no word is drawn apart from its caption.
+	laid = slices.DeleteFunc(slices.Clone(laid), func(c LaidCaption) bool { return c.Lift == LiftWord })
 	scale := float64(height) / 1920.0
 	size := max(12, pyround(s.Size*scale))
 	outline := max(1, pyround(s.Outline*scale))
@@ -603,9 +742,15 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 	marginH := pyround(s.MarginH * scale)
 	marginV := pyround(s.MarginV * scale)
 
+	// The box is measured round the whole caption, the word being typed
+	// included, so it keeps its size while a word is typed. Measured from
+	// what is drawn, it left the typed word out, 72 pixels narrower.
 	blocks := make([]string, len(laid))
+	whole := make([]string, len(laid))
 	for i, c := range laid {
 		blocks[i] = c.assText(0)
+		c.Hidden = nil
+		whole[i] = c.assText(0)
 	}
 
 	// Measured once, and one caption that cannot be measured sends the whole
@@ -613,9 +758,9 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 	// appears.
 	var boxes []*inkBox
 	if s.Radius > 0 && s.BorderStyle == 4 {
-		measured, ok := e.measureASS(ctx, blocks, s, width, size)
+		inks, ok := e.measureMany(ctx, whole, s, width, size)
 		if ok {
-			for _, box := range measured {
+			for _, box := range inks {
 				if box == nil {
 					e.Log.Detail("a caption could not be measured, using square boxes")
 					ok = false
@@ -624,7 +769,7 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 			}
 		}
 		if ok {
-			boxes = measured
+			boxes = inks
 		} else {
 			e.Log.Detail("could not measure the caption text, falling back to a square box")
 		}
@@ -672,7 +817,7 @@ func (e *Engine) writeASS(ctx context.Context, laid []LaidCaption, path string,
 				start, end, blocks[i]))
 		}
 	}
-	return os.WriteFile(path, []byte(header+strings.Join(events, "\n")+"\n"), 0o644)
+	return []byte(header + strings.Join(events, "\n") + "\n"), false, nil
 }
 
 // matrix is how libass turns the colours into the short's: BT.709's for

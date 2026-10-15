@@ -33,6 +33,9 @@ export function expectedTimeline(segments) {
   return { start: segments[0].start, end: segments[segments.length - 1].end, cuts };
 }
 
+// How long by the clock a caption may wait for its late layer, in ms.
+const LATE_FOR = 1000;
+
 // What the video preview lays over the picture, held to where the
 // playhead is, for samples as recordFrames and overlay read them, against
 // the engine's clip, state, in an episode of frames a frame long.
@@ -43,7 +46,16 @@ export function expectedTimeline(segments) {
 // while the episode played through a clip. On the clip, with the playhead
 // a frame or more inside one of its pieces, the crop frame stands over the
 // picture, and the caption box with it wherever the engine has a caption,
-// a tenth of a second or more inside it. Says what broke, or null.
+// a tenth of a second or more inside it, on the frame on screen. The
+// caption box shows what the picture shows, and the picture trails the
+// playhead while it plays, by up to a frame, see Showing in
+// lib/frames/captions.ts. A sample with no frame number, pictured, is held
+// to the playhead. A frame whose own captions are still on their way is
+// drawn with the last ones, and the caption box shows what those show, so
+// a caption may be missing while the layer is late, for two frames of the
+// playhead at most, and for a second of the clock at most, since a paused
+// playhead does not move and would excuse it for good. Says what broke,
+// or null.
 export function overlaid(samples, state, frame) {
   const pieces = state?.segments ?? [];
   const clipTime = (t) => {
@@ -60,6 +72,7 @@ export function overlaid(samples, state, frame) {
     const c = clipTime(t);
     return (state?.captions ?? []).some((x) => c >= x.start + 0.1 && c < x.end - 0.1);
   };
+  let missing = null;
   for (const o of samples) {
     const at = Number.isFinite(o.at) ? o.at.toFixed(3) : "nowhere";
     const how = o.playing ? "playing" : "paused";
@@ -68,7 +81,11 @@ export function overlaid(samples, state, frame) {
       if (over.length) return `on the video at ${at}, ${how}, the video preview shows ${over.join(" and ")}`;
     } else if (inPiece(o.at)) {
       if (!o.crop) return `on the clip at ${at}, ${how}, the video preview shows no crop frame`;
-      if (captioned(o.at) && !o.captions) return `on the clip at ${at}, ${how}, the engine has a caption and the video preview shows none`;
+      const shownAt = Number.isFinite(o.pictured) && o.pictured >= 0 ? o.pictured * frame : o.at;
+      const none = captioned(shownAt) && !o.captions;
+      missing = none ? (missing ?? o) : null;
+      const long = none && (o.at - missing.at > 2 * frame || o.t - missing.t > LATE_FOR);
+      if (none && (!o.late || long)) return `on the clip at ${at}, ${how}, on frame ${o.pictured}${o.late ? " with its captions late" : ""}, the engine has a caption and the video preview shows none`;
     }
   }
   return null;

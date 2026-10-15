@@ -86,6 +86,19 @@ export function lift(v: number): number {
   return Math.pow(c, Math.max(0.891, 0.98 - 0.31 * c));
 }
 
+// A caption colour, rgba() as the Go side writes it, as the video preview
+// shows it once it is burned into a frame: libass draws it into the frame
+// and the frame then gets its look, so the box a word is typed in, which
+// the browser draws over the canvas, wears the same look or it stands out
+// from the pill around it. Standard video lifts it, see lift. HDR writes
+// it so it comes back as the colour it was, see engine/hdrcolour.go.
+export function shownColour(light: Light, css: string): string {
+  const m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(css);
+  if (light || !m) return css;
+  const [r, g, b] = [m[1], m[2], m[3]].map((v) => Math.round(255 * lift(Number(v) / 255)));
+  return `rgba(${r}, ${g}, ${b}, ${m[4] ?? 1})`;
+}
+
 // sRGB's curve, light of 0 to 1 to a signal of 0 to 1.
 export function srgb(l: number): number {
   return l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;

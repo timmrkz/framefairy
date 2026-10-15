@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/afero"
 
 	"framefairy/engine"
@@ -113,23 +116,71 @@ func (s *FrameFairy) Captions(path, planPath, clipID string) (*engine.CaptionsVi
 	if err != nil {
 		return nil, err
 	}
-	return engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionOverrides(planPath))
+	view, err := engine.ClipCaptionsView(s.store.files, planPath, clipID, t, s.captionLook(path, planPath))
+	captionTracks.keep(path, view)
+	return view, err
 }
 
-// captionOverrides are the settings the render puts on top of a plan's
-// caption style, so the picture shows what the file will hold.
-func (s *FrameFairy) captionOverrides(planPath string) map[string]any {
-	set := s.store.Settings()
-	overrides := map[string]any{"margin_v": engine.SnapCaptionY(set.CaptionY)}
-	// The highlight colour of the settings is for a plan that was not given
-	// one of its own in the captions column, the same as the render has it.
-	plan, _, err := engine.LoadClips(s.store.files, planPath)
+// captionLook is how the captions of the clips of planPath of the episode
+// at path are made, the way a render job makes them: in the style the
+// job's options put on the plan, on the episode's frames, see
+// engine.ClipDrawing. The video preview once took the style apart from
+// the render and the clip off the frames, and lit some words a frame from
+// where the short lights them.
+func (s *FrameFairy) captionLook(path, planPath string) *engine.Look {
+	plan, _, _ := engine.LoadClips(s.store.files, planPath)
+	style, err := s.store.Settings().options().CaptionLook(plan)
 	if err != nil {
-		overrides["highlight_colour"] = set.HighlightColour
-	} else if _, own := plan.CaptionStyle()["highlight_colour"]; !own {
-		overrides["highlight_colour"] = set.HighlightColour
+		theLog.line(zerolog.WarnLevel, "captions").Err(err).Msg("the settings' caption look is not one the render takes")
+		style = plan.CaptionStyle()
 	}
-	return overrides
+	return &engine.Look{Style: style, Source: unprobed.source(path)}
+}
+
+// probeVideo reads what the video at path is, its frames among it.
+var probeVideo = func(ctx context.Context, path string) (engine.SourceInfo, error) {
+	return sources.probe(ctx, path)
+}
+
+// unprobed keeps the videos whose frames could not be read, a video on a
+// drive that is not plugged in. A drag on the clip timeline asks for the
+// captions' look on every step, and such a video was asked of ffprobe and
+// warned about on every one of them. It is asked again after a while.
+var unprobed = &failedProbes{since: map[string]time.Time{}}
+
+type failedProbes struct {
+	mu    sync.Mutex
+	since map[string]time.Time
+}
+
+// probeAgain is how long a video whose frames could not be read is left
+// before it is asked again.
+const probeAgain = 5 * time.Second
+
+// source is what the video at path is, or nothing while it cannot be
+// read. The first failure of a stretch is said, with the reason.
+func (f *failedProbes) source(path string) engine.SourceInfo {
+	f.mu.Lock()
+	failed, known := f.since[path]
+	f.mu.Unlock()
+	if known && time.Since(failed) < probeAgain {
+		return engine.SourceInfo{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	source, err := probeVideo(ctx, path)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err != nil {
+		if !known {
+			theLog.line(zerolog.WarnLevel, "captions").Str("video", filepath.Base(path)).Err(err).
+				Msg("the video's frames are not known, so its captions are timed on the plan's clock")
+		}
+		f.since[path] = time.Now()
+		return engine.SourceInfo{}
+	}
+	delete(f.since, path)
+	return source
 }
 
 // ArrivingCaptions are the captions of a clip on its way, the nth of a
@@ -165,7 +216,9 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 				if err != nil {
 					return nil, err
 				}
-				return engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionOverrides(plan)), nil
+				view := engine.ArrivingCaptionsView(s.store.files, plan, u, t, s.captionLook(j.Episode, plan))
+				captionTracks.keep(j.Episode, view)
+				return view, nil
 			}
 		}
 		return nil, nil

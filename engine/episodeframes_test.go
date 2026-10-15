@@ -146,14 +146,18 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 		return ats, frames
 	}
 	grid := gridOf(t, path)
-	// Each stream takes 8 frames and the cursor decodes a few more, so it
-	// stands about half a second past where the stream began.
+	// Each stream takes 8 frames, a third of a second. The decoder has
+	// taken in the packets of more frames than it handed over, and on a
+	// Mac at least 7 more: a stream from 1.4 s had taken in the key frame
+	// at 2 s, and the jump to 3.1 s then rightly went on. So a jump that
+	// should move past a key frame follows a stream that ended a second
+	// before it.
 	jumps := []struct {
 		from float64
 		how  string
 	}{
 		{0.2, "opened the file"},
-		{1.4, "went on"}, // ahead, before the key frame at 2 s
+		{0.6, "went on"}, // ahead, before the key frame at 2 s
 		{3.1, "moved"},   // ahead, past the key frame at 2 s
 		{2.4, "moved"},   // behind
 		{4.3, "moved"},   // ahead, past the key frame at 4 s

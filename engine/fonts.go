@@ -15,6 +15,8 @@ package engine
 
 import (
 	"embed"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -38,23 +40,56 @@ type CaptionFont struct {
 	About string `json:"about"`
 	// File is the name of the face inside the bundle.
 	File string `json:"file"`
+	// Weight is how heavy the face says it is, the weight class in its own
+	// OS/2 table. The video preview declares it with the face, so a browser
+	// fakes bold exactly where libass does and nowhere else: libass thickens
+	// a face only when bold asks for more than 150 above its weight, and a
+	// browser thickens every face that is declared light enough.
+	Weight int `json:"weight"`
 	// Licence is the licence text that belongs to it.
 	Licence string `json:"-"`
 }
 
 var captionFonts = []CaptionFont{
 	{Name: DefaultFont, About: "plain and very heavy", File: "Inter-Black.ttf",
-		Licence: "LICENSE-Inter.txt"},
+		Weight: 900, Licence: "LICENSE-Inter.txt"},
 	{Name: "Anton", About: "narrow, the usual look of a short", File: "Anton-Regular.ttf",
-		Licence: "LICENSE-Anton.txt"},
+		Weight: 400, Licence: "LICENSE-Anton.txt"},
 	{Name: "Archivo Black", About: "wide and solid", File: "ArchivoBlack-Regular.ttf",
-		Licence: "LICENSE-Archivo.txt"},
+		Weight: 400, Licence: "LICENSE-Archivo.txt"},
 }
 
 // CaptionFonts are the faces the program ships with, in the order they are
 // offered.
 func CaptionFonts() []CaptionFont {
 	return append([]CaptionFont(nil), captionFonts...)
+}
+
+// Thickening is how libass draws a face at a bold, see ass_font.c in
+// libass: weight is the face's own, which a browser is to draw it at so it
+// fakes no bold of its own, and thicken is how much libass grows the
+// outline of every letter, as a share of the em, where the bold asks for
+// more than 150 above the face's weight. It grows each outline by an em
+// over 64, half of it on either side, and leaves the advances alone,
+// ass_glyph_embolden. Bold is the caption style's: 1 or -1 is 700, 0 or
+// less is 400, and anything else is the weight itself. A face the bundle
+// does not have counts as 400.
+func Thickening(font string, bold float64) (weight int, thicken float64) {
+	weight = 400
+	if f, ok := FontByName(font); ok {
+		weight = f.Weight
+	}
+	asked := int(bold)
+	switch {
+	case asked == 1 || asked == -1:
+		asked = 700
+	case asked <= 0:
+		asked = 400
+	}
+	if asked > weight+150 {
+		thicken = 1.0 / 64
+	}
+	return weight, thicken
 }
 
 // FontByName finds a bundled face by its family name.
@@ -89,8 +124,10 @@ func InstallFont(dir, name string) error {
 	if !ok {
 		return nil
 	}
+	// Inside dir, which is there, and never dir itself, so a folder that
+	// went under it stays gone, see foldersIn.
 	target := filepath.Join(dir, FontsFolder)
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	if err := os.Mkdir(target, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
 	}
 	for _, file := range []string{font.File, font.Licence} {
@@ -102,7 +139,9 @@ func InstallFont(dir, name string) error {
 		if old, err := os.ReadFile(path); err == nil && len(old) == len(data) {
 			continue
 		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
+		// Through a name of its own, so libass opening the face while a
+		// second render or preview installs it never reads half a face.
+		if err := writeWhole(target, path, data); err != nil {
 			return err
 		}
 	}

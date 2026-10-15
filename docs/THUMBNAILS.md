@@ -27,6 +27,19 @@ frame that was liked in the finished video, which is how thumbnails were
 made by hand before, and it needs nothing to be decided about how a picture
 should look apart from how the short looks.
 
+Two things make it exactly that frame. It is the frame that holds the
+moment, the one the video preview showed where it was marked, see
+`thumbnailSeek` in `engine/render.go`: ffmpeg keeps the first frame that
+starts at or after where a seek sends it, and a moment is marked in the
+middle of its frame, so a seek to the moment took the frame after. And it
+has the short's colours as a player shows them, see `thumbnailColours`:
+a short keeps the BT.709 colours of HD video and every reader of a JPEG
+takes BT.601, so the colours are turned from one to the other, not only
+the range. Before both, Tim's thumbnail caught a word a frame further into
+its bounce than he had marked, and its purple came out darker than the
+short's. `TestAThumbnailIsTheFrameThatWasMarked` and
+`TestAThumbnailHasTheColoursOfTheShort` hold them.
+
 Whoever wants the captions without the bouncing highlight turns the
 highlight off in the caption settings, and the short and its thumbnails
 lose it together. See [APP.md](APP.md#the-workspace).

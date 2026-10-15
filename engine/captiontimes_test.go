@@ -484,3 +484,45 @@ func TestAnEdgePutBackBringsBackItsWords(t *testing.T) {
 		t.Errorf("a start put back: %q, was %q", got, was)
 	}
 }
+
+// An edge dragged onto the edge of the caption beside lands on it, on the
+// clock the captions are drawn on. The captions are laid out on the
+// clip put on the video's frames, see ClipDrawing, and the moment an edge
+// is dragged to was read on the plan's clip, whose pieces at 25 frames a
+// second start up to a frame away, so the start of "drei vier" dragged
+// onto the end of "eins zwei" stopped short of it by the difference.
+func TestAnEdgeIsMovedOnTheClockItIsDrawnOn(t *testing.T) {
+	fsys, path := editablePlanPath(t)
+	// The clip from 10.01, inside the video's frame from 10.
+	plan := strings.Replace(editablePlan, `"start": 10.0, "end": 11.1`, `"start": 10.01, "end": 11.1`, 1)
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := editableTranscript()
+	look := &Look{Source: SourceInfo{FPSNum: 25, FPSDen: 1}}
+	shown := func() []CaptionView {
+		t.Helper()
+		view, err := ClipCaptionsView(fsys, path, "01", tr, look)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view.Captions
+	}
+	_, clip, err := planClip(fsys, path, "01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	framed := look.Source.OnFrames(clip)
+	if ClipTime(framed, 12.5) == ClipTime(clip, 12.5) {
+		t.Fatal("the clip is on the frames already, so the test proves nothing")
+	}
+	was := shown()
+	onto := EpisodeTime(framed, was[0].End)
+	if _, err := SetCaptionTime(fsys, path, "01", 12.0, "start", onto, tr, look); err != nil {
+		t.Fatal(err)
+	}
+	now := shown()
+	if math.Abs(now[1].Start-was[0].End) > 0.0015 {
+		t.Errorf("the start of %q dragged onto the end of the caption before, %.3f, stopped at %.3f", "drei vier", was[0].End, now[1].Start)
+	}
+}
