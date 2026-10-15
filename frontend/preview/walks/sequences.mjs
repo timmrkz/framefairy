@@ -427,6 +427,9 @@
 //                      side of where it was pressed from the way the hand
 //                      went
 //   ["moved", which]   since "drag edge", the edge moved by a frame or more
+//   ["kept up", which] since "drag edge twice", the edge stood in four
+//                      places or more while the hand took it again, so it
+//                      went with the hand while the drag before it saved
 //   ["on press", which]
 //                      since "hold on", the playhead had moved while the
 //                      button was still down, onto the frame "followed"
@@ -732,7 +735,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, BITS } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, slowDown, BITS } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -1136,6 +1139,23 @@ export const sequences = [
       ["followed", "cut from"],
       ["drag edge twice", "end", -30, -30],
       ["moved", "end"],
+      ["followed", "end"],
+    ],
+  },
+  {
+    // An edge taken again while the drag before it is still being saved
+    // goes with the hand. It stood still until the save came back, which a
+    // busy machine made long enough to see (2.259).
+    name: "an edge taken again while the drag before it saves goes with the hand",
+    steps: [
+      ["cut at", 0.5],
+      ["hold", "Reshape", 1000],
+      ["drag edge twice", "cut from", -30, -30],
+      ["kept up", "cut from"],
+      ["followed", "cut from"],
+      ["hold", "Reshape", 1000],
+      ["drag edge twice", "end", -30, -30],
+      ["kept up", "end"],
       ["followed", "end"],
     ],
   },
@@ -3726,6 +3746,22 @@ for (const seq of toWalk) {
         }
         break;
       }
+      case "kept up": {
+        const seen = await page.evaluate(() => window.__edgeSeen ?? []);
+        const places = new Set(seen.map((t) => t.toFixed(3))).size;
+        // The two drags are saved in the order they were let go, so the
+        // engine has the edge where the hand left it the second time, the
+        // farthest it went the hand's way, once both saves are done.
+        await settle(page);
+        const segs = (await engineState(page, watch.at)).segments;
+        const saved = { start: segs[0].start, end: segs.at(-1).end, "cut from": segs[0].end, "cut to": segs[1]?.start }[arg];
+        const left = dragPx < 0 ? Math.min(...seen) : Math.max(...seen);
+        if (places < 4) wrong = `the ${arg} edge stood in ${places} places while the hand took it again, it did not go with the hand`;
+        else if (!(Math.abs(saved - left) < 0.002)) {
+          wrong = `the hand left the ${arg} edge at ${left.toFixed(3)} and it was saved at ${saved?.toFixed(3)}`;
+        }
+        break;
+      }
       case "drag edge twice": {
         // Dragged, let go, and taken again at once where it was let go, with
         // nothing waited for in between, while the first is being saved.
@@ -4428,6 +4464,7 @@ for (const seq of toWalk) {
         await fromSidebar(main, () => main.locator("aside button.bugs").click());
         if (!reportPage) {
           reportPage = await browser.newPage({ viewport: { width: 560, height: 640 } });
+          await slowDown(reportPage);
           reportPage.on("pageerror", (e) => errors.push(String(e)));
           // Every note the window plays, with its pitch and whether the
           // microphone was open then, for the dictate step's sounds.

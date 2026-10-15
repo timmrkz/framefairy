@@ -158,10 +158,10 @@ for each part, and they run against the bridge.
 `BRIDGE_URL` says where the bridge is, `http://127.0.0.1:8123/` unless
 set. `SLOW=4` runs the page four times slower, through Chromium's own CPU
 throttle, the way a busy CI runner does, to find a walk that counts on
-the machine being quick. It slows the page `open` makes, not a window
-the page opens, like the one Bugs opens for a report, and not the
-browser's calls from Node, so a walk that times a gesture from Node is
-found by putting a wait between the calls instead. The bridge puts the
+the machine being quick. It slows every page a walk opens, through
+`slowDown` in `walks/bridge.mjs`, the report window too. It does not slow
+the browser's calls from Node, so a walk that times a gesture from Node
+is found by putting a wait between the calls instead. The bridge puts the
 episode back the way it was first searched before every walk,
 `POST /reset`, so a walk starts from the same place every time.
 

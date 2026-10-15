@@ -51,6 +51,17 @@ export function random(seed) {
 
 // The interface on the bridge, in the episode's workspace with its clip
 // chosen and the keyboard on the page.
+// SLOW=4 runs a page four times slower, the way a busy CI runner does,
+// to find a walk that counts on a machine being quick. Every page a walk
+// opens goes through it, the report window too. See docs/TESTING.md.
+export async function slowDown(page) {
+  const slow = Number(process.env.SLOW);
+  if (slow > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: slow });
+  }
+}
+
 export async function open(url) {
   // The episode the way the bridge found it, whatever the walk before did.
   const reset = await fetch(new URL("/reset", url), { method: "POST" });
@@ -65,13 +76,7 @@ export async function open(url) {
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });
-  // SLOW=4 runs the page four times slower, the way a busy CI runner does,
-  // to find a walk that counts on a machine being quick. See docs/TESTING.md.
-  const slow = Number(process.env.SLOW);
-  if (slow > 1) {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: slow });
-  }
+  await slowDown(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.goto(url);
