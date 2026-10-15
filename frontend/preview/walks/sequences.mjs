@@ -509,6 +509,8 @@
 //                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
+//   ["font", name]     picks this face in the captions column, and waits
+//                      for the captions drawn in it
 //   ["selection in the pill"]
 //                      the word open, all its letters selected paint
 //                      nothing outside its pill, above it or under it
@@ -1089,6 +1091,13 @@ export const sequences = [
     // word on a frame of its pop is to move nothing.
     name: "a word typed longer grows its pill round its middle",
     steps: [["frame", "Jahre"], ["grow", "Jahre"]],
+  },
+  {
+    // Found by Tim: in Archivo Black, a face of weight 400 that libass
+    // thickens for bold captions, the word typed was narrower and lighter
+    // than libass draws it.
+    name: "a word typed in a face libass thickens is as heavy as libass draws it",
+    steps: [["font", "Archivo Black"], ["frame", "Jahre"], ["grow", "Jahre"]],
   },
   {
     // Found by Tim on #201: a word opened while another was lit was typed
@@ -4068,6 +4077,10 @@ for (const seq of toWalk) {
         // and the box was drawn without the look the frame has.
         else if (Math.abs(drawn.width - typing.width) > 2 || Math.abs(drawn.height - typing.height) > 1)
           wrong = `"${arg}" opened is ${typing.width} by ${typing.height} px of letters and ${drawn.width} by ${drawn.height} shut`;
+        // As heavy: the browser faked the bold of a face libass thickens
+        // its own way, see engine.Thickening.
+        else if (Math.abs(typing.n - drawn.n) > 0.08 * drawn.n)
+          wrong = `"${arg}" opened has ${typing.n} pixels of letters and ${drawn.n} shut, so it is ${typing.n > drawn.n ? "heavier" : "lighter"} than libass draws it`;
         else if (unlike(drawn.pill, typing.pill))
           wrong = `"${arg}" opened sits on a pill of ${typing.pill} and the pill shut is ${drawn.pill}`;
         else if (unlike(drawn.ink, typing.ink))
@@ -6582,6 +6595,14 @@ for (const seq of toWalk) {
       case "box": {
         const box = s.map((w) => w.text).join(" ");
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;
+        break;
+      }
+      case "font": {
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await page.locator(".pick-row", { hasText: new RegExp(`^\\s*${arg}\\s*$`) }).first().click();
+        await watch.step("click", s);
+        await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
+        await settled();
         break;
       }
       case "selection in the pill": {

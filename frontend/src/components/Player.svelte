@@ -1642,7 +1642,8 @@
              padding: 0 ${px(captions.style.marginH)};`}
                --size: {px(captions.style.size)};
                font-family: '{captions.style.font}', system-ui, sans-serif;
-               font-weight: {captions.style.bold ? 700 : 400};
+               font-weight: {captions.style.weight ?? (captions.style.bold ? 700 : 400)};
+               --thicken: {captions.style.thicken ?? 0};
                font-size: {px(captions.style.size)};
                line-height: {captions.style.lineHeight};
                --typed: {shownCaptions?.primary};
@@ -1957,6 +1958,15 @@
     display: flex;
     justify-content: center;
     pointer-events: none;
+    /* The letters are as heavy as libass draws them: the face at its own
+       weight, never a bold the browser fakes, grown by the share of the em
+       libass grows them by, see engine.Thickening. A stroke round each
+       letter in its own colour grows it half the width on either side and
+       leaves the advances alone, as libass does. The Mac faked the bold of
+       Archivo Black its own way, and Tim saw the word typed lighter and
+       narrower than libass draws it. */
+    font-synthesis: none;
+    -webkit-text-stroke-width: calc(var(--size) * var(--thicken, 0));
   }
 
   /* The box is as wide as its widest line and no wider, exactly like the

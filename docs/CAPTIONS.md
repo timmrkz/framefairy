@@ -226,12 +226,21 @@ words beside it apart and can break the line in another place. The walk
 
 The letters typed are drawn in the face as libass draws it. Each face is
 declared to the browser with its own weight, `CaptionFont.Weight`, read
-from its OS/2 table, and bold asks for 700, as libass does. libass
-thickens a face only when bold asks for more than 150 above its weight,
-and a browser thickens any face declared lighter than what is asked. With
-no weight declared every face counted as 400, so on the Mac Inter Black
-was thickened in the caption box and not in the short, and Tim saw the
-word typed larger than the word in the frame behind it. The pill and the
+from its OS/2 table, and the caption box draws it at that weight and
+never fakes a bold, `font-synthesis: none`. libass thickens a face only
+when bold, 700, asks for more than 150 above its weight, by growing the
+outline of every letter by an em over 64 and leaving the advances alone,
+`ass_glyph_embolden` in libass. The caption box does the same with a
+stroke round each letter in its own colour, as wide as the share of the
+em `Thickening` in `engine/fonts.go` says, which the captions view hands
+over as `thicken`. With no weight declared every face counted as 400, so
+on the Mac Inter Black was thickened in the caption box and not in the
+short, and Tim saw the word typed larger than the word in the frame
+behind it. Then Tim saw a word typed in Archivo Black, a face of weight
+400 that libass thickens for bold captions, lighter and narrower than
+libass draws it, since the Mac faked the bold its own way. The walk "a
+word typed in a face libass thickens is as heavy as libass draws it"
+holds the pixels of its letters to libass's. The pill and the
 letters typed wear the look of the frame they lie over, `shownColour` in
 `frontend/src/lib/frames/light.ts`: libass draws the captions into the
 frame and the frame is then given its look, so a colour drawn by the

@@ -731,8 +731,15 @@ type CaptionStyleView struct {
 	// ChosenSize is the size the caption style asks for, which is what the
 	// size control shows. It is also the size drawn at: a word too wide for
 	// the frame is hyphenated rather than made smaller.
-	ChosenSize      float64 `json:"chosenSize"`
-	Bold            bool    `json:"bold"`
+	ChosenSize float64 `json:"chosenSize"`
+	Bold       bool    `json:"bold"`
+	// Weight and Thicken are how libass draws the face at that bold, see
+	// Thickening: the browser draws the face at its own weight and grows
+	// the letters by Thicken of the em, so the word typed is as heavy and
+	// as wide as libass draws it. A browser fakes bold its own way, and on
+	// the Mac a word typed in Archivo Black came out lighter and narrower.
+	Weight          int     `json:"weight"`
+	Thicken         float64 `json:"thicken"`
 	MarginV         float64 `json:"marginV"`
 	MarginH         float64 `json:"marginH"`
 	PadX            float64 `json:"padX"`
@@ -912,13 +919,14 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 	// scales by the real height.
 	const authored = 1920.0
 	em := FontScale(s.Font)
+	weight, thicken := Thickening(s.Font, s.Bold)
 	pieces := make([]PieceView, 0, len(clip.Segments))
 	for _, p := range clip.Segments {
 		pieces = append(pieces, PieceView{Start: p.Start, End: p.End})
 	}
 	view := &CaptionsView{Captions: []CaptionView{}, Pieces: pieces, Style: CaptionStyleView{
 		Font: s.Font, Size: s.Size * em / authored, LineHeight: 1 / em,
-		ChosenSize: s.Size, Bold: s.Bold != 0,
+		ChosenSize: s.Size, Bold: s.Bold != 0, Weight: weight, Thicken: thicken,
 		MarginV: s.MarginV / authored, MarginH: s.MarginH / authored,
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
 		Radius: s.Radius / authored, Primary: WebColour(s.Primary),

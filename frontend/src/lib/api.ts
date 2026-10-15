@@ -300,6 +300,11 @@ export interface CaptionStyle {
   // The size the caption style asks for, which is what the control shows.
   chosenSize: number;
   bold: boolean;
+  // How libass draws the face at that bold, see engine.Thickening: the
+  // face's own weight, which the browser draws it at, and how much libass
+  // grows every letter, as a share of the em.
+  weight?: number;
+  thicken?: number;
   marginV: number;
   marginH: number;
   padX: number;

@@ -65,6 +65,33 @@ func CaptionFonts() []CaptionFont {
 	return append([]CaptionFont(nil), captionFonts...)
 }
 
+// Thickening is how libass draws a face at a bold, see ass_font.c in
+// libass: weight is the face's own, which a browser is to draw it at so it
+// fakes no bold of its own, and thicken is how much libass grows the
+// outline of every letter, as a share of the em, where the bold asks for
+// more than 150 above the face's weight. It grows each outline by an em
+// over 64, half of it on either side, and leaves the advances alone,
+// ass_glyph_embolden. Bold is the caption style's: 1 or -1 is 700, 0 or
+// less is 400, and anything else is the weight itself. A face the bundle
+// does not have counts as 400.
+func Thickening(font string, bold float64) (weight int, thicken float64) {
+	weight = 400
+	if f, ok := FontByName(font); ok {
+		weight = f.Weight
+	}
+	asked := int(bold)
+	switch {
+	case asked == 1 || asked == -1:
+		asked = 700
+	case asked <= 0:
+		asked = 400
+	}
+	if asked > weight+150 {
+		thicken = 1.0 / 64
+	}
+	return weight, thicken
+}
+
 // FontByName finds a bundled face by its family name.
 func FontByName(name string) (CaptionFont, bool) {
 	for _, font := range captionFonts {

@@ -50,6 +50,35 @@ func TestEveryFaceWeOfferIsInTheBundle(t *testing.T) {
 	}
 }
 
+// libass thickens a face only where the bold asks for more than 150 above
+// the face's own weight, by an em over 64, and the video preview draws the
+// word typed the same way, see Thickening. Found by Tim: Archivo Black, a
+// face of weight 400, was thickened by libass for bold captions and faked
+// bold another way by the Mac, and the word typed was lighter and narrower.
+func TestTheFacesLibassThickensAreKnown(t *testing.T) {
+	for _, c := range []struct {
+		font    string
+		bold    float64
+		weight  int
+		thicken bool
+	}{
+		{"Inter Black", 1, 900, false},
+		{"Archivo Black", 1, 400, true},
+		{"Archivo Black", -1, 400, true},
+		{"Archivo Black", 0, 400, false},
+		{"Archivo Black", 550, 400, false},
+		{"Archivo Black", 551, 400, true},
+		{"Anton", 1, 400, true},
+		{"Comic Sans MS", 1, 400, true},
+		{"Comic Sans MS", 0, 400, false},
+	} {
+		weight, thicken := Thickening(c.font, c.bold)
+		if weight != c.weight || (thicken != 0) != c.thicken || (thicken != 0 && thicken != 1.0/64) {
+			t.Errorf("%s at bold %g is weight %d thickened by %g, want weight %d thickened %t", c.font, c.bold, weight, thicken, c.weight, c.thicken)
+		}
+	}
+}
+
 // On the real disk: InstallFont puts the face where ffmpeg's captions read it.
 func TestInstallFontLeavesTheFaceAndItsLicenceBehind(t *testing.T) {
 	dir := t.TempDir()
