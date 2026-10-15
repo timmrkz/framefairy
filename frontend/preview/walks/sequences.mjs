@@ -509,6 +509,8 @@
 //                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
+//   ["no caret"]       no word of the caption box holds the keyboard or the
+//                      selection, where WebKit would draw a caret
 //   ["same", label]    the engine's captions and pieces are what they were
 //                      at the mark
 //   ["cuts", n]        the clip timeline shows n cuts
@@ -1091,6 +1093,12 @@ export const sequences = [
     // Every word typed sits on the one pill libass draws, lit or not.
     name: "a word typed sits on the pill libass draws, lit or not",
     steps: [["one pill", "Jahre"]],
+  },
+  {
+    // Found by Tim: a word opened with Enter and left for Report a problem
+    // kept its caret, and keys went on typing into it.
+    name: "a word left for a button lets go of its caret",
+    steps: [["click", "Jahre"], ["button", "Report a problem"], ["no caret"]],
   },
   {
     name: "a word saved empty is removed",
@@ -6565,6 +6573,19 @@ for (const seq of toWalk) {
       case "box": {
         const box = s.map((w) => w.text).join(" ");
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;
+        break;
+      }
+      case "no caret": {
+        const held = await page.evaluate(() => {
+          const box = document.querySelector(".captions");
+          const sel = getSelection();
+          return {
+            selection: !!(box && sel?.rangeCount && box.contains(sel.anchorNode)),
+            focus: !!(box && box.contains(document.activeElement)),
+          };
+        });
+        if (held.selection) wrong = "the selection stayed in the caption box, where WebKit draws the caret";
+        else if (held.focus) wrong = "a word of the caption box still holds the keyboard";
         break;
       }
       case "open": {

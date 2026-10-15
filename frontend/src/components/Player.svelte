@@ -1046,6 +1046,13 @@
   }
 
   async function dropWord(node: HTMLElement, word: { start: number; text: string }, said: Heard | null) {
+    // However the word is left, it lets go of the caret. WebKit keeps the
+    // selection in a field the keyboard has left and draws the caret
+    // there, and the keys then typed into a word nobody had opened. Tim
+    // found the caret blinking in a word after Report a problem took the
+    // keyboard from it, when only Enter and Escape let go of it.
+    const selected = window.getSelection();
+    if (selected?.rangeCount && node.contains(selected.anchorNode)) selected.removeAllRanges();
     const was = fixing;
     fixing = null;
     if (!was) return;
@@ -1118,14 +1125,10 @@
   }
 
   // A word let go of with Enter or Escape keeps the keyboard's frame, since
-  // the playhead is still on it, and gives up the caret. The caret went on
-  // blinking in a word already saved: WebKit keeps the selection in a field
-  // the keyboard has left, and draws the caret where it is.
+  // the playhead is still on it, and gives up the caret, see dropWord.
   function letGo(node: HTMLElement) {
     keyed = { start: Number(node.dataset.at), end: Number(node.dataset.to) };
     node.blur();
-    const selected = window.getSelection();
-    if (selected?.rangeCount && node.contains(selected.anchorNode)) selected.removeAllRanges();
   }
 
   // Enter opens the word at the playhead for correcting, the way Enter
