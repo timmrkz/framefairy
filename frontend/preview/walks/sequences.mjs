@@ -654,13 +654,15 @@
 //                      lies on its side
 //   ["keyframe at", share]
 //                      puts the playhead in the clip, this share of the
-//                      way along it, with a click on the clip timeline, and
+//                      way along it, with a click on the clip timeline,
+//                      waits for the video preview to show that frame, and
 //                      presses C, and the clip timeline has to show a crop
 //                      mark lit on the playhead's frame within 300 ms,
 //                      before a held answer comes
 //   ["thumbnail at", share]
 //                      puts the playhead in the clip, this share of the
-//                      way along it, with a click on the clip timeline, and
+//                      way along it, with a click on the clip timeline,
+//                      waits for the video preview to show that frame, and
 //                      presses T, and the engine has a thumbnail more
 //   ["under the hand", kind]
 //                      moves the pointer onto the first "thumbnail" or
@@ -2658,6 +2660,30 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
+}
+
+// Waits up to five seconds for the video preview to show the frame that
+// holds the playhead, by where the app says the frame shown begins, and
+// says whether it did. T and C put a mark on the frame shown, the frame a
+// person sees, and on a busy machine the picture comes a moment after the
+// playhead.
+async function shownOnPlayhead(page) {
+  const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+  return page
+    .waitForFunction(
+      ([fps, start]) => {
+        const screen = document.querySelector(".screen");
+        const at = Number(screen?.dataset.playhead);
+        const shown = Number(screen?.dataset.shown);
+        // The frame that holds the playhead, one that begins a millisecond
+        // or less after it included, see frameAt in lib/flow.ts.
+        const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+        return Number.isFinite(shown) && Math.abs(shown - begins) < 0.5 / fps;
+      },
+      [fps, videoStart],
+      { polling: 50, timeout: 5000 },
+    )
+    .then(() => true, () => false);
 }
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
@@ -6238,6 +6264,12 @@ for (const seq of toWalk) {
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
         await settle(page);
+        // C puts the keyframe on the frame the video preview shows, so it
+        // is pressed once that is the playhead's frame, see thumbnail at.
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         const count = () => page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         const before = await count();
         const took = await keyShows(
@@ -6306,6 +6338,14 @@ for (const seq of toWalk) {
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
         await settle(page);
+        // T makes a thumbnail of the frame the video preview shows, the
+        // frame a person sees, so it is pressed once that is the playhead's
+        // frame. Pressed before, on a loaded machine, T took the thumbnail
+        // off the frame still shown from the step before (2.261).
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         await page.keyboard.press("t");
         await watch.step("press", s);
         await settle(page);
