@@ -1194,8 +1194,8 @@ already been used.
 something all the while it works: how far it has read the prompt after
 every batch, then every token of its thought and its answer. So when
 nothing comes from it for two minutes, `localStall` in `engine/local.go`,
-the search fails with that reason and the server is stopped, so the next
-search starts one afresh. Before, such a search waited for good, and with it
+the search fails with that reason and the server is stopped, so Continue
+starts one afresh. Before, such a search waited for good, and with it
 every video's transcription, which waits while a local model finds.
 
 **The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.

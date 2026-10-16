@@ -7,7 +7,6 @@ import (
 	"math"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -47,8 +46,7 @@ func readCorrections(raw any) map[string]string {
 			break
 		}
 		value := fields[key]
-		ms, err := strconv.ParseInt(key, 10, 64)
-		if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != key {
+		if _, _, ok := parseWordKey(key); !ok {
 			continue
 		}
 		text, ok := value.(string)
@@ -69,8 +67,8 @@ func readCorrections(raw any) map[string]string {
 // they start, and keys that read as the same number by their text, so the
 // order is the same every time.
 func byMillisecond(a, b string) int {
-	am, _ := strconv.ParseInt(a, 10, 64)
-	bm, _ := strconv.ParseInt(b, 10, 64)
+	am, _, _ := parseWordKey(a)
+	bm, _, _ := parseWordKey(b)
 	return cmp.Or(cmp.Compare(am, bm), cmp.Compare(a, b))
 }
 

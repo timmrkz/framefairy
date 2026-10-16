@@ -26,8 +26,18 @@ func (t *Transcript) hear(raw []Cue) {
 	if len(raw) == len(t.snapped) {
 		t.keys = make([]string, len(raw))
 		t.byKey = make(map[string]int, len(raw))
+		taken := make(map[int64]bool, len(raw))
 		for i, w := range raw {
-			t.keys[i] = wordKey(w.Start)
+			// The recogniser can hear two words start in the same step,
+			// the first of them no longer than nothing. The second takes
+			// the next millisecond free, so every word has a key of its
+			// own and a fix to one never lands on the other.
+			ms := int64(math.Round(w.Start * 1000))
+			for taken[ms] {
+				ms++
+			}
+			taken[ms] = true
+			t.keys[i] = heardKey(ms)
 			t.byKey[t.keys[i]] = i
 		}
 	}
@@ -112,7 +122,7 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 			// Correct keeps no correction of a word that is not there.
 			continue
 		}
-		if seen[i] || (i+1 < len(t.HeardWords) && t.HeardWords[i+1].Start == t.HeardWords[i].Start) {
+		if seen[i] {
 			return false
 		}
 		seen[i] = true
@@ -148,9 +158,35 @@ func (t *Transcript) correctFew(corrections map[string]string) bool {
 // A correction and a removed word are kept against the heard word they
 // are about, by the millisecond the recogniser heard it start, which
 // nothing moves. They used to be kept by the millisecond it starts once it
-// is moved onto the sound, which the silence setting moves: a change of the
-// setting moved words, and the corrections and removed words of every clip
-// over them no longer met their words, without a word said. Plan row 2.254.
+// is moved onto the sound, which the silence level moves, and the app
+// measures that level from the audio heard so far, so it moves while the
+// rest of a video is heard. When it moved, the corrections and removed
+// words of every clip over the words it moved no longer met their words,
+// without a word said. Plan row 2.254.
+//
+// A key of now is written apart from a key from before, an h before the
+// millisecond, so neither is ever read as the other. A word moved onto the
+// sound often starts where the recogniser heard the next word start, so a
+// key from before read as one of now named the next word.
+
+// heardKey is the key of the word the recogniser heard start at a
+// millisecond.
+func heardKey(ms int64) string {
+	return "h" + strconv.FormatInt(ms, 10)
+}
+
+// parseWordKey reads a key of a word: the millisecond it is about, and
+// whether it is a key of now, by where the recogniser heard the word
+// start, or one from before, by where the word starts on the sound. A key
+// written any other way is not one.
+func parseWordKey(key string) (ms int64, heard, ok bool) {
+	digits, heard := strings.CutPrefix(key, "h")
+	ms, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != digits {
+		return 0, false, false
+	}
+	return ms, heard, true
+}
 
 // keyAt is the key the i-th heard word is kept by.
 func (t *Transcript) keyAt(i int) string {
@@ -160,19 +196,22 @@ func (t *Transcript) keyAt(i int) string {
 	return wordKey(t.snapped[i].Start)
 }
 
-// heardIndex is which heard word a key is about. A key that is the start
-// of no heard word is one from before 2.254, the start of a word moved
-// onto the sound, and is read that way, with the silence setting of now,
-// which is the one it was most likely kept with.
+// heardIndex is which heard word a key is about. A key of now is looked
+// up by where the recogniser heard the word start. A key from before is
+// read only the way it was written, as the start of a word moved onto the
+// sound, with the silence level of now, which is the one it was most
+// likely kept with.
 func (t *Transcript) heardIndex(key string) (int, bool) {
-	if i, ok := t.byKey[key]; ok {
-		return i, true
-	}
-	ms, err := strconv.ParseInt(key, 10, 64)
-	if err != nil {
+	_, heard, ok := parseWordKey(key)
+	if !ok {
 		return 0, false
 	}
-	at := float64(ms) / 1000
+	if heard {
+		i, ok := t.byKey[key]
+		return i, ok
+	}
+	at, _ := strconv.ParseFloat(key, 64)
+	at /= 1000
 	i := sort.Search(len(t.snapped), func(i int) bool { return t.snapped[i].Start >= at-0.0006 })
 	for ; i < len(t.snapped) && t.snapped[i].Start < at+0.0006; i++ {
 		if wordKey(t.snapped[i].Start) == key {

@@ -672,7 +672,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	authorize(request, url)
 	gaveUp := func() error {
 		return renderErr("the local model stopped answering: nothing came from it for %s seconds, "+
-			"so it was stopped. Search again to start it afresh.", fixed(localStall.Seconds(), 0))
+			"so it was stopped. Press Continue to start it afresh.", fixed(localStall.Seconds(), 0))
 	}
 	watch := watchStall(localStall, func() {
 		stalled.Store(true)

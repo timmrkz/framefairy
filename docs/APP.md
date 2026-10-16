@@ -1373,7 +1373,9 @@ bubble scrolled by those eight pixels.
       the time start on the events a browser makes up while the node under
       a still pointer is replaced: the pointer is let go of only where the
       page finds nothing of the row under it, and taken to have left the
-      app only once nothing has said otherwise for two frames. The
+      app only once nothing has said otherwise for two frames. An over on
+      the tile round the row says otherwise when the row is under the
+      pointer, since WebKit may send no over on the row itself. The
       pictures of a report wear the same row and the same time, see
       Report a Problem. Nothing above or
       below it moves while it is there, and when it goes the list closes

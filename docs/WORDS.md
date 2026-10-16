@@ -37,10 +37,14 @@ words that share the time the recogniser measured. A correction is kept
 in the clip's plan entry, `corrections`, so it goes with the clip, and
 another clip over the same word reads it as it was heard. It is kept
 against the millisecond the recogniser heard the word start, which
-nothing moves, and not against where the word starts on the sound, which
-the silence setting moves, see `heardIndex` in `engine/words.go`. A key
-kept the old way still reads, and is kept anew the next time the clip's
-words are edited. A clip's
+nothing moves, written `h61200`, and not against where the word starts on
+the sound, which the silence level moves, see `heardIndex` in
+`engine/words.go`. The app measures that level from the audio heard so
+far, so it moves while the rest of a video is heard. Two words heard
+starting in the same millisecond each have a key of their own, the second
+the next millisecond free. A key kept the old way, the bare millisecond on
+the sound, is read only that way, and is kept anew the next time the
+clip's words are edited. A clip's
 captions, its edges and the edits of its words all read its words
 through here. The stored transcript keeps the recogniser's own words, so
 nothing the recogniser heard is lost. Corrections used to be kept for the

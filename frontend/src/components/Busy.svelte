@@ -168,15 +168,19 @@
       // that frame and stood a hair short of full on CI's Chromium
       // (2.263). So the pointer is let go of only where the page finds
       // nothing of the control under it, and off the app only once no
-      // over has said otherwise for two frames.
+      // over has said otherwise for two frames. An over on the tile with
+      // the control under the pointer says otherwise too: WebKit, which
+      // counts nothing that comes up under a still pointer as under it,
+      // may send no over on the control at all.
       let outside = 0;
       const moved = (e: PointerEvent) => {
         const on = e.target instanceof Node && !!host?.contains(e.target);
-        if (on) {
+        const here = on || ((outside !== 0 || pointer) && under(host, e.clientX, e.clientY));
+        if (here) {
           cancelAnimationFrame(outside);
           outside = 0;
         }
-        if (on === pointer || (!on && under(host, e.clientX, e.clientY))) return;
+        if (on === pointer || (!on && here)) return;
         pointer = on;
         settle();
       };

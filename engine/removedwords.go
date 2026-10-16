@@ -3,7 +3,6 @@ package engine
 import (
 	"maps"
 	"slices"
-	"strconv"
 )
 
 // The words a clip does not show. Removing a word or a caption is done to
@@ -43,8 +42,7 @@ func readRemovedWords(raw any) RemovedWords {
 		if !ok {
 			continue
 		}
-		at, err := strconv.ParseInt(key, 10, 64)
-		if err != nil || at < 0 || at > MaxEpisodeSeconds*1000 || strconv.FormatInt(at, 10) != key {
+		if _, _, ok := parseWordKey(key); !ok {
 			continue
 		}
 		out[key] = true
@@ -86,17 +84,9 @@ func (r RemovedWords) hides(t *Transcript, w Cue) bool {
 	if !ok {
 		return false
 	}
-	key := t.keyOf(heard)
-	if r[key] {
-		return true
-	}
-	// Kept from before 2.254, by where the word starts on the sound.
-	old := wordKey(heard.Start)
-	if old == key || !r[old] {
-		return false
-	}
-	i, ok := t.heardIndex(old)
-	return ok && t.keyAt(i) == key
+	// Kept now, or from before 2.254 by where the word starts on the
+	// sound, see heardIndex.
+	return r[t.keyOf(heard)] || r[wordKey(heard.Start)]
 }
 
 // The three below are for a clip's words as they are edited, whose keys

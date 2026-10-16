@@ -131,3 +131,103 @@ func slicesIndex(words []Cue, text string) int {
 	}
 	return -1
 }
+
+// clipReads is the words a clip's captions show, in order, whichever
+// caption each is in.
+func clipReads(t *testing.T, fsys afero.Fs, path string, tr *Transcript) string {
+	t.Helper()
+	return strings.ReplaceAll(clipSays(t, fsys, path, tr), " | ", " ")
+}
+
+// framesLoud is a loudness from 59 s that is sound where loud says and
+// silence everywhere else.
+func framesLoud(loud func(at float64) bool) (frames []float32, start float64) {
+	start = 59.0
+	for i := range 500 {
+		level := float32(-70)
+		if loud(start + float64(i)*FrameSeconds) {
+			level = -20
+		}
+		frames = append(frames, level)
+	}
+	return frames, start
+}
+
+// clipPlan is a plan of one clip from 59.9 to 63 s, with what its entry
+// says beside its segments.
+func clipPlan(t *testing.T, entry string) (afero.Fs, string) {
+	t.Helper()
+	return writePlanAt(t, `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "kamen",
+     "segments": [{"start": 59.9, "end": 63.0}]`+entry+`}
+  ]
+}`)
+}
+
+// Two words the recogniser heard start in the same step, the first no
+// longer than nothing, are two words to a clip. Kept by the millisecond
+// they were heard at, they had one key, so a correction of the first
+// changed the second and removing the second removed the first.
+// Found by the review of #227.
+func TestTwoWordsHeardAtOnceKeepTheirOwnFixes(t *testing.T) {
+	t.Parallel()
+	floor := -40.0
+	frames, start := framesLoud(func(float64) bool { return true })
+	tr := fromStored([]Cue{{60.0, 60.4, "Und"}, {61.0, 61.0, "dass"}, {61.0, 61.3, "5000"},
+		{61.4, 61.8, "Leute"}, {62.0, 62.4, "kamen"}}, frames, start, -20, &floor)
+	at := func(text string) float64 { return tr.HeardWords[slicesIndex(tr.HeardWords, text)].Start }
+	fsys, path := clipPlan(t, "")
+	if err := SetWordText(fsys, path, "01", at("dass"), "das", tr); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := clipReads(t, fsys, path, tr), "Und das 5000 Leute kamen"; got != want {
+		t.Errorf("after dass was made das the clip reads %q, want %q", got, want)
+	}
+	for _, text := range []string{"Leute", "5000"} {
+		if err := RemoveWord(fsys, path, "01", at(text), -1, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, want := clipReads(t, fsys, path, tr), "Und das kamen"; got != want {
+		t.Errorf("after Leute and 5000 were removed the clip reads %q, want %q", got, want)
+	}
+}
+
+// A key from before 2.254 is where a word starts on the sound, and a short
+// word heard in a pause is moved forward to where the sound begins, which
+// is where the recogniser heard the next word start. Read as a key of
+// now, the fix of the short word landed on the next one, and the first
+// edit of the clip kept it there. Found by the review of #227.
+func TestAFixFromBeforeStaysOnItsOwnWord(t *testing.T) {
+	t.Parallel()
+	floor := -40.0
+	frames, start := framesLoud(func(at float64) bool {
+		return (at >= 60.0 && at < 60.4) || (at >= 61.2 && at < 61.5) || (at >= 62.0 && at < 62.4)
+	})
+	tr := fromStored([]Cue{{60.0, 60.4, "Und"}, {61.0, 61.08, "ja"}, {61.2, 61.5, "Typ"},
+		{62.0, 62.4, "kamen"}}, frames, start, -20, &floor)
+	ja := tr.HeardWords[slicesIndex(tr.HeardWords, "ja")]
+	if wordKey(ja.Start) != "61200" {
+		t.Fatalf("the test needs ja moved to where Typ was heard, it starts at %.3f", ja.Start)
+	}
+	for _, c := range []struct{ entry, want string }{
+		{`, "corrections": {"61200": "jo"}`, "Und jo Typ kamen"},
+		{`, "removed_words": ["61200"]`, "Und Typ kamen"},
+	} {
+		fsys, path := clipPlan(t, c.entry)
+		if got := clipReads(t, fsys, path, tr); got != c.want {
+			t.Errorf("a plan from before with %s reads %q, want %q", c.entry, got, c.want)
+		}
+		// An edit of another word keeps the clip's words anew, on the
+		// same words.
+		if err := SetWordText(fsys, path, "01", tr.HeardWords[0].Start, "Und so", tr); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := clipReads(t, fsys, path, tr), strings.Replace(c.want, "Und", "Und so", 1); got != want {
+			t.Errorf("after an edit a plan from before with %s reads %q, want %q", c.entry, got, want)
+		}
+	}
+}

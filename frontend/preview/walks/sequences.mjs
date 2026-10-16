@@ -229,7 +229,10 @@
 //                      pointer is on it, through the made-up leave and
 //                      over a browser may send while the node under a
 //                      still pointer goes. [i, "key"] presses Delete on
-//                      the tile instead, the pointer standing on it
+//                      the tile instead, the pointer standing on it.
+//                      [i, "tile"] presses the bin, and the browser says
+//                      the pointer is over the tile round the picture and
+//                      never over the picture itself, the way WebKit may
 //   ["put back picture", i]
 //                      presses Put it back on picture i, which is back in
 //                      the same frame
@@ -1745,6 +1748,8 @@ export const sequences = [
       ["bugs"],
       ["attach", 3],
       ["remove picture", 2],
+      ["put back picture", 2],
+      ["remove picture", [2, "tile"]],
       ["put back picture", 2],
       ["pictures", 3],
       ["remove picture", [2, "key"]],
@@ -5682,17 +5687,20 @@ for (const seq of toWalk) {
         // What a browser may tell a pointer that stands still while the
         // node under it goes: that it went off the app, and over the tile
         // round what took its place, and only a frame later over that.
-        // The time ran for that frame on CI's Chromium (2.263).
+        // The time ran for that frame on CI's Chromium (2.263). With
+        // "tile" that last over never comes, which WebKit, the Mac's
+        // browser, may well do, since it counts nothing that comes up
+        // under a still pointer as under it until the pointer moves.
         await page.evaluate(
-          async ({ id, point: [x, y] }) => {
+          async ({ id, point: [x, y], onTile }) => {
             const tile = document.querySelector(`li.tile[data-id="${id}"]`);
             const at = { bubbles: true, clientX: x, clientY: y, pointerType: "mouse" };
             tile.dispatchEvent(new PointerEvent("pointerout", at));
             tile.dispatchEvent(new PointerEvent("pointerover", at));
             await new Promise(requestAnimationFrame);
-            document.elementFromPoint(x, y).dispatchEvent(new PointerEvent("pointerover", at));
+            if (!onTile) document.elementFromPoint(x, y).dispatchEvent(new PointerEvent("pointerover", at));
           },
-          { id, point },
+          { id, point, onTile: how === "tile" },
         );
         // The pointer is still on it, so its time has not started: the
         // fill stands full until the pointer leaves. Tim saw it run for a
