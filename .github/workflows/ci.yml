@@ -255,17 +255,18 @@ jobs:
   # what the Go tests need, the interface's Node, and the Chromium
   # Playwright drives, which only this job installs.
   #
-  # On three machines, each with a third of the runs by how long they took
+  # On four machines, each with a quarter of the runs by how long they took
   # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
   # five and a half minutes after two of setting up, on two each still took
-  # six with a cold build cache, and every third run left one machine a
-  # minute behind the others.
+  # six with a cold build cache, and on three each job took four and three
+  # quarters, too close to five. More walkers on a machine of four cores
+  # finish no sooner and break walks that wait on the clock.
   walks:
-    name: walks (${{ matrix.shard }}/3)
+    name: walks (${{ matrix.shard }}/4)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -340,7 +341,7 @@ jobs:
       - name: Sequences and walks
         if: steps.needs.outputs.run == 'true'
         run: |
-          make walks WALKSHARD=${{ matrix.shard }}/3 2>&1 | tee walks.log
+          make walks WALKSHARD=${{ matrix.shard }}/4 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"

@@ -134,7 +134,7 @@ you reorder them. See CLAUDE.md.
 ## CI
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every pull
-request and every push to `main`, as eleven jobs at the same time, so the
+request and every push to `main`, as twelve jobs at the same time, so the
 answer comes back in the time the slowest takes:
 
 - **interface:** `make interface`, the type check and the interface's own
