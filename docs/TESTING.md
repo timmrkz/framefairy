@@ -122,7 +122,7 @@ each with a POST:
 
 | Path | What it does |
 | --- | --- |
-| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own |
+| `/pick?seconds=N` | makes a new video of N seconds, not in the library, for the Add button's box to hand over next. With `&rate=30000/1001` it is filmed at that frame rate, with `&timing=uneven` its frames come at a phone's uneven times with `&timing=late` its picture starts a quarter of a second after its sound, and with `&timing=turned` it is stored lying on its side with a display matrix that stands it up, the way a phone that recorded upright stores it, with `&in=mkv` it is the same video copied into Matroska, the way OBS records, and with `&switch=S` by two cameras that switch S seconds in, see below. With `&box=0` it is only made, not handed to the box, for a walk to drop instead. With `&namesake=1` it has the file name of the bridge's episode, in a folder of its own. With `&size=1080` it is 1920 by 1080, the size a camera makes, with a key frame every two seconds and frames stored after their key frame, and carries no frame number, for `speed.mjs` |
 | `/drop` | takes the files in its body, a JSON list of paths, as dropped on the app, the way `WindowFilesDropped` does in the app: adds the videos with `dropFiles` and sends the window `dropped`. A walk does not call it itself: it calls `window._wails.handleDragEnter()`, `window._wails.handleDragOver(x, y)` and `window._wails.handlePlatformFileDrop(files, x, y)`, which `wails-bridge.ts` defines the way the runtime does, so a drop reaches `/drop` only where the page marks a drop target. A walk makes the video to drop with `/pick` and `&box=0`, so Add's box does not hand it over too |
 | `/drop-report` | takes the files in its body, a JSON list of paths, as dropped on the report window, the way `WindowFilesDropped` does on it: `bugs.go` attaches the pictures and tells the window. `wails-bridge.ts` sends a drop there when the page is the report window |
 | `/report-window` | says how many report windows the app made and brought forward and whether one is open, and with `?close=1` closes it, the way its close button does. The walk opens the report window itself as a second page on `?window=report` |
@@ -598,6 +598,36 @@ again and asks `in place` and `pictured`. With a render again that picks
 a new number it fails at `in place`, and with pictures named and cleared
 by the clip's name rather than the short's it fails the namesake
 sequence at `apart`. See 2.133 in [GUI-PLAN.md](GUI-PLAN.md).
+
+### `speed.mjs`: how quickly the video preview follows the keys
+
+`speed.mjs` is not a walk. It checks no rule and fails on no number, so
+`make walks` does not run it. It is run by hand against a bridge, before
+and after a change to the frame queue, and prints a table:
+
+    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/speed.mjs
+
+It adds a video of a minute at 1920 by 1080 and 25 frames a second,
+through `/pick` with `&size=1080`, picks the clip its search finds and
+walks it the way a person does: Shift and an arrow from word to word, an
+arrow a frame at a time. For each press it times, in the page, how long
+from the key going down until the video preview shows the frame that
+holds the playhead, and until that frame has its own captions, and how
+the frames of each kind of press came: from a stream opened for them,
+read on in one already open, or from the frames kept. Each round ends
+with the playhead dragged over the clip timeline and back, a step every
+16 ms, and the last line says how many frames the video preview was
+behind the playhead while it moved, and how long after letting go the
+frame under it showed. `REST` is the pause between presses, 250 ms
+unless set, `ROUNDS` the times the clip is walked, each on a page opened
+afresh so no round finds the frames the one before kept, 5 unless set,
+`SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
+and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is
+1728 by 1080, a 16 inch MacBook Pro's screen, unless `VIEWPORT` sets
+another, `2560x1440` for frames about the size of Tim's. The line under
+the table also counts the frames read ahead, and those of them let go of
+from the kept frames before the hand asked for them. Plan row 2.269 in
+[GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
 
 ### Where they run
 

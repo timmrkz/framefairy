@@ -96,6 +96,10 @@ type preview struct {
 	// How the frames code their brightness, said with every pull that has
 	// a frame, see framewire.Picture. Nil for sound.
 	light func() framewire.Light
+	// The moment before which the page wants no frame, as the bits of a
+	// float64, said by its newest pull. The decoder lets the frames before
+	// it go unscaled, see engine.EpisodeFrames.Stream. Nil for sound.
+	skip *atomic.Uint64
 }
 
 type atomicTime struct {
@@ -175,6 +179,7 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 	var run func(ctx context.Context, got func(at float64, data []byte) error) error
 	var times *engine.PreviewTimes
 	var light func() framewire.Light
+	var skip *atomic.Uint64
 	if r.URL.Path == "/frames/sound" {
 		rate, _ := strconv.Atoi(q.Get("rate"))
 		channels, _ := strconv.Atoi(q.Get("ch"))
@@ -205,6 +210,8 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		times = engine.NewPreviewTimes()
+		skip = new(atomic.Uint64)
+		skipped := func() float64 { return math.Float64frombits(skip.Load()) }
 		dec, err := p.decoder(path)
 		if err == nil {
 			light = dec.Light
@@ -213,14 +220,14 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				return err
 			}
-			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, got)
+			return dec.Stream(engine.WithPreviewTimes(ctx, times), grid, from, width&^1, height&^1, skipped, got)
 		}
 	}
 	kind := ""
 	if r.URL.Path == "/frames/sound" {
 		kind = "sound"
 	}
-	id := p.start(kind, times, light, run)
+	id := p.start(kind, times, light, skip, run)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
@@ -230,12 +237,12 @@ func (p *previews) serveOpen(st *store, w http.ResponseWriter, r *http.Request) 
 // Streams of sound and of frames are counted apart, so that seeks of a
 // play, each with a sound stream of its own, never close the frames the
 // video preview is drawing, nor frames the sound.
-func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
+func (p *previews) start(kind string, times *engine.PreviewTimes, light func() framewire.Light, skip *atomic.Uint64, run func(ctx context.Context, got func(at float64, data []byte) error) error) string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	id := hex.EncodeToString(raw[:])
 	ctx, stop := context.WithCancel(context.Background())
-	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light}
+	s := &preview{kind: kind, frames: make(chan previewFrame), stop: stop, done: make(chan struct{}), times: times, light: light, skip: skip}
 	s.pulled.set(time.Now())
 	p.mu.Lock()
 	if p.open == nil {
@@ -466,9 +473,14 @@ func writeFrames(w http.ResponseWriter, r *http.Request, s *preview, n int, skip
 		_, err := w.Write(f.data)
 		return err == nil
 	}
-	// Frames before skip are decoded and dropped here: the page wants one
-	// further on, and stepping on in a stream that is open is quicker than
-	// a new one from the key frame before.
+	// Frames before skip are dropped here: the page wants one further on,
+	// and stepping on in a stream that is open is quicker than a new one
+	// from the key frame before. The frames the decoder has made already
+	// come and are dropped, and it is told to make none before skip in the
+	// frames it is asked for next.
+	if s.skip != nil {
+		s.skip.Store(math.Float64bits(skip))
+	}
 	for waiting := true; waiting; {
 		select {
 		case f := <-s.frames:

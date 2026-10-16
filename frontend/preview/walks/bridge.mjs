@@ -62,9 +62,10 @@ export async function slowDown(page) {
 
 // The interface on the bridge, in the episode's workspace with its clip
 // chosen and the keyboard on the page. viewport is the size of the page,
-// and again opens another page on the episode as it is now, beside the
-// first, in its browser.
-export async function open(url, { viewport = { width: 1500, height: 1000 }, again = null } = {}) {
+// scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
+// opens another page on the episode as it is now, beside the first, in
+// its browser.
+export async function open(url, { viewport = { width: 1500, height: 1000 }, scale = 1, again = null } = {}) {
   // The episode the way the bridge found it, whatever the walk before did.
   if (!again) {
     const reset = await fetch(new URL("/reset", url), { method: "POST" });
@@ -76,7 +77,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, agai
   // headless Chromium gives nothing back from a WebGPU canvas, and the
   // walks read the frame on screen from the canvas. See screen.ts.
   const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
-  const page = await browser.newPage({ viewport });
+  const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });

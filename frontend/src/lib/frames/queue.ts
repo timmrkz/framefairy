@@ -589,6 +589,13 @@ export class FrameQueue {
   // Every play, cue and seek gets a ticket, and work from an older one is
   // dropped when it comes back.
   private ticket = 0;
+  // Counts the hand's asks, a seek or a play, so frames read ahead for
+  // where it rested are asked only while it still rests there.
+  private gestures = 0;
+  private aheadKey = "";
+  // The playhead is held under the hand, being dragged: each place it
+  // passes is shown on its own, with no play cued from it, see grip.
+  private gripped = false;
   private scratch: Float32Array[] = [];
 
   // path is the episode's, and movie what the engine says of it, see
@@ -823,6 +830,8 @@ export class FrameQueue {
   // click was lost.
   seek(at: number, program?: [Piece[] | null, boolean]) {
     if (this.closed) return;
+    this.gestures++;
+    this.app?.still();
     // A seek is a gesture of its own, so it plays what is asked for now.
     if (program) this.asked = null;
     const changed = program ? this.want(...program) : this.takePending();
@@ -868,9 +877,48 @@ export class FrameQueue {
         plan.extend(p0 + this.video!.frame);
         const first = plan.need(0);
         const last = program.pieces[program.pieces.length - 1];
-        if (first && first.rank === rankAt(s, at)) this.start(at, true);
+        if (first && first.rank === rankAt(s, at) && !this.gripped) this.start(at, true);
         else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
+      },
+      () => {},
+    );
+  }
+
+  // The hand takes hold of the playhead, or lets go of it. While it is
+  // held, a place shows its frame alone and cues no play: the play's
+  // frames after it and its sound were read for every place the drag
+  // passed, and thrown away at the next. Where the hand lets go, the
+  // play is cued. Plan row 2.269, from the findings of 2.270.
+  grip(held: boolean) {
+    if (this.gripped === held) return;
+    this.gripped = held;
+    if (!held && !this.closed && (this.state === "paused" || this.state === "cued")) this.settle(this.at);
+  }
+
+  // The moments the hand is likely to step to next while paused, the first
+  // frame of the word after the playhead and of the word before: their
+  // frames are read while it rests, see AppFrames.ahead. Each is the first
+  // frame a play from it shows, the frame the step's cue asks for.
+  ahead(times: number[]) {
+    if (this.closed || (this.state !== "paused" && this.state !== "cued")) return;
+    const gesture = this.gestures;
+    // Asked again for the same moments with no gesture between: the frames
+    // are on their way or kept already.
+    const key = `${gesture} ${times.join(" ")}`;
+    if (key === this.aheadKey) return;
+    this.aheadKey = key;
+    this.ready.then(
+      () => {
+        if (gesture !== this.gestures || this.closed || !this.app || this.state === "playing" || this.state === "starting") return;
+        const s = this.video!.samples;
+        const ranks = times.map((at) => {
+          const p0 = this.program.place(at);
+          const plan = new VideoPlan(s, this.video!.frame, this.program, p0);
+          plan.extend(p0 + this.video!.frame);
+          return plan.need(0)?.rank ?? rankAt(s, at);
+        });
+        this.app.ahead(ranks);
       },
       () => {},
     );
@@ -879,6 +927,8 @@ export class FrameQueue {
   play() {
     this.trace(`play asked at ${this.at.toFixed(3)} s, ${this.state}, sound card ${this.audio?.state ?? "not there yet"}`);
     if (this.closed || this.state === "playing" || this.state === "starting") return;
+    this.gestures++;
+    this.app?.still();
     // The sound card starts on the gesture that asked for it, or a browser
     // keeps it silent.
     void this.audio?.resume();
