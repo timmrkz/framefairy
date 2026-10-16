@@ -63,17 +63,25 @@ func TestScreenRecordingsAreAttachedWithoutWhatElseTheyHeld(t *testing.T) {
 	}{
 		{"Screen Recording 2026-10-15 at 14.02.11.mov", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "mov"}, "mov"},
 		{"phone.mp4", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4"}, "mp4"},
-		{"gnome.webm", []string{"-c:v", "libvpx-vp9", "-deadline", "realtime", "-c:a", "libopus", "-f", "webm"}, "webm"},
+		// The ffmpeg the app ships, which the Mac runner has, reads WebM
+		// and makes none, so this one was made once, with VP9 and Opus and
+		// a place, the way recordingOf makes the others, and is kept.
+		{"gnome.webm", nil, "webm"},
 		{"obs.mkv", []string{"-c:v", "mpeg4", "-c:a", "aac", "-f", "matroska"}, "mkv"},
 	} {
 		t.Run(c.ending, func(t *testing.T) {
-			// The ffmpeg on the Mac runner is the one the app ships, which
-			// reads WebM and makes none. Linux makes one.
-			if c.ending == "webm" && !encodes(t, "libvpx-vp9", "libopus") {
-				t.Skip("this ffmpeg cannot make a WebM to read")
-			}
 			path := filepath.Join(dir, c.name)
-			recordingOf(t, path, c.args...)
+			if c.args == nil {
+				kept, err := os.ReadFile(filepath.Join("testdata", c.name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, kept, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				recordingOf(t, path, c.args...)
+			}
 			if c.ending == "mp4" {
 				// A phone held upright, whose picture lies on its side.
 				turned := filepath.Join(dir, "upright.mp4")
@@ -251,22 +259,6 @@ func recordingOf(t *testing.T, path string, args ...string) {
 	if out, err := exec.Command("ffmpeg", all...).CombinedOutput(); err != nil {
 		t.Fatalf("ffmpeg: %v\n%s", err, out)
 	}
-}
-
-// encodes says whether the ffmpeg on the search path has every encoder
-// named.
-func encodes(t *testing.T, names ...string) bool {
-	t.Helper()
-	out, err := exec.Command("ffmpeg", "-hide_banner", "-encoders").Output()
-	if err != nil {
-		t.Fatalf("ffmpeg -encoders: %v", err)
-	}
-	for _, name := range names {
-		if !strings.Contains(string(out), " "+name+" ") {
-			return false
-		}
-	}
-	return true
 }
 
 // probeTags says what kinds of streams a file holds, in order, and the
