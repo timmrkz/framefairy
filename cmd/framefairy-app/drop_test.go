@@ -56,9 +56,9 @@ func TestNotVideos(t *testing.T) {
 		names []string
 		want  string
 	}{
-		{[]string{"a.pdf"}, "a.pdf is not a video, so it was left out"},
-		{[]string{"a.pdf", "b.png"}, "a.pdf and b.png are not videos, so they were left out"},
-		{[]string{"a.pdf", "b.png", "c"}, "a.pdf, b.png and c are not videos, so they were left out"},
+		{[]string{"a.pdf"}, "a.pdf cannot be added because it is not a video"},
+		{[]string{"a.pdf", "b.png"}, "a.pdf and b.png cannot be added because they are not videos"},
+		{[]string{"a.pdf", "b.png", "c"}, "a.pdf, b.png and c cannot be added because they are not videos"},
 	} {
 		if got := notVideos(c.names); got != c.want {
 			t.Errorf("notVideos(%v) = %q, want %q", c.names, got, c.want)
@@ -81,7 +81,7 @@ func TestDropOfNoVideoSaysWhy(t *testing.T) {
 		}
 	}
 	got := d.svc.dropFiles([]string{notes})
-	if len(got.Added) != 0 || got.Open != "" || got.Error != "notizen.pdf is not a video, so it was left out" {
+	if len(got.Added) != 0 || got.Open != "" || got.Error != "notizen.pdf cannot be added because it is not a video" {
 		t.Errorf("a PDF dropped: %+v, want nothing added, nothing to open, and why", got)
 	}
 	got = d.svc.dropFiles([]string{broken, notes})

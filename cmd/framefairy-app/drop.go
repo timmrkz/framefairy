@@ -79,11 +79,13 @@ func (s *FrameFairy) takeFiles(how string, files []string) Added {
 // the ones picked in its box.
 func (s *FrameFairy) dropFiles(files []string) Added { return s.takeFiles("drop", files) }
 
-// notVideos says that files are not videos, by name.
+// notVideos says that files cannot be added because they are not
+// videos, by name. "Left out" said what the app did and not what it
+// means, and Tim asked what it meant.
 func notVideos(names []string) string {
 	if len(names) == 1 {
-		return names[0] + " is not a video, so it was left out"
+		return names[0] + " cannot be added because it is not a video"
 	}
 	last := len(names) - 1
-	return strings.Join(names[:last], ", ") + " and " + names[last] + " are not videos, so they were left out"
+	return strings.Join(names[:last], ", ") + " and " + names[last] + " cannot be added because they are not videos"
 }

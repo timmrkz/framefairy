@@ -57,7 +57,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: min(340px, calc(100vw - 2 * var(--gap)));
+    /* As wide as a short reason with a file's name in it on two lines.
+       340 px was a little too wide for Tim. One width for every toast, so
+       a stack reads as one column. */
+    width: min(300px, calc(100vw - 2 * var(--gap)));
     pointer-events: none;
   }
 

@@ -264,14 +264,10 @@
   let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
   // What went wrong with the library or with files given to the app,
-  // which has no row of its own: a toast, issue #327. Closing the
-  // toast forgets it here too, so the same reason is said again the next
-  // time.
-  let problem = $state("");
-  $effect(() => {
-    const text = problem;
-    untrack(() => toasts.say("app", text, { onclose: () => (problem = "") }));
-  });
+  // which has no row of its own: a toast, issue #327. Each time is a
+  // toast of its own, so two files dropped one after the other are said
+  // both.
+  const oops = (text: string) => toasts.say("app", text);
 
   // The first run. A new copy of the app cannot transcribe without a
   // speech model and cannot find clips until somebody has said how, so
@@ -296,7 +292,7 @@
       episodes = now;
     } catch (err) {
       if (mine !== reads) return;
-      problem = errorText(err);
+      oops(errorText(err));
     }
     libraryRead = true;
   }
@@ -324,18 +320,17 @@
     try {
       await took(await api.addEpisodes());
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       await refresh();
     }
   }
 
   // What came of files given to the app, with Add or a drop, the same
   // either way: the list is read again and the video to open opens, from
-  // whatever page the app was on. The reason something was left out
-  // stays until the next files are given, which replace it, and nothing
-  // given, Add cancelled, changes nothing.
+  // whatever page the app was on. Why a file cannot be added is a toast,
+  // and nothing given, Add cancelled, says nothing.
   async function took(a: Added) {
-    if (a.added.length || a.open || a.error) problem = a.error ?? "";
+    if (a.error) oops(a.error);
     await refresh();
     if (!a.open) return;
     said("app: a video added opens", { level: "info", video: a.open });
@@ -398,7 +393,7 @@
       await refresh();
     } catch (err) {
       removing = null;
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       removingHow = null;
     }

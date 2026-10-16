@@ -104,7 +104,7 @@ func (g handed) recording(reader string) (ReportPicture, []byte, []byte, error) 
 	}
 	e := engine.NewEngine(engine.NewLog(io.Discard, false, false), afero.NewOsFs())
 	if e.FFmpeg == "" || e.FFprobe == "" {
-		return ReportPicture{}, nil, nil, errors.New("could not be read, the app is missing ffmpeg")
+		return ReportPicture{}, nil, nil, errors.New("needs ffmpeg, which the app is missing")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), recordingTime)
 	defer cancel()

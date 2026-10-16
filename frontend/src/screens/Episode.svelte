@@ -139,7 +139,6 @@
   let targetWindow = $state(0);
   let min = $state(20);
   let max = $state(30);
-  let problem = $state("");
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
   let starting = $state(false);
@@ -1055,7 +1054,7 @@
         keptRead = ticket;
       }
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       if (listed.keep(ticket)) keptRead = ticket;
     }
   }
@@ -1090,7 +1089,7 @@
       await tick();
       await openOnAClip(key);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       opened = true;
       tell(`opened, the playhead at ${time.toFixed(3)} s`);
@@ -1105,7 +1104,7 @@
       await Promise.all([refreshCoverage(), refreshRoom()]);
       if (source) await openWindow(kept);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       settled = true;
       tell("settled, the window and its room are read");
@@ -1127,7 +1126,7 @@
       await refreshClips();
       keepRemovedTrue();
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -1226,7 +1225,6 @@
   }
 
   async function removeClip(clip: ClipEntry) {
-    problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
@@ -1236,21 +1234,20 @@
         [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000 },
       };
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
   async function putClipBack(key: string) {
     const clip = removed[key]?.clip;
     if (!clip) return;
-    problem = "";
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
       putClip(updated);
       forget(key);
       select(updated.key);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -1258,12 +1255,11 @@
   // out or put back, a cut moved. The engine makes the change it showed
   // while the hand moved, and answers with the clip as it is now.
   async function reshape(clip: ClipEntry, g: Gesture, playhead: [number, number]) {
-    problem = "";
     try {
       const updated = await api.reshape(path, clip.plan, clip.id, g, playhead);
       putClip(updated);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -1299,7 +1295,6 @@
   // A thumbnail added, moved or removed, shown at once and saved straight
   // after. A from below nought adds, a to below nought removes.
   async function setThumbnail(clip: ClipEntry, from: number, to: number) {
-    problem = "";
     const ms = (t: number) => Math.round(t * 1000);
     const was = clip.thumbnails ?? [];
     const next = was.filter((t) => from < 0 || ms(t) !== ms(from));
@@ -1310,7 +1305,7 @@
       const updated = await api.setThumbnail(path, clip.plan, clip.id, from, to);
       clips = clips.map((c) => (c.key === updated.key ? updated : c));
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       clips = clips.map((c) => (c.key === clip.key ? { ...c, thumbnails: was } : c));
     }
   }
@@ -1325,7 +1320,6 @@
   // glide it makes comes back with the clip. A from below nought adds one
   // at to with its crop at x, a to below nought removes the one at from.
   async function setCropMark(clip: ClipEntry, from: number, to: number, x: number) {
-    problem = "";
     const ms = (t: number) => Math.round(t * 1000);
     const was = clip.cropMarks ?? [];
     const moving = was.find((m) => from >= 0 && ms(m.at) === ms(from));
@@ -1337,7 +1331,7 @@
       const updated = await api.setCropMark(path, clip.plan, clip.id, from, to, x);
       putClip(updated);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: was } : c));
     }
   }
@@ -1398,7 +1392,7 @@
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);
       if (job.state === "failed") {
-        problem = job.error ?? "The clip could not be made";
+        oops(job.error ?? "The clip could not be made");
         return;
       }
       const key = `${job.id}/1`;
@@ -1407,7 +1401,7 @@
       await tick();
       showChosen();
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       pressed = null;
     }
@@ -1586,7 +1580,6 @@
   const words = new Newest();
 
   async function setWord(clip: ClipEntry, start: number, text: string) {
-    problem = "";
     const ticket = words.send();
     try {
       const updated = await api.setWord(path, clip.plan, clip.id, start, text);
@@ -1595,7 +1588,7 @@
       putClip(updated);
     } catch (err) {
       words.keep(ticket);
-      problem = errorText(err);
+      oops(errorText(err));
       throw err;
     }
   }
@@ -1604,7 +1597,6 @@
   // alone, so only this clip changes. It takes the same ticket as a word
   // corrected, which it comes after in the caption box.
   async function removeWords(clip: ClipEntry, remove: () => Promise<ClipEntry>) {
-    problem = "";
     const ticket = words.send();
     try {
       const updated = await remove();
@@ -1612,7 +1604,7 @@
       putClip(updated);
     } catch (err) {
       words.keep(ticket);
-      problem = errorText(err);
+      oops(errorText(err));
       throw err;
     }
   }
@@ -1622,12 +1614,11 @@
     removeWords(clip, () => api.removeCaption(path, clip.plan, clip.id, first));
 
   async function setCrop(clip: ClipEntry, at: number, left: number) {
-    problem = "";
     try {
       const updated = await api.setCrop(path, clip.plan, clip.id, at, left);
       putClip(updated);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -1635,12 +1626,11 @@
   // this is the one place they are set, right next to the clip.
   async function setCaptionStyle(font: string, size: number) {
     if (!current) return;
-    problem = "";
     try {
       await api.setCaptionStyle(path, current.plan, font, size);
       await refreshClips();
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -1685,24 +1675,21 @@
             !source || !current || captions ? "" : "the clip's captions are not read",
           ]
             .filter(Boolean)
-            .join(", ")}${away ? ", asleep" : ""}${problem ? `, problem: ${problem}` : ""}`,
+            .join(", ")}${away ? ", asleep" : ""}${toasts.text(where()) ? `, problem: ${toasts.text(where())}` : ""}`,
         );
       }, after * 1000),
     );
     return () => timers.forEach(clearTimeout);
   });
-  $effect(() => {
-    if (problem) tell(`problem: ${problem}`);
-  });
   // What went wrong here is a toast about this video, issue #327. It
   // lies over the workspace and moves nothing, where it was once a line
-  // over the workspace that pushed it down. Closing it forgets it here
-  // too, so the same reason is said again the next time.
+  // over the workspace that pushed it down. Each time is a toast of its
+  // own, and it is told to the log with what the workspace was doing.
   const where = () => `video:${path}`;
-  $effect(() => {
-    const text = problem;
-    untrack(() => toasts.say(where(), text, { video: path, onclose: () => (problem = "") }));
-  });
+  function oops(text: string) {
+    tell(`problem: ${text}`);
+    toasts.say(where(), text, { video: path });
+  }
   onMount(() => () => toasts.clear(where()));
   // A workspace kept while another episode is in front is asleep, see
   // App.svelte: its video preview lets go of everything it holds, so an
@@ -1904,7 +1891,6 @@
     highlightShare = 100,
   ) {
     if (!current) return;
-    problem = "";
     captionsWere = null;
     colourSaving = true;
     try {
@@ -1920,7 +1906,7 @@
       );
       await refreshClips();
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       colourDraft = null;
     } finally {
       colourSaving = false;
@@ -1931,7 +1917,6 @@
   // straight after: the text, the box, or the highlight.
   async function setCaptionSwitch(which: CaptionSwitch, on: boolean) {
     if (!current) return;
-    problem = "";
     captionsWere = null;
     drawColour(which === "text" ? { textOn: on } : which === "box" ? { boxOn: on } : { highlightOn: on });
     colourSaving = true;
@@ -1939,7 +1924,7 @@
       await api.setCaptionSwitch(path, current.plan, which, on);
       await refreshClips();
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       colourDraft = null;
     } finally {
       colourSaving = false;
@@ -1976,13 +1961,12 @@
     edge: "start" | "end",
     at: number,
   ): Promise<boolean> {
-    problem = "";
     try {
       const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at);
       putClip(updated);
       return true;
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       return false;
     }
   }
@@ -2175,7 +2159,6 @@
   }
 
   async function setCaptionsHeight(y: number) {
-    problem = "";
     const was = captionY;
     captionsWere = null;
     captionY = snapCaptionY(y);
@@ -2186,12 +2169,11 @@
       await refreshClips();
     } catch (err) {
       captionY = was;
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
   async function resetCaptionsHeight() {
-    problem = "";
     const was = captionY;
     captionY = captionYDefault;
     try {
@@ -2199,7 +2181,7 @@
       await refreshClips();
     } catch (err) {
       captionY = was;
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -2211,7 +2193,6 @@
   // with takes its place. Plan row 3.25.
   async function rotatePart() {
     if (!current || renderingCurrent || !inShort || !source) return;
-    problem = "";
     const clip = current;
     const at = time;
     clips = clips.map((c) => (c.key === clip.key ? rotated(c, source!, at) : c));
@@ -2219,18 +2200,17 @@
       const updated = await api.rotatePart(path, clip.plan, clip.id, at);
       putClip(updated);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       clips = clips.map((c) => (c.key === clip.key ? clip : c));
     }
   }
 
   async function resetCrop(clip: ClipEntry, at: number) {
-    problem = "";
     try {
       const updated = await api.resetCrop(path, clip.plan, clip.id, at);
       putClip(updated);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -2251,7 +2231,7 @@
   // are kept the moment they change, like everything else in the
   // workspace, and the next episode opens with them.
   function saveSearch() {
-    api.setSearch(target, targetWindow, min, max).catch((err) => (problem = errorText(err)));
+    api.setSearch(target, targetWindow, min, max).catch((err) => oops(errorText(err)));
     keepWindow();
   }
 
@@ -2273,7 +2253,6 @@
   // A click shows at once: the list opens its rows and the head says
   // Cancel before the job has reported in. It gives the press its name.
   function begin(): string {
-    problem = "";
     starting = true;
     click = `${Date.now()}-${++clicks}`;
     stoppedAt = null;
@@ -2316,7 +2295,7 @@
       jobs.apply(job);
       if (job.state !== "running" && job.state !== "queued") starting = false;
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       starting = false;
     }
   }
@@ -2356,7 +2335,6 @@
     try {
       const done = what === "undo" ? await api.undo(path) : await api.redo(path);
       if (!done?.done) return;
-      problem = "";
       // A step that moved the window puts it where it was. It is kept on
       // the Go side already.
       if (done.window && !busy) {
@@ -2379,7 +2357,7 @@
       // edgesWhilePlaying in ClipTimeline.svelte.
       if (done.playhead !== undefined && paused) player?.seek(done.playhead);
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       undoing = false;
     }
@@ -2452,14 +2430,13 @@
   });
 
   async function render(clip: ClipEntry) {
-    problem = "";
     renderAsked = clip.key;
     try {
       const job = await api.render(path, { Plan: clip.plan, Clips: [clip.id], Preview: false });
       waiting = [...waiting, job.id];
     } catch (err) {
       renderAsked = "";
-      problem = errorText(err);
+      oops(errorText(err));
     }
   }
 
@@ -2576,7 +2553,7 @@
     onchange();
     load().then(() => {
       for (const job of finished) {
-        if (job.state === "failed") problem = job.error ?? "The render failed.";
+        if (job.state === "failed") oops(job.error ?? "The render failed.");
       }
     });
   });

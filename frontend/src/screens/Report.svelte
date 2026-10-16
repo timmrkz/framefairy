@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
@@ -20,13 +20,9 @@
   let making = $state(false);
   // Why a report could not be made, or pictures attached. It is a toast
   // over the window, issue #327: beside the buttons it wrapped over
-  // three lines and stood where nothing else was about it. Closing the
-  // toast forgets it here too.
-  let problem = $state("");
-  $effect(() => {
-    const text = problem;
-    untrack(() => toasts.say("report", text, { onclose: () => (problem = "") }));
-  });
+  // three lines and stood where nothing else was about it. Each time is
+  // a toast of its own.
+  const oops = (text: string) => toasts.say("report", text);
 
   // Dictate, plan row 2.189, the way dictation on claude.ai works: the
   // words appear in the field while they are said, where the cursor was,
@@ -117,26 +113,21 @@
   function took(d: ReportDraft) {
     pictures = d.pictures ?? [];
     for (const id of Object.keys(removed)) if (pictures.some((p) => p.id === id)) delete removed[id];
-    if (d.error) {
-      problem = d.error.endsWith(".") ? d.error : d.error + ".";
-    }
+    if (d.error) oops(d.error.endsWith(".") ? d.error : d.error + ".");
   }
 
-  // A drop says what came of it on its own, and one that went well takes
-  // away the reason an earlier one left beside the buttons.
+  // A drop says what came of it on its own.
   function dropped(d: ReportDraft) {
-    if (!d.error) problem = "";
     took(d);
   }
 
   async function attach() {
     if (attaching) return;
     attaching = true;
-    problem = "";
     try {
       took(await api.attachPictures());
     } catch (e) {
-      problem = sentence(e);
+      oops(sentence(e));
     } finally {
       attaching = false;
     }
@@ -145,7 +136,7 @@
   function removePicture(p: ReportPicture) {
     removed[p.id] = { picture: p };
     pictures = pictures.filter((q) => q.id !== p.id);
-    api.removePicture(p.id).then(took, (e) => (problem = sentence(e)));
+    api.removePicture(p.id).then(took, (e) => oops(sentence(e)));
   }
 
   // The picture is back in its place at once, the way a removed one goes
@@ -167,7 +158,7 @@
       (e) => {
         pictures = pictures.filter((p) => p.id !== id);
         again();
-        problem = sentence(e);
+        oops(sentence(e));
       },
     );
   }
@@ -178,12 +169,11 @@
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (files.length === 0) return;
     e.preventDefault();
-    problem = "";
     for (const f of files) {
       const reader = new FileReader();
       reader.onload = () => {
         const data = String(reader.result).replace(/^data:[^,]*,/, "");
-        api.attachPasted(f.name || "Pasted picture.png", data).then(took, (err) => (problem = sentence(err)));
+        api.attachPasted(f.name || "Pasted picture.png", data).then(took, (err) => oops(sentence(err)));
       };
       reader.readAsDataURL(f);
     }
@@ -469,7 +459,7 @@
     onDictation((d) => {
       if (!listening || (recording && d.recording !== recording)) return;
       if (d.error || d.ended) {
-        if (d.error) problem = sentence(d.error);
+        if (d.error) oops(sentence(d.error));
         if (d.ended) note = sentence(d.ended) + ".";
         listening = false;
         chime("off");
@@ -488,7 +478,6 @@
   async function dictate() {
     if (hearing) return;
     if (listening) return keep();
-    problem = "";
     note = "";
     unheard = "";
     listening = true;
@@ -504,7 +493,7 @@
     } catch (e) {
       listening = false;
       finish(false);
-      problem = sentence(e);
+      oops(sentence(e));
     }
   }
 
@@ -524,7 +513,7 @@
         if (d.ended) note = sentence(d.ended) + ".";
       }
     } catch (e) {
-      problem = sentence(e);
+      oops(sentence(e));
     } finally {
       finish(true);
       hearing = false;
@@ -590,7 +579,6 @@
   async function make() {
     if (making) return;
     making = true;
-    problem = "";
     note = "";
     // Nothing is kept from here: the Go side lets go of the draft and
     // closes the window, which would otherwise keep the text again as it
@@ -607,7 +595,7 @@
       pictures = [];
       removed = {};
     } catch (e) {
-      problem = e instanceof Error ? e.message : String(e);
+      oops(e instanceof Error ? e.message : String(e));
     } finally {
       making = false;
       loaded = true;

@@ -301,7 +301,7 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 		many = append(many, handed{name: fmt.Sprintf("%d.png", i+1), data: pngOf(t, 8, 8)})
 	}
 	d := r.attach("drop", many)
-	if len(d.Pictures) != picturesMax || !strings.Contains(d.Error, "11.png would be more than the 10 pictures and recordings") {
+	if len(d.Pictures) != picturesMax || !strings.Contains(d.Error, "11.png cannot be attached because it would be more than the 10 pictures and recordings") {
 		t.Fatalf("eleven pictures gave %d with %q", len(d.Pictures), d.Error)
 	}
 
@@ -313,8 +313,8 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 		{name: "screen.heic", data: []byte("\x00\x00\x00\x18ftypheic")},
 		{name: "fine.png", data: pngOf(t, 8, 8)},
 	})
-	for _, why := range []string{"notes.txt is not a picture or a screen recording", "big.png is bigger than 10 MB",
-		"huge.png is too large a picture", "screen.heic is not a picture or a screen recording"} {
+	for _, why := range []string{"notes.txt cannot be attached because it is not a picture or a screen recording", "big.png cannot be attached because it is bigger than 10 MB",
+		"huge.png cannot be attached because it is too large a picture", "screen.heic cannot be attached because it is not a picture or a screen recording"} {
 		if !strings.Contains(d.Error, why) {
 			t.Errorf("the reason %q does not say %q", d.Error, why)
 		}
@@ -469,7 +469,7 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 	if names(d) != "Screenshot.png" {
 		t.Fatalf("picked, the draft holds %s", names(d))
 	}
-	for _, why := range []string{"big.png is bigger than 10 MB", filepath.Base(dir) + " is not a picture", "gone.png could not be read"} {
+	for _, why := range []string{"big.png cannot be attached because it is bigger than 10 MB", filepath.Base(dir) + " cannot be attached because it is not a picture", "gone.png cannot be attached because it could not be read"} {
 		if !strings.Contains(d.Error, why) {
 			t.Errorf("the reason %q does not say %q", d.Error, why)
 		}

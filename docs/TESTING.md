@@ -442,8 +442,9 @@ out, in the report window or the app's own, is a toast: `toast` reads
 it, or sees none with "", and sees that nothing under it moved,
 `toast goes` sees it still there after nine seconds with the pointer
 away, since it has the ten a removed row has, and then go by itself, `toast held` keeps the pointer on it past its time, sees it
-stay and then go once the pointer leaves, and `toast closed` presses its
-cross. `write` types into its field and
+stay and then go once the pointer leaves, `stacked` sees a toast for
+each of two files dropped one after the other, the newer on top, and
+`toast closed` presses the cross of the top one. `write` types into its field and
 puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
 listens and the microphone move with the hum, then ends it with Stop,

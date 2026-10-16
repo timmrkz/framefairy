@@ -173,7 +173,7 @@ func TestWhatIsNoRecordingIsLeftOut(t *testing.T) {
 		{name: "voice.m4a", data: voice},
 		{name: "fine.png", data: pngOf(t, 8, 8)},
 	})
-	for _, why := range []string{"broken.mov is not a picture or a screen recording", "voice.m4a is not a picture or a screen recording"} {
+	for _, why := range []string{"broken.mov cannot be attached because it is not a picture or a screen recording", "voice.m4a cannot be attached because it is not a picture or a screen recording"} {
 		if !strings.Contains(d.Error, why) {
 			t.Errorf("the reason %q does not say %q", d.Error, why)
 		}

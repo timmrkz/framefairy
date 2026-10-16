@@ -248,7 +248,7 @@
 //   ["toast held"]     the pointer stays on the toast longer than its time
 //                      and it stays, then the pointer goes and so does the
 //                      toast, within fourteen seconds
-//   ["toast closed"]   presses the cross on the toast, and it goes
+//   ["toast closed"]   presses the cross on the top toast, and it goes
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
@@ -466,16 +466,19 @@
 //                      over it and not after the drop
 //   ["drop again", where]
 //                      the same with the video dropped last
-//   ["drop not a video", where]
-//                      the same with a PDF
+//   ["drop not a video", where] or ["drop not a video", [where, stem]]
+//                      the same with a PDF, named stem if given
 //   ["dropped in front"]
 //                      the video dropped last is the one on screen, and in
 //                      the library once
 //   ["not a video"]    the PDF dropped last is not in the library, and a
-//                      toast says by its name that it is not a video,
-//                      with the workspace where it stood before the drop
-//   ["no reason"]      the app says nothing was left out: a reason from
-//                      files given before is gone once the next are taken
+//                      toast says by its name that it cannot be added
+//                      because it is not a video, with the workspace where
+//                      it stood before the drop
+//   ["no reason"]      no toast names the video dropped last: a video
+//                      that is added says nothing
+//   ["stacked"]        the two PDFs dropped last each have a toast, the
+//                      newer on top, the way macOS stacks its notes
 //   ["left out", name] Add left out the file whose name starts so, says why
 //                      in a toast, and the library does not hold it
 //   ["followed", which]
@@ -1752,7 +1755,7 @@ export const sequences = [
       ["bugs"],
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
-      ["toast", "notes.txt is not a picture or a screen recording"],
+      ["toast", "notes.txt cannot be attached because it is not a picture or a screen recording"],
       // A good drop after it takes the old reason away. Found in the
       // review of #217.
       ["drop pictures", 1],
@@ -2647,6 +2650,13 @@ export const sequences = [
       ["toast held"],
       ["drop not a video", "workspace"],
       ["not a video"],
+      ["toast closed"],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["drop not a video", ["workspace", "zweite"]],
+      ["not a video"],
+      ["stacked"],
+      ["toast closed"],
       ["toast closed"],
       ["no reason"],
     ],
@@ -3722,6 +3732,7 @@ for (const seq of toWalk) {
   // Whether the walk deleted that video too.
   let videoGone = false;
   let droppedOther = "";
+  let droppedBefore = "";
   // Where the workspace and the report's field stood before a toast came.
   let standing = null;
   const done = [];
@@ -5416,12 +5427,13 @@ for (const seq of toWalk) {
       case "drop":
       case "drop again":
       case "drop not a video": {
-        const where = what === "drop" ? arg[1] : arg;
+        const [where, stem] = what === "drop" ? [arg[1]] : [arg].flat();
         let file;
         if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}&box=0`);
         else if (what === "drop again") file = droppedVideo;
         else {
-          file = droppedOther = join(tmpdir(), `notizen-${process.pid}.pdf`);
+          if (droppedOther) droppedBefore = droppedOther;
+          file = droppedOther = join(tmpdir(), `${stem ?? "notizen"}-${process.pid}.pdf`);
           writeFileSync(file, "%PDF-1.4\n");
         }
         if (where !== "workspace") {
@@ -5438,7 +5450,20 @@ for (const seq of toWalk) {
       case "no reason": {
         await page.waitForTimeout(500);
         const said = await toastSays(page);
-        if (said) wrong = `the app still says "${said}" after the next files were taken`;
+        const name = droppedVideo ? basename(droppedVideo) : "";
+        if (name && said.includes(name)) wrong = `the app says "${said}" about ${name}, which it added`;
+        else if (!name && said) wrong = `the app still says "${said}"`;
+        break;
+      }
+      case "stacked": {
+        // Tim dropped one picture after another and saw only the last:
+        // a newer reason replaced the older.
+        const said = await page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()));
+        const [newer, older] = [basename(droppedOther), basename(droppedBefore)];
+        const tops = await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => Math.round(t.getBoundingClientRect().top)));
+        if (said.length !== 2) wrong = `${said.length} toasts show, not one for each of ${older} and ${newer}: ${JSON.stringify(said)}`;
+        else if (!said[0].includes(newer) || !said[1].includes(older)) wrong = `the toasts read ${JSON.stringify(said)}, not ${newer} on top of ${older}`;
+        else if (!(tops[0] < tops[1])) wrong = `the newer toast stands at ${tops[0]} px and the older at ${tops[1]} px`;
         break;
       }
       case "dropped in front": {
@@ -5464,7 +5489,7 @@ for (const seq of toWalk) {
           said = await toastSays(page);
         }
         const library = await ask(page, "Library");
-        if (!said.includes(`${name} is not a video`)) wrong = `the app says "${said}", not that ${name} is not a video`;
+        if (!said.includes(`${name} cannot be added because it is not a video`)) wrong = `the app says "${said}", not that ${name} cannot be added because it is not a video`;
         else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
         else wrong = await stillStands(page, standing);
         break;
@@ -5960,9 +5985,10 @@ for (const seq of toWalk) {
         break;
       }
       case "toast closed": {
+        const before = await page.locator(".toast").count();
         await page.locator(".toast button.close").first().click();
         await page.waitForTimeout(400);
-        if (await page.locator(".toast").count()) wrong = "the toast is still there after its cross was pressed";
+        if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
         break;
       }
       case "remove picture": {

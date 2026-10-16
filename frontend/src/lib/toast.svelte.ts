@@ -5,52 +5,54 @@
 // nothing under it. Issue #327, and Toasts.svelte, the one place they
 // are drawn.
 //
-// Each place that can go wrong has one toast at a time, known by where it
-// comes from: a newer reason replaces the older one, and the place takes
-// it away when what it was about is done again and goes well. A toast
-// about a video shows while that video is on screen and waits while it is
-// not. Its time runs down from the moment it shows, the way a removed
-// clip's does, and stands still while the pointer is on it. Its cross
-// closes it at once.
+// Each time something goes wrong is a toast of its own, the way macOS
+// stacks its notes: the newest comes in on top and pushes the others
+// down, and each runs its own time. Tim dropped one picture after another
+// and saw only the last, because a newer reason from the same place once
+// replaced the older. The same words again from the same place while
+// they show do not stack, they come in on top with their time started
+// again. A toast about a video shows while that video is on screen and
+// waits while it is not. Its time runs down from the moment it shows, the
+// way a removed clip's does, and stands still while the pointer is on it.
+// Its cross closes it at once.
 
+import { untrack } from "svelte";
 import { said } from "./said";
 
 export type Toast = {
   id: number;
-  // Where it comes from, which a newer reason from the same place replaces.
+  // Where it comes from: the app, the report window, or a video.
   from: string;
   text: string;
   // The video it is about, if it is about one.
   video?: string;
-  // Told when the person closes it, so the place it came from forgets the
-  // reason too and says it again the next time it happens.
-  onclose?: () => void;
 };
 
 let next = 1;
 
 class Toasts {
+  // Newest first.
   list = $state<Toast[]>([]);
 
-  // Says text from a place, replacing what that place said before. The
-  // same words again leave the toast as it is, so a reason said twice does
-  // not come in twice. Empty text takes the place's toast away.
-  say(from: string, text: string, how: { video?: string; onclose?: () => void } = {}) {
+  // Says text from a place, on top of what is there. It reads and writes
+  // the list untracked, since a place may say something from inside an
+  // effect, which would otherwise run again on every toast.
+  say(from: string, text: string, how: { video?: string } = {}) {
     const words = text.trim();
-    if (!words) return this.clear(from);
-    const was = this.list.find((t) => t.from === from);
-    if (was && was.text === words && was.video === how.video) {
-      was.onclose = how.onclose;
-      return;
-    }
-    said(`toast: ${words}`, { level: "warn", video: how.video });
-    this.list = [...this.list.filter((t) => t.from !== from), { id: next++, from, text: words, ...how }];
+    if (!words) return;
+    untrack(() => {
+      said(`toast: ${words}`, { level: "warn", video: how.video });
+      const others = this.list.filter((t) => !(t.from === from && t.text === words));
+      this.list = [{ id: next++, from, text: words, ...how }, ...others];
+    });
   }
 
-  // Takes a place's toast away, because what it was about went well.
+  // Takes a place's toasts away, because what they were about is gone.
   clear(from: string) {
-    if (!this.list.some((t) => t.from === from)) return;
-    this.list = this.list.filter((t) => t.from !== from);
+    untrack(() => {
+      if (!this.list.some((t) => t.from === from)) return;
+      this.list = this.list.filter((t) => t.from !== from);
+    });
   }
 
   // The person closed it, or its time ran out.
@@ -59,10 +61,9 @@ class Toasts {
     if (!t) return;
     said(`toast ${how}: ${t.text}`, { level: "info", video: t.video });
     this.list = this.list.filter((x) => x.id !== id);
-    t.onclose?.();
   }
 
-  // What a place says now, or "".
+  // The newest a place said that still shows, or "".
   text(from: string): string {
     return this.list.find((t) => t.from === from)?.text ?? "";
   }

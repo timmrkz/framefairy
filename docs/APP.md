@@ -109,8 +109,9 @@ A video dragged from Finder and dropped anywhere on the app is added the
 same way, whatever page is open, and opens. While a file is held over
 the app, the app wears the frame of what is chosen, with the accent's
 wash inside it. A video already in the list opens rather than being added
-twice, and a file that is not a video is left out, by its name, where Add
-says why it left a file out, in a toast, see [Toasts](#toasts). Add and
+twice, and a file that is not a video is not added. A toast says so by
+its name, "notes.pdf cannot be added because it is not a video", the
+way Add says why it could not add a file, see [Toasts](#toasts). Add and
 a drop are one path, `takeFiles` in
 `drop.go`: the same files are taken, the same reasons given, and the
 video just added opens, or a video given again. The reason stays until
@@ -1912,10 +1913,15 @@ wrapped lines beside Report. Tim found the workspace moved about by a
 dropped screenshot, issues #263 and #327.
 
 A toast lies over the app in the top right corner, under the bar, where
-macOS brings its own notes in, and moves nothing under it. Each place
-that can go wrong has one toast at a time: a newer reason replaces the
-older one, and the place takes it away when what it was about is done
-again and goes well. A toast about a video shows while that video is on
+macOS brings its own notes in, and moves nothing under it. Each time
+something goes wrong is a toast of its own, the way macOS stacks its
+notes: the newest comes in on top and pushes the others down, and each
+runs its own time. One toast for each place, which a newer reason
+replaced, showed Tim only the last of the pictures he dropped one after
+another. The same words from the same place while they show come in on
+top again with their time started again, rather than twice. It is
+300 px wide, one width for every toast so a stack reads as one column,
+which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
 screen and waits while another is. Its time, the ten seconds a removed
 clip has to be put back, runs down from the moment it comes, in the
 same fill, and stands still while the pointer is on it. Its cross takes it away at
@@ -2803,8 +2809,9 @@ with its length in the corner, the way Photos and Finder show a video,
 and the report holds the recording itself, under `recordings/`, see
 `cmd/framefairy-app/recording.go`. Tim's first recording was turned
 away as not a PNG or JPEG picture. A file that is not a
-picture or a recording, or is too big, or would make an eleventh, is left out and a
-toast in the window's top right corner says which and why, see
+picture or a recording, or is too big, or would make an eleventh, is not attached and a
+toast in the window's top right corner says which and why, "notes.txt
+cannot be attached because it is not a picture or a screen recording", see
 [Toasts](#toasts). It used to be red text in the row of the buttons,
 which wrapped over three lines beside Report, Tim found. They show under the card in a
 grid of three, four once the window is wide, every tile the same size

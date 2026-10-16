@@ -487,7 +487,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 			}
 		}
 		if err != nil {
-			why = append(why, name+" "+err.Error())
+			why = append(why, name+" cannot be attached because it "+err.Error())
 			theLog.line(zerolog.WarnLevel, "report").Str("how", how).Str("name", name).Int("bytes", len(all[i].data)).Err(err).Msg("a file was left out")
 			continue
 		}
