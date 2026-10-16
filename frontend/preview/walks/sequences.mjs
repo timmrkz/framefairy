@@ -3380,11 +3380,14 @@ async function asPreviewed(page, rate, before) {
     const target = (from + to) / 2;
     let x = (x0 + x1) / 2;
     let placed = NaN;
+    // Where each click put the playhead, which a failure says.
+    const tried = [];
     for (let tries = 0; tries < 4; tries++) {
       if (grips.some(([a, b]) => x > a && x < b)) break;
       await page.mouse.click(x, high(g.track));
       await settle(page);
       placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+      tried.push(placed.toFixed(4));
       if (placed >= from && placed <= to) break;
       x += ((target - placed) * (x1 - x0)) / Math.max(to - from, 1e-6);
     }
@@ -3402,7 +3405,14 @@ async function asPreviewed(page, rate, before) {
       .then(() => true, () => false);
     const seen = came ? frames[j] : await filmedOnScreen(page);
     if (!came || (await filmedOnScreen(page)) !== frames[j]) {
-      problems.push(`frame ${j} of the short, for ${at.toFixed(4)} s, is frame ${frames[j]} of the episode, the video preview shows ${seen} at ${placed.toFixed(4)}`);
+      // With the clicks that put the playhead there, and where the frame
+      // shown begins by the app's count, since this failed only on a busy
+      // machine, issue #325, and said nothing of how it came about.
+      const shown = await page.evaluate(() => document.querySelector(".screen").dataset.shown);
+      problems.push(
+        `frame ${j} of the short, for ${at.toFixed(4)} s, is frame ${frames[j]} of the episode, the video preview shows ${seen} at ${placed.toFixed(4)}` +
+          `${came ? ", after it showed the right one" : ""}, with the playhead put at ${tried.join(", then ")} and the frame shown beginning at ${shown}`,
+      );
     }
   }
   // Every piece looked at where it starts and where it ends, so at both
