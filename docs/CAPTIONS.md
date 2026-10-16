@@ -181,6 +181,15 @@ the wheel waited for three caption files nobody would see, and every one
 of them was made on the Go side. A request called off is no line in the
 app's log.
 
+While a clip plays, a frame that asks ahead while three are on their
+way waits its turn and is asked for as soon as one comes, after the frame
+on screen if that is still waiting for its own. Before, it was dropped
+and asked for only once it was drawn, so on a busy machine a playing clip
+showed a frame with the captions of the frame before, issue #288.
+Paused, nothing waits: the frames read ahead are the ones a step may
+come to, the step asks for its own, and a bounce after a word step needs
+the Go side to itself.
+
 ## The caption box
 
 The caption box over the picture stays: it is what the hand takes hold of
