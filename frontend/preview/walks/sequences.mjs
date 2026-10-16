@@ -397,6 +397,13 @@
 //                      still, where Chromium makes up a move for it. Then
 //                      the hand goes to the clip timeline, and the second
 //                      row's time has to run down and close it
+//   ["row folds"]      presses the bin of a clip with another clip's card
+//                      under it, takes the hand to the clip timeline, and
+//                      reads where the card under it stands on every
+//                      animation frame while the removed row runs down and
+//                      closes. The card has to rise by the row and the
+//                      space after it, never go back down, and move no more
+//                      than a pixel in the frame the row leaves the list
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -1910,6 +1917,14 @@ export const sequences = [
     // for that word. Plan row 2.240.
     name: "a row to put back runs down once the hand is elsewhere, though it moved from under a still hand",
     steps: [["trim", "start", 300], ["make while paused", "i"], ["remove two, hand still"]],
+  },
+  {
+    // Tim removed clips with the bin, and once a row's time ran out it
+    // closed to a thin strip and then the list jumped up the rest in one
+    // frame: the space between the rows stayed until the row was gone.
+    // Plan row 2.275.
+    name: "a removed row closes with the space after it, in one movement",
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["row folds"]],
   },
   {
     // Tim felt the app lag while it worked. A running search reads the
@@ -7192,6 +7207,52 @@ for (const seq of toWalk) {
         for (let i = 0; i < 120 && (await rows()).length; i++) await page.waitForTimeout(100);
         if ((await rows()).length) wrong = "the row left to put back is still there after its time";
         await watch.step("remove two, hand still", s);
+        break;
+      }
+      case "row folds": {
+        const bins = page.locator("aside ol li:has(+ li) button.drop");
+        if (!(await bins.count())) {
+          wrong = "no clip in the clip list has a card under it";
+          break;
+        }
+        const bin = bins.first();
+        const box = await bin.boundingBox();
+        await page.mouse.move(box.x - 40, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.down();
+        await page.mouse.up();
+        await page.waitForSelector("aside ol .gone");
+        // Every frame from here, until the row has been gone a while.
+        await page.evaluate(() => {
+          const row = document.querySelector("aside ol .gone").closest("li");
+          const under = row.nextElementSibling;
+          const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
+          const seen = [];
+          window.__fold = { seen, height: row.getBoundingClientRect().height, gap };
+          const look = () => {
+            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top });
+            if (row.isConnected || seen.filter((f) => !f.there).length < 30) requestAnimationFrame(look);
+            else window.__fold.done = true;
+          };
+          requestAnimationFrame(look);
+        });
+        const line = await page.locator(".clip-timeline").boundingBox();
+        await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
+        for (let i = 0; i < 200 && !(await page.evaluate(() => window.__fold.done)); i++) await page.waitForTimeout(100);
+        const { seen, height, gap, done } = await page.evaluate(() => window.__fold);
+        if (!done) {
+          wrong = "the removed row was still in the list after its time";
+          break;
+        }
+        const tops = seen.map((f) => f.top);
+        const left = seen.findIndex((f) => !f.there);
+        const rose = tops[0] - tops[tops.length - 1];
+        const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
+        const last = tops[left - 1] - tops[left];
+        if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
+        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
+        else if (last > 1) wrong = `the card under the removed row jumped ${last.toFixed(1)} px in the frame the row left the list, of the ${rose.toFixed(1)} it rose`;
+        await watch.step("row folds", s);
         break;
       }
       case "thumbnail": {
