@@ -423,8 +423,8 @@ scan made once is out of date the week after.
   moved to other code and a commit cannot, and the comment beside it
   names the full version that commit is, `# v7.0.2` and never `# v7`.
   Dependabot moves the comment with the commit, so a bump shows which
-  release it goes to. `scripts/pins.sh` checks both, in CI and in
-  `make changed` when a workflow changed. With Dependabot security updates on in the repository's
+  release it goes to. `scripts/pins.sh` checks both when a workflow
+  changed, in CI and in `make changed`, and on every push to main. With Dependabot security updates on in the repository's
   settings, it opens one at once for a fix to a known vulnerability.
   Wails and the speech library's Go module are left out, because each
   moves with a pin Dependabot cannot change. TypeScript stays below 7 until

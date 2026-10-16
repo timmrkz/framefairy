@@ -80,9 +80,13 @@ jobs:
       # into it, which is as silent when it is wrong.
       - name: Check the Main moved notice
         run: sh scripts/main-moved-test.sh
-      # And that every action is pinned to a commit with its full version
-      # beside it, so a bump says which release it moves to.
+      # And, when a workflow changed, that every action is pinned to a
+      # commit with its full version beside it, so a bump says which
+      # release it moves to. Nothing else can change a pin.
+      - id: pins
+        run: sh scripts/ci-needs.sh workflows >> "$GITHUB_OUTPUT"
       - name: Check the action pins
+        if: steps.pins.outputs.run == 'true'
         run: sh scripts/pins.sh
       - id: needs
         run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
