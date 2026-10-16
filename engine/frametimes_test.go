@@ -75,6 +75,10 @@ type timesCase struct {
 	// not nought, with the sound in AAC. MPEG-4 Part 2 in GOPs of 30 and
 	// PCM where it is.
 	gop int
+	// HEVC rather than H.264, with the same B-frames and key frames: the
+	// codec the graphics chip decodes on a Mac, which leaves H.264 to the
+	// processor, issue #256.
+	hevc bool
 	// Written the way a recording cut off by a crash is left: as it is
 	// made, with no going back to say how long it is or where its key
 	// frames are.
@@ -159,6 +163,9 @@ func timesEpisode(t *testing.T, c timesCase) string {
 	if c.gop > 0 {
 		codec, sound = h264(t, c.gop), []string{"-c:a", "aac"}
 	}
+	if c.hevc {
+		codec = hevcCoded(t, c.gop)
+	}
 	args = append(args, codec...)
 	args = append(args, sound...)
 	args = append(args, "-t", seconds, source)
@@ -204,6 +211,22 @@ func h264(t *testing.T, gop int) []string {
 		return []string{"-c:v", "h264_videotoolbox", "-profile:v", "high", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p"}
 	}
 	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of H.264")
+	return nil
+}
+
+// hevcCoded is how the ffmpeg on the path codes HEVC in 8 bits with two
+// B-frames and a key frame every gop frames.
+func hevcCoded(t *testing.T, gop int) []string {
+	t.Helper()
+	encoders := encodersHere()
+	g := strconv.Itoa(gop)
+	switch {
+	case hasEncoder(encoders, "libx265"):
+		return []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error:bframes=2:keyint=" + g + ":scenecut=0", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"}
+	case hasEncoder(encoders, "hevc_videotoolbox"):
+		return []string{"-c:v", "hevc_videotoolbox", "-bf", "2", "-g", g, "-b:v", "4M", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"}
+	}
+	ffmpegtest.Unusable(t, "the ffmpeg on the path has no encoder of HEVC")
 	return nil
 }
 

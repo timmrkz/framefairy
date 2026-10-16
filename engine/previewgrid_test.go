@@ -66,13 +66,22 @@ func TestTheVideoPreviewGoesOnWhenTheGraphicsChipFails(t *testing.T) {
 	}
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	cases := []timesCase{}
 	for _, c := range timesCases {
 		if c.name == "obs_mkv" || c.name == "mpegts" {
-			t.Run(c.name, func(t *testing.T) {
-				t.Parallel()
-				previewShowsTheShort(t, e, program, c, true)
-			})
+			cases = append(cases, c)
 		}
+	}
+	// On a Mac H.264 is decoded on the processor, issue #256, so the way
+	// from the chip's failure is taken on HEVC there.
+	if runtime.GOOS == "darwin" {
+		cases = append(cases, timesCase{name: "hevc", file: "hevc.mp4", gop: 60, hevc: true})
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			previewShowsTheShort(t, e, program, c, true)
+		})
 	}
 }
 
@@ -194,9 +203,15 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		t.Errorf("the decoder went on with the processor %d times in %d streams, made to fail in each", fellBack, streams)
 	}
 	// A fallback must not hide a chip that never decodes: on a Mac the
-	// chip decodes H.264.
-	if runtime.GOOS == "darwin" && c.gop > 0 && !onChip {
-		t.Errorf("the graphics chip decoded none of this H.264, the decoder said:\n%s", strings.Join(heard, "\n"))
+	// chip decodes HEVC. H.264 it does not, because its colours there
+	// are not the render's, issue #256.
+	if runtime.GOOS == "darwin" && c.gop > 0 {
+		if c.hevc && !onChip {
+			t.Errorf("the graphics chip decoded none of this HEVC, the decoder said:\n%s", strings.Join(heard, "\n"))
+		}
+		if !c.hevc && onChip {
+			t.Errorf("the graphics chip decoded this H.264, which the render decodes on the processor, the decoder said:\n%s", strings.Join(heard, "\n"))
+		}
 	}
 }
 

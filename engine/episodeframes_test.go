@@ -908,7 +908,15 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			tenBits = "p010le"
 		}
 		x265 := append(append([]string{}, hevc...), "-pix_fmt", tenBits, "-tag:v", "hvc1")
+		// HEVC in 8 bits too, whose colours the chip decodes the way it
+		// does H.264's or not, issue #256.
+		eight := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
+		if !software {
+			eight = []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M"}
+		}
+		eight = append(eight, "-pix_fmt", "yuv420p", "-tag:v", "hvc1")
 		files = append(files,
+			file{"BT.709 video range, HEVC", append(eight, tags("bt709", "bt709", "bt709", "tv")...)},
 			file{"BT.709 video range, 10 bits", append(append([]string{}, x265...), tags("bt709", "bt709", "bt709", "tv")...)},
 			file{"BT.2020 video range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "tv")...)},
 			file{"BT.2020 full range, 10 bits", append(append([]string{}, x265...), tags("bt2020nc", "bt2020", "bt709", "pc")...)},
