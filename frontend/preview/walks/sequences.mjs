@@ -39,6 +39,13 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["read ahead", key] rests a second and a half, presses the key and
+//                      checks that the frame it lands on was there already,
+//                      read while the hand rested: it came from the frames
+//                      kept, see AppFrames.ahead
+//   ["heard"]          rests a second and a half, plays with the space bar
+//                      and asks that the sound card was handed sound for
+//                      most of the next second and a half, then pauses
 //   ["button", label]  clicks the button that says label, and waits until
 //                      it has done its work
 //   ["type", text]     types
@@ -405,6 +412,13 @@
 //                      still, where Chromium makes up a move for it. Then
 //                      the hand goes to the clip timeline, and the second
 //                      row's time has to run down and close it
+//   ["row folds"]      presses the bin of a clip with another clip's card
+//                      under it, takes the hand to the clip timeline, and
+//                      reads where the card under it stands on every
+//                      animation frame while the removed row runs down and
+//                      closes. The card has to rise by the row and the
+//                      space after it, never go back down, and move no more
+//                      than a pixel in the frame the row leaves the list
 //   ["thumbnail"]      presses T, which makes the frame under the playhead
 //                      a thumbnail of the clip, and waits for the clip to
 //                      have one more
@@ -1269,6 +1283,26 @@ export const sequences = [
     ],
   },
   {
+    // Tim's idea (2.269): paused, the frames of the word after the playhead
+    // and of the word before are read while the hand rests, so Shift and an
+    // arrow find their frame there. Before, a step to the next word read on
+    // in the open stream, or opened one, while the hand waited.
+    name: "a step to the word beside finds its frame read while the hand rested",
+    steps: [
+      ["add", 40, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["heard"],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowLeft"],
+      // Tim heard nothing when clips played on #229, so a play after the
+      // frames were read ahead is listened to.
+      ["heard"],
+    ],
+  },
+  {
     // Plan row 2.235, found by Tim: the clip's edges took the playhead
     // along and a cut's edges left it where it was, so the frame beside
     // the cut could not be seen while it was placed.
@@ -1918,6 +1952,14 @@ export const sequences = [
     // for that word. Plan row 2.240.
     name: "a row to put back runs down once the hand is elsewhere, though it moved from under a still hand",
     steps: [["trim", "start", 300], ["make while paused", "i"], ["remove two, hand still"]],
+  },
+  {
+    // Tim removed clips with the bin, and once a row's time ran out it
+    // closed to a thin strip and then the list jumped up the rest in one
+    // frame: the space between the rows stayed until the row was gone.
+    // Plan row 2.275.
+    name: "a removed row closes with the space after it, in one movement",
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["row folds"]],
   },
   {
     // Tim felt the app lag while it worked. A running search reads the
@@ -4251,6 +4293,84 @@ for (const seq of toWalk) {
           (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled),
           arg,
         );
+        break;
+      }
+      case "read ahead": {
+        await page.waitForTimeout(1500);
+        const came = await page.evaluate(async (key) => {
+          const frames = window.__appFrames;
+          const before = Number(document.querySelector(".screen")?.dataset.playhead);
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: key.replace("Shift+", ""), shiftKey: key.startsWith("Shift+"), bubbles: true }));
+          // How the frames came by the time the video preview shows the
+          // frame that holds the playhead, its first frame of the word.
+          return new Promise((done) => {
+            const t0 = performance.now();
+            const check = () => {
+              const el = document.querySelector(".screen");
+              const at = Number(el?.dataset.playhead);
+              const shown = Number(el?.dataset.shown);
+              const holds = at !== before && shown <= at + 1e-6 && at - shown < frames.track.frame - 1e-6;
+              // The rank of the frame on screen, and whether it was one
+              // handed over from the frames kept.
+              let rank = 0;
+              while (rank < frames.track.samples.count - 1 && frames.ptsOf(rank + 1) <= shown + 1e-6) rank++;
+              const fromKept = frames.stats.keptRanks.includes(rank);
+              if (holds) done({ at, fromKept, ms: Math.round(performance.now() - t0) });
+              else if (performance.now() - t0 > 5000) done({ at, fromKept, ms: -1 });
+              else requestAnimationFrame(check);
+            };
+            check();
+          });
+        }, arg);
+        // The frames after it, which the step's cue reads ahead, and the
+        // frame of the word after the one it lands on, which is read ahead
+        // now, may come from a stream. The frame it lands on may not.
+        if (came.ms < 0) wrong = `${arg} to ${came.at.toFixed(3)} s showed no frame of it in five seconds`;
+        else if (!came.fromKept)
+          wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms, though the hand rested a second and a half before it`;
+        await watch.step("press", s);
+        break;
+      }
+      case "heard": {
+        await page.waitForTimeout(1500);
+        // What the sound card is handed, a render quantum at a time, the
+        // way "loop off near the end" records it.
+        await page.evaluate(async () => {
+          const q = window.__frameQueue;
+          if (!window.__loudness) {
+            const code = `registerProcessor("loudness", class extends AudioWorkletProcessor {
+              process(inputs) {
+                const ch = inputs[0][0];
+                if (ch) { let sum = 0; for (const v of ch) sum += v * v; this.port.postMessage(sum / ch.length); }
+                return true;
+              }
+            });`;
+            await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+            const node = new AudioWorkletNode(q.audio, "loudness", { numberOfOutputs: 1 });
+            node.port.onmessage = (e) => window.__loudness.push(e.data);
+            const hush = q.audio.createGain();
+            hush.gain.value = 0;
+            q.out.connect(node).connect(hush).connect(q.audio.destination);
+            // Held, or the recorder is collected while it records.
+            window.__loudnessNodes = [node, hush];
+          }
+          window.__loudness = [];
+        });
+        await page.keyboard.press("Space");
+        await page.waitForFunction(() => window.__frameQueue.state === "playing", null, { timeout: 5000 }).catch(() => {});
+        await page.evaluate(() => (window.__loudness = []));
+        await page.waitForTimeout(1500);
+        const got = await page.evaluate(() => {
+          const xs = window.__loudness;
+          return { quanta: xs.length, loud: xs.filter((x) => x > 1e-6).length, state: window.__frameQueue.state };
+        });
+        await page.keyboard.press("Space");
+        await page.waitForTimeout(300);
+        // A second and a half is about 560 quanta at 48 kHz. The test
+        // video's sound is a tone from its first moment to its last.
+        if (got.state !== "playing") wrong = `the space bar left the play ${got.state}`;
+        else if (got.loud < got.quanta * 0.8 || got.quanta < 200)
+          wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
       case "press":
@@ -7273,6 +7393,52 @@ for (const seq of toWalk) {
         for (let i = 0; i < 120 && (await rows()).length; i++) await page.waitForTimeout(100);
         if ((await rows()).length) wrong = "the row left to put back is still there after its time";
         await watch.step("remove two, hand still", s);
+        break;
+      }
+      case "row folds": {
+        const bins = page.locator("aside ol li:has(+ li) button.drop");
+        if (!(await bins.count())) {
+          wrong = "no clip in the clip list has a card under it";
+          break;
+        }
+        const bin = bins.first();
+        const box = await bin.boundingBox();
+        await page.mouse.move(box.x - 40, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.down();
+        await page.mouse.up();
+        await page.waitForSelector("aside ol .gone");
+        // Every frame from here, until the row has been gone a while.
+        await page.evaluate(() => {
+          const row = document.querySelector("aside ol .gone").closest("li");
+          const under = row.nextElementSibling;
+          const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
+          const seen = [];
+          window.__fold = { seen, height: row.getBoundingClientRect().height, gap };
+          const look = () => {
+            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top });
+            if (row.isConnected || seen.filter((f) => !f.there).length < 30) requestAnimationFrame(look);
+            else window.__fold.done = true;
+          };
+          requestAnimationFrame(look);
+        });
+        const line = await page.locator(".clip-timeline").boundingBox();
+        await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
+        for (let i = 0; i < 200 && !(await page.evaluate(() => window.__fold.done)); i++) await page.waitForTimeout(100);
+        const { seen, height, gap, done } = await page.evaluate(() => window.__fold);
+        if (!done) {
+          wrong = "the removed row was still in the list after its time";
+          break;
+        }
+        const tops = seen.map((f) => f.top);
+        const left = seen.findIndex((f) => !f.there);
+        const rose = tops[0] - tops[tops.length - 1];
+        const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
+        const last = tops[left - 1] - tops[left];
+        if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
+        else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
+        else if (last > 1) wrong = `the card under the removed row jumped ${last.toFixed(1)} px in the frame the row left the list, of the ${rose.toFixed(1)} it rose`;
+        await watch.step("row folds", s);
         break;
       }
       case "thumbnail": {
