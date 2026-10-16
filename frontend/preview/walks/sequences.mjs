@@ -182,6 +182,14 @@
 //                      frame in the video preview with the playhead in the
 //                      middle of the piece, put there with a click on the
 //                      clip timeline: where it stands and what it shows
+//   ["move window", handle, share]
+//                      drags the window's mark on the range picker, its
+//                      "to" or "from" triangle or its "bar", by this share
+//                      of the track's width, and remembers the episode's
+//                      last search and where the window was left
+//   ["searched moved"] the episode's newest search is a new one, not the
+//                      search there was at "move window", and it searched
+//                      the window where "move window" left it
 //   ["head"]           presses the clip list's head button, New, Cancel or
 //                      Continue
 //   ["hold", call, ms] the next call of this name waits so many
@@ -2003,6 +2011,36 @@ export const sequences = [
     ],
   },
   {
+    // Tim cancelled a search to look somewhere else, and the window stood
+    // locked on the range picker until the search was carried on. Moved
+    // off it, the search is set aside: New, and a fresh search where the
+    // window is. Undo puts it back on the search, and Continue with it.
+    name: "after Cancel the window moves, and New searches where it was moved",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["move window", "to", -0.4],
+      ["wait for", "New"],
+      ["no row", "Stopped. Click Continue"],
+      ["undo"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["redo"],
+      ["wait for", "New"],
+      ["restart"],
+      ["wait for", "New"],
+      ["no row", "Stopped. Click Continue"],
+      ["model", "answers"],
+      ["head"],
+      ["wait for", "New"],
+      ["searched moved"],
+    ],
+  },
+  {
     // Plan row 2.131. Cancel is pressed before the Go side has heard of
     // the search New asked for, which is held on its way there, so the
     // Cancel reaches the Go side first. The search never starts, and says
@@ -3609,6 +3647,9 @@ for (const seq of toWalk) {
   // of the last "play from", and the clip the engine had then.
   let played = null;
   let made = null;
+  // The episode's last search and the window "move window" left, for
+  // "searched moved".
+  let movedOff = null;
   // The clip "remove clip" removed last, for "put back".
   let removedLast = null;
   let loopEnd = null;
@@ -6617,6 +6658,46 @@ for (const seq of toWalk) {
       case "row": {
         const list = await clipList(page);
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
+        break;
+      }
+      case "move window": {
+        const [handle, share] = arg;
+        const mark = () =>
+          page.evaluate(() => {
+            const aim = document.querySelector(".aim");
+            const n = (sel) => Number(aim?.querySelector(sel)?.getAttribute("aria-valuenow"));
+            return aim && { from: n(".tip.top.from"), to: n(".tip.top.to") };
+          });
+        const before = await mark();
+        const grip = page.locator(handle === "bar" ? ".aim .bar.top" : `.aim .tip.top.${handle}`);
+        const box = await grip.boundingBox().catch(() => null);
+        const track = await page.getByLabel("The range picker", { exact: true }).boundingBox();
+        if (!before || !box) {
+          wrong = "the range picker shows no window to take hold of";
+          break;
+        }
+        const path = await episodeOn(page);
+        const searches = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search");
+        await drag(page, box.x + box.width / 2, box.y + box.height / 2, share * track.width);
+        const after = await mark();
+        if (!after || (Math.abs(after.from - before.from) < 0.5 && Math.abs(after.to - before.to) < 0.5)) {
+          wrong = `the window did not move: ${JSON.stringify(before)} before, ${JSON.stringify(after)} after`;
+          break;
+        }
+        movedOff = { search: searches[searches.length - 1]?.id ?? "", window: after };
+        await watch.step("move window", s);
+        break;
+      }
+      case "searched moved": {
+        const path = await episodeOn(page);
+        const last = (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
+        const w = movedOff?.window;
+        const to = last && last.to > 0 ? last.to : Infinity;
+        if (!last || !w) wrong = "there is no search, or no window was moved";
+        else if (last.id === movedOff.search) wrong = `the search there was before the window moved was carried on, ${last.from}–${last.to} s`;
+        else if (Math.abs((last.from ?? 0) - w.from) > 0.5 || Math.abs(to - w.to) > 0.5) {
+          wrong = `the search looked at ${last.from}–${last.to} s, the window was moved to ${w.from}–${w.to} s`;
+        }
         break;
       }
       case "no row": {
