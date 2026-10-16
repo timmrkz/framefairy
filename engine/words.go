@@ -221,6 +221,134 @@ func (t *Transcript) heardIndex(key string) (int, bool) {
 	return 0, false
 }
 
+// A caption moved by hand is kept against the word it begins or ends on,
+// see Clip.CaptionTimes. That word is one of the words said, and a heard
+// word corrected to several words says several, so it is kept by the key
+// of the heard word, and after a slash which of its words it is, from
+// one, when it is not the first: h61200 or h61200/1. It used to be kept by
+// where the word starts on the sound, which the silence level moves, and
+// the moved edge then met no word. Plan row 2.266. A key from before, the
+// bare millisecond, is still read that way.
+
+// saidKey is the key of the word said at a moment, one of Words, which a
+// caption edge is kept by.
+func (t *Transcript) saidKey(at float64) (string, bool) {
+	heard, ok := t.HeardAt(at)
+	if !ok {
+		return "", false
+	}
+	first, n := t.saidOf(heard)
+	for part := range n {
+		if math.Abs(t.Words[first+part].Start-at) < 0.0005 {
+			key := t.keyOf(heard)
+			if part > 0 {
+				key += "/" + strconv.Itoa(part)
+			}
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// saidAt is when the word said a key names starts, the other way round
+// from saidKey.
+func (t *Transcript) saidAt(key string) (float64, bool) {
+	base, part, split := strings.Cut(key, "/")
+	k := 0
+	if split {
+		var err error
+		if k, err = strconv.Atoi(part); err != nil {
+			return 0, false
+		}
+	}
+	i, ok := t.heardIndex(base)
+	if !ok || i >= len(t.HeardWords) {
+		return 0, false
+	}
+	first, n := t.saidOf(t.HeardWords[i])
+	if k < 0 || k >= n {
+		return 0, false
+	}
+	return t.Words[first+k].Start, true
+}
+
+// saidOf is where the words a heard word says begin in Words, and how many
+// there are, see splitWord.
+func (t *Transcript) saidOf(heard Cue) (first, n int) {
+	if strings.TrimSpace(heard.Text) == "" {
+		return 0, 0
+	}
+	first = sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= heard.Start-0.0005 })
+	n = max(len(strings.Fields(heard.Text)), 1)
+	if first >= len(t.Words) || math.Abs(t.Words[first].Start-heard.Start) >= 0.0005 {
+		return 0, 0
+	}
+	return first, min(n, len(t.Words)-first)
+}
+
+// captionTimesNow is a clip's captions moved by hand, each kept by when the
+// word it is kept on starts now, which is how the captions are laid out
+// and looked up, see moveCaptions. A key from before is that already, and
+// gives way to a key of now that names the same word. A key that names no
+// word of the clip's is left out, and its caption is where its words put
+// it.
+func (t *Transcript) captionTimesNow(times map[string]CaptionTime) map[string]CaptionTime {
+	if len(times) == 0 {
+		return times
+	}
+	out := make(map[string]CaptionTime, len(times))
+	for key, edges := range times {
+		if _, heard, _ := parseWordKey(key); !heard {
+			if _, taken := out[key]; !taken {
+				out[key] = edges
+			}
+		}
+	}
+	for key, edges := range times {
+		if _, heard, _ := parseWordKey(strings.SplitN(key, "/", 2)[0]); !heard {
+			continue
+		}
+		if at, ok := t.saidAt(key); ok {
+			out[wordKey(at)] = edges
+		}
+	}
+	return out
+}
+
+// rekeyCaptionTimes keeps a clip's caption edges kept from before 2.266,
+// by where their words start on the sound, by their words' own keys, in
+// times, and says which keys it kept anew as what. Where a word has both,
+// what its own key says wins. A key that names no word is kept as it is.
+func (t *Transcript) rekeyCaptionTimes(times map[string]CaptionTime) map[string]string {
+	rekeyed := map[string]string{}
+	for key := range times {
+		ms, heard, ok := parseWordKey(key)
+		if !ok || heard {
+			continue
+		}
+		at := float64(ms) / 1000
+		j := sort.Search(len(t.Words), func(i int) bool { return t.Words[i].Start >= at-0.0006 })
+		if j >= len(t.Words) || wordKey(t.Words[j].Start) != key {
+			continue
+		}
+		if own, ok := t.saidKey(t.Words[j].Start); ok && own != key {
+			rekeyed[key] = own
+		}
+	}
+	for old, own := range rekeyed {
+		was, now := times[old], times[own]
+		if now.Start == nil {
+			now.Start = was.Start
+		}
+		if now.End == nil {
+			now.End = was.End
+		}
+		times[own] = now
+		delete(times, old)
+	}
+	return rekeyed
+}
+
 // keyOf is the key of a heard word, one of HeardWords.
 func (t *Transcript) keyOf(heard Cue) string {
 	i := sort.Search(len(t.snapped), func(i int) bool { return t.snapped[i].Start >= heard.Start-0.0005 })
@@ -499,6 +627,7 @@ func HoldsWord(start, end float64, w Cue) bool {
 // for the episode's language.
 func ClipCaptions(clip Clip, t *Transcript, s Style) []LaidCaption {
 	t = t.Of(clip)
+	clip.CaptionTimes = t.captionTimesNow(clip.CaptionTimes)
 	captions := Captions(clip, t.clipCaptionWords(clip), max(8, int(s.MaxChars)), TooWide(s))
 	return LayOutCaptions(captions, s, t.Language)
 }
