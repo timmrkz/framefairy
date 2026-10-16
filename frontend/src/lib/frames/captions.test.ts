@@ -260,6 +260,42 @@ describe("the layers of the captions", () => {
     }
   });
 
+  // Issue #288: on a busy machine the walk saw the captions of the
+  // frame before over a playing clip's frames, since a frame that asked
+  // ahead while three layers were on their way was never asked for, and
+  // only once it was drawn without its own.
+  it("asks for a frame of a playing clip that asked ahead while three were on their way, once one has come", async () => {
+    const { asked, answer } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => false });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
+    for (const at of [1.0, 1.04, 1.08, 1.12, 1.16]) layers.coming(at, [10, 20]);
+    expect(asked.length).toBe(3);
+    expect(layers.busy).toBe(true);
+    answer.shift()!();
+    await vi.waitFor(() => expect(asked.length).toBe(4));
+    expect(new URLSearchParams(asked[3].split("?")[1]).get("at")).toBe("1.120000");
+    answer.shift()!();
+    await vi.waitFor(() => expect(asked.length).toBe(5));
+    expect(new URLSearchParams(asked[4].split("?")[1]).get("at")).toBe("1.160000");
+    for (const a of answer.splice(0)) a();
+    await vi.waitFor(() => expect(layers.busy).toBe(false));
+    // All five are there when they are drawn.
+    for (const [i, at] of [1.0, 1.04, 1.08, 1.12, 1.16].entries()) expect(layers.at(at, [10, 20])?.pixels[0]).toBe(i + 1);
+    expect(layers.stats.late).toBe(0);
+  });
+
+  // Paused, the frames read ahead are the ones a step may come to, and a
+  // bounce after a word step shares the Go side with them, so they stay
+  // as they were: asked for while there is room, and by the step.
+  it("asks for no frame read ahead of a paused clip once three are on their way", async () => {
+    const { asked } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
+    for (const at of [1.0, 1.04, 1.08, 1.12, 1.16]) layers.coming(at, [10, 20]);
+    expect(asked.length).toBe(3);
+    expect(layers.busy).toBe(true);
+  });
+
   it("never asks for a layer with an ask newer than the frame's, and drops another clip's captions", async () => {
     const { asked, answer } = answering();
     const layers = new CaptionLayers(() => {});
@@ -700,6 +736,20 @@ describe("asks no longer wanted", () => {
     layers.coming(1.04, [10, 20]);
     layers.sought(false);
     expect(asked[3].signal?.aborted).toBe(false);
+  });
+
+  it("drops the frames that asked ahead when the captions change, or a seek while playing", async () => {
+    const asked = hanging();
+    let paused = false;
+    const layers = new CaptionLayers(() => {}, { paused: () => paused });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
+    for (const at of [1.0, 1.04, 1.08, 1.12]) layers.coming(at, [10, 20]);
+    layers.sought(false);
+    expect(layers.busy).toBe(false);
+    for (const at of [2.0, 2.04, 2.08, 2.12]) layers.coming(at, [10, 20]);
+    layers.set({ path: "/v.mp4", clip: "a", track: "two", drafts: {} });
+    expect(layers.busy).toBe(false);
+    expect(asked.length).toBe(6);
   });
 
   it("are called off for both parts of a word put back", async () => {
