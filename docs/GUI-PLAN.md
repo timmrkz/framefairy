@@ -1,5 +1,15 @@
 # GUI plan
 
+<!-- frozen: open work is in the GitHub issues, see scripts/plan-frozen.sh -->
+
+**This plan is history.** It was kept up to 16 October 2026. Open work
+is now in the [GitHub issues](https://github.com/timmrkz/framefairy/issues),
+because every pull request added its row at the end of the same table
+here, and any two of them conflicted. A row still marked `[ ]` or `[~]`
+below became an issue that says which row it was, so searching the
+issues for `plan row 2.266` finds it. A pull request changes no line of
+this file, and CI fails one that does.
+
 The app is built in batches of a couple of minutes each. After a few
 batches Claude reports back, and Tim builds and tries the result on his Mac.
 
