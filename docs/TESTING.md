@@ -599,6 +599,29 @@ a new number it fails at `in place`, and with pictures named and cleared
 by the clip's name rather than the short's it fails the namesake
 sequence at `apart`. See 2.133 in [GUI-PLAN.md](GUI-PLAN.md).
 
+#### What depends on how fast the machine is
+
+A sequence that reads the screen on every frame, `watchPills` and
+`watchEdge`, gives each watch its own switch, so a watch that was
+stopped stops at its next frame even when the next one has begun. It
+read the next watch's switch before and went on, so every step of `a
+step onto a word pops it over the paused frame` added a reading of the
+canvas to every frame, and on a busy machine the screen drew a bounce on
+fewer frames each step, issues #328 and #329.
+
+How many frames the screen draws, and how soon the video preview comes
+to a frame, is the machine's. So a step that works on the frame shown,
+C, R and a play from the playhead, waits for that frame first,
+`shownOnPlayhead`, issue #320. And a check counts what the app drew
+against the frames the screen drew, not against a number: a bounce is
+drawn on every frame the screen drew while it lasted, and the crop frame
+of a glide stands in a place of its own on every frame the play showed.
+A bounce the screen drew too few frames of to judge, fewer than three or
+none for 90 ms, is stepped onto again, up to three times. A bounce drawn
+on every other frame fails with "bounced on 8 of the 15 frames the screen
+drew while it lasted", where the seven frames asked for before let it
+pass.
+
 ### `speed.mjs`: how quickly the video preview follows the keys
 
 `speed.mjs` is not a walk. It checks no rule and fails on no number, so
