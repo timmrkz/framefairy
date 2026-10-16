@@ -34,8 +34,8 @@ func TestDropAddsTheVideosAndOpensOne(t *testing.T) {
 	if got.Open != video {
 		t.Errorf("opens %q, want %s", got.Open, filepath.Base(video))
 	}
-	if !strings.Contains(got.Error, "notizen.pdf and ordner are not videos") {
-		t.Errorf("said %q, want it to name the files left out", got.Error)
+	if !strings.Contains(got.Error, "notizen.pdf and ordner cannot be added because they are not videos") {
+		t.Errorf("said %q, want it to name the files it cannot add", got.Error)
 	}
 	if !slices.Contains(d.svc.store.Episodes(), video) {
 		t.Errorf("%s is not in the library", filepath.Base(video))
@@ -88,7 +88,7 @@ func TestDropOfNoVideoSaysWhy(t *testing.T) {
 	if len(got.Added) != 0 || got.Open != "" {
 		t.Errorf("added %v and opens %q, want neither", got.Added, got.Open)
 	}
-	for _, want := range []string{"notizen.pdf is not a video", "the picture of kaputt.mp4 cannot be decoded"} {
+	for _, want := range []string{"notizen.pdf cannot be added because it is not a video", "the picture of kaputt.mp4 cannot be decoded"} {
 		if !strings.Contains(got.Error, want) {
 			t.Errorf("said %q, want it to say %q", got.Error, want)
 		}
