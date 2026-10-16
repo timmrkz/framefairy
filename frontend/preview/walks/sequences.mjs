@@ -43,6 +43,9 @@
 //                      checks that the frame it lands on was there already,
 //                      read while the hand rested: it came from the frames
 //                      kept, see AppFrames.ahead
+//   ["heard"]          rests a second and a half, plays with the space bar
+//                      and asks that the sound card was handed sound for
+//                      most of the next second and a half, then pauses
 //   ["button", label]  clicks the button that says label, and waits until
 //                      it has done its work
 //   ["type", text]     types
@@ -1274,10 +1277,14 @@ export const sequences = [
       ["add", 40, "25"],
       ["wait for", "New"],
       ["cards", 1],
+      ["heard"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowRight"],
       ["read ahead", "Shift+ArrowLeft"],
+      // Tim heard nothing when clips played on #229, so a play after the
+      // frames were read ahead is listened to.
+      ["heard"],
     ],
   },
   {
@@ -4266,6 +4273,48 @@ for (const seq of toWalk) {
         else if (!came.fromKept)
           wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms, though the hand rested a second and a half before it`;
         await watch.step("press", s);
+        break;
+      }
+      case "heard": {
+        await page.waitForTimeout(1500);
+        // What the sound card is handed, a render quantum at a time, the
+        // way "loop off near the end" records it.
+        await page.evaluate(async () => {
+          const q = window.__frameQueue;
+          if (!window.__loudness) {
+            const code = `registerProcessor("loudness", class extends AudioWorkletProcessor {
+              process(inputs) {
+                const ch = inputs[0][0];
+                if (ch) { let sum = 0; for (const v of ch) sum += v * v; this.port.postMessage(sum / ch.length); }
+                return true;
+              }
+            });`;
+            await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+            const node = new AudioWorkletNode(q.audio, "loudness", { numberOfOutputs: 1 });
+            node.port.onmessage = (e) => window.__loudness.push(e.data);
+            const hush = q.audio.createGain();
+            hush.gain.value = 0;
+            q.out.connect(node).connect(hush).connect(q.audio.destination);
+            // Held, or the recorder is collected while it records.
+            window.__loudnessNodes = [node, hush];
+          }
+          window.__loudness = [];
+        });
+        await page.keyboard.press("Space");
+        await page.waitForFunction(() => window.__frameQueue.state === "playing", null, { timeout: 5000 }).catch(() => {});
+        await page.evaluate(() => (window.__loudness = []));
+        await page.waitForTimeout(1500);
+        const got = await page.evaluate(() => {
+          const xs = window.__loudness;
+          return { quanta: xs.length, loud: xs.filter((x) => x > 1e-6).length, state: window.__frameQueue.state };
+        });
+        await page.keyboard.press("Space");
+        await page.waitForTimeout(300);
+        // A second and a half is about 560 quanta at 48 kHz. The test
+        // video's sound is a tone from its first moment to its last.
+        if (got.state !== "playing") wrong = `the space bar left the play ${got.state}`;
+        else if (got.loud < got.quanta * 0.8 || got.quanta < 200)
+          wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
       case "press":

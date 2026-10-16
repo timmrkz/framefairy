@@ -979,6 +979,9 @@
   // Paused, with nothing under the hand, the words Shift and an arrow go to
   // from here are read ahead, the way onKey walks them. A drag gets no
   // frames ahead: where the hand goes next cannot be told. Plan row 2.269.
+  // It runs on every move of the playhead while paused, a play just ended
+  // too: FrameQueue.ahead drops what it was asked already, so this needs
+  // no guard of its own.
   $effect(() => {
     if (playing || scrubbing || gripping || !onahead) return;
     const step = Math.max(frame, 1 / 240);

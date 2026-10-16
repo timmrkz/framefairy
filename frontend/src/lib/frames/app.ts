@@ -25,9 +25,13 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] }
 
 // How much of the frames shown last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
-// than that, a new stream from the key frame before is quicker. 192 MB is
-// about 40 frames of 1512 by 850, a big window's: with half of it a word
-// back sought again for frames it had let go of, plan row 2.269.
+// than that, a new stream from the key frame before is quicker. The kept
+// frames are counted, so the room follows the size of the frames: 40 are
+// about 90 MB at 1012 by 570 and 190 MB at 1512 by 850, a big window's.
+// With 96 MB at that size a word back sought again for frames it had let
+// go of, plan row 2.269. Never more than 192 MB, so a big screen on a Mac
+// with little memory keeps no more than that.
+const KEPT_FRAMES = 40;
 const KEPT_BYTES = 192 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
@@ -396,6 +400,7 @@ export class AppFrames {
       const w: Waiter = { rank, seq: ++this.asked, ahead: true, done: () => this.aheadOf.delete(w) };
       this.aheadOf.add(w);
       this.aheadRead.add(rank);
+      if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
       this.stats.ahead++;
       this.route(w);
     }
@@ -453,7 +458,10 @@ export class AppFrames {
       this.streams.push(s);
       this.streams = this.streams.filter((x) => !x.ended);
       while (this.streams.length > STREAMS) {
-        const oldest = this.streams.reduce((a, b) => (a.used <= b.used ? a : b));
+        // A stream opened only for frames read ahead goes first: the
+        // others are a play's or the hand's.
+        const ahead = this.streams.filter((x) => x.aheadOnly && x !== s);
+        const oldest = (ahead.length ? ahead : this.streams).reduce((a, b) => (a.used <= b.used ? a : b));
         oldest.close();
         this.streams = this.streams.filter((x) => x !== oldest);
       }
@@ -471,7 +479,7 @@ export class AppFrames {
     this.kept.set(rank, frame);
     this.keptBytes += bytes(frame);
     for (const [r, f] of this.kept) {
-      if (this.keptBytes <= KEPT_BYTES) break;
+      if (this.keptBytes <= KEPT_BYTES && this.kept.size <= KEPT_FRAMES) break;
       this.kept.delete(r);
       this.keptBytes -= bytes(f);
       f.close();

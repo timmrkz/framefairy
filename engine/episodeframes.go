@@ -459,7 +459,10 @@ func (f *EpisodeFrames) Light() framewire.Light {
 // which no frame is wanted any more, read each time the next frames are
 // asked of the decoder, which lets the frames before it go unscaled: a jump
 // forward in an open stream then costs their decoding only, not making
-// pictures of them that are thrown away. Plan row 2.269.
+// pictures of them that are thrown away. The next frames are asked for as
+// soon as the ones before are made, so a skip that comes with a pull counts
+// from the batch after the one already on its way, which is still made into
+// pictures. Plan row 2.269.
 func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int,
 	skip func() float64, got func(at float64, frame []byte) error) error {
 	if grid.Num <= 0 || grid.Den <= 0 {
