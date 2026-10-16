@@ -25,8 +25,14 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] }
 
 // How much of the frames shown last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
-// than that, a new stream from the key frame before is quicker.
-const KEPT_BYTES = 96 << 20;
+// than that, a new stream from the key frame before is quicker. The kept
+// frames are counted, so the room follows the size of the frames: 40 are
+// about 90 MB at 1012 by 570 and 190 MB at 1512 by 850, a big window's.
+// With 96 MB at that size a word back sought again for frames it had let
+// go of, plan row 2.269. Never more than 192 MB, so a big screen on a Mac
+// with little memory keeps no more than that.
+const KEPT_FRAMES = 40;
+const KEPT_BYTES = 192 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
 // decoders, and one more for a still or a seek while they play.
@@ -37,7 +43,8 @@ const STREAMS = 3;
 // it nor opens another stream for it.
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean };
+// ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
+type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
@@ -61,6 +68,8 @@ class Stream {
   private pulling = false;
   // The newest ask for a place it was opened for, its first frame, or 0.
   private placed = 0;
+  // Opened for a frame read ahead of the hand, see AppFrames.ahead.
+  aheadOnly = false;
 
   constructor(
     private owner: AppFrames,
@@ -95,7 +104,9 @@ class Stream {
   // Still on its way to its first frame for a place nobody wants any more:
   // a drag went on past it.
   get stale(): boolean {
-    return !this.ended && !this.gave && this.waiting.every((w) => w.gone);
+    // A stream opened ahead of the hand holds no place back: the hand's
+    // own frame never waits for one.
+    return !this.aheadOnly && !this.ended && !this.gave && this.waiting.every((w) => w.gone);
   }
 
   // Whether this stream is the quickest way to the frame: it has not passed
@@ -107,6 +118,7 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
+    if (!w.ahead) this.aheadOnly = false;
     if (w.place && w.rank === this.first) this.placed = Math.max(this.placed, w.seq);
     this.waiting.push(w);
     void this.pull();
@@ -130,12 +142,21 @@ class Stream {
           if (!this.ended && !this.gave) await this.firstFrame(id);
           return;
         }
-        const lowest = Math.min(...this.waiting.map((w) => w.rank));
-        const highest = Math.max(...this.waiting.map((w) => w.rank));
+        // The frames wanted next, one run of them: a frame read ahead
+        // further on is read with a skip of its own, after these, so the
+        // frames between are never made into pictures.
+        const ranks = this.waiting.map((w) => w.rank).sort((a, b) => a - b);
+        const lowest = ranks[0];
+        let highest = lowest;
+        for (const r of ranks) if (r <= highest + 1) highest = r;
         // Frames before the first one wanted are decoded on the Go side
-        // and dropped there.
-        const skip = lowest > this.position + 1 ? this.owner.ptsOf(lowest) - this.owner.track.frame / 2 : 0;
-        const n = Math.min(16, Math.max(1, highest - Math.max(this.position, lowest - 1)));
+        // and never made into pictures, but for the one just before it,
+        // which comes too and is kept: the arrow to the left after a jump
+        // asks for it next, and it would cost a seek back to the key
+        // frame. Plan row 2.269.
+        const from = lowest > this.position + 2 ? lowest - 1 : lowest;
+        const skip = from > this.position + 1 ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
+        const n = Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
         const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
@@ -219,6 +240,12 @@ class Stream {
       else still.push(w);
     }
     this.waiting = still;
+    if (!this.handWaits) this.owner.aheadNow();
+  }
+
+  // Whether a frame the hand asked for is still to come from this stream.
+  get handWaits(): boolean {
+    return !this.ended && this.waiting.some((w) => !w.ahead && !w.gone);
   }
 
   private end(why: string) {
@@ -257,8 +284,19 @@ export class AppFrames {
   onPassing?: (rank: number, frame: Picture, seq: number) => void;
   // The number of the newest ask.
   asked = 0;
+  // The frames read ahead of the hand, withdrawn by the hand's next ask.
+  private aheadOf = new Set<Waiter>();
+  // The ranks to read ahead once the hand waits for nothing, see ahead.
+  private aheadWanted: number[] | null = null;
+  // The ranks read ahead and not yet asked for by the hand, and those of
+  // them the kept frames let go of first, for aheadLost.
+  private aheadRead = new Set<number>();
+  private aheadEvicted = new Set<number>();
   // first is the size the first stream was opened at, for the walks.
-  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[], first: "" };
+  // keptRanks are the ranks of the frames last handed over from the kept
+  // ones, for the walks. aheadLost counts the frames the hand asked for
+  // that were read ahead and let go of from the kept ones before it did.
+  readonly stats = { streams: 0, continued: 0, kept: 0, keptRanks: [] as number[], parked: 0, ahead: 0, aheadLost: 0, opens: [] as Opened[], first: "" };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
@@ -286,6 +324,7 @@ export class AppFrames {
     const was = this.parked;
     this.parked = [];
     for (const w of was) this.route(w);
+    this.aheadNow();
   }
 
   // A stream gave its first frame: how long that took here, from asking to
@@ -331,10 +370,58 @@ export class AppFrames {
     });
   }
 
+  // Reads the frames of these ranks while the hand rests, and keeps them,
+  // so that a step to one of them finds its frame there: the first frame
+  // of the word after the playhead and of the word before, the words
+  // Shift and an arrow walk to. They come after what the hand asked for
+  // in the stream that reads on to them, and a stream opened for one never
+  // holds up a place the hand asks for. Any newer ask of the hand
+  // withdraws them, see still. Plan row 2.269.
+  //
+  // They are asked only once nothing the hand asked for is still to come.
+  // Asked at once, the frame under the hand came 80 to 120 ms later when a
+  // drag of the playhead let go, measured with speed.mjs: the frames read
+  // ahead competed with it for the decoder and for the streams.
+  ahead(ranks: number[]) {
+    this.still();
+    this.aheadWanted = ranks;
+    this.aheadNow();
+  }
+
+  // Asks the frames read ahead once the hand waits for nothing.
+  aheadNow() {
+    const ranks = this.aheadWanted;
+    if (!ranks || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
+    this.aheadWanted = null;
+    const { width, height } = this.size();
+    for (const rank of ranks) {
+      const have = this.kept.get(rank);
+      if (rank < 0 || (have && have.width === width && have.height === height)) continue;
+      const w: Waiter = { rank, seq: ++this.asked, ahead: true, done: () => this.aheadOf.delete(w) };
+      this.aheadOf.add(w);
+      this.aheadRead.add(rank);
+      if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
+      this.stats.ahead++;
+      this.route(w);
+    }
+  }
+
+  // The hand asks again: what was read ahead for where it was is not
+  // wanted any more.
+  still() {
+    this.aheadWanted = null;
+    for (const w of this.aheadOf) w.gone = true;
+    this.aheadOf.clear();
+  }
+
   route(w: Waiter) {
     if (w.gone || this.closed) {
       w.done(null);
       return;
+    }
+    if (!w.ahead) {
+      if (this.aheadEvicted.delete(w.rank)) this.stats.aheadLost++;
+      this.aheadRead.delete(w.rank);
     }
     const { width, height } = this.size();
     // A kept frame of another size is not this frame: one decoded before
@@ -343,6 +430,8 @@ export class AppFrames {
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
       this.stats.kept++;
+      this.stats.keptRanks.push(w.rank);
+      if (this.stats.keptRanks.length > 16) this.stats.keptRanks.shift();
       // The kept frame stays the most recently used.
       this.kept.delete(w.rank);
       this.kept.set(w.rank, have);
@@ -363,12 +452,16 @@ export class AppFrames {
       return;
     } else {
       s = new Stream(this, w.rank, width, height);
+      s.aheadOnly = !!w.ahead;
       this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
       this.streams.push(s);
       this.streams = this.streams.filter((x) => !x.ended);
       while (this.streams.length > STREAMS) {
-        const oldest = this.streams.reduce((a, b) => (a.used <= b.used ? a : b));
+        // A stream opened only for frames read ahead goes first: the
+        // others are a play's or the hand's.
+        const ahead = this.streams.filter((x) => x.aheadOnly && x !== s);
+        const oldest = (ahead.length ? ahead : this.streams).reduce((a, b) => (a.used <= b.used ? a : b));
         oldest.close();
         this.streams = this.streams.filter((x) => x !== oldest);
       }
@@ -386,10 +479,14 @@ export class AppFrames {
     this.kept.set(rank, frame);
     this.keptBytes += bytes(frame);
     for (const [r, f] of this.kept) {
-      if (this.keptBytes <= KEPT_BYTES) break;
+      if (this.keptBytes <= KEPT_BYTES && this.kept.size <= KEPT_FRAMES) break;
       this.kept.delete(r);
       this.keptBytes -= bytes(f);
       f.close();
+      if (this.aheadRead.delete(r)) {
+        this.aheadEvicted.add(r);
+        if (this.aheadEvicted.size > 256) this.aheadEvicted.delete(this.aheadEvicted.values().next().value!);
+      }
     }
   }
 

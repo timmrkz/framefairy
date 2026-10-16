@@ -425,7 +425,7 @@ func TestTheEpisodesDecoderStandsAPhoneVideoUp(t *testing.T) {
 		})
 		dec := NewEpisodeFrames(program, phone)
 		frame := first(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), grid, 0.5, w, h, got)
+			return dec.Stream(context.Background(), grid, 0.5, w, h, nil, got)
 		})
 		dec.Close()
 		if len(frame) != len(want) || len(want) == 0 {

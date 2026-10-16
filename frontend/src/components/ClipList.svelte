@@ -212,11 +212,23 @@
     return all.sort((a, b) => a.start - b.start || rank(a) - rank(b));
   });
 
+  // A row that opens or closes takes the space after it with it. The list
+  // puts --gap between its rows, and slide alone folds the row's height,
+  // padding and border but not that space, which stood until the row was
+  // gone and then went in one frame: Tim saw a removed row close to a
+  // strip and the list jump up the rest, plan row 2.275. The row's own
+  // margin runs from nothing to minus the gap as it folds, so the cards
+  // under it move the card and the space together, at one pace.
+  function fold(node: Element) {
+    const base = slide(node, { duration: 200 });
+    return { ...base, css: (t: number, u: number) => `${base.css?.(t, u) ?? ""}; margin-bottom: calc(var(--gap) * ${-u});` };
+  }
+
   // A clip taken out slides away. A clip on the way does not: it becomes
   // the clip itself, in the same place and the same frame, so the list
   // never shows the two of them at once.
   function leave(node: Element, row: Row) {
-    return row.clip ? slide(node, { duration: 200 }) : { duration: 0 };
+    return row.clip ? fold(node) : { duration: 0 };
   }
 
   // A clip on the way that makes the list longer comes in the way a clip
@@ -231,7 +243,7 @@
   });
   function enter(node: Element, row: Row) {
     const grows = rows.length > settled;
-    return row.arriving && grows ? slide(node, { duration: 200 }) : { duration: 0 };
+    return row.arriving && grows ? fold(node) : { duration: 0 };
   }
 
   // The work in hand stays in view: the block of rows from the first card
