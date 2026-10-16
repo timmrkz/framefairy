@@ -3,6 +3,7 @@
   import { fade } from "svelte/transition";
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
+  import { secondThoughts } from "../lib/removed";
   import { toasts, type Toast } from "../lib/toast.svelte";
 
   // The toasts, in the top right corner of the window they are about,
@@ -11,7 +12,9 @@
   // it stood when one comes and goes. Plan row 2.268, see toast.svelte.ts.
   //
   // Its time runs down from the moment it comes, in the fill a removed
-  // clip's runs down in, the way a toast does everywhere else. It stands
+  // clip's runs down in, and as long, the way a toast does everywhere
+  // else. It once had eight seconds of its own, and Tim asked why it was
+  // not the ten everything else that runs out has. It stands
   // still while the pointer is on it, so a toast being read is not taken
   // away, and the cross closes it at once. It once waited for the pointer
   // before its time began, and Tim found a toast that never went.
@@ -19,10 +22,6 @@
   // shown says which toasts belong in this window now: a toast about a
   // video waits while another video is on screen.
   let { shown = () => true }: { shown?: (t: Toast) => boolean } = $props();
-
-  // How long a toast stays, in seconds, the pointer on it aside. Long
-  // enough to read a reason with a file's whole name in it.
-  const stays = 8;
 
   const list = $derived(toasts.list.filter((t) => shown(t)));
 </script>
@@ -41,7 +40,7 @@
       <button class="quiet bin close" aria-label="Close" title="Close" onclick={() => toasts.close(t.id, "closed")}>
         <Icon name="close" />
       </button>
-      <Busy drain={stays} onend={() => toasts.close(t.id, "ran out")} />
+      <Busy drain={secondThoughts} onend={() => toasts.close(t.id, "ran out")} />
     </div>
   {/each}
 </div>

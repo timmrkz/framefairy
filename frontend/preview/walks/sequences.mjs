@@ -236,10 +236,10 @@
 //                      step before it, and the line beside the report's
 //                      buttons says nothing (2.268)
 //   ["toast goes"]     with the pointer away, the toast is still there
-//                      after two seconds and gone by itself within twelve
+//                      after nine seconds and gone by itself within fourteen
 //   ["toast held"]     the pointer stays on the toast longer than its time
 //                      and it stays, then the pointer goes and so does the
-//                      toast, within twelve seconds
+//                      toast, within fourteen seconds
 //   ["toast closed"]   presses the cross on the toast, and it goes
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
@@ -5895,25 +5895,27 @@ for (const seq of toWalk) {
       case "toast goes": {
         // Its time runs from the moment it comes, with no hand on it. Tim
         // found a toast that waited for the pointer before its time began.
+        // Its time is the ten seconds a removed row has, so it is still
+        // there after nine. It once ran eight of its own.
         await page.mouse.move(2, 400);
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(9000);
         if (!(await toastSays(page))) {
-          wrong = "the toast went within two seconds, too soon to be read";
+          wrong = "the toast went within nine seconds, sooner than the ten a removed row has";
           break;
         }
-        if (!(await gone(page, ".toast", 10000))) wrong = "the toast was still there twelve seconds after it came, with the pointer away";
+        if (!(await gone(page, ".toast", 5000))) wrong = "the toast was still there fourteen seconds after it came, with the pointer away";
         break;
       }
       case "toast held": {
         const box = await page.locator(".toast .text").first().boundingBox();
         await page.mouse.move(box.x + 4, box.y + box.height / 2);
-        await page.waitForTimeout(9500);
+        await page.waitForTimeout(11500);
         if (!(await toastSays(page))) {
           wrong = "the toast went while the pointer was on it";
           break;
         }
         await page.mouse.move(2, 400);
-        if (!(await gone(page, ".toast", 12000))) wrong = "the toast was still there twelve seconds after the pointer left it";
+        if (!(await gone(page, ".toast", 14000))) wrong = "the toast was still there fourteen seconds after the pointer left it";
         break;
       }
       case "toast closed": {

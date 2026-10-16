@@ -1909,9 +1909,9 @@ macOS brings its own notes in, and moves nothing under it. Each place
 that can go wrong has one toast at a time: a newer reason replaces the
 older one, and the place takes it away when what it was about is done
 again and goes well. A toast about a video shows while that video is on
-screen and waits while another is. Its time, eight seconds, runs down
-from the moment it comes, in the fill a removed clip's runs down in,
-and stands still while the pointer is on it. Its cross takes it away at
+screen and waits while another is. Its time, the ten seconds a removed
+clip has to be put back, runs down from the moment it comes, in the
+same fill, and stands still while the pointer is on it. Its cross takes it away at
 once. It wears the red of a removed row over the dark of the app, with
 no line round it. The first one waited for the pointer before its time
 began and had a thin red line round a grey note, and Tim found both

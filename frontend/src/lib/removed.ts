@@ -6,7 +6,8 @@
 // it is seconds long and a restart is well past it.
 import type { ClipEntry } from "./api";
 
-// How long a clip taken out can be put back, in seconds.
+// How long a clip taken out can be put back, in seconds, and how long a
+// toast stays: the one time the app gives anything that runs out.
 export const secondThoughts = 10;
 
 // A clip taken out, and the moment its time runs out, in milliseconds
