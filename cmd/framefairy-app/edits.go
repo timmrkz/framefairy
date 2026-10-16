@@ -360,7 +360,14 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
-	if err := s.edit(path, func() error { return engine.SetRejected(s.store.files, plan, clipID, removed) }); err != nil {
+	began := time.Now()
+	err := s.edit(path, func() error { return engine.SetRejected(s.store.files, plan, clipID, removed) })
+	what := "a clip was put back"
+	if removed {
+		what = "a clip was removed"
+	}
+	editLine(editLevel(err), path, clipID, time.Since(began)).Err(err).Msg(what)
+	if err != nil {
 		return ClipEntry{}, err
 	}
 	return s.clipEntry(ctx, path, plan, clipID)

@@ -20,6 +20,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -1195,9 +1196,10 @@ func bridgeDist(t *testing.T) string {
 // twelve minutes on one bridge while the other three had finished their
 // walks in four and waited. Each sequence opens the app afresh with
 // /reset, so it walks the same alone as after the one before it. The
-// walks go first, since each takes most of a minute, and the sequences,
-// most of them a few seconds long, fill in behind them, so no bridge is
-// left with a long run once the others are done.
+// longest runs go first and the short ones fill in behind them, so no
+// bridge is left with a long run once the others are done. How long each
+// run takes is in walk-times.tsv beside the walks, written by
+// WALKTIMES=1, see shareOf.
 //
 // On the real disk: Node runs the walks against the interface the build wrote.
 func TestWalks(t *testing.T) {
@@ -1227,6 +1229,10 @@ func TestWalks(t *testing.T) {
 		script string
 		env    []string
 	}
+	// The name a run is logged and timed under.
+	name := func(r walkRun) string {
+		return strings.TrimSpace(r.script + " " + strings.Join(r.env, " "))
+	}
 	var runs []walkRun
 	walksWanted := envNumber("WALKS", 3)
 	// Each walk takes its own number of steps unless STEPS says.
@@ -1248,13 +1254,23 @@ func TestWalks(t *testing.T) {
 	}
 
 	// One share of the runs when CI spreads them over machines,
-	// WALKSHARD=1/2: every nth run from the ith on. The walks come first,
-	// so each share gets as many walks as the others, and the sequences
-	// behind them.
-	runs = shareOf(t, runs, os.Getenv("WALKSHARD"))
+	// WALKSHARD=1/2, each share as long as the others by the times the
+	// runs took last, and the longest first in every share.
+	//
+	// On the real disk: the times are a file beside the walks.
+	timesFile := filepath.Join(walks, "walk-times.tsv")
+	before, err := os.ReadFile(timesFile)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	times := readWalkTimes(string(before))
+	all := runs
+	runs = shareOf(t, all, name, times, os.Getenv("WALKSHARD"))
 	if len(runs) == 0 {
 		t.Skip("this share has no runs")
 	}
+	var tookMu sync.Mutex
+	took := map[string]float64{}
 
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
@@ -1278,7 +1294,11 @@ func TestWalks(t *testing.T) {
 				cmd.Dir = walks
 				cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+url), r.env...)
 				out, err := cmd.CombinedOutput()
-				what := fmt.Sprintf("%s (%.0f s)", strings.TrimSpace(r.script+" "+strings.Join(r.env, " ")), time.Since(began).Seconds())
+				seconds := time.Since(began).Seconds()
+				tookMu.Lock()
+				took[name(r)] = seconds
+				tookMu.Unlock()
+				what := fmt.Sprintf("%s (%.0f s)", name(r), seconds)
 				if err != nil {
 					t.Errorf("%s:\n%s", what, out)
 					continue
@@ -1290,6 +1310,17 @@ func TestWalks(t *testing.T) {
 	wg.Wait()
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
+	}
+	// WALKTIMES=1 keeps what the runs took for the next split, and drops
+	// the runs that are gone.
+	if os.Getenv("WALKTIMES") != "" {
+		names := make([]string, len(all))
+		for i, r := range all {
+			names[i] = name(r)
+		}
+		if err := os.WriteFile(timesFile, []byte(writeWalkTimes(names, times, took)), 0o644); err != nil {
+			t.Error(err)
+		}
 	}
 }
 
@@ -1379,24 +1410,97 @@ func sequenceNames(t *testing.T, node, dir string) []string {
 	return names
 }
 
-// shareOf gives share i of n of all, "i/n", every nth from the ith on, or
-// all of them when share is empty.
-func shareOf[T any](t *testing.T, all []T, share string) []T {
+// shareOf gives share i of n of all, "i/n", or all of them when share is
+// empty, the longest run first either way. How long a run takes is what
+// it took when the times were last written, and a run with no time takes
+// as long as the middle one. The runs are handed out longest first, each
+// to the share with the least time so far, so the shares end together
+// where every third run left one share a minute and more behind the
+// others. A share starts its longest runs first, so the short ones fill
+// in behind them rather than one long run starting last.
+func shareOf[T any](t *testing.T, all []T, name func(T) string, took map[string]float64, share string) []T {
 	t.Helper()
-	if share == "" {
-		return all
+	i, n := 1, 1
+	if share != "" {
+		if _, err := fmt.Sscanf(share, "%d/%d", &i, &n); err != nil || n < 1 || i < 1 || i > n {
+			t.Fatalf("WALKSHARD is i/n, like 1/2, not %q", share)
+		}
 	}
-	var i, n int
-	if _, err := fmt.Sscanf(share, "%d/%d", &i, &n); err != nil || n < 1 || i < 1 || i > n {
-		t.Fatalf("WALKSHARD is i/n, like 1/2, not %q", share)
+	middle := 1.0
+	if len(took) > 0 {
+		known := make([]float64, 0, len(took))
+		for _, s := range took {
+			known = append(known, s)
+		}
+		slices.Sort(known)
+		middle = known[len(known)/2]
 	}
+	takes := func(x T) float64 {
+		if s, ok := took[name(x)]; ok {
+			return s
+		}
+		return middle
+	}
+	order := slices.Clone(all)
+	slices.SortStableFunc(order, func(a, b T) int { return cmp.Compare(takes(b), takes(a)) })
+	sums := make([]float64, n)
 	var mine []T
-	for k, x := range all {
-		if k%n == i-1 {
+	for _, x := range order {
+		least := 0
+		for k := range sums {
+			if sums[k] < sums[least] {
+				least = k
+			}
+		}
+		sums[least] += takes(x)
+		if least == i-1 {
 			mine = append(mine, x)
 		}
 	}
 	return mine
+}
+
+// readWalkTimes reads walk-times.tsv: whole seconds, a tab and the name
+// of the run, one run to a line. A line it cannot read is left out.
+func readWalkTimes(file string) map[string]float64 {
+	took := map[string]float64{}
+	for line := range strings.Lines(file) {
+		seconds, name, ok := strings.Cut(strings.TrimRight(line, "\r\n"), "\t")
+		s, err := strconv.ParseFloat(strings.TrimSpace(seconds), 64)
+		if !ok || err != nil || s <= 0 || name == "" {
+			continue
+		}
+		took[name] = s
+	}
+	return took
+}
+
+// writeWalkTimes is walk-times.tsv for the runs named, with what a run
+// took now where it ran and what it took before where it did not, the
+// longest first and padded so the seconds line up.
+func writeWalkTimes(names []string, before, now map[string]float64) string {
+	type line struct {
+		seconds int
+		name    string
+	}
+	var lines []line
+	for _, n := range names {
+		s, ok := now[n]
+		if !ok {
+			s, ok = before[n]
+		}
+		if ok {
+			lines = append(lines, line{max(1, int(math.Round(s))), n})
+		}
+	}
+	slices.SortFunc(lines, func(a, b line) int {
+		return cmp.Or(cmp.Compare(b.seconds, a.seconds), strings.Compare(a.name, b.name))
+	})
+	var out strings.Builder
+	for _, l := range lines {
+		fmt.Fprintf(&out, "%3d\t%s\n", l.seconds, l.name)
+	}
+	return out.String()
 }
 
 func envNumber(name string, otherwise int) int {
@@ -1406,24 +1510,90 @@ func envNumber(name string, otherwise int) int {
 	return otherwise
 }
 
-// Split two ways or three, the shares of the walks hold every run once.
+// Split two ways or three, the shares of the walks hold every run once,
+// with times for some of the runs or none.
 func TestTheSharesOfTheWalksHoldEveryRunOnce(t *testing.T) {
-	all := []int{0, 1, 2, 3, 4, 5, 6}
-	for _, n := range []int{1, 2, 3} {
-		seen := map[int]int{}
-		for i := 1; i <= n; i++ {
-			for _, x := range shareOf(t, all, fmt.Sprintf("%d/%d", i, n)) {
-				seen[x]++
+	all := []string{"a", "b", "c", "d", "e", "f", "g"}
+	same := func(x string) string { return x }
+	for _, took := range []map[string]float64{nil, {"a": 3, "c": 90, "f": 40, "g": 7}} {
+		for _, n := range []int{1, 2, 3} {
+			seen := map[string]int{}
+			for i := 1; i <= n; i++ {
+				for _, x := range shareOf(t, all, same, took, fmt.Sprintf("%d/%d", i, n)) {
+					seen[x]++
+				}
+			}
+			for _, x := range all {
+				if seen[x] != 1 {
+					t.Errorf("times %v, split %d ways, run %s is in %d shares", took, n, x, seen[x])
+				}
 			}
 		}
-		for _, x := range all {
-			if seen[x] != 1 {
-				t.Errorf("split %d ways, run %d is in %d shares", n, x, seen[x])
+		if got := shareOf(t, all, same, took, ""); len(got) != len(all) {
+			t.Errorf("times %v, with no share, %d runs of %d", took, len(got), len(all))
+		}
+	}
+}
+
+// The shares of the walks end together: a set like the real one, a few
+// runs of a minute or more and many of a few seconds, splits three ways
+// with no share more than a short run longer than another, every share
+// starts with its longest run, and a run with no time counts as the
+// middle one.
+func TestTheSharesOfTheWalksTakeAsLongAsEachOther(t *testing.T) {
+	took := map[string]float64{}
+	var all []string
+	for k, s := range []float64{92, 70, 69, 63, 61, 59, 56, 54, 51, 49, 48, 47, 43, 38, 37, 37} {
+		took[fmt.Sprintf("long %d", k)] = s
+	}
+	for k := range 60 {
+		took[fmt.Sprintf("short %d", k)] = float64(5 + k%20)
+	}
+	for name := range took {
+		all = append(all, name)
+	}
+	slices.Sort(all)
+	all = append(all, "new")
+	same := func(x string) string { return x }
+	sums := make([]float64, 3)
+	for i := range sums {
+		share := shareOf(t, all, same, took, fmt.Sprintf("%d/3", i+1))
+		for k, x := range share {
+			s, ok := took[x]
+			if !ok {
+				s = took["short 10"]
+			}
+			sums[i] += s
+			if k > 0 && s > took[share[k-1]] && took[share[k-1]] != 0 {
+				t.Errorf("share %d runs %s (%.0f s) after %s (%.0f s)", i+1, x, s, share[k-1], took[share[k-1]])
 			}
 		}
 	}
-	if got := shareOf(t, all, ""); len(got) != len(all) {
-		t.Errorf("with no share, %d runs of %d", len(got), len(all))
+	if spread := slices.Max(sums) - slices.Min(sums); spread > 24 {
+		t.Errorf("the shares take %v s, %.0f s apart, more than the longest short run", sums, spread)
+	}
+	whole := shareOf(t, all, same, took, "")
+	if whole[0] != "long 0" {
+		t.Errorf("with no share, the first run is %s, not the longest", whole[0])
+	}
+}
+
+// walk-times.tsv reads back what was written, keeps the old time of a
+// run that did not run, drops a run that is gone, and leaves out a line
+// it cannot read.
+func TestTheTimesOfTheWalksAreKept(t *testing.T) {
+	before := readWalkTimes(" 92\tsequences.mjs SEQUENCE=a short\n  7\tgone.mjs SEED=1\nnot a line\n-3\tnegative\n")
+	if len(before) != 2 || before["sequences.mjs SEQUENCE=a short"] != 92 {
+		t.Fatalf("read %v", before)
+	}
+	names := []string{"walk.mjs SEED=1", "sequences.mjs SEQUENCE=a short", "never.mjs"}
+	file := writeWalkTimes(names, before, map[string]float64{"walk.mjs SEED=1": 0.4})
+	want := " 92\tsequences.mjs SEQUENCE=a short\n  1\twalk.mjs SEED=1\n"
+	if file != want {
+		t.Errorf("wrote\n%q\nwant\n%q", file, want)
+	}
+	if again := writeWalkTimes(names, readWalkTimes(file), nil); again != file {
+		t.Errorf("read and written again\n%q\nwas\n%q", again, file)
 	}
 }
 

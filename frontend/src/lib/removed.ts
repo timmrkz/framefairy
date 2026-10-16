@@ -10,9 +10,10 @@ import type { ClipEntry } from "./api";
 // toast stays: the one time the app gives anything that runs out.
 export const secondThoughts = 10;
 
-// A clip taken out, and the moment its time runs out, in milliseconds
-// since the epoch, the way Date.now() counts.
-export type Removed = { clip: ClipEntry; until: number };
+// A clip taken out, the moment its time runs out, in milliseconds since
+// the epoch, the way Date.now() counts, and whether it was the clip chosen
+// when it was taken out.
+export type Removed = { clip: ClipEntry; until: number; chosen?: boolean };
 
 const aside = new Map<string, Record<string, Removed>>();
 

@@ -1228,24 +1228,37 @@
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
-      if (selected === updated.key) selected = "";
+      const chosen = selected === updated.key;
+      if (chosen) selected = "";
       removed = {
         ...removed,
-        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000 },
+        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen },
       };
     } catch (err) {
       oops(errorText(err));
     }
   }
 
+  // Putting a clip back takes back the remove and nothing more. The clip
+  // chosen stays chosen and the play goes on where it is: putting back a
+  // clip while another played used to choose the one put back and jump
+  // the play to its start. Found by Tim. Only a clip that was the one
+  // chosen when it was removed is chosen again, and only while nothing
+  // has been chosen since, with the playhead left where it is.
   async function putClipBack(key: string) {
-    const clip = removed[key]?.clip;
-    if (!clip) return;
+    const was = removed[key];
+    if (!was) return;
+    const clip = was.clip;
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
       putClip(updated);
       forget(key);
-      select(updated.key);
+      const again = !!was.chosen && selected === "";
+      said(`clip list: put back ${updated.key}, ${again ? "chosen again as it was" : `the clip chosen stays ${selected || "none"}`}, ${paused ? "paused" : "playing"}`, {
+        level: "info",
+        video: path,
+      });
+      if (again) select(updated.key, false);
     } catch (err) {
       oops(errorText(err));
     }

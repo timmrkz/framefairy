@@ -668,11 +668,23 @@ fifths of it. The slowest run, a sequence that renders a short and looks
 at 122 of its frames in the video preview, takes a little over a minute,
 so however many bridges run, the set takes at least that.
 
-CI splits the set over three machines, `make walks WALKSHARD=1/3` to
-`3/3`, each with every third run, walks and sequences alike. Five and a
-half minutes on one machine, after two of setting up, made a job of seven
-and a half, and on two machines each job still took six with a cold build
-cache. No job may take over five.
+CI splits the set over four machines, `make walks WALKSHARD=1/4` to
+`4/4`, walks and sequences alike. Five and a half minutes on one machine,
+after two of setting up, made a job of seven and a half, and on two
+machines each job still took six with a cold build cache. No job may take
+over five.
+
+The runs are shared out by how long each took last, kept in
+`frontend/preview/walks/walk-times.tsv`, seconds and name on each line.
+The longest run goes first, to whichever share has the least so far, and
+each share starts its longest runs first, so no bridge is left with a
+minute of work after the others are done. Every third run, as it was,
+left one machine a minute behind. A run the file does not know counts as
+the median. `make walks WALKTIMES=1` writes the file again from the times
+of that run, best on the whole set on a quiet machine. On three machines
+each job still took four and three quarter minutes, setup included. More
+bridges on a machine do not help: on four cores eight bridges finished a
+share no sooner than six and broke three walks that wait on the clock.
 
 Where a walk's time goes, measured: a walk of 60 steps takes about 30
 seconds, and more than half of that is waiting after each step until no call
