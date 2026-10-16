@@ -13,15 +13,11 @@ import "github.com/asticode/go-astiav"
 // before the M3 or MPEG-4 on any, is decoded by ffmpeg on the processor
 // with threads from the start, rather than offered to the chip, refused,
 // and then decoded on one thread.
-//
-// H.264 is decoded on the processor too, the way the render decodes it.
-// On CI's Mac the chip gave the processor's brightness but other colours
-// in one colour sample in six, up to 90 apart at the edges of colours, so
-// the video preview showed other colours there than the short has, issue
-// #256.
 func chipDecodes(id astiav.CodecID) bool {
 	var kind string
 	switch id {
+	case astiav.CodecIDH264:
+		kind = "avc1"
 	case astiav.CodecIDHevc:
 		kind = "hvc1"
 	case astiav.CodecIDAv1:

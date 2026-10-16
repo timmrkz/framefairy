@@ -908,8 +908,8 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 			tenBits = "p010le"
 		}
 		x265 := append(append([]string{}, hevc...), "-pix_fmt", tenBits, "-tag:v", "hvc1")
-		// HEVC in 8 bits too, whose colours the chip decodes the way it
-		// does H.264's or not, issue #256.
+		// HEVC in 8 bits too, which the chip decoded to the same other
+		// colours as H.264, issue #256.
 		eight := []string{"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error"}
 		if !software {
 			eight = []string{"-c:v", "hevc_videotoolbox", "-b:v", "2M"}
@@ -966,8 +966,8 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		// The decoder is held to the ffmpeg program decoding on the
 		// processor, the way the render decodes, since the video preview
 		// has to show the colours the short is made of. On CI's Mac the
-		// graphics chip decoded H.264 to other colours, issue #256, and so
-		// the decoder leaves H.264 to the processor.
+		// graphics chip decoded pictures of 8 bits to other colours, issue
+		// #256, and so the decoder leaves those to the processor.
 		convert := func() []byte {
 			t.Helper()
 			out, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", path, "-frames:v", "1",
