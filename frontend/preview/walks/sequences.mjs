@@ -376,6 +376,10 @@
 //                      removes another clip with its bin and puts it back,
 //                      and sees the clip chosen stay chosen, the play go
 //                      on, and the playhead never go back while it plays
+//   ["put back the chosen"]
+//                      removes the clip chosen with its bin, paused, puts
+//                      it back, and sees it chosen again with the
+//                      playhead where it was
 //   ["make here", key] presses "i" or "o", Mark In or Mark Out, with the
 //                      playhead where it is, and waits until the clip made
 //                      is written and chosen
@@ -922,7 +926,13 @@ export const sequences = [
     // played a clip, removed another and put it back, and the one put
     // back was chosen and played from its start. Plan row 2.282.
     name: "a clip put back while another plays leaves the play alone",
-    steps: [["put back another while playing"]],
+    steps: [["remove clip"], ["make here", "i"], ["put back"], ["put back another while playing"]],
+  },
+  {
+    // The clip chosen when it was removed is the one exception: putting it
+    // back takes the remove back as it was, chosen, and the playhead stays.
+    name: "the clip chosen, removed and put back, is chosen again where the playhead was",
+    steps: [["put back the chosen"]],
   },
   {
     name: "a caption removed, then its clip removed and put back, is still removed",
@@ -7145,6 +7155,42 @@ for (const seq of toWalk) {
           else if (at < at0 - 1e-6) wrong = `the playhead went back from ${at0.toFixed(3)} to ${at.toFixed(3)} when the other clip was removed or put back`;
         }
         if (!wrong && heads.length < 30) wrong = `only ${heads.length} animation frames were read`;
+        await watch.step("put back", s);
+        break;
+      }
+      case "put back the chosen": {
+        const path = await episodeOn(page);
+        const read = () =>
+          page.evaluate(() => [
+            document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "",
+            Number(document.querySelector(".screen")?.dataset.playhead),
+          ]);
+        const [was, at] = await read();
+        if (!was) {
+          wrong = "no clip is chosen";
+          break;
+        }
+        await page.hover(`aside ol li[data-key="${was}"]`);
+        await page.locator(`aside ol li[data-key="${was}"] button.drop`).click();
+        let gone = false;
+        for (let i = 0; i < 50 && !gone; i++) {
+          await page.waitForTimeout(100);
+          gone = (await ask(page, "Clips", path)).some((c) => c.key === was && c.rejected);
+        }
+        if (!gone) {
+          wrong = "the bin left the clip in the list";
+          break;
+        }
+        await page.locator(`aside ol li[data-key="${was}"] button.back`, { hasText: "Put it back" }).click();
+        let back = false;
+        for (let i = 0; i < 50 && !back; i++) {
+          await page.waitForTimeout(100);
+          const [on] = await read();
+          back = on === was && (await ask(page, "Clips", path)).some((c) => c.key === was && !c.rejected);
+        }
+        const [on, now] = await read();
+        if (!back) wrong = `the clip chosen is ${on || "none"} after ${was} was put back, not ${was} again`;
+        else if (Math.abs(now - at) > 1e-3) wrong = `the playhead went from ${at.toFixed(3)} to ${now.toFixed(3)} when the clip was put back`;
         await watch.step("put back", s);
         break;
       }
