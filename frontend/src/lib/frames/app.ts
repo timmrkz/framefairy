@@ -35,8 +35,9 @@ const STREAMS = 3;
 // A frame asked for. gone is set when the one who asked no longer wants it,
 // a decoder reset for a newer target, and a stream then neither pulls for
 // it nor opens another stream for it.
-// seq numbers the asks in the order they were made.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean };
+// seq numbers the asks in the order they were made. place is set on the
+// frame that holds the playhead, a place the hand put it, see frame.
+type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
@@ -58,8 +59,8 @@ class Stream {
   used = performance.now();
   private waiting: Waiter[] = [];
   private pulling = false;
-  // The newest ask it was given.
-  private newest = 0;
+  // The newest ask for a place it was opened for, its first frame, or 0.
+  private placed = 0;
 
   constructor(
     private owner: AppFrames,
@@ -106,7 +107,7 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
-    this.newest = Math.max(this.newest, w.seq);
+    if (w.place && w.rank === this.first) this.placed = Math.max(this.placed, w.seq);
     this.waiting.push(w);
     void this.pull();
   }
@@ -183,7 +184,8 @@ class Stream {
   }
 
   // The first frame of a stream nobody waits on any more, read so that the
-  // stream counts as come and the newest place asked for can go next.
+  // stream counts as come and the newest place asked for can go next. It
+  // is put up as a place the hand passed only when it is one, see frame.
   private async firstFrame(id: string) {
     const q = new URLSearchParams({ id, n: "1" });
     const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
@@ -194,7 +196,7 @@ class Stream {
     if (got.frames.length) {
       this.take(got);
       const { at, frame } = got.frames[got.frames.length - 1];
-      this.owner.onPassing?.(rankOf(this.owner.track.samples, at), frame, this.newest);
+      if (this.placed) this.owner.onPassing?.(rankOf(this.owner.track.samples, at), frame, this.placed);
     } else this.end("");
   }
 
@@ -303,14 +305,24 @@ export class AppFrames {
   // there. Null only when nothing near it could be decoded.
   // withdrawn, when it is set to true before the frame came, makes it
   // come as null and stops it holding a stream.
-  frame(rank: number, timestamp: number, asked?: Set<Waiter>): Promise<Picture | null> {
+  //
+  // place says the frame holds the playhead, the frame of a still or the
+  // first of a cue, and only such a frame withdrawn on the way is put up
+  // as a place the hand passed, see onPassing. The frames a cue reads
+  // ahead of it are not: the play from the last frame before a cut reads
+  // the frames after the cut, every step of a drag of the cut's edge
+  // withdrew them, and they were put up between the edge's frames, so the
+  // video preview flickered between the two. Found by Tim on youtube.mp4,
+  // plan row 2.270.
+  frame(rank: number, timestamp: number, asked?: Set<Waiter>, place = false): Promise<Picture | null> {
     return new Promise((done) => {
       const w: Waiter = {
         rank,
         seq: ++this.asked,
+        place,
         done: (f) => {
           asked?.delete(w);
-          if (f && w.gone) this.onPassing?.(rank, f, w.seq);
+          if (f && w.gone && w.place) this.onPassing?.(rank, f, w.seq);
           done(f && !w.gone ? f.clone(timestamp) : null);
         },
       };
@@ -525,12 +537,12 @@ export class AppPictures {
     return this.asked;
   }
 
-  decode(timestamp: number, _key: boolean, _data: Uint8Array, rank: number, wanted: boolean, first: number) {
+  decode(timestamp: number, _key: boolean, _data: Uint8Array, rank: number, wanted: boolean, first: number, place = false) {
     if (this.state !== "configured" || !wanted) return;
     if (this.next < 0) this.next = first;
     this.asked++;
     const generation = this.generation;
-    void this.frames.frame(rank, timestamp, this.waiting).then((f) => {
+    void this.frames.frame(rank, timestamp, this.waiting, place).then((f) => {
       if (generation !== this.generation || this.state !== "configured") {
         f?.close();
         return;
