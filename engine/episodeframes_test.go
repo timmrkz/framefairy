@@ -957,9 +957,11 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		}
 		// The ffmpeg program decodes the way the decoder does: on the Mac's
 		// graphics chip where it has one, with the frame brought out as it
-		// is. On the processor as well, the way the render decodes, which
-		// is said and not held to here: on the Mac's runner the two came
-		// out up to 22 apart at the edges of colours, plan row 2.167.
+		// is. On the processor as well, the way the render decodes, and the
+		// decoder is held to that too, since the video preview has to show
+		// the colours the short is made of. On the Mac's runner the chip's
+		// and the processor's came out up to 22 apart at the edges of
+		// colours, issue #256.
 		convert := func(hw bool) []byte {
 			t.Helper()
 			args := []string{"-loglevel", "error"}
@@ -977,8 +979,6 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		chip := runtime.GOOS == "darwin" && has("hevc_videotoolbox")
 		want := convert(chip)
 		if chip {
-			cpu := convert(false)
-			t.Logf("%s: the chip's frame and the processor's are %.2f apart on average", f.name, meanDiff(want, cpu))
 			// Issue #256: whether the two already differ as decoded, before
 			// any colour is made, or only once the chain has made colours.
 			planes := func(hw bool) []byte {
@@ -998,7 +998,12 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 				}
 				return out
 			}
-			t.Logf("%s: as decoded, before colours, the chip and the processor %s", f.name, planesApart(planes(true), planes(false), 320*180))
+			if cpu := convert(false); len(frame) == len(cpu) {
+				if most, at := furthest(colours(frame), colours(cpu)); most > 8 {
+					t.Errorf("%s: at pixel %d the decoder's colour is %v and the processor's, the render's, %v, in 10 bits, %.2f apart on average. As decoded, before colours, the chip and the processor %s",
+						f.name, at, colours(frame)[at*3:at*3+3], colours(cpu)[at*3:at*3+3], meanDiff(frame, cpu), planesApart(planes(true), planes(false), 320*180))
+				}
+			}
 		}
 		if len(frame) != w*h*4 || len(want) != w*h*4 {
 			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
@@ -1008,16 +1013,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		// two versions of its scaler can round a value one apart, in 8 bits
 		// or in 10.
 		mine, theirs := colours(frame), colours(want)
-		most, at := 0, 0
-		for i := range mine {
-			d := mine[i] - theirs[i]
-			if d < 0 {
-				d = -d
-			}
-			if d > most {
-				most, at = d, i/3
-			}
-		}
+		most, at := furthest(mine, theirs)
 		// 2 in 8 bits is 8 in 10.
 		if most > 8 {
 			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v, in 10 bits", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3])
@@ -1099,6 +1095,21 @@ func TestPlanesApartTellsBrightnessFromColour(t *testing.T) {
 
 // colours are the red, green and blue of every pixel of a frame made by
 // framewire.Picture, 10 bits each.
+// furthest is how far apart two frames' colours are at most, and the
+// pixel where.
+func furthest(a, b []int) (most, at int) {
+	for i := range min(len(a), len(b)) {
+		d := a[i] - b[i]
+		if d < 0 {
+			d = -d
+		}
+		if d > most {
+			most, at = d, i/3
+		}
+	}
+	return most, at
+}
+
 func colours(frame []byte) []int {
 	out := make([]int, 0, len(frame)/4*3)
 	for p := 0; p+4 <= len(frame); p += 4 {
