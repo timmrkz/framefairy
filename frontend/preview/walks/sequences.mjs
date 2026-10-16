@@ -39,6 +39,10 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["read ahead", key] rests a second and a half, presses the key and
+//                      checks that the frame it lands on was there already,
+//                      read while the hand rested: no stream was opened or
+//                      read on for it, see AppFrames.ahead
 //   ["button", label]  clicks the button that says label, and waits until
 //                      it has done its work
 //   ["type", text]     types
@@ -1253,6 +1257,22 @@ export const sequences = [
       ["press", "Escape"],
       ["press", "Enter"],
       ["open", "Jahre"],
+    ],
+  },
+  {
+    // Tim's idea (2.269): paused, the frames of the word after the playhead
+    // and of the word before are read while the hand rests, so Shift and an
+    // arrow find their frame there. Before, a step to the next word read on
+    // in the open stream, or opened one, while the hand waited.
+    name: "a step to the word beside finds its frame read while the hand rested",
+    steps: [
+      ["add", 40, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowRight"],
+      ["read ahead", "Shift+ArrowLeft"],
     ],
   },
   {
@@ -4200,6 +4220,37 @@ for (const seq of toWalk) {
           (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled),
           arg,
         );
+        break;
+      }
+      case "read ahead": {
+        await page.waitForTimeout(1500);
+        const came = await page.evaluate(async (key) => {
+          const frames = window.__appFrames;
+          const how = () => [frames.stats.streams, frames.stats.continued, frames.stats.kept];
+          const before = Number(document.querySelector(".screen")?.dataset.playhead);
+          const was = how();
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: key.replace("Shift+", ""), shiftKey: key.startsWith("Shift+"), bubbles: true }));
+          // How the frames came by the time the video preview shows the
+          // frame that holds the playhead, its first frame of the word.
+          return new Promise((done) => {
+            const t0 = performance.now();
+            const check = () => {
+              const el = document.querySelector(".screen");
+              const at = Number(el?.dataset.playhead);
+              const shown = Number(el?.dataset.shown);
+              const holds = at !== before && shown <= at + 1e-6 && at - shown < frames.track.frame - 1e-6;
+              if (holds) done({ was, now: how(), at, ms: Math.round(performance.now() - t0) });
+              else if (performance.now() - t0 > 5000) done({ was, now: how(), at, ms: -1 });
+              else requestAnimationFrame(check);
+            };
+            check();
+          });
+        }, arg);
+        const [streams, readOn, kept] = came.now.map((n, i) => n - came.was[i]);
+        if (came.ms < 0) wrong = `${arg} to ${came.at.toFixed(3)} s showed no frame of it in five seconds`;
+        else if (streams || readOn || !kept)
+          wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms: ${streams} streams opened and ${readOn} read on, ${kept} frames kept, while the hand rested a second and a half before it`;
+        await watch.step("press", s);
         break;
       }
       case "press":

@@ -37,7 +37,8 @@ const STREAMS = 3;
 // it nor opens another stream for it.
 // seq numbers the asks in the order they were made. place is set on the
 // frame that holds the playhead, a place the hand put it, see frame.
-type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean };
+// ahead is set on a frame read ahead of the hand, see AppFrames.ahead.
+type Waiter = { rank: number; seq: number; done: (f: Picture | null) => void; gone?: boolean; place?: boolean; ahead?: boolean };
 
 // Where the time of a stream's first frame went, in milliseconds from when
 // it was asked for, for a probe to read, see docs/VIDEO-PREVIEW.md, Speed:
@@ -61,6 +62,8 @@ class Stream {
   private pulling = false;
   // The newest ask for a place it was opened for, its first frame, or 0.
   private placed = 0;
+  // Opened for a frame read ahead of the hand, see AppFrames.ahead.
+  aheadOnly = false;
 
   constructor(
     private owner: AppFrames,
@@ -95,7 +98,9 @@ class Stream {
   // Still on its way to its first frame for a place nobody wants any more:
   // a drag went on past it.
   get stale(): boolean {
-    return !this.ended && !this.gave && this.waiting.every((w) => w.gone);
+    // A stream opened ahead of the hand holds no place back: the hand's
+    // own frame never waits for one.
+    return !this.aheadOnly && !this.ended && !this.gave && this.waiting.every((w) => w.gone);
   }
 
   // Whether this stream is the quickest way to the frame: it has not passed
@@ -107,6 +112,7 @@ class Stream {
 
   want(w: Waiter) {
     this.used = performance.now();
+    if (!w.ahead) this.aheadOnly = false;
     if (w.place && w.rank === this.first) this.placed = Math.max(this.placed, w.seq);
     this.waiting.push(w);
     void this.pull();
@@ -130,12 +136,21 @@ class Stream {
           if (!this.ended && !this.gave) await this.firstFrame(id);
           return;
         }
-        const lowest = Math.min(...this.waiting.map((w) => w.rank));
-        const highest = Math.max(...this.waiting.map((w) => w.rank));
+        // The frames wanted next, one run of them: a frame read ahead
+        // further on is read with a skip of its own, after these, so the
+        // frames between are never made into pictures.
+        const ranks = this.waiting.map((w) => w.rank).sort((a, b) => a - b);
+        const lowest = ranks[0];
+        let highest = lowest;
+        for (const r of ranks) if (r <= highest + 1) highest = r;
         // Frames before the first one wanted are decoded on the Go side
-        // and dropped there.
-        const skip = lowest > this.position + 1 ? this.owner.ptsOf(lowest) - this.owner.track.frame / 2 : 0;
-        const n = Math.min(16, Math.max(1, highest - Math.max(this.position, lowest - 1)));
+        // and never made into pictures, but for the one just before it,
+        // which comes too and is kept: the arrow to the left after a jump
+        // asks for it next, and it would cost a seek back to the key
+        // frame. Plan row 2.269.
+        const from = lowest > this.position + 2 ? lowest - 1 : lowest;
+        const skip = from > this.position + 1 ? this.owner.ptsOf(from) - this.owner.track.frame / 2 : 0;
+        const n = Math.min(16, Math.max(1, highest - Math.max(this.position, from - 1)));
         const q = new URLSearchParams({ id, n: String(n) });
         if (skip > 0) q.set("skip", skip.toFixed(6));
         const got = await this.owner.puller.pull(`/frames/read?${q}`, this.width, this.height);
@@ -257,8 +272,10 @@ export class AppFrames {
   onPassing?: (rank: number, frame: Picture, seq: number) => void;
   // The number of the newest ask.
   asked = 0;
+  // The frames read ahead of the hand, withdrawn by the hand's next ask.
+  private aheadOf = new Set<Waiter>();
   // first is the size the first stream was opened at, for the walks.
-  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, opens: [] as Opened[], first: "" };
+  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, opens: [] as Opened[], first: "" };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
@@ -331,6 +348,33 @@ export class AppFrames {
     });
   }
 
+  // Reads the frames of these ranks while the hand rests, and keeps them,
+  // so that a step to one of them finds its frame there: the first frame
+  // of the word after the playhead and of the word before, the words
+  // Shift and an arrow walk to. They come after what the hand asked for
+  // in the stream that reads on to them, and a stream opened for one never
+  // holds up a place the hand asks for. Any newer ask of the hand
+  // withdraws them, see still. Plan row 2.269.
+  ahead(ranks: number[]) {
+    this.still();
+    const { width, height } = this.size();
+    for (const rank of ranks) {
+      const have = this.kept.get(rank);
+      if (rank < 0 || (have && have.width === width && have.height === height)) continue;
+      const w: Waiter = { rank, seq: ++this.asked, ahead: true, done: () => this.aheadOf.delete(w) };
+      this.aheadOf.add(w);
+      this.stats.ahead++;
+      this.route(w);
+    }
+  }
+
+  // The hand asks again: what was read ahead for where it was is not
+  // wanted any more.
+  still() {
+    for (const w of this.aheadOf) w.gone = true;
+    this.aheadOf.clear();
+  }
+
   route(w: Waiter) {
     if (w.gone || this.closed) {
       w.done(null);
@@ -363,6 +407,7 @@ export class AppFrames {
       return;
     } else {
       s = new Stream(this, w.rank, width, height);
+      s.aheadOnly = !!w.ahead;
       this.stats.first ||= `${width}x${height}`;
       this.stats.streams++;
       this.streams.push(s);

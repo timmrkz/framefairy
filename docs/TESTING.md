@@ -613,7 +613,7 @@ walks it the way a person does: Shift and an arrow from word to word, an
 arrow a frame at a time. For each press it times, in the page, how long
 from the key going down until the video preview shows the frame that
 holds the playhead. `REST` is the pause between presses, 250 ms unless
-set, `ROUNDS` the times the clip is walked, 3 unless set, `SCALE` the
+set, `ROUNDS` the times the clip is walked, each on a page opened afresh so no round finds the frames the one before kept, 5 unless set, `SCALE` the
 device pixels of a CSS pixel, 2 unless set, a Mac's screen, and
 `CODEC=hevc` makes the video HEVC with 10-bit colour. The last line
 says how the frames came: from a stream opened for them, from one already

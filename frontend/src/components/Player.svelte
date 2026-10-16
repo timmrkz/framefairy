@@ -419,6 +419,12 @@
     sought = queue;
   }
 
+  // The moments the hand is likely to step to next, paused, whose frames
+  // are read while it rests, see FrameQueue.ahead.
+  export function ahead(times: number[]) {
+    queue?.ahead(times);
+  }
+
   // A clip made with I or O is made around the playhead, so the playhead
   // is on it from the moment it is there: making it is a gesture about
   // it, and it is not dimmed. This moves nothing and changes no running
