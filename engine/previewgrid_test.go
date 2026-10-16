@@ -137,7 +137,10 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		t.Fatal(err)
 	}
 	if len(got) != grid.Count {
-		t.Fatalf("the decoder gave %d frames, the grid has %d", len(got), grid.Count)
+		heardMu.Lock()
+		said := strings.Join(heard, "\n")
+		heardMu.Unlock()
+		t.Fatalf("the decoder gave %d frames, the grid has %d, and said:\n%s", len(got), grid.Count, said)
 	}
 	wrong := 0
 	for r, n := range got {
@@ -152,8 +155,10 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		t.Errorf("and %d more frames are the wrong frame", wrong-6)
 	}
 	// From a jump to the edges of pieces, and inside a frame: the
-	// frame that holds the moment and the ones after it.
-	for _, from := range []float64{0.2, 1.25, 3.05, 3.3, 5.3, 2.0021} {
+	// frame that holds the moment and the ones after it. And after the
+	// last key frame of the file, where a seek in MPEG-TS found no key
+	// before the end and the decoder showed nothing, plan row 2.277.
+	for _, from := range []float64{0.2, 1.25, 3.05, 3.3, 5.3, 2.0021, 6.5} {
 		first := grid.Holding(from)
 		var near []int
 		streams++
@@ -169,6 +174,9 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 		})
 		if err != nil && !errors.Is(err, errStop) {
 			t.Fatalf("from %.4f: %v", from, err)
+		}
+		if want := min(5, grid.Count-first); len(near) != want {
+			t.Errorf("from %.4f the decoder gave %d frames, want %d", from, len(near), want)
 		}
 		for i, n := range near {
 			if want := holds(grid.At(first + i)); n != want {

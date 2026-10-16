@@ -767,6 +767,11 @@ func (c *cursor) seek(from float64) error {
 // to is the first packet with the key flag from where it landed, and where
 // a seek to just before that key leads to the same key again, the seek
 // goes a second further back, then two, until it finds the key before.
+// A seek that lands after the last key frame of the file finds no key
+// before the end, and goes back the same way: it was taken for a key
+// shown in time, the decoder dropped every frame to the end, and a jump
+// into the last stretch of an MPEG-TS file, or a fallback to the
+// processor there, showed nothing at all. Plan row 2.277.
 func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 	tb := c.v.stream.TimeBase().Float64()
 	floor := c.v.stream.StartTime()
@@ -779,11 +784,23 @@ func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 			return 0, err
 		}
 		pts, dts, err := c.firstKey()
-		if err != nil || pts == astiav.NoPtsValue || dts == astiav.NoPtsValue ||
-			float64(pts)*tb <= from+1e-6 {
+		ended := errors.Is(err, astiav.ErrEof)
+		if err != nil && !ended {
+			return ts, nil
+		}
+		if !ended && (pts == astiav.NoPtsValue || dts == astiav.NoPtsValue || float64(pts)*tb <= from+1e-6) {
 			return ts, nil
 		}
 		switch {
+		case ended && ts <= floor:
+			// No key frame anywhere in the picture.
+			return ts, nil
+		case ended:
+			// The seek landed after the last key frame of the file, so
+			// no key frame came before the end.
+			c.say(fmt.Sprintf("a seek for %.3f s found no key frame before the end, going %.0f s further back",
+				from-c.grid.Origin, float64(back)*tb))
+			ts, back = ts-back, back*2
 		case dts < landed:
 			landed, ts = dts, dts-1
 		case ts <= floor:
