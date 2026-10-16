@@ -24,6 +24,8 @@
   import Landing from "./components/Landing.svelte";
   import { titleBar } from "./lib/chrome.svelte";
   import Confirm from "./components/Confirm.svelte";
+  import Toasts from "./components/Toasts.svelte";
+  import { toasts } from "./lib/toast.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
   import { installFonts } from "./lib/fonts";
@@ -261,7 +263,15 @@
   // Whether the report window is open, which lights Bugs.
   let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
+  // What went wrong with the library or with files given to the app,
+  // which has no row of its own: a toast, plan row 2.268. Closing the
+  // toast forgets it here too, so the same reason is said again the next
+  // time.
   let problem = $state("");
+  $effect(() => {
+    const text = problem;
+    untrack(() => toasts.say("app", text, { onclose: () => (problem = "") }));
+  });
 
   // The first run. A new copy of the app cannot transcribe without a
   // speech model and cannot find clips until somebody has said how, so
@@ -706,9 +716,6 @@
   </aside>
 
   <main>
-    {#if problem}
-      <p class="error banner selectable">{problem}</p>
-    {/if}
     <!-- The kept workspaces stay while another screen is open, out of the
          way, so coming back from the settings is one frame as well. -->
     {#if workspaces.length}
@@ -782,6 +789,10 @@
       <p>{leaving === "ask" ? `Press ${quitKey} again to quit` : "Quitting"}</p>
     </div>
   {/if}
+
+  <!-- What went wrong with nothing on screen about it, over the app. A
+       toast about a video waits while another is on screen. -->
+  <Toasts shown={(t) => !t.video || t.video === asked} />
 
   {#if removing}
     {@const ep = removing}
@@ -1167,10 +1178,6 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-  }
-
-  .banner {
-    padding: var(--gap) var(--edge);
   }
 
   /* The workspace in front and the one being opened behind it stand in

@@ -110,10 +110,11 @@ same way, whatever page is open, and opens. While a file is held over
 the app, the app wears the frame of what is chosen, with the accent's
 wash inside it. A video already in the list opens rather than being added
 twice, and a file that is not a video is left out, by its name, where Add
-says why it left a file out. Add and a drop are one path, `takeFiles` in
+says why it left a file out, in a toast, see [Toasts](#toasts). Add and
+a drop are one path, `takeFiles` in
 `drop.go`: the same files are taken, the same reasons given, and the
 video just added opens, or a video given again. The reason stays until
-the next files are taken. The window marks the whole page as where a
+it is read or the next files are taken. The window marks the whole page as where a
 drop lands, `data-file-drop-target`, once the first-run setup is done,
 and not while a box asks first or the app asks about quitting. Plan row
 2.192.
@@ -821,9 +822,9 @@ the episode that is in none.
 
 All of that is one expression in the stylesheet, worked out from the size
 of the app itself and the tokens in `app.css`. Two things it cannot know
-come in as custom properties, the shape of the episode and the height of an
-error line above the workspace, and neither changes because the app was
-resized. So dragging the edge of the app costs no JavaScript at all and the
+come in as custom properties, the shape of the episode and the height of
+the line above the workspace that says its file is missing, and neither
+changes because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
 workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
 nothing is laid out from the answer.
@@ -1892,6 +1893,35 @@ the one the video preview reads from when the episode opens, so asking
 costs no start later. A file with no picture, and one that is no video at
 all, said nothing at Add before and failed in the video preview after.
 
+### Toasts
+
+What goes wrong with no place of its own on screen is said in a toast,
+`Toasts.svelte`, with the list in `lib/toast.svelte.ts`. A file dropped
+on the app that is not a video, a call to the Go side that failed for a
+video with no row or card to say it in, a file Report a Problem leaves
+out. Each used to be red text put wherever there was room: a banner over
+the workspace that pushed it down, a line over the video preview, three
+wrapped lines beside Report. Tim found the workspace moved about by a
+dropped screenshot, plan rows 2.194 and 2.268.
+
+A toast lies over the app in the top right corner, under the bar, where
+macOS brings its own notes in, and moves nothing under it. Each place
+that can go wrong has one toast at a time: a newer reason replaces the
+older one, and the place takes it away when what it was about is done
+again and goes well. A toast about a video shows while that video is on
+screen and waits while another is. Nothing goes on a timer alone. A
+toast stays until its cross is clicked, or until the pointer has been
+on it and left again, and then the time it has left, six seconds, runs
+down in the fill a removed clip's runs down in, standing still while
+the pointer is back on it. A toast that came while the person looked
+elsewhere is still there when they look. Every toast and how it went is
+in the log, `toast:` when it came and `toast closed:` or `toast read:`
+when it went.
+
+What has a place of its own keeps it: a clip that failed says so on its
+card, a search that stopped in its row, a missing file in the line over
+the workspace, and what dictation did not hear beside the microphone.
+
 ### The colour picker
 
 The colours of the captions, **Text**, **Box** and **Highlight** in the
@@ -2752,8 +2782,10 @@ box, from a drop anywhere on the window, or from a paste into the
 field. PNG or JPEG, ten at most and 10 MB each, and each one is
 decoded and written again as PNG, so nothing the file held besides the
 picture travels, a place or a camera among it. A file that is not a
-picture, or is too big, or would make an eleventh, is left out and the
-line under the field says which and why. They show under the card in a
+picture, or is too big, or would make an eleventh, is left out and a
+toast in the window's top right corner says which and why, see
+[Toasts](#toasts). It used to be red text in the row of the buttons,
+which wrapped over three lines beside Report, Tim found. They show under the card in a
 grid of three, four once the window is wide, every tile the same size
 on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
 tile under the pointer, or on Delete with the tile focused, and the

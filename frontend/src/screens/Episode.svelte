@@ -91,6 +91,7 @@
   import { pieceHolding, rotated } from "../lib/rotate";
   import { markOn } from "../lib/glide";
   import { unchanged } from "../lib/unchanged";
+  import { toasts } from "../lib/toast.svelte";
 
   let {
     path,
@@ -190,7 +191,8 @@
   // The workspace measures itself: how much height the app leaves it,
   // and how wide it is. From those two the video preview gets the biggest
   // size it can have, and the columns beside it take everything else.
-  // What sits above the workspace when anything does: an error line. It is
+  // What sits above the workspace when anything does: the line that says
+  // the file is missing. What else goes wrong is a toast. It is
   // nothing at all most of the time, and it never changes because the
   // app was resized, so reading it costs nothing while the app is being
   // resized.
@@ -1645,6 +1647,16 @@
   $effect(() => {
     if (problem) tell(`problem: ${problem}`);
   });
+  // What went wrong here is a toast about this video, plan row 2.268. It
+  // lies over the workspace and moves nothing, where it was once a line
+  // over the workspace that pushed it down. Closing it forgets it here
+  // too, so the same reason is said again the next time.
+  const where = () => `video:${path}`;
+  $effect(() => {
+    const text = problem;
+    untrack(() => toasts.say(where(), text, { video: path, onclose: () => (problem = "") }));
+  });
+  onMount(() => () => toasts.clear(where()));
   // A workspace kept while another episode is in front is asleep, see
   // App.svelte: its video preview lets go of everything it holds, so an
   // episode left while it plays goes quiet the moment another is picked,
@@ -2710,16 +2722,11 @@
   <!-- Everything that stands above the workspace, together, so its height
        is one number the layout can take off the app. It is not there at
        all most of the time, and an empty row would still cost a space. -->
-  {#if status?.missing || problem}
+  {#if status?.missing}
     <div class="above" bind:clientHeight={aboveH}>
-      {#if status?.missing}
-        <p class="error">
-          The file is no longer at {path}. Move it back, or remove it from the list.
-        </p>
-      {/if}
-      {#if problem}
-        <p class="error selectable">{problem}</p>
-      {/if}
+      <p class="error">
+        The file is no longer at {path}. Move it back, or remove it from the list.
+      </p>
     </div>
   {/if}
 

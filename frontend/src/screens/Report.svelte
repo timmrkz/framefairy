@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { api, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
+  import { toasts } from "../lib/toast.svelte";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -17,8 +18,15 @@
 
   let what = $state("");
   let making = $state(false);
-  // Why a report could not be made, or pictures attached.
+  // Why a report could not be made, or pictures attached. It is a toast
+  // over the window, plan row 2.268: beside the buttons it wrapped over
+  // three lines and stood where nothing else was about it. Closing the
+  // toast forgets it here too.
   let problem = $state("");
+  $effect(() => {
+    const text = problem;
+    untrack(() => toasts.say("report", text, { onclose: () => (problem = "") }));
+  });
 
   // Dictate, plan row 2.189, the way dictation on claude.ai works: the
   // words appear in the field while they are said, where the cursor was,
@@ -671,14 +679,13 @@
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
-      <!-- Only what went wrong, and why a recording stopped by itself. What
-           the buttons are doing shows on the buttons, and how the page
-           works is in the info mark. Tim found standing lines there read
-           as news that was not true yet. -->
+      <!-- Only what the microphone hears, and why a recording stopped by
+           itself. What the buttons are doing shows on the buttons, how the
+           page works is in the info mark, and what went wrong is a toast.
+           Tim found standing lines there read as news that was not true
+           yet. -->
       <div class="words">
-        {#if problem}
-          <span class="error selectable">{problem}</span>
-        {:else if listening && unheard}
+        {#if listening && unheard}
           <span class="error selectable">{unheard}</span>
         {:else if !listening && !hearing && note}
           <span>{note}</span>
