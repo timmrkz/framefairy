@@ -9,10 +9,11 @@ for what, and what it builds on under Root cause.
 <!--
 No heading here. One or two sentences that open the description: who
 saw the problem, where, what was wrong, and who tested what. They are
-the summary, so no section below says what was wrong again. The plan
-row goes in too. For example: "Plan row 2.186. On Tim's Mac, start.mp4
-showed no picture and did not play, on Space or Play. Tim found it
-testing #184, and the walk below proves the fix."
+the summary, so no section below says what was wrong again. The issue
+goes in too, as `Fixes #N` for each one this finishes, so merging
+closes it. For example: "Fixes #245. On Tim's Mac, start.mp4 showed no picture
+and did not play, on Space or Play. Tim found it testing #184, and the
+walk below proves the fix."
 -->
 
 ## Root cause
@@ -46,4 +47,4 @@ proves it instead.
 
 ## Found along the way, not fixed here
 
-<!-- Each with the plan row it was logged as. -->
+<!-- Each with the issue it was logged as. -->

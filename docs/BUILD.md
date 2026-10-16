@@ -122,6 +122,7 @@ committed or not, new files included, and runs what those files can reach:
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
+| `scripts/plan-frozen*.sh`, `docs/GUI-PLAN.md` | `scripts/plan-frozen-test.sh`, then `scripts/plan-frozen.sh`, which fails when the plan, which is history, was edited |
 | a workflow | a read of its YAML |
 | docs | nothing |
 | anything else | `make`, so a file nobody thought of is checked rather than skipped |

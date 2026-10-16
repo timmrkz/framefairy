@@ -82,7 +82,8 @@ docs/
   APP.md              the app: using it, how it is built
   ENGINE.md           how the engine works
   TRAINING.md         training records and the training tool
-  GUI-PLAN.md         the app's build plan, batch by batch
+  GUI-PLAN.md         the app's build plan up to 16 October 2026, frozen,
+                      open work is in the GitHub issues
   ROBUSTNESS.md       what can go wrong between the parts, and what was done
   ASSESSMENT.md       a review of design and practice, and what became of it
   PACKAGING.md        what ships, what the user installs, which ffmpeg
