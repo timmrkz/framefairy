@@ -21,7 +21,7 @@ import (
 	"framefairy/engine"
 )
 
-// Screen recordings in Report a Problem, plan row 2.267. A walk through a
+// Screen recordings in Report a Problem, issue #326. A walk through a
 // problem says more than a screenshot, so a report takes the recordings
 // the usual screen recorders make, within the same 10 MB a picture may
 // have: the videos the app takes, see engine.VideoExtensions, which the

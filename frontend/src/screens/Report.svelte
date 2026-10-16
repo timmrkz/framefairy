@@ -19,7 +19,7 @@
   let what = $state("");
   let making = $state(false);
   // Why a report could not be made, or pictures attached. It is a toast
-  // over the window, plan row 2.268: beside the buttons it wrapped over
+  // over the window, issue #327: beside the buttons it wrapped over
   // three lines and stood where nothing else was about it. Closing the
   // toast forgets it here too.
   let problem = $state("");

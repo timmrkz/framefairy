@@ -1694,7 +1694,7 @@
   $effect(() => {
     if (problem) tell(`problem: ${problem}`);
   });
-  // What went wrong here is a toast about this video, plan row 2.268. It
+  // What went wrong here is a toast about this video, issue #327. It
   // lies over the workspace and moves nothing, where it was once a line
   // over the workspace that pushed it down. Closing it forgets it here
   // too, so the same reason is said again the next time.

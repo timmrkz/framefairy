@@ -293,7 +293,7 @@ facade the app goes around, and three files too big to hold in one's head.
     workspace (2084-2092), render failures included, which "no toasts and
     no banners" rules out. It is measured and written back as `--above` on
     every resize, since it wraps. Fix: each failure in the row of the work
-    that failed. **Fixed** in #228, plan row 2.268: it is a toast about the
+    that failed. **Fixed** in #228, issue #327: it is a toast about the
     video now, which lies over the app and moves nothing, and `--above`
     holds only the line that says the file is missing. A failure that has a
     row of its own still belongs in that row.

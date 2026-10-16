@@ -39,7 +39,7 @@ Desktop, shown in Finder:
   as PNG so nothing else the file held travels
 - the screen recordings attached, as `recordings/1.mov` and on, under
   the ending they came with, each copied stream by stream without its
-  metadata, chapters or tracks of data, plan row 2.267
+  metadata, chapters or tracks of data, issue #326
 - the log and its older files, unpacked, in `logs/`
 - the trace lines of the last while, which are kept in memory, see
   Levels below, `logs/recent-frames.log`

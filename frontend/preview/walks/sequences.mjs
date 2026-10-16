@@ -242,7 +242,7 @@
 //   ["toast", text]    a toast over the window says text, and with "" no
 //                      toast is there. Nothing under it moved since the
 //                      step before it, and the line beside the report's
-//                      buttons says nothing (2.268)
+//                      buttons says nothing (#327)
 //   ["toast goes"]     with the pointer away, the toast is still there
 //                      after nine seconds and gone by itself within fourteen
 //   ["toast held"]     the pointer stays on the toast longer than its time
@@ -1763,7 +1763,7 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 2.267. Tim attached a screen recording made on his Mac and
+    // Issue #326. Tim attached a screen recording made on his Mac and
     // it was turned away as not a PNG or JPEG picture. A recording is
     // attached beside the pictures, shows a still of its first frame and
     // its length, and goes in the report as a recording.
@@ -2632,7 +2632,7 @@ export const sequences = [
     ],
   },
   {
-    // Plan row 2.268. Tim dropped a picture on the app and a red line
+    // Issue #327. Tim dropped a picture on the app and a red line
     // over the workspace pushed it all down. What went wrong with nothing
     // on screen about it is a toast that moves nothing, goes by itself
     // after a while the way toasts do, stays while the pointer is on it,

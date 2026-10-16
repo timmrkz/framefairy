@@ -1909,7 +1909,7 @@ video with no row or card to say it in, a file Report a Problem leaves
 out. Each used to be red text put wherever there was room: a banner over
 the workspace that pushed it down, a line over the video preview, three
 wrapped lines beside Report. Tim found the workspace moved about by a
-dropped screenshot, plan rows 2.194 and 2.268.
+dropped screenshot, issues #263 and #327.
 
 A toast lies over the app in the top right corner, under the bar, where
 macOS brings its own notes in, and moves nothing under it. Each place
@@ -2791,7 +2791,7 @@ the paperclip's open box, from a drop anywhere on the window, or from a
 paste into the field. Ten at most and 10 MB each. A picture is PNG or
 JPEG, decoded and written again as PNG, so nothing the file held besides
 the picture travels, a place or a camera among it. A recording is what
-the usual screen recorders make, plan row 2.267: a video the app takes,
+the usual screen recorders make, issue #326: a video the app takes,
 see [Which files are videos](#which-files-are-videos), which is what the
 Mac's own recorder, QuickTime, Windows, phones and OBS make, or WebM,
 which the GNOME and KDE recorders and browsers make. It is judged by its

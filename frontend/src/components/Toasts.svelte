@@ -9,7 +9,7 @@
   // The toasts, in the top right corner of the window they are about,
   // under its bar, the corner macOS brings its own notes in at. They lie
   // over whatever is there and move nothing, so the workspace stands where
-  // it stood when one comes and goes. Plan row 2.268, see toast.svelte.ts.
+  // it stood when one comes and goes. Issue #327, see toast.svelte.ts.
   //
   // Its time runs down from the moment it comes, in the fill a removed
   // clip's runs down in, and as long, the way a toast does everywhere

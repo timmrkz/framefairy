@@ -264,7 +264,7 @@
   let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
   // What went wrong with the library or with files given to the app,
-  // which has no row of its own: a toast, plan row 2.268. Closing the
+  // which has no row of its own: a toast, issue #327. Closing the
   // toast forgets it here too, so the same reason is said again the next
   // time.
   let problem = $state("");

@@ -2,7 +2,7 @@
 // the app that is not a video, a call to the Go side that failed with no
 // row or card of its own, a file Report a Problem turns away. Each is a
 // toast, a note that lies over the app in its top right corner and moves
-// nothing under it. Plan row 2.268, and Toasts.svelte, the one place they
+// nothing under it. Issue #327, and Toasts.svelte, the one place they
 // are drawn.
 //
 // Each place that can go wrong has one toast at a time, known by where it
