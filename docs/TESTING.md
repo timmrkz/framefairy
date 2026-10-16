@@ -15,7 +15,7 @@ makes to the Go side.
 
 | | Answers the calls | Good for |
 | --- | --- | --- |
-| the preview, `frontend/preview/vite.config.ts` | `wails-stub.ts`, a stand-in written in TypeScript | the layout, a picture of any state, states the engine is slow to reach |
+| the preview, `frontend/preview/vite.config.ts` | `wails-stub.ts`, a stand-in written in TypeScript, and for the picture and the sound the Go side's own routes, `TestHarnessFrames` | the layout, a picture of any state, states the engine is slow to reach |
 | the bridge, `frontend/preview/bridge.config.ts` | the real Go side, `cmd/framefairy-app/bridge_test.go` | what the app does: the words, the captions, the clips, undo |
 
 The preview is quick and can be made to show anything, but it is a second

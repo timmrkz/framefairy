@@ -115,12 +115,22 @@ Write one-off probes outside the repository, in the scratchpad.
 
 ## The episode the harness can play
 
-The video preview reads the episode file itself, see The frame queue
-below, and the harness serves it a real one, made with ffmpeg on the first
-run and kept in the temp folder: four hours at 25 frames a second, 96 by
-54, VP9 and Opus in an MP4, about 45 MB, made in about four minutes. Without
-ffmpeg there is no episode, the video preview says it cannot read the file,
-and a probe that needs one has to say so rather than pass.
+The video preview takes its picture and its sound from the Go side, see
+The frame queue below, and the harness passes those calls, everything
+under `/frames/`, on to the Go side's own routes: `open.mjs` builds the
+app's test program once and starts `TestHarnessFrames` in
+`cmd/framefairy-app/harness_test.go` with the first call, on the episode's
+decoder that `make frames` builds, or the one `FRAMEFAIRY_FRAMES` names.
+Without the decoder those calls answer what is missing and the video
+preview shows no picture, issue #255, so a probe of the picture has to say
+so rather than pass. Headless Chromium gives nothing back of a WebGPU
+canvas, so a probe that reads the picture back asks for the 2D canvas,
+`window.__flatScreen`, the way the walks do. The episode is a real one,
+made with ffmpeg on the first run and kept in the temp folder: four hours
+at 25 frames a second, 96 by 54, VP9 and Opus in an MP4, about 45 MB, made
+in about four minutes. Without ffmpeg there is no episode, the video
+preview says it cannot read the file, and a probe that needs one has to
+say so rather than pass.
 
 Three things about it are deliberate.
 
@@ -891,11 +901,12 @@ early, in the middle of the seek.
   decodes it with ffmpeg, `GoSound` in `queue.ts`, so the video preview
   hears what the render is made of. The Mac's own AAC decoder was the one
   part nobody could run in the cloud, and it was the last suspect when Tim
-  heard a file from DaVinci Resolve out of step. The harness has no Go
-  side, so `open.mjs`'s server stands in for `/frames/sound`, ffmpeg run
-  the same way. While the browser decoded it: Chromium stamped decoded
-  sound with times of its own, so sound is matched to its packet by
-  order, not by stamp, and Opus told its pre-skip cut it a second time.
+  heard a file from DaVinci Resolve out of step. The harness passes every
+  call under `/frames/` on to the Go side's own routes, see The episode
+  the harness can play. While the browser decoded it: Chromium stamped
+  decoded sound with times of its own, so sound is matched to its packet
+  by order, not by stamp, and Opus told its pre-skip cut it a second
+  time.
 - A flush of the sound ends a run where it was asked, between the packets
   fed before it and after it, not once everything fed is out. The queue
   feeds the next run's packets straight after the flush, and a decoder
