@@ -1369,7 +1369,13 @@ bubble scrolled by those eight pixels.
       starts held and full, and its time starts once the pointer leaves:
       WebKit does not count it as under the pointer until the pointer
       moves, so the time ran for a moment and stopped a little short of
-      full, Tim found. Where the pointer was last seen says it. The
+      full, Tim found. Where the pointer was last seen says it. Nor does
+      the time start on the events a browser makes up while the node under
+      a still pointer is replaced: the pointer is let go of only where the
+      page finds nothing of the row under it, and taken to have left the
+      app only once nothing has said otherwise for two frames. An over on
+      the tile round the row says otherwise when the row is under the
+      pointer, since WebKit may send no over on the row itself. The
       pictures of a report wear the same row and the same time, see
       Report a Problem. Nothing above or
       below it moves while it is there, and when it goes the list closes

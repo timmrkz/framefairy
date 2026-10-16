@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -360,5 +362,74 @@ func TestTheKeyGoesOnlyToItsServer(t *testing.T) {
 	want := []string{"Bearer the-key", "other:", ""}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("the requests carried %q, want %q", got, want)
+	}
+}
+
+// A llama-server that stops answering partway is given up on, and the
+// server is stopped even when the search asked to keep it, so the next
+// search loads one that works. Before, the search waited for good and held
+// every video's transcription up behind it (2.224). Changes localStall and
+// launch, which the whole package shares, so it does not run in parallel.
+func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":50}}`+"\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	stalled := localStall
+	localStall = 300 * time.Millisecond
+	t.Cleanup(func() { localStall = stalled })
+	var stopped atomic.Int32
+	was := launch
+	launch = func(_ *Engine, _ context.Context, _ LocalModel, _ int, _ string) (string, func(), error) {
+		var once sync.Once
+		return server.URL, func() { once.Do(func() { stopped.Add(1) }) }, nil
+	}
+	t.Cleanup(func() {
+		StopModels()
+		launch = was
+	})
+	StopModels()
+
+	began := time.Now()
+	_, err := quietEngine().CallLocal(context.Background(), LocalModel{Model: "stalls.gguf", Keep: time.Hour},
+		linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
+	if err == nil || !strings.Contains(err.Error(), "stopped answering") {
+		t.Fatalf("err = %v", err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("a model that stopped answering was waited on for %s", took)
+	}
+	if stopped.Load() != 1 {
+		t.Errorf("the server that stopped answering was stopped %d times, want once", stopped.Load())
+	}
+}
+
+// A server that takes longer than localStall to answer, but says something
+// all the while, is not a server that stopped answering.
+func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		for done := 0; done < 100; done += 10 {
+			fmt.Fprintf(w, `data: {"choices":[],"prompt_progress":{"total":100,"cache":0,"processed":%d}}`+"\n\n", done)
+			w.(http.Flusher).Flush()
+			time.Sleep(50 * time.Millisecond)
+		}
+		writeLocalStream(w, `{"clips":[]}`, 4)
+	}))
+	t.Cleanup(server.Close)
+	stalled := localStall
+	localStall = 200 * time.Millisecond
+	t.Cleanup(func() { localStall = stalled })
+
+	answer, err := quietEngine().CallLocal(context.Background(), LocalModel{URL: server.URL},
+		linesRecipe, "Transcript:", 40, 12, 1000, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Content != `{"clips":[]}` {
+		t.Errorf("answer %q", answer.Content)
 	}
 }

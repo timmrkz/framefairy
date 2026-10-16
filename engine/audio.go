@@ -74,6 +74,11 @@ type Transcript struct {
 	// Language is what the words are in, as ISO 639-1, read off them once.
 	Language string
 	snapped  []Cue
+	// keys are what each heard word is kept by, the millisecond the
+	// recogniser heard it start, and byKey finds a heard word by its key,
+	// see heardIndex.
+	keys  []string
+	byKey map[string]int
 	// fixes are the corrections the words were made with, see Of.
 	fixes map[string]string
 	// Loudness in dB every FrameSeconds, starting at Start.

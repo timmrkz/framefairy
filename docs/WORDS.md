@@ -35,7 +35,16 @@ the prompt, the room a window has, the clip timeline.
 corrections, and a correction that reads as two words split into two
 words that share the time the recogniser measured. A correction is kept
 in the clip's plan entry, `corrections`, so it goes with the clip, and
-another clip over the same word reads it as it was heard. A clip's
+another clip over the same word reads it as it was heard. It is kept
+against the millisecond the recogniser heard the word start, which
+nothing moves, written `h61200`, and not against where the word starts on
+the sound, which the silence level moves, see `heardIndex` in
+`engine/words.go`. The app measures that level from the audio heard so
+far, so it moves while the rest of a video is heard. Two words heard
+starting in the same millisecond each have a key of their own, the second
+the next millisecond free. A key kept the old way, the bare millisecond on
+the sound, is read only that way, and is kept anew the next time the
+clip's words are edited. A clip's
 captions, its edges and the edits of its words all read its words
 through here. The stored transcript keeps the recogniser's own words, so
 nothing the recogniser heard is lost. Corrections used to be kept for the
@@ -50,7 +59,8 @@ or a cut and the words the arrow keys walk are all made from it.
 
 **What a clip leaves out** is the clip's. A word removed in the caption
 box, or with its caption on the clip timeline, is kept in the clip's plan
-entry, `removed_words`, against the word heard, and the clip's captions
+entry, `removed_words`, against the word heard, by the same key as a
+correction, and the clip's captions
 are laid out with it there and not shown, see `RemovedWords` in
 `engine/removedwords.go`. One of the words a correction made of a heard
 word, like a word typed in beside another, is taken out of what the
