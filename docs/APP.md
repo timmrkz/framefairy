@@ -1395,9 +1395,15 @@ bubble scrolled by those eight pixels.
       left. Time the pointer held it still is kept too. A list read again,
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
-      episode, or any of those, used to take every way back with it. The
-      clip stays in the plan with everything done to it, and a render of
-      the whole plan leaves it out.
+      episode, or any of those, used to take every way back with it.
+      Putting a clip back takes back the remove and nothing more: the
+      clip chosen stays chosen and a play goes on where it is. Only the
+      clip that was itself the one chosen when it was removed is chosen
+      again, while nothing else has been chosen since, and the playhead
+      stays where it is. Putting back used to choose the clip put back
+      and play it from its start, away from the clip being watched, Tim
+      found. The clip stays in the plan with everything done to it, and
+      a render of the whole plan leaves it out.
 - **Range picker:** one slim strip for the whole episode, under the video
   preview and exactly as wide as it. It shows where the clips are and
   where the playhead stands, and while clips are being found, the part
