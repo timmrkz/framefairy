@@ -128,6 +128,9 @@
   let clips = $state<ClipEntry[]>([]);
   let from = $state(0);
   let to = $state(0);
+  // Whether the window the workspace opens with is in from and to yet,
+  // see openWindow.
+  let windowRead = $state(false);
   // The target typed in the workspace, or 0 while it follows the window,
   // and how long the window was it was typed for. It is the target of a
   // window that long and of no other, see typed.
@@ -620,7 +623,7 @@
   // over in the middle, or failed with a reason. It is said in the first
   // row still to come and points to Continue, and nothing starts by
   // itself. A search called off by hand leaves nothing to say.
-  const stopped = $derived.by(() => {
+  const halted = $derived.by(() => {
     if (!search || busy) return null;
     if (search.state !== "interrupted" && search.state !== "failed") return null;
     const start = search.from ?? 0;
@@ -657,6 +660,39 @@
       left: window,
       full: `${window}. ${how} while the clips were found. Continue looks again`,
     };
+  });
+  // A search that stopped holds the window it was about, and the window
+  // can still be moved. Moved anywhere else, the search is set aside: the
+  // row that said it stopped closes, Continue becomes New again, and New
+  // starts afresh in the window as it is now. Moved back, by hand or with
+  // Undo, Continue carries the search on as before. Tim cancelled a search
+  // to look somewhere else and could not, because the window stood locked
+  // on the range picker until the search was carried on. It is read from
+  // where the window is, so it is the same after a restart, the window
+  // being kept, and only once the window is known: before that the
+  // workspace opening would flash New.
+  const aside = $derived(
+    !!halted &&
+      windowRead &&
+      to > from &&
+      (Math.abs(from - halted.from) > 0.5 || Math.abs(to - halted.to) > 0.5),
+  );
+  const stopped = $derived(aside ? null : halted);
+  // Said in the app's log when the window leaves a stopped search or
+  // comes back to it, see lib/said.ts.
+  let wasAside = false;
+  $effect(() => {
+    const now = aside;
+    if (now === wasAside) return;
+    wasAside = now;
+    const w = untrack(() => halted);
+    if (!w) return;
+    said(
+      now
+        ? `window: moved off the stopped search's window ${clock(w.from)} to ${clock(w.to)}, New starts afresh`
+        : `window: back on the stopped search's window ${clock(w.from)} to ${clock(w.to)}, Continue carries it on`,
+      { level: "info", video: path },
+    );
   });
 
   // The clips on their way, from every job of the episode alike: the
@@ -916,8 +952,10 @@
   // The window put back inside what a search can do with it, whenever
   // what that is changes: the room, or the clips asked for. Not while clips
   // are being found for it, because then it is the window being searched.
+  // Nor while a search stands stopped on it, because it is the window
+  // Continue carries on.
   function keepWindow() {
-    if (busy || duration <= 0 || to <= from) return;
+    if (busy || stopped || duration <= 0 || to <= from) return;
     const kept = fitWindow({ from, to }, reachAnywhere, leastLong, duration);
     if (Math.abs(kept.from - from) > 0.001) from = kept.from;
     if (Math.abs(kept.to - to) > 0.001) to = kept.to;
@@ -945,11 +983,20 @@
       kept = null;
     }
     if (path !== was) return;
+    windowRead = true;
     if (kept && kept.to > kept.from && kept.to <= duration + 0.5) {
       from = kept.from;
       to = Math.min(kept.to, duration);
       length = Math.max(kept.length, to - from);
       keepWindow();
+      return;
+    }
+    // A search that stopped holds its window, so a workspace opened on one
+    // opens on it rather than set it aside.
+    if (halted) {
+      from = halted.from;
+      to = halted.to;
+      length = to - from;
       return;
     }
     moveWindowOn();
@@ -2384,6 +2431,11 @@
     if (end > start) {
       from = start;
       to = end;
+      // Where the search is, not where the app placed a window before the
+      // range picker was measured, see unplaced. And kept, so a search the
+      // app is closed on opens on its own window, see aside.
+      unplaced = false;
+      rememberWindow();
     }
     if (!listedBefore) {
       listedBefore = new Set(clips.map((c) => c.key));
@@ -2683,9 +2735,10 @@
 {#snippet strip()}
   <RangeWindow
     {duration}
-    from={stopped && !busy ? stopped.from : from}
-    to={stopped && !busy ? stopped.to : to}
-    shown={busy || !!stopped}
+    {from}
+    {to}
+    shown={busy}
+    resumes={!!stopped}
     {marks}
     {selected}
     {hovered}

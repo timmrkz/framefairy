@@ -211,7 +211,7 @@ func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 		return err
 	})
 	moved := func() bool {
-		got := clipsOf(t, fsys, path)["01"].CaptionTimes[wordKey(10.0)].Start
+		got := clipsOf(t, fsys, path)["01"].CaptionTimes[heardKey(10000)].Start
 		return got != nil && near(*got, 9.8)
 	}
 	if _, err := change.Undo(); err != nil {

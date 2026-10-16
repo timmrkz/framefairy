@@ -1331,7 +1331,14 @@ bubble scrolled by those eight pixels.
       then leaves the same row, *Stopped. Click Continue*, with how far the episode was
       transcribed, because what it did stays and can be carried on. **New**
       takes its place. Clips it wrote before it stopped stay, with the row
-      after them. The episode's dot in the sidebar says it too: the colour
+      after them. The window's mark stays on the window the search was
+      about and can be dragged as at rest: moved anywhere else, the
+      search is set aside, its row closes, **Continue** becomes **New**,
+      and New starts a fresh search where the window is. Moved back, by
+      hand or with Undo, Continue carries the search on as before. It is
+      read from where the window is, which is kept, so it is the same
+      after a restart. Tim cancelled a search to look somewhere else and
+      could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed.
     - **New**, above the list, finds clips in the window, as long as the
@@ -1429,10 +1436,10 @@ bubble scrolled by those eight pixels.
       the hand that grabs and a triangle the arrows left and right. The
       triangles lie over the playhead, which a search leaves on the
       window's start, and the bars under it. The title of New and the
-      suggested Target follow the hand. While its clips are found, or
-      while its search stands stopped with Continue, the mark turns into
-      the window, drawn over the track, and back into the mark when the
-      search is done, on the window after it. Only one of the two is ever
+      suggested Target follow the hand. While its clips are found the
+      mark turns into the window, drawn over the track, and back into
+      the mark when the search is done, on the window after it, or when
+      it is stopped, on the window Continue carries on. Only one of the two is ever
       drawn. Tim found a window at rest a leftover that got in the way:
       after a search of the whole of a short episode it lay over all of
       it and hid every clip just found, and an outline with handles read

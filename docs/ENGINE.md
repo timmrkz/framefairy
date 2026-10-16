@@ -443,8 +443,14 @@ takes the whole pause and one dragged over speech takes whole words.
 Captions are made of the same words. Where their timing is a little off
 from what is heard, a caption is moved by hand: the plan keeps, per clip,
 when the caption that begins on a word appears and when the one that ends
-on a word goes, in `caption_times` keyed by the millisecond that word
-starts in the episode. `moveCaptions` in `engine/lines.go` puts them there
+on a word goes, in `caption_times` keyed by that word: the key of the
+heard word it is made from, the millisecond the recogniser heard it start,
+and after a slash which of its words it is when a correction made it
+several, `h61200` or `h61200/1`, see `saidKey` in `engine/words.go`. The
+silence level, which moves where a word starts on the sound, then moves no
+caption off its word. A key from before, the bare millisecond the word
+starts on the sound, is still read that way, and the next caption moved in
+the clip keeps them all anew, `rekeyCaptionTimes`. `moveCaptions` in `engine/lines.go` puts them there
 when captions are built, never over the caption beside them and never
 shorter than a tenth of a second, and a timing kept against a word that no
 longer begins or ends a caption is left unused.
