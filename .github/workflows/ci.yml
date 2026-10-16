@@ -38,6 +38,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# A cache whose download stalls is given up after a minute, and the job
+# goes on as if there were no cache, where it would wait ten. Restoring the
+# walks' system packages once took 2 min 22 s on one runner and 3 s on the
+# others, which put the job at seven minutes.
+env:
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+
 jobs:
   # First back, by a long way, and the one most changes touch. It needs Node
   # and nothing else: no Go, no system libraries, no build.
@@ -248,9 +255,11 @@ jobs:
   # what the Go tests need, the interface's Node, and the Chromium
   # Playwright drives, which only this job installs.
   #
-  # On three machines, each with every third run, walks and sequences
-  # alike: on one the runs took five and a half minutes after two of
-  # setting up, and on two each still took six with a cold build cache.
+  # On three machines, each with a third of the runs by how long they took
+  # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
+  # five and a half minutes after two of setting up, on two each still took
+  # six with a cold build cache, and every third run left one machine a
+  # minute behind the others.
   walks:
     name: walks (${{ matrix.shard }}/3)
     strategy:
