@@ -226,8 +226,13 @@
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
 //                      and says Removed, its time standing full while the
-//                      pointer is on it. [i, "key"] presses Delete on the
-//                      tile instead, the pointer standing on it
+//                      pointer is on it, through the made-up leave and
+//                      over a browser may send while the node under a
+//                      still pointer goes. [i, "key"] presses Delete on
+//                      the tile instead, the pointer standing on it.
+//                      [i, "tile"] presses the bin, and the browser says
+//                      the pointer is over the tile round the picture and
+//                      never over the picture itself, the way WebKit may
 //   ["put back picture", i]
 //                      presses Put it back on picture i, which is back in
 //                      the same frame
@@ -1273,6 +1278,36 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim on youtube.mp4 (2.270): dragging a cut's left edge
+    // into the clip, the video preview flickered between the edge's frame
+    // and the frames after the cut. Each step of the drag cues the play
+    // from the edge, which reads the next piece ahead, and the step after
+    // withdrew those frames: their coming late was taken for a place the
+    // hand had passed, and they were put up. And a playhead a hair before
+    // the end of the piece was cued as inside it, while the cue's plan
+    // started after the cut. At 25 frames a second, as Tim's video is, and
+    // back and forth, because one drag catches it about half the time.
+    name: "a cut's left edge dragged shows the frames before the cut, never one after it",
+    steps: [
+      ["add", 40, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+    ],
+  },
+  {
     // Found by Tim on this: with shift, the playhead went inside the word
     // the edge landed on, a pause away from the edge, and dragging a cut's
     // left edge on past the last word took it over the cut into the
@@ -1743,6 +1778,8 @@ export const sequences = [
       ["bugs"],
       ["attach", 3],
       ["remove picture", 2],
+      ["put back picture", 2],
+      ["remove picture", [2, "tile"]],
       ["put back picture", 2],
       ["pictures", 3],
       ["remove picture", [2, "key"]],
@@ -2935,10 +2972,10 @@ async function keyShows(page, key, shows, arg) {
     .then(() => page.evaluate(() => Math.round(window.__keyShows.took)), () => -1);
 }
 
-// Reads the edge of that label and the playhead on every animation frame,
-// both in the same frame, until __followWatch is set false: the edge into
-// __edgeSeen, and the two as a pair into __edgeFrames, the edge as NaN on a
-// frame it is not drawn.
+// Reads the edge of that label, the playhead and the frame the video
+// preview shows on every animation frame, all in the same frame, until
+// __followWatch is set false: the edge into __edgeSeen, and the three into
+// __edgeFrames, the edge as NaN on a frame it is not drawn.
 function watchEdge(page, label) {
   return page.evaluate((label) => {
     window.__edgeSeen = [];
@@ -2946,11 +2983,13 @@ function watchEdge(page, label) {
     window.__followWatch = true;
     const tick = () => {
       if (!window.__followWatch) return;
-      const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
+      const screen = document.querySelector(".screen");
+      const playhead = Number(screen?.dataset.playhead);
+      const shown = Number(screen?.dataset.shown);
       const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
       const at = edge ? Number(edge.getAttribute("aria-valuenow")) : NaN;
       if (edge) window.__edgeSeen.push(at);
-      window.__edgeFrames.push([at, playhead]);
+      window.__edgeFrames.push([at, playhead, shown]);
       requestAnimationFrame(tick);
     };
     tick();
@@ -3538,6 +3577,9 @@ for (const seq of toWalk) {
   // Whether the edge "drag edge twice" took again moved while the hand
   // still held it.
   let movedHeld = false;
+  // What the press that took the edge again landed on, the grips under
+  // it, said if the playhead did not go with the edge (2.271).
+  let pressedOn = "";
   let held = null;
   let wrong = null;
   // The video and the other file dropped last.
@@ -4481,6 +4523,7 @@ for (const seq of toWalk) {
         const [which, px, again] = arg;
         dragShift = false;
         dragPx = again;
+        pressedOn = "";
         const g = await handles(page);
         const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
         if (!box) {
@@ -4497,6 +4540,11 @@ for (const seq of toWalk) {
         }
         await page.mouse.up();
         await watchEdge(page, edgeLabel[which]);
+        pressedOn = await page.evaluate(
+          ([x, y]) =>
+            [...new Set(document.elementsFromPoint(x, y).map((el) => el.closest("[data-grip]")?.dataset.grip).filter(Boolean))].join(", ") || "no grip",
+          [x + px, y],
+        );
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + px + (again * i) / 10, y);
@@ -4595,9 +4643,27 @@ for (const seq of toWalk) {
           wrong = `the ${arg} edge stood in ${runs.length ? "one place" : "no place"} while the hand dragged it, which proves nothing`;
         } else if (missed) {
           const went = frames.slice(missed.from, missed.to + late + 1).map(([, p]) => p.toFixed(3));
-          wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}`;
+          // Every edge and playhead the watch saw, and what the press
+          // landed on, since a runner saw this and this machine does not.
+          const seen = frames.map(([e, p]) => `${e.toFixed(3)}/${p.toFixed(3)}`).filter((v, k, all) => v !== all[k - 1]);
+          wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}.${pressedOn ? ` The press that took it again landed on ${pressedOn}.` : ""} Edge/playhead went ${seen.join(" ")}`;
         } else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
+        }
+        break;
+      }
+      case "nothing past the cut": {
+        // While the cut's left edge was dragged, the video preview showed
+        // the frames before the cut, the edge's, and never one after it:
+        // the playhead stood before the cut all along.
+        const segs = (await engineState(page, watch.at)).segments;
+        const after = segs[1].start;
+        const frames = await page.evaluate(() => window.__edgeFrames ?? []);
+        const past = frames.filter(([, p, f]) => p < after && f >= after - 0.001);
+        if (frames.length < 10) wrong = `the drag was watched for ${frames.length} frames, which proves nothing`;
+        else if (past.length) {
+          const seen = [...new Set(past.map(([, p, f]) => `${f.toFixed(3)} with the playhead at ${p.toFixed(3)}`))];
+          wrong = `while the cut's left edge was dragged, the video preview showed frames from after the cut, which starts again at ${after.toFixed(3)}: ${seen.slice(0, 6).join(", ")}`;
         }
         break;
       }
@@ -5632,6 +5698,10 @@ for (const seq of toWalk) {
           break;
         }
         const id = await tile.getAttribute("data-id");
+        // Where the pointer stands while the picture goes: on the bin it
+        // presses, or in the middle of the tile hovered for Delete.
+        const spot = await (how === "key" ? tile : tile.locator(".bin")).boundingBox();
+        const point = [spot.x + spot.width / 2, spot.y + spot.height / 2];
         // What the page hears of the pointer and the focus from the press
         // on, said if the time runs, since a runner's Chromium has made it
         // run where this machine's does not (2.263).
@@ -5661,6 +5731,24 @@ for (const seq of toWalk) {
         // saw a swipe across the tile.
         else if (gone !== "none") wrong = `picture ${i} says Removed with the animation ${gone}`;
         if (wrong) break;
+        // What a browser may tell a pointer that stands still while the
+        // node under it goes: that it went off the app, and over the tile
+        // round what took its place, and only a frame later over that.
+        // The time ran for that frame on CI's Chromium (2.263). With
+        // "tile" that last over never comes, which WebKit, the Mac's
+        // browser, may well do, since it counts nothing that comes up
+        // under a still pointer as under it until the pointer moves.
+        await page.evaluate(
+          async ({ id, point: [x, y], onTile }) => {
+            const tile = document.querySelector(`li.tile[data-id="${id}"]`);
+            const at = { bubbles: true, clientX: x, clientY: y, pointerType: "mouse" };
+            tile.dispatchEvent(new PointerEvent("pointerout", at));
+            tile.dispatchEvent(new PointerEvent("pointerover", at));
+            await new Promise(requestAnimationFrame);
+            if (!onTile) document.elementFromPoint(x, y).dispatchEvent(new PointerEvent("pointerover", at));
+          },
+          { id, point, onTile: how === "tile" },
+        );
         // The pointer is still on it, so its time has not started: the
         // fill stands full until the pointer leaves. Tim saw it run for a
         // moment and stop a little short of full.
@@ -7174,11 +7262,24 @@ for (const seq of toWalk) {
           wrong = `${basename(folder)} is not there to delete`;
           break;
         }
-        // Again while the app writes into it, as Finder does: a file the app
-        // writes while the folder is emptied leaves it not empty, which is
-        // not the folder coming back. What the app must not do, make the
-        // folder again, is what the walk then looks for.
-        rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        // Again while the app writes into it, as a person deletes it again
+        // when Finder says the folder is not empty: a file the app writes
+        // while the folder is emptied leaves it not empty, which is not the
+        // folder coming back. On CI's busy runners the app was still
+        // writing after five tries in a second and a half, and the walk
+        // failed on its own delete. So it deletes until the folder is gone,
+        // for up to ten seconds. What the app must not do, make the folder
+        // again once it is gone, is what the walk then looks for.
+        const by = Date.now() + 10000;
+        for (;;) {
+          try {
+            rmSync(folder, { recursive: true, force: true });
+            break;
+          } catch (err) {
+            if (err.code !== "ENOTEMPTY" || Date.now() > by) throw err;
+            await page.waitForTimeout(50);
+          }
+        }
         videoGone = arg === "with the video" || arg === "written back";
         if (videoGone) rmSync(folderGone, { force: true });
         if (arg === "written back") {

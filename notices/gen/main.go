@@ -176,6 +176,8 @@ func classify(text string) string {
 		return "ISC"
 	case strings.Contains(t, "CC0 1.0 Universal"):
 		return "CC0-1.0"
+	case strings.Contains(t, "This is free and unencumbered software released into the public domain"):
+		return "Unlicense"
 	}
 	return ""
 }

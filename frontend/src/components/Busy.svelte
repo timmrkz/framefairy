@@ -7,13 +7,17 @@
     const see = (e: PointerEvent) => (seen = { x: e.clientX, y: e.clientY });
     document.addEventListener("pointermove", see, { capture: true, passive: true });
     document.addEventListener("pointerdown", see, { capture: true, passive: true });
+    // A pointer that stands still while what is under it changes is told
+    // where it is by an over the browser makes up, see runDown.
+    document.addEventListener("pointerover", see, true);
     document.addEventListener("pointerout", (e) => !e.relatedTarget && (seen = null), true);
   }
 
-  // Whether the pointer stands on node, from where it was last seen.
-  function under(node: Element | null | undefined): boolean {
-    if (!node || !seen) return false;
-    return node.contains(document.elementFromPoint(seen.x, seen.y));
+  // Whether the pointer stands on node, at x and y, or where it was last
+  // seen.
+  function under(node: Element | null | undefined, x = seen?.x, y = seen?.y): boolean {
+    if (!node || x === undefined || y === undefined) return false;
+    return node.contains(document.elementFromPoint(x, y));
   }
 </script>
 
@@ -156,9 +160,27 @@
       let pointer = !!host?.matches(":hover") || under(host);
       const keyboard = () => !!host?.contains(document.activeElement);
       const settle = () => (pointer || keyboard() ? hold() : go());
+      // A pointer that stands still while what is under it changes, as
+      // the bin just pressed goes and the removed picture takes its place,
+      // is told of it by events the browser makes up. They can name the
+      // tile round the control, or say the pointer went off the app, for
+      // the frame before it is seen on the control again. The time ran for
+      // that frame and stood a hair short of full on CI's Chromium
+      // (2.263). So the pointer is let go of only where the page finds
+      // nothing of the control under it, and off the app only once no
+      // over has said otherwise for two frames. An over on the tile with
+      // the control under the pointer says otherwise too: WebKit, which
+      // counts nothing that comes up under a still pointer as under it,
+      // may send no over on the control at all.
+      let outside = 0;
       const moved = (e: PointerEvent) => {
         const on = e.target instanceof Node && !!host?.contains(e.target);
-        if (on === pointer) return;
+        const here = on || ((outside !== 0 || pointer) && under(host, e.clientX, e.clientY));
+        if (here) {
+          cancelAnimationFrame(outside);
+          outside = 0;
+        }
+        if (on === pointer || (!on && here)) return;
         pointer = on;
         settle();
       };
@@ -166,8 +188,14 @@
       // under the pointer to say so.
       const gone = (e: PointerEvent) => {
         if (e.relatedTarget || !pointer) return;
-        pointer = false;
-        settle();
+        cancelAnimationFrame(outside);
+        outside = requestAnimationFrame(() => {
+          outside = requestAnimationFrame(() => {
+            outside = 0;
+            pointer = false;
+            settle();
+          });
+        });
       };
       const leftFocus = (e: FocusEvent) => {
         if (!host?.contains(e.relatedTarget as Node | null) && !pointer) go();
@@ -193,6 +221,7 @@
       host?.addEventListener("focusout", leftFocus);
       return () => {
         clearTimeout(timer);
+        cancelAnimationFrame(outside);
         fill?.cancel();
         document.removeEventListener("pointerover", moved, true);
         document.removeEventListener("pointermove", moved, true);
