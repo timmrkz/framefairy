@@ -955,55 +955,39 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		if light != wantLight {
 			t.Errorf("%s: the decoder says its light is %q, want %q", f.name, light, wantLight)
 		}
-		// The ffmpeg program decodes the way the decoder does: on the Mac's
-		// graphics chip where it has one, with the frame brought out as it
-		// is. On the processor as well, the way the render decodes, and the
-		// decoder is held to that too, since the video preview has to show
-		// the colours the short is made of. On the Mac's runner the chip's
-		// and the processor's came out up to 22 apart at the edges of
-		// colours, issue #256.
-		convert := func(hw bool) []byte {
+		// The decoder is held to the ffmpeg program decoding on the
+		// processor, the way the render decodes, since the video preview
+		// has to show the colours the short is made of. On CI's Mac the
+		// graphics chip decoded H.264 to other colours, issue #256, and so
+		// the decoder leaves H.264 to the processor.
+		convert := func() []byte {
 			t.Helper()
-			args := []string{"-loglevel", "error"}
-			if hw {
-				args = append(args, "-hwaccel", "videotoolbox")
-			}
-			args = append(args, "-i", path, "-frames:v", "1",
-				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-")
-			out, err := exec.Command("ffmpeg", args...).Output()
+			out, err := exec.Command("ffmpeg", "-loglevel", "error", "-i", path, "-frames:v", "1",
+				"-vf", framewire.Picture(w, h), "-f", "rawvideo", "-").Output()
 			if err != nil {
 				t.Fatalf("%s, the ffmpeg program: %v", f.name, err)
 			}
 			return out
 		}
-		chip := runtime.GOOS == "darwin" && has("hevc_videotoolbox")
-		want := convert(chip)
-		if chip {
-			// Issue #256: whether the two already differ as decoded, before
-			// any colour is made, or only once the chain has made colours.
-			planes := func(hw bool) []byte {
-				t.Helper()
-				format := "yuv420p"
-				if strings.Contains(f.name, "10 bits") {
-					format = "yuv420p16le"
-				}
-				args := []string{"-loglevel", "error"}
-				if hw {
-					args = append(args, "-hwaccel", "videotoolbox")
-				}
-				args = append(args, "-i", path, "-frames:v", "1", "-vf", "format="+format, "-f", "rawvideo", "-")
-				out, err := exec.Command("ffmpeg", args...).Output()
-				if err != nil {
-					t.Fatalf("%s, the ffmpeg program's planes: %v", f.name, err)
-				}
-				return out
+		want := convert()
+		// Whether the chip and the processor already differ as decoded,
+		// before any colour is made, for a frame that is off on a Mac.
+		planes := func(hw bool) []byte {
+			t.Helper()
+			format := "yuv420p"
+			if strings.Contains(f.name, "10 bits") {
+				format = "yuv420p16le"
 			}
-			if cpu := convert(false); len(frame) == len(cpu) {
-				if most, at := furthest(colours(frame), colours(cpu)); most > 8 {
-					t.Errorf("%s: at pixel %d the decoder's colour is %v and the processor's, the render's, %v, in 10 bits, %.2f apart on average. As decoded, before colours, the chip and the processor %s",
-						f.name, at, colours(frame)[at*3:at*3+3], colours(cpu)[at*3:at*3+3], meanDiff(frame, cpu), planesApart(planes(true), planes(false), 320*180))
-				}
+			args := []string{"-loglevel", "error"}
+			if hw {
+				args = append(args, "-hwaccel", "videotoolbox")
 			}
+			args = append(args, "-i", path, "-frames:v", "1", "-vf", "format="+format, "-f", "rawvideo", "-")
+			out, err := exec.Command("ffmpeg", args...).Output()
+			if err != nil {
+				t.Fatalf("%s, the ffmpeg program's planes: %v", f.name, err)
+			}
+			return out
 		}
 		if len(frame) != w*h*4 || len(want) != w*h*4 {
 			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
@@ -1016,7 +1000,12 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		most, at := furthest(mine, theirs)
 		// 2 in 8 bits is 8 in 10.
 		if most > 8 {
-			t.Errorf("%s: at pixel %d the decoder's colour is %v, the ffmpeg program's %v, in 10 bits", f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3])
+			chip := ""
+			if runtime.GOOS == "darwin" && has("hevc_videotoolbox") {
+				chip = ". As decoded, before colours, the chip and the processor " + planesApart(planes(true), planes(false), 320*180)
+			}
+			t.Errorf("%s: at pixel %d the decoder's colour is %v and the processor's, the render's, %v, in 10 bits, %.2f apart on average%s",
+				f.name, at, mine[at*3:at*3+3], theirs[at*3:at*3+3], meanDiff(frame, want), chip)
 		}
 		got[f.name] = frame
 	}

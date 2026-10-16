@@ -69,7 +69,10 @@ removed. Nothing is prepared before the first play.
    can be read.
 2. **One engine.** ffmpeg decodes every frame the video preview shows and
    every sample it plays, with the graphics chip where the system has
-   one, VideoToolbox on the Mac. There is no second decoder and no
+   one, VideoToolbox on the Mac. H.264 is the exception and is decoded on
+   the processor, the way the render decodes it: on CI's Mac the chip gave
+   other colours at the edges of colours, issue #256, and the video
+   preview has to show the short's colours. There is no second decoder and no
    fallback by system or by file. A file whose picture ffmpeg cannot
    decode cannot be rendered either, so it is refused once, when it is
    added, with the reason.
