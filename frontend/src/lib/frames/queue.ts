@@ -593,6 +593,9 @@ export class FrameQueue {
   // where it rested are asked only while it still rests there.
   private gestures = 0;
   private aheadKey = "";
+  // The playhead is held under the hand, being dragged: each place it
+  // passes is shown on its own, with no play cued from it, see grip.
+  private gripped = false;
   private scratch: Float32Array[] = [];
 
   // path is the episode's, and movie what the engine says of it, see
@@ -874,12 +877,23 @@ export class FrameQueue {
         plan.extend(p0 + this.video!.frame);
         const first = plan.need(0);
         const last = program.pieces[program.pieces.length - 1];
-        if (first && first.rank === rankAt(s, at)) this.start(at, true);
+        if (first && first.rank === rankAt(s, at) && !this.gripped) this.start(at, true);
         else if (last && at === last.end) void this.still(at, Math.max(last.start, at - this.video!.frame));
         else void this.still(at);
       },
       () => {},
     );
+  }
+
+  // The hand takes hold of the playhead, or lets go of it. While it is
+  // held, a place shows its frame alone and cues no play: the play's
+  // frames after it and its sound were read for every place the drag
+  // passed, and thrown away at the next. Where the hand lets go, the
+  // play is cued. Plan row 2.269, from the findings of 2.270.
+  grip(held: boolean) {
+    if (this.gripped === held) return;
+    this.gripped = held;
+    if (!held && !this.closed && (this.state === "paused" || this.state === "cued")) this.settle(this.at);
   }
 
   // The moments the hand is likely to step to next while paused, the first

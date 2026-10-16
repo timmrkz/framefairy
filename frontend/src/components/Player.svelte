@@ -457,6 +457,7 @@
 
   export function hold(held: boolean) {
     if (!queue) return;
+    queue.grip(held);
     if (held) {
       if (paused || nailed) return;
       nailed = true;

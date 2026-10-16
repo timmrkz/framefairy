@@ -612,13 +612,19 @@ through `/pick` with `&size=1080`, picks the clip its search finds and
 walks it the way a person does: Shift and an arrow from word to word, an
 arrow a frame at a time. For each press it times, in the page, how long
 from the key going down until the video preview shows the frame that
-holds the playhead. `REST` is the pause between presses, 250 ms unless
-set, `ROUNDS` the times the clip is walked, each on a page opened afresh so no round finds the frames the one before kept, 5 unless set, `SCALE` the
-device pixels of a CSS pixel, 2 unless set, a Mac's screen, and
-`CODEC=hevc` makes the video HEVC with 10-bit colour. The last line
-says how the frames came: from a stream opened for them, from one already
-open, or from the frames kept. Plan row 2.269 in [GUI-PLAN.md](GUI-PLAN.md)
-has the numbers it measured.
+holds the playhead, and until that frame has its own captions, and how
+the frames of each kind of press came: from a stream opened for them,
+read on in one already open, or from the frames kept. Each round ends
+with the playhead dragged over the clip timeline and back, a step every
+16 ms, and the last line says how many frames the video preview was
+behind the playhead while it moved, and how long after letting go the
+frame under it showed. `REST` is the pause between presses, 250 ms
+unless set, `ROUNDS` the times the clip is walked, each on a page opened
+afresh so no round finds the frames the one before kept, 5 unless set,
+`SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
+and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is
+1728 by 1080, a 16 inch MacBook Pro's screen. Plan row 2.269 in
+[GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
 
 ### Where they run
 
