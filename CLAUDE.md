@@ -62,7 +62,7 @@ Start with [README.md](README.md). In short:
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
-| plan and status | | [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
+| open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
 ## How Tim works
 
@@ -114,20 +114,27 @@ Start with [README.md](README.md). In short:
   in the thread and wait until one is merged or closed.
 - **A report that is not about the open pull request is logged, not
   started.** A bug Tim finds on the way, a review that points elsewhere,
-  something seen while testing: it goes into
-  [docs/GUI-PLAN.md](docs/GUI-PLAN.md) as a row of its own marked
-  `[ ]`, with what was seen, where, and who found it, pushed with the
-  next push to the open pull request and named in the reply. The work
-  on the open pull request carries on. Once it is merged, the next piece
-  of work is the oldest logged row, unless Tim puts them in another
+  something seen while testing: it becomes a
+  [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
+  own, with what was seen, where, and who found it, linked in the
+  reply. It carries one label or more: `bug`, `feature`, `tests` for
+  tests, walks and CI, `reliability`, `performance`, or `shipping` for
+  getting the app to customers. Opening an issue changes no file, so it needs no push and
+  starts no CI run. The work on the open pull request carries on. Once
+  it is merged, the next piece of work is the oldest open issue Tim
+  opened or a session opened for him, unless Tim puts them in another
   order. A report that is about the open pull request is that pull
   request's work, as before.
-- **A plan row takes the next free number.** Several pull requests add
-  rows to [docs/GUI-PLAN.md](docs/GUI-PLAN.md) at the same time, and two
-  of them have picked the same number before. So the number is the next
-  one free on main and in every other open pull request, not only the
-  next in the branch. When main lands a row with the same number, the
-  pull request that has not merged yet renumbers its own.
+- **Open work is GitHub issues, never rows in a file.** Every pull
+  request once added its row at the end of the same table in
+  [docs/GUI-PLAN.md](docs/GUI-PLAN.md), so any two of them conflicted,
+  however they were numbered, and two often picked the same number too.
+  An issue number is never taken twice and lives in no file. A pull
+  request names the issue it works on in its opening sentence and says
+  `Fixes #N` for each issue it finishes, so merging it closes them, and
+  no file keeps a status. `docs/GUI-PLAN.md` is the history up to 16
+  October 2026, and a pull request changes no line of it,
+  `scripts/plan-frozen.sh` fails CI when one does.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
   Go 1.27, Homebrew and the models in `~/.framefairy/models`. ffmpeg and
   llama-server are built by `make` and live in `bin/`, the only place the
@@ -229,8 +236,8 @@ messages, pull request text, code comments and chat replies.
   every button and every message. Whatever a thing is called in the
   interface, it is called that in the docs and in the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top.
-- When behaviour changes, update the matching doc in the same change, and the
-  status in `docs/GUI-PLAN.md`.
+- When behaviour changes, update the matching doc in the same change, and
+  close the issue it finishes with `Fixes #N` in the pull request.
 
 ## Interface rules
 
@@ -661,8 +668,10 @@ the skills listed last show their name without what they are for.
 
 ## Open work
 
-The batch plan with statuses is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md).
-Next up, roughly in this order:
+Open work is in the [issues](https://github.com/timmrkz/framefairy/issues).
+The batch plan up to 16 October 2026, with the decisions it was built
+on, is in [docs/GUI-PLAN.md](docs/GUI-PLAN.md). Next up, roughly in this
+order:
 
 - Tim's feedback from testing the current workspace
 - the video preview on one engine, ffmpeg, see
