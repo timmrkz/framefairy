@@ -431,7 +431,7 @@ export class CaptionLayers {
   // ahead while GOING layers were on their way, asked for in turn as room
   // comes, after the frame drawn waiting for its own. They were dropped
   // before, so on a busy machine a frame was drawn with the layer of the
-  // frame before and only then asked for its own, plan row 2.278.
+  // frame before and only then asked for its own, issue #288.
   private ahead: Wanted[] = [];
   // The layer given last, which stays while the one for a newer frame, a
   // newer draft or a newer track of the same clip is on its way, so the

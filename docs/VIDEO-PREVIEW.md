@@ -577,7 +577,7 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    begins after it. A seek after the last key frame of such a file found
    no key before the end and showed nothing, so a jump into the last
    stretch of an MPEG-TS video stood empty. It now goes back to the last
-   key frame too, plan row 2.277. The route that served a file's bytes to the page,
+   key frame too, issue #287. The route that served a file's bytes to the page,
    `/media/`, is removed with the reader that used it.
    `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
    render's rule on a phone's uneven frames, a screen recorder's left-out

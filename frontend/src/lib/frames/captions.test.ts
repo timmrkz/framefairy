@@ -260,7 +260,7 @@ describe("the layers of the captions", () => {
     }
   });
 
-  // Plan row 2.278: on a busy machine the walk saw the captions of the
+  // Issue #288: on a busy machine the walk saw the captions of the
   // frame before over a playing clip's frames, since a frame that asked
   // ahead while three layers were on their way was never asked for, and
   // only once it was drawn without its own.

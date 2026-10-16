@@ -157,7 +157,7 @@ func previewShowsTheShort(t *testing.T, e *Engine, program string, c timesCase, 
 	// From a jump to the edges of pieces, and inside a frame: the
 	// frame that holds the moment and the ones after it. And after the
 	// last key frame of the file, where a seek in MPEG-TS found no key
-	// before the end and the decoder showed nothing, plan row 2.277.
+	// before the end and the decoder showed nothing, issue #287.
 	for _, from := range []float64{0.2, 1.25, 3.05, 3.3, 5.3, 2.0021, 6.5} {
 		first := grid.Holding(from)
 		var near []int

@@ -771,7 +771,7 @@ func (c *cursor) seek(from float64) error {
 // before the end, and goes back the same way: it was taken for a key
 // shown in time, the decoder dropped every frame to the end, and a jump
 // into the last stretch of an MPEG-TS file, or a fallback to the
-// processor there, showed nothing at all. Plan row 2.277.
+// processor there, showed nothing at all. Issue #287.
 func (c *cursor) keyBefore(from float64, ts int64) (int64, error) {
 	tb := c.v.stream.TimeBase().Float64()
 	floor := c.v.stream.StartTime()
