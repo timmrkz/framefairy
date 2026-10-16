@@ -264,9 +264,9 @@ describe("the layers of the captions", () => {
   // frame before over a playing clip's frames, since a frame that asked
   // ahead while three layers were on their way was never asked for, and
   // only once it was drawn without its own.
-  it("asks for a frame that asked ahead while three were on their way, once one has come", async () => {
+  it("asks for a frame of a playing clip that asked ahead while three were on their way, once one has come", async () => {
     const { asked, answer } = answering();
-    const layers = new CaptionLayers(() => {});
+    const layers = new CaptionLayers(() => {}, { paused: () => false });
     layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
     for (const at of [1.0, 1.04, 1.08, 1.12, 1.16]) layers.coming(at, [10, 20]);
     expect(asked.length).toBe(3);
@@ -282,6 +282,18 @@ describe("the layers of the captions", () => {
     // All five are there when they are drawn.
     for (const [i, at] of [1.0, 1.04, 1.08, 1.12, 1.16].entries()) expect(layers.at(at, [10, 20])?.pixels[0]).toBe(i + 1);
     expect(layers.stats.late).toBe(0);
+  });
+
+  // Paused, the frames read ahead are the ones a step may come to, and a
+  // bounce after a word step shares the Go side with them, so they stay
+  // as they were: asked for while there is room, and by the step.
+  it("asks for no frame read ahead of a paused clip once three are on their way", async () => {
+    const { asked } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", track: "one", drafts: {} });
+    for (const at of [1.0, 1.04, 1.08, 1.12, 1.16]) layers.coming(at, [10, 20]);
+    expect(asked.length).toBe(3);
+    expect(layers.busy).toBe(true);
   });
 
   it("never asks for a layer with an ask newer than the frame's, and drops another clip's captions", async () => {

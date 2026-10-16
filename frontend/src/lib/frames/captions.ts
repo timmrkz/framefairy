@@ -427,11 +427,11 @@ export class CaptionLayers {
   // its way has come. It carries its own ask, so a layer asked for after
   // the ask changed is never asked for with the new one.
   private waiting: Wanted | null = null;
-  // The frames on their way to the screen that asked ahead while GOING
-  // layers were on their way, asked for in turn as room comes, after the
-  // frame drawn waiting for its own. They were dropped before, so on a
-  // busy machine a frame was drawn with the layer of the frame before and
-  // only then asked for its own, plan row 2.278.
+  // The frames on their way to the screen of a playing clip that asked
+  // ahead while GOING layers were on their way, asked for in turn as room
+  // comes, after the frame drawn waiting for its own. They were dropped
+  // before, so on a busy machine a frame was drawn with the layer of the
+  // frame before and only then asked for its own, plan row 2.278.
   private ahead: Wanted[] = [];
   // The layer given last, which stays while the one for a newer frame, a
   // newer draft or a newer track of the same clip is on its way, so the
@@ -681,7 +681,9 @@ export class CaptionLayers {
       this.fetch(want);
       return;
     }
-    if (this.ahead.some((a) => a.key === want.key)) return;
+    // Paused, the frames read ahead are the ones a step may come to, and
+    // they are asked for by the step, as before, while a word bounces.
+    if (this.still?.paused() !== false || this.ahead.some((a) => a.key === want.key)) return;
     this.ahead.push(want);
     if (this.ahead.length > AHEAD) this.ahead.shift();
   }
