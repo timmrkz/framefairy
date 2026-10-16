@@ -623,7 +623,10 @@ unless set, `ROUNDS` the times the clip is walked, each on a page opened
 afresh so no round finds the frames the one before kept, 5 unless set,
 `SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
 and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is
-1728 by 1080, a 16 inch MacBook Pro's screen. Plan row 2.269 in
+1728 by 1080, a 16 inch MacBook Pro's screen, unless `VIEWPORT` sets
+another, `2560x1440` for frames about the size of Tim's. The line under
+the table also counts the frames read ahead, and those of them let go of
+from the kept frames before the hand asked for them. Plan row 2.269 in
 [GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
 
 ### Where they run

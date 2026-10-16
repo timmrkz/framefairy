@@ -25,7 +25,9 @@ const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
 
 // A window as big as a 16 inch MacBook Pro's screen, which has the video
 // preview draw frames about the size Tim's do.
-const { browser, page, errors } = await open(url, { viewport: { width: 1728, height: 1080 }, scale });
+// VIEWPORT, as 2560x1440, sets another size.
+const [vw, vh] = (process.env.VIEWPORT ?? "1728x1080").split("x").map(Number);
+const { browser, page, errors } = await open(url, { viewport: { width: vw, height: vh }, scale });
 try {
   await control(url, `/pick?seconds=60&size=1080${codec}`);
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
@@ -148,14 +150,14 @@ try {
     await page.waitForTimeout(500);
   };
 
-  const seen = { streams: 0, continued: 0, kept: 0, parked: 0, size: "" };
+  const seen = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, aheadLost: 0, size: "" };
   const count = async () => {
     const s = await page.evaluate(() => {
       const s = window.__appFrames?.stats;
-      return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, size: s.first } : null;
+      return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, ahead: s.ahead, aheadLost: s.aheadLost, size: s.first } : null;
     });
     if (!s) return;
-    for (const k of ["streams", "continued", "kept", "parked"]) seen[k] += s[k];
+    for (const k of ["streams", "continued", "kept", "parked", "ahead", "aheadLost"]) seen[k] += s[k];
     seen.size ||= s.size;
   };
   for (let r = 0; r < rounds; r++) {
@@ -192,7 +194,7 @@ try {
   console.log(line(head));
   console.log("| " + widths.map((w, i) => (i === 0 ? "-".repeat(w) : "-".repeat(w - 1) + ":")).join(" | ") + " |");
   for (const r of rows) console.log(line(r));
-  console.log(`frames at ${stats?.size}, ${stats?.streams} streams opened, ${stats?.continued} frames waited for on an open stream, ${stats?.kept} from the kept frames, ${stats?.parked} parked`);
+  console.log(`frames at ${stats?.size}, ${stats?.streams} streams opened, ${stats?.continued} frames waited for on an open stream, ${stats?.kept} from the kept frames, ${stats?.parked} parked, ${stats?.ahead} read ahead, ${stats?.aheadLost} of them let go of before the hand asked for them`);
   const sorted = (xs) => xs.filter((x) => x >= 0).sort((a, b) => a - b);
   const a = sorted(apart);
   const z = sorted(settled);

@@ -544,8 +544,8 @@ episode's decoder and decoding from the key frame before:
   for rather than a new one started, and the frames it passes on the way
   are dropped on the Go side, `skip`, not sent. So the arrow keys stepping
   on, and a paused play going on, cost a frame each.
-- The frames shown last are kept, 96 MB of them, so stepping back or a
-  still close by costs nothing.
+- The frames shown last are kept, 192 MB of them, about 40 frames at a
+  big window's size, so stepping back or a still close by costs nothing.
 - A frame is decoded at the size of the canvas and no larger than the
   file's own.
 - The queue's second decoder asks for the piece after a cut while the

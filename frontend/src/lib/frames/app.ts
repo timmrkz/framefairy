@@ -25,8 +25,10 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] }
 
 // How much of the frames shown last is kept, and how far ahead a stream may
 // be from a frame wanted of it and still be waited for, in seconds. Further
-// than that, a new stream from the key frame before is quicker.
-const KEPT_BYTES = 96 << 20;
+// than that, a new stream from the key frame before is quicker. 192 MB is
+// about 40 frames of 1512 by 850, a big window's: with half of it a word
+// back sought again for frames it had let go of, plan row 2.269.
+const KEPT_BYTES = 192 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
 // decoders, and one more for a still or a seek while they play.
@@ -282,10 +284,15 @@ export class AppFrames {
   private aheadOf = new Set<Waiter>();
   // The ranks to read ahead once the hand waits for nothing, see ahead.
   private aheadWanted: number[] | null = null;
+  // The ranks read ahead and not yet asked for by the hand, and those of
+  // them the kept frames let go of first, for aheadLost.
+  private aheadRead = new Set<number>();
+  private aheadEvicted = new Set<number>();
   // first is the size the first stream was opened at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
-  // ones, for the walks.
-  readonly stats = { streams: 0, continued: 0, kept: 0, keptRanks: [] as number[], parked: 0, ahead: 0, opens: [] as Opened[], first: "" };
+  // ones, for the walks. aheadLost counts the frames the hand asked for
+  // that were read ahead and let go of from the kept ones before it did.
+  readonly stats = { streams: 0, continued: 0, kept: 0, keptRanks: [] as number[], parked: 0, ahead: 0, aheadLost: 0, opens: [] as Opened[], first: "" };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
@@ -388,6 +395,7 @@ export class AppFrames {
       if (rank < 0 || (have && have.width === width && have.height === height)) continue;
       const w: Waiter = { rank, seq: ++this.asked, ahead: true, done: () => this.aheadOf.delete(w) };
       this.aheadOf.add(w);
+      this.aheadRead.add(rank);
       this.stats.ahead++;
       this.route(w);
     }
@@ -405,6 +413,10 @@ export class AppFrames {
     if (w.gone || this.closed) {
       w.done(null);
       return;
+    }
+    if (!w.ahead) {
+      if (this.aheadEvicted.delete(w.rank)) this.stats.aheadLost++;
+      this.aheadRead.delete(w.rank);
     }
     const { width, height } = this.size();
     // A kept frame of another size is not this frame: one decoded before
@@ -463,6 +475,10 @@ export class AppFrames {
       this.kept.delete(r);
       this.keptBytes -= bytes(f);
       f.close();
+      if (this.aheadRead.delete(r)) {
+        this.aheadEvicted.add(r);
+        if (this.aheadEvicted.size > 256) this.aheadEvicted.delete(this.aheadEvicted.values().next().value!);
+      }
     }
   }
 
