@@ -235,6 +235,23 @@ messages, pull request text, code comments and chat replies.
   the **space bar**. Taking something away is **remove**, everywhere, in
   every button and every message. Whatever a thing is called in the
   interface, it is called that in the docs and in the code comments too.
+- **A measurement is written so a person can compare it.** Wherever
+  numbers are put side by side, in a pull request, a reply or a doc:
+  - Every number that is compared is in the same unit, with the same
+    number of decimals, and the unit is said once, in the column's head.
+    Seconds stay seconds, `284`, never `4:44` in one column and `197 s`
+    in the next.
+  - A comparison reads before, then after, then the change, in that
+    order, left to right.
+  - Every comparison has a change column: the difference as a share of
+    the before, rounded to a whole percent, with the word that says
+    which way it went, `20 % faster`, `7 % slower`, `3 % smaller`. A
+    change under the noise of the measurement says `no change`.
+  - Only like is compared with like. Numbers from a cloud session and
+    from CI, or from three machines and from four, go in separate tables
+    or separate rows, never in columns of one row.
+  - The table says what was measured, where, and how many times, in a
+    sentence above it, and a number that came from one run says so.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top.
 - When behaviour changes, update the matching doc in the same change, and
   close the issue it finishes with `Fixes #N` in the pull request.
@@ -649,7 +666,7 @@ the skills listed last show their name without what they are for.
 - Work on a branch, open a pull request, and let CI run. CI builds and tests
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
-  [docs/TESTING.md](docs/TESTING.md). It is eleven jobs at once rather than one after another, so
+  [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes, and on a pull request
   each one asks `scripts/ci-needs.sh` whether the change gives it anything
   to do. A push to main narrows nothing. `make changed` runs what a branch
