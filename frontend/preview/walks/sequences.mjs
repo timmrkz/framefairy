@@ -537,6 +537,9 @@
 //                      the clip timeline did not dim it
 //   ["captions drawn"] once the layers have come, the picture shows the
 //                      letters of a caption
+//   ["drawn", word]    the video preview shows the caption holding the
+//                      word where the playhead stands, letters drawn and the
+//                      caption box holding the word
 //   ["one pill", word] the word opened while another is lit sits on the
 //                      colour of the pill libass draws round it lit, with no
 //                      ring of another shade round it and no focus ring
@@ -1012,8 +1015,10 @@ export const sequences = [
     steps: [
       ["mark", "start"],
       ["edge to word", ["start", "Schulhof"]],
+      ["drawn", "Schulhof"],
       ["others", ["start", "Schulhof"]],
       ["edge to word", ["end", "Schulhof"]],
+      ["drawn", "Schulhof"],
       ["others", ["start", "Schulhof"]],
     ],
   },
@@ -6996,6 +7001,36 @@ for (const seq of toWalk) {
         else if (ats[ats.length - 1] <= ats[0]) wrong = "the playhead stood still after the hand let go";
         else if (ats[0] < second - 1e-6 || ats[0] > second + 1) {
           wrong = `the play went on from ${ats[0].toFixed(3)}, not from ${second.toFixed(3)} where the hand let go`;
+        }
+        break;
+      }
+      case "drawn": {
+        // The video preview shows the caption holding the word where the
+        // playhead stands: libass has drawn letters on the frame, and the
+        // caption box over them holds the word. An edge dragged with shift
+        // took the playhead to a moment between two frames, and the frame
+        // shown was the one before the caption appears. Tim saw nothing to
+        // snap to on #294.
+        await settled();
+        await page.waitForTimeout(300);
+        await settled();
+        const white = await page.evaluate(() => {
+          const canvas = document.querySelector(".screen canvas");
+          if (!canvas?.width) return 0;
+          const c = document.createElement("canvas");
+          c.width = canvas.width;
+          c.height = canvas.height;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(canvas, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          let n = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) n++;
+          return n;
+        });
+        const box = (await shown(page)).map((w) => w.text).join(" ");
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        if (white < 100 || !box.includes(arg)) {
+          wrong = `with the playhead at ${at.toFixed(3)} the video preview shows ${white} white pixels under the caption box "${box}", not the caption with "${arg}"`;
         }
         break;
       }

@@ -2152,8 +2152,11 @@ moved by hand, on the clip timeline.
   `captionStop` in `engine/edit.go`. Shift is read on every move, so
   letting go of it part way goes back to frames. A word the edge took out
   is a word to land on going back. The edge stands where the word does,
-  as a caption laid out from its words does, not on a frame, and the
-  playhead goes with it there. The edges of a caption used to move a frame
+  as a caption laid out from its words does, not on a frame. The playhead
+  goes with it, for an end onto the last frame the caption is up on, and
+  for a start into its first word, the way a click on the caption goes,
+  because the frame that holds a word's start begins before it, where the
+  caption is not up yet. Tim saw nothing to snap to there. The edges of a caption used to move a frame
   at a time with shift or without, found by Tim.
 - **An edge dragged over a word removes it.** Dragged in, an edge takes
   out of its caption every word whose middle it passes, the way delete

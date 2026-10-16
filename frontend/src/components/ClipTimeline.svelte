@@ -1315,7 +1315,7 @@
         capShaped = answer.captions ?? [];
         oncaptionshape?.({ cues: capShaped, track: answer.track });
         const c = capShaped[capDraft.index];
-        if (q.landed && c) q.landed(q.edge === "start" ? c.start : Math.min(c.end, clipLength));
+        if (q.landed && c) q.landed(q.edge === "start" ? captionAppears(c) : Math.min(c.end, clipLength));
       }
     } catch {
       // An edge the engine says no to shows the last answer it gave.
@@ -1324,6 +1324,16 @@
       capAsking = false;
       void capAsk();
     }
+  }
+
+  // Where the playhead goes for the start of a caption put on a word with
+  // shift: into its first word, the way a click on the caption goes, see
+  // firstWordOf. A word starts between two frames, and the frame that holds
+  // its start begins before it, where the caption is not up yet. Tim saw
+  // nothing in the video preview to snap to on #294.
+  function captionAppears(c: CaptionCue): number {
+    const word = c.lines?.[0]?.words?.[0];
+    return word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
   }
 
   // Letting go of the draft, and of any answer still on its way.
