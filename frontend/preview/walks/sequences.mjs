@@ -1273,6 +1273,36 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim on youtube.mp4 (2.270): dragging a cut's left edge
+    // into the clip, the video preview flickered between the edge's frame
+    // and the frames after the cut. Each step of the drag cues the play
+    // from the edge, which reads the next piece ahead, and the step after
+    // withdrew those frames: their coming late was taken for a place the
+    // hand had passed, and they were put up. And a playhead a hair before
+    // the end of the piece was cued as inside it, while the cue's plan
+    // started after the cut. At 25 frames a second, as Tim's video is, and
+    // back and forth, because one drag catches it about half the time.
+    name: "a cut's left edge dragged shows the frames before the cut, never one after it",
+    steps: [
+      ["add", 40, "25"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", -60],
+      ["nothing past the cut"],
+      ["drag edge", "cut from", 40],
+      ["nothing past the cut"],
+    ],
+  },
+  {
     // Found by Tim on this: with shift, the playhead went inside the word
     // the edge landed on, a pause away from the edge, and dragging a cut's
     // left edge on past the last word took it over the cut into the
@@ -2935,10 +2965,10 @@ async function keyShows(page, key, shows, arg) {
     .then(() => page.evaluate(() => Math.round(window.__keyShows.took)), () => -1);
 }
 
-// Reads the edge of that label and the playhead on every animation frame,
-// both in the same frame, until __followWatch is set false: the edge into
-// __edgeSeen, and the two as a pair into __edgeFrames, the edge as NaN on a
-// frame it is not drawn.
+// Reads the edge of that label, the playhead and the frame the video
+// preview shows on every animation frame, all in the same frame, until
+// __followWatch is set false: the edge into __edgeSeen, and the three into
+// __edgeFrames, the edge as NaN on a frame it is not drawn.
 function watchEdge(page, label) {
   return page.evaluate((label) => {
     window.__edgeSeen = [];
@@ -2946,11 +2976,13 @@ function watchEdge(page, label) {
     window.__followWatch = true;
     const tick = () => {
       if (!window.__followWatch) return;
-      const playhead = Number(document.querySelector(".screen")?.dataset.playhead);
+      const screen = document.querySelector(".screen");
+      const playhead = Number(screen?.dataset.playhead);
+      const shown = Number(screen?.dataset.shown);
       const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
       const at = edge ? Number(edge.getAttribute("aria-valuenow")) : NaN;
       if (edge) window.__edgeSeen.push(at);
-      window.__edgeFrames.push([at, playhead]);
+      window.__edgeFrames.push([at, playhead, shown]);
       requestAnimationFrame(tick);
     };
     tick();
@@ -4598,6 +4630,21 @@ for (const seq of toWalk) {
           wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}`;
         } else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
+        }
+        break;
+      }
+      case "nothing past the cut": {
+        // While the cut's left edge was dragged, the video preview showed
+        // the frames before the cut, the edge's, and never one after it:
+        // the playhead stood before the cut all along.
+        const segs = (await engineState(page, watch.at)).segments;
+        const after = segs[1].start;
+        const frames = await page.evaluate(() => window.__edgeFrames ?? []);
+        const past = frames.filter(([, p, f]) => p < after && f >= after - 0.001);
+        if (frames.length < 10) wrong = `the drag was watched for ${frames.length} frames, which proves nothing`;
+        else if (past.length) {
+          const seen = [...new Set(past.map(([, p, f]) => `${f.toFixed(3)} with the playhead at ${p.toFixed(3)}`))];
+          wrong = `while the cut's left edge was dragged, the video preview showed frames from after the cut, which starts again at ${after.toFixed(3)}: ${seen.slice(0, 6).join(", ")}`;
         }
         break;
       }
