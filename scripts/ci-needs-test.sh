@@ -72,6 +72,15 @@ check "Makefile" interface true
 check ".github/workflows/ci.yml" interface true
 check "scripts/ci-needs.sh" go true
 
+# The check of the workflows reads only the workflows, so only a workflow
+# changing runs it, and nothing else does, not even the Makefile.
+check ".github/workflows/ci.yml" workflows true
+check "engine/edit.go .github/workflows/builds.yml" workflows true
+check "engine/edit.go go.sum" workflows false
+check "frontend/src/App.svelte" workflows false
+check "Makefile scripts/ci-needs.sh" workflows false
+check "README.md" workflows false
+
 # A mix runs everything it touches.
 check "engine/edit.go frontend/src/App.svelte" go true
 check "engine/edit.go frontend/src/App.svelte" interface true
