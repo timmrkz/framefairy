@@ -979,6 +979,26 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		if chip {
 			cpu := convert(false)
 			t.Logf("%s: the chip's frame and the processor's are %.2f apart on average", f.name, meanDiff(want, cpu))
+			// Issue #256: whether the two already differ as decoded, before
+			// any colour is made, or only once the chain has made colours.
+			planes := func(hw bool) []byte {
+				t.Helper()
+				format := "yuv420p"
+				if strings.Contains(f.name, "10 bits") {
+					format = "yuv420p16le"
+				}
+				args := []string{"-loglevel", "error"}
+				if hw {
+					args = append(args, "-hwaccel", "videotoolbox")
+				}
+				args = append(args, "-i", path, "-frames:v", "1", "-vf", "format="+format, "-f", "rawvideo", "-")
+				out, err := exec.Command("ffmpeg", args...).Output()
+				if err != nil {
+					t.Fatalf("%s, the ffmpeg program's planes: %v", f.name, err)
+				}
+				return out
+			}
+			t.Logf("%s: as decoded, before colours, the chip and the processor %s", f.name, planesApart(planes(true), planes(false), 320*180))
 		}
 		if len(frame) != w*h*4 || len(want) != w*h*4 {
 			t.Fatalf("%s: a frame of %d bytes and the ffmpeg program's of %d, want %d", f.name, len(frame), len(want), w*h*4)
@@ -1016,6 +1036,65 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 	differ("BT.601 video range", "BT.709 video range")
 	differ("BT.709 video range", "BT.709 full range")
 	differ("BT.709 video range, 10 bits", "BT.2020 video range, 10 bits")
+}
+
+// planesApart says how far two decoded pictures of 4:2:0 planes are apart,
+// the brightness and the colour planes on their own, so a log says
+// whether two decoders differ in what they decode or only in how its
+// colour is spread. A picture in 16 bits a sample is twice the bytes of
+// one in 8. size is the pixels of the brightness plane.
+func planesApart(a, b []byte, size int) string {
+	if len(a) != len(b) || len(a) == 0 {
+		return fmt.Sprintf("are not the same size, %d bytes and %d", len(a), len(b))
+	}
+	wide := len(a) >= size*3
+	sample := func(p []byte, i int) int {
+		if wide {
+			return int(binary.LittleEndian.Uint16(p[i*2:]))
+		}
+		return int(p[i])
+	}
+	samples := len(a)
+	if wide {
+		samples /= 2
+	}
+	apart := func(from, to int) (int, int) {
+		n, most := 0, 0
+		for i := from; i < to && i < samples; i++ {
+			d := sample(a, i) - sample(b, i)
+			if d < 0 {
+				d = -d
+			}
+			if d > 0 {
+				n++
+			}
+			most = max(most, d)
+		}
+		return n, most
+	}
+	ln, lm := apart(0, size)
+	cn, cm := apart(size, samples)
+	return fmt.Sprintf("differ in %d of %d brightness samples, by %d at most, and in %d of %d colour samples, by %d at most",
+		ln, size, lm, cn, samples-size, cm)
+}
+
+func TestPlanesApartTellsBrightnessFromColour(t *testing.T) {
+	a := []byte{10, 10, 10, 10, 50, 60}
+	b := []byte{10, 13, 10, 10, 50, 61}
+	want := "differ in 1 of 4 brightness samples, by 3 at most, and in 1 of 2 colour samples, by 1 at most"
+	if got := planesApart(a, b, 4); got != want {
+		t.Errorf("8 bits: %s, want %s", got, want)
+	}
+	wide := func(v ...uint16) []byte {
+		out := make([]byte, 0, len(v)*2)
+		for _, s := range v {
+			out = binary.LittleEndian.AppendUint16(out, s)
+		}
+		return out
+	}
+	if got := planesApart(wide(1000, 10, 10, 10, 500, 600), wide(1000, 10, 10, 10, 520, 600), 4); got != "differ in 0 of 4 brightness samples, by 0 at most, and in 1 of 2 colour samples, by 20 at most" {
+		t.Errorf("16 bits: %s", got)
+	}
 }
 
 // colours are the red, green and blue of every pixel of a frame made by
