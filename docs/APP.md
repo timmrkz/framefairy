@@ -2146,6 +2146,15 @@ moved by hand, on the clip timeline.
   drew the caption before into the room Tim had just cleared. Nothing
   overlaps, because the picture shows one caption at a time. An edge
   lands on a whole frame.
+- **With shift an edge lands on a word**, the way an edge of the clip and
+  of a cut does: a start where the nearest word starts, an end where the
+  nearest word ends, and only in the direction the hand goes, see
+  `captionStop` in `engine/edit.go`. Shift is read on every move, so
+  letting go of it part way goes back to frames. A word the edge took out
+  is a word to land on going back. The edge stands where the word does,
+  as a caption laid out from its words does, not on a frame, and the
+  playhead goes with it there. The edges of a caption used to move a frame
+  at a time with shift or without, found by Tim.
 - **An edge dragged over a word removes it.** Dragged in, an edge takes
   out of its caption every word whose middle it passes, the way delete
   removes a word, so pulling the left edge of "one two three" past "one"

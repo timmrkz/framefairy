@@ -361,13 +361,15 @@ export function frameBegins(k: number, frame: number, start = 0): number {
   return start + k * frame;
 }
 
-// A caption edge being dragged, on the clip's clock. Where it lands and
-// what it does to the words is the engine's to say, see ShapeCaptionTime
-// in engine/episode.go.
+// A caption edge being dragged, on the clip's clock, where the hand has it,
+// and whether shift puts it on words. Where it lands and what it does to
+// the words is the engine's to say, see ShapeCaptionTime in
+// engine/episode.go.
 export interface CaptionDraft {
   index: number;
   edge: "start" | "end";
   at: number;
+  toWords: boolean;
 }
 
 // Which word of a caption is lit at a moment on the clip's clock, counted

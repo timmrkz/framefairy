@@ -281,7 +281,7 @@ func TestAMovedCaptionEdgeHoldsWhenTheSilenceLevelMoves(t *testing.T) {
 		return CaptionView{}
 	}
 	before := opening(loud)
-	if _, err := SetCaptionTime(fsys, path, "01", before.First, "start", und(loud)-0.5, loud, nil); err != nil {
+	if _, err := SetCaptionTime(fsys, path, "01", before.First, "start", und(loud)-0.5, false, loud, nil); err != nil {
 		t.Fatal(err)
 	}
 	moved := opening(loud)
@@ -322,7 +322,7 @@ func TestAMovedCaptionFromBeforeIsReadAndKeptAnew(t *testing.T) {
 	if !from.StartMoved {
 		t.Fatalf("a caption moved in a plan from before starts at %.3f, not moved", from.Start)
 	}
-	if _, err := SetCaptionTime(fsys, path, "01", from.Last, "end", from.End+0.3+59.9, quiet, nil); err != nil {
+	if _, err := SetCaptionTime(fsys, path, "01", from.Last, "end", from.End+0.3+59.9, false, quiet, nil); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := afero.ReadFile(fsys, path)

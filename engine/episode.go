@@ -826,8 +826,8 @@ func ShapeClipView(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcr
 // writes nothing. It is what SetCaptionTime saves when the hand lets go,
 // see moveCaptionEdge.
 func ShapeCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
-	t *Transcript, look *Look) (*CaptionsView, error) {
-	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, t, look)
+	toWords bool, t *Transcript, look *Look) (*CaptionsView, error) {
+	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
 	if err != nil {
 		return nil, err
 	}

@@ -1916,10 +1916,11 @@
     word: number,
     edge: "start" | "end",
     at: number,
+    toWords: boolean,
   ): Promise<boolean> {
     problem = "";
     try {
-      const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at);
+      const updated = await api.setCaptionTime(path, clip.plan, clip.id, word, edge, at, toWords);
       putClip(updated);
       return true;
     } catch (err) {
@@ -3171,8 +3172,8 @@
                 : "transparent",
             }
           : null}
-        oncaptiontime={(word, edge, at) =>
-          current ? setCaptionTime(current, word, edge, at) : Promise.resolve(false)}
+        oncaptiontime={(word, edge, at, toWords) =>
+          current ? setCaptionTime(current, word, edge, at, toWords) : Promise.resolve(false)}
         onremovecaption={(first) => (current ? removeCaption(current, first) : Promise.resolve())}
         oncaptionshape={(shape) => (captionShape = shape)}
         onshape={(next) => (reshaped = next)}
