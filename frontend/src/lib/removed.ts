@@ -11,8 +11,10 @@ export const secondThoughts = 10;
 
 // A clip taken out, the moment its time runs out, in milliseconds since
 // the epoch, the way Date.now() counts, and whether it was the clip chosen
-// when it was taken out.
-export type Removed = { clip: ClipEntry; until: number; chosen?: boolean };
+// when it was taken out. If it was, then is the clip chosen in its place,
+// empty when none was left, and at is where the playhead stood, so
+// putting it back puts both back.
+export type Removed = { clip: ClipEntry; until: number; chosen?: boolean; then?: string; at?: number };
 
 const aside = new Map<string, Record<string, Removed>>();
 

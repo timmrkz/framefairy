@@ -1396,11 +1396,15 @@ bubble scrolled by those eight pixels.
       after a search, a render or an undo, leaves the rows as they are, and
       an undo that puts the clip back makes it a clip again. Leaving the
       episode, or any of those, used to take every way back with it.
+      A clip is always chosen while there is one: removing the chosen
+      clip chooses the next in the list, or the one before it when it
+      was the last, the way Finder and Mail move on from what was
+      deleted. It used to leave nothing chosen, Tim found.
       Putting a clip back takes back the remove and nothing more: the
       clip chosen stays chosen and a play goes on where it is. Only the
       clip that was itself the one chosen when it was removed is chosen
-      again, while nothing else has been chosen since, and the playhead
-      stays where it is. Putting back used to choose the clip put back
+      again, while the clip chosen in its place is still chosen, and the
+      playhead goes back to where it was. Putting back used to choose the clip put back
       and play it from its start, away from the clip being watched, Tim
       found. The clip stays in the plan with everything done to it, and
       a render of the whole plan leaves it out.
