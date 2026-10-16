@@ -236,6 +236,17 @@ closed for standing unused.
   now is asked for again whenever the app is resized, so
   a picture that stands still is always as sharp as the canvas lets it
   be. Plan row 2.187.
+- **A paused frame** is the frame that holds the playhead. Paused on a
+  piece, the play from the playhead is cued, its first frame drawn and
+  the frames after it read ahead, the next piece's too. Whether the cue's
+  first frame holds the playhead is asked of the cue's own plan, never
+  worked out apart: a playhead a hair before a piece's end is in the cut
+  for the plan, and is then a still of its own. Under a dragging hand, a
+  frame that comes after the hand has moved on is put up while the next
+  one is on its way, but only a frame that held the playhead, never one
+  read ahead of it. Both kept the frames after a cut off the screen while
+  a cut's left edge was dragged, which flickered between the two, plan
+  row 2.270.
 
 ## Speed
 
