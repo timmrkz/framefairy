@@ -41,8 +41,8 @@
 //   ["press", key]     presses a key, as Playwright names it
 //   ["read ahead", key] rests a second and a half, presses the key and
 //                      checks that the frame it lands on was there already,
-//                      read while the hand rested: no stream was opened or
-//                      read on for it, see AppFrames.ahead
+//                      read while the hand rested: it came from the frames
+//                      kept, and no stream was opened, see AppFrames.ahead
 //   ["button", label]  clicks the button that says label, and waits until
 //                      it has done its work
 //   ["type", text]     types
@@ -4226,7 +4226,7 @@ for (const seq of toWalk) {
         await page.waitForTimeout(1500);
         const came = await page.evaluate(async (key) => {
           const frames = window.__appFrames;
-          const how = () => [frames.stats.streams, frames.stats.continued, frames.stats.kept];
+          const how = () => [frames.stats.streams, frames.stats.kept];
           const before = Number(document.querySelector(".screen")?.dataset.playhead);
           const was = how();
           window.dispatchEvent(new KeyboardEvent("keydown", { key: key.replace("Shift+", ""), shiftKey: key.startsWith("Shift+"), bubbles: true }));
@@ -4239,17 +4239,24 @@ for (const seq of toWalk) {
               const at = Number(el?.dataset.playhead);
               const shown = Number(el?.dataset.shown);
               const holds = at !== before && shown <= at + 1e-6 && at - shown < frames.track.frame - 1e-6;
-              if (holds) done({ was, now: how(), at, ms: Math.round(performance.now() - t0) });
-              else if (performance.now() - t0 > 5000) done({ was, now: how(), at, ms: -1 });
+              // The rank of the frame on screen, and whether it was one
+              // handed over from the frames kept.
+              let rank = 0;
+              while (rank < frames.track.samples.count - 1 && frames.ptsOf(rank + 1) <= shown + 1e-6) rank++;
+              const fromKept = frames.stats.keptRanks.includes(rank);
+              if (holds) done({ was, now: how(), at, fromKept, ms: Math.round(performance.now() - t0) });
+              else if (performance.now() - t0 > 5000) done({ was, now: how(), at, fromKept, ms: -1 });
               else requestAnimationFrame(check);
             };
             check();
           });
         }, arg);
-        const [streams, readOn, kept] = came.now.map((n, i) => n - came.was[i]);
+        // The frames after it, which the step's cue reads ahead, may come
+        // from an open stream. The frame it lands on may not.
+        const [streams, kept] = came.now.map((n, i) => n - came.was[i]);
         if (came.ms < 0) wrong = `${arg} to ${came.at.toFixed(3)} s showed no frame of it in five seconds`;
-        else if (streams || readOn || !kept)
-          wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms: ${streams} streams opened and ${readOn} read on, ${kept} frames kept, while the hand rested a second and a half before it`;
+        else if (streams || !came.fromKept)
+          wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms: ${streams} streams opened, ${kept} frames from the kept ones but not this one, while the hand rested a second and a half before it`;
         await watch.step("press", s);
         break;
       }

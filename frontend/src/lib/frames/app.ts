@@ -275,7 +275,9 @@ export class AppFrames {
   // The frames read ahead of the hand, withdrawn by the hand's next ask.
   private aheadOf = new Set<Waiter>();
   // first is the size the first stream was opened at, for the walks.
-  readonly stats = { streams: 0, continued: 0, kept: 0, parked: 0, ahead: 0, opens: [] as Opened[], first: "" };
+  // keptRanks are the ranks of the frames last handed over from the kept
+  // ones, for the walks.
+  readonly stats = { streams: 0, continued: 0, kept: 0, keptRanks: [] as number[], parked: 0, ahead: 0, opens: [] as Opened[], first: "" };
   // Every step on the way to a frame, for the app's log, see lib/said.ts.
   trace: (line: string) => void = () => {};
   readonly puller = new Puller((line) => this.trace(line));
@@ -387,6 +389,8 @@ export class AppFrames {
     const have = this.kept.get(w.rank);
     if (have && have.width === width && have.height === height) {
       this.stats.kept++;
+      this.stats.keptRanks.push(w.rank);
+      if (this.stats.keptRanks.length > 16) this.stats.keptRanks.shift();
       // The kept frame stays the most recently used.
       this.kept.delete(w.rank);
       this.kept.set(w.rank, have);
