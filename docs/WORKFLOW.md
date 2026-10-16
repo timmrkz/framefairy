@@ -91,8 +91,8 @@ whatever version the machine came with.
 
 1. **Start a session** at claude.ai/code with the `framefairy` repository and the
    `framefairy` environment. Describe the task the way you would in chat,
-   screenshots included. Batch numbers from [GUI-PLAN.md](GUI-PLAN.md) work
-   as shorthand.
+   screenshots included. Issue numbers work as shorthand, and so do the
+   batch numbers of the old plan in [GUI-PLAN.md](GUI-PLAN.md).
 2. **Claude works** on a new branch. It reads `CLAUDE.md` first, which holds
    the project's rules and your preferences. It runs the tests of what it
    changed, pushes, and opens a pull request, so you can try the change at
@@ -127,9 +127,10 @@ Several sessions can run at once, each on its own branch. Keep them to
 separate areas of the code, so the pull requests don't conflict. Each
 session works on one pull request at a time, and opens the next only
 once that one is merged or closed. Something you report that is not
-about its open pull request is logged as a row marked `[ ]` in
-[GUI-PLAN.md](GUI-PLAN.md) and taken up in turn, the oldest first unless
-you reorder them. See CLAUDE.md.
+about its open pull request is logged as a GitHub issue and taken up in
+turn, the oldest first unless you reorder them. Opening an issue changes
+no file, so it costs no push and no CI run, and the pull request that
+finishes it closes it with `Fixes #N`. See CLAUDE.md.
 
 ## CI
 

@@ -128,6 +128,11 @@ is ".github/workflows/publish.yml" "build-rules workflow .github/workflows/publi
 is "scripts/needs-build.sh" "build-rules script scripts/needs-build.sh"
 is "scripts/main-moved.sh" "moved-rules script scripts/main-moved.sh"
 is ".github/workflows/main-moved.yml" "moved-rules workflow .github/workflows/main-moved.yml"
+is "scripts/plan-frozen.sh" "plan-rules script scripts/plan-frozen.sh"
+
+# The plan is history, so a change to it runs the check that says so,
+# while every other doc runs nothing.
+is "docs/GUI-PLAN.md" "plan-rules"
 
 # A file nobody thought of builds, rather than being passed over.
 is "build/icon.png" "build"

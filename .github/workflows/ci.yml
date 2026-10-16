@@ -80,6 +80,13 @@ jobs:
       # into it, which is as silent when it is wrong.
       - name: Check the Main moved notice
         run: sh scripts/main-moved-test.sh
+      # And that the plan stays history. Open work is GitHub issues, since
+      # every pull request adding a row to the same table conflicted with
+      # every other. The test first, so a broken check cannot pass.
+      - name: Check the plan is left alone
+        run: |
+          sh scripts/plan-frozen-test.sh
+          sh scripts/plan-frozen.sh
       # And, when a workflow changed, that every action is pinned to a
       # commit with its full version beside it, so a bump says which
       # release it moves to. Nothing else can change a pin.
