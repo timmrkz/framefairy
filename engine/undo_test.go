@@ -176,7 +176,7 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 	change := edited(t, fsys, logs, func() error {
 		return SetWordText(fsys, path, "01", 10.6, "zwo", tr)
 	})
-	if clipsOf(t, fsys, path)["01"].Corrections[wordKey(10.6)] != "zwo" {
+	if clipsOf(t, fsys, path)["01"].Corrections[heardKey(10600)] != "zwo" {
 		t.Fatal("the word was not corrected")
 	}
 	// A word of another clip corrected since is not the undo's to take.
@@ -187,10 +187,10 @@ func TestACorrectedWordIsUndone(t *testing.T) {
 		t.Fatal(err)
 	}
 	clips := clipsOf(t, fsys, path)
-	if _, ok := clips["01"].Corrections[wordKey(10.6)]; ok {
+	if _, ok := clips["01"].Corrections[heardKey(10600)]; ok {
 		t.Error("the correction is still there")
 	}
-	if clips["02"].Corrections[wordKey(20.1)] != "fünf!" {
+	if clips["02"].Corrections[heardKey(20100)] != "fünf!" {
 		t.Error("a correction made since was lost")
 	}
 	// The clip's words say zwei again.

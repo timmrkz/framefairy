@@ -626,10 +626,10 @@ func TestAWordTypedBackGoesWhereItWasHeard(t *testing.T) {
 	}{
 		{"after", []float64{11.2}, 10.6, "das ein", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}, "[]"},
 		{"before", []float64{11.2}, 11.6, "ein echtes", "weil@10 das@10.5 ein@11 echtes@11.5", map[string]string{}, "[]"},
-		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"11000": "eine"}, "[]"},
-		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"11000": "ein so"}, "[]"},
-		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{}, "[10500]"},
-		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"10000": "weil es"}, "[11000]"},
+		{"typed otherwise", []float64{11.2}, 10.6, "das eine", "weil@10 das@10.5 eine@11 echtes@11.5", map[string]string{"h11000": "eine"}, "[]"},
+		{"more than were removed", []float64{10.6, 11.2}, 10.2, "weil das ein so", "weil@10 das@10.5 ein@11 so@11.2 echtes@11.5", map[string]string{"h11000": "ein so"}, "[]"},
+		{"fewer than were removed", []float64{10.6, 11.2}, 11.6, "ein echtes", "weil@10 ein@11 echtes@11.5", map[string]string{}, "[h10500]"},
+		{"nothing removed beside it", []float64{11.2}, 10.2, "weil es", "weil@10 es@10.3 das@10.5 echtes@11.5", map[string]string{"h10000": "weil es"}, "[h11000]"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fsys := afero.NewMemMapFs()

@@ -1162,11 +1162,9 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 		return captionEdge{}, renderErr("the clip has no caption that %ss on the word at %s", edge, HMS(word))
 	}
 	out := captionEdge{plan: plan, clip: clip, at: math.NaN()}
-	corrections := maps.Clone(clip.Corrections)
-	if corrections == nil {
-		corrections = map[string]string{}
-	}
-	removed := clip.RemovedWords.clone()
+	// Kept the way keys are kept now, see editClipWords.
+	corrections := t.rekeyCorrections(clip.Corrections)
+	removed := t.rekeyRemoved(clip.RemovedWords)
 	if !reset {
 		to := ClipTime(framed, at)
 		if edge == "start" && i > 0 && to < laid[i-1].End {

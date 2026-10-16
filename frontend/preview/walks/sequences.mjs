@@ -230,8 +230,13 @@
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
 //                      and says Removed, its time standing full while the
-//                      pointer is on it. [i, "key"] presses Delete on the
-//                      tile instead, the pointer standing on it
+//                      pointer is on it, through the made-up leave and
+//                      over a browser may send while the node under a
+//                      still pointer goes. [i, "key"] presses Delete on
+//                      the tile instead, the pointer standing on it.
+//                      [i, "tile"] presses the bin, and the browser says
+//                      the pointer is over the tile round the picture and
+//                      never over the picture itself, the way WebKit may
 //   ["put back picture", i]
 //                      presses Put it back on picture i, which is back in
 //                      the same frame
@@ -1793,6 +1798,8 @@ export const sequences = [
       ["bugs"],
       ["attach", 3],
       ["remove picture", 2],
+      ["put back picture", 2],
+      ["remove picture", [2, "tile"]],
       ["put back picture", 2],
       ["pictures", 3],
       ["remove picture", [2, "key"]],
@@ -3590,6 +3597,9 @@ for (const seq of toWalk) {
   // Whether the edge "drag edge twice" took again moved while the hand
   // still held it.
   let movedHeld = false;
+  // What the press that took the edge again landed on, the grips under
+  // it, said if the playhead did not go with the edge (2.271).
+  let pressedOn = "";
   let held = null;
   let wrong = null;
   // The video and the other file dropped last.
@@ -4569,6 +4579,7 @@ for (const seq of toWalk) {
         const [which, px, again] = arg;
         dragShift = false;
         dragPx = again;
+        pressedOn = "";
         const g = await handles(page);
         const box = { start: g.start, end: g.end, "cut from": g.cutEdges[0], "cut to": g.cutEdges[1] }[which];
         if (!box) {
@@ -4585,6 +4596,11 @@ for (const seq of toWalk) {
         }
         await page.mouse.up();
         await watchEdge(page, edgeLabel[which]);
+        pressedOn = await page.evaluate(
+          ([x, y]) =>
+            [...new Set(document.elementsFromPoint(x, y).map((el) => el.closest("[data-grip]")?.dataset.grip).filter(Boolean))].join(", ") || "no grip",
+          [x + px, y],
+        );
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + px + (again * i) / 10, y);
@@ -4683,7 +4699,10 @@ for (const seq of toWalk) {
           wrong = `the ${arg} edge stood in ${runs.length ? "one place" : "no place"} while the hand dragged it, which proves nothing`;
         } else if (missed) {
           const went = frames.slice(missed.from, missed.to + late + 1).map(([, p]) => p.toFixed(3));
-          wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}`;
+          // Every edge and playhead the watch saw, and what the press
+          // landed on, since a runner saw this and this machine does not.
+          const seen = frames.map(([e, p]) => `${e.toFixed(3)}/${p.toFixed(3)}`).filter((v, k, all) => v !== all[k - 1]);
+          wrong = `the ${arg} edge stood at ${missed.edge.toFixed(3)} and the playhead did not come onto its frame, it stood at ${[...new Set(went)].join(", ")}.${pressedOn ? ` The press that took it again landed on ${pressedOn}.` : ""} Edge/playhead went ${seen.join(" ")}`;
         } else if (!(Math.abs(at - want) < frame / 2 + 0.001)) {
           wrong = `the playhead stands at ${at.toFixed(3)} after the ${arg} edge was dragged, not on its frame at ${want?.toFixed(3)}`;
         }
@@ -5735,6 +5754,10 @@ for (const seq of toWalk) {
           break;
         }
         const id = await tile.getAttribute("data-id");
+        // Where the pointer stands while the picture goes: on the bin it
+        // presses, or in the middle of the tile hovered for Delete.
+        const spot = await (how === "key" ? tile : tile.locator(".bin")).boundingBox();
+        const point = [spot.x + spot.width / 2, spot.y + spot.height / 2];
         // What the page hears of the pointer and the focus from the press
         // on, said if the time runs, since a runner's Chromium has made it
         // run where this machine's does not (2.263).
@@ -5764,6 +5787,24 @@ for (const seq of toWalk) {
         // saw a swipe across the tile.
         else if (gone !== "none") wrong = `picture ${i} says Removed with the animation ${gone}`;
         if (wrong) break;
+        // What a browser may tell a pointer that stands still while the
+        // node under it goes: that it went off the app, and over the tile
+        // round what took its place, and only a frame later over that.
+        // The time ran for that frame on CI's Chromium (2.263). With
+        // "tile" that last over never comes, which WebKit, the Mac's
+        // browser, may well do, since it counts nothing that comes up
+        // under a still pointer as under it until the pointer moves.
+        await page.evaluate(
+          async ({ id, point: [x, y], onTile }) => {
+            const tile = document.querySelector(`li.tile[data-id="${id}"]`);
+            const at = { bubbles: true, clientX: x, clientY: y, pointerType: "mouse" };
+            tile.dispatchEvent(new PointerEvent("pointerout", at));
+            tile.dispatchEvent(new PointerEvent("pointerover", at));
+            await new Promise(requestAnimationFrame);
+            if (!onTile) document.elementFromPoint(x, y).dispatchEvent(new PointerEvent("pointerover", at));
+          },
+          { id, point, onTile: how === "tile" },
+        );
         // The pointer is still on it, so its time has not started: the
         // fill stands full until the pointer leaves. Tim saw it run for a
         // moment and stop a little short of full.

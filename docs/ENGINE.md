@@ -1190,6 +1190,14 @@ does. An API answer that breaks off before a word of it arrived is asked
 for again. One that breaks off after is not, because what arrived has
 already been used.
 
+**A local model that stops answering is given up on.** llama-server says
+something all the while it works: how far it has read the prompt after
+every batch, then every token of its thought and its answer. So when
+nothing comes from it for two minutes, `localStall` in `engine/local.go`,
+the search fails with that reason and the server is stopped, so Continue
+starts one afresh. Before, such a search waited for good, and with it
+every video's transcription, which waits while a local model finds.
+
 **The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.
 The model asked for says which: a `claude-` model is Anthropic's, a `gpt-`
 model OpenAI's, and a model nobody has heard of is taken to be Anthropic's,

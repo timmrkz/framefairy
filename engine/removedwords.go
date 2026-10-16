@@ -3,7 +3,6 @@ package engine
 import (
 	"maps"
 	"slices"
-	"strconv"
 )
 
 // The words a clip does not show. Removing a word or a caption is done to
@@ -19,7 +18,8 @@ import (
 // What a word reads is the clip's in the same way, see corrections.go.
 
 // RemovedWords is the heard words a clip does not show, each kept by the
-// millisecond it starts in the episode, as a correction is. Taking out
+// millisecond the recogniser heard it start, as a correction is, see
+// heardIndex. Taking out
 // some of the words a correction made of a heard word is not a removal,
 // it is the correction made to read the rest, see dropWords.
 type RemovedWords map[string]bool
@@ -42,8 +42,7 @@ func readRemovedWords(raw any) RemovedWords {
 		if !ok {
 			continue
 		}
-		at, err := strconv.ParseInt(key, 10, 64)
-		if err != nil || at < 0 || at > MaxEpisodeSeconds*1000 || strconv.FormatInt(at, 10) != key {
+		if _, _, ok := parseWordKey(key); !ok {
 			continue
 		}
 		out[key] = true
@@ -82,20 +81,28 @@ func (r RemovedWords) hides(t *Transcript, w Cue) bool {
 		return false
 	}
 	heard, ok := t.HeardAt(w.Start)
-	return ok && r[wordKey(heard.Start)]
+	if !ok {
+		return false
+	}
+	// Kept now, or from before 2.254 by where the word starts on the
+	// sound, see heardIndex.
+	return r[t.keyOf(heard)] || r[wordKey(heard.Start)]
 }
 
+// The three below are for a clip's words as they are edited, whose keys
+// are all kept the way they are now, see editClipWords.
+
 // take removes a heard word from the clip.
-func (r RemovedWords) take(heard Cue) {
-	r[wordKey(heard.Start)] = true
+func (r RemovedWords) take(t *Transcript, heard Cue) {
+	r[t.keyOf(heard)] = true
 }
 
 // forget shows a heard word in the clip again.
-func (r RemovedWords) forget(heard Cue) {
-	delete(r, wordKey(heard.Start))
+func (r RemovedWords) forget(t *Transcript, heard Cue) {
+	delete(r, t.keyOf(heard))
 }
 
 // removesHeard says whether the clip removes a heard word.
-func (r RemovedWords) removesHeard(heard Cue) bool {
-	return r[wordKey(heard.Start)]
+func (r RemovedWords) removesHeard(t *Transcript, heard Cue) bool {
+	return r[t.keyOf(heard)]
 }
