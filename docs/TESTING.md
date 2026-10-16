@@ -430,10 +430,13 @@ clicks Bugs in the sidebar and goes on in the report window, a second
 page of the browser, and `windows` and `close report` say how many the
 app made and close it. `attach` presses the paperclip with a picture
 waiting in the box, `drop pictures` and `paste picture` bring pictures
-in the other two ways, `pictures` counts the tiles, `remove picture` presses a tile's bin, `put back`
+in the other two ways, `drop recording` drops a screen recording the
+way a Mac makes one and `recording tile` reads its length off its tile
+and sees its still loaded, `pictures` counts the tiles, `remove picture` presses a tile's bin, `put back`
 its Put it back, and `removed goes` waits for the grid to close over it.
 `report` presses Report, sees the row keep its width, and reads the zip
-for the pictures and the field for nothing, and `report lines up`
+for the pictures, and the recordings when it is given two numbers, and
+the field for nothing, and `report lines up`
 measures the row and the tiles on whole pixels. Why something was left
 out, in the report window or the app's own, is a toast: `toast` reads
 it, or sees none with "", and sees that nothing under it moved,

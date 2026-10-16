@@ -145,12 +145,23 @@ func (f *FrameFairy) ReportProblem(what, video string) (string, error) {
 			return "", err
 		}
 	}
-	// The pictures go as they are, since home is not in a picture's
-	// pixels and replacing it in them would spoil the file.
-	for i, pic := range pictures {
-		w, err := z.Create(fmt.Sprintf("Frame Fairy report/pictures/%d.png", i+1))
+	// The pictures and recordings go as they are, since home is not in a
+	// picture's pixels and replacing it in them would spoil the file. A
+	// recording is stored, not squeezed, since it is squeezed already.
+	shots, films := 0, 0
+	for _, f := range pictures {
+		h := &zip.FileHeader{Method: zip.Deflate}
+		if f.ending == "png" {
+			shots++
+			h.Name = fmt.Sprintf("Frame Fairy report/pictures/%d.png", shots)
+		} else {
+			films++
+			h.Name = fmt.Sprintf("Frame Fairy report/recordings/%d.%s", films, f.ending)
+			h.Method = zip.Store
+		}
+		w, err := z.CreateHeader(h)
 		if err == nil {
-			_, err = w.Write(pic)
+			_, err = w.Write(f.data)
 		}
 		if err != nil {
 			return "", err

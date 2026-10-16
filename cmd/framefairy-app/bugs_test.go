@@ -274,7 +274,7 @@ func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
 		t.Fatalf("the report holds %d pictures, want 2", len(pics))
 	}
 	for i, p := range pics {
-		cfg, format, err := image.DecodeConfig(bytes.NewReader(p))
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(p.data))
 		if err != nil || format != "png" {
 			t.Fatalf("picture %d is %q, %v, want a PNG", i+1, format, err)
 		}
@@ -286,13 +286,13 @@ func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
 		} else if [2]int{cfg.Width, cfg.Height} != want {
 			t.Fatalf("picture %d is %dx%d, want %v", i+1, cfg.Width, cfg.Height, want)
 		}
-		if bytes.Contains(p, []byte("GPS")) || bytes.Contains(p, []byte("Author")) || bytes.Contains(p, []byte("Exif")) {
+		if bytes.Contains(p.data, []byte("GPS")) || bytes.Contains(p.data, []byte("Author")) || bytes.Contains(p.data, []byte("Exif")) {
 			t.Fatalf("picture %d still holds what the file held beside its pixels", i+1)
 		}
 	}
 }
 
-// A report takes ten pictures of PNG or JPEG, each at most 10 MB. Anything
+// A report takes ten pictures of PNG or JPEG or recordings, each at most 10 MB. Anything
 // else is left out with the reason, and what could be attached still is.
 func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
@@ -301,7 +301,7 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 		many = append(many, handed{name: fmt.Sprintf("%d.png", i+1), data: pngOf(t, 8, 8)})
 	}
 	d := r.attach("drop", many)
-	if len(d.Pictures) != picturesMax || !strings.Contains(d.Error, "11.png would be more than the 10 pictures") {
+	if len(d.Pictures) != picturesMax || !strings.Contains(d.Error, "11.png would be more than the 10 pictures and recordings") {
 		t.Fatalf("eleven pictures gave %d with %q", len(d.Pictures), d.Error)
 	}
 
@@ -313,8 +313,8 @@ func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
 		{name: "screen.heic", data: []byte("\x00\x00\x00\x18ftypheic")},
 		{name: "fine.png", data: pngOf(t, 8, 8)},
 	})
-	for _, why := range []string{"notes.txt is not a PNG or JPEG picture", "big.png is bigger than 10 MB",
-		"huge.png is too large a picture", "screen.heic is not a PNG or JPEG picture"} {
+	for _, why := range []string{"notes.txt is not a picture or a screen recording", "big.png is bigger than 10 MB",
+		"huge.png is too large a picture", "screen.heic is not a picture or a screen recording"} {
 		if !strings.Contains(d.Error, why) {
 			t.Errorf("the reason %q does not say %q", d.Error, why)
 		}

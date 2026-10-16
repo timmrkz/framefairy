@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
-  import { api, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
+  import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
@@ -172,10 +172,10 @@
     );
   }
 
-  // A picture pasted into the field is attached, the way Mail takes one.
-  // Text pastes as text.
+  // A picture or a recording pasted into the field is attached, the way
+  // Mail takes one. Text pastes as text.
   function pasted(e: ClipboardEvent) {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (files.length === 0) return;
     e.preventDefault();
     problem = "";
@@ -673,8 +673,8 @@
         class="act square attach"
         onclick={attach}
         disabled={attaching || making}
-        aria-label="Attach pictures"
-        title="Attach pictures. Screenshots work best. You can also drop them on this window or paste them"
+        aria-label="Attach screenshots or recordings"
+        title="Attach screenshots or screen recordings. You can also drop them on this window or paste them"
       >
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
@@ -698,10 +698,11 @@
       <span class="ask always">
         <Info label="How a report works" side="right">
           Say what happened with the microphone, or type it. Enter keeps what you said and Escape removes it. Attach
-          screenshots with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each.
+          screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
+          to ten of 10 MB each.
           What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,
-          shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their
-          files hold, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
+          shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what
+          else their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
@@ -727,8 +728,18 @@
             />
           {:else}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-            <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
+            <figure
+              tabindex="0"
+              title={t.p.name}
+              aria-label={t.p.recording ? `${t.p.name}, a recording of ${clock(t.p.seconds ?? 0)}` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
+              onkeydown={(e) => tileKey(e, t.p)}
+            >
               <img src="/report-picture?id={t.p.id}" alt={t.p.name} draggable="false" />
+              {#if t.p.recording}
+                <!-- How long a recording is, in the corner Photos and
+                     Finder show it in. -->
+                <span class="length">{clock(t.p.seconds ?? 0)}</span>
+              {/if}
             </figure>
             <button class="glyph small quiet danger bin" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
               <Icon name="trash" />
@@ -944,6 +955,22 @@
     opacity: 0;
     pointer-events: none;
     color: var(--text);
+  }
+
+  /* A recording's length, at the foot of the tile on the right, the way
+     Photos and Finder show a video's, on a shade of its own so it reads
+     on any frame. */
+  .tile .length {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    padding: 12px var(--gap) 4px 16px;
+    font-size: var(--size-s);
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    background: radial-gradient(circle at 100% 100%, var(--backdrop), transparent 100%);
+    pointer-events: none;
   }
 
   .tile figure::after {

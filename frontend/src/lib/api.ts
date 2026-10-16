@@ -986,13 +986,17 @@ export function onDictation(fn: (d: Dictation) => void): () => void {
   return Events.On("dictation", (ev) => fn(ev.data as Dictation));
 }
 
-// A picture attached to a report, which the window shows from
-// /report-picture?id=.
+// A picture or a screen recording attached to a report, which the window
+// shows from /report-picture?id=, a recording by a still of its first
+// frame. recording is the ending it is kept under, and seconds how long it
+// is.
 export interface ReportPicture {
   id: string;
   name: string;
   width: number;
   height: number;
+  recording?: string;
+  seconds?: number;
 }
 
 // A report before it is made. error says why pictures just given were

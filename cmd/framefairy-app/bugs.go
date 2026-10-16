@@ -34,8 +34,9 @@ import (
 // which may be the problem being reported. Plan row 2.244 and
 // docs/LOGGING.md.
 
-// How many pictures a report takes, and how big a file each may be. They
-// are meant for screenshots, which a Mac's screen makes at a few MB.
+// How many pictures and recordings a report takes, and how big a file each
+// may be. They are meant for screenshots, which a Mac's screen makes at a
+// few MB, and short screen recordings, see recording.go.
 const (
 	picturesMax     = 10
 	pictureBytesMax = 10 << 20
@@ -69,6 +70,11 @@ type ReportPicture struct {
 	Name   string `json:"name"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+	// The ending a screen recording is kept under, "" for a picture. A
+	// recording keeps a still of its first frame beside it, for the tile.
+	Recording string `json:"recording,omitempty"`
+	// How long a recording is, in seconds.
+	Seconds float64 `json:"seconds,omitempty"`
 	// Removed by the person, kept a while so it can be put back. A removed
 	// picture goes in no report and counts toward no limit.
 	Removed bool `json:"removed,omitempty"`
@@ -316,9 +322,9 @@ func (s *FrameFairy) AttachPictures() ReportDraft {
 	if pick == nil && s.app != nil {
 		pick = func() ([]string, error) {
 			return s.app.Dialog.OpenFile().
-				SetTitle("Attach pictures").
+				SetTitle("Attach screenshots or recordings").
 				CanChooseFiles(true).
-				AddFilter("Pictures", "*.png;*.jpg;*.jpeg").
+				AddFilter("Screenshots and recordings", "*.png;*.jpg;*.jpeg;*.mov;*.mp4;*.m4v;*.webm;*.mkv").
 				PromptForMultipleSelection()
 		}
 	}
@@ -370,7 +376,7 @@ func (s *FrameFairy) markPicture(id string, removed bool) ReportDraft {
 		return r.shown("")
 	}
 	if !removed && r.count() >= picturesMax {
-		return r.shown(fmt.Sprintf("A report takes %d pictures at most", picturesMax))
+		return r.shown(fmt.Sprintf("A report takes %d pictures and recordings at most", picturesMax))
 	}
 	r.draft.Pictures[i].Removed = removed
 	how := "a picture was put back"
@@ -392,7 +398,8 @@ func (r *reporting) dropped(files []string) {
 	}
 }
 
-// handed is a picture handed to the report, with why it could not be read.
+// handed is a picture or a recording handed to the report, with why it
+// could not be read.
 type handed struct {
 	name string
 	data []byte
@@ -425,7 +432,7 @@ func readSmall(path string) ([]byte, error) {
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return nil, errors.New("is not a picture")
+		return nil, errNotKept
 	}
 	if info.Size() > pictureBytesMax {
 		return nil, errTooBig
@@ -443,12 +450,13 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 		name string
 		pic  ReportPicture
 		body []byte
+		film []byte
 		err  error
 	}
 	got := make([]read, len(all))
 	for i, g := range all {
 		got[i].name = tidyName(g.name)
-		got[i].pic, got[i].body, got[i].err = g.picture()
+		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment()
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -458,7 +466,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	for i, g := range got {
 		name, pic, err := g.name, g.pic, g.err
 		if err == nil && r.count() >= picturesMax {
-			err = fmt.Errorf("would be more than the %d pictures a report takes", picturesMax)
+			err = fmt.Errorf("would be more than the %d pictures and recordings a report takes", picturesMax)
 		}
 		if err == nil {
 			r.draft.Next++
@@ -467,19 +475,27 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 			if err = r.files.MkdirAll(r.dir, 0o700); err == nil {
 				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
 			}
+			if err == nil && pic.Recording != "" {
+				err = engine.WriteAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.Recording), g.film)
+			}
 			if err != nil {
 				err = errors.New("could not be kept")
 			}
 		}
 		if err != nil {
 			why = append(why, name+" "+err.Error())
-			theLog.line(zerolog.WarnLevel, "report").Str("how", how).Str("name", name).Int("bytes", len(all[i].data)).Err(err).Msg("a picture was left out")
+			theLog.line(zerolog.WarnLevel, "report").Str("how", how).Str("name", name).Int("bytes", len(all[i].data)).Err(err).Msg("a file was left out")
 			continue
 		}
 		r.draft.Pictures = append(r.draft.Pictures, pic)
 		added++
+		what := "a picture was attached"
+		if pic.Recording != "" {
+			what = "a recording was attached"
+		}
 		theLog.line(zerolog.InfoLevel, "report").Str("how", how).Str("picture", pic.ID).Str("name", name).
-			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).Msg("a picture was attached")
+			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).
+			Str("recording", pic.Recording).Float64("seconds", pic.Seconds).Msg(what)
 	}
 	if added > 0 {
 		if err := r.keep(); err != nil {
@@ -494,19 +510,30 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 // puts its own in here, to hold a decode and see that nothing waits on it.
 var decoding = func() {}
 
+// attachment reads what was handed to the report: a picture, see picture,
+// or a screen recording, see recording.go. It gives the picture, or the
+// still of the recording, as a PNG, and the recording.
+func (g handed) attachment() (ReportPicture, []byte, []byte, error) {
+	if g.err != nil {
+		return ReportPicture{}, nil, nil, g.err
+	}
+	if len(g.data) > pictureBytesMax {
+		return ReportPicture{}, nil, nil, errTooBig
+	}
+	if reader := sniffRecording(g.data); reader != "" {
+		return g.recording(reader)
+	}
+	pic, body, err := g.picture()
+	return pic, body, nil, err
+}
+
 // picture decodes a picture handed to the report and writes it again as a
 // PNG of its pixels alone, so nothing else the file held, a photo's place
 // or its camera, goes with a report.
 func (g handed) picture() (ReportPicture, []byte, error) {
-	if g.err != nil {
-		return ReportPicture{}, nil, g.err
-	}
-	if len(g.data) > pictureBytesMax {
-		return ReportPicture{}, nil, errTooBig
-	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(g.data))
 	if err != nil || (format != "png" && format != "jpeg") {
-		return ReportPicture{}, nil, errors.New("is not a PNG or JPEG picture")
+		return ReportPicture{}, nil, errNotKept
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > picturePixelsMax {
 		return ReportPicture{}, nil, errors.New("is too large a picture")
@@ -609,12 +636,20 @@ func (r *reporting) load() {
 		if !pictureID.MatchString(p.ID) {
 			continue
 		}
+		if p.Recording != "" && !isRecordingEnding(p.Recording) {
+			continue
+		}
 		if p.Removed {
-			_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+			r.forget(p)
 			continue
 		}
 		if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+".png")); err != nil {
 			continue
+		}
+		if p.Recording != "" {
+			if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+"."+p.Recording)); err != nil {
+				continue
+			}
 		}
 		p.Name = tidyName(p.Name)
 		kept = append(kept, p)
@@ -648,9 +683,26 @@ func (r *reporting) keep() error {
 // preview route serves.
 var pictureID = regexp.MustCompile(`^p[0-9]{1,9}$`)
 
-// reportPictures gives the pictures that go in a report, in order, as
-// their PNG bytes, and their ids, for clear.
-func (r *reporting) reportPictures() (ids []string, pictures [][]byte) {
+// forget lets go of the files a picture or a recording is kept in. They
+// are the app's own copies, never the file the person handed over.
+func (r *reporting) forget(p ReportPicture) {
+	_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+	if isRecordingEnding(p.Recording) {
+		_ = r.files.Remove(filepath.Join(r.dir, p.ID+"."+p.Recording))
+	}
+}
+
+// sentFile is a picture or a recording as it goes in a report: the
+// ending it goes under, "png" for a picture, and its bytes.
+type sentFile struct {
+	ending string
+	data   []byte
+}
+
+// reportPictures gives the pictures and recordings that go in a report,
+// in order, and their ids, for clear. A recording goes as itself, not as
+// its still.
+func (r *reporting) reportPictures() (ids []string, files []sentFile) {
 	if r == nil {
 		return nil, nil
 	}
@@ -661,12 +713,16 @@ func (r *reporting) reportPictures() (ids []string, pictures [][]byte) {
 		if p.Removed {
 			continue
 		}
-		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+".png")); err == nil {
+		ending := "png"
+		if p.Recording != "" {
+			ending = p.Recording
+		}
+		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+"."+ending)); err == nil {
 			ids = append(ids, p.ID)
-			pictures = append(pictures, b)
+			files = append(files, sentFile{ending, b})
 		}
 	}
-	return ids, pictures
+	return ids, files
 }
 
 // clear lets go of the draft once a report is made from it, so the next
@@ -684,7 +740,7 @@ func (r *reporting) clear(sent []string) {
 	var kept []ReportPicture
 	for _, p := range r.draft.Pictures {
 		if p.Removed || slices.Contains(sent, p.ID) {
-			_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+			r.forget(p)
 			continue
 		}
 		kept = append(kept, p)

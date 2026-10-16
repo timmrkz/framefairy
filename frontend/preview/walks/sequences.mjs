@@ -218,6 +218,11 @@
 //                      drops n pictures on the report window, and a file of
 //                      text named other with them when there is one
 //   ["paste picture"]  pastes a picture into the report's field
+//   ["drop recording"] drops a screen recording of three seconds on the
+//                      report window, a MOV the way a Mac makes one
+//   ["recording tile", length]
+//                      the last tile is a recording, its still loaded and
+//                      its length written in its corner as length
 //   ["pictures", n]    the report window shows n pictures
 //   ["toast", text]    a toast over the window says text, and with "" no
 //                      toast is there. Nothing under it moved since the
@@ -246,8 +251,9 @@
 //                      back runs out and the grid closes over it
 //   ["report", n]      presses Report, which closes the report window and
 //                      says nothing beside the buttons, and reads the zip
-//                      it made: what was written and n pictures, and the
-//                      field empty after
+//                      it made: what was written and n pictures, or with
+//                      [n, m] n pictures and m recordings, and the field
+//                      empty after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -1703,7 +1709,7 @@ export const sequences = [
       ["bugs"],
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
-      ["toast", "notes.txt is not a PNG or JPEG picture"],
+      ["toast", "notes.txt is not a picture or a screen recording"],
       // A good drop after it takes the old reason away. Found in the
       // review of #217.
       ["drop pictures", 1],
@@ -1711,6 +1717,23 @@ export const sequences = [
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
+    ],
+  },
+  {
+    // Plan row 2.267. Tim attached a screen recording made on his Mac and
+    // it was turned away as not a PNG or JPEG picture. A recording is
+    // attached beside the pictures, shows a still of its first frame and
+    // its length, and goes in the report as a recording.
+    name: "A screen recording is attached, shown by its first frame and its length, and goes in the report",
+    steps: [
+      ["bugs"],
+      ["drop pictures", 1],
+      ["drop recording"],
+      ["toast", ""],
+      ["pictures", 2],
+      ["recording tile", "0:03"],
+      ["report lines up"],
+      ["report", [1, 1]],
     ],
   },
   {
@@ -1771,7 +1794,7 @@ export const sequences = [
       ["drop pictures", 10],
       ["pictures", 10],
       ["attach", 1],
-      ["toast", "would be more than the 10 pictures a report takes"],
+      ["toast", "would be more than the 10 pictures and recordings a report takes"],
       ["pictures", 10],
     ],
   },
@@ -5641,6 +5664,31 @@ for (const seq of toWalk) {
         await settle(page);
         break;
       }
+      case "drop recording": {
+        standing = null;
+        const file = await (await fetch(new URL("/pick-picture?box=0&kind=recording", url))).json();
+        const before = await page.locator("li.tile").count();
+        wrong = await dropOn(page, [file]);
+        if (wrong) break;
+        await page
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + 1, { timeout: 15000 })
+          .catch(async () => (wrong = `a dropped recording was not attached, the toast says "${await toastSays(page)}"`));
+        await settle(page);
+        break;
+      }
+      case "recording tile": {
+        const tile = await page.evaluate(() => {
+          const all = document.querySelectorAll("li.tile figure");
+          const f = all[all.length - 1];
+          const img = f?.querySelector("img");
+          return f && { length: f.querySelector(".length")?.textContent.trim() ?? "", loaded: !!img && img.complete && img.naturalWidth > 0, label: f.getAttribute("aria-label") };
+        });
+        if (!tile) wrong = "there is no tile";
+        else if (!tile.loaded) wrong = "the still of the recording did not load";
+        else if (tile.length !== arg) wrong = `the recording's tile says "${tile.length}", not ${arg}`;
+        else if (!tile.label.includes(`a recording of ${arg}`)) wrong = `the recording's tile is read out as "${tile.label}"`;
+        break;
+      }
       case "paste picture": {
         const before = await page.locator("li.tile").count();
         await page.locator(".telling").click();
@@ -5886,8 +5934,11 @@ for (const seq of toWalk) {
           break;
         }
         const names = await (await fetch(new URL("/report-made", url))).json();
+        const [want, films = 0] = [arg].flat();
         const pictures = names.filter((n) => /\/pictures\/\d+\.png$/.test(n)).length;
-        if (pictures !== arg) wrong = `the report holds ${pictures} pictures, not ${arg}: ${names.join(", ")}`;
+        const recordings = names.filter((n) => /\/recordings\/\d+\.(mov|mp4|m4v|webm|mkv)$/.test(n)).length;
+        if (pictures !== want) wrong = `the report holds ${pictures} pictures, not ${want}: ${names.join(", ")}`;
+        else if (recordings !== films) wrong = `the report holds ${recordings} recordings, not ${films}: ${names.join(", ")}`;
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
         const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;

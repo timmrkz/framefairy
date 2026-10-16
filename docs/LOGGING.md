@@ -37,6 +37,9 @@ Desktop, shown in Finder:
 - what the person wrote, `what-happened.txt`
 - the pictures attached, as `pictures/1.png` and on, each written again
   as PNG so nothing else the file held travels
+- the screen recordings attached, as `recordings/1.mov` and on, under
+  the ending they came with, each copied stream by stream without its
+  metadata, chapters or tracks of data, plan row 2.267
 - the log and its older files, unpacked, in `logs/`
 - the trace lines of the last while, which are kept in memory, see
   Levels below, `logs/recent-frames.log`
@@ -234,8 +237,9 @@ jq -c 'select(.video == "start.mp4")' app.log
    the address. Its lines are `report`'s: the window opening, brought
    forward and closed, with how it closed, `window` for its red button
    or Cmd+W, `report` once a report is made and `app` with the app's
-   window, each picture attached or left out with the
-   reason, removed and put back, a draft kept from before, and the
+   window, each picture or recording attached or left out with the
+   reason, a recording with its ending and length, and what ffmpeg said
+   when it could not copy one, removed and put back, a draft kept from before, and the
    report made with how many characters and pictures, never what was
    written.
 4. Under way, plan row 2.189. **Dictate** beside the field: the person

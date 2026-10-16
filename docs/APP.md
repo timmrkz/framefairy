@@ -2777,12 +2777,23 @@ beside **Report** says how the page works and what goes in a report.
 Tim found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
-The pictures are for screenshots. They come from the paperclip's open
-box, from a drop anywhere on the window, or from a paste into the
-field. PNG or JPEG, ten at most and 10 MB each, and each one is
-decoded and written again as PNG, so nothing the file held besides the
-picture travels, a place or a camera among it. A file that is not a
-picture, or is too big, or would make an eleventh, is left out and a
+The pictures are for screenshots and screen recordings. They come from
+the paperclip's open box, from a drop anywhere on the window, or from a
+paste into the field. Ten at most and 10 MB each. A picture is PNG or
+JPEG, decoded and written again as PNG, so nothing the file held besides
+the picture travels, a place or a camera among it. A recording is what
+the usual screen recorders make, plan row 2.267: MOV from the Mac's own
+recorder and QuickTime, MP4 from Windows, phones and OBS, WebM from the
+GNOME and KDE recorders and browsers, MKV from OBS. It is judged by its
+first bytes and then by the ffmpeg the app ships, made to read it as
+that kind and nothing else, and copied stream by stream, its picture and
+its sound untouched, without what the file said about itself, the
+place, the date or the device. Its tile shows a still of its first frame
+with its length in the corner, the way Photos and Finder show a video,
+and the report holds the recording itself, under `recordings/`, see
+`cmd/framefairy-app/recording.go`. Tim's first recording was turned
+away as not a PNG or JPEG picture. A file that is not a
+picture or a recording, or is too big, or would make an eleventh, is left out and a
 toast in the window's top right corner says which and why, see
 [Toasts](#toasts). It used to be red text in the row of the buttons,
 which wrapped over three lines beside Report, Tim found. They show under the card in a
