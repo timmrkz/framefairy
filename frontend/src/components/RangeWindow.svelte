@@ -560,14 +560,36 @@
   }
 
   /* On the range picker's own edge, its round corner. */
+  .window {
+    --left: var(--frame-radius);
+    --right: var(--frame-radius);
+  }
+
   .window.first {
+    --left: var(--radius-m);
     border-top-left-radius: var(--radius-m);
     border-bottom-left-radius: var(--radius-m);
   }
 
   .window.last {
+    --right: var(--radius-m);
     border-top-right-radius: var(--radius-m);
     border-bottom-right-radius: var(--radius-m);
+  }
+
+  /* The motes are cut to the inside of the window's own line, corners
+     and all, by a shape of their own. The window's overflow cuts them as
+     well, but a mote moves on a layer of its own, and on the Mac a layer
+     like that inside a box whose corners are not all alike, round at the
+     range picker's end and nearly square at the other, was seen over the
+     line at the round bottom corner: Tim saw it start round and break,
+     plan row 2.274. The motes rise from the bottom and are gone before
+     the top, which is why the top corner stayed round. */
+  .window :global(.beam) {
+    clip-path: inset(
+      0 round max(var(--left) - var(--frame-line), 0px) max(var(--right) - var(--frame-line), 0px)
+        max(var(--right) - var(--frame-line), 0px) max(var(--left) - var(--frame-line), 0px)
+    );
   }
 
   /* The window at rest, marked at its corners. A bar three pixels thick
