@@ -326,7 +326,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
-			q.Get("namesake") == "1", q.Get("box") != "0", q.Get("in") == "mkv")
+			q.Get("namesake") == "1", q.Get("box") != "0", q.Get("in") == "mkv", q.Get("size") == "1080")
 		answer(w, path, err)
 	})
 	// Files dropped on the app, which the window hands over the way the
@@ -766,6 +766,32 @@ func makeEpisode(path string, seconds int, switchAt float64, hevc bool) error {
 	return nil
 }
 
+// makeCameraEpisode makes a video the size a camera or an export has, 1920
+// by 1080 at 25 frames a second, with a key frame every two seconds and
+// three B-frames between the others, in H.264 or with hevc in HEVC with
+// 10-bit colour and open GOPs. Its picture moves all over, so every frame
+// costs the decoder what a real one does. It is for timing how quickly the
+// video preview follows the keys, see walks/speed.mjs, which a picture of
+// 320 by 180 cannot say anything about. Its frames carry no number.
+func makeCameraEpisode(path string, seconds int, hevc bool) error {
+	d := strconv.Itoa(seconds)
+	args := []string{"-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=25:d=" + d,
+		"-f", "lavfi", "-i", "sine=f=220:sample_rate=48000:d=" + d,
+		"-map", "0", "-map", "1", "-shortest"}
+	if hevc {
+		args = append(args, "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1",
+			"-x265-params", "keyint=50:bframes=3:open-gop=1:log-level=error")
+	} else {
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-g", "50", "-bf", "3")
+	}
+	out, err := exec.Command("ffmpeg", append(args, "-c:a", "libopus", "-b:a", "64k", path)...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("making %s: %s %s", filepath.Base(path), err, out)
+	}
+	return nil
+}
+
 // twoCameras is the picture below the strip of an episode filmed by two
 // cameras, the first up to the frame it switches on and the second from
 // it. Each looks at a subject, a chequerboard, on its own side of the
@@ -896,10 +922,11 @@ var frameRate = regexp.MustCompile(`^[1-9][0-9]{0,5}(/[1-9][0-9]{0,4})?$`)
 // rate, see makeFilmedEpisode. With a switch, in seconds, the bridge's
 // own kind is filmed by two cameras that switch then, see twoCameras, and
 // with hevc it is HEVC with 10-bit colour. With mkv it is the same video
-// in Matroska, the way OBS records, its streams copied as they are.
+// in Matroska, the way OBS records, its streams copied as they are. With
+// large it is a camera's picture instead, see makeCameraEpisode.
 //
 // On the real disk: ffmpeg makes the video the app adds.
-func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv bool) (string, error) {
+func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, box, mkv, large bool) (string, error) {
 	n, err := strconv.Atoi(seconds)
 	if err != nil || n < 10 || n > 3600 {
 		n = 90
@@ -925,7 +952,9 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	if rate != "" && timing == "turned" {
+	if large {
+		err = makeCameraEpisode(path, n, hevc)
+	} else if rate != "" && timing == "turned" {
 		err = makeTurnedEpisode(path, n, rate)
 	} else if rate != "" {
 		err = makeFilmedEpisode(path, n, rate, timing)

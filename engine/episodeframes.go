@@ -455,9 +455,16 @@ func (f *EpisodeFrames) Light() framewire.Light {
 // on, scaled to width by height in colours as framewire.Picture makes them
 // for the episode's Light, each with the moment of the grid it is for and
 // in a buffer of its own. It runs until got says no more, the context
-// ends or the grid does.
+// ends or the grid does. skip, where it is not nil, says the moment before
+// which no frame is wanted any more, read each time the next frames are
+// asked of the decoder, which lets the frames before it go unscaled: a jump
+// forward in an open stream then costs their decoding only, not making
+// pictures of them that are thrown away. The next frames are asked for as
+// soon as the ones before are made, so a skip that comes with a pull counts
+// from the batch after the one already on its way, which is still made into
+// pictures. Plan row 2.269.
 func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from float64, width, height int,
-	got func(at float64, frame []byte) error) error {
+	skip func() float64, got func(at float64, frame []byte) error) error {
 	if grid.Num <= 0 || grid.Den <= 0 {
 		return errors.New("the video has no frame rate to count its frames by")
 	}
@@ -470,7 +477,7 @@ func (f *EpisodeFrames) Stream(ctx context.Context, grid framewire.Grid, from fl
 	first := grid.Holding(from)
 	return f.stream(ctx, pictureCursor, &place{grid: grid, w: width, h: height, frame: first}, func(id uint32) string {
 		return framewire.OpenRequest(id, first, width, height, grid)
-	}, got)
+	}, skip, got)
 }
 
 // Sound hands over the sound of the episode from the moment from on, as
@@ -500,15 +507,25 @@ func (f *EpisodeFrames) Sound(ctx context.Context, e *Engine, from float64, rate
 	seek, _ := soundSeek(from, picture)
 	return f.stream(ctx, soundCursor, nil, func(id uint32) string {
 		return fmt.Sprintf("sound %d %.6f %.6f %d %d", id, seek, from, rate, channels)
-	}, got)
+	}, nil, got)
 }
 
 // stream runs one stream on a cursor of its kind, opened by the request
 // open makes for the cursor's number. A stream of picture says where it
 // starts, want, and the cursor is kept standing at the last frame it
-// handed over.
+// handed over. skip is as for Stream.
 func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open func(id uint32) string,
-	got func(at float64, data []byte) error) error {
+	skip func() float64, got func(at float64, data []byte) error) error {
+	// The next frames from the cursor, none before the moment skip names.
+	next := func(id uint32) string {
+		from := 0.0
+		if skip != nil {
+			if at := skip(); at > 0 && !math.IsNaN(at) && !math.IsInf(at, 0) {
+				from = at
+			}
+		}
+		return fmt.Sprintf("next %d %d %.6f", id, ahead, from)
+	}
 	times := previewTimesOf(ctx)
 	f.mu.Lock()
 	if err := f.start(); err != nil {
@@ -520,7 +537,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 	gone := f.gone
 	err := f.send(gone, "%s", open(id))
 	if err == nil {
-		err = f.send(gone, "next %d %d 0", id, ahead)
+		err = f.send(gone, "%s", next(id))
 	}
 	f.mu.Unlock()
 	// The decoder runs and has the request: at once where it ran already,
@@ -600,7 +617,7 @@ func (f *EpisodeFrames) stream(ctx context.Context, kind int, want *place, open 
 			case framewire.Done:
 				f.mu.Lock()
 				f.used = time.Now()
-				err := f.send(gone, "next %d %d 0", id, ahead)
+				err := f.send(gone, "%s", next(id))
 				f.mu.Unlock()
 				if err != nil {
 					return f.refused(ctx, gone, err)

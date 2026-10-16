@@ -73,6 +73,7 @@
     frameStart = 0,
     lit = [],
     onseek,
+    onahead,
     onhold,
     dimmed = false,
     onreshape,
@@ -142,6 +143,10 @@
     // video says that, see placeOf in lib/playhead.ts. A step from word to
     // word says so, and the word it lands on bounces in the video preview.
     onseek: (t: number, about?: About, wordStep?: boolean) => void;
+    // Paused and at rest, the moments Shift and an arrow would step to
+    // next, the word after the playhead and the word before, so their
+    // frames are read before the step asks for them.
+    onahead?: (times: number[]) => void;
     // The hand has taken hold of the playhead, or let go of it, so a play
     // can wait under the hand, see hold in Player.svelte.
     onhold?: (held: boolean) => void;
@@ -329,6 +334,8 @@
   // Dragging the playhead, the same way as on the range picker, see
   // lib/scrub.ts.
   let scrubbing = $state(false);
+  // An edge, a cut or a caption held under the hand.
+  let gripping = $state(false);
 
   // One seek a frame while an edge is dragged, for the playhead that goes
   // with it, the same pace the playhead itself is dragged at.
@@ -968,6 +975,24 @@
     else if (walk === lit) onwalkclip?.(back);
     else if (!walk.length) put(time + (back ? -1 : 1));
   }
+
+  // Paused, with nothing under the hand, the words Shift and an arrow go to
+  // from here are read ahead, the way onKey walks them. A drag gets no
+  // frames ahead: where the hand goes next cannot be told. Plan row 2.269.
+  // It runs on every move of the playhead while paused, a play just ended
+  // too: FrameQueue.ahead drops what it was asked already, so this needs
+  // no guard of its own.
+  $effect(() => {
+    if (playing || scrubbing || gripping || !onahead) return;
+    const step = Math.max(frame, 1 / 240);
+    const walk = lit.length && insideClip(drawnPieces, time, step) ? lit : words;
+    const times: number[] = [];
+    for (const back of [false, true]) {
+      const to = wordStep(walk, time, back, step);
+      if (to !== null) times.push(Math.max(0, Math.min(to, duration)));
+    }
+    if (times.length) onahead(times);
+  });
 
   // Reading takes a call each, so it waits until the fingers come to rest.
   // Where the view stood when they began is kept until then, for the log.
@@ -1755,6 +1780,7 @@
     if (!grip.drag && !grip.release) return;
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
+    gripping = true;
     const startX = event.clientX;
     const pressed = timeAt(startX);
     let moved = false;
@@ -1766,6 +1792,7 @@
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
+      gripping = false;
       void grip.release?.(moved);
     };
     target.addEventListener("pointermove", move);

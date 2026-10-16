@@ -7,6 +7,7 @@
 #   sh scripts/ci-needs.sh build      # building the programs and the interface
 #   sh scripts/ci-needs.sh walks      # the interface against the Go side
 #   sh scripts/ci-needs.sh outside    # the app on a Mac, opened from outside
+#   sh scripts/ci-needs.sh workflows  # the check of the workflows themselves
 #
 # It writes "run=true" or "run=false" on standard output, in the shape a
 # GitHub Actions step output takes, and says on standard error why.
@@ -17,7 +18,7 @@
 # losing the waiting.
 set -eu
 
-kind=${1:?say what to decide about: go, interface, build, walks or outside}
+kind=${1:?say what to decide about: go, interface, build, walks, outside or workflows}
 
 say() { echo "$*" >&2; }
 
@@ -62,6 +63,7 @@ docs=0
 frontend=0
 go=0
 other=0
+workflows=0
 
 for file in $changed; do
 	case $file in
@@ -77,6 +79,10 @@ for file in $changed; do
 	*.go | go.mod | go.sum)
 		go=$((go + 1))
 		;;
+	.github/workflows/*)
+		workflows=$((workflows + 1))
+		other=$((other + 1))
+		;;
 	*)
 		other=$((other + 1))
 		;;
@@ -84,6 +90,16 @@ for file in $changed; do
 done
 
 say "changed: $docs docs, $frontend interface, $go Go, $other other"
+
+# The check of the workflows reads the workflows and nothing else, so it is
+# decided before the rule that anything unknown runs everything: a Makefile
+# or Go code changing gives it nothing new to look at.
+if [ "$kind" = workflows ]; then
+	if [ "$workflows" -gt 0 ]; then
+		answer true "a workflow changed"
+	fi
+	answer false "no workflow changed"
+fi
 
 if [ "$other" -gt 0 ]; then
 	answer true "something changed that decides how the project is built"

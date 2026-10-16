@@ -54,9 +54,9 @@ type Clip struct {
 	CaptionY *float64
 	// CaptionTimes are captions moved by hand, where the timing of the
 	// words is a little off from what is heard. Each is kept against the
-	// word a caption begins or ends on, by the millisecond that word starts
-	// in the episode, so it survives the clip's pieces moving and the
-	// captions breaking in other places.
+	// word a caption begins or ends on, by that word's key, see saidKey,
+	// so it survives the clip's pieces moving, the captions breaking in
+	// other places and the silence level moving the word.
 	CaptionTimes map[string]CaptionTime
 	// RemovedWords are the words the clip does not show, removed in the
 	// caption box or with a caption on the clip timeline, see
@@ -533,9 +533,10 @@ func intPtr(n int) *int { return &n }
 func itoa(n int) string { return strconv.Itoa(n) }
 
 // readCaptionTimes takes the captions moved by hand out of a plan, which is
-// untrusted like the rest of it. A key that is not a millisecond, a time
-// that is not a moment of an episode, and anything that is not what it
-// should be are left out, and the caption is where the words put it.
+// untrusted like the rest of it. A key that is not one of a word said, see
+// saidKey, a time that is not a moment of an episode, and anything that is
+// not what it should be are left out, and the caption is where the words
+// put it.
 func readCaptionTimes(raw any) map[string]CaptionTime {
 	fields, ok := raw.(map[string]any)
 	if !ok || len(fields) == 0 {
@@ -543,8 +544,7 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 	}
 	out := map[string]CaptionTime{}
 	for key, value := range fields {
-		ms, err := strconv.ParseInt(key, 10, 64)
-		if err != nil || ms < 0 || ms > MaxEpisodeSeconds*1000 || strconv.FormatInt(ms, 10) != key {
+		if !isSaidKey(key) {
 			continue
 		}
 		edges, ok := value.(map[string]any)
@@ -566,6 +566,20 @@ func readCaptionTimes(raw any) map[string]CaptionTime {
 		return nil
 	}
 	return out
+}
+
+// isSaidKey says whether a key is one of a word said: the key of a heard
+// word, then which of its words after a slash when it is not the first,
+// or from before, the bare millisecond the word starts at on the sound.
+// A word is at most 60 characters, so it says at most 30 words.
+func isSaidKey(key string) bool {
+	base, part, split := strings.Cut(key, "/")
+	_, heard, ok := parseWordKey(base)
+	if !ok || !split {
+		return ok
+	}
+	n, err := strconv.Atoi(part)
+	return heard && err == nil && n >= 1 && n < 30 && strconv.Itoa(n) == part
 }
 
 // readThumbnails takes the moments a clip's pictures are taken at out of a

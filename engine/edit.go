@@ -1063,7 +1063,7 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 	if err != nil {
 		return moved.done, err
 	}
-	key := wordKey(word)
+	key := moved.key
 	err = editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
@@ -1074,6 +1074,25 @@ func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge s
 		times, _ := c.values[keyCaptionTimes].(*object)
 		if times == nil {
 			times = newObject()
+		}
+		// The edges kept from before, by where their words start on the
+		// sound, are kept by their words' keys from now on.
+		for old, own := range moved.rekeyed {
+			was, _ := times.values[old].(*object)
+			if was == nil {
+				continue
+			}
+			now, _ := times.values[own].(*object)
+			if now == nil {
+				now = newObject()
+			}
+			for _, name := range was.keys {
+				if _, set := now.values[name]; !set {
+					now.set(name, was.values[name])
+				}
+			}
+			times.remove(old)
+			times.set(own, now)
 		}
 		edges, _ := times.values[key].(*object)
 		if edges == nil {
@@ -1106,8 +1125,13 @@ type captionEdge struct {
 	clip Clip
 	// at is where the edge is kept, on the episode's clock, or not a number
 	// when it is where its words put it.
-	at   float64
-	done CaptionEdit
+	at float64
+	// key is what the edge is kept by in the clip's caption times, the
+	// word's own, see saidKey, and rekeyed the keys from before it keeps
+	// anew, each by the key it is kept by now.
+	key     string
+	rekeyed map[string]string
+	done    CaptionEdit
 }
 
 // moveCaptionEdge works out what moving the edge of a caption does, the
@@ -1198,6 +1222,18 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	if times == nil {
 		times = map[string]CaptionTime{}
 	}
+	// Kept by the word's own key, so a change of the silence level, which
+	// moves where the word starts, leaves it on its word. The clip's edges
+	// kept from before by where their words start are kept that way from
+	// now on, see rekeyCaptionTimes.
+	said := t.Of(clip)
+	out.rekeyed = said.rekeyCaptionTimes(times)
+	if own, ok := said.saidKey(word); ok {
+		key = own
+	} else if own, ok := out.rekeyed[key]; ok {
+		key = own
+	}
+	out.key = key
 	edges := times[key]
 	var put *float64
 	if !reset {

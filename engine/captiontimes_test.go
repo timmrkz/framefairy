@@ -142,10 +142,10 @@ func TestSetCaptionTimeKeepsItAgainstTheWord(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := clipsOf(t, fsys, path)["01"]
-	if got := c.CaptionTimes[wordKey(10.0)].Start; got == nil || !near(*got, 9.8) {
+	if got := c.CaptionTimes[heardKey(10000)].Start; got == nil || !near(*got, 9.8) {
 		t.Errorf("start %v", got)
 	}
-	if got := c.CaptionTimes[wordKey(13.0)].End; got == nil || !near(*got, 13.6) {
+	if got := c.CaptionTimes[heardKey(13000)].End; got == nil || !near(*got, 13.6) {
 		t.Errorf("end %v", got)
 	}
 	// Put back where the words put it, and nothing is left behind.

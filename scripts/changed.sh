@@ -372,6 +372,7 @@ for w in $workflows; do
 	fi
 done
 
+[ -n "$workflows" ] && sh scripts/pins.sh
 [ "$rules" = 1 ] && sh scripts/ci-needs-test.sh
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
