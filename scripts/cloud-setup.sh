@@ -9,8 +9,9 @@
 # - GTK 4 and WebKitGTK 6, for compiling the app
 # - the build tools for the ffmpeg we ship. That ffmpeg and the episode's
 #   decoder on it are not built here: building ffmpeg from source takes
-#   longer than the five minutes a setup script may run. Each session
-#   builds them in the background instead, see scripts/cloud-decoder.sh
+#   longer than the five minutes a setup script may take and still be
+#   cached. Each session builds them in the background instead, see
+#   scripts/cloud-decoder.sh
 # - the engineering skills from the two plugins Tim added on claude.ai, which
 #   do not reach cloud sessions by themselves, as skills Claude loads
 #

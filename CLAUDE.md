@@ -610,9 +610,10 @@ script from `scripts/cloud-setup.sh` pasted into the environment. It
 provides Go 1.27, ffmpeg, and the GTK and WebKit packages the app needs to
 compile. The ffmpeg we ship and the episode's decoder on it, which every
 frame of the video preview comes from, take longer to build than the five
-minutes a setup script may run, so the SessionStart hook in
-`.claude/settings.json` builds them in the background at the start of each
-session, see `scripts/cloud-decoder.sh`, logged in `/tmp/framefairy-decoder.log`. There are no models in the cloud, which the tests do not need.
+minutes a setup script may take and still be cached, so the SessionStart
+hook in `.claude/settings.json` builds them in the background as each
+session starts, see `scripts/cloud-decoder.sh`, logged in
+`/tmp/framefairy-decoder.log`. There are no models in the cloud, which the tests do not need.
 It also installs the engineering skills from `samber/cc-skills-golang` and
 `addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
 because plugins added on claude.ai do not reach cloud sessions. They are
@@ -625,9 +626,11 @@ the skills listed last show their name without what they are for.
 
 - If `go version` does not show 1.27 or `make check` reports missing build
   tools, run `bash scripts/cloud-setup.sh` and read `/tmp/framefairy-setup-*.log`.
-  Without `.build/frames/framefairy-frames` the decoder's tests and the
-  walks skip. The background build makes it in several minutes; it is done
-  when `/tmp/framefairy-decoder.log` ends in `decoder ready`.
+  The background build takes about seven minutes, and it is done when
+  `/tmp/framefairy-decoder.log` ends in `decoder ready`. `make changed`,
+  `unit`, `walks` and `test` wait for it, so the decoder's tests do not
+  skip only because they came first. When it failed, they say so, and
+  `make ffmpeg frames` builds it by hand.
 - Push a change once its own tests pass, then run `make changed`, and it
   must pass, see the tests rule above. Waiting minutes on tests before a push is Tim
   waiting. `make changed` builds when it is not sure what a file reaches.
