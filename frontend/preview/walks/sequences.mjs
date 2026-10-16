@@ -931,7 +931,7 @@ export const sequences = [
   {
     // Putting a clip back takes back its remove and nothing more. Tim
     // played a clip, removed another and put it back, and the one put
-    // back was chosen and played from its start. Plan row 2.282.
+    // back was chosen and played from its start. Plan row 2.285.
     name: "a clip put back while another plays leaves the play alone",
     steps: [["remove clip"], ["make here", "i"], ["put back"], ["put back another while playing"]],
   },
