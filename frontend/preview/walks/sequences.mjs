@@ -1008,6 +1008,16 @@ export const sequences = [
     ],
   },
   {
+    name: "a caption's edges dragged with shift land on words",
+    steps: [
+      ["mark", "start"],
+      ["edge to word", ["start", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+      ["edge to word", ["end", "Schulhof"]],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
     name: "a caption's left edge dragged in over its first word removes the word and leaves the caption before it alone",
     steps: [
       ["mark", "start"],
@@ -3780,10 +3790,14 @@ for (const seq of toWalk) {
       }
       case "edge in":
       case "edge out":
-      case "edge nudge": {
+      case "edge nudge":
+      case "edge to word": {
         // An edge of the caption holding a word dragged: in, just over
         // the middle of the word at that edge, out, back past where that
-        // word was at "start", or a little in, short of any word's middle.
+        // word was at "start", a little in, short of any word's middle, or
+        // with shift to a little past where the word after the first
+        // starts, or before where the word before the last ends, nearer
+        // that than any other, where it has to land.
         const [edge, text] = arg;
         const now = await engineState(page, watch.at);
         const was = what === "edge out" ? marks.start : now;
@@ -3806,9 +3820,18 @@ for (const seq of toWalk) {
         const c = now.captions[i];
         const from = edge === "end" ? c.end : c.start;
         let to;
+        let landing = null;
         if (what === "edge in") to = edge === "end" ? (w.start + mid) / 2 : (mid + w.end) / 2;
         else if (what === "edge out") to = edge === "end" ? was.captions[i].end : was.captions[i].start;
-        else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
+        else if (what === "edge to word") {
+          const next = edge === "end" ? words.at(-2) : words[1];
+          if (!next) {
+            wrong = `the caption with "${text}" has one word`;
+            break;
+          }
+          landing = edge === "end" ? next.end : next.start;
+          to = landing + (edge === "end" ? -0.04 : 0.04);
+        } else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
         const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
         const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
         if (!box) {
@@ -3824,6 +3847,7 @@ for (const seq of toWalk) {
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
         const target = x + (await xOf(page, into(to))) - (await xOf(page, into(from)));
+        if (landing !== null) await page.keyboard.down("Shift");
         await page.mouse.move(x, y);
         await page.mouse.down();
         for (let k = 1; k <= 6; k++) {
@@ -3834,6 +3858,7 @@ for (const seq of toWalk) {
         const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
         const held = await handle.boundingBox();
         await page.mouse.up();
+        if (landing !== null) await page.keyboard.up("Shift");
         await watch.step(what, s);
         let left = null;
         for (let k = 0; k < 20; k++) {
@@ -3843,6 +3868,15 @@ for (const seq of toWalk) {
         }
         if (!held || !left || Math.abs(left.x - held.x) > 1) {
           wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+          break;
+        }
+        if (landing !== null) {
+          const after = await engineState(page, watch.at);
+          const c = after.captions[i];
+          const landed = edge === "end" ? c?.end : c?.start;
+          if (landed === undefined || Math.abs(landed - landing) > 0.002) {
+            wrong = `dragged with shift to ${to.toFixed(3)}, the ${edge} of the caption is at ${landed?.toFixed(3)}, not on the word at ${landing.toFixed(3)}`;
+          }
         }
         break;
       }
