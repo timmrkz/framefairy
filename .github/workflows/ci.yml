@@ -80,6 +80,10 @@ jobs:
       # into it, which is as silent when it is wrong.
       - name: Check the Main moved notice
         run: sh scripts/main-moved-test.sh
+      # And that every action is pinned to a commit with its full version
+      # beside it, so a bump says which release it moves to.
+      - name: Check the action pins
+        run: sh scripts/pins.sh
       - id: needs
         run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
       - if: steps.needs.outputs.run == 'true'

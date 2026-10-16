@@ -68,7 +68,7 @@ jobs:
           git ls-files --others --exclude-standard -- '*testdata/fuzz/*' | tee /dev/stderr |
             while read -r f; do mkdir -p "$RUNNER_TEMP/crashers/$(dirname "$f")" && cp "$f" "$RUNNER_TEMP/crashers/$f"; done
       - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: crashers
           path: ${{ runner.temp }}/crashers
@@ -107,7 +107,7 @@ jobs:
           git ls-files --others --exclude-standard -- '*testdata/fuzz/*' | tee /dev/stderr |
             while read -r f; do mkdir -p "$RUNNER_TEMP/crashers/$(dirname "$f")" && cp "$f" "$RUNNER_TEMP/crashers/$f"; done
       - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: crashers-macos
           path: ${{ runner.temp }}/crashers

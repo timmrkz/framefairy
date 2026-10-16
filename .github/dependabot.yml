@@ -14,7 +14,9 @@
 # because a major can break the build, and a broken one in the group
 # holds back every patch beside it. The actions stay in one pull request
 # with their majors: an action's major is mostly the Node it runs on, and
-# CI runs every one of them.
+# CI runs every one of them. Each action is pinned to a commit with its full
+# version in the comment beside it, # v7.0.2 and never # v7, and Dependabot
+# moves the two together. scripts/pins.sh checks it.
 version: 2
 updates:
   - package-ecosystem: gomod

@@ -419,7 +419,12 @@ scan made once is out of date the week after.
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The actions come in one pull request, majors
-  included. With Dependabot security updates on in the repository's
+  included. Every action is pinned to a commit, because a tag can be
+  moved to other code and a commit cannot, and the comment beside it
+  names the full version that commit is, `# v7.0.2` and never `# v7`.
+  Dependabot moves the comment with the commit, so a bump shows which
+  release it goes to. `scripts/pins.sh` checks both, in CI and in
+  `make changed` when a workflow changed. With Dependabot security updates on in the repository's
   settings, it opens one at once for a fix to a known vulnerability.
   Wails and the speech library's Go module are left out, because each
   moves with a pin Dependabot cannot change. TypeScript stays below 7 until
