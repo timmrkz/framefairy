@@ -117,7 +117,9 @@ Start with [README.md](README.md). In short:
   something seen while testing: it becomes a
   [GitHub issue](https://github.com/timmrkz/framefairy/issues) of its
   own, with what was seen, where, and who found it, linked in the
-  reply. Opening an issue changes no file, so it needs no push and
+  reply. It carries one label or more: `bug`, `feature`, `tests` for
+  tests, walks and CI, `reliability`, `performance`, or `shipping` for
+  getting the app to customers. Opening an issue changes no file, so it needs no push and
   starts no CI run. The work on the open pull request carries on. Once
   it is merged, the next piece of work is the oldest open issue Tim
   opened or a session opened for him, unless Tim puts them in another

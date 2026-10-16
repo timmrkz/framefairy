@@ -127,7 +127,8 @@ Several sessions can run at once, each on its own branch. Keep them to
 separate areas of the code, so the pull requests don't conflict. Each
 session works on one pull request at a time, and opens the next only
 once that one is merged or closed. Something you report that is not
-about its open pull request is logged as a GitHub issue and taken up in
+about its open pull request is logged as a GitHub issue, labelled bug,
+feature, tests, reliability, performance or shipping, and taken up in
 turn, the oldest first unless you reorder them. Opening an issue changes
 no file, so it costs no push and no CI run, and the pull request that
 finishes it closes it with `Fixes #N`. See CLAUDE.md.
