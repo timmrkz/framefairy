@@ -23,7 +23,8 @@
 #                   what that file is for: make for the build, the rules
 #                   tests for the rules, a read by its own shell for a
 #                   script, a read of the YAML for a workflow
-#   docs            nothing
+#   docs            nothing, but docs/GUI-PLAN.md runs the check that it
+#                   is history and left alone, scripts/plan-frozen.sh
 #
 # Anything it does not know runs the build, so a file nobody thought of is
 # checked rather than skipped. CI still runs everything on every pull
@@ -110,11 +111,14 @@ changed_rules=0
 build_rules=0
 moved_rules=0
 shard_rules=0
+plan_rules=0
 workflows=""
 shells=""
 
 for file in $changed; do
 	case $file in
+	# The plan is history, and the check that keeps it so runs on it.
+	docs/GUI-PLAN.md) plan_rules=1 ;;
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
 	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts | frontend/package.json | frontend/package-lock.json)
 		interface=1
@@ -150,6 +154,10 @@ for file in $changed; do
 		;;
 	scripts/go-shard.sh | scripts/go-shard-test.sh)
 		shard_rules=1
+		shells="$shells $file"
+		;;
+	scripts/plan-frozen.sh | scripts/plan-frozen-test.sh)
+		plan_rules=1
 		shells="$shells $file"
 		;;
 	*.sh)
@@ -233,9 +241,10 @@ fi
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
 [ "$shard_rules" = 1 ] && say "rules:     scripts/go-shard-test.sh"
+[ "$plan_rules" = 1 ] && say "rules:     scripts/plan-frozen-test.sh, scripts/plan-frozen.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules" = 00000000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules$plan_rules" = 000000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -250,6 +259,7 @@ if [ "$plan_only" = 1 ]; then
 	[ "$build_rules" = 1 ] && echo build-rules
 	[ "$moved_rules" = 1 ] && echo moved-rules
 	[ "$shard_rules" = 1 ] && echo shard-rules
+	[ "$plan_rules" = 1 ] && echo plan-rules
 	for s in $shells; do echo "script $s"; done
 	for w in $workflows; do echo "workflow $w"; done
 	exit 0
@@ -378,6 +388,10 @@ done
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
 [ "$shard_rules" = 1 ] && sh scripts/go-shard-test.sh
+if [ "$plan_rules" = 1 ]; then
+	sh scripts/plan-frozen-test.sh
+	sh scripts/plan-frozen.sh ${base:-}
+fi
 # Away from a Mac nothing builds the tools we ship, and make stops without
 # them, so there the build proves the programs build and says it goes
 # without, the way CI's Linux job does. On a Mac make builds them.
