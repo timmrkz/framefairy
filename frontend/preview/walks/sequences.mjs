@@ -7262,11 +7262,24 @@ for (const seq of toWalk) {
           wrong = `${basename(folder)} is not there to delete`;
           break;
         }
-        // Again while the app writes into it, as Finder does: a file the app
-        // writes while the folder is emptied leaves it not empty, which is
-        // not the folder coming back. What the app must not do, make the
-        // folder again, is what the walk then looks for.
-        rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        // Again while the app writes into it, as a person deletes it again
+        // when Finder says the folder is not empty: a file the app writes
+        // while the folder is emptied leaves it not empty, which is not the
+        // folder coming back. On CI's busy runners the app was still
+        // writing after five tries in a second and a half, and the walk
+        // failed on its own delete. So it deletes until the folder is gone,
+        // for up to ten seconds. What the app must not do, make the folder
+        // again once it is gone, is what the walk then looks for.
+        const by = Date.now() + 10000;
+        for (;;) {
+          try {
+            rmSync(folder, { recursive: true, force: true });
+            break;
+          } catch (err) {
+            if (err.code !== "ENOTEMPTY" || Date.now() > by) throw err;
+            await page.waitForTimeout(50);
+          }
+        }
         videoGone = arg === "with the video" || arg === "written back";
         if (videoGone) rmSync(folderGone, { force: true });
         if (arg === "written back") {
