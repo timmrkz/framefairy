@@ -1,15 +1,17 @@
 <script lang="ts">
   // The whole episode as one slim track: the ruler, the clips as marks and
   // the playhead, which a press anywhere takes hold of. While clips are
-  // being found, or a search stands stopped, the window it is about is
-  // drawn over the track, with how far the episode has been read for it.
+  // being found, the window they are found in is drawn over the track.
   // At rest the window is not drawn at all, only marked at its corners: a
   // bar on the top border and one on the bottom border, over them, with a
   // triangle at each end whose tip reaches into the track.
   // Laid over a short episode searched whole, the window hid every clip
   // just found, and a frame round it read as the same window, so nothing
   // of the mark lies over the track but the tips. It says where New looks
-  // next, which the app decides, see nextWindow in lib/flow.ts. A triangle
+  // next, which the app decides, see nextWindow in lib/flow.ts, or where
+  // Continue carries on a search that stopped. Moved off that, the search
+  // is set aside and New starts afresh where it is, see aside in
+  // Episode.svelte. A triangle
   // drags its edge, a bar drags the whole window, and a double-click puts
   // it back where the app would have it. While clips are found the mark
   // turns into the window, and back into the mark when they are. Nothing
@@ -46,6 +48,7 @@
     leastSays = "",
     most = Infinity,
     reachSays = "",
+    resumes = false,
   }: {
     duration: number;
     // The window of the search in hand, drawn while shown.
@@ -95,7 +98,13 @@
     leastSays?: string;
     most?: number;
     reachSays?: string;
+    // A search stands stopped on the window, so the mark is where Continue
+    // carries it on rather than where New looks.
+    resumes?: boolean;
   } = $props();
+
+  // What the mark is, in its titles.
+  const says = $derived(resumes ? "Where Continue carries on the search that stopped" : "Where New looks next");
 
   let track: HTMLDivElement;
   let width = $state(0);
@@ -376,9 +385,10 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole video, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. The marks at the four corners are where New looks next: drag
-      a bar between them to look somewhere else, drag a triangle to make it shorter or longer, and
-      double-click to put it back. It is at least as long as its clips need and at most as long as
+      press a mark to work on its clip. The marks at the four corners are where New looks next, or
+      where Continue carries on a search that stopped: drag a bar between them to look somewhere
+      else, drag a triangle to make it shorter or longer, and double-click to put it back. Moved
+      off a search that stopped, New starts afresh where they are. It is at least as long as its clips need and at most as long as
       the model reads at once, and flashes red when a triangle runs into either. While clips are
       being found, the window is drawn over the track. How far a search has come is on its cards in
       the clip list.
@@ -428,9 +438,9 @@
         class:held={moving === "move"}
         role="slider"
         tabindex="-1"
-        aria-label="Where New looks next"
+        aria-label={says}
         aria-valuenow={from}
-        title="Where New looks next, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
+        title="{says}, {clock(from)} to {clock(to)}. Drag to look somewhere else, double-click to put it back"
         onpointerdown={(e) => grabWindow("move", e)}
         ondblclick={resetWindow}
       ></div>
