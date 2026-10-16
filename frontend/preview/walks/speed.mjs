@@ -22,40 +22,48 @@ const rounds = Number(process.env.ROUNDS ?? 3);
 const scale = Number(process.env.SCALE ?? 2);
 const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
 
-const { browser, page, errors } = await open(url, { scale });
+// A window as big as a 16 inch MacBook Pro's screen, which has the video
+// preview draw frames about the size Tim's do.
+const { browser, page, errors } = await open(url, { viewport: { width: 1728, height: 1080 }, scale });
 try {
   await control(url, `/pick?seconds=60&size=1080${codec}`);
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  await page.waitForFunction(
-    () => {
-      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-      return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
-    },
-    null,
-    { timeout: 180000, polling: 250 },
-  );
+  // The page is opened afresh for every round, so no round finds the frames
+  // the one before kept, and each times what a first walk of a clip costs.
+  // The Go side stays as it is, the way the app stays open.
+  const ready = async () => {
+    await page.waitForFunction(
+      () => {
+        const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+        const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+        return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
+      },
+      null,
+      { timeout: 180000, polling: 250 },
+    );
+    await page.evaluate((fps) => {
+      // The moment a key goes down, before the app hears it.
+      window.addEventListener("keydown", () => (window.__keyAt = performance.now()), { capture: true });
+      // Resolves with the milliseconds from the last key until the video
+      // preview shows the frame that holds the playhead, or -1 after 3 s.
+      window.__followed = (before) =>
+        new Promise((done) => {
+          const check = () => {
+            const s = document.querySelector(".screen");
+            const at = Number(s?.dataset.playhead);
+            const shown = Number(s?.dataset.shown);
+            const holds = Math.floor(at * fps + 1e-6) / fps;
+            const took = performance.now() - window.__keyAt;
+            if (at !== before && Math.abs(shown - holds) < 1e-3) done(took);
+            else if (took > 3000) done(-1);
+            else requestAnimationFrame(check);
+          };
+          check();
+        });
+    }, fps);
+  };
   const fps = 25;
-  await page.evaluate((fps) => {
-    // The moment a key goes down, before the app hears it.
-    window.addEventListener("keydown", () => (window.__keyAt = performance.now()), { capture: true });
-    // Resolves with the milliseconds from the last key until the video
-    // preview shows the frame that holds the playhead, or -1 after 3 s.
-    window.__followed = (before) =>
-      new Promise((done) => {
-        const check = () => {
-          const s = document.querySelector(".screen");
-          const at = Number(s?.dataset.playhead);
-          const shown = Number(s?.dataset.shown);
-          const holds = Math.floor(at * fps + 1e-6) / fps;
-          const took = performance.now() - window.__keyAt;
-          if (at !== before && Math.abs(shown - holds) < 1e-3) done(took);
-          else if (took > 3000) done(-1);
-          else requestAnimationFrame(check);
-        };
-        check();
-      });
-  }, fps);
+  await ready();
 
   const times = new Map();
   const press = async (name, key) => {
@@ -73,7 +81,22 @@ try {
     await page.waitForTimeout(500);
   };
 
+  const seen = { streams: 0, continued: 0, kept: 0, parked: 0, size: "" };
+  const count = async () => {
+    const s = await page.evaluate(() => {
+      const s = window.__appFrames?.stats;
+      return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, size: s.first } : null;
+    });
+    if (!s) return;
+    for (const k of ["streams", "continued", "kept", "parked"]) seen[k] += s[k];
+    seen.size ||= s.size;
+  };
   for (let r = 0; r < rounds; r++) {
+    if (r > 0) {
+      await count();
+      await page.reload();
+      await ready();
+    }
     await pickClip();
     for (let i = 0; i < 8; i++) await press("Shift+Right, a word on", "Shift+ArrowRight");
     for (let i = 0; i < 3; i++) await press("Left, a frame back", "ArrowLeft");
@@ -85,10 +108,8 @@ try {
     }
   }
 
-  const stats = await page.evaluate(() => {
-    const s = window.__appFrames?.stats;
-    return s ? { streams: s.streams, continued: s.continued, kept: s.kept, parked: s.parked, size: s.first } : null;
-  });
+  await count();
+  const stats = seen;
   const q = (xs, p) => xs[Math.min(xs.length - 1, Math.floor(p * xs.length))];
   const rows = [...times].map(([name, xs]) => {
     const ok = xs.filter((x) => x >= 0).sort((a, b) => a - b);
