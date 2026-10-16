@@ -2782,9 +2782,10 @@ the paperclip's open box, from a drop anywhere on the window, or from a
 paste into the field. Ten at most and 10 MB each. A picture is PNG or
 JPEG, decoded and written again as PNG, so nothing the file held besides
 the picture travels, a place or a camera among it. A recording is what
-the usual screen recorders make, plan row 2.267: MOV from the Mac's own
-recorder and QuickTime, MP4 from Windows, phones and OBS, WebM from the
-GNOME and KDE recorders and browsers, MKV from OBS. It is judged by its
+the usual screen recorders make, plan row 2.267: a video the app takes,
+see [Which files are videos](#which-files-are-videos), which is what the
+Mac's own recorder, QuickTime, Windows, phones and OBS make, or WebM,
+which the GNOME and KDE recorders and browsers make. It is judged by its
 first bytes and then by the ffmpeg the app ships, made to read it as
 that kind and nothing else, and copied stream by stream, its picture and
 its sound untouched, without what the file said about itself, the

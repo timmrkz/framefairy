@@ -324,7 +324,7 @@ func (s *FrameFairy) AttachPictures() ReportDraft {
 			return s.app.Dialog.OpenFile().
 				SetTitle("Attach screenshots or recordings").
 				CanChooseFiles(true).
-				AddFilter("Screenshots and recordings", "*.png;*.jpg;*.jpeg;*.mov;*.mp4;*.m4v;*.webm;*.mkv").
+				AddFilter("Screenshots and recordings", "*.png;*.jpg;*.jpeg;"+recordingPattern()).
 				PromptForMultipleSelection()
 		}
 	}

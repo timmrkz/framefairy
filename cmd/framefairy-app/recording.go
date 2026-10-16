@@ -24,9 +24,9 @@ import (
 // Screen recordings in Report a Problem, plan row 2.267. A walk through a
 // problem says more than a screenshot, so a report takes the recordings
 // the usual screen recorders make, within the same 10 MB a picture may
-// have: MOV from the Mac's own recorder and QuickTime, MP4 from Windows,
-// phones and OBS, WebM from the GNOME and KDE recorders and browsers, and
-// MKV from OBS.
+// have: the videos the app takes, see engine.VideoExtensions, which the
+// Mac's own recorder, QuickTime, Windows, phones and OBS make, and WebM,
+// which the GNOME and KDE recorders and browsers make.
 //
 // What a file is, is judged by its first bytes and then by the ffmpeg the
 // app ships, made to read it as that kind and nothing else, so a file
@@ -36,8 +36,20 @@ import (
 // same way a picture is written again without its camera. The tile shows
 // a still of its first frame.
 
-// recordingEndings are the endings a recording is kept under.
-var recordingEndings = []string{"mov", "mp4", "m4v", "webm", "mkv"}
+// recordingEndings are the endings a recording is kept under: those of
+// the videos the app takes, and WebM.
+var recordingEndings = func() []string {
+	var all []string
+	for _, ext := range engine.VideoExtensions {
+		all = append(all, strings.TrimPrefix(ext, "."))
+	}
+	return append(all, "webm")
+}()
+
+// recordingPattern is recordingEndings as the filter of a file box.
+func recordingPattern() string {
+	return engine.VideoPattern() + ";*.webm"
+}
 
 // recordingTime is how long ffprobe or ffmpeg may take over a recording
 // of 10 MB, which they copy in well under a second.
@@ -172,7 +184,9 @@ func copyRecording(ctx context.Context, ffmpeg, reader, in, out, name string) (s
 		}
 		tries = append(tries, kind{"mkv", "matroska"})
 	} else {
-		if had == "mp4" || had == "m4v" {
+		// An MPEG-4 file is kept as one, and anything else of its family
+		// as a QuickTime file, which takes whatever the family holds.
+		if mpeg4(had) {
 			tries = append(tries, kind{had, "mp4"})
 		}
 		tries = append(tries, kind{"mov", "mov"})
@@ -219,4 +233,9 @@ func stillOf(ctx context.Context, ffmpeg, in, out string) ([]byte, error) {
 // isRecordingEnding says whether a kept draft may name ending.
 func isRecordingEnding(ending string) bool {
 	return slices.Contains(recordingEndings, ending)
+}
+
+// mpeg4 says whether an ending is one of an MPEG-4 file.
+func mpeg4(ending string) bool {
+	return ending == "mp4" || ending == "m4v"
 }
