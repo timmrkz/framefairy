@@ -975,11 +975,12 @@ func (b *bridge) pickPicture(name, w, h, kind string, box bool) (string, error) 
 	path := filepath.Join(dir, filepath.Base(name))
 	var data []byte
 	if kind == "recording" {
-		// A recording of three seconds the way the Mac's own recorder
-		// makes one, H.264 and AAC in a MOV, with a sound.
+		// A recording of three seconds in a MOV, the way the Mac's own
+		// recorder makes one, with a sound. MPEG-4 and not H.264, which
+		// the ffmpeg the app ships cannot make.
 		if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
 			"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=%dx%d:rate=30:duration=3", width, height),
-			"-f", "lavfi", "-i", "sine=f=440:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+			"-f", "lavfi", "-i", "sine=f=440:d=3", "-c:v", "mpeg4", "-c:a", "aac",
 			"-shortest", "-f", "mov", path).CombinedOutput(); err != nil {
 			return "", fmt.Errorf("ffmpeg: %v: %s", err, out)
 		}
