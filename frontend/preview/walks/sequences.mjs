@@ -6671,7 +6671,7 @@ for (const seq of toWalk) {
         const before = await mark();
         const grip = page.locator(handle === "bar" ? ".aim .bar.top" : `.aim .tip.top.${handle}`);
         const box = await grip.boundingBox().catch(() => null);
-        const track = await page.locator(".track.asks").boundingBox();
+        const track = await page.getByLabel("The range picker", { exact: true }).boundingBox();
         if (!before || !box) {
           wrong = "the range picker shows no window to take hold of";
           break;
