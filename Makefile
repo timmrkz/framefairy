@@ -330,6 +330,16 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
 
+# In a cloud session the decoder is built in the background as the session
+# starts, see scripts/cloud-decoder.sh, and the targets that run it wait
+# for that build here, before they look for it. Without the wait, a test
+# run in the first minutes skips the decoder's tests and still says ok.
+ifeq ($(CLAUDE_CODE_REMOTE),true)
+ifneq ($(filter changed unit walks test,$(MAKECMDGOALS)),)
+$(shell bash scripts/cloud-decoder.sh wait >&2)
+endif
+endif
+
 # The tests run the decoder that is built, so one older than its code is
 # built again before them, or new tests meet an old decoder and fail for
 # no reason in the change. Only one that is there and can be built again:

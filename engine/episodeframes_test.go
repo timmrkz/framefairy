@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestTheEpisodesDecoderHandsOverTheFramesFFmpegDoes(t *testing.T) {
 		})
 		times := NewPreviewTimes()
 		got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, from, 160, 90, got)
+			return dec.Stream(WithPreviewTimes(context.Background(), times), grid, from, 160, 90, nil, got)
 		})
 		if times.File.Load() != (i == 0) {
 			t.Errorf("stream %d from %.2f opened the file: %v, want only the first to", i, from, times.File.Load())
@@ -169,7 +170,7 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 			return e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(j.from)), 160, 90, got)
 		})
 		gotAts, got := collect(func(got func(float64, []byte) error) error {
-			return dec.Stream(context.Background(), grid, j.from, 160, 90, got)
+			return dec.Stream(context.Background(), grid, j.from, 160, 90, nil, got)
 		})
 		if len(got) != len(want) {
 			t.Fatalf("from %.2f the decoder gave %d frames, ffmpeg %d", j.from, len(got), len(want))
@@ -227,6 +228,72 @@ func TestTheEpisodesDecoderDecodesAJumpNoFurtherThanItMust(t *testing.T) {
 	}
 }
 
+// A stream told to skip hands over no frame before the moment it names,
+// beyond the ones the decoder was asked for already: a jump forward in an
+// open stream costs the decoding of the frames on the way, not making
+// pictures of them that are thrown away. The frame at the moment is still
+// the one the ffmpeg program hands over. Plan row 2.269.
+//
+// On the real disk: ffmpeg makes the episode and the frames decoder reads it.
+func TestTheEpisodesDecoderMakesNoFrameBeforeTheSkip(t *testing.T) {
+	ffmpegtest.Need(t)
+	program := os.Getenv("FRAMEFAIRY_FRAMES")
+	if program == "" {
+		ffmpegtest.Unusable(t, "FRAMEFAIRY_FRAMES names no framefairy-frames, which make frames builds")
+	}
+	path := filepath.Join(t.TempDir(), "episode.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi",
+		"-i", "testsrc2=s=320x180:r=25:d=4", "-c:v", "mpeg4", "-q:v", "3", "-g", "50", "-bf", "2", path).CombinedOutput(); err != nil {
+		ffmpegtest.Unusable(t, "ffmpeg could not make an episode: %s %s", err, out)
+	}
+	e := NewEngine(NewLog(nil, false, false), disk)
+	e.FFmpeg, e.FFprobe = "ffmpeg", "ffprobe"
+	dec := NewEpisodeFrames(program, path)
+	defer dec.Close()
+	grid := gridOf(t, path)
+	// Two frames from 0.2 s, then a jump to 1.6 s, before the key frame at
+	// 2 s, in the same stream, the way a word jump reads on.
+	const to = 1.6
+	var skip atomic.Uint64
+	var ats []float64
+	var at []byte
+	err := dec.Stream(context.Background(), grid, 0.2, 160, 90, func() float64 {
+		return math.Float64frombits(skip.Load())
+	}, func(a float64, data []byte) error {
+		ats = append(ats, a)
+		if len(ats) == 2 {
+			skip.Store(math.Float64bits(grid.At(grid.Holding(to)) - 0.02))
+		}
+		if a >= to-0.02 {
+			at = data
+			return errStop
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errStop) {
+		t.Fatal(err)
+	}
+	if last := ats[len(ats)-1]; math.Abs(last-grid.At(grid.Holding(to))) > 1e-6 {
+		t.Fatalf("the stream went on to %.4f s, want the frame at %.4f s", last, grid.At(grid.Holding(to)))
+	}
+	// The two taken, the frames asked for before the skip was known, and
+	// at most a batch more that was asked for as the skip was set. Without
+	// the skip all 35 frames from 0.2 s come.
+	if n := len(ats) - 1; n > 2+2*ahead {
+		t.Errorf("the stream handed over %d frames before %.1f s, want no more than %d: %v", n, to, 2+2*ahead, ats)
+	}
+	var want []byte
+	if err := e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(to)), 160, 90, func(_ float64, data []byte) error {
+		want = data
+		return errStop
+	}); err != nil && !errors.Is(err, errStop) {
+		t.Fatal(err)
+	}
+	if d := meanDiff(at, want); d > 2 {
+		t.Errorf("the frame at %.1f s differs from ffmpeg's by %.2f on average", to, d)
+	}
+}
+
 // The decoder of an episode open in the video preview is started before
 // any frame is asked for, with its cursors on the file, so the first frame
 // asked for only moves one. Plan row 2.156.
@@ -262,7 +329,7 @@ func TestTheEpisodesDecoderIsReadyBeforeTheFirstFrame(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	times := NewPreviewTimes()
-	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, func(float64, []byte) error { return errStop })
+	err := dec.Stream(WithPreviewTimes(context.Background(), times), gridOf(t, path), 1.5, 160, 90, nil, func(float64, []byte) error { return errStop })
 	if !errors.Is(err, errStop) {
 		t.Fatal(err)
 	}
@@ -345,7 +412,7 @@ func TestTheEpisodesDecoderTakesStreamsFromEverywhereAtOnce(t *testing.T) {
 					cancel()
 				}
 				last, n := -1.0, 0
-				err := dec.Stream(ctx, grid, from, 64, 36, func(at float64, data []byte) error {
+				err := dec.Stream(ctx, grid, from, 64, 36, nil, func(at float64, data []byte) error {
 					if at < grid.At(grid.Holding(from))-1e-6 || at <= last {
 						t.Errorf("a stream from %.1f got a frame at %.3f after %.3f", from, at, last)
 					}
@@ -447,7 +514,7 @@ func TestTheEpisodesDecoderPlaysTheFilesPeopleBring(t *testing.T) {
 					return nil
 				}
 			}
-			if err := dec.Stream(context.Background(), grid, from, 160, 90, collect(&got, &gotData)); err != nil && !errors.Is(err, errStop) {
+			if err := dec.Stream(context.Background(), grid, from, 160, 90, nil, collect(&got, &gotData)); err != nil && !errors.Is(err, errStop) {
 				t.Fatalf("%s from %.2f: %v", k.name, from, err)
 			}
 			if err := e.PreviewFrames(context.Background(), path, grid.At(grid.Holding(from)), 160, 90, collect(&want, &wantData)); err != nil && !errors.Is(err, errStop) {
@@ -548,7 +615,7 @@ func TestTheEpisodesDecoderAgreesOnAPictureThatStartsLate(t *testing.T) {
 		for _, from := range []float64{0, 0.2, 0.31, 0.35, 1.0, 1.02, 2.3} {
 			first := grid.Holding(from)
 			var got []frame
-			err := dec.Stream(context.Background(), grid, from, 160, 90, func(at float64, data []byte) error {
+			err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(at float64, data []byte) error {
 				got = append(got, frame{at, data})
 				if len(got) == 6 {
 					return errStop
@@ -631,7 +698,7 @@ func TestTheEpisodesDecoderGivesTheFramesBeforeAnOpenKeyFrame(t *testing.T) {
 	grid := gridOf(t, path)
 	for _, from := range leading {
 		var got []float64
-		err := dec.Stream(context.Background(), grid, from, 160, 90, func(at float64, _ []byte) error {
+		err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(at float64, _ []byte) error {
 			got = append(got, at)
 			if len(got) == 4 {
 				return errStop
@@ -761,7 +828,7 @@ func TestTheEpisodesDecoderComesBackFromTheEnd(t *testing.T) {
 	grid := gridOf(t, path)
 	count := func(from float64, most int) int {
 		n := 0
-		err := dec.Stream(context.Background(), grid, from, 160, 90, func(float64, []byte) error {
+		err := dec.Stream(context.Background(), grid, from, 160, 90, nil, func(float64, []byte) error {
 			n++
 			if n == most {
 				return errStop
@@ -867,7 +934,7 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		}
 		dec := NewEpisodeFrames(program, path)
 		var frame []byte
-		err := dec.Stream(context.Background(), gridOf(t, path), 0, w, h, func(_ float64, data []byte) error {
+		err := dec.Stream(context.Background(), gridOf(t, path), 0, w, h, nil, func(_ float64, data []byte) error {
 			frame = data
 			return errStop
 		})
@@ -1004,7 +1071,7 @@ func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T)
 	before := cursor()
 	asked := make(chan error, 1)
 	go func() {
-		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36,
+		asked <- dec.Stream(context.Background(), framewire.Grid{Num: 1, Den: 1, Count: 1}, 0, 64, 36, nil,
 			func(float64, []byte) error { return nil })
 	}()
 	var err error

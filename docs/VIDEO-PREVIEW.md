@@ -200,7 +200,16 @@ closed for standing unused.
   and while paused decoding the frames on either side of the playhead
   before they are asked for. The interface keeps the frames it was given,
   which covers a step back, so this waits until the marks say it is
-  needed, with plan row 2.157.
+  needed, with plan row 2.157. The interface asks for the frames a step
+  goes to next, plan row 2.269: paused with nothing under the hand, the
+  first frame of the word after the playhead and of the word before, the
+  way Shift and an arrow walk, once the frame the hand asked for has
+  come, see `AppFrames.ahead`. A jump forward in an open stream brings
+  the frame before it too, for the arrow to the left. The decoder is told
+  the moment before which nothing is wanted, `next` with a skip, so the
+  frames a jump passes are decoded but never scaled. While the playhead
+  is dragged, each place it passes shows its frame alone and cues no
+  play, `FrameQueue.grip`, and the play is cued where the hand lets go.
 - The routes the interface reads from, `/frames/open`, `/frames/sound`,
   `/frames/read` and `/frames/close`, stay as they are. The interface
   cannot tell whether a frame came from it or from the ffmpeg program.

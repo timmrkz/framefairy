@@ -3154,6 +3154,7 @@
         bind:numbers
         bind:drawn
         onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
+        onahead={(times) => player?.ahead(times)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}
