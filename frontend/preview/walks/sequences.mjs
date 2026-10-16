@@ -8791,7 +8791,7 @@ async function toastSays(page) {
 // report's field, and the main column under the bar.
 async function standsAt(page) {
   return page.evaluate(() =>
-    [".workspace.front .stage", "main", ".report .field, [contenteditable]"].map((q) => {
+    [".workspace.front .stage", "main", ".telling"].map((q) => {
       const r = document.querySelector(q)?.getBoundingClientRect();
       return r ? [q, r.x, r.y, r.width, r.height] : [q];
     }),
