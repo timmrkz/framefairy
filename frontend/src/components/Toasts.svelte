@@ -10,22 +10,20 @@
   // over whatever is there and move nothing, so the workspace stands where
   // it stood when one comes and goes. Plan row 2.268, see toast.svelte.ts.
   //
-  // A toast stays until it is read. The pointer on it reads it: from then
-  // on its time runs down in the fill a removed clip's runs down in,
-  // standing still while the pointer is on it, and it goes when the time
-  // is over. The cross closes it at once. Before the pointer has been on
-  // it, nothing takes it away but the place it came from, so a toast that
-  // came while the person looked elsewhere is still there when they look.
+  // Its time runs down from the moment it comes, in the fill a removed
+  // clip's runs down in, the way a toast does everywhere else. It stands
+  // still while the pointer is on it, so a toast being read is not taken
+  // away, and the cross closes it at once. It once waited for the pointer
+  // before its time began, and Tim found a toast that never went.
   //
   // shown says which toasts belong in this window now: a toast about a
   // video waits while another video is on screen.
   let { shown = () => true }: { shown?: (t: Toast) => boolean } = $props();
 
-  // How long a toast stays once it has been read and the pointer has
-  // left it, in seconds.
-  const afterRead = 6;
+  // How long a toast stays, in seconds, the pointer on it aside. Long
+  // enough to read a reason with a file's whole name in it.
+  const stays = 8;
 
-  let read = $state<Record<number, boolean>>({});
   const list = $derived(toasts.list.filter((t) => shown(t)));
 </script>
 
@@ -35,7 +33,6 @@
       class="toast busyhost"
       role="alert"
       data-id={t.id}
-      onpointerenter={() => (read[t.id] = true)}
       animate:flip={{ duration: 150 }}
       out:fade={{ duration: 150 }}
     >
@@ -44,9 +41,7 @@
       <button class="quiet bin close" aria-label="Close" title="Close" onclick={() => toasts.close(t.id, "closed")}>
         <Icon name="close" />
       </button>
-      {#if read[t.id]}
-        <Busy drain={afterRead} onend={() => toasts.close(t.id, "read")} />
-      {/if}
+      <Busy drain={stays} onend={() => toasts.close(t.id, "ran out")} />
     </div>
   {/each}
 </div>
@@ -67,15 +62,18 @@
     pointer-events: none;
   }
 
+  /* The red of what went wrong laid over the dark of the app, the way a
+     removed row wears it, and no line round it. A grey note with a thin
+     red line was a look the app has nowhere else, and Tim found it wrong.
+     Solid, since it lies over whatever is under it. */
   .toast {
     display: flex;
     align-items: flex-start;
     gap: 8px;
     padding: 6px 6px 6px 12px;
-    border: 1px solid color-mix(in srgb, var(--err) 45%, var(--line));
     border-radius: var(--radius-m);
-    background: var(--ink-2);
-    color: var(--text);
+    background: color-mix(in srgb, var(--err) 16%, var(--ink-1));
+    color: color-mix(in srgb, var(--err) 30%, var(--text));
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     pointer-events: auto;
     animation: arrive 0.18s ease-out;
@@ -104,7 +102,7 @@
   }
 
   .close {
-    color: var(--muted);
+    color: inherit;
   }
 
   @keyframes arrive {

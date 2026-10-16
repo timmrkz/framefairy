@@ -228,10 +228,11 @@
 //                      toast is there. Nothing under it moved since the
 //                      step before it, and the line beside the report's
 //                      buttons says nothing (2.268)
-//   ["toast stays"]    the toast stands for seven seconds with the
-//                      pointer away from it, since nothing has read it
-//   ["toast read"]     the pointer comes onto the toast and goes, and the
-//                      toast goes within eight seconds
+//   ["toast goes"]     with the pointer away, the toast is still there
+//                      after two seconds and gone by itself within twelve
+//   ["toast held"]     the pointer stays on the toast longer than its time
+//                      and it stays, then the pointer goes and so does the
+//                      toast, within twelve seconds
 //   ["toast closed"]   presses the cross on the toast, and it goes
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
@@ -2553,15 +2554,17 @@ export const sequences = [
   {
     // Plan row 2.268. Tim dropped a picture on the app and a red line
     // over the workspace pushed it all down. What went wrong with nothing
-    // on screen about it is a toast that moves nothing, stays until it is
-    // read, goes a few seconds after the pointer has been on it, and goes
-    // at once by its cross.
-    name: "a file that is not a video is said in a toast that moves nothing and stays until read",
+    // on screen about it is a toast that moves nothing, goes by itself
+    // after a while the way toasts do, stays while the pointer is on it,
+    // and goes at once by its cross.
+    name: "a file that is not a video is said in a toast that moves nothing and goes by itself unless held",
     steps: [
       ["drop not a video", "workspace"],
       ["not a video"],
-      ["toast stays"],
-      ["toast read"],
+      ["toast goes"],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["toast held"],
       ["drop not a video", "workspace"],
       ["not a video"],
       ["toast closed"],
@@ -5769,27 +5772,28 @@ for (const seq of toWalk) {
         else wrong = await stillStands(page, standing);
         break;
       }
-      case "toast stays": {
+      case "toast goes": {
+        // Its time runs from the moment it comes, with no hand on it. Tim
+        // found a toast that waited for the pointer before its time began.
         await page.mouse.move(2, 400);
-        await page.waitForTimeout(7000);
-        if (!(await toastSays(page))) wrong = "the toast went by itself, before the pointer had been on it";
+        await page.waitForTimeout(2000);
+        if (!(await toastSays(page))) {
+          wrong = "the toast went within two seconds, too soon to be read";
+          break;
+        }
+        if (!(await gone(page, ".toast", 10000))) wrong = "the toast was still there twelve seconds after it came, with the pointer away";
         break;
       }
-      case "toast read": {
+      case "toast held": {
         const box = await page.locator(".toast .text").first().boundingBox();
         await page.mouse.move(box.x + 4, box.y + box.height / 2);
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(9500);
         if (!(await toastSays(page))) {
           wrong = "the toast went while the pointer was on it";
           break;
         }
         await page.mouse.move(2, 400);
-        let left = true;
-        for (let i = 0; i < 80 && left; i++) {
-          await page.waitForTimeout(100);
-          left = (await page.locator(".toast").count()) > 0;
-        }
-        if (left) wrong = "the toast was still there eight seconds after the pointer left it";
+        if (!(await gone(page, ".toast", 12000))) wrong = "the toast was still there twelve seconds after the pointer left it";
         break;
       }
       case "toast closed": {
@@ -8796,6 +8800,14 @@ async function standsAt(page) {
       return r ? [q, r.x, r.y, r.width, r.height] : [q];
     }),
   );
+}
+
+// Whether nothing matches selector within ms.
+async function gone(page, selector, ms) {
+  for (const end = Date.now() + ms; Date.now() < end; await page.waitForTimeout(100)) {
+    if ((await page.locator(selector).count()) === 0) return true;
+  }
+  return (await page.locator(selector).count()) === 0;
 }
 
 // Says what moved since standsAt was read, or null.

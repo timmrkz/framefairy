@@ -9,9 +9,9 @@
 // comes from: a newer reason replaces the older one, and the place takes
 // it away when what it was about is done again and goes well. A toast
 // about a video shows while that video is on screen and waits while it is
-// not. Nothing goes on a timer alone: a toast stays until the person
-// closes it, or until the pointer has been on it and left again, and then
-// the time it has left runs down the way a removed clip's does.
+// not. Its time runs down from the moment it shows, the way a removed
+// clip's does, and stands still while the pointer is on it. Its cross
+// closes it at once.
 
 import { said } from "./said";
 
@@ -53,8 +53,8 @@ class Toasts {
     this.list = this.list.filter((t) => t.from !== from);
   }
 
-  // The person closed it, or its time ran out after they had read it.
-  close(id: number, how: "closed" | "read") {
+  // The person closed it, or its time ran out.
+  close(id: number, how: "closed" | "ran out") {
     const t = this.list.find((x) => x.id === id);
     if (!t) return;
     said(`toast ${how}: ${t.text}`, { level: "info", video: t.video });

@@ -1909,14 +1909,16 @@ macOS brings its own notes in, and moves nothing under it. Each place
 that can go wrong has one toast at a time: a newer reason replaces the
 older one, and the place takes it away when what it was about is done
 again and goes well. A toast about a video shows while that video is on
-screen and waits while another is. Nothing goes on a timer alone. A
-toast stays until its cross is clicked, or until the pointer has been
-on it and left again, and then the time it has left, six seconds, runs
-down in the fill a removed clip's runs down in, standing still while
-the pointer is back on it. A toast that came while the person looked
-elsewhere is still there when they look. Every toast and how it went is
-in the log, `toast:` when it came and `toast closed:` or `toast read:`
-when it went.
+screen and waits while another is. Its time, eight seconds, runs down
+from the moment it comes, in the fill a removed clip's runs down in,
+and stands still while the pointer is on it. Its cross takes it away at
+once. It wears the red of a removed row over the dark of the app, with
+no line round it. The first one waited for the pointer before its time
+began and had a thin red line round a grey note, and Tim found both
+wrong: a toast counts down by itself, and a look the app has nowhere
+else reads as a mistake. Every toast and how it went is in the log,
+`toast:` when it came and `toast closed:` or `toast ran out:` when it
+went.
 
 What has a place of its own keeps it: a clip that failed says so on its
 card, a search that stopped in its row, a missing file in the line over

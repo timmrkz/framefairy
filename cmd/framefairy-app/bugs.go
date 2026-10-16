@@ -379,9 +379,13 @@ func (s *FrameFairy) markPicture(id string, removed bool) ReportDraft {
 		return r.shown(fmt.Sprintf("A report takes %d pictures and recordings at most", picturesMax))
 	}
 	r.draft.Pictures[i].Removed = removed
-	how := "a picture was put back"
+	what := "a picture"
+	if r.draft.Pictures[i].Recording != "" {
+		what = "a recording"
+	}
+	how := what + " was put back"
 	if removed {
-		how = "a picture was removed"
+		how = what + " was removed"
 	}
 	theLog.line(zerolog.InfoLevel, "report").Str("picture", id).Msg(how)
 	if err := r.keep(); err != nil {
