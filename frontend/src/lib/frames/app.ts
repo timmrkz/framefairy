@@ -234,6 +234,12 @@ class Stream {
       else still.push(w);
     }
     this.waiting = still;
+    if (!this.handWaits) this.owner.aheadNow();
+  }
+
+  // Whether a frame the hand asked for is still to come from this stream.
+  get handWaits(): boolean {
+    return !this.ended && this.waiting.some((w) => !w.ahead && !w.gone);
   }
 
   private end(why: string) {
@@ -274,6 +280,8 @@ export class AppFrames {
   asked = 0;
   // The frames read ahead of the hand, withdrawn by the hand's next ask.
   private aheadOf = new Set<Waiter>();
+  // The ranks to read ahead once the hand waits for nothing, see ahead.
+  private aheadWanted: number[] | null = null;
   // first is the size the first stream was opened at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
   // ones, for the walks.
@@ -305,6 +313,7 @@ export class AppFrames {
     const was = this.parked;
     this.parked = [];
     for (const w of was) this.route(w);
+    this.aheadNow();
   }
 
   // A stream gave its first frame: how long that took here, from asking to
@@ -357,8 +366,22 @@ export class AppFrames {
   // in the stream that reads on to them, and a stream opened for one never
   // holds up a place the hand asks for. Any newer ask of the hand
   // withdraws them, see still. Plan row 2.269.
+  //
+  // They are asked only once nothing the hand asked for is still to come.
+  // Asked at once, the frame under the hand came 80 to 120 ms later when a
+  // drag of the playhead let go, measured with speed.mjs: the frames read
+  // ahead competed with it for the decoder and for the streams.
   ahead(ranks: number[]) {
     this.still();
+    this.aheadWanted = ranks;
+    this.aheadNow();
+  }
+
+  // Asks the frames read ahead once the hand waits for nothing.
+  aheadNow() {
+    const ranks = this.aheadWanted;
+    if (!ranks || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
+    this.aheadWanted = null;
     const { width, height } = this.size();
     for (const rank of ranks) {
       const have = this.kept.get(rank);
@@ -373,6 +396,7 @@ export class AppFrames {
   // The hand asks again: what was read ahead for where it was is not
   // wanted any more.
   still() {
+    this.aheadWanted = null;
     for (const w of this.aheadOf) w.gone = true;
     this.aheadOf.clear();
   }
