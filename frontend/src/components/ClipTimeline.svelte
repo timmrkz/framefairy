@@ -1326,11 +1326,12 @@
     }
   }
 
-  // Where the playhead goes for the start of a caption put on a word with
-  // shift: into its first word, the way a click on the caption goes, see
-  // firstWordOf. A word starts between two frames, and the frame that holds
-  // its start begins before it, where the caption is not up yet. Tim saw
-  // nothing in the video preview to snap to on #294.
+  // Where the playhead goes for the start of a caption that begins on its
+  // first word, pressed or put there with shift: into the word, the way a
+  // click on the caption goes, see firstWordOf. A word starts between two
+  // frames, and the frame that holds its start begins before it, where the
+  // caption is not up yet. Tim saw nothing in the video preview to snap to
+  // on #294, and the caption before it on pressing the edge.
   function captionAppears(c: CaptionCue): number {
     const word = c.lines?.[0]?.words?.[0];
     return word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
@@ -1548,8 +1549,8 @@
   // every move. How far it may go, and which word it lands on, is the
   // engine's to say. The playhead goes with it the way it goes with every
   // edge, onto the frame the caption appears on or the last it is up on,
-  // where the engine put it when that is on a word, and a double-click puts
-  // a moved edge back.
+  // see captionAppears, where the engine put it when that is on a word, and
+  // a double-click puts a moved edge back.
   function captionEdgeGrip(i: number, edge: "start" | "end"): Grip | null {
     if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return null;
     const c = captions[i];
@@ -1563,7 +1564,7 @@
     capHeld = captions;
     capFor++;
     return {
-      at: playing ? null : playheadAt(from),
+      at: playing ? null : playheadAt(edge === "start" ? captionAppears(c) : from),
       about: "clip",
       twice: () => resetCaption(i, edge),
       drag(delta, shift) {

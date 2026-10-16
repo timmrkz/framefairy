@@ -2156,7 +2156,8 @@ moved by hand, on the clip timeline.
   goes with it, for an end onto the last frame the caption is up on, and
   for a start into its first word, the way a click on the caption goes,
   because the frame that holds a word's start begins before it, where the
-  caption is not up yet. Tim saw nothing to snap to there. The edges of a caption used to move a frame
+  caption is not up yet. Tim saw nothing to snap to there. A click on the
+  start edge puts the playhead there too. The edges of a caption used to move a frame
   at a time with shift or without, found by Tim.
 - **An edge dragged over a word removes it.** Dragged in, an edge takes
   out of its caption every word whose middle it passes, the way delete

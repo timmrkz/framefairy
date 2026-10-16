@@ -540,6 +540,9 @@
 //   ["drawn", word]    the video preview shows the caption holding the
 //                      word where the playhead stands, letters drawn and the
 //                      caption box holding the word
+//   ["caption edge", [edge, word]]
+//                      clicks the "start" or "end" edge of the caption
+//                      holding the word on the clip timeline, without moving
 //   ["one pill", word] the word opened while another is lit sits on the
 //                      colour of the pill libass draws round it lit, with no
 //                      ring of another shade round it and no focus ring
@@ -1008,6 +1011,19 @@ export const sequences = [
       ["edge out", ["end", "Schulhof"]],
       ["fewer", "start", 0],
       ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    // A click on the edge where a caption appears put the playhead on the
+    // frame that holds its first word's start, which begins before the
+    // word, where the caption is not up yet. Tim saw it on #294.
+    // Its caption starts at 10.15 s, between two frames of the test video.
+    name: "a click on either edge of a caption shows the caption",
+    steps: [
+      ["caption edge", ["start", "jedenfalls"]],
+      ["drawn", "jedenfalls"],
+      ["caption edge", ["end", "jedenfalls"]],
+      ["drawn", "jedenfalls"],
     ],
   },
   {
@@ -7002,6 +7018,19 @@ for (const seq of toWalk) {
         else if (ats[0] < second - 1e-6 || ats[0] > second + 1) {
           wrong = `the play went on from ${ats[0].toFixed(3)}, not from ${second.toFixed(3)} where the hand let go`;
         }
+        break;
+      }
+      case "caption edge": {
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const i = now.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        if (i < 0) {
+          wrong = `no caption has "${text}"`;
+          break;
+        }
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        await page.locator(`.clip-timeline [aria-label="${label}"]`).first().click();
+        await watch.step(what, s);
         break;
       }
       case "drawn": {
