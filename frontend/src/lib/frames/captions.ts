@@ -330,6 +330,10 @@ export type CaptionAsk = { path: string; clip: string; track: string; drafts: Re
 // frames ahead, see FrameQueue.over.
 const KEPT = 48;
 const GOING = 3;
+// How many frames that asked ahead may wait for room among the GOING, the
+// frames a decoder holds and those of the next piece's decoder with room
+// to spare, see DEPTH in queue.ts.
+const AHEAD = 12;
 
 // How long a layer that did not come waits before it is asked for again,
 // once, in milliseconds. A layer that fails is not kept, so the next frame
@@ -423,6 +427,12 @@ export class CaptionLayers {
   // its way has come. It carries its own ask, so a layer asked for after
   // the ask changed is never asked for with the new one.
   private waiting: Wanted | null = null;
+  // The frames on their way to the screen that asked ahead while GOING
+  // layers were on their way, asked for in turn as room comes, after the
+  // frame drawn waiting for its own. They were dropped before, so on a
+  // busy machine a frame was drawn with the layer of the frame before and
+  // only then asked for its own, plan row 2.278.
+  private ahead: Wanted[] = [];
   // The layer given last, which stays while the one for a newer frame, a
   // newer draft or a newer track of the same clip is on its way, so the
   // captions never blink off in between. Another clip's captions never stay.
@@ -469,7 +479,13 @@ export class CaptionLayers {
   // Whether a layer is on its way or a word bounces, for the walks: until
   // neither, the screen may not show what it shows next.
   get busy(): boolean {
-    return this.going.size > 0 || this.waiting !== null || this.popping || (this.lift !== null && !this.lift.word);
+    return (
+      this.going.size > 0 ||
+      this.ahead.length > 0 ||
+      this.waiting !== null ||
+      this.popping ||
+      (this.lift !== null && !this.lift.word)
+    );
   }
 
   // Whether the frame on screen was drawn with a layer not its own, the
@@ -483,6 +499,7 @@ export class CaptionLayers {
     if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
     if (key !== this.askKey) {
       this.waiting = null;
+      this.ahead = [];
       this.again.clear();
       this.callOff(() => true);
     }
@@ -507,7 +524,9 @@ export class CaptionLayers {
     // is on its way is the frame next to it, which a step may still want.
     if (this.still?.paused() !== false) return;
     const waiting = this.waiting?.key;
+    this.ahead = [];
     this.callOff((key) => key !== waiting);
+    this.more();
   }
 
   // Calls off the layers on their way that which picks, so their slots go
@@ -534,6 +553,10 @@ export class CaptionLayers {
     // so a second word step before it came bounces the word it lands on,
     // not the one it passed over.
     this.shownAt = frame;
+    // Playing, a frame that asked ahead and was drawn before its turn is
+    // the frame drawn now or one passed.
+    const playing = this.still?.paused() === false;
+    this.ahead = this.ahead.filter((a) => a.key !== want.key && (!playing || a.frame > frame));
     const have = this.kept.get(want.key);
     if (!have) {
       this.stats.late++;
@@ -653,7 +676,26 @@ export class CaptionLayers {
   // A frame that starts at frame is on its way to the screen.
   coming(frame: number, size: [number, number]) {
     const want = this.wanted(frame, size);
-    if (want && !this.kept.has(want.key)) this.fetch(want);
+    if (!want || this.kept.has(want.key) || this.going.has(want.key)) return;
+    if (this.going.size < GOING) {
+      this.fetch(want);
+      return;
+    }
+    if (this.ahead.some((a) => a.key === want.key)) return;
+    this.ahead.push(want);
+    if (this.ahead.length > AHEAD) this.ahead.shift();
+  }
+
+  // Asks for what waits for room: the frame drawn without its own layer
+  // first, unless its layer did not come and is asked for again in a
+  // moment, then the frames that asked ahead, in the order they asked.
+  private more(drawn = true) {
+    const w = this.waiting;
+    if (drawn && w && !this.kept.has(w.key)) this.fetch(w);
+    while (this.going.size < GOING && this.ahead.length > 0) {
+      const a = this.ahead.shift()!;
+      if (!this.kept.has(a.key)) this.fetch(a);
+    }
   }
 
   private fetch(want: Wanted) {
@@ -709,15 +751,17 @@ export class CaptionLayers {
             this.waiting = null;
             this.gaveUp(ask, "a layer", why);
           }
+          this.more(false);
           return;
         }
         // The frame drawn without its own layer is drawn again once it
-        // has come, and asked for once there is room.
-        if (!w) return;
-        if (this.kept.has(w.key)) {
+        // has come, and asked for once there is room, before the frames
+        // that asked ahead.
+        if (w && this.kept.has(w.key)) {
           this.waiting = null;
           this.came();
-        } else this.fetch(w);
+        }
+        this.more();
       });
   }
 }
