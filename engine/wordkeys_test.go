@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -229,5 +230,107 @@ func TestAFixFromBeforeStaysOnItsOwnWord(t *testing.T) {
 		if got, want := clipReads(t, fsys, path, tr), strings.Replace(c.want, "Und", "Und so", 1); got != want {
 			t.Errorf("after an edit a plan from before with %s reads %q, want %q", c.entry, got, want)
 		}
+	}
+}
+
+// edgeTranscript is captionHeard with a soft stretch before "Und", which
+// opens the second caption, that is sound with the silence level at
+// -50 dB and silence at -40 dB, so the level moves where "Und" starts.
+func edgeTranscript(silenceDB float64) *Transcript {
+	start := 59.0
+	var frames []float32
+	for i := range 800 {
+		at := start + float64(i)*FrameSeconds
+		level := float32(-70)
+		for _, w := range captionHeard() {
+			if at >= w.Start && at < w.End {
+				level = -20
+			}
+		}
+		if at >= 63.9 && at < 64.3 {
+			level = -45
+		}
+		frames = append(frames, level)
+	}
+	return fromStored(captionHeard(), frames, start, -30, &silenceDB)
+}
+
+// A caption edge moved by hand stays where it was put when the silence
+// level moves the word it is kept on. It was kept by where that word
+// starts on the sound, so a moved level left it meeting no word, and the
+// caption went back to where its words put it. Plan row 2.266.
+func TestAMovedCaptionEdgeHoldsWhenTheSilenceLevelMoves(t *testing.T) {
+	loud, quiet := edgeTranscript(-50), edgeTranscript(-40)
+	und := func(tr *Transcript) float64 { return tr.HeardWords[slicesIndex(tr.HeardWords, "Und")].Start }
+	if und(loud) == und(quiet) {
+		t.Fatalf("the test needs the level to move a word, Und starts at %.3f with both", und(loud))
+	}
+	fsys, path := captionPlanPath(t)
+	opening := func(tr *Transcript) CaptionView {
+		t.Helper()
+		view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range view.Captions {
+			if c.First == und(tr) {
+				return c
+			}
+		}
+		t.Fatalf("no caption opens on Und at %.3f", und(tr))
+		return CaptionView{}
+	}
+	before := opening(loud)
+	if _, err := SetCaptionTime(fsys, path, "01", before.First, "start", und(loud)-0.5, loud, nil); err != nil {
+		t.Fatal(err)
+	}
+	moved := opening(loud)
+	if !moved.StartMoved || moved.Start >= before.Start {
+		t.Fatalf("the caption starts at %.3f, moved %v, after its start was put 0.5 s earlier than %.3f",
+			moved.Start, moved.StartMoved, before.Start)
+	}
+	if got := opening(quiet); !got.StartMoved || math.Abs(got.Start-moved.Start) > 0.001 {
+		t.Errorf("with the level moved the caption starts at %.3f, moved %v, want %.3f where it was put",
+			got.Start, got.StartMoved, moved.Start)
+	}
+}
+
+// A caption moved by hand in a plan from before 2.266 is kept by where its
+// word starts on the sound. It still reads that way, and the next move of
+// either of its edges keeps both by the word's own key.
+func TestAMovedCaptionFromBeforeIsReadAndKeptAnew(t *testing.T) {
+	loud, quiet := edgeTranscript(-50), edgeTranscript(-40)
+	und := quiet.HeardWords[slicesIndex(quiet.HeardWords, "Und")].Start
+	fsys, path := writePlanAt(t, `{
+  "source": "ep.mp4",
+  "plan_id": "p1",
+  "clips": [
+    {"id": "01", "slug": "schulhof",
+     "segments": [{"start": 59.9, "end": 66.0}],
+     "caption_times": {"`+wordKey(und)+`": {"start": `+fixed(und-0.5, 3)+`}}}
+  ]
+}`)
+	second := func(tr *Transcript) CaptionView {
+		t.Helper()
+		view, err := ClipCaptionsView(fsys, path, "01", tr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view.Captions[len(view.Captions)-1]
+	}
+	from := second(quiet)
+	if !from.StartMoved {
+		t.Fatalf("a caption moved in a plan from before starts at %.3f, not moved", from.Start)
+	}
+	if _, err := SetCaptionTime(fsys, path, "01", from.Last, "end", from.End+0.3+59.9, quiet, nil); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := afero.ReadFile(fsys, path)
+	if strings.Contains(string(body), `"`+wordKey(und)+`"`) {
+		t.Errorf("the key from before is still kept:\n%s", body)
+	}
+	if got := second(loud); !got.StartMoved || math.Abs(got.Start-from.Start) > 0.001 {
+		t.Errorf("after an edit and a change of the level the caption starts at %.3f, moved %v, want %.3f",
+			got.Start, got.StartMoved, from.Start)
 	}
 }
