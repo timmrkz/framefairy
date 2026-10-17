@@ -1224,15 +1224,34 @@
     closing = closing.filter((k) => k !== key);
   }
 
+  // A clip is always chosen while there is one. Removing the chosen clip
+  // chooses the next in the list, or the one before it when it was the
+  // last, the way Finder and Mail move the selection on from what was
+  // deleted. It used to leave nothing chosen and the clip timeline empty.
+  // Found by Tim.
   async function removeClip(clip: ClipEntry) {
+    // The clip beside it in the list as it stands before the remove, the
+    // same list the shift and arrow keys walk.
+    const list = shown.filter((c) => !(c.key in removed));
+    const here = list.findIndex((c) => c.key === clip.key);
+    const beside = here < 0 ? undefined : (list[here + 1] ?? list[here - 1]);
+    const at = time;
     try {
       const updated = await api.removeClip(path, clip.plan, clip.id, true);
       putClip(updated);
       const chosen = selected === updated.key;
-      if (chosen) selected = "";
+      const then = chosen && beside ? beside.key : "";
+      if (chosen) {
+        said(`clip list: removed ${updated.key}, which was chosen, ${then ? `chose ${then}` : "no clip left to choose"}`, {
+          level: "info",
+          video: path,
+        });
+        if (then) select(then);
+        else selected = "";
+      }
       removed = {
         ...removed,
-        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen },
+        [updated.key]: { clip: updated, until: Date.now() + secondThoughts * 1000, chosen, then, at },
       };
     } catch (err) {
       oops(errorText(err));
@@ -1243,8 +1262,9 @@
   // chosen stays chosen and the play goes on where it is: putting back a
   // clip while another played used to choose the one put back and jump
   // the play to its start. Found by Tim. Only a clip that was the one
-  // chosen when it was removed is chosen again, and only while nothing
-  // has been chosen since, with the playhead left where it is.
+  // chosen when it was removed is chosen again, and only while the clip
+  // its remove chose instead is still the one chosen, with the playhead
+  // back where it was when it was removed.
   async function putClipBack(key: string) {
     const was = removed[key];
     if (!was) return;
@@ -1253,12 +1273,15 @@
       const updated = await api.removeClip(path, clip.plan, clip.id, false);
       putClip(updated);
       forget(key);
-      const again = !!was.chosen && selected === "";
+      const again = !!was.chosen && selected === (was.then ?? "");
       said(`clip list: put back ${updated.key}, ${again ? "chosen again as it was" : `the clip chosen stays ${selected || "none"}`}, ${paused ? "paused" : "playing"}`, {
         level: "info",
         video: path,
       });
-      if (again) select(updated.key, false);
+      if (again) {
+        void select(updated.key, false);
+        if (was.at !== undefined) player?.seek(was.at, "clip");
+      }
     } catch (err) {
       oops(errorText(err));
     }

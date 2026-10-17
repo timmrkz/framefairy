@@ -404,6 +404,13 @@
 //                      removes another clip with its bin and puts it back,
 //                      and sees the clip chosen stay chosen, the play go
 //                      on, and the playhead never go back while it plays
+//   ["remove the chosen", end]
+//                      clicks the "first" or "last" clip in the list, which
+//                      chooses it, removes it with its bin, and sees the
+//                      clip beside it chosen: the next, or for the last
+//                      the one before it
+//   ["chosen again"]   the clip the last "remove the chosen" removed is
+//                      chosen again
 //   ["put back the chosen"]
 //                      removes the clip chosen with its bin, paused, puts
 //                      it back, and sees it chosen again with the
@@ -958,6 +965,22 @@ export const sequences = [
     // back was chosen and played from its start. Issue #323.
     name: "a clip put back while another plays leaves the play alone",
     steps: [["remove clip"], ["make here", "i"], ["put back"], ["put back another while playing"]],
+  },
+  {
+    // A clip is always chosen while there is one: removing the chosen clip
+    // chooses the next, or the one before it at the end of the list, and
+    // putting it back chooses it again. Tim found nothing chosen. Issue
+    // #331.
+    name: "removing the chosen clip chooses the one beside it",
+    steps: [
+      ["remove clip"],
+      ["make here", "i"],
+      ["put back"],
+      ["remove the chosen", "first"],
+      ["put back"],
+      ["chosen again"],
+      ["remove the chosen", "last"],
+    ],
   },
   {
     // The clip chosen when it was removed is the one exception: putting it
@@ -3734,6 +3757,7 @@ for (const seq of toWalk) {
   let movedOff = null;
   // The clip "remove clip" removed last, for "put back".
   let removedLast = null;
+  let removedChosen = "";
   let loopEnd = null;
   // Whether the last "drag edge" held shift.
   let dragShift = false;
@@ -7491,6 +7515,59 @@ for (const seq of toWalk) {
         }
         if (!wrong && heads.length < 30) wrong = `only ${heads.length} animation frames were read`;
         await watch.step("put back", s);
+        break;
+      }
+      case "remove the chosen": {
+        const path = await episodeOn(page);
+        const order = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll("aside ol li[data-key]")].filter((li) => li.querySelector("button.pick")).map((li) => li.dataset.key),
+          );
+        const chosenKey = () =>
+          page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
+        const list = await order();
+        if (list.length < 2) {
+          wrong = `the list has ${list.length} clips, the step needs two`;
+          break;
+        }
+        const key = arg === "last" ? list[list.length - 1] : list[0];
+        const beside = arg === "last" ? list[list.length - 2] : list[1];
+        await page.locator(`aside ol li[data-key="${key}"] button.pick`).click();
+        for (let i = 0; i < 50 && (await chosenKey()) !== key; i++) await page.waitForTimeout(100);
+        if ((await chosenKey()) !== key) {
+          wrong = `clicking ${key} did not choose it`;
+          break;
+        }
+        await page.hover(`aside ol li[data-key="${key}"]`);
+        await page.locator(`aside ol li[data-key="${key}"] button.drop`).click();
+        let gone = false;
+        for (let i = 0; i < 50 && !gone; i++) {
+          await page.waitForTimeout(100);
+          gone = (await ask(page, "Clips", path)).some((c) => c.key === key && c.rejected);
+        }
+        if (!gone) {
+          wrong = "the bin left the clip in the list";
+          break;
+        }
+        let on = "";
+        for (let i = 0; i < 30 && on !== beside; i++) {
+          on = await chosenKey();
+          if (on !== beside) await page.waitForTimeout(100);
+        }
+        if (on !== beside) wrong = `removing the chosen ${arg} clip, ${key}, left ${on || "nothing"} chosen, not ${beside}`;
+        removedChosen = key;
+        const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
+        removedLast = { path, plan: entry.plan, clip: entry.id };
+        await watch.step("remove clip", s);
+        break;
+      }
+      case "chosen again": {
+        let on = "";
+        for (let i = 0; i < 30 && on !== removedChosen; i++) {
+          on = await page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
+          if (on !== removedChosen) await page.waitForTimeout(100);
+        }
+        if (on !== removedChosen) wrong = `${on || "nothing"} is chosen after ${removedChosen} was put back, not ${removedChosen} again`;
         break;
       }
       case "put back the chosen": {
