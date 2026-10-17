@@ -94,7 +94,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
     await page.locator("aside .head .glyph").click();
     await page.mouse.move(750, 500);
-    await page.waitForTimeout(400);
+    await sidebarStill(page);
   }
   await page.locator("aside .list li button.pick").first().waitFor();
   await page.locator("aside .list li button.pick").first().click();
@@ -105,12 +105,15 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
 }
 
 // Waits until no call has been on its way for a while and the page has
-// drawn what came back.
+// drawn what came back. It looks on every frame, and a call that went and
+// came back between two looks starts the while again, see
+// wails-bridge.ts.
 export async function settle(page) {
   await page.waitForFunction(
     () => {
       const w = window;
-      if (w.__pending > 0) {
+      if (w.__pending > 0 || w.__answered !== w.__answeredSeen) {
+        w.__answeredSeen = w.__answered;
         w.__quietSince = 0;
         return false;
       }
@@ -118,10 +121,24 @@ export async function settle(page) {
       return performance.now() - w.__quietSince > 250;
     },
     null,
-    { polling: 50, timeout: 15000 },
+    { polling: "raf", timeout: 15000 },
   );
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.evaluate(() => (window.__quietSince = 0));
+}
+
+// Waits until the sidebar has stopped sliding, so what a walk reads or
+// clicks next stays where it is. It opens and shuts in the frame the
+// pointer reaches or leaves it, and slides for 140 ms, see App.svelte,
+// which a walk once waited 400 ms for each way. A sidebar that is pinned,
+// or held open while a video is dragged in the list, does not slide at
+// all, and then this is two frames.
+export async function sidebarStill(page) {
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.waitForFunction(() => (document.querySelector("aside")?.getAnimations().length ?? 0) === 0, null, {
+    polling: "raf",
+    timeout: 15000,
+  });
 }
 
 // Which episode is on screen: the one the sidebar marks as the current
@@ -464,10 +481,10 @@ export async function pressHead(page) {
 // does something there and leaves it again.
 export async function fromSidebar(page, click) {
   await page.mouse.move(20, 500);
-  await page.waitForTimeout(400);
+  await sidebarStill(page);
   await click();
   await page.mouse.move(750, 400);
-  await page.waitForTimeout(400);
+  await sidebarStill(page);
   // An episode picked is built behind the one on screen and takes its
   // place once it is ready, see App.svelte. Until then there are two, and
   // whatever a walk reads next is about the one it picked.

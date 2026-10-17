@@ -10,9 +10,16 @@ const listeners = new Map<string, Set<Listener>>();
 // The calls made and how each ended, for a walk to read.
 const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__calls = calls;
-// How many calls are on their way, so a walk can wait for the app to
-// settle before it compares the screen with the engine.
+// How many calls are on their way, and how many have come back, so a walk
+// can wait for the app to settle before it compares the screen with the
+// engine. A call that went and came back between two looks still counts.
+// The calls that only write the app's log are left out: they change
+// nothing on screen, and the log is written a quarter of a second after a
+// line is said, so a walk that waited for them waited a second quarter
+// after every step that said one, and longer the busier the machine.
 (window as any).__pending = 0;
+(window as any).__answered = 0;
+const logOnly = new Set(["Said", "Acted"]);
 
 let source: EventSource | null = null;
 function listen() {
@@ -55,7 +62,8 @@ export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
     const call: (typeof calls)[number] = { name: name.split(".").pop() ?? name, args };
     calls.push(call);
-    (window as any).__pending++;
+    const counted = !logOnly.has(call.name);
+    if (counted) (window as any).__pending++;
     let answer: Response;
     let body: string;
     try {
@@ -66,7 +74,10 @@ export const Call = {
       });
       body = await answer.text();
     } finally {
-      (window as any).__pending--;
+      if (counted) {
+        (window as any).__pending--;
+        (window as any).__answered++;
+      }
     }
     if (!answer.ok) {
       call.failed = body.trim();
