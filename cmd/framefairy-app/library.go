@@ -92,7 +92,7 @@ func (s *FrameFairy) addEpisodes(videos []string) ([]string, error) {
 	}
 	added, err := s.store.AddEpisodes(take)
 	if len(refused) > 0 {
-		why := strings.Join(refused, ", ") + ", so it was left out"
+		why := strings.Join(refused, ", ") + ", so it cannot be added"
 		if err != nil {
 			why = err.Error() + ". And " + why
 		}

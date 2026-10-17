@@ -293,7 +293,10 @@ facade the app goes around, and three files too big to hold in one's head.
     workspace (2084-2092), render failures included, which "no toasts and
     no banners" rules out. It is measured and written back as `--above` on
     every resize, since it wraps. Fix: each failure in the row of the work
-    that failed. **Open.**
+    that failed. **Fixed** in #228, issue #327: it is a toast about the
+    video now, which lies over the app and moves nothing, and `--above`
+    holds only the line that says the file is missing. A failure that has a
+    row of its own still belongs in that row.
 29. **Settings has a Training data section** (`Settings.svelte:812-834`,
     bindings at `main.go:1571-1609`), while `CLAUDE.md` says no training
     screens in the app and everything about the records in

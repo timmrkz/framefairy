@@ -430,12 +430,21 @@ clicks Bugs in the sidebar and goes on in the report window, a second
 page of the browser, and `windows` and `close report` say how many the
 app made and close it. `attach` presses the paperclip with a picture
 waiting in the box, `drop pictures` and `paste picture` bring pictures
-in the other two ways, `pictures` counts the tiles, `picture note` reads
-why one was left out, `remove picture` presses a tile's bin, `put back`
+in the other two ways, `drop recording` drops a screen recording the
+way a Mac makes one and `recording tile` reads its length off its tile
+and sees its still loaded, `pictures` counts the tiles, `remove picture` presses a tile's bin, `put back`
 its Put it back, and `removed goes` waits for the grid to close over it.
 `report` presses Report, sees the row keep its width, and reads the zip
-for the pictures and the field for nothing, and `report lines up`
-measures the row and the tiles on whole pixels. `write` types into its field and
+for the pictures, and the recordings when it is given two numbers, and
+the field for nothing, and `report lines up`
+measures the row and the tiles on whole pixels. Why something was left
+out, in the report window or the app's own, is a toast: `toast` reads
+it, or sees none with "", and sees that nothing under it moved,
+`toast goes` sees it still there after nine seconds with the pointer
+away, since it has the ten a removed row has, and then go by itself, `toast held` keeps the pointer on it past its time, sees it
+stay and then go once the pointer leaves, `stacked` sees a toast for
+each of two files dropped one after the other, the newer on top, and
+`toast closed` presses the cross of the top one. `write` types into its field and
 puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
 listens and the microphone move with the hum, then ends it with Stop,

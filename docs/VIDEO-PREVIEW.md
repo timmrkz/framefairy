@@ -574,7 +574,10 @@ next one starts. Steps 1 and 2 went into one, #157, at Tim's wish.
    frames, and the decoder read on to the next one and showed it for
    every frame before it. A seek now finds the key frame shown at or
    before its moment, and the decoder seeks again if its first frame
-   begins after it. The route that served a file's bytes to the page,
+   begins after it. A seek after the last key frame of such a file found
+   no key before the end and showed nothing, so a jump into the last
+   stretch of an MPEG-TS video stood empty. It now goes back to the last
+   key frame too, issue #287. The route that served a file's bytes to the page,
    `/media/`, is removed with the reader that used it.
    `TestTheVideoPreviewShowsTheFramesOfTheShort` holds the decoder to the
    render's rule on a phone's uneven frames, a screen recorder's left-out

@@ -233,10 +233,22 @@
 //                      drops n pictures on the report window, and a file of
 //                      text named other with them when there is one
 //   ["paste picture"]  pastes a picture into the report's field
+//   ["drop recording"] drops a screen recording of three seconds on the
+//                      report window, a MOV the way a Mac makes one
+//   ["recording tile", length]
+//                      the last tile is a recording, its still loaded and
+//                      its length written in its corner as length
 //   ["pictures", n]    the report window shows n pictures
-//   ["picture note", text]
-//                      the line beside the buttons says text, and with ""
-//                      nothing at all
+//   ["toast", text]    a toast over the window says text, and with "" no
+//                      toast is there. Nothing under it moved since the
+//                      step before it, and the line beside the report's
+//                      buttons says nothing (#327)
+//   ["toast goes"]     with the pointer away, the toast is still there
+//                      after nine seconds and gone by itself within fourteen
+//   ["toast held"]     the pointer stays on the toast longer than its time
+//                      and it stays, then the pointer goes and so does the
+//                      toast, within fourteen seconds
+//   ["toast closed"]   presses the cross on the top toast, and it goes
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
 //                      other, and presses it. The picture keeps its place
@@ -255,8 +267,9 @@
 //                      back runs out and the grid closes over it
 //   ["report", n]      presses Report, which closes the report window and
 //                      says nothing beside the buttons, and reads the zip
-//                      it made: what was written and n pictures, and the
-//                      field empty after
+//                      it made: what was written and n pictures, or with
+//                      [n, m] n pictures and m recordings, and the field
+//                      empty after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -469,18 +482,21 @@
 //                      over it and not after the drop
 //   ["drop again", where]
 //                      the same with the video dropped last
-//   ["drop not a video", where]
-//                      the same with a PDF
+//   ["drop not a video", where] or ["drop not a video", [where, stem]]
+//                      the same with a PDF, named stem if given
 //   ["dropped in front"]
 //                      the video dropped last is the one on screen, and in
 //                      the library once
-//   ["not a video"]    the PDF dropped last is not in the library, and the
-//                      app says by its name that it is not a video
-//   ["no reason"]      the app says nothing was left out: a reason from
-//                      files given before is gone once the next are taken
+//   ["not a video"]    the PDF dropped last is not in the library, and a
+//                      toast says by its name that it cannot be added
+//                      because it is not a video, with the workspace where
+//                      it stood before the drop
+//   ["no reason"]      no toast names the video dropped last: a video
+//                      that is added says nothing
+//   ["stacked"]        the two PDFs dropped last each have a toast, the
+//                      newer on top, the way macOS stacks its notes
 //   ["left out", name] Add left out the file whose name starts so, says why
-//                      where the app says what went wrong, and the library
-//                      does not hold it
+//                      in a toast, and the library does not hold it
 //   ["followed", which]
 //                      since "drag edge", the playhead went with the edge:
 //                      on frames, the edge stood in two places or more,
@@ -1784,14 +1800,31 @@ export const sequences = [
       ["bugs"],
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
-      ["picture note", "notes.txt is not a PNG or JPEG picture"],
+      ["toast", "notes.txt cannot be attached because it is not a picture or a screen recording"],
       // A good drop after it takes the old reason away. Found in the
       // review of #217.
       ["drop pictures", 1],
-      ["picture note", ""],
+      ["toast", ""],
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
+    ],
+  },
+  {
+    // Issue #326. Tim attached a screen recording made on his Mac and
+    // it was turned away as not a PNG or JPEG picture. A recording is
+    // attached beside the pictures, shows a still of its first frame and
+    // its length, and goes in the report as a recording.
+    name: "A screen recording is attached, shown by its first frame and its length, and goes in the report",
+    steps: [
+      ["bugs"],
+      ["drop pictures", 1],
+      ["drop recording"],
+      ["toast", ""],
+      ["pictures", 2],
+      ["recording tile", "0:03"],
+      ["report lines up"],
+      ["report", [1, 1]],
     ],
   },
   {
@@ -1852,7 +1885,7 @@ export const sequences = [
       ["drop pictures", 10],
       ["pictures", 10],
       ["attach", 1],
-      ["picture note", "would be more than the 10 pictures a report takes"],
+      ["toast", "would be more than the 10 pictures and recordings a report takes"],
       ["pictures", 10],
     ],
   },
@@ -2643,6 +2676,33 @@ export const sequences = [
       ["dropped in front"],
       ["drop again", "updates"],
       ["dropped in front"],
+      ["no reason"],
+    ],
+  },
+  {
+    // Issue #327. Tim dropped a picture on the app and a red line
+    // over the workspace pushed it all down. What went wrong with nothing
+    // on screen about it is a toast that moves nothing, goes by itself
+    // after a while the way toasts do, stays while the pointer is on it,
+    // and goes at once by its cross.
+    name: "a file that is not a video is said in a toast that moves nothing and goes by itself unless held",
+    steps: [
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["toast goes"],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["toast held"],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["toast closed"],
+      ["drop not a video", "workspace"],
+      ["not a video"],
+      ["drop not a video", ["workspace", "zweite"]],
+      ["not a video"],
+      ["stacked"],
+      ["toast closed"],
+      ["toast closed"],
       ["no reason"],
     ],
   },
@@ -3718,6 +3778,9 @@ for (const seq of toWalk) {
   // Whether the walk deleted that video too.
   let videoGone = false;
   let droppedOther = "";
+  let droppedBefore = "";
+  // Where the workspace and the report's field stood before a toast came.
+  let standing = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
   // The letters on screen in a box of the page, libass's on the canvas or
@@ -5410,12 +5473,13 @@ for (const seq of toWalk) {
       case "drop":
       case "drop again":
       case "drop not a video": {
-        const where = what === "drop" ? arg[1] : arg;
+        const [where, stem] = what === "drop" ? [arg[1]] : [arg].flat();
         let file;
         if (what === "drop") file = droppedVideo = await control(url, `/pick?seconds=${arg[0]}&box=0`);
         else if (what === "drop again") file = droppedVideo;
         else {
-          file = droppedOther = join(tmpdir(), `notizen-${process.pid}.pdf`);
+          if (droppedOther) droppedBefore = droppedOther;
+          file = droppedOther = join(tmpdir(), `${stem ?? "notizen"}-${process.pid}.pdf`);
           writeFileSync(file, "%PDF-1.4\n");
         }
         if (where !== "workspace") {
@@ -5423,6 +5487,7 @@ for (const seq of toWalk) {
           await fromSidebar(page, () => page.locator("aside").getByText(name, { exact: true }).first().click());
           await settle(page);
         }
+        if (what === "drop not a video") standing = await standsAt(page);
         wrong = await dropOn(page, [file]);
         if (what === "drop not a video") rmSync(file, { force: true });
         await watch.step("add", s);
@@ -5430,8 +5495,21 @@ for (const seq of toWalk) {
       }
       case "no reason": {
         await page.waitForTimeout(500);
-        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
-        if (said.trim()) wrong = `the app still says "${said.trim()}" after the next files were taken`;
+        const said = await toastSays(page);
+        const name = droppedVideo ? basename(droppedVideo) : "";
+        if (name && said.includes(name)) wrong = `the app says "${said}" about ${name}, which it added`;
+        else if (!name && said) wrong = `the app still says "${said}"`;
+        break;
+      }
+      case "stacked": {
+        // Tim dropped one picture after another and saw only the last:
+        // a newer reason replaced the older.
+        const said = await page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()));
+        const [newer, older] = [basename(droppedOther), basename(droppedBefore)];
+        const tops = await page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => Math.round(t.getBoundingClientRect().top)));
+        if (said.length !== 2) wrong = `${said.length} toasts show, not one for each of ${older} and ${newer}: ${JSON.stringify(said)}`;
+        else if (!said[0].includes(newer) || !said[1].includes(older)) wrong = `the toasts read ${JSON.stringify(said)}, not ${newer} on top of ${older}`;
+        else if (!(tops[0] < tops[1])) wrong = `the newer toast stands at ${tops[0]} px and the older at ${tops[1]} px`;
         break;
       }
       case "dropped in front": {
@@ -5454,11 +5532,12 @@ for (const seq of toWalk) {
         let said = "";
         for (let i = 0; i < 50 && !said.includes(name); i++) {
           await page.waitForTimeout(100);
-          said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+          said = await toastSays(page);
         }
         const library = await ask(page, "Library");
-        if (!said.includes(`${name} is not a video`)) wrong = `the app says "${said.trim()}", not that ${name} is not a video`;
+        if (!said.includes(`${name} cannot be added because it is not a video`)) wrong = `the app says "${said}", not that ${name} cannot be added because it is not a video`;
         else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
+        else wrong = await stillStands(page, standing);
         break;
       }
       case "add sound alone": {
@@ -5788,10 +5867,11 @@ for (const seq of toWalk) {
       }
       case "attach": {
         const before = await page.locator("li.tile").count();
+        standing = await standsAt(page);
         for (let i = 0; i < arg; i++) await fetch(new URL("/pick-picture", url));
         await page.locator("button.attach").click();
         const grew = await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n || document.querySelector(".words .error"), before + arg, { timeout: 10000 })
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n || document.querySelector(".toast"), before + arg, { timeout: 10000 })
           .then(() => true)
           .catch(() => false);
         if (!grew) wrong = `the paperclip attached nothing, ${before} pictures before and after`;
@@ -5800,6 +5880,8 @@ for (const seq of toWalk) {
       }
       case "drop pictures": {
         const [n, other] = Array.isArray(arg) ? arg : [arg];
+        // The pictures that come take room under the field, so it may move.
+        standing = null;
         // A number of pictures, or their shapes, "446x738".
         const shapes = typeof n === "string" ? n.split(" ") : Array(n).fill("");
         const files = [];
@@ -5815,6 +5897,31 @@ for (const seq of toWalk) {
           .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length, { timeout: 10000 })
           .catch(() => (wrong = `a drop of ${shapes.length} pictures left ${before} on the report window`));
         await settle(page);
+        break;
+      }
+      case "drop recording": {
+        standing = null;
+        const file = await (await fetch(new URL("/pick-picture?box=0&kind=recording", url))).json();
+        const before = await page.locator("li.tile").count();
+        wrong = await dropOn(page, [file]);
+        if (wrong) break;
+        await page
+          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + 1, { timeout: 15000 })
+          .catch(async () => (wrong = `a dropped recording was not attached, the toast says "${await toastSays(page)}"`));
+        await settle(page);
+        break;
+      }
+      case "recording tile": {
+        const tile = await page.evaluate(() => {
+          const all = document.querySelectorAll("li.tile figure");
+          const f = all[all.length - 1];
+          const img = f?.querySelector("img");
+          return f && { length: f.querySelector(".length")?.textContent.trim() ?? "", loaded: !!img && img.complete && img.naturalWidth > 0, label: f.getAttribute("aria-label") };
+        });
+        if (!tile) wrong = "there is no tile";
+        else if (!tile.loaded) wrong = "the still of the recording did not load";
+        else if (tile.length !== arg) wrong = `the recording's tile says "${tile.length}", not ${arg}`;
+        else if (!tile.label.includes(`a recording of ${arg}`)) wrong = `the recording's tile is read out as "${tile.label}"`;
         break;
       }
       case "paste picture": {
@@ -5885,10 +5992,49 @@ for (const seq of toWalk) {
         else if (Math.abs(m[0] - m[1]) > 1) wrong = `the report is scrolled to ${m[0]} px, not to its end at ${m[1]} px`;
         break;
       }
-      case "picture note": {
-        const said = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
-        // "" asks for nothing to be said at all.
-        if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the line beside the buttons says "${said}", not "${arg}"`;
+      case "toast": {
+        let said = "";
+        for (let i = 0; i < 50 && (arg === "" ? said !== "" : !said.includes(arg)); i++) {
+          await page.waitForTimeout(100);
+          said = await toastSays(page);
+        }
+        const line = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
+        if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the toast says "${said}", not "${arg}"`;
+        else if (line) wrong = `the line beside the buttons says "${line}", where only the toast should`;
+        else wrong = await stillStands(page, standing);
+        break;
+      }
+      case "toast goes": {
+        // Its time runs from the moment it comes, with no hand on it. Tim
+        // found a toast that waited for the pointer before its time began.
+        // Its time is the ten seconds a removed row has, so it is still
+        // there after nine. It once ran eight of its own.
+        await page.mouse.move(2, 400);
+        await page.waitForTimeout(9000);
+        if (!(await toastSays(page))) {
+          wrong = "the toast went within nine seconds, sooner than the ten a removed row has";
+          break;
+        }
+        if (!(await gone(page, ".toast", 5000))) wrong = "the toast was still there fourteen seconds after it came, with the pointer away";
+        break;
+      }
+      case "toast held": {
+        const box = await page.locator(".toast .text").first().boundingBox();
+        await page.mouse.move(box.x + 4, box.y + box.height / 2);
+        await page.waitForTimeout(11500);
+        if (!(await toastSays(page))) {
+          wrong = "the toast went while the pointer was on it";
+          break;
+        }
+        await page.mouse.move(2, 400);
+        if (!(await gone(page, ".toast", 14000))) wrong = "the toast was still there fourteen seconds after the pointer left it";
+        break;
+      }
+      case "toast closed": {
+        const before = await page.locator(".toast").count();
+        await page.locator(".toast button.close").first().click();
+        await page.waitForTimeout(400);
+        if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
         break;
       }
       case "remove picture": {
@@ -6027,8 +6173,11 @@ for (const seq of toWalk) {
           break;
         }
         const names = await (await fetch(new URL("/report-made", url))).json();
+        const [want, films = 0] = [arg].flat();
         const pictures = names.filter((n) => /\/pictures\/\d+\.png$/.test(n)).length;
-        if (pictures !== arg) wrong = `the report holds ${pictures} pictures, not ${arg}: ${names.join(", ")}`;
+        const recordings = names.filter((n) => /\/recordings\/\d+\.(mov|mp4|m4v|webm|mkv)$/.test(n)).length;
+        if (pictures !== want) wrong = `the report holds ${pictures} pictures, not ${want}: ${names.join(", ")}`;
+        else if (recordings !== films) wrong = `the report holds ${recordings} recordings, not ${films}: ${names.join(", ")}`;
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
         const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
@@ -6950,7 +7099,7 @@ for (const seq of toWalk) {
         break;
       }
       case "left out": {
-        const said = await page.evaluate(() => document.querySelector(".error")?.textContent ?? "");
+        const said = await toastSays(page);
         const library = await ask(page, "Library");
         if (!said.includes(`the picture of ${arg}`) || !said.includes("cannot be decoded")) {
           wrong = `the app says "${said.trim()}", not why ${arg} was left out`;
@@ -9132,6 +9281,40 @@ function glideOf(marks, src) {
 // middle and below it, over whatever the page has there. Says what was
 // wrong, or null: the app has to wear its frame while the files are held
 // over it, take the drop, and wear no frame after it.
+// What the toasts over the window say, one after the other.
+async function toastSays(page) {
+  return page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()).join(" "));
+}
+
+// Where what a toast must not move stands: the workspace in front, the
+// report's field, and the main column under the bar.
+async function standsAt(page) {
+  return page.evaluate(() =>
+    [".workspace.front .stage", "main", ".telling"].map((q) => {
+      const r = document.querySelector(q)?.getBoundingClientRect();
+      return r ? [q, r.x, r.y, r.width, r.height] : [q];
+    }),
+  );
+}
+
+// Whether nothing matches selector within ms.
+async function gone(page, selector, ms) {
+  for (const end = Date.now() + ms; Date.now() < end; await page.waitForTimeout(100)) {
+    if ((await page.locator(selector).count()) === 0) return true;
+  }
+  return (await page.locator(selector).count()) === 0;
+}
+
+// Says what moved since standsAt was read, or null.
+async function stillStands(page, before) {
+  if (!before) return null;
+  const now = await standsAt(page);
+  for (let i = 0; i < before.length; i++) {
+    if (JSON.stringify(before[i]) !== JSON.stringify(now[i])) return `${before[i][0]} moved from ${before[i].slice(1).join(", ")} to ${now[i].slice(1).join(", ")} when the toast came`;
+  }
+  return null;
+}
+
 async function dropOn(page, files) {
   const { width, height } = page.viewportSize();
   const [x, y] = [Math.round(width * 0.4), Math.round(height * 0.6)];

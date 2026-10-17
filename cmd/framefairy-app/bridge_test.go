@@ -371,7 +371,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	// &kind=text it is a file of text named like a picture.
 	mux.HandleFunc("/pick-picture", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		path, err := b.pickPicture(q.Get("name"), q.Get("w"), q.Get("h"), q.Get("kind") == "text", q.Get("box") != "0")
+		path, err := b.pickPicture(q.Get("name"), q.Get("w"), q.Get("h"), q.Get("kind"), q.Get("box") != "0")
 		answer(w, path, err)
 	})
 	// What the last report on the bridge's Desktop holds, by name.
@@ -983,7 +983,7 @@ func (b *bridge) pick(seconds, rate, switchAt, timing string, hevc, namesake, bo
 // picture, and has the paperclip's box hand it over next when box.
 //
 // On the real disk: the open box and a drop hand over paths on the disk.
-func (b *bridge) pickPicture(name, w, h string, text, box bool) (string, error) {
+func (b *bridge) pickPicture(name, w, h, kind string, box bool) (string, error) {
 	width, _ := strconv.Atoi(w)
 	height, _ := strconv.Atoi(h)
 	if width <= 0 || height <= 0 {
@@ -993,6 +993,9 @@ func (b *bridge) pickPicture(name, w, h string, text, box bool) (string, error) 
 		b.mu.Lock()
 		b.made++
 		name = fmt.Sprintf("Screenshot %d.png", b.made)
+		if kind == "recording" {
+			name = fmt.Sprintf("Screen Recording %d.mov", b.made)
+		}
 		b.mu.Unlock()
 	}
 	dir := filepath.Join(b.d.home, "pictures")
@@ -1001,7 +1004,17 @@ func (b *bridge) pickPicture(name, w, h string, text, box bool) (string, error) 
 	}
 	path := filepath.Join(dir, filepath.Base(name))
 	var data []byte
-	if text {
+	if kind == "recording" {
+		// A recording of three seconds in a MOV, the way the Mac's own
+		// recorder makes one, with a sound. MPEG-4 and not H.264, which
+		// the ffmpeg the app ships cannot make.
+		if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=%dx%d:rate=30:duration=3", width, height),
+			"-f", "lavfi", "-i", "sine=f=440:d=3", "-c:v", "mpeg4", "-c:a", "aac",
+			"-shortest", "-f", "mov", path).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("ffmpeg: %v: %s", err, out)
+		}
+	} else if kind == "text" {
 		data = []byte("not a picture\n")
 	} else {
 		img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -1016,8 +1029,10 @@ func (b *bridge) pickPicture(name, w, h string, text, box bool) (string, error) 
 		}
 		data = buf.Bytes()
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", err
+	if data != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return "", err
+		}
 	}
 	if box {
 		b.d.pictureMu.Lock()

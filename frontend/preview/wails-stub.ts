@@ -2035,7 +2035,7 @@ function attachStub(n: number) {
   const left: string[] = [];
   for (let i = 0; i < n; i++) {
     if (reportDraft.pictures.length >= 10) {
-      left.push(`Screenshot ${reportDraft.next + 1}.png would be more than the 10 pictures a report takes`);
+      left.push(`Screenshot ${reportDraft.next + 1}.png would be more than the 10 pictures and recordings a report takes`);
       continue;
     }
     reportDraft.next++;
