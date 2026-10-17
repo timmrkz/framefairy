@@ -792,8 +792,13 @@ button:has(> .beam):disabled {
   box-sizing: border-box;
 }
 
+/* The line over a row is not part of its height. Inside the 64 px it
+   left 35 px for a 32 px control, which centred stood half a pixel down,
+   the buttons of Report a Problem at 309.5 px. So a row under a line is
+   the line and 64 px, as tall as the first row below its line. */
 .card .item + .item {
   border-top: 1px solid var(--line);
+  min-height: 65px;
 }
 
 /* The same background a chosen row wears everywhere else in the app. */

@@ -2478,7 +2478,11 @@ Every piece of work shows where it was started and nowhere else: a
 transcription on the episode's lamp and the range picker, a search in the
 clip list with **Cancel** and **Continue**, a render on its button, a
 model being fetched on its row in the settings. Transcription runs in its
-own lane, so finding and rendering clips never wait for it.
+own lane, so finding and rendering clips never wait for it. The other way
+round, a search finding clips with the model on this machine holds
+transcription up while it finds, since the two models share the machine.
+A model in the cloud, or llama-server on another machine given as its
+address, shares nothing with it and holds nothing up, issue #276.
 
 There used to be an **Activity** page that listed every job again, with
 its progress, **Cancel**, **Clear finished** and the job's log. Nobody
@@ -2875,8 +2879,11 @@ it until they scroll back to the words. The cursor stands right after
 the words while nobody has put it elsewhere, drawn there by the end of
 the words themselves, since WebKit drew it at the front of the last line
 while the words ran on. The microphone in the button grows and shrinks with the voice it
-hears, about ten times a second, and wears the accent while it listens,
-so the person sees they are heard. The
+hears, so the person sees they are heard. The Go side tells its
+loudness ten times a second, and the window follows it every frame the
+way a level meter's needle does, up at once and back down in about a
+third of a second. It grows by a scale from a drawing at its largest
+size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from. What follows the last pause is still
 being heard and changes as more of it is, so it is plain text in a mark

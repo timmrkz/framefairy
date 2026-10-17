@@ -107,7 +107,9 @@
 <script lang="ts">
   // They take the colour of the text around them, and a line one and a
   // half pixels wide at every size, the weight the workspace's text has.
-  let { name, size = 16 }: { name: string; size?: number } = $props();
+  // An icon drawn large to be shown smaller, by a scale, takes a line as
+  // much thicker, so it is that weight where it rests.
+  let { name, size = 16, line = 1.5 }: { name: string; size?: number; line?: number } = $props();
 
   const Glyph = $derived(glyphs[name]);
   const fill = $derived(solid.has(name) ? "currentColor" : "none");
@@ -121,7 +123,7 @@
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width={(1.5 * 24) / size}
+    stroke-width={(line * 24) / size}
     stroke-linecap="round"
     stroke-linejoin="round"
     aria-hidden="true"
@@ -129,7 +131,7 @@
     <path d={brackets[name]} />
   </svg>
 {:else if Glyph}
-  <Glyph {size} {fill} strokeWidth={1.5} absoluteStrokeWidth aria-hidden="true" />
+  <Glyph {size} {fill} strokeWidth={line} absoluteStrokeWidth aria-hidden="true" />
 {/if}
 
 <style>

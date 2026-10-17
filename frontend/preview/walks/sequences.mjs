@@ -288,7 +288,8 @@
 //                      shows its own cursor there again
 //   ["report lines up"]
 //                      the microphone, the paperclip and Report are one
-//                      height, the two are square, the tiles are one size
+//                      height on a whole pixel, the two are square, the
+//                      tiles are one size
 //                      on whole pixels with a space between them, and the
 //                      row keeps its width while Report is pressed
 //   ["write", text, n] types text into the report's field and puts the
@@ -6344,6 +6345,9 @@ for (const seq of toWalk) {
         const problems = [];
         for (const [name, b] of [["the microphone", m.mic], ["the paperclip", m.clip], ["Report", m.report]]) {
           if (b.height !== m.control) problems.push(`${name} is ${b.height} px high, not ${m.control}`);
+          // Issue #279: the row under the field stood half a pixel down,
+          // its top at 309.5, so it stepped as it faded or moved.
+          if (b.top !== Math.round(b.top)) problems.push(`${name} stands between two pixels, its top at ${b.top}`);
         }
         if (m.mic.width !== m.mic.height || m.clip.width !== m.clip.height) problems.push("the microphone or the paperclip is not square");
         const t0 = m.tiles[0];
@@ -6420,11 +6424,104 @@ for (const seq of toWalk) {
         // The microphone moves with the voice it hears, so a person knows
         // they are heard. The bridge's microphone plays a tone.
         const moved = await page
-          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.style.getPropertyValue("--loud")) > 0.3, null, { timeout: 10000 })
+          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3, null, { timeout: 10000 })
           .then(() => true)
           .catch(() => false);
         if (!moved) {
           wrong = "the microphone did not move while it heard a voice";
+          break;
+        }
+        // And it moves enough to be seen, smoothly, and in its place. For
+        // three seconds of the hum and its pauses, every frame, the size
+        // it is drawn at, its middle and the size of its own box. A
+        // microphone 16 px at rest grows by at least six tenths of that
+        // for every step of loudness: by a third it grew 3 px for a voice
+        // talking, and Tim could hardly see it. Its box keeps one size
+        // and its middle keeps still: a size that changed snapped to
+        // whole pixels and shook on Tim's Mac. It falls back no faster
+        // than a level meter's needle, a third of a second for the whole
+        // way: jumping to every reading shook too.
+        const track = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const b = document.querySelector("button.dictate");
+              const xs = [];
+              const start = performance.now();
+              const step = (now) => {
+                const icon = b.querySelector("svg");
+                const r = icon.getBoundingClientRect();
+                xs.push({
+                  t: now,
+                  w: r.width,
+                  x: r.left + r.width / 2,
+                  y: r.top + r.height / 2,
+                  box: getComputedStyle(icon).width,
+                  loud: parseFloat(b.dataset.loud),
+                  size: Number(icon.getAttribute("width")),
+                });
+                if (now - start < 3000) requestAnimationFrame(step);
+                else done(xs);
+              };
+              requestAnimationFrame(step);
+            }),
+        );
+        const widest = Math.max(...track.map((f) => f.w));
+        const loudest = Math.max(...track.map((f) => f.loud));
+        const boxes = [...new Set(track.map((f) => f.box))];
+        const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
+        let fastest = 0;
+        for (let k = 1; k < track.length; k++) {
+          const dt = track[k].t - track[k - 1].t;
+          if (dt > 0) fastest = Math.max(fastest, (track[k - 1].w - track[k].w) / track[0].size / dt);
+        }
+        if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
+          wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
+          break;
+        }
+        if (boxes.length > 1) {
+          wrong = `the microphone changes the size of its box as it grows, ${boxes.join(", ")}, which snaps to whole pixels and shakes`;
+          break;
+        }
+        if (drift > 0.5) {
+          wrong = `the middle of the microphone moved by ${drift.toFixed(2)} px as it grew`;
+          break;
+        }
+        if (fastest > 0.003) {
+          wrong = `the microphone fell back by ${(fastest * 1000).toFixed(1)} of its size a second, faster than a level meter's needle`;
+          break;
+        }
+        // It is drawn white, like every icon in the app, as the paperclip
+        // beside it is, and so stands out from its button by at least 3
+        // to 1. Tim saw the accent dark on dark, and the lit shade of it
+        // matched nothing in the app.
+        const look = await page.evaluate(() => {
+          const b = document.querySelector("button.dictate");
+          const icon = b.querySelector("svg");
+          const clip = document.querySelector("button.attach svg");
+          // A colour mixed from the accent comes back as color(srgb ...),
+          // its channels from 0 to 1.
+          const rgb = (c) => {
+            const v = c.match(/[\d.]+/g).map(Number);
+            return c.startsWith("color(") ? [...v.slice(0, 3).map((x) => x * 255), ...v.slice(3, 4)] : v.slice(0, 4);
+          };
+          const luminance = ([r, g, b]) => {
+            const l = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+            return 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b);
+          };
+          let back = null;
+          for (let e = b; e && !back; e = e.parentElement) {
+            const c = rgb(getComputedStyle(e).backgroundColor);
+            if (c.length < 4 || c[3] > 0) back = c;
+          }
+          const [hi, lo] = [luminance(rgb(getComputedStyle(icon).color)), luminance(back ?? [0, 0, 0])].sort((x, y) => y - x);
+          return { colour: getComputedStyle(icon).color, clip: getComputedStyle(clip).color, contrast: (hi + 0.05) / (lo + 0.05) };
+        });
+        if (look.colour !== look.clip) {
+          wrong = `the microphone is drawn ${look.colour} while it listens, not white like the paperclip, ${look.clip}`;
+          break;
+        }
+        if (look.contrast < 3) {
+          wrong = `the microphone stands out from its button by only ${look.contrast.toFixed(2)} to 1 while it listens`;
           break;
         }
         // Two notes going up say the microphone is open, while it is.
@@ -9570,6 +9667,12 @@ async function frameWhole(page, turned) {
   const corners = [screen.left - viewer.left, viewer.right - screen.right, screen.top - viewer.top, viewer.bottom - screen.bottom];
   if (turned ? corners[0] < 8 : corners.some((d) => d > 1)) {
     return `the picture stands ${corners.map((d) => d.toFixed(1)).join(", ")} px in from the viewer's sides, so its corners are not the viewer's`;
+  }
+  // Issue #264: a part rotated a quarter stood a pixel above the viewer,
+  // its top row cut and a black line under it. It stands inside the
+  // viewer, in its middle, on a whole pixel.
+  if (turned && (corners[2] < 0 || corners[3] < 0 || Math.abs(corners[2] - corners[3]) > 1 || Math.abs(corners[2] - Math.round(corners[2])) > 0.01)) {
+    return `the rotated picture stands ${corners[2].toFixed(2)} px down from the viewer's top and ${corners[3].toFixed(2)} px up from its foot`;
   }
   const look = await page.addStyleTag({ content: ".screen canvas, .screen .trouble, .screen .failed { visibility: hidden !important } .screen { background: #fff !important }" });
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
