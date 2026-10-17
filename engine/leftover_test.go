@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,6 +45,14 @@ func leftover(t *testing.T, args ...string) *standingServer {
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		<-s.done
+	})
+	// Until the system shows its command line, ps sees the program that
+	// started it, and the app would take it for somebody else's. The
+	// tests slept 100 ms for it and hoped.
+	want := strings.Join(args, " ")
+	waitFor(t, func() bool {
+		out, err := exec.Command("ps", "-p", strconv.Itoa(cmd.Process.Pid), "-o", "args=").Output()
+		return err == nil && strings.Contains(string(out), want)
 	})
 	return s
 }
@@ -86,7 +96,6 @@ func TestALeftoverServerIsStopped(t *testing.T) {
 	cmd := leftover(t, "-m", "/models/gemma.gguf", "--host", "127.0.0.1", "--port", "41234")
 	pid := cmd.cmd.Process.Pid
 	noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
-	time.Sleep(100 * time.Millisecond)
 
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
@@ -109,7 +118,6 @@ func TestAServerInUseIsLeftAlone(t *testing.T) {
 	pid := cmd.cmd.Process.Pid
 	// Owned by this test, which is running.
 	noteServer(serverNote{PID: pid, Port: 41234, Model: "/models/gemma.gguf"})
-	time.Sleep(100 * time.Millisecond)
 	if StopLeftoverServer() {
 		t.Error("a server in use was stopped")
 	}
@@ -129,7 +137,6 @@ func TestEveryServerKeepsItsOwnNote(t *testing.T) {
 	app := leftover(t, "-m", "/models/b.gguf", "--port", "41002")
 	noteServer(serverNote{PID: cli.cmd.Process.Pid, Port: 41001, Model: "/models/a.gguf", Owner: gone(t)})
 	noteServer(serverNote{PID: app.cmd.Process.Pid, Port: 41002, Model: "/models/b.gguf", Owner: gone(t)})
-	time.Sleep(100 * time.Millisecond)
 	if !StopLeftoverServer() {
 		t.Fatal("nothing was stopped")
 	}
@@ -144,7 +151,6 @@ func TestAModelPathWithASpaceIsFound(t *testing.T) {
 	model := "/Users/tim/My Models/gemma.gguf"
 	cmd := leftover(t, "-m", model, "--port", "41234")
 	noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: model, Owner: gone(t)})
-	time.Sleep(100 * time.Millisecond)
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
@@ -165,7 +171,6 @@ func TestTheNoteOfAnOlderVersionIsRead(t *testing.T) {
 	if err := os.WriteFile(old, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
 	if !StopLeftoverServer() {
 		t.Fatal("the server left behind was not stopped")
 	}
@@ -183,7 +188,6 @@ func TestSomebodyElsesProcessIsLeftAlone(t *testing.T) {
 	noteIn(t)
 	cmd := leftover(t, "-m", "/models/other.gguf", "--port", "41234")
 	noteServer(serverNote{PID: cmd.cmd.Process.Pid, Port: 41234, Model: "/models/gemma.gguf", Owner: gone(t)})
-	time.Sleep(100 * time.Millisecond)
 	if StopLeftoverServer() {
 		t.Error("a process that is not the server was stopped")
 	}

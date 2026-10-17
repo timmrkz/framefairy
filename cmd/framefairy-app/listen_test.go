@@ -311,13 +311,25 @@ func TestDroppingARecording(t *testing.T) {
 	f, mic, told := dictating(t)
 	mic.say(tone(2))
 	awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" })
+	f.listening.mu.Lock()
+	r := f.listening.now
+	f.listening.mu.Unlock()
 	f.CancelListening()
 	mic.say(tone(2))
-	time.Sleep(100 * time.Millisecond)
+	// The window is told only from the goroutine that writes the words
+	// down, which closes over when it ends. Once it has, what it said
+	// before it heard of the drop is all there will be. Waiting 100 ms
+	// missed whatever came later than that.
+	select {
+	case <-r.over:
+	case <-time.After(10 * time.Second):
+		t.Fatal("writing the words down went on after the recording was dropped")
+	}
+	// What was on its way as the recording was dropped.
 	for len(told) > 0 {
 		<-told
 	}
-	time.Sleep(100 * time.Millisecond)
+	mic.say(tone(1))
 	if len(told) != 0 {
 		t.Errorf("the window was told %v after the recording was dropped", <-told)
 	}
@@ -537,7 +549,12 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 		}
 		stopped <- d
 	}()
-	time.Sleep(50 * time.Millisecond)
+	// The last pass ends only once Stop has taken the recording in hand.
+	until(t, "Stop to take the recording", func() bool {
+		f.listening.mu.Lock()
+		defer f.listening.mu.Unlock()
+		return f.listening.now == nil
+	})
 	close(held)
 	if d := <-stopped; strings.Join(d.Said, " ") != "wort wort" {
 		t.Errorf("Stop gave %q", d.Said)
@@ -725,7 +742,16 @@ func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
 	if _, err := f.Listen(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	// Stopped once the whole room is heard, rather than 200 ms on, which
+	// a busy machine may not have played it all in.
+	f.listening.mu.Lock()
+	r := f.listening.now
+	f.listening.mu.Unlock()
+	until(t, "the room was heard", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return len(r.samples) == len(room)
+	})
 	d, err := f.StopListening()
 	if err != nil {
 		t.Fatal(err)
@@ -735,5 +761,18 @@ func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
 	}
 	if find(read(), "nobody spoke, so nothing was written down") == nil {
 		t.Fatal("the log does not say nobody spoke")
+	}
+}
+
+// until waits for ok to say yes, looking every millisecond, and fails
+// the test after ten seconds with what was waited for.
+func until(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	give := time.Now().Add(10 * time.Second)
+	for !ok() {
+		if time.Now().After(give) {
+			t.Fatalf("%s never came", what)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

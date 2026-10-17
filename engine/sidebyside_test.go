@@ -73,7 +73,10 @@ func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 		panic("a copy of the speech model broke")
 	}
 	// Each piece takes a time of its own, so they finish in any order.
-	time.Sleep(time.Duration(200+rand.IntN(200)) * time.Millisecond)
+	// A spread of 20 to 60 ms is wider than the time a piece takes to be
+	// handed out, so they still overtake each other, and an episode of many
+	// pieces is not held up by seconds of sleeping.
+	time.Sleep(time.Duration(20+rand.IntN(40)) * time.Millisecond)
 	s.mu.Lock()
 	out := s.inner.Recognize(samples, rate)
 	s.mu.Unlock()
