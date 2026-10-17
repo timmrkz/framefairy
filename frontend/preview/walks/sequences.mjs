@@ -318,7 +318,10 @@
 //                      whatever the speech model heard, a word or more
 //   ["report as before"]
 //                      the report's field reads what it did at the last
-//                      "report reads"
+//                      "report reads", or at the last "report grew" with
+//                      "grown"
+//   ["report grew"]    the report's field holds more than it did at the
+//                      last "report reads", all of that and more words
 //   ["episode"]        opens the episode on screen before again
 //   ["episode watched"]
 //                      the same, reading back from the video preview every
@@ -1691,16 +1694,23 @@ export const sequences = [
   },
   {
     // Plan row 2.189. Tim asked for dictation the way claude.ai does it:
-    // Enter keeps what was said, as the microphone does, and Escape
-    // removes it.
-    name: "Enter keeps what was dictated and Escape removes it",
+    // Enter keeps what was said, as the microphone does. Escape removed
+    // it then, and Tim lost a long report to an Escape meant for the app,
+    // with nothing Cmd+Z could bring back, issue #355. Escape keeps it
+    // too now, as it does on a Mac, and Cmd+Z takes it back as one step
+    // and Cmd+Shift+Z brings it back again.
+    name: "Enter and Escape keep what was dictated, and undo takes it back",
     steps: [
       ["bugs"],
       ["write", "It froze.", 2],
       ["dictate", "enter"],
       ["report reads", "It * froze."],
       ["dictate", "escape"],
+      ["report grew"],
+      ["undo"],
       ["report as before"],
+      ["redo"],
+      ["report as before", "grown"],
     ],
   },
   {
@@ -6576,7 +6586,19 @@ for (const seq of toWalk) {
       }
       case "report as before": {
         const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
-        if (have !== kept.report) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(kept.report)} as before`;
+        const was = arg === "grown" ? kept.grown : kept.report;
+        if (have !== was) wrong = `the report reads ${JSON.stringify(have)}, not ${JSON.stringify(was)} as before`;
+        break;
+      }
+      case "report grew": {
+        const have = await page.locator(".telling").evaluate((f) => f.innerText.replace(/\n$/, ""));
+        // Every word there was, in order, and words between them.
+        const words = kept.report.split(/\s+/);
+        let at = 0;
+        for (const w of have.split(/\s+/)) if (w === words[at]) at++;
+        if (at < words.length || have.split(/\s+/).length <= words.length)
+          wrong = `the report reads ${JSON.stringify(have)}, not more than ${JSON.stringify(kept.report)}`;
+        kept.grown = have;
         break;
       }
       case "episode":

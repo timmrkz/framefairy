@@ -30,9 +30,12 @@
   // heard and changes as more of it is, so it is plain text in a mark
   // that cannot be typed in. What came before the pause is settled and is text
   // in the field, still grey, which can be corrected while the person
-  // talks on. Enter or the button keeps all of it, written in as one step
-  // Cmd+Z takes back, and Escape removes it. The Go side records and
-  // writes down, see listen.go.
+  // talks on. Enter, Escape or the button keeps all of it, written in as
+  // one step Cmd+Z takes back. Escape removed it once, as on claude.ai,
+  // and Tim lost a long report to an Escape meant for the app, with no
+  // Cmd+Z to bring it back, issue #355. On a Mac, Escape ends Dictation
+  // and keeps what was said. The Go side records and writes down, see
+  // listen.go.
   let field: HTMLDivElement;
   let listening = $state(false);
   let hearing = $state(false);
@@ -549,25 +552,18 @@
     }
   }
 
-  // drop stops listening and removes what was said.
-  function drop() {
-    if (!listening) return;
-    listening = false;
-    chime("off");
-    loud = 0;
-    api.cancelListening().catch(() => {});
-    finish(false);
-  }
-
+  // Enter and Escape keep what was said, the way the button does.
+  // Removing it is Cmd+Z after, one step, and Cmd+Shift+Z brings it back,
+  // so no key throws a report away for good.
   function key(e: KeyboardEvent) {
     if (!listening) return;
     if (e.key === "Enter" && !e.isComposing && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       keep();
-    } else if (e.key === "Escape") {
+    } else if (e.key === "Escape" && !e.isComposing) {
       e.preventDefault();
       e.stopPropagation();
-      drop();
+      keep();
     }
   }
 
@@ -678,7 +674,7 @@
         data-loud={loud}
         aria-label={listening ? "Stop" : hearing ? "Writing" : "Dictate"}
         title={listening
-          ? "Stop. Keeps what you said. Enter does the same, and Escape removes it"
+          ? "Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z takes it back"
           : hearing
             ? "Writing down what you said"
             : "Dictate. Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
@@ -714,7 +710,7 @@
            before it is made. -->
       <span class="ask always">
         <Info label="How a report works" side="right">
-          Say what happened with the microphone, or type it. Enter keeps what you said and Escape removes it. Attach
+          Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z takes it back. Attach
           screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
           to ten of 10 MB each.
           What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,

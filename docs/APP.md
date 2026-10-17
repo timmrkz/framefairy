@@ -2906,8 +2906,11 @@ came before a pause of 0.6 s is settled: it is text in the field, still
 grey, and can be corrected while the person talks on. Settled words are
 put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking
 undo and redo only what was typed. **Stop** or Enter keeps all of it,
-the last piece a moment later, written in as one step Cmd+Z takes back,
-and Escape removes everything said since Dictate was pressed. It also
+the last piece a moment later, written in as one step Cmd+Z takes back
+and Cmd+Shift+Z brings back again. Escape keeps it too, the way it ends
+Dictation on a Mac. It removed everything said once, as on claude.ai,
+and Tim lost a long report to an Escape meant for the app, with nothing
+Cmd+Z could bring back, issue #355. It also
 stops by itself, keeping what was said, after 2 minutes without a word
 or once a recording is 10 minutes long, and says why under the field
 where the problem would be. Stop pressed while it does that gets every
