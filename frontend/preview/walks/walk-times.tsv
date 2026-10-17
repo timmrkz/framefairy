@@ -82,7 +82,7 @@
  12	sequences.mjs SEQUENCE=an edge taken again at once after a drag is the edge's
  11	sequences.mjs SEQUENCE=Bugs opens one report window and brings it back
  11	sequences.mjs SEQUENCE=Dictate writes what is said while it is said, where the cursor was, and undo takes it back
- 11	sequences.mjs SEQUENCE=Enter keeps what was dictated and Escape removes it
+ 11	sequences.mjs SEQUENCE=Enter and Escape keep what was dictated, and undo takes it back
  11	sequences.mjs SEQUENCE=a clip made with I while the video is paused is not dimmed
  11	sequences.mjs SEQUENCE=a video shorter than a clip is its own clip, with rulers that fit it
  11	sequences.mjs SEQUENCE=a word typed in a face libass thickens is as heavy as libass draws it

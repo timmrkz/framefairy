@@ -305,7 +305,7 @@ func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
 	}
 }
 
-// Escape drops what was said: the recording ends at once, the window is
+// Dropping a recording drops what was said: the recording ends at once, the window is
 // told nothing more about it, and nothing is left to stop. Plan row 2.189.
 func TestDroppingARecording(t *testing.T) {
 	f, mic, told := dictating(t)

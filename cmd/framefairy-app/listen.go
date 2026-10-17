@@ -622,7 +622,8 @@ func (f *FrameFairy) SettleListening(recording, pieces int, text string) {
 }
 
 // CancelListening ends the recording and drops what was said, at once,
-// without waiting for the speech model. Escape on Report a Problem.
+// without waiting for the speech model, when Report a Problem goes while
+// it listens. Escape keeps what was said, issue #355.
 func (f *FrameFairy) CancelListening() {
 	l := &f.listening
 	r, _ := l.take()
