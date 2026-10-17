@@ -51,6 +51,10 @@ type Engine struct {
 	// Files is where the files of episodes are read and written, the real
 	// disk in the programs, see files.go.
 	Files afero.Fs
+	// Records is where the training records and the timings of past
+	// searches are kept, on Files in the default places unless the
+	// program hands it its own, see records.go.
+	Records *Records
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
@@ -107,6 +111,7 @@ type Engine struct {
 func NewEngine(log *Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
 		Files:   files,
+		Records: NewRecords(files, "", ""),
 		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
 		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}

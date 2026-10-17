@@ -276,7 +276,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	// framed and written to the plan while the model writes the next, so
 	// the first clip is there long before the last.
 	build := e.newPlanBuilder(ctx, sourcePath, source, lines, units, opts,
-		planIDFor(opts, fingerprint, !haveReply))
+		e.planIDFor(opts, fingerprint, !haveReply))
 	defer build.stop()
 	// A local model can be asked again about the clips that do not fit the
 	// length, and a reused reply brings the answer it had to that.
@@ -310,7 +310,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		if opts.Local != nil {
 			budget = opts.Local.Think
 		}
-		clock := newSearchClock(e.Log, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count, budget)
+		clock := newSearchClock(e.Log, e.Records, opts.Model, opts.Local != nil, runeLen(prompt), opts.Count, budget)
 		// Set before the clock runs, so nothing reads it while it is set.
 		clock.now.NoFit = !build.fits
 		go clock.run()

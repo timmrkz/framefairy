@@ -78,7 +78,7 @@ func TestAClipMadeAgainHasTheCaptionsItsRemovedOneLost(t *testing.T) {
 	if err := RemoveCaption(fsys, path, "01", before.Captions[0].First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(fsys, path, "01", true); err != nil {
+	if err := SetRejected(fsys, nil, path, "01", true); err != nil {
 		t.Fatal(err)
 	}
 	// Made again by hand, over the same part of the video.
@@ -131,7 +131,7 @@ func TestACaptionRemovedInOneClipIsRemovedThereAlone(t *testing.T) {
 		t.Errorf("the video says %d words, it said %d", len(fresh.Words), len(captionHeard()))
 	}
 	for _, removed := range []bool{true, false} {
-		if err := SetRejected(fsys, path, "01", removed); err != nil {
+		if err := SetRejected(fsys, nil, path, "01", removed); err != nil {
 			t.Fatal(err)
 		}
 		own, err := ClipCaptionsView(fsys, path, "01", readAgain(fsys, logs, captionHeard()), nil)
@@ -173,7 +173,7 @@ func TestAClipMadeByHandAgainIsTheClipMadeTheFirstTime(t *testing.T) {
 	if err := RemoveCaption(disk, p.HandPlanPath(), "h01", first.Captions[1].First, tr, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(disk, p.HandPlanPath(), "h01", true); err != nil {
+	if err := SetRejected(disk, nil, p.HandPlanPath(), "h01", true); err != nil {
 		t.Fatal(err)
 	}
 	key, err := p.MakeClip(ctx, "clip-2", ClipRequest{At: 20}, nil)
@@ -223,7 +223,7 @@ func TestACorrectionGoesWithItsClip(t *testing.T) {
 	if tr.Words[2].Text != "ein" {
 		t.Errorf("the video says %q", tr.Words[2].Text)
 	}
-	if err := SetRejected(fsys, path, "01", true); err != nil {
+	if err := SetRejected(fsys, nil, path, "01", true); err != nil {
 		t.Fatal(err)
 	}
 	hand := filepath.Join(filepath.Dir(path), HandPlanName)

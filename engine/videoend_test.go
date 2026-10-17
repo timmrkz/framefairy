@@ -52,7 +52,7 @@ func TestAClipEndsWhereTheVideoDoes(t *testing.T) {
 			if shaped.Playhead > 21.52 {
 				t.Errorf("the playhead goes to %v, after the video", shaped.Playhead)
 			}
-			if err := Reshape(fsys, path, "01", c.g, nearTheEndWords, 0.1); err != nil {
+			if err := Reshape(fsys, nil, path, "01", c.g, nearTheEndWords, 0.1); err != nil {
 				t.Fatal(err)
 			}
 			_, clips, err := LoadClips(fsys, path)

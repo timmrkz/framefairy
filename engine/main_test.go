@@ -12,12 +12,13 @@ import (
 	"github.com/spf13/afero"
 )
 
-// The tests never write into the home folder of whoever runs them, so the
-// one training folder is in memory for the whole package, and so is the
-// record of how long searches take.
+// The tests never write into the home folder of whoever runs them. An
+// engine on memory keeps its records there, and one on the disk keeps
+// them in a home of the tests' own, see Records, which a test that reads
+// them back replaces with records of its own, see ownRecords.
 //
 // On the real disk: the episodes the tests share are made by ffmpeg, and
-// removed when they end.
+// removed when they end, and so is the tests' home.
 func TestMain(m *testing.M) {
 	if os.Getenv("FRAMEFAIRY_STUBBORN_SERVER") != "" {
 		stubbornServer()
@@ -38,29 +39,29 @@ func TestMain(m *testing.M) {
 	// The tests start fake servers, whatever the machine they run on has
 	// free, so what is free is not asked. TestTheMemoryFreeNow asks it.
 	freeMemory = func() int64 { return 0 }
-	machine := afero.NewMemMapFs()
-	SetTrainingDir(machine, "/home/tim/.framefairy/training")
-	// Nor into the timings of past searches, which would then measure
-	// every search on the machine against a fake model.
-	SetSpeedFile(machine, "/home/tim/.framefairy/speed.json")
+	home, err := os.MkdirTemp("", "framefairy-home-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("HOME", home)
+	os.Setenv("USERPROFILE", home)
+	os.Unsetenv("FRAMEFAIRY_TRAINING")
 	code := m.Run()
+	_ = os.RemoveAll(home)
 	if episodes.dir != "" {
 		_ = os.RemoveAll(episodes.dir)
 	}
 	os.Exit(code)
 }
 
-// ownTrainingDir gives a test the training folder to itself, for a test
-// that reads back the records it wrote, and puts back the one before when
-// it ends. The tests that run side by side write into the package's one
-// folder, and a test that points it elsewhere cannot run beside them.
-func ownTrainingDir(t *testing.T) string {
-	t.Helper()
-	was, wasOn := TrainingDir(), TrainingFiles()
-	dir := "/home/tim/.framefairy/training"
-	SetTrainingDir(afero.NewMemMapFs(), dir)
-	t.Cleanup(func() { SetTrainingDir(wasOn, was) })
-	return dir
+// ownRecords gives an engine records of its own, in memory, for a test
+// that reads back what it recorded, and returns them. An engine on memory
+// has records of its own already, one on the disk shares the tests' home.
+func ownRecords(e *Engine) *Records {
+	e.Records = NewRecords(afero.NewMemMapFs(), "/home/tim/.framefairy/training",
+		"/home/tim/.framefairy/speed.json")
+	return e.Records
 }
 
 // stubbornServer is this test binary run as a llama-server that says it is

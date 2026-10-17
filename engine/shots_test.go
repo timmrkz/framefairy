@@ -59,7 +59,7 @@ func TestACutPutBackKeepsTheCameraSwitch(t *testing.T) {
 	for _, snap := range []Snap{ToFrames, ToWords} {
 		fsys, path := writePlanAt(t, shotsPlan)
 		g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(snap), Frames: at25}
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		cut := ClipCuts(clipByID(t, fsys, path, "01"))
@@ -72,7 +72,7 @@ func TestACutPutBackKeepsTheCameraSwitch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := Reshape(fsys, path, "01", join, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", join, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		shotsAre(t, fsys, path, fmt.Sprintf("with snap %v, after the cut is put back", snap), twoShots())
@@ -93,13 +93,13 @@ func TestACutPutBackKeepsTheCameraSwitch(t *testing.T) {
 func TestACutPutBackKeepsACropPlacedByHand(t *testing.T) {
 	fsys, path := writePlanAt(t, shotsPlan)
 	tr := shotsTranscript()
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetCrop(fsys, path, "01", 15, 700, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	shotsAre(t, fsys, path, "after the cut is put back", []Segment{
@@ -118,14 +118,14 @@ func TestAnEdgePutBackKeepsTheCameraSwitch(t *testing.T) {
 	}{{"end", 12.0, 16.0}, {"start", 13.6, 9.6}} {
 		fsys, path := writePlanAt(t, shotsPlan)
 		trim := Gesture{Kind: "trim", Edge: c.edge, From: c.to, Frames: at25}
-		if err := Reshape(fsys, path, "01", trim, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", trim, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		if n := len(clipByID(t, fsys, path, "01").Segments); n != 1 {
 			t.Fatalf("trimming the %s to %v left %d pieces", c.edge, c.to, n)
 		}
 		back := Gesture{Kind: "trim", Edge: c.edge, From: c.back, Frames: at25}
-		if err := Reshape(fsys, path, "01", back, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", back, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		shotsAre(t, fsys, path, "after the "+c.edge+" is put back", twoShots())
@@ -138,10 +138,10 @@ func TestACutPutBackInOneShotLeavesOnePiece(t *testing.T) {
 	fsys, path := writePlanAt(t, `{"clips": [{"id": "01", "segments": [
       {"start": 9.6, "end": 16.0, "crop_x": 300}]}]}`)
 	tr := shotsTranscript()
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	shotsAre(t, fsys, path, "after the cut is put back", []Segment{{Start: 9.6, End: 16, CropX: intPtr(300)}})
@@ -156,13 +156,13 @@ func TestACutPutBackBringsBackAShotItSwallowed(t *testing.T) {
       {"start": 12.8, "end": 13.4, "crop_x": 900},
       {"start": 13.4, "end": 16.0, "crop_x": 300}]}]}`)
 	tr := shotsTranscript()
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "cut", From: 12.0, To: 14.0, Frames: at25}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 14.0, Frames: at25}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(clipByID(t, fsys, path, "01").Segments); n != 2 {
 		t.Fatalf("the cut left %d pieces, not 2", n)
 	}
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	shotsAre(t, fsys, path, "after the cut is put back", []Segment{
@@ -180,7 +180,7 @@ func TestASwitchIsNoCut(t *testing.T) {
 		{Kind: "move", Index: 0, From: 12.0, To: 13.5, Frames: at25},
 	} {
 		fsys, path := writePlanAt(t, shotsPlan)
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err == nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err == nil {
 			t.Errorf("a %s at the switch was made", g.Kind)
 		}
 		shotsAre(t, fsys, path, "after a "+g.Kind+" at the switch", twoShots())
@@ -199,11 +199,11 @@ func TestFoundPiecesThatAreNotPiecesAreNotRead(t *testing.T) {
 		`"found_segments": [7]`,
 	} {
 		fsys, path := writePlanAt(t, strings.Replace(shotsPlan, `{"id": "01", `, `{"id": "01", `+found+`, `, 1))
-		if err := Reshape(fsys, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		cut := ClipCuts(clipByID(t, fsys, path, "01"))[0]
-		if err := Reshape(fsys, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		// The switch was cut out before anything knew where it was, so the
@@ -222,7 +222,7 @@ func TestTheFoundPiecesAreKeptOnce(t *testing.T) {
 		{Kind: "trim", Edge: "end", From: 14, Frames: at25},
 		{Kind: "trim", Edge: "start", From: 13.6, Frames: at25},
 	} {
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 	}

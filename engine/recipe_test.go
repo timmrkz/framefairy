@@ -147,13 +147,13 @@ func TestStoriesSaysTheLengthInWords(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAnExperimentKeepsToItself(t *testing.T) {
-	ownTrainingDir(t)
 	source := testEpisode(t, "20")
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	records := ownRecords(e)
 
 	base := DefaultOptions()
 	base.LLMURL = server.URL
@@ -187,7 +187,7 @@ func TestAnExperimentKeepsToItself(t *testing.T) {
 	if _, err := os.Stat(kept); err != nil {
 		t.Error("the experiment set the episode's captions aside")
 	}
-	if n := 0; readRecords(filepath.Join(TrainingDir(), "plans.jsonl"), func([]byte) { n++ }) == nil && n > 0 {
+	if n := 0; records.readRecords(filepath.Join(records.TrainingDir(), "plans.jsonl"), func([]byte) { n++ }) == nil && n > 0 {
 		t.Errorf("the experiment was recorded for training")
 	}
 	if asked != 1 {

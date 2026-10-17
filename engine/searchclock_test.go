@@ -14,11 +14,11 @@ import (
 	"github.com/spf13/afero"
 )
 
-// useSpeedFile gives a test a record of timings of its own, empty.
-func useSpeedFile(t *testing.T) {
-	wasOn, was := speedFile()
-	SetSpeedFile(afero.NewMemMapFs(), "/home/tim/.framefairy/speed.json")
-	t.Cleanup(func() { SetSpeedFile(wasOn, was) })
+// speedRecords are records of a test's own, in memory, with no timings
+// yet.
+func speedRecords() *Records {
+	return NewRecords(afero.NewMemMapFs(), "/home/tim/.framefairy/training",
+		"/home/tim/.framefairy/speed.json")
 }
 
 // A search measured against the one before it: 20 seconds loading, 30
@@ -218,68 +218,68 @@ func TestABudgetShortensTheThinking(t *testing.T) {
 // stand-in rather than not at all. A record of what an older version
 // measured is no record.
 func TestALocalModelSaysHowFarItIsTheFirstTime(t *testing.T) {
-	useSpeedFile(t)
-	if got, known := pastSpeed("local:new", true); !known || got != measuredLocal {
+	r := speedRecords()
+	if got, known := r.pastSpeed("local:new", true); !known || got != measuredLocal {
 		t.Errorf("got %+v %v", got, known)
 	}
 	// A model in the cloud the app knows is measured against a guess of its
 	// own, never against a local model, and one nobody knows not at all.
-	if got, known := pastSpeed("claude-sonnet-5", false); !known || got != measuredCloud {
+	if got, known := r.pastSpeed("claude-sonnet-5", false); !known || got != measuredCloud {
 		t.Errorf("a model in the cloud: %+v %v", got, known)
 	}
-	if _, known := pastSpeed("claude-somebody-9", false); known {
+	if _, known := r.pastSpeed("claude-somebody-9", false); known {
 		t.Error("a model nobody knows was given a guess")
 	}
 	old := `{"local:old": {"load": 24, "read": 127, "clip": 1, "tail": 28, "runs": 1}}`
-	if fsys, path := speedFile(); afero.WriteFile(fsys, path, []byte(old), 0o644) != nil {
+	if fsys, path := r.Files, r.speeds; afero.WriteFile(fsys, path, []byte(old), 0o644) != nil {
 		t.Fatal("the old record was not written")
 	}
-	if got, _ := pastSpeed("local:old", true); got != measuredLocal {
+	if got, _ := r.pastSpeed("local:old", true); got != measuredLocal {
 		t.Errorf("an old record was read as a new one: %+v", got)
 	}
 }
 
 func TestTimingsAreKeptPerModelAndBlended(t *testing.T) {
-	useSpeedFile(t)
-	if _, known := pastSpeed("gemma", false); known {
+	r := speedRecords()
+	if _, known := r.pastSpeed("gemma", false); known {
 		t.Fatal("a record out of nowhere")
 	}
-	keepSpeed("gemma", searchSpeed{Load: 20, Read: 1000, Thought: 20, Rate: 40, Clip: 4, Tail: 2, Runs: 1}, true)
-	keepSpeed("gemma", searchSpeed{Load: 40, Read: 3000, Thought: 40, Rate: 60, Clip: 6, Tail: 4, Runs: 1}, true)
+	r.keepSpeed("gemma", searchSpeed{Load: 20, Read: 1000, Thought: 20, Rate: 40, Clip: 4, Tail: 2, Runs: 1}, true)
+	r.keepSpeed("gemma", searchSpeed{Load: 40, Read: 3000, Thought: 40, Rate: 60, Clip: 6, Tail: 4, Runs: 1}, true)
 	// Against a server that was already running, and without thinking:
 	// neither loading nor the speed of thought is measured.
-	keepSpeed("gemma", searchSpeed{Load: 0, Read: 2000, Thought: 0, Clip: 5, Tail: 3, Runs: 1}, false)
-	got, known := pastSpeed("gemma", false)
+	r.keepSpeed("gemma", searchSpeed{Load: 0, Read: 2000, Thought: 0, Clip: 5, Tail: 3, Runs: 1}, false)
+	got, known := r.pastSpeed("gemma", false)
 	want := searchSpeed{Version: speedVersion, Load: 30, Read: 2000, Thought: 15, Rate: 50,
 		Clip: 5, Tail: 3, Runs: 3}
 	if !known || got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	if got, _ := pastSpeed("claude-sonnet-5", false); got != measuredCloud {
+	if got, _ := r.pastSpeed("claude-sonnet-5", false); got != measuredCloud {
 		t.Error("one model's timings were taken for another's")
 	}
 
 	// A search that asked again times the fit. One that did not keeps it.
-	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 10, Runs: 1}, false)
-	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 20, Runs: 1}, false)
-	keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Runs: 1}, false)
-	if got, _ := pastSpeed("gemma", false); got.Fit != 15 {
+	r.keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 10, Runs: 1}, false)
+	r.keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Fit: 20, Runs: 1}, false)
+	r.keepSpeed("gemma", searchSpeed{Read: 2000, Clip: 5, Tail: 3, Runs: 1}, false)
+	if got, _ := r.pastSpeed("gemma", false); got.Fit != 15 {
 		t.Errorf("fit %.1f, want 15", got.Fit)
 	}
 
 	// A record nobody could have measured is no record.
-	keepSpeed("broken", searchSpeed{Read: 0, Clip: 5, Runs: 1}, false)
-	if _, known := pastSpeed("broken", false); known {
+	r.keepSpeed("broken", searchSpeed{Read: 0, Clip: 5, Runs: 1}, false)
+	if _, known := r.pastSpeed("broken", false); known {
 		t.Error("a search with no reading was kept")
 	}
-	if fsys, path := speedFile(); afero.WriteFile(fsys, path, []byte("{not json"), 0o644) != nil {
+	if fsys, path := r.Files, r.speeds; afero.WriteFile(fsys, path, []byte("{not json"), 0o644) != nil {
 		t.Fatal("the broken record was not written")
 	}
-	if _, known := pastSpeed("gemma", false); known {
+	if _, known := r.pastSpeed("gemma", false); known {
 		t.Error("a broken file was read as a record")
 	}
-	keepSpeed("gemma", searchSpeed{Load: 20, Read: 1000, Clip: 4, Tail: 2, Runs: 1}, true)
-	if _, known := pastSpeed("gemma", false); !known {
+	r.keepSpeed("gemma", searchSpeed{Load: 20, Read: 1000, Clip: 4, Tail: 2, Runs: 1}, true)
+	if _, known := r.pastSpeed("gemma", false); !known {
 		t.Error("a broken file was not replaced")
 	}
 }
@@ -287,18 +287,18 @@ func TestTimingsAreKeptPerModelAndBlended(t *testing.T) {
 // Many searches finishing at once, each on its own goroutine, keep every
 // timing they report.
 func TestTimingsKeptFromSeveralSearchesAtOnce(t *testing.T) {
-	useSpeedFile(t)
+	r := speedRecords()
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			keepSpeed("model", searchSpeed{Read: float64(1000 + i), Clip: 4, Runs: 1}, false)
-			pastSpeed("model", false)
+			r.keepSpeed("model", searchSpeed{Read: float64(1000 + i), Clip: 4, Runs: 1}, false)
+			r.pastSpeed("model", false)
 		}()
 	}
 	wg.Wait()
-	if got, _ := pastSpeed("model", false); got.Runs != 16 {
+	if got, _ := r.pastSpeed("model", false); got.Runs != 16 {
 		t.Errorf("%d of 16 searches kept", got.Runs)
 	}
 }
@@ -310,9 +310,7 @@ func TestTimingsKeptFromSeveralSearchesAtOnce(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestASearchSaysHowFarItIs(t *testing.T) {
-	useSpeedFile(t)
 	source := testEpisode(t, "40")
-	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -329,6 +327,7 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 	})
 	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	r := ownRecords(e)
 	base := DefaultOptions()
 	base.LLMURL = server.URL
 	base.ASRModel = t.TempDir()
@@ -376,7 +375,7 @@ func TestASearchSaysHowFarItIs(t *testing.T) {
 	if found != 1 {
 		t.Errorf("the clip that landed was not in the progress: %+v", first)
 	}
-	if got, known := readSpeeds(speedFile())[plannerName(base)]; !known || !got.usable() {
+	if got, known := readSpeeds(r.Files, r.speeds)[plannerName(base)]; !known || !got.usable() {
 		t.Fatalf("the first search left no timings under %s", plannerName(base))
 	}
 	says(search(20))
@@ -473,10 +472,10 @@ func TestTheFittingAndTheFramingCountTheirClips(t *testing.T) {
 // nothing left to frame when the model stopped keeps the framing it had.
 // It was kept as no time, which halved the record on every such search.
 func TestTheTailIsKeptPerClip(t *testing.T) {
-	useSpeedFile(t)
-	keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Fit: 6, Tail: 4, Runs: 1}, false)
-	keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Runs: 1}, false)
-	if got, _ := pastSpeed("gemma", true); got.Tail != 4 || got.Fit != 6 {
+	r := speedRecords()
+	r.keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Fit: 6, Tail: 4, Runs: 1}, false)
+	r.keepSpeed("gemma", searchSpeed{Read: 1000, Clip: 4, Runs: 1}, false)
+	if got, _ := r.pastSpeed("gemma", true); got.Tail != 4 || got.Fit != 6 {
 		t.Errorf("tail %.1f, fit %.1f, want 4 and 6", got.Tail, got.Fit)
 	}
 }
@@ -485,8 +484,8 @@ func TestTheTailIsKeptPerClip(t *testing.T) {
 // written, never past the clips it was asked about, and a finished search
 // keeps how long a clip took to fit and to frame after the answer.
 func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
-	useSpeedFile(t)
-	c := newSearchClock(NewLog(&bytes.Buffer{}, false, false), "gemma", true, 30000, 6, -1)
+	r := speedRecords()
+	c := newSearchClock(NewLog(&bytes.Buffer{}, false, false), r, "gemma", true, 30000, 6, -1)
 	c.now.Framers = 4
 	c.enter(partReading)
 	c.enter(partWriting)
@@ -523,7 +522,7 @@ func TestTheClockCountsTheFittingAndKeepsItPerClip(t *testing.T) {
 	c.framingAt = c.lastFramed.Add(-time.Duration(12 * float64(time.Second)))
 	c.mu.Unlock()
 	c.finish(true)
-	got, _ := pastSpeed("gemma", true)
+	got, _ := r.pastSpeed("gemma", true)
 	// 40 seconds for four clips, and 12 for the six still to frame, in two
 	// rounds of four framers.
 	if got.Fit != 10 || got.Tail != 6 || got.Clip != 2 {

@@ -67,7 +67,7 @@ func reshape(t *testing.T, fsys afero.Fs, path string, g Gesture) {
 	if g.Frames.FPSNum == 0 {
 		g.Frames = at25
 	}
-	if err := Reshape(fsys, path, "01", g, editableTranscript(), 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", g, editableTranscript(), 0.1); err != nil {
 		t.Fatal(err)
 	}
 }
