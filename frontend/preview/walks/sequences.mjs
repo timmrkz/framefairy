@@ -889,7 +889,7 @@
 //                      reads the frame on the canvas and the crop frame on
 //                      every animation frame: on each, the crop frame
 //                      stands where the glide puts it for that frame, and
-//                      it moves on many frames, not once
+//                      in a place of its own on every frame shown, not once
 //   ["fits"]           the list's trigger is as wide as the channel it
 //                      names, with no room kept for a longer one
 //   ["at once", head]  in the frame after the pick, the list said the
@@ -3197,8 +3197,14 @@ function watchEdge(page, label) {
     window.__edgeSeen = [];
     window.__edgeFrames = [];
     window.__followWatch = true;
+    // Its own, so a watch that was stopped stops even when the next has
+    // begun by its next frame, as watchPills does. On a machine too busy
+    // to draw a frame between the two, it read the new watch's
+    // __followWatch and went on reading its own edge into the new watch.
+    const id = (window.__followId ?? 0) + 1;
+    window.__followId = id;
     const tick = () => {
-      if (!window.__followWatch) return;
+      if (!window.__followWatch || window.__followId !== id) return;
       const screen = document.querySelector(".screen");
       const playhead = Number(screen?.dataset.playhead);
       const shown = Number(screen?.dataset.shown);
@@ -3488,11 +3494,14 @@ async function asPreviewed(page, rate, before) {
     const target = (from + to) / 2;
     let x = (x0 + x1) / 2;
     let placed = NaN;
+    // Where each click put the playhead, which a failure says.
+    const tried = [];
     for (let tries = 0; tries < 4; tries++) {
       if (grips.some(([a, b]) => x > a && x < b)) break;
       await page.mouse.click(x, high(g.track));
       await settle(page);
       placed = Number(await page.evaluate(() => document.querySelector(".screen").dataset.playhead));
+      tried.push(placed.toFixed(4));
       if (placed >= from && placed <= to) break;
       x += ((target - placed) * (x1 - x0)) / Math.max(to - from, 1e-6);
     }
@@ -3510,7 +3519,14 @@ async function asPreviewed(page, rate, before) {
       .then(() => true, () => false);
     const seen = came ? frames[j] : await filmedOnScreen(page);
     if (!came || (await filmedOnScreen(page)) !== frames[j]) {
-      problems.push(`frame ${j} of the short, for ${at.toFixed(4)} s, is frame ${frames[j]} of the episode, the video preview shows ${seen} at ${placed.toFixed(4)}`);
+      // With the clicks that put the playhead there, and where the frame
+      // shown begins by the app's count, since this failed only on a busy
+      // machine, issue #325, and said nothing of how it came about.
+      const shown = await page.evaluate(() => document.querySelector(".screen").dataset.shown);
+      problems.push(
+        `frame ${j} of the short, for ${at.toFixed(4)} s, is frame ${frames[j]} of the episode, the video preview shows ${seen} at ${placed.toFixed(4)}` +
+          `${came ? ", after it showed the right one" : ""}, with the playhead put at ${tried.join(", then ")} and the frame shown beginning at ${shown}`,
+      );
     }
   }
   // Every piece looked at where it starts and where it ends, so at both
@@ -8171,6 +8187,15 @@ for (const seq of toWalk) {
         const from = g.start.x + g.start.w;
         await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
         await settle(page);
+        // R works on the frame the video preview shows, inShort in
+        // Episode.svelte, and the turn read is that frame's, so R is
+        // pressed once it is the playhead's frame, as C is, see keyframe
+        // at. On a busy machine R was pressed while the video preview
+        // still showed the frame from before the click, issue #320.
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         const turn = () => page.evaluate(() => Number(document.querySelector(".screen").dataset.turn));
         const before = await turn();
         const took = await keyShows(page, "r", (b) => Number(document.querySelector(".screen").dataset.turn) !== b, before);
@@ -8445,11 +8470,9 @@ for (const seq of toWalk) {
         let popped = 0;
         // The most a pop grew.
         let grew = 1;
-        // The most frames of the screen a bounce was drawn over.
-        let longest = 0;
-        // arg steps to the right, then as many back to the first word.
-        for (let k = 0; k < 2 * arg && !wrong; k++) {
-          const key = k < arg ? "Shift+ArrowRight" : "Shift+ArrowLeft";
+        // One step with key, watched: whether a pop started, the frames
+        // read, and how many frames of the screen the bounce was drawn on.
+        const stepWatched = async (key) => {
           const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
           const drawn = await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0);
           const stop = await watchPills(page);
@@ -8464,6 +8487,29 @@ for (const seq of toWalk) {
           });
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           const frames = await stop();
+          const bounced = (await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0)) - drawn;
+          // The longest the screen went without a frame while the bounce
+          // was drawn, from the first frame it was drawn on to the last.
+          const on = frames.filter((f, i) => i > 0 && f.bounced > frames[i - 1].bounced);
+          const gap = Math.max(0, ...on.slice(1).map((f, i) => f.t - on[i].t));
+          return { started, frames, bounced, gap };
+        };
+        // arg steps to the right, then as many back to the first word.
+        for (let k = 0; k < 2 * arg && !wrong; k++) {
+          const key = k < arg ? "Shift+ArrowRight" : "Shift+ArrowLeft";
+          let { started, frames, bounced, gap } = await stepWatched(key);
+          // The bounce lasts 220 ms and is drawn on every frame the screen
+          // draws while it lasts, so on a machine so busy that the screen
+          // drew fewer than three frames in that time, or none for 90 ms,
+          // there is no bounce to see, only the machine. Issues #328 and
+          // #329: a busy runner drew two, and one drew none round the
+          // peak. Then the step is taken again, off the word and back onto
+          // it, up to three times, and a bounce that is not there is not
+          // there any of the four times.
+          for (let again = 0; started && (bounced < 3 || gap > 90) && again < 3; again++) {
+            await stepWatched(key === "Shift+ArrowRight" ? "Shift+ArrowLeft" : "Shift+ArrowRight");
+            ({ started, frames, bounced, gap } = await stepWatched(key));
+          }
           const off = frames.find((f) => framesOffPill(f, "keyed"));
           const last = frames[frames.length - 1];
           if (off) {
@@ -8479,15 +8525,18 @@ for (const seq of toWalk) {
           const widths = on.map((f) => f.pill.w);
           const least = Math.min(...widths);
           const most = Math.max(...widths);
-          // How many frames of the screen the bounce was drawn on.
-          const bounced = (await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0)) - drawn;
           report.push(
             `"${last.keyed.text}" ${started ? `popped from ${least.toFixed(0)} to ${most.toFixed(0)} px over ${bounced} frames` : "did not pop"}`,
           );
           if (!started) continue;
           popped++;
           grew = Math.max(grew, most / least);
-          longest = Math.max(longest, bounced);
+          // The frames of the screen from the first the bounce was drawn
+          // on to the last, read off the count of bounce paints on each,
+          // and those of them it was not drawn on.
+          const paints = frames.map((f, i) => (i > 0 ? f.bounced - frames[i - 1].bounced : 0));
+          const span = paints.slice(paints.findIndex((d) => d > 0), paints.findLastIndex((d) => d > 0) + 1);
+          const skipped = span.filter((d) => d === 0).length;
           // The word and its pill grow together, to 115 % of rest, from
           // the word's first frame, where the step lands, at rest, and
           // back to rest, however briefly the short lights it, every word
@@ -8496,19 +8545,24 @@ for (const seq of toWalk) {
           // one frame, and then a word of one frame stop at its peak.
           // On the screen's frames, one scale each: Tim found the bounce
           // laggy when it was the short's frames of the pop, 25 a second.
-          // A runner busy with other walks draws fewer, 4 of 13 at the
-          // least seen in CI, so a word holds only that the screen drew
-          // it step by step, on the way up, its peak and on the way down,
-          // and the whole walk that a bounce was drawn over 7 frames. That every frame of the screen gets its own
-          // scale is held by "the bounce after a word step" in
-          // captions.test.ts. So too the peak: with fewer frames one may
+          // How many frames the screen draws in a fifth of a second is the
+          // machine's, 13 on a quiet one and 2 on a busy runner, so a word
+          // holds that the bounce was drawn on every frame the screen drew
+          // while it lasted, which no machine changes, and on three at the
+          // least, on the way up, its peak and on the way down. Before, the
+          // whole walk held that a bounce was drawn over 7 frames, which
+          // a busy machine broke, issues #328 and #329. That every frame
+          // gets its own scale is held by "the bounce after a word step"
+          // in captions.test.ts. So too the peak: with fewer frames one may
           // land a little off it, 12.7 % of 15 on a machine running six
           // walks at once, and 8 % of "er" when a busy runner drew no frame
           // for over 100 ms round its peak, so a word holds that it popped
           // by 5 %, against the 1 % Tim saw, and the whole walk that some
           // pop reached the peak.
           if (bounced < 3) {
-            wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen`;
+            wrong = `"${last.keyed.text}" bounced over only ${bounced} frames of the screen, four times`;
+          } else if (skipped > 0) {
+            wrong = `"${last.keyed.text}" bounced on ${span.length - skipped} of the ${span.length} frames the screen drew while it lasted`;
           } else if (most < least * 1.05) {
             wrong = `"${last.keyed.text}" popped, but its pill grew only from ${least.toFixed(1)} to ${most.toFixed(1)} px`;
           } else if (Math.abs(widths[0] - least) > 1.5 || Math.abs(last.pill.w - least) > 1.5) {
@@ -8539,7 +8593,6 @@ for (const seq of toWalk) {
         console.log(`    ${report.join(", ")}`);
         if (!wrong && popped < 2 * arg) wrong = `only ${popped} of ${2 * arg} steps onto a word popped it`;
         else if (!wrong && grew < 1.14) wrong = `no pop grew by more than ${((grew - 1) * 100).toFixed(0)} %`;
-        else if (!wrong && longest < 7) wrong = `no bounce was drawn over more than ${longest} frames of the screen`;
         break;
       }
       case "step frame by frame and see nothing pop": {
@@ -8998,6 +9051,12 @@ for (const seq of toWalk) {
         // Two fifths of the way, where smoothstep moves the crop fastest.
         await page.mouse.click(await xOf(page, a.at + 0.4 * (b.at - a.at) + 0.5 / src.fps), high(g.track));
         await settle(page);
+        // The play starts from the frame on the video preview, so it is
+        // started once that is the playhead's frame.
+        if (!(await shownOnPlayhead(page))) {
+          wrong = "the video preview did not come to the playhead's frame";
+          break;
+        }
         await page.evaluate(() => {
           window.__glide = [];
           const read = () => {
@@ -9017,10 +9076,19 @@ for (const seq of toWalk) {
         await settle(page);
         const off = seen.filter((r) => r.k >= 0 && r.crop !== glide(r.k));
         const places = new Set(seen.filter((r) => r.k >= 0).map((r) => r.crop));
+        // The frames of the episode the video preview showed, each with a
+        // place of its own on the glide. How many it shows in two seconds
+        // is the machine's: a busy one showed six, issue #320. So the crop
+        // frame stands in as many places as frames were shown, and the
+        // play showed at least three, where it stood in ten or more before.
+        const shown = new Set(seen.filter((r) => r.k >= 0).map((r) => r.k));
+        const apart = new Set([...shown].map((k) => glide(k)));
         if (off.length) {
           wrong = `while playing, ${off.length} of ${seen.length} frames had the crop frame off the glide, the first frame ${off[0].k} at ${off[0].crop} for ${glide(off[0].k)}`;
-        } else if (places.size < 10) {
-          wrong = `while playing, the crop frame stood in ${places.size} places, not following the glide`;
+        } else if (shown.size < 3) {
+          wrong = `while playing for two seconds, the video preview showed ${shown.size} frames`;
+        } else if (places.size < apart.size) {
+          wrong = `while playing, the crop frame stood in ${places.size} places over ${shown.size} frames, where the glide has ${apart.size}`;
         }
         break;
       }
@@ -9242,11 +9310,17 @@ process.exit(failures ? 1 : 0);
 // too. Says how to stop, which hands back what was read.
 async function watchPills(page) {
   await page.evaluate(() => {
-    window.__pillWatch = { frames: [], on: true };
+    // Its own, so a watch that was stopped stops at its next frame even
+    // when the next watch has begun by then. It read the new watch's on
+    // before and went on, so every step of a walk added a reading of the
+    // canvas to every frame of the screen, and on a busy machine the
+    // screen drew a bounce on fewer frames each step, issues #328 and #329.
+    const watch = { frames: [], on: true };
+    window.__pillWatch = watch;
     const s = document.createElement("canvas");
     const g = s.getContext("2d", { willReadFrequently: true });
     const look = () => {
-      if (!window.__pillWatch.on) return;
+      if (!watch.on) return;
       requestAnimationFrame(look);
       const box = document.querySelector(".captions");
       const canvas = document.querySelector(".screen canvas");
@@ -9285,11 +9359,12 @@ async function watchPills(page) {
           w: f.right - f.left,
         };
       };
-      window.__pillWatch.frames.push({
+      watch.frames.push({
         at: Number(document.querySelector(".screen").dataset.playhead),
         pictured: window.__pictured?.(),
         t: performance.now(),
         late: window.__captionLayers?.late ?? false,
+        bounced: window.__captionLayers?.stats.bounced ?? 0,
         now: frame(box.querySelector(".word.now")),
         keyed: frame(box.querySelector(".word.keyed")),
         pill:
