@@ -61,9 +61,9 @@ between a cut and an edge of the clip, is a **part** of the clip below.
 - **Undo** takes it back like any other edit, and so do three more
   presses.
 - A rotated part shows a small rotate mark at its start on the clip
-  timeline, in the top left corner of the part, clear of the thumbnails
-  and keyframes along the foot, so a clip that holds a rotation says so
-  without playing it.
+  timeline, in the top left corner of the part under the keyframes along
+  the top rule, issue #348, and clear of the thumbnails along the foot,
+  so a clip that holds a rotation says so without playing it.
 - Nothing about it is a setting, and nothing is on screen until a part
   is rotated. A video that was never rotated looks and works as it does
   today.

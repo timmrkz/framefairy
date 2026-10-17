@@ -2368,6 +2368,35 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim testing #340, issue #348: rotating a part with R took
+    // its keyframe diamond off the clip timeline, and the rotate mark
+    // stood under the diamond. The keyframe stays through four turns, and
+    // the rotate mark stands clear of the row the keyframes are in and
+    // of the row the thumbnails are in, wherever they are put.
+    // TestRotatingAPartKeepsItsKeyframes holds the engine to it.
+    name: "a rotated part keeps its keyframe, and its rotate mark stands clear of the keyframes",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["keyframe at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["keyframes", 1],
+      ["turn mark clear"],
+      ["rotate at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 0]],
+      ["keyframes", 1],
+    ],
+  },
+  {
     // Plan row 3.26: keyframes put with C, the second dragged to another
     // place, glide the crop from the one to the other, in the video
     // preview frame by frame while it plays as the render crops it.
@@ -9033,6 +9062,42 @@ for (const seq of toWalk) {
         await page.mouse.up();
         await watch.step("drag", s);
         await settle(page);
+        break;
+      }
+      case "turn mark clear": {
+        // The rotate mark at the start of every rotated part, against the
+        // band the keyframes stand in along the top of the clip timeline
+        // and the band the thumbnails stand in along its foot.
+        const got = await page.evaluate(() => {
+          const track = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+          const band = (sel, sample) => {
+            const e = document.querySelector(sel);
+            if (e) {
+              const r = e.getBoundingClientRect();
+              return [r.top, r.bottom];
+            }
+            return sample;
+          };
+          const keys = band(".clip-timeline .cropdot", null);
+          const thumbs = band(".clip-timeline .thumb", [track.bottom - 10, track.bottom + 9]);
+          return {
+            keys,
+            thumbs,
+            marks: [...document.querySelectorAll(".clip-timeline .turnmark")].map((e) => {
+              const r = e.getBoundingClientRect();
+              return [r.top, r.bottom];
+            }),
+          };
+        });
+        if (!got.marks.length) wrong = "the rotated part has no rotate mark";
+        else if (!got.keys) wrong = "the clip has no keyframe to stand clear of";
+        for (const [top, bottom] of got.marks) {
+          if (wrong) break;
+          if (top < got.keys[1] && bottom > got.keys[0])
+            wrong = `the rotate mark, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, stands in the keyframes' row, ${got.keys[0].toFixed(1)} to ${got.keys[1].toFixed(1)} px`;
+          else if (top < got.thumbs[1] && bottom > got.thumbs[0])
+            wrong = `the rotate mark, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, stands in the thumbnails' row, ${got.thumbs[0].toFixed(1)} to ${got.thumbs[1].toFixed(1)} px`;
+        }
         break;
       }
       case "keyframes": {
