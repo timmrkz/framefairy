@@ -60,10 +60,10 @@ between a cut and an edge of the clip, is a **part** of the clip below.
   press, and the crop frame stands on the rotated picture.
 - **Undo** takes it back like any other edit, and so do three more
   presses.
-- A rotated part shows a small rotate mark at its start on the clip
-  timeline, in the top left corner of the part under the keyframes along
-  the top rule, issue #348, and clear of the thumbnails along the foot,
-  so a clip that holds a rotation says so without playing it.
+- A rotated part has the rotate icon stamped out of its wash on the clip
+  timeline, large, in its middle, clear of the keyframes along the top
+  rule and the thumbnails along the foot, issue #348, so a clip that
+  holds a rotation says so without playing it.
 - Nothing about it is a setting, and nothing is on screen until a part
   is rotated. A video that was never rotated looks and works as it does
   today.
@@ -190,7 +190,8 @@ two above:
   transform on the canvas, and the crop frame reads its left edge from
   the same glide the engine uses, in `lib/`, with a test that compares
   both on the same keyframes. The clip timeline draws a keyframe with the thumbnail's mark, one
-  component with an icon of its own, and the rotate mark. `Rotate`,
+  component with an icon of its own, and the rotate icon stamped out of
+  a rotated part's wash with a mask. `Rotate`,
   `SetCrop`, adding and removing a keyframe go through
   `Shape` and the undo history like every other edit of a clip.
 - **Nothing for training.** Framing and rotating are not a judgement of a

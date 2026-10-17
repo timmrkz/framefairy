@@ -16,9 +16,6 @@
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
   const CAMERA =
     "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
-  // Lucide's rotate-ccw, the Rotate button's icon, as lines, for the mark
-  // at the start of a rotated part.
-  const ROTATE = ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"];
 </script>
 
 <script lang="ts">
@@ -59,7 +56,7 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import { partOf } from "../lib/rotate";
+  import { PIECES_MEET, rotationAt } from "../lib/rotate";
 
   let {
     path,
@@ -1640,18 +1637,23 @@
   );
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
-  // Where each rotated stretch of the clip starts, and how far it is
-  // rotated: the first piece of a part, or the piece where a part that
-  // had its cut put back turns, see lib/rotate.ts.
-  const rotatedParts = $derived(
-    segments
-      .map((p, i) => ({
-        at: p.start,
-        rotate: p.rotate ?? 0,
-        starts: i === partOf(segments, i)[0] || (segments[i - 1].rotate ?? 0) !== (p.rotate ?? 0),
-      }))
-      .filter((r) => r.starts && r.rotate !== 0),
-  );
+  // The stretch each piece the clip draws is rotated in, for the rotate
+  // icon stamped out of the wash in its middle: the pieces that play
+  // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
+  // one's start to the last one's end, or null for a piece as filmed.
+  // Issue #348.
+  const turnedRuns = $derived.by(() => {
+    const turns = drawnPieces.map((p) => rotationAt(clip?.rotations, p.start));
+    return drawnPieces.map((p, i) => {
+      if (!turns[i]) return null;
+      let first = i;
+      let last = i;
+      const meets = (a: number, b: number) => drawnPieces[b].start - drawnPieces[a].end <= PIECES_MEET && turns[a] === turns[b];
+      while (first > 0 && meets(first - 1, first)) first--;
+      while (last + 1 < drawnPieces.length && meets(last, last + 1)) last++;
+      return { from: drawnPieces[first].start, to: drawnPieces[last].end };
+    });
+  });
 
   // The frame on the video preview, which is how a mark knows it is the
   // one on screen. A state, never a distance.
@@ -1921,7 +1923,10 @@
           class="piece"
           class:first={i === 0}
           class:last={i === drawnPieces.length - 1}
-          style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
+          class:turned={!!turnedRuns[i]}
+          style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%{turnedRuns[i]
+            ? `; --left: ${x(p.start)}; --run-left: ${x(turnedRuns[i].from)}; --run-w: ${x(turnedRuns[i].to) - x(turnedRuns[i].from)}`
+            : ''}"
         ></div>
       {/each}
       <!-- A cut is drawn over the pieces rather than between them, so a cut
@@ -2078,17 +2083,6 @@
           {/each}
         {/if}
       {/if}
-      {#if clip}
-        <!-- A rotated part says so at its start, in the top left corner of
-             its first piece under the keyframes, so a clip that holds a
-             rotation shows it without playing it. It takes no click: R and the Rotate button
-             are where it is changed. Plan row 3.25. -->
-        {#each rotatedParts as r (r.at)}
-          <div class="turnmark" style="left: {x(r.at)}%" data-rotate={r.rotate} aria-hidden="true">
-            {@render ringed(ROTATE, 14)}
-          </div>
-        {/each}
-      {/if}
     </div>
   </div>
     {#if wholeClip}
@@ -2184,20 +2178,6 @@
      the track's dark round it, so it reads over the waveform and over the
      app's colour alike. The ring is the line drawn under the fill, so half
      of it shows, outside the shape. -->
-<!-- An icon of lines with the same ring of the track's dark round them,
-     a line of it under each line of the icon, so the rotate mark reads
-     over the waveform the way the keyframes and thumbnails do. -->
-{#snippet ringed(paths: string[], size: number)}
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    {#each paths as d (d)}
-      <path {d} stroke="var(--well)" stroke-width={(4.5 * 24) / size} />
-    {/each}
-    {#each paths as d (d)}
-      <path {d} stroke="currentColor" stroke-width={(1.5 * 24) / size} />
-    {/each}
-  </svg>
-{/snippet}
-
 {#snippet solid(d: string, size: number, lens = false)}
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
     <path {d} fill="currentColor" stroke="var(--well)" stroke-width={(3 * 24) / size} stroke-linejoin="round" paint-order="stroke" />
@@ -2230,6 +2210,9 @@
     overflow: hidden;
     cursor: pointer;
     touch-action: none;
+    /* Its width is the unit a stamp on a rotated stretch is placed in,
+       see .piece.turned. */
+    container-type: inline-size;
   }
 
   .track.scrubbing {
@@ -2317,6 +2300,34 @@
     bottom: 0;
     background: var(--accent-wash);
     pointer-events: none;
+  }
+
+  /* A rotated stretch has the Rotate button's icon, Lucide's rotate-ccw,
+     stamped out of its wash, large, in its middle, so the waveform shows
+     through it as it does through a cut. Tim's idea, issue #348: a small
+     mark in a corner ran into the keyframes. It is as tall as the track
+     leaves between the keyframes along the top rule and the thumbnails
+     along the foot, 10 px each and a space of 4 px, and never wider than
+     the stretch less a space of 8 px each side, so it shrinks as the clip
+     timeline is zoomed out and the stretch narrows, and sits in its
+     middle as it is zoomed. The stretch may be several pieces: each
+     stamps its own share of the one icon, placed from the stretch's
+     middle in the track's own width, 1cqw a hundredth of it, the unit
+     x() places everything in. A mask is drawn from the lines at the size
+     it is shown, so it is sharp at every size. */
+  .piece.turned {
+    --stamp: max(0px, min(calc(var(--wave-h, 112px) - 28px), calc(var(--run-w) * 1cqw - 16px)));
+    mask-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E"),
+      linear-gradient(#000 0 0);
+    mask-size:
+      var(--stamp) var(--stamp),
+      100% 100%;
+    mask-position:
+      calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%,
+      0 0;
+    mask-repeat: no-repeat;
+    mask-composite: exclude;
   }
 
   /* The wash at the clip's two ends takes the frame's corners, so none of
@@ -2597,23 +2608,6 @@
     bottom: calc(var(--frame-line) / 2 - 8px);
   }
 
-  /* The mark at the start of a rotated part: the Rotate button's icon,
-     small, in the top left corner of the part in the app's colour, under
-     the row the keyframes stand in along the top rule and the times
-     beside it. Tim found it under a keyframe's diamond, issue #348. The
-     diamonds reach 10 px down and the times 16 px, so it starts 4 px
-     under the times, and it ends at 34 px, clear of the captions, which
-     start 48 px down in the smallest clip timeline, 112 px. */
-  .turnmark {
-    position: absolute;
-    top: 20px;
-    margin-left: 3px;
-    width: 14px;
-    height: 14px;
-    color: var(--accent-hi);
-    pointer-events: none;
-    z-index: 5;
-  }
 
   /* The playhead. */
   .at {
