@@ -132,6 +132,13 @@
 
   const edge = $derived((hang ?? align) === "right" ? "end" : "start");
 
+  // How far under its field a list hangs. The fields of a column stand 8
+  // apart, and a list is its rows and a border above and under them, so a
+  // list of one row hung 6 under its field lies exactly over the field
+  // under that one. Hung 4 under, it stopped 2 short of that field's
+  // bottom, and its border showed under the list's own.
+  const drop = 6;
+
   const picked = $derived(options.find((o) => o.value === value));
 
   // What the trigger says. A value that is not in the list yet, which is
@@ -293,7 +300,7 @@
       {#snippet child({ props })}{@render trigger(props)}{/snippet}
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content sideOffset={4} align={edge}>
+      <Popover.Content sideOffset={drop} align={edge}>
         {#snippet child({ props, wrapperProps, open })}
           {#if open}
             <div {...wrapperProps}>
@@ -394,7 +401,7 @@
   <Select.Portal>
     <!-- Right under the trigger and along its left edge, so the list opens
          where the eye already is. -->
-    <Select.Content sideOffset={4} align={edge}>
+    <Select.Content sideOffset={drop} align={edge}>
       {#snippet child({ props, wrapperProps, open })}
         {#if open}
           <div {...wrapperProps}>
@@ -506,6 +513,7 @@
 
   .said > span {
     grid-area: 1 / 1;
+    align-self: center;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -662,11 +670,18 @@
     text-overflow: ellipsis;
   }
 
-  /* A name drawn in its own face keeps to the height of the row, so a
-     face with tall letters is cut at the row rather than pushing the rows
-     apart. */
-  .what.shown {
-    line-height: var(--control-h);
+  /* A name drawn in its own face has its capitals in the middle of its
+     box, in the row and in the field alike. The line a face brings is as
+     high above its letters and as low under them as its maker chose, so
+     Palatino and an italic stood a pixel high where Inter stood in the
+     middle. The box is cut to the capitals and their baseline, and the
+     padding gives back the rest of the row on both sides alike, so the
+     capitals are in the middle whatever the face, and a face with tall
+     letters is still cut at the row rather than pushing the rows apart. */
+  .what.shown,
+  .said > .shown {
+    text-box: trim-both cap alphabetic;
+    padding-block: calc((var(--control-h) - 2px - 1cap) / 2);
   }
 
   .pick-row.right .what {
@@ -693,7 +708,6 @@
     flex: none;
     padding: 8px 8px 4px 28px;
     border-top: 1px solid var(--line);
-    margin-top: 4px;
     color: var(--muted);
     font-size: var(--size-s);
     font-weight: 600;
@@ -702,7 +716,6 @@
 
   .pick-group.first {
     border-top: none;
-    margin-top: 0;
     padding-top: 4px;
   }
 
@@ -723,13 +736,15 @@
 
   /* The field is a row of the list, with the magnifier where the ticks
      stand and what is typed where the names start, so the eye runs down
-     one edge from the field into the rows. */
+     one edge from the field into the rows. It is a row tall above its
+     line, and the line is under that, so it does not stand a pixel
+     shorter than the rows it is over. */
   .pick-search {
     flex: none;
     display: flex;
     align-items: center;
     gap: 8px;
-    height: var(--control-h);
+    height: calc(var(--control-h) + 1px);
     padding: 0 8px;
     border-bottom: 1px solid var(--line);
     color: var(--muted);
@@ -755,8 +770,16 @@
     overflow-y: auto;
   }
 
+  /* A row with nothing to tick, so it keeps no room for a tick. It says
+     so in the middle, and asks no more width of the list than its field
+     has. */
   .pick-none {
-    padding: 8px 8px 8px 28px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--control-h);
+    padding: 0 8px;
     color: var(--muted);
   }
 </style>

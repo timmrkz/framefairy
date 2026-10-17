@@ -598,8 +598,17 @@
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
 //                      the rows or under them, each family is drawn in its
-//                      own face, ours by name first, and the field is
-//                      drawn in the face picked
+//                      own face, ours by name first, the field is drawn
+//                      in the face picked, the search field is a row tall
+//                      above its line, the line over Installed sits on the
+//                      last of ours, and every name drawn in its face has
+//                      its capitals in the middle of its box
+//   ["style list"]     the Style list of one style ends on the bottom of
+//                      the field under the Style field
+//   ["nothing found", letters]
+//                      typing the letters in the Font list finds nothing,
+//                      said in the middle of a list as wide as its field,
+//                      or as the words where they need more
 //   ["search order", letters]
 //                      what typing the letters in the Font list finds is
 //                      in the order of the whole list, under its own head
@@ -1283,6 +1292,18 @@ export const sequences = [
     // fonts.
     name: "a search of the fonts keeps the order and the heads of the list",
     steps: [["search order", "b"]],
+  },
+  {
+    // Found by Tim on #349: the Style list of one style lay over the Size
+    // field two pixels short of its bottom, so its border showed twice.
+    name: "a list of one style covers the field under it",
+    steps: [["style list"]],
+  },
+  {
+    // Found by Tim on #349: Nothing matches stood where the names start,
+    // after the room of a tick that is never there, and widened the list.
+    name: "a search that finds nothing says so in the middle of a narrow list",
+    steps: [["nothing found", "zzqx"]],
   },
   {
     // Found by Tim on #349: a family is picked first and then its style,
@@ -7480,10 +7501,37 @@ for (const seq of toWalk) {
           const field = trigger.getBoundingClientRect();
           const list = document.querySelector(".pick-list").getBoundingClientRect();
           const rowsBox = document.querySelector(".pick-list .pick-rows");
+          // Where the capitals of a name stand against the middle of the
+          // box it is in: the baseline, read from a mark of no size sat on
+          // it, less half the height of an H in that face.
+          const offCentre = (text, box) => {
+            const mark = document.createElement("span");
+            mark.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+            text.append(mark);
+            const baseline = mark.getBoundingClientRect().bottom;
+            mark.remove();
+            const look = getComputedStyle(text);
+            const pen = document.createElement("canvas").getContext("2d");
+            pen.font = `${look.fontStyle} ${look.fontWeight} ${look.fontSize} ${look.fontFamily}`;
+            const cap = pen.measureText("H").actualBoundingBoxAscent;
+            const r = box.getBoundingClientRect();
+            return baseline - cap / 2 - (r.top + r.height / 2);
+          };
+          const said = trigger.querySelector(".said > span:last-child");
+          const centres = [[said.textContent.trim() + " in the field", offCentre(said, trigger)]];
+          for (const row of document.querySelectorAll(".pick-list .pick-row")) {
+            const what = row.querySelector(".what.shown");
+            if (what) centres.push([row.textContent.trim(), offCentre(what, row)]);
+          }
+          const search = document.querySelector(".pick-list .pick-search");
+          const head = [...document.querySelectorAll(".pick-list .pick-group")].find((it) => it.textContent.trim() === "Installed");
+          const ourLast = [...document.querySelectorAll(".pick-list .pick-row")]
+            .filter((row) => row.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING)
+            .at(-1);
           const first = document.querySelector(".pick-list .pick-rows .pick-row, .pick-list .pick-rows .pick-group");
-          const search = document.querySelector(".pick-list .pick-search").getBoundingClientRect();
+          const searchBox = search.getBoundingClientRect();
           const corner = (el) => getComputedStyle(el).borderTopLeftRadius;
-          const above = first.getBoundingClientRect().top - search.bottom;
+          const above = first.getBoundingClientRect().top - searchBox.bottom;
           // The last row, with the rows scrolled to their end, to within
           // the part of a pixel a scroll is rounded to.
           rowsBox.scrollTop = rowsBox.scrollHeight;
@@ -7494,6 +7542,12 @@ for (const seq of toWalk) {
             above,
             below: rowsBox.getBoundingClientRect().bottom - all.at(-1).getBoundingClientRect().bottom,
             face: getComputedStyle(trigger.querySelector(".said > span:last-child")).fontFamily,
+            // The search field above its line, and the line over the head
+            // of the installed fonts against the last of ours.
+            searchHigh: searchBox.height - parseFloat(getComputedStyle(search).borderBottomWidth),
+            headGap: head.getBoundingClientRect().top - ourLast.getBoundingClientRect().bottom,
+            ourLast: ourLast.textContent.trim(),
+            centres,
           };
           const rows = [...document.querySelectorAll(".pick-list .pick-row")].map((row) => {
             const what = row.querySelector(".what");
@@ -7527,6 +7581,71 @@ for (const seq of toWalk) {
           wrong = `${seen.look.above.toFixed(1)} px between the search field and the first row, ${seen.look.below.toFixed(1)} under the last`;
         else if (!seen.look.face.startsWith('"Inter Black"'))
           wrong = `the Font field is drawn in ${seen.look.face}, not in Inter Black`;
+        else if (Math.abs(seen.look.searchHigh - seen.field.height) > 0.5)
+          wrong = `the search field is ${seen.look.searchHigh.toFixed(1)} high above its line, a row ${seen.field.height.toFixed(1)}`;
+        else if (Math.abs(seen.look.headGap) > 0.5)
+          wrong = `${seen.look.headGap.toFixed(1)} px between ${seen.look.ourLast} and the line over Installed`;
+        else {
+          const off = seen.look.centres.find(([, by]) => Math.abs(by) > 0.5);
+          if (off) wrong = `the capitals of ${off[0]} stand ${Math.abs(off[1]).toFixed(1)} px ${off[1] < 0 ? "above" : "below"} the middle`;
+        }
+        break;
+      }
+      case "style list": {
+        // A list of one style hung under its field covers the field under
+        // that exactly, its bottom on that field's bottom, so no second
+        // border shows under its own.
+        await page.locator('button.pick[aria-label="Style"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        const seen = await page.evaluate(() => {
+          const setting = document.getElementById("caption-style").closest(".setting");
+          const under = setting.nextElementSibling.querySelector("input, button");
+          return {
+            rows: document.querySelectorAll(".pick-list .pick-row").length,
+            list: document.querySelector(".pick-list").getBoundingClientRect().bottom,
+            under: under.getBoundingClientRect().bottom,
+          };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (seen.rows !== 1) wrong = `the Style list has ${seen.rows} rows, not one`;
+        else if (Math.abs(seen.list - seen.under) > 0.5)
+          wrong = `the Style list ends ${Math.abs(seen.list - seen.under).toFixed(1)} px ${seen.list < seen.under ? "above" : "below"} the bottom of the field under it`;
+        break;
+      }
+      case "nothing found": {
+        // Letters that find nothing leave the list as wide as its field,
+        // or as the words that say so where they need more, said in its
+        // middle.
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.keyboard.type(arg);
+        await watch.step("type", s);
+        const seen = await page.evaluate(() => {
+          const none = document.querySelector(".pick-list .pick-none");
+          if (!none) return null;
+          const text = document.createRange();
+          text.selectNodeContents(none);
+          const t = text.getBoundingClientRect();
+          const list = document.querySelector(".pick-list").getBoundingClientRect();
+          const field = document.querySelector('button.pick[aria-label="Font"]').getBoundingClientRect();
+          return {
+            side: t.left - list.left - (list.right - t.right),
+            list: list.width,
+            field: field.width,
+            needs: Math.max(field.width, t.width + 16 + 2),
+            high: none.getBoundingClientRect().height,
+          };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (!seen) wrong = `${arg} found something`;
+        else if (Math.abs(seen.side) > 1) wrong = `Nothing matches stands ${seen.side.toFixed(1)} px off the middle of the list`;
+        else if (seen.list - seen.needs > 1)
+          wrong = `the list saying Nothing matches is ${seen.list.toFixed(1)} wide, its field ${seen.field.toFixed(1)}`;
+        else if (Math.abs(seen.high - seen.field) > 0.5 && Math.abs(seen.high - 32) > 0.5)
+          wrong = `Nothing matches is ${seen.high.toFixed(1)} high, not a row`;
         break;
       }
       case "search order": {

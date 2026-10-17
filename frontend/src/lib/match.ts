@@ -1,12 +1,14 @@
 // Whether a name answers what was typed in the search field over a list.
 //
 // It answers when it holds what was typed, or when the letters typed come
-// in order and each one either starts a word or follows the letter before
-// it, so amtyp finds American Typewriter and brnar Bridge Narrow. A letter
-// picked out of the middle of a word does not count: orb found Kohinoor
-// Bangla and Chalkboard, from an o and an r somewhere inside them, which
-// no one typing orb was looking for. Spaces typed count for nothing, and
-// neither does the case.
+// in it in order, in pieces. A piece that starts a word is free, so amtyp
+// finds American Typewriter and brnar Bridge Narrow. A piece that starts
+// in the middle of a word is allowed once for every two letters typed, so
+// a letter left out, helvtica for Helvetica, or a few letters from inside
+// the name, tms for Times, still find it. What it keeps out is a name
+// where every letter typed was picked out of somewhere else in it, which
+// is how a long name came up for almost anything. Spaces typed count for
+// nothing, and neither does the case.
 export function matches(name: string, typed: string): boolean {
   const want = typed.toLowerCase().replace(/\s+/g, "");
   if (!want) return true;
@@ -21,19 +23,23 @@ export function matches(name: string, typed: string): boolean {
     if (/\p{Lu}/u.test(c) && /\p{Ll}/u.test(before)) return true;
     return /\p{N}/u.test(c) !== /\p{N}/u.test(before);
   });
-  // Where each typed letter may stand, worked out once per place, so a
-  // name full of the same letter costs no more than any other.
-  const tried = new Set<string>();
-  const from = (letter: number, last: number): boolean => {
-    if (letter === want.length) return true;
+  // The fewest pieces from the middle of a word the rest of the letters
+  // need, worked out once per place, so a name full of the same letter
+  // costs no more than any other.
+  const known = new Map<string, number>();
+  const fewest = (letter: number, last: number): number => {
+    if (letter === want.length) return 0;
     const key = `${letter} ${last}`;
-    if (tried.has(key)) return false;
-    tried.add(key);
-    for (let at = last + 1; at < have.length; at++) {
+    const seen = known.get(key);
+    if (seen !== undefined) return seen;
+    let best = Infinity;
+    for (let at = last + 1; at < have.length && best > 0; at++) {
       if (have[at] !== want[letter]) continue;
-      if ((at === last + 1 || starts[at]) && from(letter + 1, at)) return true;
+      const piece = at === last + 1 || starts[at] ? 0 : 1;
+      best = Math.min(best, piece + fewest(letter + 1, at));
     }
-    return false;
+    known.set(key, best);
+    return best;
   };
-  return from(0, -1);
+  return fewest(0, -1) <= Math.ceil(want.length / 2);
 }

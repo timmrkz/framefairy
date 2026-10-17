@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { matches } from "./match";
 
-// The search field over the Font list, after Tim typed orb and got
-// Kohinoor Bangla and Chalkboard (#349).
+// The search field over the Font list. Tim found it too strict, often
+// finding nothing, after letters from inside a word stopped counting (#349).
 describe("matches", () => {
   it("finds a name by the letters that start its words", () => {
     expect(matches("American Typewriter", "amtyp")).toBe(true);
@@ -17,11 +17,20 @@ describe("matches", () => {
     expect(matches("Georgia", "")).toBe(true);
   });
 
-  it("takes no letter out of the middle of a word", () => {
-    expect(matches("Kohinoor Bangla", "orb")).toBe(false);
-    expect(matches("Chalkboard", "orb")).toBe(false);
-    expect(matches("Arial Rounded MT Bold", "orb")).toBe(false);
-    expect(matches("Georgia", "ga")).toBe(false);
+  it("finds a name with a letter left out of it", () => {
+    expect(matches("Helvetica", "helvtica")).toBe(true);
+    expect(matches("Baskerville", "baskervile")).toBe(true);
+    expect(matches("Garamond", "garmond")).toBe(true);
+  });
+
+  it("finds a name by a few letters from inside it", () => {
+    expect(matches("Times New Roman", "tms")).toBe(true);
+    expect(matches("Georgia", "ga")).toBe(true);
+  });
+
+  it("finds no name whose every letter was picked from somewhere else", () => {
+    expect(matches("Chalkboard", "hlbr")).toBe(false);
+    expect(matches("Arial Rounded MT Bold", "iudl")).toBe(false);
   });
 
   it("keeps the letters in the order they were typed", () => {
