@@ -674,14 +674,26 @@
      box, in the row and in the field alike. The line a face brings is as
      high above its letters and as low under them as its maker chose, so
      Palatino and an italic stood a pixel high where Inter stood in the
-     middle. The box is cut to the capitals and their baseline, and the
-     padding gives back the rest of the row on both sides alike, so the
-     capitals are in the middle whatever the face, and a face with tall
-     letters is still cut at the row rather than pushing the rows apart. */
+     middle. So the face's own line counts for nothing here, line-height
+     0, and a strut of no width stands on the baseline instead, as high as
+     half the box and half a capital. The baseline is then half a capital
+     under the middle of the box, so the capitals are in the middle
+     whatever the face. It is plain inline layout that every engine does
+     alike, where cutting the line to the capitals with text-box came out
+     a pixel apart between two versions of Chromium. The box is as tall as
+     the inside of a field, so a face with tall letters is cut there
+     rather than pushing the rows apart. */
   .what.shown,
   .said > .shown {
-    text-box: trim-both cap alphabetic;
-    padding-block: calc((var(--control-h) - 2px - 1cap) / 2);
+    height: calc(var(--control-h) - 2px);
+    line-height: 0;
+  }
+
+  .what.shown::before,
+  .said > .shown::before {
+    content: "";
+    display: inline-block;
+    height: calc((var(--control-h) - 2px + 1cap) / 2);
   }
 
   .pick-row.right .what {

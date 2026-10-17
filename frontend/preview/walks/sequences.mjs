@@ -7586,8 +7586,11 @@ for (const seq of toWalk) {
         else if (Math.abs(seen.look.headGap) > 0.5)
           wrong = `${seen.look.headGap.toFixed(1)} px between ${seen.look.ourLast} and the line over Installed`;
         else {
-          const off = seen.look.centres.find(([, by]) => Math.abs(by) > 0.5);
-          if (off) wrong = `the capitals of ${off[0]} stand ${Math.abs(off[1]).toFixed(1)} px ${off[1] < 0 ? "above" : "below"} the middle`;
+          const off = seen.look.centres.filter(([, by]) => Math.abs(by) > 0.5);
+          if (off.length)
+            wrong = `the capitals stand off the middle: ${off
+              .map(([name, by]) => `${name} ${Math.abs(by).toFixed(1)} px ${by < 0 ? "above" : "below"}`)
+              .join(", ")}`;
         }
         break;
       }
