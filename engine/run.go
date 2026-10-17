@@ -680,6 +680,9 @@ func (r *runner) render(ctx context.Context, plan Plan, clips []Clip) error {
 	if err != nil {
 		return err
 	}
+	if missing := ResolveStyle(style).Missing; missing != "" {
+		log.Warn("%s is not a font on this machine, the captions are drawn in %s", Scrub(missing, 64), DefaultFont)
+	}
 
 	cropW, cropH := CropWindow(source, outW, outH)
 	if opts.NoUpscale {

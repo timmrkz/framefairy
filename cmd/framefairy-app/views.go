@@ -226,9 +226,13 @@ func (s *FrameFairy) ArrivingCaptions(jobID string, n int) (*engine.CaptionsView
 	return nil, nil
 }
 
-// Fonts are the faces the captions can be written in. They travel with the
-// program, so every one of them renders on any machine.
-func (s *FrameFairy) Fonts() []engine.CaptionFont { return engine.CaptionFonts() }
+// Fonts are the faces the captions can be written in: the ones that travel
+// with the program, then the ones installed on this machine.
+func (s *FrameFairy) Fonts() []engine.CaptionFont {
+	// Read again, so a font installed while the app runs is in the list.
+	engine.RefreshFonts()
+	return engine.CaptionFonts()
+}
 
 // clipEntry is one clip as it is now, read from its own plan alone. An
 // edit answers with it, and it used to be found in the whole clip list,

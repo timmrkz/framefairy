@@ -134,7 +134,7 @@ nothing left to refresh.
 | `--width 1080 --height 1920` | 1080x1920 | output size in pixels |
 | `--no-upscale` | off | write the native crop, no resampling |
 | `--no-captions` | off | no burned-in captions. The srt files are still written |
-| `--font "Inter Black"` | Inter Black | caption font: Inter Black, Anton and Archivo Black ship inside the program, any other name has to be installed on the machine |
+| `--font "Inter Black"` | Inter Black | caption font: Inter Black, Anton and Archivo Black ship inside the program, or the full name of a font installed on the machine, as Font Book shows it. A name the machine does not have is drawn in Inter Black |
 | `--font-size 96` | 96 | caption size, in pixels of a 1080x1920 frame |
 | `--margin-v 300` | 300 | caption distance from the bottom edge, same scale |
 | `--highlight-colour "#942192"` | purple | colour of the pill behind the word being spoken, for a plan that was not given one in the app |

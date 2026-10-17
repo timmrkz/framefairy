@@ -432,6 +432,8 @@ func main() {
 	// way the app sets it from its settings. Run once set it itself, which
 	// made it state that changed under anything else running.
 	engine.SetTrainingDir(afero.NewOsFs(), p.opts.TrainingDir)
+	// --font takes the fonts installed on the machine too.
+	engine.UseMachineFonts()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

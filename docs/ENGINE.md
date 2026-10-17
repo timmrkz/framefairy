@@ -983,8 +983,31 @@ caption file, with its licence, and ffmpeg is pointed at that folder with
 the filter graph, where colons and backslashes have their own meaning.
 
 So a render needs nothing installed on the machine and a short looks the same
-everywhere. `--font` accepts any other name too, and then it is up to the
-machine to have it.
+everywhere.
+
+The fonts installed on the machine are offered after them, see
+`engine/machinefonts.go`. The programs read the folders the system keeps
+fonts in, on macOS `~/Library/Fonts`, `/Library/Fonts`, `/System/Library/Fonts`
+and the fonts Font Book downloads, and take every face that has outlines, the
+letters and digits of a caption, and a name a style line can hold. A name that
+starts with a dot is one of macOS's own interface faces and is left out. A
+face of a collection, a `.ttc` that holds a family in one file, is offered on
+its own, under its full name, the one Font Book shows.
+
+A face of the machine goes the same way as a bundled one. Its copy is written
+into the `fonts` folder, measured by the same code and served to the app for
+the word being typed, so the video preview, the thumbnails and the short are
+drawn from one file. The copy is one face under a name of its own,
+`Frame Fairy` and a number, and that is the name the caption file asks
+libass for. libass on the Mac sees every installed font as well, and asked
+for a family it takes the face nearest to the bold the caption asks for, so
+Arial with bold captions came out as Arial Bold, wider than the Arial the
+lines were broken for. A name only the copy has finds the copy.
+
+A style that names a face neither has, a font removed from the machine or a
+plan from another one, is drawn in Inter Black, and the app says so on the
+Font field. `--font` takes the full name of any face the machine has, and a
+name it does not have is drawn in Inter Black with a warning.
 
 The srt and ass files written next to a short are output and are never
 read back. A word is corrected in the app's caption box, and the next
@@ -1564,6 +1587,7 @@ Everything else is in `engine/`:
   clips.go      the plan file and crop geometry
   captions.go   srt reading and writing, time formats
   fonts.go      the caption faces built into the binary
+  machinefonts.go  the caption faces installed on the machine
   metrics.go    how wide a caption comes out, read from the font file
   ass.go        the burned-in caption track and its measured boxes
   render.go     filter graph and ffmpeg command per clip

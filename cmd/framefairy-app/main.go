@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"errors"
 	"image"
@@ -63,6 +64,10 @@ func main() {
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
 	engine.PreferSavedKeys()
+	// The fonts installed on the Mac are offered for captions beside ours.
+	// Their folders are read once now, so the Font list opens at once.
+	engine.UseMachineFonts()
+	go engine.RefreshFonts()
 	st := openStore()
 
 	var app *application.App
@@ -269,14 +274,20 @@ func mediaMiddleware(st *store) application.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/font" {
-				// The interface writes the captions in the same face as the
-				// render, which is one of the faces built into the program.
+				// The interface writes the word being typed in the same face
+				// as the render: one built into the program, or the copy of
+				// one installed on the machine. Only a face of that list is
+				// served, found by its name, never by a path.
 				data, ok := engine.FontBytes(r.URL.Query().Get("name"))
 				if !ok {
 					http.NotFound(w, r)
 					return
 				}
-				w.Header().Set("Content-Type", "font/ttf")
+				kind := "font/ttf"
+				if bytes.HasPrefix(data, []byte("OTTO")) {
+					kind = "font/otf"
+				}
+				w.Header().Set("Content-Type", kind)
 				w.Header().Set("Cache-Control", "max-age=86400")
 				_, _ = w.Write(data)
 				return
