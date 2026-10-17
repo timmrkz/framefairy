@@ -68,15 +68,11 @@ removed. Nothing is prepared before the first play.
    before the first play, and the first frame shows as soon as the file
    can be read.
 2. **One engine.** ffmpeg decodes every frame the video preview shows and
-   every sample it plays, with the graphics chip where the system has one,
-   VideoToolbox on the Mac. A picture of 8 bits a colour is the exception
-   and is decoded on the processor, the way the render decodes it: on CI's
-   Mac the chip gave other colours at the edges of colours for H.264 and
-   HEVC in 8 bits, issue #256, and the video preview has to show the
-   short's colours. In 10 bits the two agree. There is no second decoder
-   and no fallback by system or by file. A file whose picture ffmpeg
-   cannot decode cannot be rendered either, so it is refused once, when it
-   is added, with the reason.
+   every sample it plays, with the graphics chip where the system has
+   one, VideoToolbox on the Mac. There is no second decoder and no
+   fallback by system or by file. A file whose picture ffmpeg cannot
+   decode cannot be rendered either, so it is refused once, when it is
+   added, with the reason.
 3. **A decoder is always waiting.** While an episode is open, its decoder
    runs with the file open, its index read and the decoder ready. A jump,
    a click, a drag or the space bar is a request to it, answered at once,

@@ -394,19 +394,6 @@ func (v *video) close() {
 	v.fc.Free()
 }
 
-// eightBits is the pictures of 8 bits a colour, which the episode's
-// decoder leaves to the processor, see openDecoder.
-var eightBits = map[astiav.PixelFormat]bool{
-	astiav.PixelFormatYuv420P:  true,
-	astiav.PixelFormatYuvj420P: true,
-	astiav.PixelFormatNv12:     true,
-	astiav.PixelFormatNv21:     true,
-	astiav.PixelFormatYuv422P:  true,
-	astiav.PixelFormatYuvj422P: true,
-	astiav.PixelFormatYuv444P:  true,
-	astiav.PixelFormatYuvj444P: true,
-}
-
 // openDecoder opens a decoder for the picture, on the graphics chip where
 // the system has one and it takes the file. Where it does not, ffmpeg
 // decodes on the processor by itself, and either way the frame comes out
@@ -429,15 +416,7 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 	// offered the chip with threads of its own failed on every frame on a
 	// Mac, "Invalid argument", since the chip is chosen for each frame from
 	// ffmpeg's threads.
-	//
-	// A picture of 8 bits a colour is decoded on the processor, the way
-	// the render decodes it. On CI's Mac the chip gave the processor's
-	// brightness for H.264 and HEVC in 8 bits but other colours in one
-	// colour sample in six, up to 90 apart at the edges of colours, so the
-	// video preview showed other colours there than the short has, issue
-	// #256. In 10 bits the two agree.
-	chip := hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID()) &&
-		!eightBits[v.stream.CodecParameters().PixelFormat()]
+	chip := hardware != nil && chipDecodes(v.stream.CodecParameters().CodecID())
 	if chip {
 		dec.SetHardwareDeviceContext(hardware)
 		said := ""
@@ -460,9 +439,7 @@ func (v *video) openDecoder(hardware *astiav.HardwareDeviceContext, say func(str
 		})
 	} else {
 		dec.SetThreadCount(0)
-		if hardware != nil && eightBits[v.stream.CodecParameters().PixelFormat()] {
-			say("8 bits a colour, decodes on the processor the way the render does")
-		} else if hardware != nil {
+		if hardware != nil {
 			say("the graphics chip does not decode " + v.stream.CodecParameters().CodecID().Name() + ", decodes on the processor")
 		} else if v.stream.CodecParameters().MediaType() == astiav.MediaTypeVideo {
 			say("decodes on the processor")
