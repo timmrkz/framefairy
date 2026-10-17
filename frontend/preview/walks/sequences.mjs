@@ -7503,25 +7503,33 @@ for (const seq of toWalk) {
           const rowsBox = document.querySelector(".pick-list .pick-rows");
           // Where the capitals of a name stand against the middle of the
           // box it is in: the baseline, read from a mark of no size sat on
-          // it, less half the height of an H in that face.
+          // it, less half the height of a capital in that face.
           const offCentre = (text, box) => {
             const mark = document.createElement("span");
             mark.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
             text.append(mark);
             const baseline = mark.getBoundingClientRect().bottom;
+            // And the height of a capital, from the face's own figures.
+            mark.style.height = "1cap";
+            const known = mark.getBoundingClientRect().height;
             mark.remove();
             const look = getComputedStyle(text);
             const pen = document.createElement("canvas").getContext("2d");
             pen.font = `${look.fontStyle} ${look.fontWeight} ${look.fontSize} ${look.fontFamily}`;
-            const cap = pen.measureText("H").actualBoundingBoxAscent;
+            const drawn = pen.measureText("H").actualBoundingBoxAscent;
             const r = box.getBoundingClientRect();
-            return baseline - cap / 2 - (r.top + r.height / 2);
+            // The capital the face says it has. The H drawn on a canvas is
+            // rounded to whole pixels, and differently by each version of
+            // Chromium, so measured by it Inter stood 0.3 px high here and
+            // 0.8 px in CI, with the same layout.
+            const by = baseline - known / 2 - (r.top + r.height / 2);
+            return [by, `${Math.abs(by).toFixed(1)} px ${by < 0 ? "above" : "below"}, with capitals ${known.toFixed(2)} high, drawn ${drawn.toFixed(2)}`];
           };
           const said = trigger.querySelector(".said > span:last-child");
-          const centres = [[said.textContent.trim() + " in the field", offCentre(said, trigger)]];
+          const centres = [[said.textContent.trim() + " in the field", ...offCentre(said, trigger)]];
           for (const row of document.querySelectorAll(".pick-list .pick-row")) {
             const what = row.querySelector(".what.shown");
-            if (what) centres.push([row.textContent.trim(), offCentre(what, row)]);
+            if (what) centres.push([row.textContent.trim(), ...offCentre(what, row)]);
           }
           const search = document.querySelector(".pick-list .pick-search");
           const head = [...document.querySelectorAll(".pick-list .pick-group")].find((it) => it.textContent.trim() === "Installed");
@@ -7589,7 +7597,7 @@ for (const seq of toWalk) {
           const off = seen.look.centres.filter(([, by]) => Math.abs(by) > 0.5);
           if (off.length)
             wrong = `the capitals stand off the middle: ${off
-              .map(([name, by]) => `${name} ${Math.abs(by).toFixed(1)} px ${by < 0 ? "above" : "below"}`)
+              .map(([name, , said]) => `${name} ${said}`)
               .join(", ")}`;
         }
         break;
