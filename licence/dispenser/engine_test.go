@@ -313,7 +313,15 @@ func TestStockRefusesTheWholeBatch(t *testing.T) {
 		stranger := signWith(t, 1, strangerSigner(), 0, "")
 		unknown := signWith(t, 1, testSigner(), 9, "")
 		named := signWith(t, 1, testSigner(), 0, "Lena Fischer")
-		tampered := good[1][:len(good[1])-2] + "AA"
+		// A letter well inside the signature, where every bit of it is
+		// read. The last letter carries bits the decoder leaves out, and
+		// once in a few hundred keys "AA" was what they ended in already.
+		at := len(good[1]) - 10
+		other := byte('A')
+		if good[1][at] == 'A' {
+			other = 'B'
+		}
+		tampered := good[1][:at] + licence.Key(other) + good[1][at+1:]
 		cases := map[string][]licence.Key{
 			"signed by a stranger":     append(append([]licence.Key{}, good...), stranger...),
 			"from an unknown signer":   append(append([]licence.Key{}, good...), unknown...),
