@@ -312,34 +312,6 @@ func TestACutEdgeWalksAFrameAtATime(t *testing.T) {
 	}
 }
 
-// Everything that makes a clip unrenderable is still refused to frames.
-// Turning the snapping off is a choice about where the edges land, not a
-// way around the checks.
-func TestACutToFramesIsStillChecked(t *testing.T) {
-	tr := cutsTranscript()
-	refused := []struct {
-		name string
-		run  func(fsys afero.Fs, path string) error
-	}{
-		{"a cut that leaves the clip with nothing", func(fsys afero.Fs, p string) error {
-			return CutClip(fsys, p, "01", 9, 17, tr, 0.1, ToFrames)
-		}},
-	}
-	for _, c := range refused {
-		t.Run(c.name, func(t *testing.T) {
-			fsys, path := cutsPlanPath(t)
-			before, _ := afero.ReadFile(fsys, path)
-			if err := c.run(fsys, path); err == nil {
-				t.Fatalf("the edit was accepted")
-			}
-			after, _ := afero.ReadFile(fsys, path)
-			if string(before) != string(after) {
-				t.Errorf("the plan changed:\n%s", after)
-			}
-		})
-	}
-}
-
 // A cut wide enough to swallow a piece takes the piece, rather than leaving
 // an empty one behind for the render to trip over.
 func TestACutThatSwallowsAPieceDropsIt(t *testing.T) {
@@ -435,6 +407,11 @@ func TestARefusedCutLeavesThePlanAlone(t *testing.T) {
 			// With no words there is no pause for the cut to grow into, so
 			// this stays the hair's breadth it was asked for.
 			return CutClip(fsys, p, "01", 12, 12.01, &Transcript{}, 0.1, ToWords)
+		}},
+		// Turning the snapping off is a choice about where the edges land,
+		// not a way around the checks.
+		{"a cut to frames that leaves the clip with nothing", func(fsys afero.Fs, p string) error {
+			return CutClip(fsys, p, "01", 9, 17, tr, 0.1, ToFrames)
 		}},
 		{"a cut that falls outside the clip", func(fsys afero.Fs, p string) error {
 			return CutClip(fsys, p, "01", 40, 45, tr, 0.1, ToWords)

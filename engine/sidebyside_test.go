@@ -217,44 +217,11 @@ func TestHearingSideBySideHearsExactlyItsPart(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestHearingSideBySideStoppedKeepsWhatItHeard(t *testing.T) {
 	t.Parallel()
-	source := testEpisode(t, "70")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var mu sync.Mutex
-	heard := 0.0
-	log := NewLog(&bytes.Buffer{}, false, false)
-	log.SetSink(func(ev Event) {
-		if ev.Kind != EventProgress || ev.Covered <= 0 {
-			return
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		heard = ev.Covered
-		if heard > 20 {
-			cancel()
-		}
-	})
 	var calls int32
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4}
-	e := NewEngine(log, disk)
-	e.checkpointEvery = time.Hour
-	e.OpenRecognizer = func(string) (Recognizer, error) { return copies, nil }
-	base := DefaultOptions()
-	base.ASRModel = t.TempDir()
-	p := NewProject(e, source, base)
-	if err := p.Transcribe(ctx); err == nil {
-		t.Fatal("a stopped transcription finished")
-	}
+	stoppedKeepsWhatItHeard(t, copies)
 	if busy := copies.busy.Load(); busy != 0 {
 		t.Errorf("%d copies still hearing after the transcription returned", busy)
-	}
-	mu.Lock()
-	want := heard
-	mu.Unlock()
-	covered, done := Coverage(disk, source, base.ASRModel)
-	if done || want <= 20 || covered < want-0.001 {
-		t.Errorf("stopped after hearing %.2f s, %.2f s written down (done %v)", want, covered, done)
 	}
 }
 

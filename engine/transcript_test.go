@@ -521,6 +521,17 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 	t.Parallel()
+	var calls int32
+	stoppedKeepsWhatItHeard(t, fakeRecognizer{&calls})
+}
+
+// stoppedKeepsWhatItHeard transcribes a test episode with rec, stops it
+// once more than 20 s are heard, and checks all of that was written down.
+// It is shared with TestHearingSideBySideStoppedKeepsWhatItHeard.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func stoppedKeepsWhatItHeard(t *testing.T, rec Recognizer) {
+	t.Helper()
 	source := testEpisode(t, "70")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -539,10 +550,9 @@ func TestAStoppedTranscriptionKeepsWhatItHeard(t *testing.T) {
 			cancel()
 		}
 	})
-	var calls int32
 	e := NewEngine(log, disk)
 	e.checkpointEvery = time.Hour
-	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	e.OpenRecognizer = func(string) (Recognizer, error) { return rec, nil }
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()
 	p := NewProject(e, source, base)

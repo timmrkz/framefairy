@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,28 +33,7 @@ import (
 func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	if err := e.Preflight(ctx); err != nil {
-		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
-	}
-	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	onMac := hasEncoder(string(listing), "h264_videotoolbox")
-	if !onMac && !hasEncoder(string(listing), "libx264") {
-		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
-	}
-
-	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.mp4")
-	if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
-		"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
-		"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
-	info, err := e.Probe(ctx, source)
-	if err != nil {
-		t.Fatal(err)
-	}
+	e, onMac, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
 	e.Log = NewLog(&log, false, false)
@@ -110,28 +90,7 @@ func TestARenderGoesOnWhenTheEncoderFails(t *testing.T) {
 func TestARenderGoesOnWhenTheEncoderHangs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	if err := e.Preflight(ctx); err != nil {
-		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
-	}
-	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
-	onMac := hasEncoder(string(listing), "h264_videotoolbox")
-	if !onMac && !hasEncoder(string(listing), "libx264") {
-		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
-	}
-
-	dir := t.TempDir()
-	source := filepath.Join(dir, "episode.mp4")
-	if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
-		"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
-		"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", source).CombinedOutput(); err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
-	}
-	info, err := e.Probe(ctx, source)
-	if err != nil {
-		t.Fatal(err)
-	}
+	e, onMac, dir, source, info := encoderFailure(t)
 
 	var log bytes.Buffer
 	e.Log = NewLog(&log, false, false)
@@ -399,4 +358,41 @@ func TestTheProcessorEncodesWhatAShortAsks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// encoderFailure is what both tests of a failing encoder start from: an
+// engine whose ffmpeg can encode on the processor, whether it has the
+// Mac's media engine, a folder of the test's own and an episode of three
+// seconds, made once for both.
+//
+// On the real disk: ffmpeg makes the episode and the stand-in reads it.
+func encoderFailure(t *testing.T) (e *Engine, onMac bool, dir, source string, info SourceInfo) {
+	t.Helper()
+	ctx := context.Background()
+	e = NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	if err := e.Preflight(ctx); err != nil {
+		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)
+	}
+	listing, _ := exec.Command(e.FFmpeg, "-hide_banner", "-encoders").Output()
+	onMac = hasEncoder(string(listing), "h264_videotoolbox")
+	if !onMac && !hasEncoder(string(listing), "libx264") {
+		ffmpegtest.Unusable(t, "this ffmpeg has neither VideoToolbox nor libx264")
+	}
+	source, err := episodes.once("encoder-fails.mp4", func(path string) error {
+		if out, err := exec.Command(e.FFmpeg, "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
+			"-f", "lavfi", "-i", "sine=f=440:r=48000:d=3",
+			"-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-shortest", path).CombinedOutput(); err != nil {
+			return fmt.Errorf("making the test episode: %s %s", err, out)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err = e.Probe(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, onMac, t.TempDir(), source, info
 }
