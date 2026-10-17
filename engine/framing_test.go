@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"math"
@@ -8,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,5 +261,75 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 	}
 	if took := time.Since(began); took > 5*time.Second {
 		t.Errorf("giving up took %s", took)
+	}
+}
+
+// A system decoder that does not end even once it is stopped is left
+// behind, and the search goes on. On CI's Mac, in run 38734171823 for
+// #201, the ffmpeg of the probe was stopped after its fifteen seconds and
+// went on sitting in the system's decoder, and the test waited on it for
+// eight minutes, until the run was killed. Here the stop does nothing, as
+// it did there. Not parallel: it shortens frameLimit, shotLimit and
+// leaveAfter and stands in for stopProcess, package variables.
+func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
+	limits, shots, leave, stop := frameLimit, shotLimit, leaveAfter, stopProcess
+	frameLimit = 300 * time.Millisecond
+	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
+	leaveAfter = 300 * time.Millisecond
+	var mu sync.Mutex
+	var left []*os.Process
+	stopProcess = func(p *os.Process) error {
+		mu.Lock()
+		defer mu.Unlock()
+		left = append(left, p)
+		return nil
+	}
+	t.Cleanup(func() {
+		frameLimit, shotLimit, leaveAfter, stopProcess = limits, shots, leave, stop
+		mu.Lock()
+		defer mu.Unlock()
+		for _, p := range left {
+			_ = p.Kill()
+		}
+	})
+
+	var said bytes.Buffer
+	e := NewEngine(NewLog(&said, false, false), afero.NewMemMapFs())
+	e.FFmpeg = stuckFFmpeg(t, false)
+	began := time.Now()
+	used := e.decoderUsed(context.Background(), "episode.mp4", 10.2)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("asking which decoder is used took %s", took)
+	}
+	if used != "the processor" || !e.softDecode.Load() {
+		t.Errorf("the decoder used is %q, want the processor from now on", used)
+	}
+	if !strings.Contains(said.String(), "did not end") {
+		t.Errorf("the log does not say the decoder was left behind: %q", said.String())
+	}
+
+	// Pulling frames, and looking for camera switches with the frames
+	// coming out of ffmpeg as it reads, are left the same way.
+	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
+	e.FFmpeg = stuckFFmpeg(t, true)
+	began = time.Now()
+	if got := e.sampleGray(context.Background(), "episode.mp4", 10, 0.1, FaceWidth, FaceHeight, 1); len(got) != 0 {
+		t.Errorf("an ffmpeg left behind gave %d frames", len(got))
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("pulling one frame took %s", took)
+	}
+	said.Reset()
+	e = NewEngine(NewLog(&said, false, false), afero.NewMemMapFs())
+	e.FFmpeg = stuckFFmpeg(t, true)
+	began = time.Now()
+	if read, err := e.readSpan(context.Background(), "episode.mp4", 10, 20, true); err != nil || len(read.cuts) != 0 {
+		t.Errorf("an ffmpeg left behind while it looks for switches: %v, %v", read.cuts, err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("looking for switches took %s", took)
+	}
+	if !strings.Contains(said.String(), "did not end") {
+		t.Errorf("the log does not say ffmpeg was left behind: %q", said.String())
 	}
 }

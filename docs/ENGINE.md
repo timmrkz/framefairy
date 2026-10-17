@@ -1106,7 +1106,12 @@ reading what ffmpeg says, and written to the log as `framing decodes
 video on VideoToolbox` or `on the processor`. A single frame has 15 s,
 `frameLimit`, there and wherever framing pulls one frame: VideoToolbox
 has given none and said nothing on a virtual Mac, and a system decoder
-that misses the limit is gone round on the processor from then on. The crop
+that misses the limit is gone round on the processor from then on. An
+ffmpeg that is stopped has five seconds to end, `leaveAfter` in
+`engine/ffmpeg.go`, and one that is still there after them is left
+behind, with a warning that says so, and the search goes on without it.
+On the same Mac an ffmpeg went on in VideoToolbox for eight minutes after
+it was killed, and the search waited on it until the test run was ended. The crop
 centres on the largest face found. Where too few frames contain a face, it
 goes to the part of the frame with the most fine detail, which is whatever
 the camera focused on. The built-in face detector looks for faces turned
@@ -1201,7 +1206,11 @@ something all the while it works: how far it has read the prompt after
 every batch, then every token of its thought and its answer. So when
 nothing comes from it for two minutes, `localStall` in `engine/local.go`,
 the search fails with that reason and the server is stopped, so Continue
-starts one afresh. Before, such a search waited for good, and with it
+starts one afresh. A batch is 512 tokens, `promptBatch`, where llama.cpp's
+own is 2048: a machine that reads the prompt on its processor alone, as a
+Windows or Linux machine without a graphics chip llama.cpp can use will,
+has to read fewer than 4.3 tokens a second to be taken for a stalled
+model, where 2048 made it 17. Before, such a search waited for good, and with it
 every video's transcription, which waits while a local model finds.
 
 **The API is two companies, Anthropic and OpenAI,** in `engine/provider.go`.

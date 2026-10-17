@@ -229,13 +229,33 @@ func contextFor(promptChars, maxTokens int) int {
 
 // localStall is how long llama-server may send nothing before the ask is
 // given up on. It speaks all the time while it works: a word of how far it
-// has read the prompt after every batch of it, then every token of its
-// thought and of its answer. So two minutes of silence is a server that hangs,
+// has read the prompt after every batch of it, promptBatch tokens, then
+// every token of its thought and of its answer. So two minutes of silence is a server that hangs,
 // and a search waiting on it waits for good, with every video's
 // transcription held up behind it, see lanes.go in the app. The client has
 // no timeout of its own, because a whole answer takes minutes. Plan row
 // 2.224. A variable so a test can make it short.
 var localStall = 2 * time.Minute
+
+// promptBatch is how many tokens of the prompt llama-server reads before
+// it says how far it has come, its logical batch, `-b`. Its own default is
+// 2048, and a machine that reads fewer than 17 tokens a second, the
+// processor of a Windows or Linux machine without a graphics chip
+// llama.cpp can use, would say nothing for longer than localStall and be
+// stopped while it was well. With 512 it has to read fewer than 4.3 a
+// second for that. It is also llama.cpp's physical batch, `-ub`, so the graphics
+// chip of a Mac reads the prompt in the same pieces as before and no
+// slower. Checked against llama.cpp b11430: the server sends its progress
+// in post_decode in tools/server/server-context.cpp, once for every
+// logical batch it decodes.
+const promptBatch = 512
+
+// slowestReading is the fewest tokens of the prompt a second a machine the
+// app runs on may read without being taken for a stalled model. A
+// processor of the last ten years is expected to read a model of a few
+// billion active parameters, like Gemma 4 26B A4B, in tens of tokens a
+// second, not measured here.
+const slowestReading = 5.0
 
 // stallWatch calls its function once nothing has been read for a while.
 type stallWatch struct {
@@ -341,7 +361,10 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		"-lv", "4",
 		// Nothing reads what the server is working on, and it is the
 		// transcript, see serverKeys.
-		"--no-slots"}
+		"--no-slots",
+		// How far it has read the prompt is said once a batch, see
+		// promptBatch.
+		"-b", itoa(promptBatch)}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	key, err := newServerKey()
 	if err != nil {
