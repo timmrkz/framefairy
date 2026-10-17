@@ -125,9 +125,6 @@ func (m *testEpisodes) make(seconds string) (string, error) {
 // On the real disk: the project runs ffmpeg on the episode.
 func TestProjectSteps(t *testing.T) {
 	source := testEpisode(t, "40")
-	// The records of every episode go in one folder. This test counts
-	// them, so it gets a folder of its own.
-	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
@@ -137,6 +134,9 @@ func TestProjectSteps(t *testing.T) {
 	log.SetSink(rec.sink)
 	e := NewEngine(log, disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	// The records of every episode on a machine go in one folder. This
+	// test counts them, so it gets records of its own.
+	records := ownRecords(e)
 	// The one test that frames with the face detector, the way the app
 	// does, see TestMain.
 	e.NoFaces = false
@@ -196,10 +196,10 @@ func TestProjectSteps(t *testing.T) {
 
 	// Training records: one per new model answer, and a reused answer keeps
 	// its id even when the plan file is made again.
-	training := TrainingDir()
+	training := records.TrainingDir()
 	countLines := func(name string) int {
 		n := 0
-		_ = readRecords(filepath.Join(training, name), func([]byte) { n++ })
+		_ = records.readRecords(filepath.Join(training, name), func([]byte) { n++ })
 		return n
 	}
 	if n := countLines("plans.jsonl"); n != 2 {
@@ -210,7 +210,7 @@ func TestProjectSteps(t *testing.T) {
 	if firstID == "" {
 		t.Fatal("no plan_id in the plan file")
 	}
-	record, ok := loadPlanRecord(training, firstID)
+	record, ok := records.loadPlanRecord(firstID)
 	// middle sends no system part, and names a line inside the story.
 	if !ok || record.Prompt == "" || record.System != "" || record.PromptVersion != PromptVersion ||
 		len(record.Lines) == 0 || record.Candidates[0].Heart[0] == 0 ||
@@ -232,14 +232,14 @@ func TestProjectSteps(t *testing.T) {
 		t.Errorf("reused answer recorded again, %d records", n)
 	}
 
-	if err := SetRejected(disk, plan, "t10-01", true); err != nil {
+	if err := SetRejected(disk, records, plan, "t10-01", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(disk, plan, "t10-01", false); err != nil {
+	if err := SetRejected(disk, records, plan, "t10-01", false); err != nil {
 		t.Fatal(err)
 	}
 	var decisions []DecisionRecord
-	_ = readRecords(filepath.Join(training, "decisions.jsonl"), func(line []byte) {
+	_ = records.readRecords(filepath.Join(training, "decisions.jsonl"), func(line []byte) {
 		var d DecisionRecord
 		_ = json.Unmarshal(line, &d)
 		decisions = append(decisions, d)

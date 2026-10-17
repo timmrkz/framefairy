@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -99,43 +98,6 @@ func DefaultTrainingDir() string {
 		return "training"
 	}
 	return filepath.Join(home, ".framefairy", "training")
-}
-
-// The one folder, set when a program starts and whenever the app's
-// settings are saved: everything that records reads it, so there is one
-// place and no path travels through the engine. Jobs record from their own
-// goroutines while the app saves settings on another, so it is read and
-// written behind a lock. The folder is on the files it was set with, the
-// disk in the programs and memory in a test.
-var (
-	dirMu         sync.RWMutex
-	trainingDir   = DefaultTrainingDir()
-	trainingFiles = disk
-)
-
-// SetTrainingDir points the records at another folder, on fsys. An empty
-// path means the default one.
-func SetTrainingDir(fsys afero.Fs, dir string) {
-	if dir == "" {
-		dir = DefaultTrainingDir()
-	}
-	dirMu.Lock()
-	defer dirMu.Unlock()
-	trainingDir, trainingFiles = dir, fsys
-}
-
-// TrainingDir is the folder the records are written to and read from.
-func TrainingDir() string {
-	dirMu.RLock()
-	defer dirMu.RUnlock()
-	return trainingDir
-}
-
-// TrainingFiles is what the training folder is on.
-func TrainingFiles() afero.Fs {
-	dirMu.RLock()
-	defer dirMu.RUnlock()
-	return trainingFiles
 }
 
 // PlanRecord is one line of plans.jsonl.
@@ -239,20 +201,18 @@ type FinalRecord struct {
 	Segments [][2]float64 `json:"segments"`
 }
 
-var trainingMu sync.Mutex
-
-func appendRecord(path string, record any) error {
+// appendRecord adds one line to a record file in the training folder.
+func (r *Records) appendRecord(path string, record any) error {
 	body, err := marshalNoEscape(record)
 	if err != nil {
 		return err
 	}
-	trainingMu.Lock()
-	defer trainingMu.Unlock()
-	fsys := TrainingFiles()
-	if err := fsys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	r.write.Lock()
+	defer r.write.Unlock()
+	if err := r.Files.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := fsys.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := r.Files.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -266,8 +226,8 @@ func appendRecord(path string, record any) error {
 // readRecords calls fn with every line of a JSON Lines file in the
 // training folder. Broken lines, for example from a crash mid-write, are
 // skipped.
-func readRecords(path string, fn func(line []byte)) error {
-	f, err := TrainingFiles().Open(path)
+func (r *Records) readRecords(path string, fn func(line []byte)) error {
+	f, err := r.Files.Open(path)
 	if err != nil {
 		return err
 	}
@@ -359,10 +319,10 @@ func lineSpans(lines []Line) [][][2]float64 {
 }
 
 // findPlanRecord returns the newest plan record with the given reply key.
-func findPlanRecord(dir, replyKey string) (PlanRecord, bool) {
+func (r *Records) findPlanRecord(replyKey string) (PlanRecord, bool) {
 	var found PlanRecord
 	ok := false
-	_ = readRecords(filepath.Join(dir, "plans.jsonl"), func(line []byte) {
+	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
 		var probe struct {
 			PlanID   string `json:"plan_id"`
 			ReplyKey string `json:"reply_key"`
@@ -379,10 +339,10 @@ func findPlanRecord(dir, replyKey string) (PlanRecord, bool) {
 
 // findSamePlan returns an earlier record of the same answer to the same
 // prompt, so doing the same thing twice is recorded once.
-func findSamePlan(dir string, rec PlanRecord) (PlanRecord, bool) {
+func (r *Records) findSamePlan(rec PlanRecord) (PlanRecord, bool) {
 	var found PlanRecord
 	ok := false
-	_ = readRecords(filepath.Join(dir, "plans.jsonl"), func(line []byte) {
+	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
 		if !strings.Contains(string(line), rec.ExampleKey) {
 			return
 		}
@@ -396,10 +356,10 @@ func findSamePlan(dir string, rec PlanRecord) (PlanRecord, bool) {
 }
 
 // loadPlanRecord returns the plan record with a plan id.
-func loadPlanRecord(dir, planID string) (PlanRecord, bool) {
+func (r *Records) loadPlanRecord(planID string) (PlanRecord, bool) {
 	var found PlanRecord
 	ok := false
-	_ = readRecords(filepath.Join(dir, "plans.jsonl"), func(line []byte) {
+	_ = r.readRecords(filepath.Join(r.TrainingDir(), "plans.jsonl"), func(line []byte) {
 		if !strings.Contains(string(line), planID) {
 			return
 		}
@@ -581,10 +541,14 @@ func DiffClip(proposal, final [][2]float64, proposedLines, finalLines [][2]int) 
 	return c
 }
 
-// RecordDecision appends a decision about a clip of a plan. Plans made
-// before recording existed have no plan id, and nothing is recorded for
-// them.
-func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []string) error {
+// RecordDecision appends a decision about a clip of a plan, the plan read
+// from fsys and the decision kept in rec. Plans made before recording
+// existed have no plan id, and nothing is recorded for them, nor for a nil
+// rec.
+func RecordDecision(fsys afero.Fs, rec *Records, planPath, clipID, event string, reasons []string) error {
+	if rec == nil {
+		return nil
+	}
 	plan, clips, err := LoadClips(fsys, planPath)
 	if err != nil {
 		return err
@@ -607,7 +571,7 @@ func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []str
 		return err
 	}
 
-	dir := TrainingDir()
+	dir := rec.TrainingDir()
 	record := DecisionRecord{Schema: TrainingSchema, Time: time.Now().UTC().Format(time.RFC3339),
 		PlanID: planID, CID: clipID, Event: event, Reasons: clean}
 	switch event {
@@ -616,9 +580,9 @@ func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []str
 		for _, s := range clip.Segments {
 			final.Segments = append(final.Segments, [2]float64{roundTo(s.Start, 3), roundTo(s.End, 3)})
 		}
-		if rec, ok := loadPlanRecord(dir, planID); ok {
-			final.Lines = LinesForSegments(rec.Lines, final.Segments)
-			for _, cand := range rec.Candidates {
+		if planned, ok := rec.loadPlanRecord(planID); ok {
+			final.Lines = LinesForSegments(planned.Lines, final.Segments)
+			for _, cand := range planned.Candidates {
 				if cand.CID == clipID && len(cand.Segments) > 0 {
 					record.Changes = DiffClip(cand.Segments, final.Segments, cand.Keep, final.Lines)
 				}
@@ -629,17 +593,17 @@ func RecordDecision(fsys afero.Fs, planPath, clipID, event string, reasons []str
 	default:
 		return renderErr("unknown decision %s", event)
 	}
-	return appendRecord(filepath.Join(dir, "decisions.jsonl"), record)
+	return rec.appendRecord(filepath.Join(dir, "decisions.jsonl"), record)
 }
 
 // planIDFor is the id a plan will be recorded under, decided before the
 // model has answered. A reused answer keeps the id it was recorded with.
-func planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
-	if opts.LogDir == "" || !opts.Record {
+func (e *Engine) planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
+	if opts.LogDir == "" || !opts.Record || e.Records == nil {
 		return ""
 	}
 	if !fresh {
-		if rec, ok := findPlanRecord(TrainingDir(), replyKey); ok {
+		if rec, ok := e.Records.findPlanRecord(replyKey); ok {
 			return rec.PlanID
 		}
 	}
@@ -658,7 +622,7 @@ func planIDFor(opts PlanOptions, replyKey string, fresh bool) string {
 func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, lines []Line,
 	prompt, replyKey string, fresh bool, entries []PlanEntry, ids []string,
 	segments map[string][][2]float64, planned string) string {
-	if opts.LogDir == "" || !opts.Record {
+	if opts.LogDir == "" || !opts.Record || e.Records == nil {
 		return ""
 	}
 	// Training records are answers to one way of asking, the one whose
@@ -669,9 +633,9 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 	if IsExperiment(recipe.Name) {
 		return ""
 	}
-	dir := TrainingDir()
+	dir := e.Records.TrainingDir()
 	if !fresh {
-		if rec, ok := findPlanRecord(dir, replyKey); ok {
+		if rec, ok := e.Records.findPlanRecord(replyKey); ok {
 			return rec.PlanID
 		}
 	}
@@ -699,10 +663,10 @@ func (e *Engine) recordPlan(opts PlanOptions, sourcePath string, window Window, 
 			Title: entry.Title, Reason: entry.Reason, Keep: entry.Keep, Heart: entry.Heart,
 			Segments: segments[ids[i]]})
 	}
-	if same, ok := findSamePlan(dir, record); ok {
+	if same, ok := e.Records.findSamePlan(record); ok {
 		return same.PlanID
 	}
-	if err := appendRecord(filepath.Join(dir, "plans.jsonl"), record); err != nil {
+	if err := e.Records.appendRecord(filepath.Join(dir, "plans.jsonl"), record); err != nil {
 		e.Log.Warn("could not record the plan for training: %s", err)
 		return ""
 	}

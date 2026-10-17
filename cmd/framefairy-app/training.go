@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/afero"
+
 	"framefairy/engine"
 )
 
@@ -14,7 +16,7 @@ func (s *FrameFairy) ClipPlayed(plan, clipID string) error {
 	if !s.store.Known(plan) {
 		return errNotInLibrary
 	}
-	return engine.RecordDecision(s.store.files, plan, clipID, engine.DecisionViewed, nil)
+	return engine.RecordDecision(s.store.files, s.store.records, plan, clipID, engine.DecisionViewed, nil)
 }
 
 // TrainingStatus is the one folder the records live in and how much is in
@@ -29,17 +31,18 @@ type TrainingStatus struct {
 // belongs to the person, not to an episode, so it is named as it is on
 // disk rather than hidden behind a setting.
 func (s *FrameFairy) Training() TrainingStatus {
-	dir := engine.TrainingDir()
+	records := s.store.records
+	dir := records.TrainingDir()
 	return TrainingStatus{
 		Dir:       dir,
-		Plans:     countRecords(filepath.Join(dir, "plans.jsonl")),
-		Decisions: countRecords(filepath.Join(dir, "decisions.jsonl")),
+		Plans:     countRecords(records.Files, filepath.Join(dir, "plans.jsonl")),
+		Decisions: countRecords(records.Files, filepath.Join(dir, "decisions.jsonl")),
 	}
 }
 
 // countRecords counts the lines of a record file. A missing file is none.
-func countRecords(path string) int {
-	f, err := engine.TrainingFiles().Open(path)
+func countRecords(files afero.Fs, path string) int {
+	f, err := files.Open(path)
 	if err != nil {
 		return 0
 	}
@@ -59,7 +62,7 @@ func countRecords(path string) int {
 // training a model that is not trained yet, so this is a person tidying up
 // while the app is being built, and it cannot be taken back.
 func (s *FrameFairy) ClearTraining() error {
-	dir, files := engine.TrainingDir(), engine.TrainingFiles()
+	dir, files := s.store.records.TrainingDir(), s.store.records.Files
 	for _, name := range []string{"plans.jsonl", "decisions.jsonl"} {
 		if err := files.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return err

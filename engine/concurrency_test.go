@@ -16,14 +16,14 @@ import (
 // themselves are all reached from several places at once. make test runs
 // this with the race detector.
 func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
-	dir := ownTrainingDir(t)
-
+	t.Parallel()
 	fsys := afero.NewMemMapFs()
+	dir := "/home/tim/.framefairy/training"
+	records := NewRecords(fsys, dir, "")
 	source := "/home/tim/ep.mp4"
 	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	files := TrainingFiles()
 
 	const hands, each = 8, 25
 	var wg sync.WaitGroup
@@ -34,7 +34,7 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 			for k := 0; k < each; k++ {
 				record := DecisionRecord{Schema: TrainingSchema, PlanID: "p1",
 					CID: fmt.Sprintf("%d-%d", hand, k), Event: DecisionViewed}
-				if err := appendRecord(filepath.Join(TrainingDir(), "decisions.jsonl"), record); err != nil {
+				if err := records.appendRecord(filepath.Join(records.TrainingDir(), "decisions.jsonl"), record); err != nil {
 					t.Error(err)
 				}
 				if err := WriteJob(fsys, source, JobRecord{ID: SearchID, Kind: JobSearch, Step: StepHearing}); err != nil {
@@ -51,8 +51,8 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for k := 0; k < hands*each; k++ {
-			SetTrainingDir(files, dir)
-			_ = TrainingDir()
+			records.SetTrainingDir(dir)
+			_ = records.TrainingDir()
 		}
 	}()
 	wg.Wait()
@@ -61,7 +61,7 @@ func TestRecordingFromEveryDirectionAtOnce(t *testing.T) {
 	// land inside each other.
 	seen := map[string]bool{}
 	lines := 0
-	readRecords(filepath.Join(dir, "decisions.jsonl"), func(line []byte) {
+	_ = records.readRecords(filepath.Join(dir, "decisions.jsonl"), func(line []byte) {
 		lines++
 		var d DecisionRecord
 		if json.Unmarshal(line, &d) != nil {

@@ -3,7 +3,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -89,40 +88,6 @@ var measuredLocal = searchSpeed{Version: speedVersion, Load: 24, Read: 2260,
 var measuredCloud = searchSpeed{Version: speedVersion, Load: 0, Read: 20000,
 	Thought: 60, Rate: 0, Clip: 3, Tail: 16, Runs: 1}
 
-var (
-	// speedMu guards where the file is. speedWrite is held while it is
-	// read, changed and written back, so two searches that finish at once
-	// do not each write over the other.
-	speedMu    sync.Mutex
-	speedPath  string
-	speedFiles = disk
-	speedWrite sync.Mutex
-)
-
-// SetSpeedFile says where the timings of past searches are kept. Empty is
-// the default, beside the models in ~/.framefairy. It is a file of its own
-// rather than a setting, because it describes the machine, not a choice.
-// It is on fsys, the disk in the programs and memory in a test.
-func SetSpeedFile(fsys afero.Fs, path string) {
-	speedMu.Lock()
-	defer speedMu.Unlock()
-	speedPath, speedFiles = path, fsys
-}
-
-// speedFile is where the timings are kept, and what that is on.
-func speedFile() (afero.Fs, string) {
-	speedMu.Lock()
-	defer speedMu.Unlock()
-	if speedPath != "" {
-		return speedFiles, speedPath
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return speedFiles, ""
-	}
-	return speedFiles, filepath.Join(home, ".framefairy", "speed.json")
-}
-
 func readSpeeds(fsys afero.Fs, path string) map[string]searchSpeed {
 	speeds := map[string]searchSpeed{}
 	if path == "" {
@@ -142,8 +107,12 @@ func readSpeeds(fsys afero.Fs, path string) map[string]searchSpeed {
 // there is anything to measure against. A local model never timed here is
 // measured against its stand-in, and a model in the cloud the app knows by
 // name against its own.
-func pastSpeed(model string, local bool) (searchSpeed, bool) {
-	past, ok := readSpeeds(speedFile())[model]
+func (r *Records) pastSpeed(model string, local bool) (searchSpeed, bool) {
+	var past searchSpeed
+	ok := false
+	if r != nil {
+		past, ok = readSpeeds(r.Files, r.speeds)[model]
+	}
 	if ok && past.usable() {
 		return past, true
 	}
@@ -177,14 +146,14 @@ func blend(was, now float64, known bool) float64 {
 }
 
 // keepSpeed records how long the parts of a finished search took.
-func keepSpeed(model string, took searchSpeed, loaded bool) {
-	fsys, path := speedFile()
+func (r *Records) keepSpeed(model string, took searchSpeed, loaded bool) {
 	took.Version = speedVersion
-	if path == "" || !took.usable() {
+	if r == nil || r.speeds == "" || !took.usable() {
 		return
 	}
-	speedWrite.Lock()
-	defer speedWrite.Unlock()
+	fsys, path := r.Files, r.speeds
+	r.speedWrite.Lock()
+	defer r.speedWrite.Unlock()
 	speeds := readSpeeds(fsys, path)
 	was, known := speeds[model]
 	known = known && was.usable()
@@ -506,10 +475,13 @@ func searchLabel(now searchNow) string {
 // twice a second, which is also what moves the share on between the
 // moments anything happens.
 type searchClock struct {
-	log   *Log
-	model string
-	past  searchSpeed
-	known bool
+	log *Log
+	// records is where the timings it measures against are kept, and
+	// where it keeps what it measured.
+	records *Records
+	model   string
+	past    searchSpeed
+	known   bool
 
 	mu     sync.Mutex
 	now    searchNow
@@ -535,9 +507,9 @@ type searchClock struct {
 // newSearchClock starts watching a search of chars characters of
 // transcript for count clips. budget is the most a local model may think,
 // negative for no limit.
-func newSearchClock(log *Log, model string, local bool, chars, count, budget int) *searchClock {
-	past, known := pastSpeed(model, local)
-	c := &searchClock{log: log, model: model, past: past, known: known,
+func newSearchClock(log *Log, records *Records, model string, local bool, chars, count, budget int) *searchClock {
+	past, known := records.pastSpeed(model, local)
+	c := &searchClock{log: log, records: records, model: model, past: past, known: known,
 		took: map[string]float64{}, stopped: make(chan struct{})}
 	c.now = searchNow{Local: local, Chars: chars, Count: count, Budget: budget, Framers: framers}
 	return c
@@ -805,5 +777,5 @@ func (c *searchClock) finish(complete bool) {
 		took.Rate = float64(c.now.Thought) / thought
 	}
 	loaded := c.now.Loads && took.Load > 0
-	keepSpeed(c.model, took, loaded)
+	c.records.keepSpeed(c.model, took, loaded)
 }

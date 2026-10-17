@@ -300,6 +300,169 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 	}
 }
 
+// The queue under everything the app can do to it at once: work added,
+// found, listed and cancelled, episodes closed for removal and stopped,
+// while jobs run, report and panic, and the window's own
+// news panics too. Each of these has a test of its own above, one at a
+// time. Here they all happen together, and then the app quits in the
+// middle of them. A lane that died of a panic leaves the work queued
+// behind it waiting for good, and a job that slipped past a close or the
+// quit runs on with nobody to stop it.
+func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
+	t.Parallel()
+	var events, broken atomic.Int64
+	q := newQueue(memoryStore(), func(u JobUpdate) {
+		events.Add(1)
+		if u.Job.ID == "" || u.Job.Episode == "" || u.Job.Lane == "" || u.Job.State == "" {
+			broken.Add(1)
+		}
+		// Some of the window's news cannot be delivered at all.
+		if strings.HasSuffix(u.Job.ID, "3") {
+			panic("the window went away")
+		}
+	}, func(string) { panic("nobody is listening") })
+
+	episodes := []string{"/eps/a.mp4", "/eps/b.mp4", "/eps/c.mp4"}
+	kinds := []string{"render", "model", "plan", engine.JobClip}
+	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().ProgressOf("working", 0.5, 1)
+		<-ctx.Done()
+		return "", engine.ErrCancelled
+	}
+	quick := func(ctx context.Context, p *engine.Project) (string, error) {
+		p.Log().Info("%s", "working")
+		return "ok", nil
+	}
+	breaks := func(ctx context.Context, p *engine.Project) (string, error) {
+		panic("the work broke")
+	}
+	works := []func(context.Context, *engine.Project) (string, error){waiting, quick, breaks}
+
+	// hands does everything the window can do, from several goroutines at
+	// once, until stop is closed.
+	hands := func(stop chan struct{}) *sync.WaitGroup {
+		var wg sync.WaitGroup
+		for hand := range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for k := 0; ; k++ {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					episode := episodes[(hand+k)%len(episodes)]
+					kind := kinds[(hand*3+k)%len(kinds)]
+					switch (hand + k) % 8 {
+					case 0, 1, 2:
+						job := q.add(episode, kind, "Work", works[(hand+k)%len(works)])
+						if k%3 == 0 {
+							q.cancel(job.ID)
+						}
+					case 3:
+						q.list()
+						q.find(episode, kind)
+					case 4:
+						reopen := q.closeEpisode(episode)
+						q.add(episode, kind, "Work", waiting)
+						reopen()
+					case 5:
+						q.cancelEpisode(episode)
+					case 6:
+						q.addOnce(episode, kind, "Work", waiting)
+					case 7:
+						q.busy()
+						for _, j := range q.list() {
+							if j.Episode == episode && (j.State == JobQueued || j.State == JobRunning) {
+								q.cancel(j.ID)
+								break
+							}
+						}
+					}
+				}
+			}()
+		}
+		return &wg
+	}
+
+	stop := make(chan struct{})
+	wg := hands(stop)
+	time.Sleep(300 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	// No lane died of the panics: work queued on each after all of it
+	// still runs and ends, once what still waits there is called off.
+	for _, j := range q.list() {
+		q.cancel(j.ID)
+	}
+	after := map[string]Job{}
+	for _, kind := range kinds {
+		job := q.add("/eps/d.mp4", kind, "After", quick)
+		after[job.ID] = job
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for len(after) > 0 {
+		for _, j := range q.list() {
+			if _, waited := after[j.ID]; waited && j.State == JobDone {
+				delete(after, j.ID)
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d lanes never ran the work queued after the panics: %v", len(after), after)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Then the app quits while the window is still at it.
+	stop = make(chan struct{})
+	wg = hands(stop)
+	time.Sleep(100 * time.Millisecond)
+	stopped := q.shutDown()
+	close(stop)
+	wg.Wait()
+	if !stopped {
+		t.Error("the jobs did not stop when the app quit")
+	}
+	if j := q.add("/eps/e.mp4", "render", "Render", waiting); j.State != JobFailed {
+		t.Errorf("work was queued after the app quit: %s", j.State)
+	}
+	// What was running when it quit has ended, and nothing slipped in
+	// while it did.
+	deadline = time.Now().Add(20 * time.Second)
+	for {
+		var left []string
+		for _, j := range q.list() {
+			if j.State == JobQueued || j.State == JobRunning {
+				left = append(left, j.ID+" "+j.Episode+" "+j.State)
+			}
+		}
+		if len(left) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still going after the app quit: %v", left)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	failed := 0
+	for _, j := range q.list() {
+		if j.State == JobFailed && strings.Contains(j.Error, "stopped unexpectedly") {
+			failed++
+		}
+	}
+	if failed == 0 {
+		t.Error("no work that broke ended as failed, so none of it ran")
+	}
+	if events.Load() == 0 {
+		t.Error("the window was told nothing")
+	}
+	if broken.Load() != 0 {
+		t.Errorf("%d job snapshots came out half written", broken.Load())
+	}
+}
+
 // Whatever order the news reaches the window in, the snapshot of a job
 // with the largest number is the job as it ended. News is sent after the
 // queue's lock is let go, so a job's queued and running could arrive the

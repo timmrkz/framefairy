@@ -51,6 +51,10 @@ type Engine struct {
 	// Files is where the files of episodes are read and written, the real
 	// disk in the programs, see files.go.
 	Files afero.Fs
+	// Records is where the training records and the timings of past
+	// searches are kept, on Files in the default places unless the
+	// program hands it its own, see records.go.
+	Records *Records
 
 	// SkipCaptions renders without burning in captions.
 	SkipCaptions bool
@@ -107,6 +111,7 @@ type Engine struct {
 func NewEngine(log *Log, files afero.Fs) *Engine {
 	return &Engine{Log: log,
 		Files:   files,
+		Records: NewRecords(files, "", ""),
 		FFmpeg:  ToolPath("FRAMEFAIRY_FFMPEG", "ffmpeg"),
 		FFprobe: ToolPath("FRAMEFAIRY_FFPROBE", "ffprobe"),
 		NoFaces: os.Getenv("FRAMEFAIRY_NO_FACES") != ""}
@@ -116,6 +121,9 @@ type result struct {
 	Code   int
 	Stdout string
 	Stderr string
+	// Left is set for a program that did not end when it was stopped,
+	// see leaveAfter.
+	Left bool
 }
 
 // run executes a command as an argument list, never through a shell. A
@@ -125,12 +133,18 @@ func run(ctx context.Context, cwd string, name string, args ...string) result {
 	if name == "" {
 		return result{Code: 127, Stderr: "no tool that may run, see Preflight"}
 	}
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := command(ctx, name, args...)
 	cmd.Dir = cwd
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	out, said := &cutWriter{w: &stdout}, &cutWriter{w: &stderr}
+	cmd.Stdout, cmd.Stderr = out, said
+	if err := cmd.Start(); err != nil {
+		return result{Code: 127, Stderr: err.Error()}
+	}
+	left, err := finish(ctx, cmd, out, said)
+	if left {
+		return result{Code: 1, Stderr: filepath.Base(name) + " " + leftBehind, Left: true}
+	}
 	code := 0
 	if err != nil {
 		var exit *exec.ExitError
@@ -147,11 +161,18 @@ func run(ctx context.Context, cwd string, name string, args ...string) result {
 }
 
 func runBytes(ctx context.Context, cwd string, name string, args ...string) ([]byte, int) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := command(ctx, name, args...)
 	cmd.Dir = cwd
 	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	err := cmd.Run()
+	out := &cutWriter{w: &stdout}
+	cmd.Stdout = out
+	if err := cmd.Start(); err != nil {
+		return nil, 127
+	}
+	left, err := finish(ctx, cmd, out)
+	if left {
+		return nil, 1
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
@@ -160,6 +181,79 @@ func runBytes(ctx context.Context, cwd string, name string, args ...string) ([]b
 		return nil, 127
 	}
 	return stdout.Bytes(), 0
+}
+
+// leaveAfter is how long a program that was stopped has to end before it
+// is left behind. A killed program ends at once, unless it is inside the
+// system and the system will not let it go: ffmpeg in VideoToolbox on CI's
+// virtual Mac went on for eight minutes after it was killed, and the
+// search that waited for it waited for good. Tests make it shorter.
+var leaveAfter = 5 * time.Second
+
+// leftBehind is what is said of a program that was left behind.
+const leftBehind = "did not end when it was stopped, so it was left behind"
+
+// stopProcess stops a program whose work is called off, by killing it. A
+// variable so a test can stand in a stop that does not end the program.
+var stopProcess = func(p *os.Process) error { return p.Kill() }
+
+// command is exec.CommandContext that stops the program with stopProcess
+// once ctx is done. run, runBytes and runFFmpegWatched start their
+// programs with it and wait for them with finish.
+func command(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	// Read here rather than in the stop, which may run after a test has
+	// put the variable back.
+	stop := stopProcess
+	cmd.Cancel = func() error { return stop(cmd.Process) }
+	return cmd
+}
+
+// finish waits for a command that was started to end. Once ctx is done
+// the command is stopped, and one that has still not ended leaveAfter
+// later is left behind and left says so: what it writes from then on goes
+// to none of outs, which the caller may read at once.
+func finish(ctx context.Context, cmd *exec.Cmd, outs ...*cutWriter) (left bool, err error) {
+	finished := make(chan error, 1)
+	go func() { finished <- cmd.Wait() }()
+	select {
+	case err := <-finished:
+		return false, err
+	case <-ctx.Done():
+	}
+	gone := time.NewTimer(leaveAfter)
+	defer gone.Stop()
+	select {
+	case err := <-finished:
+		return false, err
+	case <-gone.C:
+	}
+	for _, out := range outs {
+		out.cut()
+	}
+	return true, nil
+}
+
+// cutWriter passes what is written on to w until it is cut, and drops it
+// after, so a program left behind writes into nothing anyone reads.
+type cutWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (c *cutWriter) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.w == nil {
+		return len(p), nil
+	}
+	return c.w.Write(p)
+}
+
+func (c *cutWriter) cut() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.w = nil
 }
 
 // parseProgress reads seconds of media processed so far from an ffmpeg
@@ -236,10 +330,14 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	// is part of.
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
-	cmd := exec.CommandContext(ctx, e.FFmpeg, full...)
+	cmd := command(ctx, e.FFmpeg, full...)
 	cmd.Dir = cwd
 	cmd.Stderr = handle
-	cmd.Stdout = stdout
+	var out *cutWriter
+	if stdout != nil {
+		out = &cutWriter{w: stdout}
+		cmd.Stdout = out
+	}
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		handle.Close()
@@ -252,10 +350,29 @@ func (e *Engine) runFFmpegWatched(ctx context.Context, args []string, label stri
 	defer ticker.Stop()
 	lastMove, lastDone, warned := time.Now(), -1.0, false
 	var waitErr error
+	// gone runs from the moment ffmpeg is stopped, see leaveAfter.
+	var gone <-chan time.Time
+	left := false
 loop:
 	for {
+		if gone == nil && ctx.Err() != nil {
+			leave := time.NewTimer(leaveAfter)
+			defer leave.Stop()
+			gone = leave.C
+		}
 		select {
 		case waitErr = <-finished:
+			break loop
+		case <-gone:
+			left = true
+			if out != nil {
+				out.cut()
+			}
+			name := label
+			if name == "" {
+				name = "ffmpeg"
+			}
+			e.Log.Warn("%s %s", name, leftBehind)
 			break loop
 		case <-ticker.C:
 		}
@@ -282,11 +399,11 @@ loop:
 			if elapsed > 0 {
 				speed = done / elapsed
 			}
-			left := 0.0
+			remaining := 0.0
 			if speed > 0.01 {
-				left = (total - done) / speed
+				remaining = (total - done) / speed
 			}
-			e.Log.ProgressOf(label, share, left)
+			e.Log.ProgressOf(label, share, remaining)
 		} else {
 			e.Log.Progress(fmt.Sprintf("%s %.0fs", label, elapsed))
 		}
@@ -294,7 +411,9 @@ loop:
 	handle.Close()
 	e.Log.ClearProgress()
 	stderr, _ := os.ReadFile(stderrPath)
-	if waitErr != nil {
+	if left {
+		code = 1
+	} else if waitErr != nil {
 		var exit *exec.ExitError
 		if errors.As(waitErr, &exit) {
 			code = max(exit.ExitCode(), 1)

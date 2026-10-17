@@ -109,8 +109,8 @@ func ShapeClip(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript,
 }
 
 // Reshape makes a gesture's change to a clip and saves it, the same change
-// ShapeClip shows while the hand moves.
-func Reshape(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) error {
+// ShapeClip shows while the hand moves. The edit is recorded in rec.
+func Reshape(fsys afero.Fs, rec *Records, planPath, clipID string, g Gesture, t *Transcript, keepPause float64) error {
 	plan, clip, err := planClip(fsys, planPath, clipID)
 	if err != nil {
 		return err
@@ -119,7 +119,7 @@ func Reshape(fsys afero.Fs, planPath, clipID string, g Gesture, t *Transcript, k
 	if err != nil {
 		return err
 	}
-	return editPieces(fsys, planPath, clipID, change, g.Frames)
+	return editPieces(fsys, rec, planPath, clipID, change, g.Frames)
 }
 
 // change is what a gesture does to a clip's pieces, with its edges where

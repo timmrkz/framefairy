@@ -14,11 +14,11 @@ import (
 // it changed, the way the app records every edit.
 func edited(t *testing.T, fsys afero.Fs, logs string, edit func() error) *Change {
 	t.Helper()
-	before := TakeSnapshot(fsys, logs)
+	before := TakeSnapshot(fsys, nil, logs)
 	if err := edit(); err != nil {
 		t.Fatal(err)
 	}
-	change := ChangeBetween(before, TakeSnapshot(fsys, logs))
+	change := ChangeBetween(before, TakeSnapshot(fsys, nil, logs))
 	if change == nil {
 		t.Fatal("the edit changed nothing")
 	}
@@ -82,7 +82,7 @@ func TestAnEditIsUndoneAndDoneAgain(t *testing.T) {
 func TestUndoLeavesAClipThatLandedSince(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	change := edited(t, fsys, logs, func() error { return SetRejected(fsys, path, "01", true) })
+	change := edited(t, fsys, logs, func() error { return SetRejected(fsys, nil, path, "01", true) })
 	landing := PlanClip{ID: "03", Slug: "drei",
 		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
 	if err := appendClip(fsys, path, landing); err != nil {
@@ -109,7 +109,7 @@ func TestUndoLeavesAClipThatLandedDuringTheEdit(t *testing.T) {
 	landing := PlanClip{ID: "03", Slug: "drei",
 		Segments: []PlanSegment{{Start: 30, End: 32, CropX: "center"}}}
 	change := edited(t, fsys, logs, func() error {
-		if err := SetRejected(fsys, path, "01", true); err != nil {
+		if err := SetRejected(fsys, nil, path, "01", true); err != nil {
 			return err
 		}
 		return appendClip(fsys, path, landing)
@@ -234,7 +234,7 @@ func TestACaptionTimeIsUndoneAndRedone(t *testing.T) {
 func TestUndoAndRedoAtOnceLeaveAPlan(t *testing.T) {
 	fsys, path := editablePlanPath(t)
 	logs := filepath.Dir(path)
-	change := edited(t, fsys, logs, func() error { return SetRejected(fsys, path, "02", true) })
+	change := edited(t, fsys, logs, func() error { return SetRejected(fsys, nil, path, "02", true) })
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Add(1)

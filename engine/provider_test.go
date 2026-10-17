@@ -332,12 +332,12 @@ func TestReadAPIKeyNamesTheProvider(t *testing.T) {
 // On the real disk: a search runs ffmpeg on the episode.
 func TestProjectPlansWithOpenAI(t *testing.T) {
 	source := testEpisode(t, "40")
-	ownTrainingDir(t)
 	// One story, the first line, as middle answers, in two pieces.
 	fake, e := cloud(t, disk, openAIStream([]string{"1 1", " 1\n"}, "stop",
 		`{"prompt_tokens":900,"completion_tokens":60}`))
 	var heard int32
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	ownRecords(e)
 
 	base := DefaultOptions()
 	base.Planner = "api"
@@ -375,10 +375,10 @@ func TestProjectPlansWithOpenAI(t *testing.T) {
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAPlainAnswerIsNotPrefilled(t *testing.T) {
 	source := testEpisode(t, "40")
-	ownTrainingDir(t)
 	fake, e := cloud(t, disk, claudeStream("1 1 1\n"))
 	var heard int32
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	ownRecords(e)
 	base := DefaultOptions()
 	base.Planner = "api"
 	base.Model = "claude-sonnet-5"

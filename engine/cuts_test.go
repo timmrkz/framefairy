@@ -543,9 +543,8 @@ func TestClipCutsAreTheGapsInOrder(t *testing.T) {
 // This drives the app's own calls and reads decisions.jsonl back, because
 // the fields being right in DiffClip proves nothing about whether the edits
 // reach it.
-func trainingFixture(t *testing.T) (afero.Fs, string, string) {
+func trainingFixture(t *testing.T) (afero.Fs, string, *Records) {
 	t.Helper()
-	dir := ownTrainingDir(t)
 
 	// One clip the model proposed in two pieces, so it has a cut of its own
 	// to throw away or move, and room either side to make a new one.
@@ -558,24 +557,25 @@ func trainingFixture(t *testing.T) (afero.Fs, string, string) {
      "words": []}
   ]
 }`)
-	rec := PlanRecord{
+	records := NewRecords(fsys, "/home/tim/.framefairy/training", "")
+	planned := PlanRecord{
 		Schema: TrainingSchema, PlanID: "p-train",
 		Candidates: []RecordCandidate{{
 			CID: "01", Keep: [][2]int{{1, 4}},
 			Segments: [][2]float64{{10, 12}, {14, 20}},
 		}},
 	}
-	if err := appendRecord(filepath.Join(dir, "plans.jsonl"), rec); err != nil {
+	if err := records.appendRecord(filepath.Join(records.TrainingDir(), "plans.jsonl"), planned); err != nil {
 		t.Fatal(err)
 	}
-	return fsys, path, dir
+	return fsys, path, records
 }
 
-func lastDecision(t *testing.T, dir string) DecisionRecord {
+func lastDecision(t *testing.T, records *Records) DecisionRecord {
 	t.Helper()
 	var last DecisionRecord
 	found := false
-	_ = readRecords(filepath.Join(dir, "decisions.jsonl"), func(line []byte) {
+	_ = records.readRecords(filepath.Join(records.TrainingDir(), "decisions.jsonl"), func(line []byte) {
 		var d DecisionRecord
 		if json.Unmarshal(line, &d) == nil {
 			last, found = d, true
@@ -598,13 +598,13 @@ func trainingTranscript() *Transcript {
 
 func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 	t.Run("a cut the model did not make", func(t *testing.T) {
-		fsys, path, dir := trainingFixture(t)
+		fsys, path, records := trainingFixture(t)
 		// Between zwei and drei, inside the model's second piece, where it
 		// left the audio running.
-		if err := CutClip(fsys, path, "01", 15.5, 16.5, trainingTranscript(), 0.1, ToWords); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 15.5, To: 16.5, ToWords: true}, trainingTranscript(), 0.1); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Event != DecisionEdited {
 			t.Fatalf("recorded as %q", d.Event)
 		}
@@ -620,11 +620,11 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 	})
 
 	t.Run("a cut of the model's thrown away", func(t *testing.T) {
-		fsys, path, dir := trainingFixture(t)
-		if err := JoinCut(fsys, path, "01", 13, trainingTranscript()); err != nil {
+		fsys, path, records := trainingFixture(t)
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, trainingTranscript(), 0.1); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Changes == nil || d.Changes.Unchanged {
 			t.Fatalf("changes %+v", d.Changes)
 		}
@@ -640,13 +640,13 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 	})
 
 	t.Run("a cut of the model's moved", func(t *testing.T) {
-		fsys, path, dir := trainingFixture(t)
+		fsys, path, records := trainingFixture(t)
 		// To frames, because moving a cut a little is exactly what the
 		// snapping would undo.
-		if err := MoveCut(fsys, path, "01", 0, 11.5, 14.6, trainingTranscript(), 0.1, ToFrames); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "move", Index: 0, From: 11.5, To: 14.6}, trainingTranscript(), 0.1); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Changes == nil || d.Changes.Unchanged {
 			t.Fatalf("a moved cut was recorded as an untouched clip: %+v", d.Changes)
 		}
@@ -668,18 +668,18 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		// nothing either way, so it has to read as untouched: the model's
 		// cut is back where the model put it, and two records of a hand
 		// moving through the same place must not add up to a correction.
-		fsys, path, dir := trainingFixture(t)
+		fsys, path, records := trainingFixture(t)
 		tr := trainingTranscript()
-		if err := JoinCut(fsys, path, "01", 13, tr); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		// Exactly the part that was put back, sent as it stands, which
 		// is what the timeline does: snapping something already snapped
 		// would move it.
-		if err := CutClip(fsys, path, "01", 12, 14, tr, 0.1, ToFrames); err != nil {
+		if err := Reshape(fsys, records, path, "01", Gesture{Kind: "cut", From: 12, To: 14}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Changes == nil || !d.Changes.Unchanged {
 			t.Errorf("a cut put back and made again reads as an edit: %+v", d.Changes)
 		}
@@ -696,11 +696,11 @@ func TestCuttingByHandIsRecordedAsTrainingData(t *testing.T) {
 		// The negative case, and the one that matters most: if an untouched
 		// clip ever looked edited, every render would teach the model that
 		// it got the cut wrong.
-		fsys, path, dir := trainingFixture(t)
-		if err := SetRejected(fsys, path, "01", false); err != nil {
+		fsys, path, records := trainingFixture(t)
+		if err := SetRejected(fsys, records, path, "01", false); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Changes == nil || !d.Changes.Unchanged {
 			t.Errorf("an untouched clip reads as changed: %+v", d.Changes)
 		}

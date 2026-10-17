@@ -15,13 +15,13 @@ import (
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 	source := testEpisode(t, "15")
-	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	ownRecords(e)
 	base := DefaultOptions()
 	base.LLMURL = server.URL
 	base.ASRModel = t.TempDir()
@@ -64,13 +64,13 @@ func TestAShortEpisodeIsItsOwnClip(t *testing.T) {
 // On the real disk: ffmpeg reads the episode the search hears.
 func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	source := testEpisode(t, "15")
-	ownTrainingDir(t)
 	var heard, asked int32
 	server := fakeModel(t, &asked)
 	defer server.Close()
 
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
+	ownRecords(e)
 	base := DefaultOptions()
 	base.LLMURL = server.URL
 	base.ASRModel = t.TempDir()
@@ -98,11 +98,11 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 		t.Fatalf("first plan: %d clips, %v", len(clips), err)
 	}
 	removed := clips[0].ID
-	before := TakeSnapshot(disk, p.LogsDir())
-	if err := SetRejected(disk, first, removed, true); err != nil {
+	before := TakeSnapshot(disk, nil, p.LogsDir())
+	if err := SetRejected(disk, nil, first, removed, true); err != nil {
 		t.Fatal(err)
 	}
-	removal := ChangeBetween(before, TakeSnapshot(disk, p.LogsDir()))
+	removal := ChangeBetween(before, TakeSnapshot(disk, nil, p.LogsDir()))
 
 	plan, err := p.Search(ctx, req, nil)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestAShortEpisodeGetsItsClipAgainOnceRemoved(t *testing.T) {
 	if _, clips, _ := LoadClips(disk, first); len(clips) != 0 {
 		t.Errorf("the removed clip is still in its plan beside the one made again")
 	}
-	if err := SetRejected(disk, first, removed, false); err == nil {
+	if err := SetRejected(disk, nil, first, removed, false); err == nil {
 		t.Errorf("the removed clip could be put back beside the one made again")
 	}
 	if _, err := removal.Undo(); !errors.Is(err, ErrChangedSince) {

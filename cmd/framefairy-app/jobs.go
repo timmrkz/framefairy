@@ -784,6 +784,7 @@ func (q *queue) runJob(job *Job) {
 	started := time.Now()
 	theLog.jobLine(zerolog.InfoLevel, job).Msg("the job started")
 	e := engine.NewEngine(log, q.store.files)
+	e.Records = q.store.records
 	opts := jobOptions(q.store, e)
 	project := engine.NewProject(e, job.Episode, opts)
 

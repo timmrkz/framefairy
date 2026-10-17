@@ -183,7 +183,7 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
 	if err := afero.WriteFile(fsys, path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetRejected(fsys, path, "02", true); err != nil {
+	if err := SetRejected(fsys, nil, path, "02", true); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, err := LoadClips(fsys, path)
@@ -204,14 +204,14 @@ func TestSetRejectedKeepsTheFile(t *testing.T) {
 		strings.Index(text, `"z"`) > strings.Index(text, `"a"`) {
 		t.Errorf("key order changed\n%s", text)
 	}
-	if err := SetRejected(fsys, path, "02", false); err != nil {
+	if err := SetRejected(fsys, nil, path, "02", false); err != nil {
 		t.Fatal(err)
 	}
 	body, _ = afero.ReadFile(fsys, path)
 	if strings.Contains(string(body), "rejected") || !strings.Contains(string(body), `"revision": 2`) {
 		t.Errorf("after keeping again\n%s", body)
 	}
-	if err := SetRejected(fsys, path, "07", true); err == nil {
+	if err := SetRejected(fsys, nil, path, "07", true); err == nil {
 		t.Errorf("unknown clip accepted")
 	}
 }
@@ -236,8 +236,8 @@ func TestLinesForSegments(t *testing.T) {
 // records are not in there: they live in one folder of their own, so they
 // are not touched by this and outlive every episode.
 func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
-	dir := ownTrainingDir(t)
 	fsys, source := afero.NewMemMapFs(), "/home/tim/ep.mp4"
+	dir := NewRecords(fsys, "", "").TrainingDir()
 	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 		_ = afero.WriteFile(fsys, filepath.Join(work, name), []byte("x"), 0o644)
 	}
 	records := filepath.Join(dir, "plans.jsonl")
-	if err := afero.WriteFile(TrainingFiles(), records, []byte("{}\n"), 0o644); err != nil {
+	if err := afero.WriteFile(fsys, records, []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -259,7 +259,7 @@ func TestDeleteWorkLeavesNothingButTheEpisode(t *testing.T) {
 	if !exists(fsys, source) {
 		t.Errorf("the episode itself was deleted")
 	}
-	if !exists(TrainingFiles(), records) {
+	if !exists(fsys, records) {
 		t.Errorf("the training records were deleted with the episode")
 	}
 	if err := DeleteWork(fsys, "/home/tim/missing.mp4"); err != nil {
