@@ -849,16 +849,26 @@
   /* The microphone moves with the voice it hears, so the person sees they
      are heard. It grows by up to three quarters, about its middle, 16 px
      to 28 px in a 32 px button, which moves nothing else in the row. By a
-     third, a voice talking grew it by 3 px, and Tim could hardly see it. */
+     third, a voice talking grew it by 3 px, and Tim could hardly see it.
+     It grows by its size, not by a scale: a scale is a picture of the
+     16 px icon made larger, which WebKit drew blurred, and a size is the
+     icon drawn again, sharp at every size. */
   .act.dictate :global(svg) {
-    transform: scale(calc(1 + var(--loud, 0) * 0.75));
-    transition: transform 100ms linear;
+    flex: none;
+    width: calc(16px * (1 + var(--loud, 0) * 0.75));
+    height: calc(16px * (1 + var(--loud, 0) * 0.75));
+    transition:
+      width 100ms linear,
+      height 100ms linear;
   }
 
   /* While it listens the microphone wears the accent, so it reads as on
-     at a glance. Tim missed a colour on it. */
+     at a glance. Tim missed a colour on it. The lit shade of it, the
+     brightest the app's colour is drawn: the accent itself stands 2 to 1
+     against the dark button, too little for a thin line, the lit one
+     nearly 6 to 1. */
   .act.dictate.listening :global(svg) {
-    color: var(--accent);
+    color: var(--accent-lit);
   }
 
   .act.square {

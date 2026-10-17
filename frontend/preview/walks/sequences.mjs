@@ -6439,6 +6439,39 @@ for (const seq of toWalk) {
           wrong = `the microphone hardly grew with the voice, ${at}`;
           break;
         }
+        // It grows by being drawn larger, not by a scale, which WebKit
+        // draws as a blurred picture of the small icon, and it stands out
+        // from its button by at least 3 to 1 while it listens. Tim saw it
+        // blurred and dark on dark.
+        const look = await page.evaluate(() => {
+          const b = document.querySelector("button.dictate");
+          const icon = b.querySelector("svg");
+          // A colour mixed from the accent comes back as color(srgb ...),
+          // its channels from 0 to 1.
+          const rgb = (c) => {
+            const v = c.match(/[\d.]+/g).map(Number);
+            return c.startsWith("color(") ? [...v.slice(0, 3).map((x) => x * 255), ...v.slice(3, 4)] : v.slice(0, 4);
+          };
+          const luminance = ([r, g, b]) => {
+            const l = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+            return 0.2126 * l(r) + 0.7152 * l(g) + 0.0722 * l(b);
+          };
+          let back = null;
+          for (let e = b; e && !back; e = e.parentElement) {
+            const c = rgb(getComputedStyle(e).backgroundColor);
+            if (c.length < 4 || c[3] > 0) back = c;
+          }
+          const [hi, lo] = [luminance(rgb(getComputedStyle(icon).color)), luminance(back ?? [0, 0, 0])].sort((x, y) => y - x);
+          return { transform: getComputedStyle(icon).transform, contrast: (hi + 0.05) / (lo + 0.05) };
+        });
+        if (look.transform !== "none") {
+          wrong = `the microphone grows by a scale, ${look.transform}, which is drawn blurred`;
+          break;
+        }
+        if (look.contrast < 3) {
+          wrong = `the microphone stands out from its button by only ${look.contrast.toFixed(2)} to 1 while it listens`;
+          break;
+        }
         // Two notes going up say the microphone is open, while it is.
         const up = await page.evaluate(() => window.__notes.slice(-2));
         if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {
