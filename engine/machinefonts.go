@@ -610,6 +610,15 @@ func NamedFace(data []byte, name string) ([]byte, error) {
 	return copyFace(bytes.NewReader(data), int64(len(data)), 0, aliasNames(name))
 }
 
+// StyledFace is the single face of a font file as the style of a family,
+// named the way Apple names its own faces, so a test or the bridge can make
+// a family the machine has out of the faces of ours.
+func StyledFace(data []byte, family, style string) ([]byte, error) {
+	full := family + " " + style
+	return copyFace(bytes.NewReader(data), int64(len(data)), 0, nameTable(map[uint16]string{
+		1: family, 2: style, 4: full, 6: strings.ReplaceAll(full, " ", "-"), 16: family, 17: style}))
+}
+
 // copyFace writes the face at offset as a font file of its own, with the
 // name table given, which for a copy libass draws from says its alias and
 // nothing else. The tables keep their

@@ -393,7 +393,11 @@ messages, pull request text, code comments and chat replies.
   anywhere but in that file and the tokens in `app.css`. A list hangs on
   the edge of the trigger its column reads from and grows away from it, so
   no name is ever cut short in the list and the edge stays one line down
-  the column.
+  the column. A list wider than the room on that side, like the fonts, each
+  drawn in its own face, hangs on the left edge and grows into the
+  workspace, because a list pushed back from the edge of the app lines up
+  with nothing. A list long enough to search has a search field over its
+  rows, from the same file, never a second list of its own.
 - **Borrow what people already know.** Where the Mac, or the apps people
   use every day, already have a way of doing something, an icon, a word, a
   place for a control, a flow like updating, do it their way. Look it up

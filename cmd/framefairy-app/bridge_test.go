@@ -665,6 +665,30 @@ func openBridge(t *testing.T) *bridge {
 	if err := afero.WriteFile(installed, "/Library/Fonts/Bridge Narrow.ttf", narrow, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A family of two styles, Regular and Heavy, out of Archivo Black and
+	// Inter Black, so picking it keeps the look of the face it replaces.
+	// And enough families after it for the list to be longer than it may
+	// be tall, the way a Mac's is, which is when its rows were squeezed.
+	inter, _ := engine.FontBytes(engine.DefaultFont)
+	archivo, _ := engine.FontBytes("Archivo Black")
+	faces := map[string][]byte{}
+	if faces["Bridge Sans.ttf"], err = engine.StyledFace(archivo, "Bridge Sans", "Regular"); err != nil {
+		t.Fatal(err)
+	}
+	if faces["Bridge Sans Heavy.ttf"], err = engine.StyledFace(inter, "Bridge Sans", "Heavy"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 16 {
+		name := fmt.Sprintf("Bridge Spare %02d", i+1)
+		if faces[name+".ttf"], err = engine.NamedFace(anton, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, face := range faces {
+		if err := afero.WriteFile(installed, "/Library/Fonts/"+name, face, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
 	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records two seconds of a hum, then a

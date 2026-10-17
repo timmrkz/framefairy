@@ -588,8 +588,18 @@
 //                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
-//   ["font", name]     picks this face in the captions column, and waits
+//   ["font", name]     picks this family in the captions column, and waits
 //                      for the captions drawn in it
+//   ["search font", "letters|name"]
+//                      types the letters in the Font list's search field,
+//                      finds the family first, picks it with Enter and
+//                      waits for the captions drawn in it
+//   ["font list"]      the Font list hangs on the field's left edge, every
+//                      row is as tall as the field, and each family is
+//                      drawn in its own face
+//   ["style is", name] the Style field says this
+//   ["style", name]    picks this style of the family, and waits for the
+//                      captions drawn in it
 //   ["thickened as libass", word]
 //                      the word opened is drawn at its face's own weight
 //                      with no bold the browser fakes, and its letters
@@ -1247,10 +1257,29 @@ export const sequences = [
     name: "a font installed on the computer draws the captions and the word typed",
     steps: [
       ["listed under", "Installed|Bridge Narrow"],
-      ["font", "Bridge Narrow"],
+      ["search font", "brnar|Bridge Narrow"],
       ["frame", "Jahre"],
       ["grow", "Jahre"],
       ["thickened as libass", "Jahre"],
+    ],
+  },
+  {
+    // Found by Tim on #349: the Font list lined up with neither edge of
+    // its field, its rows were squeezed to the height of their text, and
+    // every name was in the app's face, so nothing showed what a font
+    // looks like.
+    name: "the font list hangs on the field's edge with rows as tall as it, each in its own face",
+    steps: [["font list"]],
+  },
+  {
+    // Found by Tim on #349: a family is picked first and then its style,
+    // the way Pages does, so the list is as wide as a family's name. A
+    // family picked comes in the style nearest the face it replaces.
+    name: "a family picked keeps the look of the face it replaces",
+    steps: [
+      ["font", "Bridge Sans"],
+      ["style is", "Heavy"],
+      ["style", "Regular"],
     ],
   },
   {
@@ -7398,12 +7427,74 @@ for (const seq of toWalk) {
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;
         break;
       }
-      case "font": {
-        await page.locator('button.pick[aria-label="Font"]').click();
+      case "font":
+      case "style": {
+        const field = what === "style" ? "Style" : "Font";
+        await page.locator(`button.pick[aria-label="${field}"]`).click();
         await page.locator(".pick-row", { hasText: new RegExp(`^\\s*${arg}\\s*$`) }).first().click();
         await watch.step("click", s);
         await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
         await settled();
+        break;
+      }
+      case "search font": {
+        const [letters, name] = arg.split("|");
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.keyboard.type(letters);
+        await watch.step("type", s);
+        const first = await page.evaluate(() => document.querySelector(".pick-list .pick-row")?.textContent.trim());
+        if (first !== name) {
+          wrong = `${letters} found ${first ?? "nothing"} first, not ${name}`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        await page.keyboard.press("Enter");
+        await watch.step("press", s);
+        await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), name);
+        await settled();
+        break;
+      }
+      case "font list": {
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        // Each family's face is fetched as its row is drawn, so the rows
+        // are read once the faces have come.
+        await page.evaluate(() => document.fonts.ready);
+        const seen = await page.evaluate(() => {
+          const field = document.querySelector('button.pick[aria-label="Font"]').getBoundingClientRect();
+          const list = document.querySelector(".pick-list").getBoundingClientRect();
+          const rows = [...document.querySelectorAll(".pick-list .pick-row")].map((row) => {
+            const what = row.querySelector(".what");
+            const family = getComputedStyle(what).fontFamily.split(",")[0].replace(/"/g, "").trim();
+            return {
+              name: row.textContent.trim(),
+              height: row.getBoundingClientRect().height,
+              family,
+              drawn: document.fonts.check(`13px "${family}"`, what.textContent),
+            };
+          });
+          return { field: { left: field.left, height: field.height }, list: { left: list.left, height: list.height }, rows };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const narrow = seen.rows.find((row) => row.name === "Bridge Narrow");
+        const squeezed = seen.rows.find((row) => Math.abs(row.height - seen.field.height) > 0.5);
+        if (seen.rows.length < 20) wrong = `the Font list has ${seen.rows.length} rows, too few to be longer than it may be tall`;
+        else if (Math.abs(seen.list.left - seen.field.left) > 0.5)
+          wrong = `the Font list starts at ${seen.list.left.toFixed(1)}, its field at ${seen.field.left.toFixed(1)}`;
+        else if (squeezed) wrong = `${squeezed.name} is ${squeezed.height.toFixed(1)} high, its field ${seen.field.height.toFixed(1)}`;
+        else if (!narrow) wrong = "the Font list has no Bridge Narrow";
+        else if (narrow.family !== "Bridge Narrow" || !narrow.drawn)
+          wrong = `Bridge Narrow is drawn in ${narrow.family}${narrow.drawn ? "" : ", which has not loaded"}`;
+        break;
+      }
+      case "style is": {
+        const said = await page.locator('button.pick[aria-label="Style"]').textContent();
+        // The trigger keeps room for its longest style, drawn and hidden.
+        const shown = await page.locator('button.pick[aria-label="Style"] .said > span:last-child').textContent();
+        if (shown.trim() !== arg) wrong = `the Style field says ${shown.trim() || said.trim()}, not ${arg}`;
         break;
       }
       case "listed under": {

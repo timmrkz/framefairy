@@ -1337,10 +1337,32 @@ const Answers = {
           style: { font: face(), size: 0.062, lineHeight: 1.16, chosenSize: size(), bold: true, marginV: 0.156, marginH: 0.04, padX: 0.012, padY: 0.008, radius: 0.008, primary: textCss(), box: boxCss(), highlight: (window as any).__highlight ?? true, highlightColour: pillCss(), text: (window as any).__text_on ?? true, boxOn: (window as any).__box_on ?? true },
         }));
       case "Fonts":
+        // The app's own three, as the engine reads them from their files,
+        // then faces the way a machine has them: real ones the browser
+        // finds by name, in families of several styles, and a long tail of
+        // families nobody has, so the list is as long as a Mac's.
         return Promise.resolve([
-          { name: "Inter Black", about: "", file: "Inter-Black.ttf" },
-          { name: "Anton", about: "", file: "Anton-Regular.ttf" },
-          { name: "Archivo Black", about: "", file: "ArchivoBlack-Regular.ttf" },
+          { name: "Inter Black", family: "Inter", style: "Black", postscript: "Inter-Black", about: "", file: "Inter-Black.ttf", weight: 900, width: 5 },
+          { name: "Anton", family: "Anton", style: "Regular", postscript: "Anton-Regular", about: "", file: "Anton-Regular.ttf", weight: 400, width: 5 },
+          { name: "Archivo Black", family: "Archivo Black", style: "Regular", postscript: "ArchivoBlack-Regular", about: "", file: "ArchivoBlack-Regular.ttf", weight: 400, width: 5 },
+          ...[
+            ["DejaVu Sans", "DejaVu Sans", "Book", "DejaVuSans", 400, 5, false],
+            ["DejaVu Sans Bold", "DejaVu Sans", "Bold", "DejaVuSans-Bold", 700, 5, false],
+            ["DejaVu Sans Oblique", "DejaVu Sans", "Oblique", "DejaVuSans-Oblique", 400, 5, true],
+            ["DejaVu Sans Condensed", "DejaVu Sans", "Condensed", "DejaVuSansCondensed", 400, 3, false],
+            ["DejaVu Sans Condensed Bold", "DejaVu Sans", "Condensed Bold", "DejaVuSansCondensed-Bold", 700, 3, false],
+            ["DejaVu Serif", "DejaVu Serif", "Book", "DejaVuSerif", 400, 5, false],
+            ["DejaVu Serif Bold", "DejaVu Serif", "Bold", "DejaVuSerif-Bold", 700, 5, false],
+            ["DejaVu Serif Condensed", "DejaVu Serif", "Condensed", "DejaVuSerifCondensed", 400, 3, false],
+            ["DejaVu Sans Mono", "DejaVu Sans Mono", "Book", "DejaVuSansMono", 400, 5, false],
+            ["Liberation Serif", "Liberation Serif", "Regular", "LiberationSerif", 400, 5, false],
+            ["Liberation Serif Italic", "Liberation Serif", "Italic", "LiberationSerif-Italic", 400, 5, true],
+            ["Courier 10 Pitch", "Courier 10 Pitch", "Regular", "Courier10PitchBT-Roman", 400, 5, false],
+            ["FreeSerif", "FreeSerif", "Regular", "FreeSerif", 400, 5, false],
+            ...Array.from({ length: 60 }, (_, i) => [`Nobody Has ${i + 1}`, `Nobody Has ${i + 1}`, "Regular", "", 400, 5, false]),
+          ].map(([name, family, style, postscript, weight, width, italic]) => ({
+            name, family, style, postscript, weight, width, italic, about: "", file: "", machine: true,
+          })),
         ]);
       // What the app remembers of an episode between runs. The preview
       // starts each time with nothing chosen, so a probe sees what a first

@@ -991,8 +991,19 @@ fonts in, on macOS `~/Library/Fonts`, `/Library/Fonts`, `/System/Library/Fonts`
 and the fonts Font Book downloads, and take every face that has outlines, the
 letters and digits of a caption, and a name a style line can hold. A name that
 starts with a dot is one of macOS's own interface faces and is left out. A
-face of a collection, a `.ttc` that holds a family in one file, is offered on
+face of a collection, a `.ttc` that holds a family in one file, is a face of
 its own, under its full name, the one Font Book shows.
+
+The app offers them the way Pages does, in two lists: Font holds the
+families and Style the faces of the one picked. Every face says its family
+and its style in it, read from the typographic names of its name table and
+then the plain ones, so American Typewriter Condensed Bold is the Condensed
+Bold of American Typewriter. It says how heavy and how wide it is and
+whether it leans too, from OS/2 and head, and a family picked comes in the
+face nearest the one it replaces, leaning or not first, then as wide, then
+as heavy. A caption style still names one face by its full name. Each name
+in the two lists is drawn in its own face, which the app asks of the system
+by its PostScript and full names before it asks the program for a copy.
 
 A face of the machine goes the same way as a bundled one. Its copy is written
 into the `fonts` folder, measured by the same code and served to the app for

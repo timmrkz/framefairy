@@ -36,6 +36,7 @@
   import Mic from "@lucide/svelte/icons/mic";
   import Bug from "@lucide/svelte/icons/bug";
   import Paperclip from "@lucide/svelte/icons/paperclip";
+  import Search from "@lucide/svelte/icons/search";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -97,6 +98,9 @@
     // and the paperclip that attaches pictures to it, as in Mail.
     report: Bug,
     attach: Paperclip,
+    // The field over a list long enough to search, the magnifier of
+    // Spotlight and of every search field on the Mac.
+    search: Search,
   };
 
   // The marks that are solid wherever people see them, play and pause on
