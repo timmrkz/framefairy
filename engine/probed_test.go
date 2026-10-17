@@ -13,6 +13,8 @@ import (
 
 // A stand-in for ffmpeg or ffprobe that writes a line to asked for every
 // run and answers with what each kind of question wants.
+//
+// On the real disk: the stand-in is a program the engine runs.
 func countingTool(t *testing.T, name string) (path string, runs func() int) {
 	t.Helper()
 	if runtime.GOOS == "windows" {

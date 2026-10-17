@@ -246,6 +246,9 @@ func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
 // the test has seen the two meet and does not pass on a writer that was
 // done before the other side began. Past the 60 it gives the other side
 // ten seconds more, and then fails.
+//
+// On the real disk: what is tested is that a rename on the drive leaves
+// no reader with half a plan.
 func writeWhile(t *testing.T, path string, body []byte, other *int64) {
 	var give time.Time
 	for i := 0; ; i++ {
