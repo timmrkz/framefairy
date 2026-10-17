@@ -1877,14 +1877,23 @@
      longer, so it still fits, and in the middle of the viewer on a whole
      pixel. Everything over the picture stands in it, the crop and the
      captions, rotated with it. The canvas is the episode's frame lying as
-     the file has it, as tall as the box is wide, turned into the box. */
+     the file has it, as tall as the box is wide, turned into the box.
+
+     The box is rounded first, never larger than the viewer, and centred
+     from its rounded size. Centred from the size before rounding, a
+     picture whose turned box filled the viewer's height to a hair over
+     got a margin a hair below nought, rounded down to a whole pixel
+     above the viewer, issue #264. A hundredth of a pixel is added before
+     rounding down, as for the picture's own size in Episode.svelte. */
   .screen.sideways,
   .lid.sideways {
     --fit: min(var(--ar), calc(1 / var(--ar)));
-    width: round(down, calc(var(--pic-h) * var(--fit)), 1px);
-    height: round(down, calc(var(--pic-w) * var(--fit)), 1px);
-    margin-left: round(down, calc((var(--mid-w) - var(--pic-h) * var(--fit)) / 2), 1px);
-    margin-top: round(down, calc((var(--pic-h) - var(--pic-w) * var(--fit)) / 2), 1px);
+    --side-w: min(var(--pic-w), round(down, calc(var(--pic-h) * var(--fit) + 0.01px), 1px));
+    --side-h: min(var(--pic-h), round(down, calc(var(--pic-w) * var(--fit) + 0.01px), 1px));
+    width: var(--side-w);
+    height: var(--side-h);
+    margin-left: round(down, calc((var(--mid-w) - var(--side-w)) / 2), 1px);
+    margin-top: round(down, calc((var(--pic-h) - var(--side-h)) / 2), 1px);
   }
 
   .sideways canvas {

@@ -288,7 +288,8 @@
 //                      shows its own cursor there again
 //   ["report lines up"]
 //                      the microphone, the paperclip and Report are one
-//                      height, the two are square, the tiles are one size
+//                      height on a whole pixel, the two are square, the
+//                      tiles are one size
 //                      on whole pixels with a space between them, and the
 //                      row keeps its width while Report is pressed
 //   ["write", text, n] types text into the report's field and puts the
@@ -6326,6 +6327,9 @@ for (const seq of toWalk) {
         const problems = [];
         for (const [name, b] of [["the microphone", m.mic], ["the paperclip", m.clip], ["Report", m.report]]) {
           if (b.height !== m.control) problems.push(`${name} is ${b.height} px high, not ${m.control}`);
+          // Issue #279: the row under the field stood half a pixel down,
+          // its top at 309.5, so it stepped as it faded or moved.
+          if (b.top !== Math.round(b.top)) problems.push(`${name} stands between two pixels, its top at ${b.top}`);
         }
         if (m.mic.width !== m.mic.height || m.clip.width !== m.clip.height) problems.push("the microphone or the paperclip is not square");
         const t0 = m.tiles[0];
@@ -9547,6 +9551,12 @@ async function frameWhole(page, turned) {
   const corners = [screen.left - viewer.left, viewer.right - screen.right, screen.top - viewer.top, viewer.bottom - screen.bottom];
   if (turned ? corners[0] < 8 : corners.some((d) => d > 1)) {
     return `the picture stands ${corners.map((d) => d.toFixed(1)).join(", ")} px in from the viewer's sides, so its corners are not the viewer's`;
+  }
+  // Issue #264: a part rotated a quarter stood a pixel above the viewer,
+  // its top row cut and a black line under it. It stands inside the
+  // viewer, in its middle, on a whole pixel.
+  if (turned && (corners[2] < 0 || corners[3] < 0 || Math.abs(corners[2] - corners[3]) > 1 || Math.abs(corners[2] - Math.round(corners[2])) > 0.01)) {
+    return `the rotated picture stands ${corners[2].toFixed(2)} px down from the viewer's top and ${corners[3].toFixed(2)} px up from its foot`;
   }
   const look = await page.addStyleTag({ content: ".screen canvas, .screen .trouble, .screen .failed { visibility: hidden !important } .screen { background: #fff !important }" });
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
