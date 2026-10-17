@@ -254,8 +254,9 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 					path, face.offset, info.Size(), info.ModTime().UnixNano(), face.name))
 				id := hex.EncodeToString(sum[:6])
 				faces = append(faces, machineFace{
-					font: CaptionFont{Name: face.name, Weight: face.weight,
-						File: "FrameFairy-" + id + face.ext, Machine: true},
+					font: CaptionFont{Name: face.name, Family: face.family, Style: face.style,
+						PostScript: face.postscript, Weight: face.weight, Width: face.width,
+						Italic: face.italic, File: "FrameFairy-" + id + face.ext, Machine: true},
 					path: path, offset: face.offset, alias: "Frame Fairy " + id,
 				})
 			}
@@ -270,10 +271,15 @@ func findFaces(fsys afero.Fs, dirs []string) []machineFace {
 
 // sfntFace is what one face of a font file says about itself.
 type sfntFace struct {
-	name   string
-	weight int
-	ext    string
-	offset int64
+	name       string
+	family     string
+	style      string
+	postscript string
+	weight     int
+	width      int
+	italic     bool
+	ext        string
+	offset     int64
 }
 
 // readSfntFaces reads the faces of a font file that captions can be written
@@ -373,7 +379,8 @@ func readSfntFace(r io.ReaderAt, size, offset int64) (sfntFace, bool) {
 		data, _ := readAt(r, size, entry.offset, entry.length)
 		return data
 	}
-	name := faceName(read("name", nameTableMost))
+	names := read("name", nameTableMost)
+	name := faceName(names, 4)
 	if !captionFontName(name) {
 		return sfntFace{}, false
 	}
@@ -391,8 +398,15 @@ func readSfntFace(r io.ReaderAt, size, offset int64) (sfntFace, bool) {
 	if postscript {
 		ext = ".otf"
 	}
-	return sfntFace{name: name, weight: faceWeight(read("OS/2", 1024), read("head", 1024)),
-		ext: ext, offset: offset}, true
+	os2, headTable := read("OS/2", 1024), read("head", 1024)
+	family, style := faceFamily(names, name)
+	psName := faceName(names, 6)
+	if !captionFontName(psName) {
+		psName = ""
+	}
+	return sfntFace{name: name, family: family, style: style, postscript: psName,
+		weight: faceWeight(os2, headTable), width: faceWidth(os2),
+		italic: faceItalic(os2, headTable), ext: ext, offset: offset}, true
 }
 
 // readAt reads n bytes at offset, when the file has them.
@@ -407,10 +421,10 @@ func readAt(r io.ReaderAt, size, offset, n int64) ([]byte, bool) {
 	return data, true
 }
 
-// faceName is the full name of a face, the one Font Book shows: an English
-// one from the Windows table where there is one, then any from it, then
-// the Mac's own.
-func faceName(name []byte) string {
+// faceName is one of the names a face has by its number in the name
+// table, 4 for the full name Font Book shows: an English one from the
+// Windows table where there is one, then any from it, then the Mac's own.
+func faceName(name []byte, want uint16) string {
 	count, ok1 := u16(name, 2)
 	strings0, ok2 := u16(name, 4)
 	if !ok1 || !ok2 {
@@ -425,7 +439,7 @@ func faceName(name []byte) string {
 		id, ok4 := u16(name, at+6)
 		length, ok5 := u16(name, at+8)
 		offset, ok6 := u16(name, at+10)
-		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || id != 4 {
+		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || id != want {
 			continue
 		}
 		start := int(strings0) + int(offset)
@@ -494,6 +508,62 @@ func captionFontName(name string) bool {
 	return cleanField(name) == name
 }
 
+// faceFamily is the family a face belongs to and its style in it, the two
+// lists the Mac's own apps offer a font in, Font and Typeface in Pages. The
+// typographic names come first, so American Typewriter Condensed Bold is
+// the Condensed Bold of American Typewriter rather than a family of its
+// own, then the plain ones. A face with neither is a family of one.
+func faceFamily(names []byte, full string) (family, style string) {
+	family = faceName(names, 16)
+	style = faceName(names, 17)
+	if family == "" {
+		family, style = faceName(names, 1), faceName(names, 2)
+	}
+	if !familyName(family) {
+		return full, "Regular"
+	}
+	if !familyName(style) {
+		style = strings.TrimSpace(strings.TrimPrefix(full, family))
+		if !familyName(style) {
+			style = "Regular"
+		}
+	}
+	return family, style
+}
+
+// familyName tells whether a family or a style name can be shown: it is
+// only ever shown, never written into a caption file, so it only has to
+// be a short line a person can read.
+func familyName(name string) bool {
+	if name == "" || strings.HasPrefix(name, ".") || len([]rune(name)) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// faceWidth is how wide a face says it is, the width class of OS/2, from 1
+// for the narrowest to 9 for the widest and 5 for a face of usual width.
+func faceWidth(os2 []byte) int {
+	class, ok := u16(os2, 6)
+	if !ok || class < 1 || class > 9 {
+		return 5
+	}
+	return int(class)
+}
+
+// faceItalic tells whether a face leans, by the italic or the oblique bit
+// of OS/2 or the italic bit of head.
+func faceItalic(os2, head []byte) bool {
+	selection, _ := u16(os2, 62)
+	style, _ := u16(head, 44)
+	return selection&0x201 != 0 || style&0x2 != 0
+}
+
 // faceWeight is the weight libass gives a face, ass_face_get_weight in
 // ass_font.c: the weight class of OS/2, read the old way when it is a
 // single digit, and 400 or 700 by the bold flag when there is none.
@@ -531,20 +601,21 @@ func machineFontBytes(face machineFace) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return copyFace(file, info.Size(), face.offset, face.alias)
+	return copyFace(file, info.Size(), face.offset, aliasNames(face.alias))
 }
 
 // NamedFace is the single face of a font file under another name, the way
 // a test or the bridge makes a font the machine has out of one of ours.
 func NamedFace(data []byte, name string) ([]byte, error) {
-	return copyFace(bytes.NewReader(data), int64(len(data)), 0, name)
+	return copyFace(bytes.NewReader(data), int64(len(data)), 0, aliasNames(name))
 }
 
-// copyFace writes the face at offset as a font file of its own, with a
-// name table that says alias and nothing else. The tables keep their
+// copyFace writes the face at offset as a font file of its own, with the
+// name table given, which for a copy libass draws from says its alias and
+// nothing else. The tables keep their
 // bytes, in a fresh directory with fresh checksums. A signature would not
 // fit the copy, so it is left out.
-func copyFace(r io.ReaderAt, size, offset int64, alias string) ([]byte, error) {
+func copyFace(r io.ReaderAt, size, offset int64, names []byte) ([]byte, error) {
 	tables, postscript, ok := tableDirectory(r, size, offset)
 	if !ok {
 		return nil, errors.New("not a font file")
@@ -571,7 +642,7 @@ func copyFace(r io.ReaderAt, size, offset int64, alias string) ([]byte, error) {
 		}
 		out = append(out, table{tag, data})
 	}
-	out = append(out, table{"name", aliasNames(alias)})
+	out = append(out, table{"name", names})
 	slices.SortFunc(out, func(a, b table) int { return strings.Compare(a.tag, b.tag) })
 
 	count := len(out)
@@ -628,11 +699,22 @@ func tableSum(data []byte) uint32 {
 // aliasNames is a name table in which the family, the full name and the
 // PostScript name are all alias, in the Windows table libass reads.
 func aliasNames(alias string) []byte {
-	postscript := strings.ReplaceAll(alias, " ", "-")
-	records := []struct {
+	return nameTable(map[uint16]string{1: alias, 2: "Regular", 4: alias,
+		6: strings.ReplaceAll(alias, " ", "-")})
+}
+
+// nameTable is a name table that holds the names given by their number,
+// in the Windows table, in English.
+func nameTable(names map[uint16]string) []byte {
+	type record struct {
 		id   uint16
 		text string
-	}{{1, alias}, {2, "Regular"}, {4, alias}, {6, postscript}}
+	}
+	var records []record
+	for id, text := range names {
+		records = append(records, record{id, text})
+	}
+	slices.SortFunc(records, func(a, b record) int { return int(a.id) - int(b.id) })
 	var stringsData []byte
 	table := make([]byte, 6+12*len(records))
 	binary.BigEndian.PutUint16(table[2:], uint16(len(records)))

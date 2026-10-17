@@ -27,7 +27,22 @@ func namedFace(t testing.TB, bundled, name string) []byte {
 	if !ok {
 		t.Fatalf("%s is not bundled", bundled)
 	}
-	face, err := copyFace(bytes.NewReader(data), int64(len(data)), 0, name)
+	face, err := copyFace(bytes.NewReader(data), int64(len(data)), 0, aliasNames(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return face
+}
+
+// styledFace is a bundled face with the names given by their number in
+// the name table, the way a face the machine has names its family.
+func styledFace(t testing.TB, bundled string, names map[uint16]string) []byte {
+	t.Helper()
+	data, ok := FontBytes(bundled)
+	if !ok {
+		t.Fatalf("%s is not bundled", bundled)
+	}
+	face, err := copyFace(bytes.NewReader(data), int64(len(data)), 0, nameTable(names))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +159,79 @@ func TestTheMachinesFontsAreOfferedAfterOurs(t *testing.T) {
 // The copy a caption file is drawn from answers to its alias and to
 // nothing else, so libass cannot take another face of the family for it,
 // and keeps the face's own weight and letters.
+// Tim saw the font list as wide as American Typewriter Condensed Light, a
+// row for every face. A face is offered in its family, under the style it
+// has there, so the list of families is short and the styles are a list
+// of their own, the way Pages offers a font.
+func TestAFaceIsOfferedInItsFamily(t *testing.T) {
+	onShelf(t, map[string][]byte{
+		// The way Apple names a face: the typographic family, and a family
+		// for older programs that holds the width.
+		"Type.ttc": collection(
+			styledFace(t, "Anton", map[uint16]string{1: "Test Type Condensed", 2: "Bold",
+				4: "Test Type Condensed Bold", 6: "TestType-CondensedBold",
+				16: "Test Type", 17: "Condensed Bold"}),
+			styledFace(t, DefaultFont, map[uint16]string{1: "Test Type", 2: "Regular",
+				4: "Test Type", 6: "TestType-Regular"})),
+		// A family with no name for the style but the rest of the full name.
+		"Light.ttf": styledFace(t, "Anton", map[uint16]string{1: "Test Type", 2: "\x00",
+			4: "Test Type Light"}),
+		// A family no one can read is a family of one.
+		"Odd.ttf": styledFace(t, "Anton", map[uint16]string{1: ".Hidden", 2: "Bold",
+			4: "Odd Face"}),
+	})
+	for _, c := range []struct{ name, family, style, postscript string }{
+		{DefaultFont, "Inter", "Black", "Inter-Black"},
+		{"Anton", "Anton", "Regular", "Anton-Regular"},
+		{"Test Type Condensed Bold", "Test Type", "Condensed Bold", "TestType-CondensedBold"},
+		{"Test Type", "Test Type", "Regular", "TestType-Regular"},
+		{"Test Type Light", "Test Type", "Light", ""},
+		{"Odd Face", "Odd Face", "Regular", ""},
+	} {
+		font, ok := FontByName(c.name)
+		if !ok || font.Family != c.family || font.Style != c.style || font.PostScript != c.postscript {
+			t.Errorf("%s is %+v, want %s, %s, %s", c.name, font, c.family, c.style, c.postscript)
+		}
+	}
+}
+
+// How wide a face is and whether it leans are read the way OS/2 and head
+// say them, so a family picked keeps the look of the one it replaced.
+func TestTheWidthAndLeanOfAFace(t *testing.T) {
+	os2 := func(width, selection uint16) []byte {
+		data := make([]byte, 96)
+		binary.BigEndian.PutUint16(data[6:], width)
+		binary.BigEndian.PutUint16(data[62:], selection)
+		return data
+	}
+	head := func(style uint16) []byte {
+		data := make([]byte, 54)
+		binary.BigEndian.PutUint16(data[44:], style)
+		return data
+	}
+	for _, c := range []struct {
+		what   string
+		os2    []byte
+		head   []byte
+		width  int
+		italic bool
+	}{
+		{"usual", os2(5, 0), head(0), 5, false},
+		{"condensed", os2(3, 0), head(0), 3, false},
+		{"no width at all", os2(0, 0), head(0), 5, false},
+		{"a width past the widest", os2(12, 0), head(0), 5, false},
+		{"no OS/2 table", nil, head(0), 5, false},
+		{"italic", os2(5, 0x1), head(0), 5, true},
+		{"oblique", os2(5, 0x200), head(0), 5, true},
+		{"italic by head alone", os2(5, 0), head(0x2), 5, true},
+		{"bold is not italic", os2(5, 0x20), head(0x1), 5, false},
+	} {
+		if width, italic := faceWidth(c.os2), faceItalic(c.os2, c.head); width != c.width || italic != c.italic {
+			t.Errorf("%s: width %d, italic %v, want %d, %v", c.what, width, italic, c.width, c.italic)
+		}
+	}
+}
+
 func TestTheCopyOfAMachineFaceIsThatFaceAlone(t *testing.T) {
 	onShelf(t, map[string][]byte{"Pair.ttc": collection(
 		namedFace(t, "Archivo Black", "Test Wide"), namedFace(t, DefaultFont, "Test Heavy"))})
@@ -262,7 +350,7 @@ func FuzzMachineFace(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		size := int64(len(data))
 		for _, face := range readSfntFaces(bytes.NewReader(data), size) {
-			copied, err := copyFace(bytes.NewReader(data), size, face.offset, "Frame Fairy fuzz")
+			copied, err := copyFace(bytes.NewReader(data), size, face.offset, aliasNames("Frame Fairy fuzz"))
 			if err != nil {
 				t.Fatalf("a face that was read could not be copied: %v", err)
 			}

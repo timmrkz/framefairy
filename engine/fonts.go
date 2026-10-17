@@ -14,6 +14,7 @@ package engine
 // See docs/THIRD_PARTY.md.
 
 import (
+	"bytes"
 	"embed"
 	"errors"
 	"io/fs"
@@ -34,8 +35,18 @@ const DefaultFont = "Inter Black"
 
 // CaptionFont is one face the captions can be written in.
 type CaptionFont struct {
-	// Name is the family name, which is what a caption style names.
+	// Name is the full name of the face, which is what a caption style
+	// names.
 	Name string `json:"name"`
+	// Family is the family the face belongs to and Style what it is in
+	// it, American Typewriter and Condensed Bold, the two lists a font is
+	// picked from. They are only ever shown: a caption style names a face
+	// by Name.
+	Family string `json:"family"`
+	Style  string `json:"style"`
+	// PostScript is the face's PostScript name, which the interface draws
+	// a machine's face by straight from the system, without a copy.
+	PostScript string `json:"postscript,omitempty"`
 	// About says in a few words what it looks like.
 	About string `json:"about"`
 	// File is the name of the face inside the bundle.
@@ -46,6 +57,12 @@ type CaptionFont struct {
 	// a face only when bold asks for more than 150 above its weight, and a
 	// browser thickens every face that is declared light enough.
 	Weight int `json:"weight"`
+	// Width is the width class of OS/2, 1 for the narrowest, 5 for a face
+	// of usual width and 9 for the widest, and Italic tells a face that
+	// leans. With Weight they say which style of another family is the
+	// nearest, so a family picked keeps the look of the one it replaced.
+	Width  int  `json:"width"`
+	Italic bool `json:"italic,omitempty"`
 	// Licence is the licence text that belongs to it.
 	Licence string `json:"-"`
 	// Machine is a face installed on the machine rather than built into
@@ -60,6 +77,24 @@ var captionFonts = []CaptionFont{
 		Weight: 400, Licence: "LICENSE-Anton.txt"},
 	{Name: "Archivo Black", About: "wide and solid", File: "ArchivoBlack-Regular.ttf",
 		Weight: 400, Licence: "LICENSE-Archivo.txt"},
+}
+
+// The family, style and width of a bundled face are read from the face
+// itself, the way a machine's are, so the two kinds never disagree.
+func init() {
+	for i := range captionFonts {
+		font := &captionFonts[i]
+		data, err := fontBundle.ReadFile(FontsFolder + "/" + font.File)
+		if err != nil {
+			panic("a bundled font is missing: " + font.File)
+		}
+		face, ok := readSfntFace(bytes.NewReader(data), int64(len(data)), 0)
+		if !ok {
+			panic("a bundled font cannot be read: " + font.File)
+		}
+		font.Family, font.Style, font.PostScript = face.family, face.style, face.postscript
+		font.Width, font.Italic = face.width, face.italic
+	}
 }
 
 // CaptionFonts are the faces captions can be written in, in the order they
