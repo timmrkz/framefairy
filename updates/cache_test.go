@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -77,6 +78,56 @@ func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
 	// The fill still runs to the end, from the disk.
 	if progressed != int64(len(s.zip)) {
 		t.Errorf("progress stopped at %d of %d", progressed, len(s.zip))
+	}
+}
+
+// How far a download has come only ever goes forward. The build arrives in
+// the cache and is then handed to the updater from there, and that hand
+// over used to count again from nothing, so the fill ran back towards
+// empty just before the end and then jumped to full. Found by Tim on the
+// Updates page (#334).
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestADownloadsProgressNeverGoesBack(t *testing.T) {
+	key := testKey(t)
+	// Big enough that the hand over from the cache reports many times.
+	noise := make([]byte, 4<<20)
+	_, _ = rand.Read(noise)
+	s := &served{zip: appZip(t, string(noise)), half: make(chan struct{})}
+	srv := serve(t, s)
+	s.list = listJSON(t, build(t, key, "pr-30", "0.3.0-pr30.abc1234", srv.URL+"/dev/app.zip", s.zip))
+	src := cachedSource(t, srv.URL)
+	src.Client = srv.Client()
+	src.Picked = func() string { return "pr-30" }
+	var (
+		mu   sync.Mutex
+		seen []int64
+		once sync.Once
+	)
+	// Never left holding the build back, or the server could not close.
+	t.Cleanup(func() { once.Do(func() { close(s.half) }) })
+	src.Progress = func(w, _ int64) {
+		mu.Lock()
+		seen = append(seen, w)
+		mu.Unlock()
+		// The download is seen half way, then let finish.
+		if w > 0 {
+			once.Do(func() { close(s.half) })
+		}
+	}
+
+	if got := install(t, src, key); got != string(noise) {
+		t.Fatal("the build is not the build")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i := 1; i < len(seen); i++ {
+		if seen[i] < seen[i-1] {
+			t.Fatalf("progress went back from %d to %d of %d", seen[i-1], seen[i], len(s.zip))
+		}
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != int64(len(s.zip)) {
+		t.Errorf("progress ended at %v, want %d", seen[max(0, len(seen)-1):], len(s.zip))
 	}
 }
 

@@ -524,6 +524,11 @@ with its newest build, so one fetch is the whole check:
    of its own, and a check only speaks for the round it began in. Going
    back to a channel finds its build kept and ready in the time it takes
    to unpack, or still on its way, and the fill goes on from where it is.
+   The fill only ever goes forward. Handing a build that has just arrived
+   over from the cache is not more of the download, so it says only that
+   the build is whole. It used to count from nothing again, and Tim saw
+   the fill run back towards empty just before the end, then jump to
+   full (#334).
    A build is never downloaded twice at once. A kept build is used only
    while it still hashes to what the list says, and the updater checks it
    again, checksum and signature, as it checks a download.

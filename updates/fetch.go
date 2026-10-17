@@ -92,6 +92,11 @@ func (s *Source) inFlight(sum string) bool {
 // await waits for a download into the cache, telling report how far it
 // has come, and then hands dst the kept build. A wait called off leaves
 // the download going.
+//
+// Handing the kept build over is not more of the download, so it does not
+// count from nothing again: the fill ran back towards empty just before
+// the end and then jumped to full (#334). It says only that the whole
+// build is there, once it has been handed over.
 func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writer, report func(written, total int64)) error {
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
@@ -107,9 +112,12 @@ func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writ
 			if err != nil {
 				return err
 			}
-			found, err := s.fromCache(sum, f.total, dst, report)
+			found, err := s.fromCache(sum, f.total, dst, func(int64, int64) {})
 			if !found {
 				return errors.New("the build went from the cache as it arrived")
+			}
+			if err == nil {
+				report(f.total, f.total)
 			}
 			return err
 		case <-tick.C:

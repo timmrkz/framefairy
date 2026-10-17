@@ -232,6 +232,9 @@ type served struct {
 	list  []byte
 	zip   []byte
 	extra int
+	// half, when there is one, holds the build back half way until it is
+	// closed, so a test can look at a download while it is on its way.
+	half chan struct{}
 	// zips counts the times the build was asked for.
 	zips atomic.Int32
 }
@@ -244,7 +247,14 @@ func serve(t *testing.T, s *served) *httptest.Server {
 			_, _ = w.Write(s.list)
 		case "/dev/app.zip":
 			s.zips.Add(1)
-			_, _ = w.Write(s.zip)
+			rest := s.zip
+			if s.half != nil {
+				_, _ = w.Write(rest[:len(rest)/2])
+				w.(http.Flusher).Flush()
+				<-s.half
+				rest = rest[len(rest)/2:]
+			}
+			_, _ = w.Write(rest)
 			if s.extra > 0 {
 				_, _ = w.Write(make([]byte, s.extra))
 			}
