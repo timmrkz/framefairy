@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -322,4 +323,38 @@ func TestATinyFaceIsAFace(t *testing.T) {
 	if len(faces) != 1 || faces[0].name != "Tiny Bold" || faces[0].weight != 700 {
 		t.Fatalf("read %+v", faces)
 	}
+}
+
+// The app reads the font folders as it starts, on a goroutine of its own,
+// while a video opening asks for the list, a caption is measured and the
+// word typed fetches its face. All of it at once finds every face.
+func TestTheShelfIsReadFromSeveralAtOnce(t *testing.T) {
+	onShelf(t, map[string][]byte{
+		"Narrow.ttf": namedFace(t, "Anton", "Test Narrow"),
+		"Pair.ttc":   collection(tinyFace("Tiny", 400), tinyFace("Tiny Heavy", 900)),
+	})
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for range 20 {
+				switch i % 4 {
+				case 0:
+					RefreshFonts()
+				case 1:
+					if n := len(CaptionFonts()); n != 6 {
+						t.Errorf("%d faces offered", n)
+					}
+				case 2:
+					if _, ok := TextWidth("Test Narrow", "Jahre", 96); !ok {
+						t.Error("Test Narrow was not measured")
+					}
+				case 3:
+					if _, ok := FontBytes("Tiny Heavy"); !ok {
+						t.Error("no copy of Tiny Heavy")
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

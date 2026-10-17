@@ -64,6 +64,9 @@ type machineFace struct {
 // nothing until a program says where to look, see UseMachineFonts, so a
 // test sees only the bundled faces unless it puts some on the shelf.
 type fontShelf struct {
+	// reading is held while the folders are read, so a second caller
+	// waits for the one reading rather than reading them all again.
+	reading sync.Mutex
 	mu      sync.Mutex
 	fsys    afero.Fs
 	dirs    []string
@@ -143,6 +146,8 @@ func RefreshFonts() {
 
 // scan reads every font folder and puts what it found on the shelf.
 func (s *fontShelf) scan() {
+	s.reading.Lock()
+	defer s.reading.Unlock()
 	s.mu.Lock()
 	fsys, dirs := s.fsys, s.dirs
 	s.mu.Unlock()
@@ -166,7 +171,14 @@ func (s *fontShelf) all() []machineFace {
 	ready := !s.scanned.IsZero()
 	s.mu.Unlock()
 	if !ready {
-		s.scan()
+		s.reading.Lock()
+		s.mu.Lock()
+		ready = !s.scanned.IsZero()
+		s.mu.Unlock()
+		s.reading.Unlock()
+		if !ready {
+			s.scan()
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
