@@ -6406,46 +6406,80 @@ for (const seq of toWalk) {
         // The microphone moves with the voice it hears, so a person knows
         // they are heard. The bridge's microphone plays a tone.
         const moved = await page
-          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.style.getPropertyValue("--loud")) > 0.3, null, { timeout: 10000 })
+          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3, null, { timeout: 10000 })
           .then(() => true)
           .catch(() => false);
         if (!moved) {
           wrong = "the microphone did not move while it heard a voice";
           break;
         }
-        // And it moves enough to be seen: at least six tenths of its size
-        // for every step of loudness. By a third it grew 3 px for a voice
-        // talking, and Tim could hardly see it.
-        const grew = await page
-          .waitForFunction(
-            () => {
+        // And it moves enough to be seen, smoothly, and in its place. For
+        // three seconds of the hum and its pauses, every frame, the size
+        // it is drawn at, its middle and the size of its own box. A
+        // microphone 16 px at rest grows by at least six tenths of that
+        // for every step of loudness: by a third it grew 3 px for a voice
+        // talking, and Tim could hardly see it. Its box keeps one size
+        // and its middle keeps still: a size that changed snapped to
+        // whole pixels and shook on Tim's Mac. It falls back no faster
+        // than a level meter's needle, a third of a second for the whole
+        // way: jumping to every reading shook too.
+        const track = await page.evaluate(
+          () =>
+            new Promise((done) => {
               const b = document.querySelector("button.dictate");
-              const icon = b?.querySelector("svg");
-              const loud = parseFloat(b?.style.getPropertyValue("--loud"));
-              if (!icon || !(loud > 0.3)) return false;
-              const size = Number(icon.getAttribute("width"));
-              return icon.getBoundingClientRect().width >= size * (1 + 0.6 * loud) - 0.5;
-            },
-            null,
-            { timeout: 10000, polling: "raf" },
-          )
-          .then(() => true)
-          .catch(() => false);
-        if (!grew) {
-          const at = await page.evaluate(() => {
-            const b = document.querySelector("button.dictate");
-            return `${b.querySelector("svg").getBoundingClientRect().width.toFixed(1)} px wide at a loudness of ${b.style.getPropertyValue("--loud")}`;
-          });
-          wrong = `the microphone hardly grew with the voice, ${at}`;
+              const xs = [];
+              const start = performance.now();
+              const step = (now) => {
+                const icon = b.querySelector("svg");
+                const r = icon.getBoundingClientRect();
+                xs.push({
+                  t: now,
+                  w: r.width,
+                  x: r.left + r.width / 2,
+                  y: r.top + r.height / 2,
+                  box: getComputedStyle(icon).width,
+                  loud: parseFloat(b.dataset.loud),
+                  size: Number(icon.getAttribute("width")),
+                });
+                if (now - start < 3000) requestAnimationFrame(step);
+                else done(xs);
+              };
+              requestAnimationFrame(step);
+            }),
+        );
+        const widest = Math.max(...track.map((f) => f.w));
+        const loudest = Math.max(...track.map((f) => f.loud));
+        const boxes = [...new Set(track.map((f) => f.box))];
+        const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
+        let fastest = 0;
+        for (let k = 1; k < track.length; k++) {
+          const dt = track[k].t - track[k - 1].t;
+          if (dt > 0) fastest = Math.max(fastest, (track[k - 1].w - track[k].w) / track[0].size / dt);
+        }
+        if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
+          wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
           break;
         }
-        // It grows by being drawn larger, not by a scale, which WebKit
-        // draws as a blurred picture of the small icon, and it stands out
-        // from its button by at least 3 to 1 while it listens. Tim saw it
-        // blurred and dark on dark.
+        if (boxes.length > 1) {
+          wrong = `the microphone changes the size of its box as it grows, ${boxes.join(", ")}, which snaps to whole pixels and shakes`;
+          break;
+        }
+        if (drift > 0.5) {
+          wrong = `the middle of the microphone moved by ${drift.toFixed(2)} px as it grew`;
+          break;
+        }
+        if (fastest > 0.003) {
+          wrong = `the microphone fell back by ${(fastest * 1000).toFixed(1)} of its size a second, faster than a level meter's needle`;
+          break;
+        }
+        // It is drawn white, like every icon in the app, as the paperclip
+        // beside it is, and so stands out from its button by at least 3
+        // to 1. Tim saw the accent dark on dark, and the lit shade of it
+        // matched nothing in the app.
         const look = await page.evaluate(() => {
           const b = document.querySelector("button.dictate");
           const icon = b.querySelector("svg");
+          const clip = document.querySelector("button.attach svg");
           // A colour mixed from the accent comes back as color(srgb ...),
           // its channels from 0 to 1.
           const rgb = (c) => {
@@ -6462,10 +6496,10 @@ for (const seq of toWalk) {
             if (c.length < 4 || c[3] > 0) back = c;
           }
           const [hi, lo] = [luminance(rgb(getComputedStyle(icon).color)), luminance(back ?? [0, 0, 0])].sort((x, y) => y - x);
-          return { transform: getComputedStyle(icon).transform, contrast: (hi + 0.05) / (lo + 0.05) };
+          return { colour: getComputedStyle(icon).color, clip: getComputedStyle(clip).color, contrast: (hi + 0.05) / (lo + 0.05) };
         });
-        if (look.transform !== "none") {
-          wrong = `the microphone grows by a scale, ${look.transform}, which is drawn blurred`;
+        if (look.colour !== look.clip) {
+          wrong = `the microphone is drawn ${look.colour} while it listens, not white like the paperclip, ${look.clip}`;
           break;
         }
         if (look.contrast < 3) {

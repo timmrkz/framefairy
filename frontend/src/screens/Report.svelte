@@ -199,6 +199,35 @@
   // Why the microphone hears nothing, while it records.
   let unheard = $state("");
 
+  // How far the microphone has grown, from 0 at rest to 1 for a raised
+  // voice. It follows the loudness the way the needle of a level meter
+  // does: up with the voice at once, in about a twentieth of a second,
+  // and back down slowly, in about a third, so it swells with a word and
+  // settles between words. Moving straight to every reading, ten a
+  // second, it shook. It is worked out every frame, so it moves between
+  // readings rather than jumping to them, and it is written straight to
+  // the icon as a scale: no layout, no transition, nothing else moves.
+  let mic = $state<HTMLSpanElement>();
+  let grown = 0;
+  let frame = 0;
+  let then = 0;
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  function grow(now: number) {
+    const target = listening && !still.matches ? loud : 0;
+    const dt = then ? Math.min(now - then, 100) : 16;
+    grown += (target - grown) * (1 - Math.exp(-dt / (target > grown ? 50 : 300)));
+    if (Math.abs(target - grown) < 0.002) grown = target;
+    if (mic) mic.style.transform = `scale(${(16 + 12 * grown) / 28})`;
+    then = now;
+    frame = grown === target ? 0 : requestAnimationFrame(grow);
+    if (!frame) then = 0;
+  }
+  $effect(() => {
+    void [loud, listening, mic];
+    if (!frame) frame = requestAnimationFrame(grow);
+  });
+  onDestroy(() => cancelAnimationFrame(frame));
+
   // The text of the field before and after a node in it.
   function around(node: Node): [string, string] {
     const before = document.createRange();
@@ -646,7 +675,7 @@
         class:listening
         onclick={dictate}
         disabled={hearing || making}
-        style:--loud={loud}
+        data-loud={loud}
         aria-label={listening ? "Stop" : hearing ? "Writing" : "Dictate"}
         title={listening
           ? "Stop. Keeps what you said. Enter does the same, and Escape removes it"
@@ -655,7 +684,7 @@
             : "Dictate. Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
       >
         {#if listening || hearing}<Busy />{/if}
-        <Icon name="mic" />
+        <span class="grows" bind:this={mic}><Icon name="mic" size={28} line={1.5 * (28 / 16)} /></span>
       </button>
       <button
         class="act square attach"
@@ -847,28 +876,22 @@
   }
 
   /* The microphone moves with the voice it hears, so the person sees they
-     are heard. It grows by up to three quarters, about its middle, 16 px
-     to 28 px in a 32 px button, which moves nothing else in the row. By a
-     third, a voice talking grew it by 3 px, and Tim could hardly see it.
-     It grows by its size, not by a scale: a scale is a picture of the
-     16 px icon made larger, which WebKit drew blurred, and a size is the
-     icon drawn again, sharp at every size. */
-  .act.dictate :global(svg) {
+     are heard. It grows from 16 px to 28 px about its middle, in a box of
+     28 px that never changes, so nothing in the row moves and the icon
+     does not shift by a pixel as it grows. It is drawn at its largest and
+     scaled down to rest, with a line as much thicker, so at rest it is
+     the icon every other button has, and grown it is drawn from a picture
+     at least as large as it is shown, never one blown up: WebKit draws a
+     scale of a small picture blurred, and a size that changed instead
+     snapped to whole pixels as it grew and shook. It stays white, like
+     every icon in the app. */
+  .act.dictate .grows {
+    display: block;
     flex: none;
-    width: calc(16px * (1 + var(--loud, 0) * 0.75));
-    height: calc(16px * (1 + var(--loud, 0) * 0.75));
-    transition:
-      width 100ms linear,
-      height 100ms linear;
-  }
-
-  /* While it listens the microphone wears the accent, so it reads as on
-     at a glance. Tim missed a colour on it. The lit shade of it, the
-     brightest the app's colour is drawn: the accent itself stands 2 to 1
-     against the dark button, too little for a thin line, the lit one
-     nearly 6 to 1. */
-  .act.dictate.listening :global(svg) {
-    color: var(--accent-lit);
+    width: 28px;
+    height: 28px;
+    transform: scale(calc(16 / 28));
+    transform-origin: 50% 50%;
   }
 
   .act.square {

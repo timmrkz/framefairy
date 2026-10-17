@@ -2879,8 +2879,11 @@ it until they scroll back to the words. The cursor stands right after
 the words while nobody has put it elsewhere, drawn there by the end of
 the words themselves, since WebKit drew it at the front of the last line
 while the words ran on. The microphone in the button grows and shrinks with the voice it
-hears, about ten times a second, and wears the accent while it listens,
-so the person sees they are heard. The
+hears, so the person sees they are heard. The Go side tells its
+loudness ten times a second, and the window follows it every frame the
+way a level meter's needle does, up at once and back down in about a
+third of a second. It grows by a scale from a drawing at its largest
+size, so it stays sharp and in its place, and it stays white. The
 beam stays the sign that it listens, because running work shows the beam
 on the control it was started from. What follows the last pause is still
 being heard and changes as more of it is, so it is plain text in a mark
