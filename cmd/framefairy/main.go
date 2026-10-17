@@ -428,6 +428,9 @@ func main() {
 		return
 	}
 
+	// --font takes the fonts installed on the machine too.
+	engine.UseMachineFonts()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

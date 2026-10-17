@@ -49,7 +49,7 @@
     frameAt,
     frameMiddle,
   } from "../lib/flow";
-  import { installFonts } from "../lib/fonts";
+  import { faceLook, families, installFonts, nearestFace, styleNames } from "../lib/fonts";
   import type { About } from "../lib/playhead";
   import {
     Reach,
@@ -2081,6 +2081,14 @@
     return () => off.abort();
   });
   let fonts = $state<CaptionFont[]>([]);
+  // The fonts as Pages offers them, a list of families and a list of the
+  // styles of the one picked, and the face the captions are in now.
+  const fontFamilies = $derived(families(fonts));
+  const captionFace = $derived(fonts.find((f) => f.name === captions?.style.font));
+  const captionFamily = $derived(
+    fontFamilies.find((f) => f.name === (captionFace?.family || captionFace?.name)),
+  );
+  const captionStyles = $derived(captionFamily ? styleNames(captionFamily) : new Map<string, string>());
 
   // Where the captions sit, for every clip of every episode. Dragging the
   // box in the video preview is the same thing as typing the number in the
@@ -2108,7 +2116,9 @@
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
   const captionsNow = $derived({
-    font: captions?.style.font ?? captionFontDefault,
+    // The face the video asks for, even one this machine lacks, so putting
+    // the captions back as they start out is offered for it too.
+    font: captions?.style.missing || (captions?.style.font ?? captionFontDefault),
     size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
@@ -2907,17 +2917,63 @@
             </div>
             <label class="setting" for="caption-font">
               <span>Font</span>
-              <!-- The list of faces stands in the same box as the numbers,
+              <!-- The list of families stands in the same box as the numbers,
                    with its own mark where their unit is, so every setting
                    in the column ends in the same place whatever draws it. -->
               <span class="field">
+                <!-- The families of the app, then the ones installed on
+                     the machine under a head of their own, the way a
+                     pop-up menu on the Mac parts its kinds of thing, each
+                     drawn in its own regular face, with a field to search
+                     them. A family picked comes in the style nearest the
+                     one the captions are in. A face the video asks for and
+                     the machine does not have is named on the field in the
+                     colour of a warning, and the captions are drawn in the
+                     app's own meanwhile. -->
                 <Pick
-                  value={captions.style.font}
-                  options={fonts.map((f) => ({ value: f.name, label: f.name }))}
-                  onpick={(name) => setCaptionStyle(name, 0)}
+                  value={captions.style.missing || captionFamily?.name || captions.style.font}
+                  options={fontFamilies.map((family) => ({
+                    value: family.name,
+                    label: family.name,
+                    group: family.machine ? "Installed" : undefined,
+                    ...faceLook(nearestFace(family)),
+                  }))}
+                  onpick={(name) => {
+                    const family = fontFamilies.find((f) => f.name === name);
+                    if (family) setCaptionStyle(nearestFace(family, captionFace).name, 0);
+                  }}
                   id="caption-font"
                   label="Font"
-                  title="The face the captions are written in"
+                  search="Search fonts"
+                  hang="left"
+                  title={captions.style.missing
+                    ? `${captions.style.missing} is not installed on this computer, so the captions are drawn in ${captions.style.font}`
+                    : "The font the captions are written in"}
+                  tone={captions.style.missing ? "warn" : undefined}
+                  align="right"
+                />
+              </span>
+            </label>
+            <label class="setting" for="caption-style">
+              <span>Style</span>
+              <!-- The faces of the family, Regular, Bold, Condensed Light,
+                   each drawn as itself. A face the machine does not have
+                   has no family here to offer the styles of. -->
+              <span class="field">
+                <Pick
+                  value={captions.style.missing ? "" : captions.style.font}
+                  options={(captionFamily?.faces ?? []).map((face) => ({
+                    value: face.name,
+                    label: captionStyles.get(face.name) ?? face.name,
+                    ...faceLook(face),
+                  }))}
+                  onpick={(name) => setCaptionStyle(name, 0)}
+                  id="caption-style"
+                  label="Style"
+                  placeholder={captions.style.missing ? "Not installed" : ""}
+                  disabled={!!captions.style.missing}
+                  hang="left"
+                  title="How heavy, how wide and how slanted the font is"
                   align="right"
                 />
               </span>

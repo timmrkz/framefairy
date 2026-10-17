@@ -17,7 +17,11 @@ import (
 // 1080x1920 frame and scaled when the output size differs, so a preview
 // render looks like the final one.
 type Style struct {
+	// Font is the face the captions are drawn in, always one the program
+	// or the machine has. Missing is the one the style asked for when that
+	// was neither, and Font is then DefaultFont.
 	Font          string
+	Missing       string
 	Size          float64
 	Primary       string
 	OutlineColour string
@@ -211,9 +215,15 @@ func ResolveStyle(overrides map[string]any) Style {
 	number := func(key string) float64 {
 		return cleanNumber(s[key], DefaultStyle[key].(float64))
 	}
-	font := cleanField(s["font"])
+	font, missing := cleanField(s["font"]), ""
 	if font == "" {
 		font = DefaultStyle["font"].(string)
+	}
+	// A face nobody has would leave libass to pick any face at all, and
+	// the measuring to guess, so the captions are drawn in ours and the
+	// style says which one it asked for.
+	if _, ok := FontByName(font); !ok {
+		font, missing = DefaultFont, font
 	}
 	border := int(number("border_style"))
 	if border != 1 && border != 3 && border != 4 {
@@ -221,6 +231,7 @@ func ResolveStyle(overrides map[string]any) Style {
 	}
 	return Style{
 		Font:          font,
+		Missing:       missing,
 		Size:          math.Max(8, math.Min(number("size"), 400)),
 		Primary:       cleanColour(s["primary"], DefaultStyle["primary"].(string)),
 		OutlineColour: cleanColour(s["outline_colour"], DefaultStyle["outline_colour"].(string)),
@@ -471,7 +482,7 @@ func (e *Engine) measureASS(ctx context.Context, blocks []string, s Style,
 			"ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, " +
 			"Alignment, MarginL, MarginR, MarginV, Encoding",
 		fmt.Sprintf("Style: M,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,"+
-			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", s.Font, size, int(s.Bold)),
+			"&H00FFFFFF,%d,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1", AssFontName(s.Font), size, int(s.Bold)),
 		"", "[Events]",
 		"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, " +
 			"Effect, Text",
@@ -582,8 +593,9 @@ func (e *Engine) measureMany(ctx context.Context, blocks []string, s Style,
 	width, size int) ([]*inkBox, bool) {
 	out := make([]*inkBox, len(blocks))
 	var missing []int
-	// Only a face the program carries is the same file whatever its name
-	// finds, see measureKey. One left to the machine is measured each time.
+	// A face the program carries is the same file whatever its name finds,
+	// see measureKey, and so is one of the machine's, whose copy is named
+	// after the version of its file. Anything else is measured each time.
 	_, keep := FontByName(s.Font)
 	for i, block := range blocks {
 		if box, ok := measured.get(measureKey(block, s, width, size)); ok && keep {
@@ -849,8 +861,8 @@ Style: Box,%s,%d,%s,%s,%s,%s,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `, width, height, s.matrix(),
-		s.Font, size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
+		AssFontName(s.Font), size, s.Primary, s.Primary, s.OutlineColour, s.boxColour(), int(s.Bold),
 		captionBorder, outline, shadow, marginH, marginH, marginV,
-		s.Font, size, s.Primary, s.Primary, s.Primary, s.Primary)
+		AssFontName(s.Font), size, s.Primary, s.Primary, s.Primary, s.Primary)
 
 }

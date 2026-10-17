@@ -721,6 +721,9 @@ type CaptionView struct {
 // draw the captions over a picture of any size.
 type CaptionStyleView struct {
 	Font string `json:"font"`
+	// Missing is the face the style asks for when this machine has no such
+	// face, and Font is then the one the captions are drawn in instead.
+	Missing string `json:"missing,omitempty"`
 	// Size is the em size to draw at, which is not the size in the caption
 	// style: libass takes that as the height of the face, ascent plus
 	// descent, while a browser takes a font size as the em square.
@@ -925,7 +928,7 @@ func captionsView(plan Plan, clip Clip, t *Transcript, look *Look) *CaptionsView
 		pieces = append(pieces, PieceView{Start: p.Start, End: p.End})
 	}
 	view := &CaptionsView{Captions: []CaptionView{}, Pieces: pieces, Style: CaptionStyleView{
-		Font: s.Font, Size: s.Size * em / authored, LineHeight: 1 / em,
+		Font: s.Font, Missing: s.Missing, Size: s.Size * em / authored, LineHeight: 1 / em,
 		ChosenSize: s.Size, Bold: s.Bold != 0, Weight: weight, Thicken: thicken,
 		MarginV: s.MarginV / authored, MarginH: s.MarginH / authored,
 		PadX: s.BoxPadX / authored, PadY: s.BoxPadY / authored,
