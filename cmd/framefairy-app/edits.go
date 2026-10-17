@@ -278,8 +278,10 @@ func (s *FrameFairy) SetCropMark(ctx context.Context, path, plan, clipID string,
 // to appear or go at a moment of the episode, and takes the words it is
 // moved in over out of it, or puts back the ones it is moved back over, in
 // one step to undo. A moment below nought puts it back where its words put
-// it, because JSON has no way to say not a number.
-func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64) (ClipEntry, error) {
+// it, because JSON has no way to say not a number. toWords puts the edge on
+// the word nearest at, the way shift does on the clip timeline.
+func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID string, word float64, edge string, at float64,
+	toWords bool) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
 	}
@@ -299,7 +301,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	var done engine.CaptionEdit
 	err = s.edit(path, func() error {
 		var err error
-		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, t, look)
+		done, err = engine.SetCaptionTime(s.store.files, plan, clipID, word, edge, at, toWords, t, look)
 		return err
 	})
 	// Which edge, of the caption on which word, where to, and what it did
@@ -310,7 +312,7 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 	if math.IsNaN(at) {
 		line = line.Bool("reset", true)
 	} else {
-		line = line.Float64("at", at)
+		line = line.Float64("at", at).Bool("words", toWords)
 	}
 	line.Int("out", done.Removed).Int("back", done.Back).Msg("a caption edge was moved")
 	if err != nil {
@@ -325,7 +327,8 @@ func (s *FrameFairy) SetCaptionTime(ctx context.Context, path, plan, clipID stri
 // the hand lets go, so the timeline and the video preview show while the
 // hand moves what is saved, and the interface keeps no rule of its own
 // about which words an edge crosses. See engine.ShapeCaptionTime.
-func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, edge string, at float64) (*engine.CaptionsView, error) {
+func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, edge string, at float64,
+	toWords bool) (*engine.CaptionsView, error) {
 	if !s.store.PlanOf(path, plan) {
 		return nil, errNotInLibrary
 	}
@@ -336,7 +339,7 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	if err != nil {
 		return nil, err
 	}
-	view, err := engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, t, s.captionLook(path, plan))
+	view, err := engine.ShapeCaptionTime(s.store.files, plan, clipID, word, edge, at, toWords, t, s.captionLook(path, plan))
 	captionTracks.keep(path, view)
 	return view, err
 }

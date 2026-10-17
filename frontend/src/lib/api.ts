@@ -797,7 +797,7 @@ export const api = {
   // When a caption appears or goes, where the words are a little off from
   // what is heard. word is the word it begins or ends on and at the moment,
   // both in the episode. A moment below nought puts it back where its
-  // words put it.
+  // words put it. toWords puts it on the word nearest at, the way shift does.
   setCaptionTime: (
     path: string,
     plan: string,
@@ -805,7 +805,8 @@ export const api = {
     word: number,
     edge: "start" | "end",
     at: number,
-  ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at),
+    toWords: boolean,
+  ) => call<ClipEntry>("SetCaptionTime", path, plan, clip, word, edge, at, toWords),
   // The captions as they would be with a caption edge moved, worked out by
   // the engine while the hand moves and saved by setCaptionTime when it
   // lets go, so what is drawn is what is saved. Nothing is written.
@@ -816,7 +817,8 @@ export const api = {
     word: number,
     edge: "start" | "end",
     at: number,
-  ) => call<CaptionsView>("ShapeCaptionTime", path, plan, clip, word, edge, at),
+    toWords: boolean,
+  ) => call<CaptionsView>("ShapeCaptionTime", path, plan, clip, word, edge, at, toWords),
   // A thumbnail added, moved or removed. A from below nought adds one at
   // to, and a to below nought removes the one at from.
   setThumbnail: (path: string, plan: string, clip: string, from: number, to: number) =>

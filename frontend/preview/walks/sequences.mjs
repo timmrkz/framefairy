@@ -577,6 +577,12 @@
 //                      the clip timeline did not dim it
 //   ["captions drawn"] once the layers have come, the picture shows the
 //                      letters of a caption
+//   ["drawn", word]    the video preview shows the caption holding the
+//                      word where the playhead stands, letters drawn and the
+//                      caption box holding the word
+//   ["caption edge", [edge, word]]
+//                      clicks the "start" or "end" edge of the caption
+//                      holding the word on the clip timeline, without moving
 //   ["one pill", word] the word opened while another is lit sits on the
 //                      colour of the pill libass draws round it lit, with no
 //                      ring of another shade round it and no focus ring
@@ -1073,6 +1079,31 @@ export const sequences = [
       ["edge in", ["end", "Schulhof"]],
       ["edge out", ["end", "Schulhof"]],
       ["fewer", "start", 0],
+      ["others", ["start", "Schulhof"]],
+    ],
+  },
+  {
+    // A click on the edge where a caption appears put the playhead on the
+    // frame that holds its first word's start, which begins before the
+    // word, where the caption is not up yet. Tim saw it on #294.
+    // Its caption starts at 10.15 s, between two frames of the test video.
+    name: "a click on either edge of a caption shows the caption",
+    steps: [
+      ["caption edge", ["start", "jedenfalls"]],
+      ["drawn", "jedenfalls"],
+      ["caption edge", ["end", "jedenfalls"]],
+      ["drawn", "jedenfalls"],
+    ],
+  },
+  {
+    name: "a caption's edges dragged with shift land on words",
+    steps: [
+      ["mark", "start"],
+      ["edge to word", ["start", "Schulhof"]],
+      ["drawn", "Schulhof"],
+      ["others", ["start", "Schulhof"]],
+      ["edge to word", ["end", "Schulhof"]],
+      ["drawn", "Schulhof"],
       ["others", ["start", "Schulhof"]],
     ],
   },
@@ -3930,10 +3961,14 @@ for (const seq of toWalk) {
       }
       case "edge in":
       case "edge out":
-      case "edge nudge": {
+      case "edge nudge":
+      case "edge to word": {
         // An edge of the caption holding a word dragged: in, just over
         // the middle of the word at that edge, out, back past where that
-        // word was at "start", or a little in, short of any word's middle.
+        // word was at "start", a little in, short of any word's middle, or
+        // with shift to a little past where the word after the first
+        // starts, or before where the word before the last ends, nearer
+        // that than any other, where it has to land.
         const [edge, text] = arg;
         const now = await engineState(page, watch.at);
         const was = what === "edge out" ? marks.start : now;
@@ -3956,9 +3991,18 @@ for (const seq of toWalk) {
         const c = now.captions[i];
         const from = edge === "end" ? c.end : c.start;
         let to;
+        let landing = null;
         if (what === "edge in") to = edge === "end" ? (w.start + mid) / 2 : (mid + w.end) / 2;
         else if (what === "edge out") to = edge === "end" ? was.captions[i].end : was.captions[i].start;
-        else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
+        else if (what === "edge to word") {
+          const next = edge === "end" ? words.at(-2) : words[1];
+          if (!next) {
+            wrong = `the caption with "${text}" has one word`;
+            break;
+          }
+          landing = edge === "end" ? next.end : next.start;
+          to = landing + (edge === "end" ? -0.04 : 0.04);
+        } else to = edge === "end" ? Math.max(mid + 0.05, from - 0.2) : Math.min(mid - 0.05, from + 0.2);
         const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
         const box = await page.locator(`.clip-timeline [aria-label="${label}"]`).first().boundingBox();
         if (!box) {
@@ -3974,6 +4018,7 @@ for (const seq of toWalk) {
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
         const target = x + (await xOf(page, into(to))) - (await xOf(page, into(from)));
+        if (landing !== null) await page.keyboard.down("Shift");
         await page.mouse.move(x, y);
         await page.mouse.down();
         for (let k = 1; k <= 6; k++) {
@@ -3984,6 +4029,7 @@ for (const seq of toWalk) {
         const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
         const held = await handle.boundingBox();
         await page.mouse.up();
+        if (landing !== null) await page.keyboard.up("Shift");
         await watch.step(what, s);
         let left = null;
         for (let k = 0; k < 20; k++) {
@@ -3993,6 +4039,15 @@ for (const seq of toWalk) {
         }
         if (!held || !left || Math.abs(left.x - held.x) > 1) {
           wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
+          break;
+        }
+        if (landing !== null) {
+          const after = await engineState(page, watch.at);
+          const c = after.captions[i];
+          const landed = edge === "end" ? c?.end : c?.start;
+          if (landed === undefined || Math.abs(landed - landing) > 0.002) {
+            wrong = `dragged with shift to ${to.toFixed(3)}, the ${edge} of the caption is at ${landed?.toFixed(3)}, not on the word at ${landing.toFixed(3)}`;
+          }
         }
         break;
       }
@@ -7238,6 +7293,49 @@ for (const seq of toWalk) {
         else if (ats[ats.length - 1] <= ats[0]) wrong = "the playhead stood still after the hand let go";
         else if (ats[0] < second - 1e-6 || ats[0] > second + 1) {
           wrong = `the play went on from ${ats[0].toFixed(3)}, not from ${second.toFixed(3)} where the hand let go`;
+        }
+        break;
+      }
+      case "caption edge": {
+        const [edge, text] = arg;
+        const now = await engineState(page, watch.at);
+        const i = now.captions.findIndex((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
+        if (i < 0) {
+          wrong = `no caption has "${text}"`;
+          break;
+        }
+        const label = `When caption ${i + 1} ${edge === "end" ? "goes" : "appears"}`;
+        await page.locator(`.clip-timeline [aria-label="${label}"]`).first().click();
+        await watch.step(what, s);
+        break;
+      }
+      case "drawn": {
+        // The video preview shows the caption holding the word where the
+        // playhead stands: libass has drawn letters on the frame, and the
+        // caption box over them holds the word. An edge dragged with shift
+        // took the playhead to a moment between two frames, and the frame
+        // shown was the one before the caption appears. Tim saw nothing to
+        // snap to on #294.
+        await settled();
+        await page.waitForTimeout(300);
+        await settled();
+        const white = await page.evaluate(() => {
+          const canvas = document.querySelector(".screen canvas");
+          if (!canvas?.width) return 0;
+          const c = document.createElement("canvas");
+          c.width = canvas.width;
+          c.height = canvas.height;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(canvas, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          let n = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 220) n++;
+          return n;
+        });
+        const box = (await shown(page)).map((w) => w.text).join(" ");
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        if (white < 100 || !box.includes(arg)) {
+          wrong = `with the playhead at ${at.toFixed(3)} the video preview shows ${white} white pixels under the caption box "${box}", not the caption with "${arg}"`;
         }
         break;
       }

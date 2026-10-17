@@ -188,7 +188,7 @@
     // A caption edge let go of: the word it begins or ends on and the new
     // moment, both in the episode, or a moment below nought to put it back
     // where its words put it. True when it was saved.
-    oncaptiontime?: (word: number, edge: "start" | "end", at: number) => Promise<boolean>;
+    oncaptiontime?: (word: number, edge: "start" | "end", at: number, toWords: boolean) => Promise<boolean>;
     // The captions as the engine has them with a caption edge where the
     // hand is, so the caption box in the video preview follows the drag.
     // Null once the captions have come back with it saved.
@@ -1279,12 +1279,26 @@
   // they come back changed, so the block never jumps back to where it was
   // while the saved captions are on their way.
   let capHeld: CaptionCue[] | undefined;
-  let capNext: { word: number; edge: "start" | "end"; at: number } | null = null;
+  // landed hears where the engine put an edge dragged with shift, on the
+  // clip's clock, which only the engine knows.
+  let capNext: {
+    word: number;
+    edge: "start" | "end";
+    at: number;
+    toWords: boolean;
+    landed?: (at: number) => void;
+  } | null = null;
   let capAsking = false;
   let capFor = 0;
 
-  function askCaption(word: number, edge: "start" | "end", at: number) {
-    capNext = { word, edge, at };
+  function askCaption(
+    word: number,
+    edge: "start" | "end",
+    at: number,
+    toWords: boolean,
+    landed?: (at: number) => void,
+  ) {
+    capNext = { word, edge, at, toWords, landed };
     void capAsk();
   }
 
@@ -1296,10 +1310,12 @@
     capNext = null;
     capAsking = true;
     try {
-      const answer = await api.shapeCaptionTime(path, asked.plan, asked.id, q.word, q.edge, q.at);
+      const answer = await api.shapeCaptionTime(path, asked.plan, asked.id, q.word, q.edge, q.at, q.toWords);
       if (mine === capFor && clip?.key === asked.key && capDraft && answer) {
         capShaped = answer.captions ?? [];
         oncaptionshape?.({ cues: capShaped, track: answer.track });
+        const c = capShaped[capDraft.index];
+        if (q.landed && c) q.landed(q.edge === "start" ? captionAppears(c) : Math.min(c.end, clipLength));
       }
     } catch {
       // An edge the engine says no to shows the last answer it gave.
@@ -1308,6 +1324,17 @@
       capAsking = false;
       void capAsk();
     }
+  }
+
+  // Where the playhead goes for the start of a caption that begins on its
+  // first word, pressed or put there with shift: into the word, the way a
+  // click on the caption goes, see firstWordOf. A word starts between two
+  // frames, and the frame that holds its start begins before it, where the
+  // caption is not up yet. Tim saw nothing in the video preview to snap to
+  // on #294, and the caption before it on pressing the edge.
+  function captionAppears(c: CaptionCue): number {
+    const word = c.lines?.[0]?.words?.[0];
+    return word && Math.abs(word.start - c.start) < 1e-6 ? intoWord(word, frame) : c.start;
   }
 
   // Letting go of the draft, and of any answer still on its way.
@@ -1518,10 +1545,12 @@
   });
 
   // An edge of a caption is dragged on the clip's clock, a whole frame at a
-  // time, and how far it may go is the engine's to say. The playhead goes
-  // with it the way it goes with every edge, onto the frame the caption
-  // appears on or the last it is up on, and a double-click puts a moved
-  // edge back.
+  // time, and with shift on words, the way an edge of the clip is, read on
+  // every move. How far it may go, and which word it lands on, is the
+  // engine's to say. The playhead goes with it the way it goes with every
+  // edge, onto the frame the caption appears on or the last it is up on,
+  // see captionAppears, where the engine put it when that is on a word, and
+  // a double-click puts a moved edge back.
   function captionEdgeGrip(i: number, edge: "start" | "end"): Grip | null {
     if (!clip || locked || capSaving || !oncaptiontime || !captions?.length) return null;
     const c = captions[i];
@@ -1535,19 +1564,20 @@
     capHeld = captions;
     capFor++;
     return {
-      at: playing ? null : playheadAt(from),
+      at: playing ? null : playheadAt(edge === "start" ? captionAppears(c) : from),
       about: "clip",
       twice: () => resetCaption(i, edge),
-      drag(delta) {
+      drag(delta, shift) {
         capMoving = true;
         if (word === undefined) return;
         const at = Math.min(
           Math.max(Math.round(inClip(segments, onEpisode(from) + delta) / frame) * frame, 0),
           clipLength,
         );
-        capDraft = { index: i, edge, at };
-        askCaption(word, edge, onEpisode(at));
-        if (!playing) seekSoon(playheadAt(at), "clip");
+        capDraft = { index: i, edge, at, toWords: shift };
+        const follow = playing ? undefined : (to: number) => seekSoon(playheadAt(to), "clip");
+        askCaption(word, edge, onEpisode(at), shift, shift ? follow : undefined);
+        if (!shift) follow?.(at);
       },
       async release(moved) {
         capMoving = false;
@@ -1557,7 +1587,7 @@
           return;
         }
         capSaving = true;
-        const ok = await oncaptiontime(word, edge, onEpisode(d.at));
+        const ok = await oncaptiontime(word, edge, onEpisode(d.at), d.toWords);
         capSaving = false;
         if (!ok) dropCaption();
       },
@@ -1582,7 +1612,7 @@
     const word = edge === "start" ? c.first : c.last;
     const moved = edge === "start" ? c.startMoved : c.endMoved;
     if (word === undefined || !moved) return;
-    oncaptiontime(word, edge, -1);
+    oncaptiontime(word, edge, -1, false);
   }
 
   // Where in the episode this is. Without them a swipe leaves you nowhere,

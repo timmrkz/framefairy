@@ -325,10 +325,10 @@ func TestEditsAreLogged(t *testing.T) {
 	// The answers describe the clip for the interface, which needs the
 	// video read, and this one is not a video. The edits are made either
 	// way, and logged before.
-	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", c.Last, "end", 11.0)
+	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", c.Last, "end", 11.0, false)
 	_, _ = svc.SetWord(ctx, mine, plan, "01", 10.1, "")
 	_, _ = svc.RemoveCaption(ctx, mine, plan, "01", c.First)
-	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", 10.5, "start", 10.6)
+	_, _ = svc.SetCaptionTime(ctx, mine, plan, "01", 10.5, "start", 10.6, false)
 	lines := read()
 	moved := find(lines, "a caption edge was moved")
 	if moved == nil {

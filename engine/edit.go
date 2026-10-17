@@ -1053,13 +1053,15 @@ type CaptionEdit struct {
 // where the timing of the words is a little off from what is heard. word
 // is when that word starts in the episode, edge is "start" or "end", and at
 // is when the caption should appear or go, also in the episode. A time that
-// is not a number puts the caption back where its words put it. look is
+// is not a number puts the caption back where its words put it. toWords
+// puts the edge on the word nearest at, the way shift does, see
+// captionStop. look is
 // how the captions are made, see Look. It makes the change ShapeCaptionTime shows
 // while the hand moves, see moveCaptionEdge, and says what it did to the
 // words, for the app's log.
 func SetCaptionTime(fsys afero.Fs, planPath, clipID string, word float64, edge string, at float64,
-	t *Transcript, look *Look) (CaptionEdit, error) {
-	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, t, look)
+	toWords bool, t *Transcript, look *Look) (CaptionEdit, error) {
+	moved, err := moveCaptionEdge(fsys, planPath, clipID, word, edge, at, toWords, t, look)
 	if err != nil {
 		return moved.done, err
 	}
@@ -1155,7 +1157,7 @@ type captionEdge struct {
 // what it is. The word is the one the caption was laid out from, a word
 // removed among them, see Caption.Opens.
 func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge string,
-	at float64, t *Transcript, look *Look) (captionEdge, error) {
+	at float64, toWords bool, t *Transcript, look *Look) (captionEdge, error) {
 	if edge != "start" && edge != "end" {
 		return captionEdge{}, renderErr("a caption has a start and an end, not %s", Scrub(edge, 20))
 	}
@@ -1191,6 +1193,10 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	removed := t.rekeyRemoved(clip.RemovedWords)
 	if !reset {
 		to := ClipTime(framed, at)
+		if toWords {
+			to = captionStop(framed, t, laid[i], edge, to)
+			at = EpisodeTime(framed, to)
+		}
 		if edge == "start" && i > 0 && to < laid[i-1].End {
 			to, at = laid[i-1].End, EpisodeTime(framed, laid[i-1].End)
 		}
@@ -1251,6 +1257,38 @@ func moveCaptionEdge(fsys afero.Fs, planPath, clipID string, word float64, edge 
 	}
 	out.clip.CaptionTimes = times
 	return out, nil
+}
+
+// captionStop is where an edge of caption c lands, dragged with shift to
+// hand on the clip's clock: where the nearest word starts, for a start, or
+// ends, for an end, the way an edge of the clip lands on words. The words
+// are the ones the captions are laid out from, those taken out among them,
+// so a word an edge took out is a word to land on going back over it. A
+// caption put on a word appears or goes where the word does, as one laid
+// out from its words does, so it lands there and not on a frame. It goes
+// only the way the hand goes, see toward. Tim dragged a caption's edge
+// with shift and it moved a frame at a time, as it does without.
+func captionStop(clip Clip, t *Transcript, c LaidCaption, edge string, hand float64) float64 {
+	was := c.Start
+	if edge == "end" {
+		was = c.End
+	}
+	words, _ := clipWords(clip, t.clipCaptionWords(clip))
+	length := clipLength(clip)
+	landed, gap := was, math.Inf(1)
+	for _, w := range words {
+		if text, _ := removedText(w.Text); text == "" {
+			continue
+		}
+		stop := math.Max(w.Start, 0)
+		if edge == "end" {
+			stop = math.Min(w.End, length)
+		}
+		if d := math.Abs(stop - hand); d < gap {
+			landed, gap = stop, d
+		}
+	}
+	return toward(was, hand, landed)
 }
 
 // SetThumbnail adds, moves or removes a thumbnail of a clip: a moment of
