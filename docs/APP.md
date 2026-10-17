@@ -109,11 +109,13 @@ A video dragged from Finder and dropped anywhere on the app is added the
 same way, whatever page is open, and opens. While a file is held over
 the app, the app wears the frame of what is chosen, with the accent's
 wash inside it. A video already in the list opens rather than being added
-twice, and a file that is not a video is left out, by its name, where Add
-says why it left a file out. Add and a drop are one path, `takeFiles` in
+twice, and a file that is not a video is not added. A toast says so by
+its name, "notes.pdf cannot be added because it is not a video", the
+way Add says why it could not add a file, see [Toasts](#toasts). Add and
+a drop are one path, `takeFiles` in
 `drop.go`: the same files are taken, the same reasons given, and the
 video just added opens, or a video given again. The reason stays until
-the next files are taken. The window marks the whole page as where a
+it is read or the next files are taken. The window marks the whole page as where a
 drop lands, `data-file-drop-target`, once the first-run setup is done,
 and not while a box asks first or the app asks about quitting. Plan row
 2.192.
@@ -821,9 +823,9 @@ the episode that is in none.
 
 All of that is one expression in the stylesheet, worked out from the size
 of the app itself and the tokens in `app.css`. Two things it cannot know
-come in as custom properties, the shape of the episode and the height of an
-error line above the workspace, and neither changes because the app was
-resized. So dragging the edge of the app costs no JavaScript at all and the
+come in as custom properties, the shape of the episode and the height of
+the line above the workspace that says its file is missing, and neither
+changes because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
 workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
 nothing is laid out from the answer.
@@ -1905,6 +1907,42 @@ the one the video preview reads from when the episode opens, so asking
 costs no start later. A file with no picture, and one that is no video at
 all, said nothing at Add before and failed in the video preview after.
 
+### Toasts
+
+What goes wrong with no place of its own on screen is said in a toast,
+`Toasts.svelte`, with the list in `lib/toast.svelte.ts`. A file dropped
+on the app that is not a video, a call to the Go side that failed for a
+video with no row or card to say it in, a file Report a Problem leaves
+out. Each used to be red text put wherever there was room: a banner over
+the workspace that pushed it down, a line over the video preview, three
+wrapped lines beside Report. Tim found the workspace moved about by a
+dropped screenshot, issues #263 and #327.
+
+A toast lies over the app in the top right corner, under the bar, where
+macOS brings its own notes in, and moves nothing under it. Each time
+something goes wrong is a toast of its own, the way macOS stacks its
+notes: the newest comes in on top and pushes the others down, and each
+runs its own time. One toast for each place, which a newer reason
+replaced, showed Tim only the last of the pictures he dropped one after
+another. The same words from the same place while they show come in on
+top again with their time started again, rather than twice. It is
+300 px wide, one width for every toast so a stack reads as one column,
+which Tim found 340 px a little too wide for. A toast about a video shows while that video is on
+screen and waits while another is. Its time, the ten seconds a removed
+clip has to be put back, runs down from the moment it comes, in the
+same fill, and stands still while the pointer is on it. Its cross takes it away at
+once. It wears the red of a removed row over the dark of the app, with
+no line round it. The first one waited for the pointer before its time
+began and had a thin red line round a grey note, and Tim found both
+wrong: a toast counts down by itself, and a look the app has nowhere
+else reads as a mistake. Every toast and how it went is in the log,
+`toast:` when it came and `toast closed:` or `toast ran out:` when it
+went.
+
+What has a place of its own keeps it: a clip that failed says so on its
+card, a search that stopped in its row, a missing file in the line over
+the workspace, and what dictation did not hear beside the microphone.
+
 ### The colour picker
 
 The colours of the captions, **Text**, **Box** and **Highlight** in the
@@ -2760,13 +2798,28 @@ beside **Report** says how the page works and what goes in a report.
 Tim found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
-The pictures are for screenshots. They come from the paperclip's open
-box, from a drop anywhere on the window, or from a paste into the
-field. PNG or JPEG, ten at most and 10 MB each, and each one is
-decoded and written again as PNG, so nothing the file held besides the
-picture travels, a place or a camera among it. A file that is not a
-picture, or is too big, or would make an eleventh, is left out and the
-line under the field says which and why. They show under the card in a
+The pictures are for screenshots and screen recordings. They come from
+the paperclip's open box, from a drop anywhere on the window, or from a
+paste into the field. Ten at most and 10 MB each. A picture is PNG or
+JPEG, decoded and written again as PNG, so nothing the file held besides
+the picture travels, a place or a camera among it. A recording is what
+the usual screen recorders make, issue #326: a video the app takes,
+see [Which files are videos](#which-files-are-videos), which is what the
+Mac's own recorder, QuickTime, Windows, phones and OBS make, or WebM,
+which the GNOME and KDE recorders and browsers make. It is judged by its
+first bytes and then by the ffmpeg the app ships, made to read it as
+that kind and nothing else, and copied stream by stream, its picture and
+its sound untouched, without what the file said about itself, the
+place, the date or the device. Its tile shows a still of its first frame
+with its length in the corner, the way Photos and Finder show a video,
+and the report holds the recording itself, under `recordings/`, see
+`cmd/framefairy-app/recording.go`. Tim's first recording was turned
+away as not a PNG or JPEG picture. A file that is not a
+picture or a recording, or is too big, or would make an eleventh, is not attached and a
+toast in the window's top right corner says which and why, "notes.txt
+cannot be attached because it is not a picture or a screen recording", see
+[Toasts](#toasts). It used to be red text in the row of the buttons,
+which wrapped over three lines beside Report, Tim found. They show under the card in a
 grid of three, four once the window is wide, every tile the same size
 on whole pixels and 16 by 10, the picture fitted in. A bin shows on a
 tile under the pointer, or on Delete with the tile focused, and the

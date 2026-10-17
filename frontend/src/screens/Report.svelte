@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
+  import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
+  import { toasts } from "../lib/toast.svelte";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -17,8 +18,11 @@
 
   let what = $state("");
   let making = $state(false);
-  // Why a report could not be made, or pictures attached.
-  let problem = $state("");
+  // Why a report could not be made, or pictures attached. It is a toast
+  // over the window, issue #327: beside the buttons it wrapped over
+  // three lines and stood where nothing else was about it. Each time is
+  // a toast of its own.
+  const oops = (text: string) => toasts.say("report", text);
 
   // Dictate, plan row 2.189, the way dictation on claude.ai works: the
   // words appear in the field while they are said, where the cursor was,
@@ -109,26 +113,21 @@
   function took(d: ReportDraft) {
     pictures = d.pictures ?? [];
     for (const id of Object.keys(removed)) if (pictures.some((p) => p.id === id)) delete removed[id];
-    if (d.error) {
-      problem = d.error.endsWith(".") ? d.error : d.error + ".";
-    }
+    if (d.error) oops(d.error.endsWith(".") ? d.error : d.error + ".");
   }
 
-  // A drop says what came of it on its own, and one that went well takes
-  // away the reason an earlier one left beside the buttons.
+  // A drop says what came of it on its own.
   function dropped(d: ReportDraft) {
-    if (!d.error) problem = "";
     took(d);
   }
 
   async function attach() {
     if (attaching) return;
     attaching = true;
-    problem = "";
     try {
       took(await api.attachPictures());
     } catch (e) {
-      problem = sentence(e);
+      oops(sentence(e));
     } finally {
       attaching = false;
     }
@@ -137,7 +136,7 @@
   function removePicture(p: ReportPicture) {
     removed[p.id] = { picture: p };
     pictures = pictures.filter((q) => q.id !== p.id);
-    api.removePicture(p.id).then(took, (e) => (problem = sentence(e)));
+    api.removePicture(p.id).then(took, (e) => oops(sentence(e)));
   }
 
   // The picture is back in its place at once, the way a removed one goes
@@ -159,23 +158,22 @@
       (e) => {
         pictures = pictures.filter((p) => p.id !== id);
         again();
-        problem = sentence(e);
+        oops(sentence(e));
       },
     );
   }
 
-  // A picture pasted into the field is attached, the way Mail takes one.
-  // Text pastes as text.
+  // A picture or a recording pasted into the field is attached, the way
+  // Mail takes one. Text pastes as text.
   function pasted(e: ClipboardEvent) {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (files.length === 0) return;
     e.preventDefault();
-    problem = "";
     for (const f of files) {
       const reader = new FileReader();
       reader.onload = () => {
         const data = String(reader.result).replace(/^data:[^,]*,/, "");
-        api.attachPasted(f.name || "Pasted picture.png", data).then(took, (err) => (problem = sentence(err)));
+        api.attachPasted(f.name || "Pasted picture.png", data).then(took, (err) => oops(sentence(err)));
       };
       reader.readAsDataURL(f);
     }
@@ -461,7 +459,7 @@
     onDictation((d) => {
       if (!listening || (recording && d.recording !== recording)) return;
       if (d.error || d.ended) {
-        if (d.error) problem = sentence(d.error);
+        if (d.error) oops(sentence(d.error));
         if (d.ended) note = sentence(d.ended) + ".";
         listening = false;
         chime("off");
@@ -480,7 +478,6 @@
   async function dictate() {
     if (hearing) return;
     if (listening) return keep();
-    problem = "";
     note = "";
     unheard = "";
     listening = true;
@@ -496,7 +493,7 @@
     } catch (e) {
       listening = false;
       finish(false);
-      problem = sentence(e);
+      oops(sentence(e));
     }
   }
 
@@ -516,7 +513,7 @@
         if (d.ended) note = sentence(d.ended) + ".";
       }
     } catch (e) {
-      problem = sentence(e);
+      oops(sentence(e));
     } finally {
       finish(true);
       hearing = false;
@@ -582,7 +579,6 @@
   async function make() {
     if (making) return;
     making = true;
-    problem = "";
     note = "";
     // Nothing is kept from here: the Go side lets go of the draft and
     // closes the window, which would otherwise keep the text again as it
@@ -599,7 +595,7 @@
       pictures = [];
       removed = {};
     } catch (e) {
-      problem = e instanceof Error ? e.message : String(e);
+      oops(e instanceof Error ? e.message : String(e));
     } finally {
       making = false;
       loaded = true;
@@ -665,20 +661,19 @@
         class="act square attach"
         onclick={attach}
         disabled={attaching || making}
-        aria-label="Attach pictures"
-        title="Attach pictures. Screenshots work best. You can also drop them on this window or paste them"
+        aria-label="Attach screenshots or recordings"
+        title="Attach screenshots or screen recordings. You can also drop them on this window or paste them"
       >
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
-      <!-- Only what went wrong, and why a recording stopped by itself. What
-           the buttons are doing shows on the buttons, and how the page
-           works is in the info mark. Tim found standing lines there read
-           as news that was not true yet. -->
+      <!-- Only what the microphone hears, and why a recording stopped by
+           itself. What the buttons are doing shows on the buttons, how the
+           page works is in the info mark, and what went wrong is a toast.
+           Tim found standing lines there read as news that was not true
+           yet. -->
       <div class="words">
-        {#if problem}
-          <span class="error selectable">{problem}</span>
-        {:else if listening && unheard}
+        {#if listening && unheard}
           <span class="error selectable">{unheard}</span>
         {:else if !listening && !hearing && note}
           <span>{note}</span>
@@ -691,10 +686,11 @@
       <span class="ask always">
         <Info label="How a report works" side="right">
           Say what happened with the microphone, or type it. Enter keeps what you said and Escape removes it. Attach
-          screenshots with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each.
+          screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
+          to ten of 10 MB each.
           What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,
-          shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their
-          files hold, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
+          shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what
+          else their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
@@ -720,8 +716,18 @@
             />
           {:else}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-            <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
+            <figure
+              tabindex="0"
+              title={t.p.name}
+              aria-label={t.p.recording ? `${t.p.name}, a recording of ${clock(t.p.seconds ?? 0)}` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
+              onkeydown={(e) => tileKey(e, t.p)}
+            >
               <img src="/report-picture?id={t.p.id}" alt={t.p.name} draggable="false" />
+              {#if t.p.recording}
+                <!-- How long a recording is, in the corner Photos and
+                     Finder show it in. -->
+                <span class="length">{clock(t.p.seconds ?? 0)}</span>
+              {/if}
             </figure>
             <button class="glyph small quiet danger bin" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
               <Icon name="trash" />
@@ -937,6 +943,22 @@
     opacity: 0;
     pointer-events: none;
     color: var(--text);
+  }
+
+  /* A recording's length, at the foot of the tile on the right, the way
+     Photos and Finder show a video's, on a shade of its own so it reads
+     on any frame. */
+  .tile .length {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    padding: 12px var(--gap) 4px 16px;
+    font-size: var(--size-s);
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    background: radial-gradient(circle at 100% 100%, var(--backdrop), transparent 100%);
+    pointer-events: none;
   }
 
   .tile figure::after {

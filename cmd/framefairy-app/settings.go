@@ -262,7 +262,7 @@ func (s *store) AddEpisodes(paths []string) ([]string, error) {
 		return nil, err
 	}
 	if len(clash) > 0 {
-		return added, errors.New(strings.Join(clash, ", ") + ", so it was left out")
+		return added, errors.New(strings.Join(clash, ", ") + ", so it cannot be added")
 	}
 	return added, nil
 }

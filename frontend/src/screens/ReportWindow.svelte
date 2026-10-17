@@ -3,6 +3,7 @@
   import Bar from "../components/Bar.svelte";
   import Landing from "../components/Landing.svelte";
   import Report from "./Report.svelte";
+  import Toasts from "../components/Toasts.svelte";
   import { api, onUndo } from "../lib/api";
   import { typing } from "../lib/keys";
   import { titleBar } from "../lib/chrome.svelte";
@@ -34,6 +35,8 @@
 <div class="shell" style={titleBar.style}>
   <Bar title="Report a Problem" />
   <Report />
+  <!-- What went wrong, over the window, see Toasts.svelte. -->
+  <Toasts />
   <!-- Where a picture dragged over the window would land: all of it. -->
   <Landing />
 </div>

@@ -24,6 +24,8 @@
   import Landing from "./components/Landing.svelte";
   import { titleBar } from "./lib/chrome.svelte";
   import Confirm from "./components/Confirm.svelte";
+  import Toasts from "./components/Toasts.svelte";
+  import { toasts } from "./lib/toast.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
   import { installFonts } from "./lib/fonts";
@@ -261,7 +263,11 @@
   // Whether the report window is open, which lights Bugs.
   let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
-  let problem = $state("");
+  // What went wrong with the library or with files given to the app,
+  // which has no row of its own: a toast, issue #327. Each time is a
+  // toast of its own, so two files dropped one after the other are said
+  // both.
+  const oops = (text: string) => toasts.say("app", text);
 
   // The first run. A new copy of the app cannot transcribe without a
   // speech model and cannot find clips until somebody has said how, so
@@ -286,7 +292,7 @@
       episodes = now;
     } catch (err) {
       if (mine !== reads) return;
-      problem = errorText(err);
+      oops(errorText(err));
     }
     libraryRead = true;
   }
@@ -314,18 +320,17 @@
     try {
       await took(await api.addEpisodes());
     } catch (err) {
-      problem = errorText(err);
+      oops(errorText(err));
       await refresh();
     }
   }
 
   // What came of files given to the app, with Add or a drop, the same
   // either way: the list is read again and the video to open opens, from
-  // whatever page the app was on. The reason something was left out
-  // stays until the next files are given, which replace it, and nothing
-  // given, Add cancelled, changes nothing.
+  // whatever page the app was on. Why a file cannot be added is a toast,
+  // and nothing given, Add cancelled, says nothing.
   async function took(a: Added) {
-    if (a.added.length || a.open || a.error) problem = a.error ?? "";
+    if (a.error) oops(a.error);
     await refresh();
     if (!a.open) return;
     said("app: a video added opens", { level: "info", video: a.open });
@@ -388,7 +393,7 @@
       await refresh();
     } catch (err) {
       removing = null;
-      problem = errorText(err);
+      oops(errorText(err));
     } finally {
       removingHow = null;
     }
@@ -706,9 +711,6 @@
   </aside>
 
   <main>
-    {#if problem}
-      <p class="error banner selectable">{problem}</p>
-    {/if}
     <!-- The kept workspaces stay while another screen is open, out of the
          way, so coming back from the settings is one frame as well. -->
     {#if workspaces.length}
@@ -782,6 +784,10 @@
       <p>{leaving === "ask" ? `Press ${quitKey} again to quit` : "Quitting"}</p>
     </div>
   {/if}
+
+  <!-- What went wrong with nothing on screen about it, over the app. A
+       toast about a video waits while another is on screen. -->
+  <Toasts shown={(t) => !t.video || t.video === asked} />
 
   {#if removing}
     {@const ep = removing}
@@ -1167,10 +1173,6 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-  }
-
-  .banner {
-    padding: var(--gap) var(--edge);
   }
 
   /* The workspace in front and the one being opened behind it stand in

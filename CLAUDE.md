@@ -298,9 +298,18 @@ messages, pull request text, code comments and chat replies.
   said where it was started and where its result would have appeared, and
   it stays there until it is acted on, after a restart too. A search that
   stopped says so in the row its next clip would have appeared in, and
-  its window stays on the range picker. No toasts and
-  no banners: a toast is gone before it is read and appears far from what
-  it is about, and a banner is standing text that moves the workspace.
+  its window stays on the range picker. No banners: a banner is standing
+  text that moves the workspace. What goes wrong with no place of its own
+  on screen, a file dropped on the app that is not a video, a call that
+  failed with no row or card to say it in, is a toast, `Toasts.svelte`
+  and nothing else. It lies over the app in the top right corner and
+  moves nothing, in the red a removed row wears, and it is about one
+  video and shows only while that video is on screen. Its time runs
+  down from the moment it comes, the way toasts do everywhere, stands
+  still while the pointer is on it, and its cross takes it away at once.
+  Every toast is in the log, so one gone unread is not lost. A failure
+  that has a row, a card or a field of its own is said there and never
+  in a toast.
   Work called off by hand says so the same way as work cut off by the app
   closing, Stopped with Continue, because what it did stays and can be
   carried on. An empty column after Cancel reads as work that vanished.
