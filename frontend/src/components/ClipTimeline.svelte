@@ -16,6 +16,9 @@
     "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z";
   const CAMERA =
     "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
+  // Lucide's rotate-ccw, the Rotate button's icon, as lines, for the mark
+  // at the start of a rotated part.
+  const ROTATE = ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"];
 </script>
 
 <script lang="ts">
@@ -56,7 +59,6 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import Icon from "./Icon.svelte";
   import { partOf } from "../lib/rotate";
 
   let {
@@ -2078,12 +2080,12 @@
       {/if}
       {#if clip}
         <!-- A rotated part says so at its start, in the top left corner of
-             its first piece, so a clip that holds a rotation shows it
-             without playing it. It takes no click: R and the Rotate button
+             its first piece under the keyframes, so a clip that holds a
+             rotation shows it without playing it. It takes no click: R and the Rotate button
              are where it is changed. Plan row 3.25. -->
         {#each rotatedParts as r (r.at)}
           <div class="turnmark" style="left: {x(r.at)}%" data-rotate={r.rotate} aria-hidden="true">
-            <Icon name="rotate" size={14} />
+            {@render ringed(ROTATE, 14)}
           </div>
         {/each}
       {/if}
@@ -2182,6 +2184,20 @@
      the track's dark round it, so it reads over the waveform and over the
      app's colour alike. The ring is the line drawn under the fill, so half
      of it shows, outside the shape. -->
+<!-- An icon of lines with the same ring of the track's dark round them,
+     a line of it under each line of the icon, so the rotate mark reads
+     over the waveform the way the keyframes and thumbnails do. -->
+{#snippet ringed(paths: string[], size: number)}
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {#each paths as d (d)}
+      <path {d} stroke="var(--well)" stroke-width={(4.5 * 24) / size} />
+    {/each}
+    {#each paths as d (d)}
+      <path {d} stroke="currentColor" stroke-width={(1.5 * 24) / size} />
+    {/each}
+  </svg>
+{/snippet}
+
 {#snippet solid(d: string, size: number, lens = false)}
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
     <path {d} fill="currentColor" stroke="var(--well)" stroke-width={(3 * 24) / size} stroke-linejoin="round" paint-order="stroke" />
@@ -2582,10 +2598,15 @@
   }
 
   /* The mark at the start of a rotated part: the Rotate button's icon,
-     small, in the top left corner of the part in the app's colour. */
+     small, in the top left corner of the part in the app's colour, under
+     the row the keyframes stand in along the top rule and the times
+     beside it. Tim found it under a keyframe's diamond, issue #348. The
+     diamonds reach 10 px down and the times 16 px, so it starts 4 px
+     under the times, and it ends at 34 px, clear of the captions, which
+     start 48 px down in the smallest clip timeline, 112 px. */
   .turnmark {
     position: absolute;
-    top: 3px;
+    top: 20px;
     margin-left: 3px;
     width: 14px;
     height: 14px;

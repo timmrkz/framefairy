@@ -2135,8 +2135,12 @@ or walks across the picture. Plan row 3.26, the design is in
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing the first of two keyframes leaves the
   crop standing at the other for the whole clip, as removing a keyframe
-  does in Resolve and Premiere. Rotating a part removes the keyframes in
-  it, which were placed on the picture as it stood.
+  does in Resolve and Premiere. Rotating a part keeps its keyframes. Each
+  was placed on the picture turned one way, and steers the part only while
+  it is turned that way: turned another way, it waits, and four turns
+  bring its glide back. A crop placed on the frame of a keyframe that
+  waits takes it to the picture as it stands. Tim found the diamonds gone
+  after a turn, issue #348.
 - **Undo** takes back adding, moving and removing one.
 
 ### Rotate
@@ -2171,7 +2175,9 @@ lies on its side. Plan row 3.25, the design is in
   rotated alike and no other. Rotated back all the way, the part has the
   crop it had before, which rotating never touched.
 - **A rotated part shows the Rotate icon** at its start, in the top left
-  corner of the part on the clip timeline. It takes no click.
+  corner of the part on the clip timeline, under the row the keyframes
+  stand in and the times, with the track's dark ring round it so it reads
+  over the waveform. It takes no click.
 - **Undo** takes a rotation back like any other edit.
 - **A phone's video stands up by itself.** A phone that records upright
   stores the picture lying down and says in the file how to stand it up.

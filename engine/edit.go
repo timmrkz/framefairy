@@ -542,9 +542,11 @@ func autoCrop(seg *object) any {
 //
 // The crop of a rotated piece stands in the middle of the picture rotated
 // until it is placed, and the crop it has unrotated is kept as it was, so
-// a part rotated back has it again. The keyframes of the stretch are
-// removed, since they were placed on the picture as it stood. Framing is not a judgement of the
-// clip, so nothing is recorded for training.
+// a part rotated back has it again. So are the keyframes of the stretch:
+// each was placed on the picture turned one way and waits while it is
+// turned another, see CropMark, so four turns bring the glide back. Tim
+// found the diamonds removed with the turn, issue #348. Framing is not a
+// judgement of the clip, so nothing is recorded for training.
 func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames SourceInfo) error {
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
@@ -557,6 +559,9 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 			return renderErr("clip %s has no pieces", clipID)
 		}
 		spans := rotationsOf(c)
+		// The keyframes are read with the clip turned as it was, so each
+		// keeps the turn it was placed on, written down before the turn.
+		marks := cropMarksOf(c)
 		first, last := partOf(pieces, target)
 		from, to := math.Inf(-1), math.Inf(1)
 		if first > 0 {
@@ -568,17 +573,8 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 		turned := (rotationOf(pieces[target], spans) + 90) % 360
 		spans = turnStretch(spans, from, to, turned)
 		setRotations(c, spans)
-		// A keyframe of the stretch was placed on the picture as it stood
-		// before, which is now another shape.
-		var kept []CropMark
-		marks := cropMarksOf(c)
-		for _, m := range marks {
-			if m.At < from || m.At >= to {
-				kept = append(kept, m)
-			}
-		}
-		if len(kept) != len(marks) {
-			setCropMarks(c, kept)
+		if len(marks) > 0 {
+			setCropMarks(c, marks)
 		}
 		for _, seg := range pieces {
 			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
@@ -915,9 +911,14 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 		angle := angleOf(pieces[target], spans)
 		marks := cropMarksOf(c)
 		ofAngle := marksOfAngle(marks, pieces, spans, angle)
+		// The keyframe on the frame takes the crop, also one that waits,
+		// placed on the picture turned another way: it is the diamond
+		// under the playhead, and from now on it is on the picture as it
+		// stands.
 		for i := range marks {
-			if ofAngle[i] && frames.markFrame(marks[i].At) == frames.frameHolding(at) {
+			if frames.markFrame(marks[i].At) == frames.frameHolding(at) {
 				marks[i].X = left
+				marks[i].Turn = rotationOf(pieces[target], spans)
 				setCropMarks(c, marks)
 				return nil
 			}
