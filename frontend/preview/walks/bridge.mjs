@@ -94,7 +94,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   if (await page.evaluate(() => document.querySelector("aside")?.classList.contains("open"))) {
     await page.locator("aside .head .glyph").click();
     await page.mouse.move(750, 500);
-    await page.waitForTimeout(400);
+    await sidebarStill(page);
   }
   await page.locator("aside .list li button.pick").first().waitFor();
   await page.locator("aside .list li button.pick").first().click();
@@ -105,12 +105,15 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
 }
 
 // Waits until no call has been on its way for a while and the page has
-// drawn what came back.
+// drawn what came back. It looks on every frame, and a call that went and
+// came back between two looks starts the while again, see
+// wails-bridge.ts.
 export async function settle(page) {
   await page.waitForFunction(
     () => {
       const w = window;
-      if (w.__pending > 0) {
+      if (w.__pending > 0 || w.__answered !== w.__answeredSeen) {
+        w.__answeredSeen = w.__answered;
         w.__quietSince = 0;
         return false;
       }
@@ -118,10 +121,24 @@ export async function settle(page) {
       return performance.now() - w.__quietSince > 250;
     },
     null,
-    { polling: 50, timeout: 15000 },
+    { polling: "raf", timeout: 15000 },
   );
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.evaluate(() => (window.__quietSince = 0));
+}
+
+// Waits until the sidebar has stopped sliding, so what a walk reads or
+// clicks next stays where it is. It opens and shuts in the frame the
+// pointer reaches or leaves it, and slides for 140 ms, see App.svelte,
+// which a walk once waited 400 ms for each way. A sidebar that is pinned,
+// or held open while a video is dragged in the list, does not slide at
+// all, and then this is two frames.
+export async function sidebarStill(page) {
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.waitForFunction(() => (document.querySelector("aside")?.getAnimations().length ?? 0) === 0, null, {
+    polling: "raf",
+    timeout: 15000,
+  });
 }
 
 // Which episode is on screen: the one the sidebar marks as the current
@@ -243,8 +260,24 @@ export const middle = (r) => r.x + r.w / 2;
 // High on the track, over the waveform rather than the captions' band.
 export const high = (t) => t.y + t.h * 0.2;
 
+// Waits for the page to draw n frames, so whatever the walk did last has
+// reached the screen however busy the machine is.
+export async function nextPaint(page, n = 1) {
+  await page.evaluate(
+    (n) =>
+      new Promise((r) => {
+        const next = (left) => (left ? requestAnimationFrame(() => next(left - 1)) : r());
+        next(n);
+      }),
+    n,
+  );
+}
+
 // A drag of the pointer from a point, by dx, in steps the way a hand
-// moves, with shift held when asked.
+// moves, with shift held when asked. Each step is a frame of its own, the
+// way a pointer moves on screen. A step a fixed 30 ms after the last can
+// come two to a frame on a busy machine, and Chromium then hands the app
+// only the last of them.
 export async function drag(page, x, y, dx, shift) {
   if (shift) await page.keyboard.down("Shift");
   await page.mouse.move(x, y);
@@ -252,7 +285,7 @@ export async function drag(page, x, y, dx, shift) {
   const n = 6;
   for (let i = 1; i <= n; i++) {
     await page.mouse.move(x + (dx * i) / n, y);
-    await page.waitForTimeout(30);
+    await nextPaint(page);
   }
   await page.mouse.up();
   if (shift) await page.keyboard.up("Shift");
@@ -464,10 +497,10 @@ export async function pressHead(page) {
 // does something there and leaves it again.
 export async function fromSidebar(page, click) {
   await page.mouse.move(20, 500);
-  await page.waitForTimeout(400);
+  await sidebarStill(page);
   await click();
   await page.mouse.move(750, 400);
-  await page.waitForTimeout(400);
+  await sidebarStill(page);
   // An episode picked is built behind the one on screen and takes its
   // place once it is ready, see App.svelte. Until then there are two, and
   // whatever a walk reads next is about the one it picked.
@@ -735,4 +768,17 @@ export async function cropPixels(page, source) {
 export function shortFrame(path, n, w, h) {
   return execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=eq(n\\,${n}),scale=${w}:${h}:flags=area`,
     "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+}
+
+// The frames of a short from the nth to the mth, both counted, read back
+// with ffmpeg in one go, each the way shortFrame gives one. ffmpeg decodes
+// a short from its start to reach a frame, so the frames either side of
+// one cost nothing more read with it, and three times as much read alone.
+export function shortFramesFrom(path, n, m, w, h) {
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=between(n\\,${n}\\,${m}),scale=${w}:${h}:flags=area`,
+    "-fps_mode", "passthrough", "-frames:v", String(m - n + 1), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+  const size = w * h * 3;
+  const out = [];
+  for (let at = 0; at + size <= raw.length; at += size) out.push(raw.subarray(at, at + size));
+  return out;
 }
