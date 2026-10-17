@@ -1240,6 +1240,20 @@ export const sequences = [
     steps: [["font", "Archivo Black"], ["frame", "Jahre"], ["grow", "Jahre"], ["thickened as libass", "Jahre"]],
   },
   {
+    // Tim asked for the fonts installed on his Mac (#347). The bridge's
+    // computer has Anton installed as Bridge Narrow, which the Font list
+    // offers under Installed, and libass and the word typed are both drawn
+    // from its copy.
+    name: "a font installed on the computer draws the captions and the word typed",
+    steps: [
+      ["listed under", "Installed|Bridge Narrow"],
+      ["font", "Bridge Narrow"],
+      ["frame", "Jahre"],
+      ["grow", "Jahre"],
+      ["thickened as libass", "Jahre"],
+    ],
+  },
+  {
     // Found by Tim on #201: a word opened while another was lit was typed
     // on the dark box, and the lit one on its pill inside a lighter ring.
     // Every word typed sits on the one pill libass draws, lit or not.
@@ -7390,6 +7404,24 @@ for (const seq of toWalk) {
         await watch.step("click", s);
         await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
         await settled();
+        break;
+      }
+      case "listed under": {
+        // The Font list puts a face under a head of its group.
+        const [head, name] = arg.split("|");
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        const order = await page.evaluate(() =>
+          [...document.querySelectorAll(".pick-list .pick-group, .pick-list .pick-row")].map((it) =>
+            (it.classList.contains("pick-group") ? "# " : "") + it.textContent.trim(),
+          ),
+        );
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const at = order.indexOf(name);
+        const heads = order.slice(0, at).filter((it) => it.startsWith("# "));
+        if (at < 0) wrong = `the Font list has no ${name}: ${order.join(", ")}`;
+        else if (heads.at(-1) !== `# ${head}`) wrong = `${name} is under ${heads.at(-1) ?? "no head"}, not ${head}`;
         break;
       }
       case "thickened as libass": {

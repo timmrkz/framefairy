@@ -26,6 +26,7 @@ package engine
 // whatever it likes.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -76,12 +77,12 @@ var shelf = &fontShelf{}
 // UseMachineFonts offers the fonts installed on this machine beside the
 // bundled ones. The programs call it as they start. The folders are read
 // the first time a face is looked for, and again by RefreshFonts.
-func UseMachineFonts() { useFontFolders(disk, FontFolders()) }
+func UseMachineFonts() { UseFontFolders(disk, FontFolders()) }
 
-// useFontFolders puts the faces in dirs of fsys on the shelf, in place of
+// UseFontFolders puts the faces in dirs of fsys on the shelf, in place of
 // whatever was there. A test that calls it changes the faces every test of
-// the package sees, so it does not run beside the tests that draw captions.
-func useFontFolders(fsys afero.Fs, dirs []string) {
+// its package sees, so it does not run beside the tests that draw captions.
+func UseFontFolders(fsys afero.Fs, dirs []string) {
 	shelf.mu.Lock()
 	shelf.fsys, shelf.dirs = fsys, dirs
 	shelf.faces, shelf.byName, shelf.scanned = nil, nil, time.Time{}
@@ -519,6 +520,12 @@ func machineFontBytes(face machineFace) ([]byte, error) {
 		return nil, err
 	}
 	return copyFace(file, info.Size(), face.offset, face.alias)
+}
+
+// NamedFace is the single face of a font file under another name, the way
+// a test or the bridge makes a font the machine has out of one of ours.
+func NamedFace(data []byte, name string) ([]byte, error) {
+	return copyFace(bytes.NewReader(data), int64(len(data)), 0, name)
 }
 
 // copyFace writes the face at offset as a font file of its own, with a

@@ -2108,7 +2108,9 @@
   // The captions as they are now, and whether that is how they start out.
   // The mark beside the head is about the group, not about one row of it.
   const captionsNow = $derived({
-    font: captions?.style.font ?? captionFontDefault,
+    // The face the video asks for, even one this machine lacks, so putting
+    // the captions back as they start out is offered for it too.
+    font: captions?.style.missing || (captions?.style.font ?? captionFontDefault),
     size: Math.round(captions?.style.chosenSize ?? captionSizeDefault),
     y: Math.round(captionY),
     text: splitColour(captions?.style.primary ?? "").hex,
@@ -2911,13 +2913,26 @@
                    with its own mark where their unit is, so every setting
                    in the column ends in the same place whatever draws it. -->
               <span class="field">
+                <!-- The faces of the app, then the ones installed on the
+                     machine under a head of their own, the way a pop-up
+                     menu on the Mac parts its kinds of thing. A face the
+                     video asks for and the machine does not have is named
+                     on the field in the colour of a warning, and the
+                     captions are drawn in the app's own meanwhile. -->
                 <Pick
-                  value={captions.style.font}
-                  options={fonts.map((f) => ({ value: f.name, label: f.name }))}
+                  value={captions.style.missing || captions.style.font}
+                  options={fonts.map((f) => ({
+                    value: f.name,
+                    label: f.name,
+                    group: f.machine ? "Installed" : undefined,
+                  }))}
                   onpick={(name) => setCaptionStyle(name, 0)}
                   id="caption-font"
                   label="Font"
-                  title="The face the captions are written in"
+                  title={captions.style.missing
+                    ? `${captions.style.missing} is not installed on this computer, so the captions are drawn in ${captions.style.font}`
+                    : "The face the captions are written in"}
+                  tone={captions.style.missing ? "warn" : undefined}
                   align="right"
                 />
               </span>

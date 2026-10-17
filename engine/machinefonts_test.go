@@ -73,8 +73,8 @@ func onShelf(t *testing.T, folders ...map[string][]byte) {
 			}
 		}
 	}
-	useFontFolders(fsys, dirs)
-	t.Cleanup(func() { useFontFolders(nil, nil) })
+	UseFontFolders(fsys, dirs)
+	t.Cleanup(func() { UseFontFolders(nil, nil) })
 }
 
 func fontNames(fonts []CaptionFont) []string {

@@ -51,6 +51,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	"framefairy/engine"
@@ -652,6 +653,20 @@ func openBridge(t *testing.T) *bridge {
 		o.Preset = "ultrafast"
 	}
 	standIns.Store(&fakes)
+	// A font installed on the bridge's computer: Anton under a name of its
+	// own, so the Font list has a face of the machine to offer, and libass
+	// and the word typed are drawn from its copy.
+	anton, _ := engine.FontBytes("Anton")
+	narrow, err := engine.NamedFace(anton, "Bridge Narrow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := afero.NewMemMapFs()
+	if err := afero.WriteFile(installed, "/Library/Fonts/Bridge Narrow.ttf", narrow, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
+	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records two seconds of a hum, then a
 	// pause and a second and a half more, four times over, as fast as it
 	// would be said, which the stand-in hears as words: what came before a

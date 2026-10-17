@@ -116,6 +116,8 @@ export interface CaptionFont {
   file: string;
   // How heavy the face says it is, from 100 to 900.
   weight: number;
+  // A face installed on the machine rather than built into the app.
+  machine?: boolean;
 }
 
 export interface Check {
@@ -293,6 +295,9 @@ export interface CaptionCue {
 // The caption look, with every measure as a share of the frame height.
 export interface CaptionStyle {
   font: string;
+  // The face the captions ask for when the machine does not have it, and
+  // font is then the one they are drawn in instead.
+  missing?: string;
   // The em size to draw at, as a share of the frame height, and the space
   // from one line to the next as a share of that size.
   size: number;
