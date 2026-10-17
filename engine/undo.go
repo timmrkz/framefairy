@@ -39,6 +39,7 @@ type fileState struct {
 // Snapshot is the files an edit of an episode can change, as they were.
 type Snapshot struct {
 	fsys    afero.Fs
+	records *Records
 	logsDir string
 	files   map[string]fileState
 }
@@ -53,9 +54,10 @@ func editableFiles(fsys afero.Fs, logsDir string) []string {
 }
 
 // TakeSnapshot reads the files an edit of the episode in logsDir can
-// change.
-func TakeSnapshot(fsys afero.Fs, logsDir string) *Snapshot {
-	s := &Snapshot{fsys: fsys, logsDir: logsDir, files: map[string]fileState{}}
+// change. An undo of the change it is the start of is recorded in rec, the
+// way the edit was.
+func TakeSnapshot(fsys afero.Fs, rec *Records, logsDir string) *Snapshot {
+	s := &Snapshot{fsys: fsys, records: rec, logsDir: logsDir, files: map[string]fileState{}}
 	for _, path := range editableFiles(fsys, logsDir) {
 		s.files[path] = readState(fsys, path)
 	}
@@ -73,6 +75,7 @@ func readState(fsys afero.Fs, path string) fileState {
 // Change is what one edit did to an episode.
 type Change struct {
 	fsys    afero.Fs
+	records *Records
 	logsDir string
 	// paths are the files it changed, in a fixed order, with what each
 	// held before and after.
@@ -85,7 +88,7 @@ type Change struct {
 // Nothing changed is nil. A file in either is compared, so a plan an edit
 // removed and a plan that appeared are both part of it.
 func ChangeBetween(before, after *Snapshot) *Change {
-	c := &Change{fsys: before.fsys, logsDir: before.logsDir, before: map[string]fileState{}, after: map[string]fileState{}}
+	c := &Change{fsys: before.fsys, records: before.records, logsDir: before.logsDir, before: map[string]fileState{}, after: map[string]fileState{}}
 	seen := map[string]bool{}
 	for _, snap := range []*Snapshot{before, after} {
 		for path := range snap.files {
@@ -232,7 +235,7 @@ func (c *Change) apply(from, to map[string]fileState) (ClipRef, error) {
 }
 
 func (c *Change) applyOne(path string, from, to fileState, dryRun bool) error {
-	return applyPlan(c.fsys, path, from, to, dryRun)
+	return applyPlan(c.fsys, c.records, path, from, to, dryRun)
 }
 
 // equalJSON says whether two decoded values are the same, written out.
@@ -331,7 +334,7 @@ func fieldsOf(p *planParts) map[string]any {
 	return out
 }
 
-func applyPlan(fsys afero.Fs, path string, from, to fileState, dryRun bool) error {
+func applyPlan(fsys afero.Fs, rec *Records, path string, from, to fileState, dryRun bool) error {
 	defer lockFile(fsys, path)()
 	src, err := splitPlan(from)
 	if err != nil {
@@ -422,7 +425,7 @@ func applyPlan(fsys afero.Fs, path string, from, to fileState, dryRun bool) erro
 	if err != nil {
 		return err
 	}
-	recordRestored(fsys, path, ids, src, dst)
+	recordRestored(fsys, rec, path, ids, src, dst)
 	return nil
 }
 
@@ -494,7 +497,7 @@ func putClip(list []any, id string, to *planParts) []any {
 // undoes was recorded, so the training records end on the clip as it is.
 // A clip taken out or put back is a decision, a clip trimmed or cut is an
 // edit, and anything else was never recorded to begin with.
-func recordRestored(fsys afero.Fs, planPath string, ids []string, from, to *planParts) {
+func recordRestored(fsys afero.Fs, rec *Records, planPath string, ids []string, from, to *planParts) {
 	for _, id := range ids {
 		was, now := from.clips[id], to.clips[id]
 		if now == nil {
@@ -520,9 +523,9 @@ func recordRestored(fsys afero.Fs, planPath string, ids []string, from, to *plan
 			if rejected(now) {
 				event = DecisionRejected
 			}
-			_ = RecordDecision(fsys, planPath, id, event, nil)
+			_ = RecordDecision(fsys, rec, planPath, id, event, nil)
 		case !equalJSON(segments(was), segments(now)):
-			_ = RecordDecision(fsys, planPath, id, DecisionEdited, nil)
+			_ = RecordDecision(fsys, rec, planPath, id, DecisionEdited, nil)
 		}
 	}
 }

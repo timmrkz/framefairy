@@ -131,7 +131,11 @@ type store struct {
 	dir string
 	// files is where the library's episodes and their work folders are
 	// read and written, the real disk in the app. See engine/files.go.
-	files    afero.Fs
+	files afero.Fs
+	// records is where the training records and the timings of past
+	// searches are kept, for every engine the app makes and every edit
+	// that records. The training folder follows the settings.
+	records  *engine.Records
 	settings Settings
 	episodes []string
 }
@@ -147,11 +151,11 @@ func openStore() *store {
 // openStoreIn is the store whose settings and library are in dir, with
 // everything read and written through files.
 func openStoreIn(files afero.Fs, dir string) *store {
-	s := &store{dir: dir, files: files, settings: defaultSettings()}
+	s := &store{dir: dir, files: files, records: engine.NewRecords(files, "", ""), settings: defaultSettings()}
 	s.load("settings.json", &s.settings)
 	s.load("library.json", &s.episodes)
 	s.settings.tidy()
-	s.settings.apply(s.files)
+	s.apply(s.settings)
 	s.markEarlier()
 	return s
 }
@@ -182,11 +186,11 @@ func (s *store) Settings() Settings {
 	return s.settings
 }
 
-// apply puts the settings that live outside this struct where they belong.
-// The one training folder is read by the engine wherever it records, so it
-// is set whenever the settings are read or written.
-func (s Settings) apply(files afero.Fs) {
-	engine.SetTrainingDir(files, s.TrainingDir)
+// apply puts the settings that live outside the settings where they
+// belong. The training folder is read wherever the app records, so it is
+// set whenever the settings are read or written.
+func (s *store) apply(v Settings) {
+	s.records.SetTrainingDir(v.TrainingDir)
 }
 
 // UpdateSettings changes the settings in one step: read, change, write,
@@ -201,7 +205,7 @@ func (s *store) UpdateSettings(change func(*Settings)) error {
 	change(&v)
 	v.tidy()
 	s.settings = v
-	v.apply(s.files)
+	s.apply(v)
 	return s.save("settings.json", v)
 }
 

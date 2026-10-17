@@ -369,8 +369,8 @@ func findClip(clips []*object, id string) (*object, error) {
 
 // SetRejected marks a clip as rejected or kept. A rejected clip stays in the
 // plan, and a render of the whole plan leaves it out. Reasons are recorded
-// with a rejection for training.
-func SetRejected(fsys afero.Fs, planPath, clipID string, rejected bool, reasons ...string) error {
+// with a rejection for training, in rec.
+func SetRejected(fsys afero.Fs, rec *Records, planPath, clipID string, rejected bool, reasons ...string) error {
 	// Checked before the plan is touched. A reason the format does not know
 	// would throw the whole record away further down, without a word.
 	if _, err := CheckReasons(reasons); rejected && err != nil {
@@ -400,7 +400,7 @@ func SetRejected(fsys afero.Fs, planPath, clipID string, rejected bool, reasons 
 	if !rejected {
 		reasons = nil
 	}
-	_ = RecordDecision(fsys, planPath, clipID, event, reasons)
+	_ = RecordDecision(fsys, rec, planPath, clipID, event, reasons)
 	return nil
 }
 
@@ -705,8 +705,9 @@ func foundPieces(c *object) []foundPiece {
 // What comes back has to be a clip a person can still watch and the render
 // can still make, so it is checked before anything is written. The words are
 // taken again from the transcript, the caption file goes, because the
-// captions are built from the words, and the edit is recorded for training.
-func editPieces(fsys afero.Fs, planPath, clipID string, change pieceChange, frames SourceInfo) error {
+// captions are built from the words, and the edit is recorded for training,
+// in rec.
+func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pieceChange, frames SourceInfo) error {
 	err := editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
 		if err != nil {
@@ -749,7 +750,7 @@ func editPieces(fsys afero.Fs, planPath, clipID string, change pieceChange, fram
 	if err != nil {
 		return err
 	}
-	_ = RecordDecision(fsys, planPath, clipID, DecisionEdited, nil)
+	_ = RecordDecision(fsys, rec, planPath, clipID, DecisionEdited, nil)
 	return nil
 }
 

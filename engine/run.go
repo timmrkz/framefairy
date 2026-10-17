@@ -116,8 +116,8 @@ type Options struct {
 	// NoRecord stops training records from being written.
 	NoRecord bool
 	// TrainingDir is the one folder the records go in. Empty means the
-	// default, ~/.framefairy/training. The program sets it with
-	// SetTrainingDir before anything runs, see cmd/framefairy.
+	// default, ~/.framefairy/training. The program puts it in the engine's
+	// Records before anything runs, see cmd/framefairy.
 	TrainingDir     string
 	HighlightColour string
 	NoHighlight     bool

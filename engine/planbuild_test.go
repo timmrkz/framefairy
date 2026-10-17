@@ -85,9 +85,9 @@ func landed(t *testing.T, path string, n int) []Clip {
 
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
-	ownTrainingDir(t)
 	letGo := make(chan struct{})
 	p, path := searching(t, letGo)
+	records := ownRecords(p.engine)
 
 	type result struct {
 		plan string
@@ -130,11 +130,11 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 					t.Errorf("caption height: %v", err)
 				}
 			case 1:
-				if err := SetRejected(disk, path, "t10-01", false); err != nil {
+				if err := SetRejected(disk, records, path, "t10-01", false); err != nil {
 					t.Errorf("keep: %v", err)
 				}
 			case 2:
-				if err := RecordDecision(disk, path, "t10-01", DecisionKept, nil); err != nil {
+				if err := RecordDecision(disk, records, path, "t10-01", DecisionKept, nil); err != nil {
 					t.Errorf("decision: %v", err)
 				}
 			case 3:
@@ -164,11 +164,11 @@ func TestAClipLandsWhileTheModelIsStillWriting(t *testing.T) {
 	}
 	// The decision made while the model was still writing counts, against
 	// the plan it was made about.
-	decisions, _ := afero.ReadFile(TrainingFiles(), filepath.Join(TrainingDir(), "decisions.jsonl"))
+	decisions, _ := afero.ReadFile(records.Files, filepath.Join(records.TrainingDir(), "decisions.jsonl"))
 	if !strings.Contains(string(decisions), `"plan_id":"`+id+`"`) {
 		t.Errorf("the decision made during the search was not recorded: %s", decisions)
 	}
-	if _, ok := loadPlanRecord(TrainingDir(), id); !ok {
+	if _, ok := records.loadPlanRecord(id); !ok {
 		t.Errorf("no plan record under %s", id)
 	}
 }
@@ -227,7 +227,7 @@ func TestAClipThatPanicsWhileFramedIsLeftOut(t *testing.T) {
 // else stops.
 func TestAClockThatPanicsStopsQuietly(t *testing.T) {
 	log := NewLog(&bytes.Buffer{}, false, false)
-	c := newSearchClock(log, "gemma", true, 1000, 12, 2048)
+	c := newSearchClock(log, nil, "gemma", true, 1000, 12, 2048)
 	c.mu.Lock()
 	c.now.Part = "reading"
 	c.mu.Unlock()
@@ -380,10 +380,10 @@ func TestAWrittenClipIsCountedAsItLeavesTheWay(t *testing.T) {
 //
 // On the real disk: a search runs ffmpeg on the episode.
 func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
-	dir := ownTrainingDir(t)
 	letGo := make(chan struct{})
 	close(letGo)
 	p, path := searching(t, letGo)
+	records := ownRecords(p.engine)
 	if _, err := p.Plan(context.Background(), PlanRequest{From: 10, To: 30, Count: 2, Min: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 	}
 
 	var plan PlanRecord
-	_ = readRecords(filepath.Join(dir, "plans.jsonl"), func(line []byte) { _ = json.Unmarshal(line, &plan) })
+	_ = records.readRecords(filepath.Join(records.TrainingDir(), "plans.jsonl"), func(line []byte) { _ = json.Unmarshal(line, &plan) })
 	for _, c := range clips {
 		var proposed [][2]float64
 		for _, cand := range plan.Candidates {
@@ -450,10 +450,10 @@ func TestAnEdgePutOnItsFrameIsNoTrim(t *testing.T) {
 		if fmt.Sprint(proposed) != fmt.Sprint(kept) {
 			t.Errorf("%s was proposed as %v and entered the plan as %v", c.ID, proposed, kept)
 		}
-		if err := RecordDecision(disk, path, c.ID, DecisionRendered, nil); err != nil {
+		if err := RecordDecision(disk, records, path, c.ID, DecisionRendered, nil); err != nil {
 			t.Fatal(err)
 		}
-		d := lastDecision(t, dir)
+		d := lastDecision(t, records)
 		if d.Changes == nil || !d.Changes.Unchanged || d.Changes.StartShift != 0 || d.Changes.EndShift != 0 {
 			t.Errorf("%s rendered as the search left it reads as changed: %+v", c.ID, d.Changes)
 		}

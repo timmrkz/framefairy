@@ -364,7 +364,7 @@ func (s *FrameFairy) RemoveClip(ctx context.Context, path, plan, clipID string, 
 		return ClipEntry{}, errNotInLibrary
 	}
 	began := time.Now()
-	err := s.edit(path, func() error { return engine.SetRejected(s.store.files, plan, clipID, removed) })
+	err := s.edit(path, func() error { return engine.SetRejected(s.store.files, s.store.records, plan, clipID, removed) })
 	what := "a clip was put back"
 	if removed {
 		what = "a clip was removed"
@@ -410,7 +410,7 @@ func (s *FrameFairy) Reshape(ctx context.Context, path, plan, clipID string, g e
 	}
 	g.Frames = s.frames(ctx, path)
 	if err := s.editMoving(path, &playhead, func() error {
-		return engine.Reshape(s.store.files, plan, clipID, g, t, s.store.Settings().options().KeepPause)
+		return engine.Reshape(s.store.files, s.store.records, plan, clipID, g, t, s.store.Settings().options().KeepPause)
 	}); err != nil {
 		return ClipEntry{}, err
 	}

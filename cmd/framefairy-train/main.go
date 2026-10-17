@@ -106,6 +106,7 @@ func mark(args []string) error {
 		}
 		planPath = plans[0].Path
 	}
+	records := engine.NewRecords(disk, "", "")
 	reasons := map[string][]string{}
 	for _, pair := range ids(*reason) {
 		id, why, ok := strings.Cut(pair, "=")
@@ -115,26 +116,26 @@ func mark(args []string) error {
 		reasons[id] = append(reasons[id], why)
 	}
 	for _, id := range ids(*keep) {
-		if err := engine.SetRejected(disk, planPath, id, false); err != nil {
+		if err := engine.SetRejected(disk, records, planPath, id, false); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*reject) {
-		if err := engine.SetRejected(disk, planPath, id, true, reasons[id]...); err != nil {
+		if err := engine.SetRejected(disk, records, planPath, id, true, reasons[id]...); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*published) {
-		if err := engine.RecordDecision(disk, planPath, id, engine.DecisionPublished, nil); err != nil {
+		if err := engine.RecordDecision(disk, records, planPath, id, engine.DecisionPublished, nil); err != nil {
 			return err
 		}
 	}
 	for _, id := range ids(*unpublished) {
-		if err := engine.RecordDecision(disk, planPath, id, engine.DecisionUnpublished, nil); err != nil {
+		if err := engine.RecordDecision(disk, records, planPath, id, engine.DecisionUnpublished, nil); err != nil {
 			return err
 		}
 	}
-	fmt.Println("recorded in", engine.TrainingDir())
+	fmt.Println("recorded in", records.TrainingDir())
 	return nil
 }
 
@@ -151,7 +152,7 @@ func export(args []string) error {
 	}
 	from := *root
 	if from == "" {
-		from = engine.TrainingDir()
+		from = engine.DefaultTrainingDir()
 	}
 	disk := afero.NewOsFs()
 	episodes, err := train.FindEpisodes(disk, from)

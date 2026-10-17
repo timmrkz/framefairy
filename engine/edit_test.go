@@ -65,8 +65,8 @@ func TestAFailedEditLeavesThePlanAlone(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"a clip that is not there", func() error { return SetRejected(fsys, path, "99", true) }},
-		{"a reason nobody knows", func() error { return SetRejected(fsys, path, "01", true, "langweilig") }},
+		{"a clip that is not there", func() error { return SetRejected(fsys, nil, path, "99", true) }},
+		{"a reason nobody knows", func() error { return SetRejected(fsys, nil, path, "01", true, "langweilig") }},
 		{"a clip under a second", func() error { return TrimClip(fsys, path, "01", 12, 12.2, tr, 0.1, ToWords) }},
 		{"a crop to the left of the frame", func() error { return SetCrop(fsys, path, "01", 10.5, -4, SourceInfo{}, 0) }},
 	}
@@ -106,7 +106,7 @@ func TestEveryEditRaisesTheRevision(t *testing.T) {
 		t.Fatalf("a fresh plan starts at %d", revision())
 	}
 	steps := []func() error{
-		func() error { return SetRejected(fsys, path, "02", true) },
+		func() error { return SetRejected(fsys, nil, path, "02", true) },
 		func() error { return TrimClip(fsys, path, "01", 10, 12.4, tr, 0.1, ToWords) },
 		func() error { return SetCrop(fsys, path, "01", 10.5, 200, SourceInfo{}, 0) },
 		func() error { return ResetCrop(fsys, path, "01", 10.5) },
@@ -157,7 +157,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 			if after, _ := afero.ReadFile(fsys, path); string(after) != string(before) {
 				t.Fatal("showing a gesture changed the plan")
 			}
-			if err := Reshape(fsys, path, "01", c.g, tr, 0.1); err != nil {
+			if err := Reshape(fsys, nil, path, "01", c.g, tr, 0.1); err != nil {
 				t.Fatal(err)
 			}
 			_, clips, err := LoadClips(fsys, path)
@@ -197,7 +197,7 @@ func TestAShapeIsWhatTheGestureSaves(t *testing.T) {
 		if _, err := ShapeClip(fsys, path, "01", g, tr, 0.1); err == nil {
 			t.Errorf("%+v was shown", g)
 		}
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err == nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err == nil {
 			t.Errorf("%+v was saved", g)
 		}
 	}
@@ -540,7 +540,7 @@ func FuzzPlanEdits(f *testing.F) {
 			case 3:
 				_ = ResetCrop(fsys, path, clip, at(script[i+1]))
 			case 4:
-				_ = SetRejected(fsys, path, clip, script[i+2]%2 == 0)
+				_ = SetRejected(fsys, nil, path, clip, script[i+2]%2 == 0)
 			case 5:
 				if script[i+2]%4 == 0 {
 					_ = ResetCaptionY(fsys, path, clip)
@@ -989,7 +989,7 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 
 	trim := func(edge string, at float64) {
 		t.Helper()
-		if err := Reshape(fsys, path, "01", Gesture{Kind: "trim", Edge: edge, From: at}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "trim", Edge: edge, From: at}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1014,7 +1014,7 @@ func TestAClipKeepsWhereItWasFound(t *testing.T) {
 	}
 
 	// A drag on frames lands on a frame.
-	if err := Reshape(fsys, path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frames: at5}, tr, 0.1); err != nil {
+	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "trim", Edge: "end", From: 12.73, Frames: at5}, tr, 0.1); err != nil {
 		t.Fatal(err)
 	}
 	_, clips, _ = LoadClips(fsys, path)
@@ -1040,7 +1040,7 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	fresh := func() string {
 		var path string
 		fsys, path = editablePlanPath(t)
-		if err := Reshape(fsys, path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frames: at25}, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "move", Edge: "from", From: 10.8, To: 11.9, Frames: at25}, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		return path
@@ -1048,7 +1048,7 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	move := func(path string, g Gesture) []Segment {
 		t.Helper()
 		g.Kind, g.Index, g.Frames = "move", 0, at25
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		_, clips, err := LoadClips(fsys, path)
@@ -1084,7 +1084,7 @@ func TestMovingOneEdgeOfACutLeavesTheOther(t *testing.T) {
 	}
 
 	// An edge a cut does not have is refused.
-	if err := Reshape(fsys, fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
+	if err := Reshape(fsys, nil, fresh(), "01", Gesture{Kind: "move", Edge: "middle", From: 10.8, To: 11.9}, tr, 0.1); err == nil {
 		t.Error("a move of an edge called middle was taken")
 	}
 }
@@ -1100,7 +1100,7 @@ func TestAnEdgeOnWordsStopsWhereTheCaptionGoes(t *testing.T) {
 	segments := func(fsys afero.Fs, path string, g Gesture) []Segment {
 		t.Helper()
 		g.Frames, g.ToWords = at25, true
-		if err := Reshape(fsys, path, "01", g, tr, 0.1); err != nil {
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		_, clips, err := LoadClips(fsys, path)

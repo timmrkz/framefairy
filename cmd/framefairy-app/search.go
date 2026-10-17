@@ -151,7 +151,7 @@ func (s *FrameFairy) render(path string, req engine.RenderRequest, carry *engine
 				}
 			}
 			for _, id := range ids {
-				_ = engine.RecordDecision(s.store.files, req.Plan, id, engine.DecisionRendered, nil)
+				_ = engine.RecordDecision(s.store.files, s.store.records, req.Plan, id, engine.DecisionRendered, nil)
 			}
 		}
 		return req.Plan, nil
