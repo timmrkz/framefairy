@@ -2478,7 +2478,11 @@ Every piece of work shows where it was started and nowhere else: a
 transcription on the episode's lamp and the range picker, a search in the
 clip list with **Cancel** and **Continue**, a render on its button, a
 model being fetched on its row in the settings. Transcription runs in its
-own lane, so finding and rendering clips never wait for it.
+own lane, so finding and rendering clips never wait for it. The other way
+round, a search finding clips with the model on this machine holds
+transcription up while it finds, since the two models share the machine.
+A model in the cloud, or llama-server on another machine given as its
+address, shares nothing with it and holds nothing up, issue #276.
 
 There used to be an **Activity** page that listed every job again, with
 its progress, **Cancel**, **Clear finished** and the job's log. Nobody

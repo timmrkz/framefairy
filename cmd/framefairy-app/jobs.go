@@ -338,11 +338,16 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 // and which step it is in once it has its turn. How far the step before
 // came is not how far this one is, so the progress starts again with it.
 // opts are the settings the job runs with, which say where its language
-// model is.
+// model is: the API, or llama-server on another machine at LLMURL, are
+// both not this one, issue #276.
 func (q *queue) turn(job *Job, opts engine.Options) engine.Turn {
-	onThisMachine := opts.Planner != "api"
+	onThisMachine := opts.Planner != "api" && opts.LLMURL == ""
 	return func(ctx context.Context, step string) (context.Context, func(), error) {
 		lane, kind := laneOfStep(job.Kind, step, onThisMachine)
+		// Which lane a step waits for and whether its model is on this
+		// machine, so a log says why a transcription waited on a search.
+		theLog.jobLine(zerolog.DebugLevel, job).Str("step", step).Str("lane", lane).
+			Bool("model_here", onThisMachine).Msg("the job waits for its turn")
 		q.update(job, func(j *Job) { j.Step, j.Lane, j.Progress = engine.StepWaiting, lane, nil })
 		stepCtx, release, err := q.lanes.take(ctx, lane, kind)
 		if err != nil {

@@ -126,23 +126,25 @@ func TestFindingInTheCloudLeavesHearingAlone(t *testing.T) {
 
 // A search takes the turn of finding the clips by where its settings put
 // the language model, so a search asking the cloud lets hearing go on and
-// one asking the model on this machine holds it up.
+// one asking the model on this machine holds it up. A local model served
+// by llama-server on another machine, LLMURL, shares nothing with the
+// speech model either, issue #276.
 func TestASearchTakesItsTurnByWhereItsModelIs(t *testing.T) {
 	for _, c := range []struct {
-		planner string
-		holds   bool
-	}{{"api", false}, {"local", true}, {"", true}} {
+		planner, url string
+		holds        bool
+	}{{"api", "", false}, {"local", "", true}, {"", "", true}, {"local", "http://studio.local:8080", false}} {
 		q := newQueue(nil, func(JobUpdate) {}, func(string) {})
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_, found, err := q.turn(&Job{Kind: "search"}, engine.Options{Planner: c.planner})(ctx, "finding")
+		_, found, err := q.turn(&Job{Kind: "search"}, engine.Options{Planner: c.planner, LLMURL: c.url})(ctx, "finding")
 		if err != nil {
 			t.Fatal(err)
 		}
 		hearing, stop := waiting(q.lanes, LaneHearing, hearingTurn)
 		if c.holds {
-			waits(t, hearing, "hearing while a search with the model "+c.planner+" finds")
+			waits(t, hearing, "hearing while a search with the model "+c.planner+" "+c.url+" finds")
 		} else {
-			comes(t, hearing, "hearing while a search with the model "+c.planner+" finds")()
+			comes(t, hearing, "hearing while a search with the model "+c.planner+" "+c.url+" finds")()
 		}
 		found()
 		stop()
