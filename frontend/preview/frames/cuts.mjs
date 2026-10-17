@@ -89,7 +89,9 @@ if (seeking) {
       while (!window.__drawn.length) await new Promise((r) => setTimeout(r, 5));
       return { ...window.__drawn[window.__drawn.length - 1], took: performance.now() - from };
     }, t);
-    const holds = Math.floor(t / d + 1e-6);
+    // A frame that begins up to a millisecond after the moment holds it,
+    // FRAME_HAIR in lib/flow.ts, so 0.039 is the frame of 0.04.
+    const holds = Math.floor((t + 0.001) / d + 1e-6);
     const ok = r.pictured === holds && Math.abs(r.at - t) < 1e-9;
     if (!ok) wrong++;
     rows.push(`| ${t.toFixed(4).padStart(9)} | ${(holds * d).toFixed(2).padStart(7)} | ${(r.pictured * d).toFixed(2).padStart(7)} | ${r.took.toFixed(0).padStart(4)} |`);

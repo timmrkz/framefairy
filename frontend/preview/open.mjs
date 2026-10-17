@@ -26,9 +26,9 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 //
 // VP9 and Opus in an MP4, from when the webview decoded the episode and
 // the Chromium that comes with Playwright decoded no H.264 or AAC. The
-// video preview reads nothing of the file now: the frames the engine
-// names come with the source, see the stub's Source, and the sound from
-// the Go side, which ffmpeg stands in for here, see sound() below.
+// video preview reads nothing of the file now: the grid of frames the
+// engine names comes with the source, see the stub's Source, and the
+// picture and the sound from the Go side, see framesSide() below.
 //
 // The picture says which frame it is. Its top half is the frame number in
 // bars, the highest bit on the left, light for one and dark for nought, so
@@ -97,78 +97,76 @@ export function framesEpisode() {
   return made(framesAt, { seconds: 600, bits: 16, bar: 12, height: 108, climb: 1, picture: "200k", sound: "96k" });
 }
 
-// The sound streams of the Go side, see /frames/sound in
-// cmd/framefairy-app/frames.go, which the video preview hears every
-// episode through. The harness has no Go side, so this stands in for it:
-// ffmpeg decodes the sound from a moment on, seeking a fifth of a second
-// early and cutting at the moment by its timestamps, and a pull hands over
-// chunks of 1024 moments, each after the moment it starts at, the last
-// maybe shorter.
-const sounds = new Map();
-let soundIds = 0;
-async function sound(res, url, frames) {
-  const q = url.searchParams;
-  if (url.pathname === "/frames/sound") {
-    const file = frames ? await framesEpisode() : await episode();
-    const rate = Number(q.get("rate"));
-    const ch = Number(q.get("ch"));
-    const from = Math.max(0, Number(q.get("from")) || 0);
-    if (!file || !(rate >= 8000 && rate <= 192000) || !(ch >= 1 && ch <= 8)) {
-      res.writeHead(400).end("no");
-      return;
-    }
-    const lead = Math.min(from, 0.2);
-    const args = ["-v", "error"];
-    if (from - lead > 0) args.push("-ss", (from - lead).toFixed(6));
-    args.push("-i", file, "-map", "0:a:0");
-    if (lead > 0) args.push("-af", `atrim=start=${lead.toFixed(6)}`);
-    args.push("-ac", String(ch), "-ar", String(rate), "-f", "f32le", "-");
-    const p = spawn("ffmpeg", args);
-    const s = { p, parts: [], size: 0, ended: false, waiting: [], from, rate, chunk: 1024 * ch * 4, sent: 0 };
-    p.stdout.on("data", (d) => {
-      s.parts.push(d);
-      s.size += d.length;
-      if (s.size > 1 << 20) p.stdout.pause();
-      for (const w of s.waiting.splice(0)) w();
+// The picture and the sound come from the Go side itself: its own routes
+// under /frames/, served for the harness's two episodes by
+// TestHarnessFrames in cmd/framefairy-app/harness_test.go, on the episode's
+// decoder, the way the app serves them. The page names the episodes the
+// stub's Source names, /eps/ep.mp4 and /frames.mp4, and this tells the Go
+// side which file each one is. A harness that stood in for them itself
+// stood in only for the sound, and showed no picture at all, issue #255.
+//
+// The Go side is built once, as the app's test program, and started with
+// the first call. It needs the episode's decoder, which make frames
+// builds, or FRAMEFAIRY_FRAMES naming one. Without it every call answers
+// what was missing, and the video preview says it cannot decode.
+const root = resolve(import.meta.dirname, "../..");
+let goSide = null;
+function framesSide() {
+  goSide ??= (async () => {
+    const program = join(tmpdir(), "framefairy-harness", "framefairy-app.test");
+    await run("go", ["test", "-c", "-o", program, "./cmd/framefairy-app"], { cwd: root, maxBuffer: 1 << 24 });
+    const p = spawn(program, ["-test.run", "^TestHarnessFrames$", "-test.timeout", "0"], {
+      cwd: join(root, "cmd", "framefairy-app"),
+      env: {
+        ...process.env,
+        FRAMEFAIRY_HARNESS_FRAMES: "127.0.0.1:0",
+        FRAMEFAIRY_HARNESS_EPISODES: [episodeAt, framesAt].join(":"),
+        FRAMEFAIRY_FRAMES: process.env.FRAMEFAIRY_FRAMES ?? join(root, ".build", "frames", "framefairy-frames"),
+      },
+      // Its standard input stays open for as long as this program runs,
+      // and it stops when that closes.
+      stdio: ["pipe", "pipe", "inherit"],
     });
-    p.stdout.on("end", () => {
-      s.ended = true;
-      for (const w of s.waiting.splice(0)) w();
+    const base = await new Promise((done, fail) => {
+      let said = "";
+      p.stdout.on("data", (d) => {
+        said += d;
+        const m = said.match(/frames on (http:\/\/\S+)/);
+        if (m) done(m[1]);
+      });
+      p.on("exit", (code) => fail(new Error(`the Go side of the frames stopped, ${code}: ${said.trim()}`)));
     });
-    const id = String(++soundIds);
-    sounds.set(id, s);
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id }));
+    p.stdout.resume();
+    // Nothing of it keeps this program running once the probe is done.
+    p.unref();
+    p.stdin.unref?.();
+    p.stdout.unref?.();
+    return base;
+  })();
+  return goSide;
+}
+
+// The episodes as the page names them, each with what makes it, which
+// is only waited on when the page asks for that one.
+const named = { "/eps/ep.mp4": episode, "/frames.mp4": framesEpisode };
+
+// pass hands a call of the page under /frames/ to the Go side, with the
+// episode the page names put as the file it is.
+async function pass(req, res, url) {
+  const q = new URLSearchParams(url.search);
+  let base;
+  try {
+    const path = q.get("path");
+    if (path !== null) q.set("path", (await named[path]?.()) ?? path);
+    base = await framesSide();
+  } catch (e) {
+    res.writeHead(503).end(String(e.message ?? e));
     return;
   }
-  const s = sounds.get(q.get("id") ?? "");
-  if (url.pathname === "/frames/close") {
-    if (s) s.p.kill();
-    sounds.delete(q.get("id") ?? "");
-    res.writeHead(204).end();
-    return;
-  }
-  if (!s) {
-    res.writeHead(404).end("no");
-    return;
-  }
-  while (s.size < s.chunk && !s.ended) await new Promise((r) => s.waiting.push(r));
-  const all = Buffer.concat(s.parts);
-  const n = Math.min(Number(q.get("n")) || 1, 16);
-  const whole = Math.min(Math.floor(all.length / s.chunk), n);
-  const take = s.ended && whole < n ? all.length : whole * s.chunk;
-  const out = [];
-  for (let off = 0; off < take; off += s.chunk) {
-    const head = Buffer.alloc(8);
-    head.writeDoubleLE(s.from + (s.sent + off) / (s.chunk / 1024) / s.rate);
-    out.push(head, all.subarray(off, Math.min(off + s.chunk, take)));
-  }
-  s.sent += take;
-  s.parts = [all.subarray(take)];
-  s.size = all.length - take;
-  if (s.size <= 1 << 20) s.p.stdout.resume();
-  const headers = { "content-type": "application/octet-stream" };
-  if (s.ended && !s.size) headers["x-frames-end"] = "1";
-  res.writeHead(200, headers).end(Buffer.concat(out));
+  const got = await fetch(`${base}${url.pathname}?${q}`);
+  const headers = {};
+  for (const [k, v] of got.headers) if (k.startsWith("x-frames") || k === "content-type") headers[k] = v;
+  res.writeHead(got.status, headers).end(Buffer.from(await got.arrayBuffer()));
 }
 
 // A port of its own per run, so two probes never collide.
@@ -197,8 +195,8 @@ export async function screen({
 } = {}) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
-    if (["/frames/sound", "/frames/read", "/frames/close"].includes(url.pathname)) {
-      await sound(res, url, url.searchParams.get("path") === "/frames.mp4");
+    if (url.pathname.startsWith("/frames/")) {
+      await pass(req, res, url);
       return;
     }
     const file = url.pathname === "/" ? "/index.html" : url.pathname;

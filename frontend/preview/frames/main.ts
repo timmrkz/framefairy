@@ -22,6 +22,10 @@ declare global {
 }
 
 const params = new URLSearchParams(location.search);
+// Headless Chromium gives back nothing of a WebGPU canvas, so a probe that
+// reads the picture back has the queue draw on a 2D canvas, the way the
+// walks do, see openScreen in frames/screen.ts.
+if (params.has("read")) (globalThis as { __flatScreen?: boolean }).__flatScreen = true;
 const canvas = document.querySelector("canvas")!;
 // What the engine would say of the episode open.mjs makes for this page:
 // ten minutes at 25 frames a second, 192 by 108, with its sound in Opus,
@@ -42,8 +46,8 @@ window.__heard = [];
 // pixels, the highest bit first, so what is on the canvas can be read back
 // rather than taken on trust.
 const read = params.has("read");
-// The canvas may be a WebGPU canvas, which has no 2D context, so the row
-// is copied to a 2D canvas to be read.
+// The 2D canvas is read through a copy of its row, which keeps the
+// queue's own context out of it.
 const strip = document.createElement("canvas");
 const looks = strip.getContext("2d", { willReadFrequently: true })!;
 function pictured(): number {

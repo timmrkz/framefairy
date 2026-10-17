@@ -959,7 +959,9 @@ func TestTheEpisodesDecoderMakesFFmpegsColours(t *testing.T) {
 		// graphics chip where it has one, with the frame brought out as it
 		// is. On the processor as well, the way the render decodes, which
 		// is said and not held to here: on the Mac's runner the two came
-		// out up to 22 apart at the edges of colours, plan row 2.167.
+		// out up to 22 apart at the edges of colours, 0.2 % on average,
+		// which only the video preview shows and is left as it is, issue
+		// #256.
 		convert := func(hw bool) []byte {
 			t.Helper()
 			args := []string{"-loglevel", "error"}
