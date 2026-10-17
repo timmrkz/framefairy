@@ -2371,8 +2371,8 @@ export const sequences = [
     // Found by Tim testing #340, issue #348: rotating a part with R took
     // its keyframe diamond off the clip timeline, and the rotate mark
     // stood under the diamond. The keyframe stays through four turns, and
-    // the rotate icon is drawn in the part's wash a second time, large,
-    // in its middle, clear of the row the keyframes are in and of the row the
+    // the rotate icon is stamped in the part's wash in the dark of the
+    // empty track, large, in its middle, clear of the row the keyframes are in and of the row the
     // thumbnails are in. TestRotatingAPartKeepsItsKeyframes holds the
     // engine to it.
     name: "a rotated part keeps its keyframe, and has the rotate icon drawn in its middle",
@@ -9066,9 +9066,9 @@ for (const seq of toWalk) {
         break;
       }
       case "stamp": {
-        // The rotate icon drawn in the wash a second time over the
-        // rotated part, worked out from the layer the stylesheet lays
-        // over each piece of it: its colour against the piece's own,
+        // The rotate icon stamped over the rotated part, worked out from
+        // the layer the stylesheet lays over each piece of it: its colour
+        // against the empty track's,
         // the size it is drawn at and where, against the part's middle,
         // the band the keyframes stand in along the top of the clip
         // timeline and the band the thumbnails stand in along its foot.
@@ -9094,7 +9094,7 @@ for (const seq of toWalk) {
               at: r.left + left,
               image: css.maskImage,
               colour: css.backgroundColor,
-              wash: getComputedStyle(e).backgroundColor,
+              well: getComputedStyle(document.querySelector(".clip-timeline .track")).backgroundColor,
               cut: getComputedStyle(e).maskImage,
             };
           });
@@ -9114,11 +9114,13 @@ for (const seq of toWalk) {
           wrong = `the rotated part's icon is drawn with ${p.image.slice(0, 40)}, not the rotate icon`;
           break;
         }
-        // The same wash again, so the icon is twice as strong, and
-        // nothing cut out of the piece, where the track's black and the
-        // waveform's grey showed through by turns.
-        if (p.colour !== p.wash) {
-          wrong = `the rotate icon is ${p.colour}, not the part's wash, ${p.wash}`;
+        // The empty track's dark, solid, so it reads as a hole in the wash
+        // and is the same over the waveform as beside it, and nothing
+        // really cut out of the piece, where the track's black and the
+        // waveform's grey showed through by turns. The wash drawn again
+        // was too faint to see.
+        if (p.colour !== p.well) {
+          wrong = `the rotate icon is ${p.colour}, not the empty track's ${p.well}`;
           break;
         }
         if (p.cut !== "none") {

@@ -1638,7 +1638,7 @@
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
-  // icon drawn in the wash in its middle: the pieces that play
+  // icon stamped in the middle of its wash: the pieces that play
   // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
   // one's start to the last one's end, or null for a piece as filmed.
   // Issue #348.
@@ -2303,11 +2303,12 @@
   }
 
   /* A rotated stretch has the Rotate button's icon, Lucide's rotate-ccw,
-     drawn large in its middle in the wash a second time, so the icon is
-     the same colour at twice the strength over whatever is under it.
-     Tim's idea, issue #348: a small mark in a corner ran into the
-     keyframes, and an icon cut out of the wash showed the black of the
-     track in one place and the grey of the waveform in the next. It is
+     large in its middle, in the dark of the empty track, so it reads as
+     stamped out of the wash and is the same dark over the waveform as
+     beside it. Tim's idea, issue #348: a small mark in a corner ran into
+     the keyframes, an icon really cut out of the wash showed the black of
+     the track in one place and the grey of the waveform in the next, and
+     the wash drawn over it a second time was too faint to see. It is
      as tall as the track leaves between the keyframes along the top rule
      and the thumbnails along the foot, 10 px each and a space of 4 px,
      and never wider than the stretch less a space of 8 px each side, so
@@ -2322,7 +2323,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: var(--accent-wash);
+    background: var(--well);
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
     mask-size: var(--stamp) var(--stamp);
     mask-position: calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%;
