@@ -165,8 +165,11 @@ func (w *world) thanksWith(ref, nonce string) (int, []string) {
 	w.t.Helper()
 	b, _ := json.Marshal(map[string]string{"nonce": nonce})
 	resp, err := w.client.Post(w.base+"/v1/thanks/"+ref, "application/json", bytes.NewReader(b))
+	// Error and not Fatal, because TestAllAtOnce asks from goroutines,
+	// where FailNow would end only the goroutine.
 	if err != nil {
-		w.t.Fatal(err)
+		w.t.Error(err)
+		return 0, nil
 	}
 	defer resp.Body.Close()
 	var body map[string]any

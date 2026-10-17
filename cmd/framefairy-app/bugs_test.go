@@ -134,7 +134,10 @@ func TestNothingWaitsOnAPictureBeingDecoded(t *testing.T) {
 	decoding = func() { close(held); <-hold }
 	defer func() { decoding = was }()
 	done := make(chan ReportDraft)
-	go func() { done <- r.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}}) }()
+	// Made here, because pngOf fails the test with t.Fatal, which ends
+	// only the goroutine it is called in.
+	picture := pngOf(t, 8, 8)
+	go func() { done <- r.attach("drop", []handed{{name: "a.png", data: picture}}) }()
 	<-held
 	asked := make(chan struct{})
 	go func() {

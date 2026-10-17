@@ -256,10 +256,18 @@ func TestCaptionsBreakAtWidth(t *testing.T) {
 		ws = append(ws, Cue{float64(i) * 0.3, float64(i)*0.3 + 0.3, "Zielgruppe"})
 	}
 	clip := Clip{Segments: []Segment{{Start: 0, End: 4}}}
-	for _, c := range Captions(clip, ws, 38, nil) {
+	captions := Captions(clip, ws, 38, nil)
+	said := 0
+	for _, c := range captions {
 		if runeLen(c.Text) > 38 {
 			t.Errorf("caption %q is %d characters", c.Text, runeLen(c.Text))
 		}
+		said += strings.Count(c.Text, "Zielgruppe")
+	}
+	// Every word is in a caption, so no caption was kept short by leaving
+	// words out, and no more than three of them fit in 38 characters.
+	if said != len(ws) || len(captions) < len(ws)/3 {
+		t.Errorf("%d captions say the word %d times, want %d", len(captions), said, len(ws))
 	}
 }
 

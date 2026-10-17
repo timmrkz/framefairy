@@ -125,6 +125,9 @@ func TestATimingOnAWordInsideACaptionIsNotUsed(t *testing.T) {
 	natural := Captions(clip, timedWords(), 38, nil)
 	clip.CaptionTimes = map[string]CaptionTime{wordKey(10.7): moved(at(10.9), at(11.0))}
 	got := Captions(clip, timedWords(), 38, nil)
+	if len(got) != len(natural) || len(got) < 2 {
+		t.Fatalf("%d captions with the timing, %d without", len(got), len(natural))
+	}
 	for i := range got {
 		if !near(got[i].Start, natural[i].Start) || !near(got[i].End, natural[i].End) {
 			t.Errorf("caption %d moved by a word in its middle: %+v", i, got[i])

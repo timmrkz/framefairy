@@ -57,16 +57,28 @@ func (p *leaveProbe) quitWithin(t *testing.T, d time.Duration) {
 // Cmd+Q answers at once, whatever stopping takes. It used to stop
 // everything on the main thread, which froze the app under the spinning
 // wheel for five seconds with nothing to say the key had been heard.
+//
+// Stopping is held until Cmd+Q has answered, so an answer that waited for
+// it never comes, on a machine of any speed. A bound of 50 ms on the
+// answer measured the machine as much as the app.
 func TestCmdQAnswersAtOnceAndQuitsWhenStopped(t *testing.T) {
-	l, p := newLeaving(false, 300*time.Millisecond)
+	l, p := newLeaving(false, 0)
+	hold := make(chan struct{})
+	stop := l.stop
+	l.stop = func() { <-hold; stop() }
 	l.shouldQuit()
-	began := time.Now()
-	if l.shouldQuit() {
-		t.Fatal("quit before anything was stopped")
+	answer := make(chan bool, 1)
+	go func() { answer <- l.shouldQuit() }()
+	select {
+	case quit := <-answer:
+		if quit {
+			t.Fatal("quit before anything was stopped")
+		}
+	case <-time.After(5 * time.Second):
+		close(hold)
+		t.Fatal("Cmd+Q waited for everything to stop before it answered")
 	}
-	if took := time.Since(began); took > 50*time.Millisecond {
-		t.Errorf("Cmd+Q took %s to answer", took)
-	}
+	close(hold)
 	if got := p.words(); len(got) != 2 || got[1] != "going" {
 		t.Errorf("the interface heard %v", got)
 	}

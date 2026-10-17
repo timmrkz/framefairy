@@ -5,9 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
 )
@@ -363,6 +366,38 @@ func TestTheMeasureAgreesWithLibass(t *testing.T) {
 // On the real disk: WriteASS writes the caption file where ffmpeg reads it.
 func writeCaptionFile(t *testing.T, captions []Caption) string {
 	t.Helper()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	path := filepath.Join(t.TempDir(), "clip.ass")
+	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
+	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
+	err := e.WriteASS(context.Background(), laid, path, 1080, 1920, overrides)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// captionTrackOf is the caption file writeCaptionFile writes, made in
+// memory, for the fuzz target, which would wait on the drive otherwise.
+func captionTrackOf(t *testing.T, captions []Caption) string {
+	t.Helper()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
+	laid := LayOutCaptions(withWords(captions), ResolveStyle(overrides), "de")
+	track, err := e.CaptionTrack(context.Background(), laid, 1080, 1920, overrides, SourceInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(track)
+}
+
+// withWords gives every caption without words its words, its text split
+// over its time.
+func withWords(captions []Caption) []Caption {
 	for i, c := range captions {
 		if len(c.Words) > 0 {
 			continue
@@ -374,19 +409,7 @@ func writeCaptionFile(t *testing.T, captions []Caption) string {
 				Cue{c.Start + float64(k)*share, c.Start + float64(k+1)*share, part})
 		}
 	}
-	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
-	path := filepath.Join(t.TempDir(), "clip.ass")
-	overrides := map[string]any{"radius": 0.0, "highlight": 0.0}
-	laid := LayOutCaptions(captions, ResolveStyle(overrides), "de")
-	err := e.WriteASS(context.Background(), laid, path, 1080, 1920, overrides)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(body)
+	return captions
 }
 
 func TestWriteASSKeepsCaptionTextInert(t *testing.T) {
@@ -435,8 +458,15 @@ func FuzzWriteASS(f *testing.F) {
 		if !isFinite(start) || !isFinite(end) || start < 0 || end < start || end > 100_000 {
 			t.Skip()
 		}
-		body := writeCaptionFile(t, []Caption{{Start: start, End: end, Text: text}})
+		body := captionTrackOf(t, []Caption{{Start: start, End: end, Text: text}})
 		lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+		// Every line but the caption's own is the line a harmless caption
+		// at the same time gets, so nothing the caption carried starts a
+		// line of its own anywhere, a style, an event section or a format.
+		plain := strings.Split(strings.TrimRight(captionTrackOf(t, []Caption{{Start: start, End: end, Text: "x"}}), "\n"), "\n")
+		if rest, want := withoutDialogue(lines), withoutDialogue(plain); !slices.Equal(rest, want) {
+			t.Fatalf("the caption changed the lines around it:\n%s\nnot\n%s", strings.Join(rest, "\n"), strings.Join(want, "\n"))
+		}
 		events := 0
 		for i, line := range lines {
 			if strings.HasPrefix(line, "Dialogue:") {
@@ -448,17 +478,18 @@ func FuzzWriteASS(f *testing.F) {
 				if left := withoutOwnTags(parts[9]); strings.ContainsAny(left, `{}\`) {
 					t.Fatalf("override syntax in the text: %q", parts[9])
 				}
-				continue
-			}
-			// Nothing the caption carried may start a line of its own, which
-			// is how a caption would add a style or a second event section.
-			if strings.HasPrefix(line, "Style:") && i > 12 {
-				t.Fatalf("an extra style line appeared at %d: %q", i, line)
 			}
 		}
 		if events != 1 {
 			t.Fatalf("%d dialogue lines for one caption", events)
 		}
+	})
+}
+
+// withoutDialogue is the lines of a caption file that are not events.
+func withoutDialogue(lines []string) []string {
+	return slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
+		return strings.HasPrefix(line, "Dialogue:")
 	})
 }
 

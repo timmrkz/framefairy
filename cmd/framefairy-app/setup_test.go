@@ -279,11 +279,16 @@ func TestTheKeyNeverLandsInTheSettingsFile(t *testing.T) {
 	s := emptyMachine(t)
 	_ = s.SaveAPIKey("anthropic", secret)
 	_ = s.SaveAPIKey("openai", secret)
-	_ = s.ChoosePlanner("api")
+	// Choosing a model writes the settings, so there is always a file to
+	// look in. A skip here turned a settings file that was never written
+	// into a pass nobody sees.
+	if err := s.ChoosePlanner("api"); err != nil {
+		t.Fatal(err)
+	}
 
 	body, err := os.ReadFile(filepath.Join(s.store.dir, "settings.json"))
 	if err != nil {
-		t.Skip("no settings file was written")
+		t.Fatalf("choosing a model wrote no settings: %v", err)
 	}
 	if strings.Contains(string(body), secret) {
 		t.Errorf("the key is in %s", filepath.Join(s.store.dir, "settings.json"))
