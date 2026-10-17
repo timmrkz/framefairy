@@ -625,27 +625,49 @@
   // where the playhead goes, see edgePlayhead in engine/shape.go, and shift
   // puts the edge on words, read on every move, so letting go of shift
   // part way through goes back to frames.
-  function gestureGrip(key: string, make: (delta: number, shift: boolean) => Gesture | null) {
-    let ready = pending === "" || pending === key;
+  //
+  // The gesture starts from where the edge is drawn, read once nothing on
+  // its way can still move it. The hand can let go before the last place
+  // it left is answered and take the edge again at once. Read at the
+  // press, the edge was where the answer before had it, a frame behind
+  // the hand, and the drag went on from there, back against the hand.
+  // The late answer drew the edge where the hand had left it, but it was
+  // the press before's, so it put the playhead nowhere, and the playhead
+  // stood a frame away from the edge (#284). So the same edge taken again
+  // starts once that answer is in, and the playhead goes onto the edge
+  // then, unless the hand has pressed somewhere else since. Another edge
+  // waits for the saves on their way as well, see pending.
+  type Begun = { at: number; make: (delta: number, shift: boolean) => Gesture };
+  function gestureGrip(key: string, begin: () => Begun | null) {
+    const press = owner;
+    const pressed = begin();
+    if (!pressed) return null;
+    const settled = pending === "" || pending === key;
+    let begun = settled && !asking && !nextGesture ? pressed : null;
     let last: [number, boolean] | null = null;
     const go = (delta: number, shift: boolean) => {
-      const g = make(delta, shift);
-      if (g) shape(g);
+      if (begun) shape(begun.make(delta, shift));
     };
-    const started = ready
+    const started = begun
       ? Promise.resolve()
-      : saved.then(() => {
-          ready = true;
+      : (settled ? idle() : saved).then(() => {
+          begun = begin();
+          if (!begun) return;
+          if (begun.at !== pressed.at && press === owner && !playing) {
+            pressedTo = begun.at;
+            seekSoon(begun.at, "clip");
+          }
           if (last) go(...last);
         });
     return {
+      at: playing ? null : pressed.at,
       drag(delta: number, shift: boolean) {
         last = [delta, shift];
-        if (ready) go(delta, shift);
+        go(delta, shift);
       },
       async release(moved: boolean) {
         await started;
-        if (moved) await letGo(true);
+        if (moved && begun) await letGo(true);
       },
     };
   }
@@ -664,47 +686,42 @@
   // back where the clip was found.
   function edgeGrip(edge: "start" | "end"): Grip | null {
     if (!clip || locked || !onreshape) return null;
-    // From where the edge is drawn when it is pressed, which is where the
-    // drag before it left it, saved or on its way.
-    const was = edge === "start" ? start : end;
-    return {
-      at: playing ? null : edgeFrame(was, edge === "start"),
-      about: "clip",
-      twice: () => void resetEdge(edge),
-      ...gestureGrip(`trim ${edge}`, (delta, shift) => ({
-        kind: "trim",
-        edge,
-        index: 0,
-        from: was + delta,
-        to: 0,
-        toWords: shift,
-      })),
-    };
+    const opens = edge === "start";
+    const grip = gestureGrip(`trim ${edge}`, () => {
+      // Where the drag before it left it, saved or on its way.
+      const was = opens ? start : end;
+      return {
+        at: edgeFrame(was, opens),
+        make: (delta, shift) => ({ kind: "trim", edge, index: 0, from: was + delta, to: 0, toWords: shift }),
+      };
+    });
+    return grip && { ...grip, about: "clip", twice: () => void resetEdge(edge) };
   }
 
   // An edge of a cut is dragged the way a clip edge is, and the other edge
   // stays where it was. A double-click removes the cut.
   function cutGrip(index: number, side: "from" | "to"): Grip | null {
     if (!clip || locked || !onreshape) return null;
-    const drawn = cuts.find((c) => c.index === index);
-    if (!drawn) return null;
-    return {
-      at: playing ? null : edgeFrame(side === "from" ? drawn.from : drawn.to, side === "to"),
-      about: "clip",
-      twice: () => void removeCut(index),
-      ...gestureGrip(`move ${index}`, (delta, shift) => {
-        const { from, to } = drawn;
-        const t = (side === "from" ? from : to) + delta;
-        return {
-          kind: "move",
-          edge: side,
-          index,
-          from: side === "from" ? t : from,
-          to: side === "to" ? t : to,
-          toWords: shift,
-        };
-      }),
-    };
+    const grip = gestureGrip(`move ${index}`, () => {
+      const drawn = cuts.find((c) => c.index === index);
+      if (!drawn) return null;
+      const { from, to } = drawn;
+      return {
+        at: edgeFrame(side === "from" ? from : to, side === "to"),
+        make: (delta, shift) => {
+          const t = (side === "from" ? from : to) + delta;
+          return {
+            kind: "move",
+            edge: side,
+            index,
+            from: side === "from" ? t : from,
+            to: side === "to" ? t : to,
+            toWords: shift,
+          };
+        },
+      };
+    });
+    return grip && { ...grip, about: "clip", twice: () => void removeCut(index) };
   }
 
   // How wide a cut taken out by a double-click starts, in pixels of the
