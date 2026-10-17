@@ -335,6 +335,9 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	if !strings.Contains(first, "--no-slots") {
 		t.Errorf("the server lists what it is working on: %q", first)
 	}
+	if !strings.Contains(first, "-b "+itoa(promptBatch)) {
+		t.Errorf("the server reads the prompt in batches of its own size, and says how far it is only after each: %q", first)
+	}
 	if other := keyOf(second); other == key || len(other) != 64 {
 		t.Errorf("a second launch was handed %q after %q, not a key of its own", other, key)
 	}
@@ -404,6 +407,19 @@ func TestALocalModelThatStopsAnsweringIsGivenUpOn(t *testing.T) {
 	}
 	if stopped.Load() != 1 {
 		t.Errorf("the server that stopped answering was stopped %d times, want once", stopped.Load())
+	}
+}
+
+// A machine that reads the prompt slowly is not taken for a stalled
+// model: llama-server says how far it has read once a batch, and a batch
+// is read inside localStall by any machine that reads slowestReading
+// tokens a second. With llama.cpp's own batch of 2048 a machine had to
+// read 17 a second, and a processor without a graphics chip llama.cpp can
+// use might not.
+func TestASlowMachineIsNotTakenForAStalledModel(t *testing.T) {
+	if need := float64(promptBatch) / localStall.Seconds(); need >= slowestReading {
+		t.Errorf("a batch of %d tokens read in %s needs %.1f tokens a second, want under %.1f",
+			promptBatch, localStall, need, slowestReading)
 	}
 }
 

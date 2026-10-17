@@ -65,8 +65,15 @@ func (e *Engine) decoderUsed(ctx context.Context, path string, at float64) strin
 			// A system decoder that does not give one frame in that time
 			// has stopped working. VideoToolbox on CI's virtual Mac did,
 			// and the framing waited on it until the test run was killed.
+			// One that went on even once it was stopped, as it did on the
+			// same Mac, is left behind, see leaveAfter.
 			e.softDecode.Store(true)
-			e.Log.Warn("the system's video decoder gave no frame in %s, decoding on the processor from now on", frameLimit)
+			if said.Left {
+				e.Log.Warn("the system's video decoder gave no frame in %s and %s, decoding on the processor from now on",
+					frameLimit, leftBehind)
+			} else {
+				e.Log.Warn("the system's video decoder gave no frame in %s, decoding on the processor from now on", frameLimit)
+			}
 			used = "the processor"
 		}
 	}
