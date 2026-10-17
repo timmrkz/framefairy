@@ -76,9 +76,12 @@
 //                      edge of its second caption, reading the playhead on
 //                      every animation frame while the button is down, and
 //                      lets go
-//   ["drag edge twice", which, px, again]
+//   ["drag edge twice", which, px, again, late]
 //                      drags an edge by px, lets go, and at once, with
-//                      nothing waited for, drags it again by again
+//                      nothing waited for, drags it again by again. With
+//                      late, the last place of the first drag is a frame
+//                      further on and answered so many milliseconds late,
+//                      so the edge is taken again before that answer is in
 //   ["edge then track", which]
 //                      clicks an edge and at once presses the track near
 //                      its right end: the playhead stands where the track
@@ -1506,6 +1509,23 @@ export const sequences = [
       ["moved", "cut from"],
       ["followed", "cut from"],
       ["drag edge twice", "end", -30, -30],
+      ["moved", "end"],
+      ["followed", "end"],
+    ],
+  },
+  {
+    // An edge taken again before the last place the drag before it left
+    // was answered starts from where that answer puts it, and the playhead
+    // goes there with it. It started from the place answered before, a
+    // frame behind, and the answer that came after the press put the edge
+    // on its frame with the playhead left a frame away (#284).
+    name: "an edge taken again before the drag before it is answered goes on from its answer",
+    steps: [
+      ["cut at", 0.5],
+      ["drag edge twice", "cut from", -30, -30, 600],
+      ["moved", "cut from"],
+      ["followed", "cut from"],
+      ["drag edge twice", "end", -30, -30, 600],
       ["moved", "end"],
       ["followed", "end"],
     ],
@@ -4883,7 +4903,7 @@ for (const seq of toWalk) {
       case "drag edge twice": {
         // Dragged, let go, and taken again at once where it was let go, with
         // nothing waited for in between, while the first is being saved.
-        const [which, px, again] = arg;
+        const [which, px, again, late] = arg;
         dragShift = false;
         dragPx = again;
         pressedOn = "";
@@ -4901,16 +4921,24 @@ for (const seq of toWalk) {
           await page.mouse.move(x + (px * i) / 10, y);
           await nextPaint(page);
         }
+        // Every place so far answered, and the last one, ten pixels on,
+        // which is more than a frame at this zoom, held on its way.
+        const took = late ? x + px + Math.sign(px) * 10 : x + px;
+        if (late) {
+          await page.waitForFunction(() => window.__pending === 0, null, { polling: "raf" });
+          await control(url, `/hold?call=Shape&ms=${late}`);
+          await page.mouse.move(took, y);
+        }
         await page.mouse.up();
         await watchEdge(page, edgeLabel[which]);
         pressedOn = await page.evaluate(
           ([x, y]) =>
             [...new Set(document.elementsFromPoint(x, y).map((el) => el.closest("[data-grip]")?.dataset.grip).filter(Boolean))].join(", ") || "no grip",
-          [x + px, y],
+          [took, y],
         );
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
-          await page.mouse.move(x + px + (again * i) / 10, y);
+          await page.mouse.move(took + (again * i) / 10, y);
           await nextPaint(page);
         }
         // The hand stays down until the edge has left where the first drag
