@@ -111,11 +111,25 @@ export interface Settings {
 
 // One of the faces the captions can be written in, built into the program.
 export interface CaptionFont {
+  // The full name of the face, which is what a caption style names.
   name: string;
+  // The family it belongs to and what it is in it, Inter and Black, the
+  // two lists a font is picked from.
+  family: string;
+  style: string;
+  // The face's PostScript name, which a machine's face is drawn by
+  // straight from the system.
+  postscript?: string;
   about: string;
   file: string;
   // How heavy the face says it is, from 100 to 900.
   weight: number;
+  // How wide, from 1 for the narrowest to 9, 5 for a usual width, and
+  // whether it leans.
+  width: number;
+  italic?: boolean;
+  // A face installed on the machine rather than built into the app.
+  machine?: boolean;
 }
 
 export interface Check {
@@ -293,6 +307,9 @@ export interface CaptionCue {
 // The caption look, with every measure as a share of the frame height.
 export interface CaptionStyle {
   font: string;
+  // The face the captions ask for when the machine does not have it, and
+  // font is then the one they are drawn in instead.
+  missing?: string;
   // The em size to draw at, as a share of the frame height, and the space
   // from one line to the next as a share of that size.
   size: number;

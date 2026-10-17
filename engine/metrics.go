@@ -5,13 +5,13 @@ package engine
 // A caption has to be broken into lines that fit inside the frame, and the
 // app and the render have to break it in the same places. The app cannot
 // call ffmpeg for every keystroke, so the widths are read straight out of
-// the font file the program carries: the table that says how wide each
+// the font file the captions are drawn from: the table that says how wide each
 // glyph is, and the table that says which glyph a character uses.
 //
 // Kerning and shaping are left out. Kerning almost always pulls letters
 // closer, so this measure comes out a shade wider than what libass draws,
-// and a line that fits here fits there. A face the program does not carry
-// cannot be measured at all, and then the caption style's character count
+// and a line that fits here fits there. A face neither the program nor the
+// machine has cannot be measured at all, and then the caption style's character count
 // decides, as it did before.
 
 import (
@@ -116,15 +116,28 @@ func bestCmap(cmap []byte) []byte {
 	return best
 }
 
-// face reads the tables of a bundled font once and keeps them.
+// forgetMetrics drops what was read of every face, for when the faces of
+// the machine are read again and a name may now be another file.
+func forgetMetrics() {
+	facesMu.Lock()
+	faces = map[string]*faceMetrics{}
+	facesMu.Unlock()
+}
+
+// face reads the tables of a font once and keeps them.
 func face(name string) (*faceMetrics, bool) {
 	facesMu.Lock()
-	defer facesMu.Unlock()
-	if f, seen := faces[name]; seen {
+	f, seen := faces[name]
+	facesMu.Unlock()
+	if seen {
 		return f, f != nil
 	}
-	f := readFace(name)
+	// Read without the lock, because finding a face of the machine may read
+	// its font folders, which forgets every face read before.
+	f = readFace(name)
+	facesMu.Lock()
 	faces[name] = f
+	facesMu.Unlock()
 	return f, f != nil
 }
 
@@ -254,7 +267,8 @@ func (f *faceMetrics) advance(r rune) float64 {
 }
 
 // TextWidth is how wide a line of text comes out at a size, in the same
-// unit as the size. It reports false for a face the program does not carry.
+// unit as the size. It reports false for a face neither the program nor the
+// machine has.
 func TextWidth(font, text string, size float64) (float64, bool) {
 	f, ok := face(font)
 	if !ok {

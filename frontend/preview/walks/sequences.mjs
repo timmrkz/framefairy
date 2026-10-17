@@ -596,8 +596,33 @@
 //                      ring of another shade round it and no focus ring
 //   ["box", text]      the caption box reads this, word by word
 //   ["open", word]     this word is open for typing
-//   ["font", name]     picks this face in the captions column, and waits
+//   ["font", name]     picks this family in the captions column, and waits
 //                      for the captions drawn in it
+//   ["search font", "letters|name"]
+//                      types the letters in the Font list's search field,
+//                      finds the family first, picks it with Enter and
+//                      waits for the captions drawn in it
+//   ["font list"]      the Font list hangs on the field's left edge with
+//                      its corners, every row is as tall as the field and
+//                      square, nothing stands between the search field and
+//                      the rows or under them, each family is drawn in its
+//                      own face, ours by name first, the field is drawn
+//                      in the face picked, the search field is a row tall
+//                      above its line, the line over Installed sits on the
+//                      last of ours, and every name drawn in its face has
+//                      its capitals in the middle of its box
+//   ["style list"]     the Style list of one style ends on the bottom of
+//                      the field under the Style field
+//   ["nothing found", letters]
+//                      typing the letters in the Font list finds nothing,
+//                      said in the middle of a list as wide as its field,
+//                      or as the words where they need more
+//   ["search order", letters]
+//                      what typing the letters in the Font list finds is
+//                      in the order of the whole list, under its own head
+//   ["style is", name] the Style field says this
+//   ["style", name]    picks this style of the family, and waits for the
+//                      captions drawn in it
 //   ["thickened as libass", word]
 //                      the word opened is drawn at its face's own weight
 //                      with no bold the browser fakes, and its letters
@@ -1246,6 +1271,58 @@ export const sequences = [
     // than libass draws it.
     name: "a word typed in a face libass thickens is as heavy as libass draws it",
     steps: [["font", "Archivo Black"], ["frame", "Jahre"], ["grow", "Jahre"], ["thickened as libass", "Jahre"]],
+  },
+  {
+    // Tim asked for the fonts installed on his Mac (#347). The bridge's
+    // computer has Anton installed as Bridge Narrow, which the Font list
+    // offers under Installed, and libass and the word typed are both drawn
+    // from its copy.
+    name: "a font installed on the computer draws the captions and the word typed",
+    steps: [
+      ["listed under", "Installed|Bridge Narrow"],
+      ["search font", "brnar|Bridge Narrow"],
+      ["frame", "Jahre"],
+      ["grow", "Jahre"],
+      ["thickened as libass", "Jahre"],
+    ],
+  },
+  {
+    // Found by Tim on #349: the Font list lined up with neither edge of
+    // its field, its rows were squeezed to the height of their text, and
+    // every name was in the app's face, so nothing showed what a font
+    // looks like.
+    name: "the font list hangs on the field's edge with rows as tall as it, each in its own face",
+    steps: [["font list"]],
+  },
+  {
+    // Found by Tim on #349: a search sorted what it found by how well it
+    // answered, so Archivo Black stood under the head of the installed
+    // fonts.
+    name: "a search of the fonts keeps the order and the heads of the list",
+    steps: [["search order", "b"]],
+  },
+  {
+    // Found by Tim on #349: the Style list of one style lay over the Size
+    // field two pixels short of its bottom, so its border showed twice.
+    name: "a list of one style covers the field under it",
+    steps: [["style list"]],
+  },
+  {
+    // Found by Tim on #349: Nothing matches stood where the names start,
+    // after the room of a tick that is never there, and widened the list.
+    name: "a search that finds nothing says so in the middle of a narrow list",
+    steps: [["nothing found", "zzqx"]],
+  },
+  {
+    // Found by Tim on #349: a family is picked first and then its style,
+    // the way Pages does, so the list is as wide as a family's name. A
+    // family picked comes in the style nearest the face it replaces.
+    name: "a family picked keeps the look of the face it replaces",
+    steps: [
+      ["font", "Bridge Sans"],
+      ["style is", "Heavy"],
+      ["style", "Regular"],
+    ],
   },
   {
     // Found by Tim on #201: a word opened while another was lit was typed
@@ -7557,12 +7634,245 @@ for (const seq of toWalk) {
         if (box !== arg) wrong = `the caption box reads "${box}", not "${arg}"`;
         break;
       }
-      case "font": {
-        await page.locator('button.pick[aria-label="Font"]').click();
+      case "font":
+      case "style": {
+        const field = what === "style" ? "Style" : "Font";
+        await page.locator(`button.pick[aria-label="${field}"]`).click();
         await page.locator(".pick-row", { hasText: new RegExp(`^\\s*${arg}\\s*$`) }).first().click();
         await watch.step("click", s);
         await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
         await settled();
+        break;
+      }
+      case "search font": {
+        const [letters, name] = arg.split("|");
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.keyboard.type(letters);
+        await watch.step("type", s);
+        const first = await page.evaluate(() => document.querySelector(".pick-list .pick-row")?.textContent.trim());
+        if (first !== name) {
+          wrong = `${letters} found ${first ?? "nothing"} first, not ${name}`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        await page.keyboard.press("Enter");
+        await watch.step("press", s);
+        await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), name);
+        await settled();
+        break;
+      }
+      case "font list": {
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        // Each family's face is fetched as its row is drawn, so the rows
+        // are read once the faces have come.
+        await page.evaluate(() => document.fonts.ready);
+        const seen = await page.evaluate(() => {
+          const trigger = document.querySelector('button.pick[aria-label="Font"]');
+          const field = trigger.getBoundingClientRect();
+          const list = document.querySelector(".pick-list").getBoundingClientRect();
+          const rowsBox = document.querySelector(".pick-list .pick-rows");
+          // Where the capitals of a name stand against the middle of the
+          // box it is in: the baseline, read from a mark of no size sat on
+          // it, less half the height of an H in that face.
+          const offCentre = (text, box) => {
+            const mark = document.createElement("span");
+            mark.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+            text.append(mark);
+            const baseline = mark.getBoundingClientRect().bottom;
+            mark.remove();
+            const look = getComputedStyle(text);
+            const pen = document.createElement("canvas").getContext("2d");
+            pen.font = `${look.fontStyle} ${look.fontWeight} ${look.fontSize} ${look.fontFamily}`;
+            const cap = pen.measureText("H").actualBoundingBoxAscent;
+            const r = box.getBoundingClientRect();
+            return baseline - cap / 2 - (r.top + r.height / 2);
+          };
+          const said = trigger.querySelector(".said > span:last-child");
+          const centres = [[said.textContent.trim() + " in the field", offCentre(said, trigger)]];
+          for (const row of document.querySelectorAll(".pick-list .pick-row")) {
+            const what = row.querySelector(".what.shown");
+            if (what) centres.push([row.textContent.trim(), offCentre(what, row)]);
+          }
+          const search = document.querySelector(".pick-list .pick-search");
+          const head = [...document.querySelectorAll(".pick-list .pick-group")].find((it) => it.textContent.trim() === "Installed");
+          const ourLast = [...document.querySelectorAll(".pick-list .pick-row")]
+            .filter((row) => row.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING)
+            .at(-1);
+          const first = document.querySelector(".pick-list .pick-rows .pick-row, .pick-list .pick-rows .pick-group");
+          const searchBox = search.getBoundingClientRect();
+          const corner = (el) => getComputedStyle(el).borderTopLeftRadius;
+          const above = first.getBoundingClientRect().top - searchBox.bottom;
+          // The last row, with the rows scrolled to their end, to within
+          // the part of a pixel a scroll is rounded to.
+          rowsBox.scrollTop = rowsBox.scrollHeight;
+          const all = [...document.querySelectorAll(".pick-list .pick-row")];
+          const look = {
+            corners: [corner(trigger), corner(document.querySelector(".pick-list"))],
+            rowCorner: corner(all[0]),
+            above,
+            below: rowsBox.getBoundingClientRect().bottom - all.at(-1).getBoundingClientRect().bottom,
+            face: getComputedStyle(trigger.querySelector(".said > span:last-child")).fontFamily,
+            // The search field above its line, and the line over the head
+            // of the installed fonts against the last of ours.
+            searchHigh: searchBox.height - parseFloat(getComputedStyle(search).borderBottomWidth),
+            headGap: head.getBoundingClientRect().top - ourLast.getBoundingClientRect().bottom,
+            ourLast: ourLast.textContent.trim(),
+            centres,
+          };
+          const rows = [...document.querySelectorAll(".pick-list .pick-row")].map((row) => {
+            const what = row.querySelector(".what");
+            const family = getComputedStyle(what).fontFamily.split(",")[0].replace(/"/g, "").trim();
+            return {
+              name: row.textContent.trim(),
+              height: row.getBoundingClientRect().height,
+              family,
+              drawn: document.fonts.check(`13px "${family}"`, what.textContent),
+            };
+          });
+          return { field: { left: field.left, height: field.height }, list: { left: list.left, height: list.height }, rows, look };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const narrow = seen.rows.find((row) => row.name === "Bridge Narrow");
+        const squeezed = seen.rows.find((row) => Math.abs(row.height - seen.field.height) > 0.5);
+        if (seen.rows.length < 20) wrong = `the Font list has ${seen.rows.length} rows, too few to be longer than it may be tall`;
+        else if (Math.abs(seen.list.left - seen.field.left) > 0.5)
+          wrong = `the Font list starts at ${seen.list.left.toFixed(1)}, its field at ${seen.field.left.toFixed(1)}`;
+        else if (squeezed) wrong = `${squeezed.name} is ${squeezed.height.toFixed(1)} high, its field ${seen.field.height.toFixed(1)}`;
+        else if (!narrow) wrong = "the Font list has no Bridge Narrow";
+        else if (narrow.family !== "Bridge Narrow" || !narrow.drawn)
+          wrong = `Bridge Narrow is drawn in ${narrow.family}${narrow.drawn ? "" : ", which has not loaded"}`;
+        else if (seen.rows.slice(0, 3).map((row) => row.name).join(", ") !== "Anton, Archivo Black, Inter")
+          wrong = `the app's fonts stand as ${seen.rows.slice(0, 3).map((row) => row.name).join(", ")}, not by name`;
+        else if (seen.look.corners[0] !== seen.look.corners[1])
+          wrong = `the list's corners are ${seen.look.corners[1]}, its field's ${seen.look.corners[0]}`;
+        else if (seen.look.rowCorner !== "0px") wrong = `a row has corners of ${seen.look.rowCorner}`;
+        else if (Math.abs(seen.look.above) > 0.5 || Math.abs(seen.look.below) >= 1)
+          wrong = `${seen.look.above.toFixed(1)} px between the search field and the first row, ${seen.look.below.toFixed(1)} under the last`;
+        else if (!seen.look.face.startsWith('"Inter Black"'))
+          wrong = `the Font field is drawn in ${seen.look.face}, not in Inter Black`;
+        else if (Math.abs(seen.look.searchHigh - seen.field.height) > 0.5)
+          wrong = `the search field is ${seen.look.searchHigh.toFixed(1)} high above its line, a row ${seen.field.height.toFixed(1)}`;
+        else if (Math.abs(seen.look.headGap) > 0.5)
+          wrong = `${seen.look.headGap.toFixed(1)} px between ${seen.look.ourLast} and the line over Installed`;
+        else {
+          const off = seen.look.centres.find(([, by]) => Math.abs(by) > 0.5);
+          if (off) wrong = `the capitals of ${off[0]} stand ${Math.abs(off[1]).toFixed(1)} px ${off[1] < 0 ? "above" : "below"} the middle`;
+        }
+        break;
+      }
+      case "style list": {
+        // A list of one style hung under its field covers the field under
+        // that exactly, its bottom on that field's bottom, so no second
+        // border shows under its own.
+        await page.locator('button.pick[aria-label="Style"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        const seen = await page.evaluate(() => {
+          const setting = document.getElementById("caption-style").closest(".setting");
+          const under = setting.nextElementSibling.querySelector("input, button");
+          return {
+            rows: document.querySelectorAll(".pick-list .pick-row").length,
+            list: document.querySelector(".pick-list").getBoundingClientRect().bottom,
+            under: under.getBoundingClientRect().bottom,
+          };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (seen.rows !== 1) wrong = `the Style list has ${seen.rows} rows, not one`;
+        else if (Math.abs(seen.list - seen.under) > 0.5)
+          wrong = `the Style list ends ${Math.abs(seen.list - seen.under).toFixed(1)} px ${seen.list < seen.under ? "above" : "below"} the bottom of the field under it`;
+        break;
+      }
+      case "nothing found": {
+        // Letters that find nothing leave the list as wide as its field,
+        // or as the words that say so where they need more, said in its
+        // middle.
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.keyboard.type(arg);
+        await watch.step("type", s);
+        const seen = await page.evaluate(() => {
+          const none = document.querySelector(".pick-list .pick-none");
+          if (!none) return null;
+          const text = document.createRange();
+          text.selectNodeContents(none);
+          const t = text.getBoundingClientRect();
+          const list = document.querySelector(".pick-list").getBoundingClientRect();
+          const field = document.querySelector('button.pick[aria-label="Font"]').getBoundingClientRect();
+          return {
+            side: t.left - list.left - (list.right - t.right),
+            list: list.width,
+            field: field.width,
+            needs: Math.max(field.width, t.width + 16 + 2),
+            high: none.getBoundingClientRect().height,
+          };
+        });
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (!seen) wrong = `${arg} found something`;
+        else if (Math.abs(seen.side) > 1) wrong = `Nothing matches stands ${seen.side.toFixed(1)} px off the middle of the list`;
+        else if (seen.list - seen.needs > 1)
+          wrong = `the list saying Nothing matches is ${seen.list.toFixed(1)} wide, its field ${seen.field.toFixed(1)}`;
+        else if (Math.abs(seen.high - seen.field) > 0.5 && Math.abs(seen.high - 32) > 0.5)
+          wrong = `Nothing matches is ${seen.high.toFixed(1)} high, not a row`;
+        break;
+      }
+      case "search order": {
+        // What a search finds stands in the order of the whole list, each
+        // row under the head of its own group.
+        const order = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll(".pick-list .pick-group, .pick-list .pick-row")].map((it) =>
+              (it.classList.contains("pick-group") ? "# " : "") + it.textContent.trim(),
+            ),
+          );
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        const whole = await order();
+        await page.keyboard.type(arg);
+        await watch.step("type", s);
+        const found = await order();
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const head = (list, name) => list.slice(0, list.indexOf(name)).filter((it) => it.startsWith("# ")).at(-1) ?? "";
+        const rows = found.filter((it) => !it.startsWith("# "));
+        const places = rows.map((name) => whole.indexOf(name));
+        if (rows.length < 2) wrong = `${arg} found ${rows.join(", ") || "nothing"}`;
+        else if (places.some((at, i) => at < 0 || (i > 0 && at < places[i - 1])))
+          wrong = `${arg} found ${rows.join(", ")}, not in the order of the list`;
+        else {
+          const moved = rows.find((name) => head(found, name) !== head(whole, name));
+          if (moved) wrong = `${moved} stands under ${head(found, moved) || "no head"} after ${arg}`;
+        }
+        break;
+      }
+      case "style is": {
+        const said = await page.locator('button.pick[aria-label="Style"]').textContent();
+        // The trigger keeps room for its longest style, drawn and hidden.
+        const shown = await page.locator('button.pick[aria-label="Style"] .said > span:last-child').textContent();
+        if (shown.trim() !== arg) wrong = `the Style field says ${shown.trim() || said.trim()}, not ${arg}`;
+        break;
+      }
+      case "listed under": {
+        // The Font list puts a face under a head of its group.
+        const [head, name] = arg.split("|");
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        const order = await page.evaluate(() =>
+          [...document.querySelectorAll(".pick-list .pick-group, .pick-list .pick-row")].map((it) =>
+            (it.classList.contains("pick-group") ? "# " : "") + it.textContent.trim(),
+          ),
+        );
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const at = order.indexOf(name);
+        const heads = order.slice(0, at).filter((it) => it.startsWith("# "));
+        if (at < 0) wrong = `the Font list has no ${name}: ${order.join(", ")}`;
+        else if (heads.at(-1) !== `# ${head}`) wrong = `${name} is under ${heads.at(-1) ?? "no head"}, not ${head}`;
         break;
       }
       case "thickened as libass": {

@@ -125,10 +125,12 @@ func TestCaptionLinesWrapSoTheyFitTheFrame(t *testing.T) {
 		t.Errorf("at size 200 it still takes %d lines", len(captionLines(caption, roomFor(big))))
 	}
 
-	// A face the program does not carry cannot be measured, and then the
-	// character count decides, as it always did.
-	plain := ResolveStyle(map[string]any{"font": "Helvetica", "wrap_chars": 12})
-	lines = captionLines(caption, roomFor(plain))
+	// A face that cannot be measured leaves the character count to decide,
+	// as it always did. A style never names one, ResolveStyle draws a face
+	// nobody has in ours, so the room is asked for one by hand.
+	plain := roomFor(ResolveStyle(map[string]any{"wrap_chars": 12}))
+	plain.font = "Gone Grotesk"
+	lines = captionLines(caption, plain)
 	if len(lines) != 2 || len(lines[0]) != 2 || len(lines[1]) != 3 {
 		t.Fatalf("lines %v", lines)
 	}
