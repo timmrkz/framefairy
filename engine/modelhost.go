@@ -67,6 +67,9 @@ var host struct {
 	stopAll context.CancelFunc
 	// closed is set when the app quits. No model is loaded after it.
 	closed bool
+	// waiting is how many asks wait for the model in use to be let go
+	// of, which a test waits for instead of guessing how long it takes.
+	waiting int
 }
 
 func init() {
@@ -164,10 +167,16 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 			// Another model in use or on its way. This ask waits for it to
 			// be let go of rather than load a second one beside it.
 			wait := host.changed
+			host.waiting++
 			host.mu.Unlock()
 			select {
 			case <-wait:
 			case <-ctx.Done():
+			}
+			host.mu.Lock()
+			host.waiting--
+			host.mu.Unlock()
+			if ctx.Err() != nil {
 				return "", nil, ctx.Err()
 			}
 		}

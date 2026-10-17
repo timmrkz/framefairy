@@ -241,17 +241,25 @@ func TestTheWindowReadsAWholePlanWhileASearchWrites(t *testing.T) {
 	}
 }
 
-// writeWhile writes the plan over and over, at least 60 times, and on
-// until the other side has done at least 30 of what it does at the same
-// time, so the test has seen the two meet and does not pass on a writer
-// that was done before the other side began. It gives up after ten
-// seconds, which is a failure.
+// writeWhile writes the plan over and over, 60 times, and on until the
+// other side has done at least 30 of what it does at the same time, so
+// the test has seen the two meet and does not pass on a writer that was
+// done before the other side began. Past the 60 it gives the other side
+// ten seconds more, and then fails.
 func writeWhile(t *testing.T, path string, body []byte, other *int64) {
-	give := time.Now().Add(10 * time.Second)
-	for i := 0; i < 60 || atomic.LoadInt64(other) < 30; i++ {
-		if time.Now().After(give) {
-			t.Errorf("the other side did %d in ten seconds of writing, not 30", atomic.LoadInt64(other))
-			return
+	var give time.Time
+	for i := 0; ; i++ {
+		if i == 60 {
+			give = time.Now().Add(10 * time.Second)
+		}
+		if i >= 60 {
+			if atomic.LoadInt64(other) >= 30 {
+				return
+			}
+			if time.Now().After(give) {
+				t.Errorf("the other side did %d while the plan was written, not 30", atomic.LoadInt64(other))
+				return
+			}
 		}
 		if err := writePlanFile(disk, path, body); err != nil {
 			t.Errorf("writing the plan: %v", err)
