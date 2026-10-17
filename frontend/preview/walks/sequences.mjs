@@ -760,7 +760,7 @@
 //                      turn says so, with no black along the top or the
 //                      bottom of the picture, where a frame squeezed into
 //                      the wrong shape leaves it, and the clip timeline
-//                      stamps the rotate icon out of every rotated piece
+//                      draws the rotate icon on every rotated piece
 //   ["turned with its frames"]
 //                      since "scrub", of a video standing up by its display
 //                      matrix: every frame read off the canvas was turned
@@ -2371,11 +2371,11 @@ export const sequences = [
     // Found by Tim testing #340, issue #348: rotating a part with R took
     // its keyframe diamond off the clip timeline, and the rotate mark
     // stood under the diamond. The keyframe stays through four turns, and
-    // the rotate icon is stamped out of the part's wash, large, in its
-    // middle, clear of the row the keyframes are in and of the row the
+    // the rotate icon is drawn in the part's wash a second time, large,
+    // in its middle, clear of the row the keyframes are in and of the row the
     // thumbnails are in. TestRotatingAPartKeepsItsKeyframes holds the
     // engine to it.
-    name: "a rotated part keeps its keyframe, and has the rotate icon stamped out of its middle",
+    name: "a rotated part keeps its keyframe, and has the rotate icon drawn in its middle",
     steps: [
       ["add", 30, "25", "turned"],
       ["wait for", "New"],
@@ -9066,8 +9066,9 @@ for (const seq of toWalk) {
         break;
       }
       case "stamp": {
-        // The rotate icon stamped out of the wash of the rotated part,
-        // worked out from the mask the stylesheet gives each piece of it:
+        // The rotate icon drawn in the wash a second time over the
+        // rotated part, worked out from the layer the stylesheet lays
+        // over each piece of it: its colour against the piece's own,
         // the size it is drawn at and where, against the part's middle,
         // the band the keyframes stand in along the top of the clip
         // timeline and the band the thumbnails stand in along its foot.
@@ -9081,10 +9082,21 @@ for (const seq of toWalk) {
           };
           const pieces = [...document.querySelectorAll(".clip-timeline .piece.turned")].map((e) => {
             const r = e.getBoundingClientRect();
-            const css = getComputedStyle(e);
+            const css = getComputedStyle(e, "::after");
             const size = parseFloat(css.maskSize);
             const left = parseFloat(css.maskPosition);
-            return { left: r.left, right: r.right, top: r.top, height: r.height, size, at: r.left + left, image: css.maskImage };
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              height: r.height,
+              size,
+              at: r.left + left,
+              image: css.maskImage,
+              colour: css.backgroundColor,
+              wash: getComputedStyle(e).backgroundColor,
+              cut: getComputedStyle(e).maskImage,
+            };
           });
           return {
             keys: band(".clip-timeline .cropdot", null),
@@ -9095,11 +9107,22 @@ for (const seq of toWalk) {
         });
         const p = got.pieces[0];
         if (!p) {
-          wrong = "the rotated part has no rotate icon stamped out of it";
+          wrong = "the rotated part has no rotate icon on it";
           break;
         }
         if (!/svg/.test(p.image)) {
-          wrong = `the rotated part is masked with ${p.image.slice(0, 40)}, not the rotate icon`;
+          wrong = `the rotated part's icon is drawn with ${p.image.slice(0, 40)}, not the rotate icon`;
+          break;
+        }
+        // The same wash again, so the icon is twice as strong, and
+        // nothing cut out of the piece, where the track's black and the
+        // waveform's grey showed through by turns.
+        if (p.colour !== p.wash) {
+          wrong = `the rotate icon is ${p.colour}, not the part's wash, ${p.wash}`;
+          break;
+        }
+        if (p.cut !== "none") {
+          wrong = `the rotated part's wash has ${p.cut.slice(0, 40)} cut out of it`;
           break;
         }
         const top = p.top + (p.height - p.size) / 2;
@@ -9338,11 +9361,11 @@ for (const seq of toWalk) {
             problems.push(`piece ${i + 1} shows black along the top or the bottom of its picture, ${seen.edges.map((e) => e.toFixed(0)).join(" and ")}, so its frame is squeezed`);
           }
         }
-        // Every rotated piece has the rotate icon stamped out of its
-        // wash, and no other.
+        // Every rotated piece has the rotate icon drawn on its wash, and
+        // no other.
         const turned = arg.filter((t) => t !== 0).length;
-        const stamped = await page.evaluate(() => document.querySelectorAll(".clip-timeline .piece.turned").length);
-        if (stamped !== turned) problems.push(`the clip timeline stamps ${stamped} pieces as rotated, not ${turned}`);
+        const marked = await page.evaluate(() => document.querySelectorAll(".clip-timeline .piece.turned").length);
+        if (marked !== turned) problems.push(`the clip timeline marks ${marked} pieces as rotated, not ${turned}`);
         if (problems.length) wrong = problems.join("\n");
         break;
       }

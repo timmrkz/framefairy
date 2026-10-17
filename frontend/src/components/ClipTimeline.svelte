@@ -1638,7 +1638,7 @@
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
-  // icon stamped out of the wash in its middle: the pieces that play
+  // icon drawn in the wash in its middle: the pieces that play
   // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
   // one's start to the last one's end, or null for a piece as filmed.
   // Issue #348.
@@ -2210,7 +2210,7 @@
     overflow: hidden;
     cursor: pointer;
     touch-action: none;
-    /* Its width is the unit a stamp on a rotated stretch is placed in,
+    /* Its width is the unit the icon on a rotated stretch is placed in,
        see .piece.turned. */
     container-type: inline-size;
   }
@@ -2303,31 +2303,30 @@
   }
 
   /* A rotated stretch has the Rotate button's icon, Lucide's rotate-ccw,
-     stamped out of its wash, large, in its middle, so the waveform shows
-     through it as it does through a cut. Tim's idea, issue #348: a small
-     mark in a corner ran into the keyframes. It is as tall as the track
-     leaves between the keyframes along the top rule and the thumbnails
-     along the foot, 10 px each and a space of 4 px, and never wider than
-     the stretch less a space of 8 px each side, so it shrinks as the clip
-     timeline is zoomed out and the stretch narrows, and sits in its
-     middle as it is zoomed. The stretch may be several pieces: each
-     stamps its own share of the one icon, placed from the stretch's
-     middle in the track's own width, 1cqw a hundredth of it, the unit
-     x() places everything in. A mask is drawn from the lines at the size
-     it is shown, so it is sharp at every size. */
-  .piece.turned {
+     drawn large in its middle in the wash a second time, so the icon is
+     the same colour at twice the strength over whatever is under it.
+     Tim's idea, issue #348: a small mark in a corner ran into the
+     keyframes, and an icon cut out of the wash showed the black of the
+     track in one place and the grey of the waveform in the next. It is
+     as tall as the track leaves between the keyframes along the top rule
+     and the thumbnails along the foot, 10 px each and a space of 4 px,
+     and never wider than the stretch less a space of 8 px each side, so
+     it shrinks as the clip timeline is zoomed out and the stretch
+     narrows, and sits in its middle as it is zoomed. The stretch may be
+     several pieces: each draws its own share of the one icon, placed
+     from the stretch's middle in the track's own width, 1cqw a hundredth
+     of it, the unit x() places everything in. A mask is drawn from the
+     lines at the size it is shown, so it is sharp at every size. */
+  .piece.turned::after {
     --stamp: max(0px, min(calc(var(--wave-h, 112px) - 28px), calc(var(--run-w) * 1cqw - 16px)));
-    mask-image:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E"),
-      linear-gradient(#000 0 0);
-    mask-size:
-      var(--stamp) var(--stamp),
-      100% 100%;
-    mask-position:
-      calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%,
-      0 0;
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--accent-wash);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
+    mask-size: var(--stamp) var(--stamp);
+    mask-position: calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%;
     mask-repeat: no-repeat;
-    mask-composite: exclude;
   }
 
   /* The wash at the clip's two ends takes the frame's corners, so none of
