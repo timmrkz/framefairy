@@ -290,7 +290,8 @@
 //                      the microphone, the paperclip and Report are one
 //                      height on a whole pixel, the two are square, the
 //                      tiles are one size
-//                      on whole pixels with a space between them, and the
+//                      on whole pixels with a space between them, each
+//                      with the sidebar's bin in its corner, and the
 //                      row keeps its width while Report is pressed
 //   ["write", text, n] types text into the report's field and puts the
 //                      cursor n characters in, or at its end for "end"
@@ -6348,9 +6349,10 @@ for (const seq of toWalk) {
         const m = await page.evaluate(() => {
           const r = (s) => document.querySelector(s)?.getBoundingClientRect();
           const tiles = [...document.querySelectorAll("li.tile")].map((t) => t.getBoundingClientRect());
+          const bins = [...document.querySelectorAll("li.tile .bin")].map((b) => b.getBoundingClientRect());
           const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap"));
           const control = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h"));
-          return { mic: r("button.dictate"), clip: r("button.attach"), report: r("button.report"), tiles, gap, control };
+          return { mic: r("button.dictate"), clip: r("button.attach"), report: r("button.report"), tiles, bins, gap, control };
         });
         const problems = [];
         for (const [name, b] of [["the microphone", m.mic], ["the paperclip", m.clip], ["Report", m.report]]) {
@@ -6366,6 +6368,12 @@ for (const seq of toWalk) {
           for (const v of [t.x, t.y, t.width, t.height]) if (v !== Math.round(v)) problems.push(`picture ${i + 1} stands between pixels, at ${v}`);
           const next = m.tiles[i + 1];
           if (next && next.y === t.y && next.x - (t.x + t.width) !== m.gap) problems.push(`the space after picture ${i + 1} is ${next.x - (t.x + t.width)} px, not ${m.gap}`);
+          // The sidebar's bin in its row's corner: 24 px square, 6 px in.
+          // A space in and as tall as a control, it stood too far into
+          // the picture, Tim found.
+          const b = m.bins[i];
+          const bin = [b.width, b.height, b.y - t.y, t.x + t.width - (b.x + b.width)];
+          if (bin.join() !== "24,24,6,6") problems.push(`the bin of picture ${i + 1} is ${bin[0]} by ${bin[1]} px, ${bin[2]} px from its top and ${bin[3]} px from its right, not 24 by 24 and 6 from both`);
         }
         const wide = m.report.width;
         await page.evaluate(() => {

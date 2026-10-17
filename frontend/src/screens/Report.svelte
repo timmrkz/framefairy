@@ -960,16 +960,21 @@
     display: block;
   }
 
-  /* The bin in the tile's top right corner, a space in, only while the
-     pointer is on the tile or the keyboard is in it. It is the quiet
-     trash can of every list, with no box of its own: on a solid grey
-     square it looked pasted on, Tim found, next to how it looks under
-     the hand. A shade falls from that corner instead, so it reads on
-     any picture, and the tile's edge lifts the way a row's does. */
+  /* The bin in the tile's top right corner, only while the pointer is on
+     the tile or the keyboard is in it. It is the quiet trash can of every
+     list, with no box of its own: on a solid grey square it looked pasted
+     on, Tim found, next to how it looks under the hand. A shade falls
+     from that corner instead, so it reads on any picture, and the tile's
+     edge lifts the way a row's does. It is the sidebar's bin, 24 px
+     square and 6 px in from the corner, see .tools in App.svelte, and
+     close to the clip list's. A space in, and as tall as a control, it
+     stood too far into the picture, Tim found. */
   .tile .bin {
     position: absolute;
-    top: var(--gap);
-    right: var(--gap);
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
     opacity: 0;
     pointer-events: none;
     color: var(--text);
