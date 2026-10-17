@@ -13,6 +13,7 @@ import (
 // whole suite again, renders included, and TestUpdatesFromEverywhereAtOnce
 // in it could start further copies, see TestMain.
 func TestAnUpdaterHelperCopyOfTheTestsLeavesAtOnce(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v")

@@ -363,6 +363,7 @@ func beatEpisode(t *testing.T, seconds string) string {
 //
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestAPartOfAudioLinesUpWithTheWholeEpisode(t *testing.T) {
+	t.Parallel()
 	source := beatEpisode(t, "12")
 	var calls int32
 	rec := fakeRecognizer{&calls}
@@ -847,6 +848,7 @@ func TestPartsMeetWithEveryWordOnce(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode the speech model hears.
 func TestTwoHearingsOfOnePartAtOnce(t *testing.T) {
+	t.Parallel()
 	source := beatEpisode(t, "12")
 	base := DefaultOptions()
 	base.ASRModel = t.TempDir()

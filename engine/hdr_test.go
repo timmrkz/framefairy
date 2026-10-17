@@ -17,6 +17,7 @@ import (
 //
 // On the real disk: ffmpeg makes the episode and renders the short.
 func TestAnHDREpisodeMakesAnHDRShort(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(ctx); err != nil {

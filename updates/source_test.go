@@ -33,6 +33,7 @@ func flaky(t *testing.T, list []byte, code int, misses int32) (*httptest.Server,
 var quick = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 
 func TestAListBeingReplacedIsWaitedOut(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	list := listJSON(t, build(t, key, "main", "0.3.0-main.1", "https://example.com/main.zip", appZip(t, "x")))
 	srv, asked := flaky(t, list, http.StatusNotFound, 2)
@@ -50,6 +51,7 @@ func TestAListBeingReplacedIsWaitedOut(t *testing.T) {
 }
 
 func TestAListThatStaysMissingGivesUp(t *testing.T) {
+	t.Parallel()
 	srv, asked := flaky(t, nil, http.StatusNotFound, 1000)
 	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: quick}
 	_, err := src.Fetch(context.Background())
@@ -64,6 +66,7 @@ func TestAListThatStaysMissingGivesUp(t *testing.T) {
 // Only a missing list is the moment it is replaced. Anything else is said
 // at once.
 func TestOtherAnswersAreNotTriedAgain(t *testing.T) {
+	t.Parallel()
 	srv, asked := flaky(t, nil, http.StatusInternalServerError, 1000)
 	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: quick}
 	if _, err := src.Fetch(context.Background()); err == nil {
@@ -75,6 +78,7 @@ func TestOtherAnswersAreNotTriedAgain(t *testing.T) {
 }
 
 func TestACheckCalledOffStopsWaiting(t *testing.T) {
+	t.Parallel()
 	srv, _ := flaky(t, nil, http.StatusNotFound, 1000)
 	src := &Source{URL: srv.URL, Client: srv.Client(), Retries: []time.Duration{time.Hour}}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -90,6 +94,7 @@ func TestACheckCalledOffStopsWaiting(t *testing.T) {
 
 // Several checks at once, while the list is missing and after it is back.
 func TestChecksAtOnceWhileTheListIsReplaced(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	list := listJSON(t, build(t, key, "main", "0.3.0-main.1", "https://example.com/main.zip", appZip(t, "x")))
 	srv, _ := flaky(t, list, http.StatusNotFound, 5)
@@ -184,6 +189,7 @@ func copiesOf(srv *httptest.Server) *Source {
 }
 
 func TestTheNewerCopyOfTheListIsRead(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -213,6 +219,7 @@ func TestTheNewerCopyOfTheListIsRead(t *testing.T) {
 // The copy being replaced is missing, for however long GitHub takes, and
 // the other one is read at once, with no waiting and no error.
 func TestACopyBeingReplacedIsNoGap(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
 	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", time.Now().UTC()))
@@ -237,6 +244,7 @@ func TestACopyBeingReplacedIsNoGap(t *testing.T) {
 // A release from before the copies has only the list, and it is read the
 // way it always was, its 404 waited out.
 func TestWithNoCopiesTheListIsRead(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
 	r.set("/channels.json", writtenList(t, key, "0.3.0-main.1", time.Time{}))
@@ -263,6 +271,7 @@ func TestWithNoCopiesTheListIsRead(t *testing.T) {
 // once at a time and each writing takes half a minute, far longer than a
 // check, so the steps are taken in turn here rather than raced.
 func TestChecksAtOnceWhileTheCopiesAreReplaced(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
 	start := time.Now().UTC().Truncate(time.Second)

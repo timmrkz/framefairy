@@ -21,6 +21,7 @@ import (
 //
 // On the real disk: ffmpeg makes the episode and decodes its sound.
 func TestPreviewSoundIsTheEpisodesOwnFromAnyMoment(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "late.mov")
 	// Two channels that differ, a tone that climbs in the left and one that

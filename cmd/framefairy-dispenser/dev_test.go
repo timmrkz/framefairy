@@ -491,6 +491,7 @@ func TestThanksWindowAndLostKeys(t *testing.T) {
 // Every button on the dev page takes its click and the page reads back,
 // with every switch in every position.
 func TestEveryButton(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, 10)
 	ref := w.buy("kai@example.com", 1)
 	fp := w.keysOf(ref)[0].Fingerprint
@@ -595,6 +596,7 @@ func TestPagesCarryTheNonce(t *testing.T) {
 // Buyers, Paddle, the signer, the scheduled runs and someone at the
 // dev page, all at once.
 func TestAllAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t, 20)
 	var wg sync.WaitGroup
 	refs := make(chan string, 64)

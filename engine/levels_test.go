@@ -57,6 +57,7 @@ func TestLevelsAreTheTranscriptionsFrames(t *testing.T) {
 //
 // On the real disk: ffmpeg makes the episode and measures it.
 func TestMeasureLevelsOfAnEpisode(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "episode.m4a")

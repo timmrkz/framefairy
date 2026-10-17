@@ -211,6 +211,7 @@ func kind(err error) error {
 }
 
 func TestEngineAgreesWithTheModel(t *testing.T) {
+	t.Parallel()
 	for _, twice := range []bool{false, true} {
 		for seed := range uint64(12) {
 			t.Run(fmt.Sprintf("twice=%v/seed=%d", twice, seed), func(t *testing.T) {

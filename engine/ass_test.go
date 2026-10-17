@@ -191,6 +191,7 @@ func TestAWordTooWideIsHyphenated(t *testing.T) {
 // A word is broken where TeX would break it in that language, at the last
 // break that still fits.
 func TestAWordBreaksWhereTheLanguageAllows(t *testing.T) {
+	t.Parallel()
 	// A face that cannot be measured, so the room is sixteen characters.
 	room := captionRoom{font: "keine", size: 96, room: 888, wrapChars: 16}
 	de, en := hyphenatorFor("de"), hyphenatorFor("en")
@@ -334,6 +335,7 @@ func TestAWordTooWideGetsACaptionOfItsOwn(t *testing.T) {
 //
 // On the real disk: ffmpeg measures the captions.
 func TestTheMeasureAgreesWithLibass(t *testing.T) {
+	t.Parallel()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	if err := e.Preflight(context.Background()); err != nil {
 		ffmpegtest.Unusable(t, "no usable ffmpeg here: %v", err)

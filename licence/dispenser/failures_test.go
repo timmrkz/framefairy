@@ -438,6 +438,7 @@ func mustSettle(f *fixture, ref string) {
 }
 
 func TestEveryWriteFailing(t *testing.T) {
+	t.Parallel()
 	for _, c := range failureCases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -563,6 +564,7 @@ func outcomeOf(f *fixture, _ []licence.Key) string {
 // again. And when the database is back, nothing of the time without it is
 // left in the store.
 func TestEveryEndpointWithTheDatabaseDown(t *testing.T) {
+	t.Parallel()
 	mem := &Memory{}
 	store := &breaking{Memory: mem}
 	w := newWebOn(t, newFixtureOn(t, mem, store))
@@ -622,6 +624,7 @@ func TestEveryEndpointWithTheDatabaseDown(t *testing.T) {
 // the keys, says so to its caller, and sends them when asked again once
 // the mail is back. Nothing about the sale changes.
 func TestLostKeyWhileTheMailIsDown(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(4)
 	f.shop.sold("txn_a", "anna@example.com")
@@ -646,6 +649,7 @@ func TestLostKeyWhileTheMailIsDown(t *testing.T) {
 // Use case 19 with Paddle down: the daily catch-up cannot ask what was
 // sold, says so, and catches everything up the next time it runs.
 func TestCatchUpWhilePaddleIsDown(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(4)
 	f.shop.sold("txn_missed", "anna@example.com")

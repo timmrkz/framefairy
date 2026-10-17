@@ -42,6 +42,9 @@ var renderTimingWords = []Cue{
 	{19.10, 19.45, "neun"}, {22.10, 22.45, "zehn"}, {25.10, 25.45, "elf."},
 }
 
+// renderTimingEpisode is made once for every test that reads it, see
+// testEpisodes. It is only read.
+//
 // On the real disk: ffmpeg makes the episode.
 func renderTimingEpisode(t *testing.T) string {
 	t.Helper()
@@ -51,13 +54,18 @@ func renderTimingEpisode(t *testing.T) string {
 		// starts out of silence and its start can be heard.
 		tone = append(tone, fmt.Sprintf("between(t,%.2f,%.2f)", w.Start, w.End-0.1))
 	}
-	path := filepath.Join(t.TempDir(), "episode.mp4")
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=28", renderTimingFPS),
-		"-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)*("+strings.Join(tone, "+")+")':s=48000:d=28",
-		"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", "-b:a", "192k", path).CombinedOutput()
+	path, err := episodes.once("render-timing.mp4", func(path string) error {
+		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:s=640x360:r=%d:d=28", renderTimingFPS),
+			"-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)*("+strings.Join(tone, "+")+")':s=48000:d=28",
+			"-shortest", "-c:v", "mpeg4", "-q:v", "2", "-c:a", "aac", "-b:a", "192k", path).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("making the test episode: %s %s", err, out)
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("making the test episode: %s %s", err, out)
+		t.Fatal(err)
 	}
 	return path
 }
@@ -141,6 +149,7 @@ func abs(v int) int {
 }
 
 func TestTheShortShowsItsCaptionsWhenItSaysThem(t *testing.T) {
+	t.Parallel()
 	// 3.03 s is 75.75 frames: the cut does not fall on a frame.
 	checkRenderTiming(t, Clip{Segments: []Segment{{Start: 1.00, End: 4.03}, {Start: 6.00, End: 9.00}}})
 }
@@ -150,6 +159,7 @@ func TestTheShortShowsItsCaptionsWhenItSaysThem(t *testing.T) {
 // whole number of frames, so a caption that drifted from its word a
 // little at every cut would be well away from it by the last.
 func TestTheShortKeepsItsCaptionsOnTheirWordsAcrossCuts(t *testing.T) {
+	t.Parallel()
 	var pieces []Segment
 	for k := range 6 {
 		start := 10.0 + 3*float64(k)

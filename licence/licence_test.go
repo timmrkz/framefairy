@@ -631,6 +631,7 @@ func TestNilSetHoldsNothing(t *testing.T) {
 // Check is called from every request of the dispenser at once, with one
 // Trust shared between them.
 func TestCheckFromManyGoroutines(t *testing.T) {
+	t.Parallel()
 	trust := testTrust()
 	trust.Revoked = NewSet(examples[1].key.Fingerprint())
 	var wg sync.WaitGroup

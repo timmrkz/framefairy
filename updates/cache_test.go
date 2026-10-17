@@ -51,6 +51,7 @@ func cachedSource(t *testing.T, srv string) *Source {
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pull request 30")}
 	srv := serve(t, s)
@@ -89,6 +90,7 @@ func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestADownloadsProgressNeverGoesBack(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	// Big enough that the hand over from the cache reports many times.
 	noise := make([]byte, 4<<20)
@@ -136,6 +138,7 @@ func TestADownloadsProgressNeverGoesBack(t *testing.T) {
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestAChangedKeptBuildIsDownloadedAgain(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "the real one")}
 	srv := serve(t, s)
@@ -169,6 +172,7 @@ func TestAChangedKeptBuildIsDownloadedAgain(t *testing.T) {
 //
 // On the real disk: the updater keeps its builds in a folder on the disk.
 func TestKeptBuildsGoWhenTheListDropsThem(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pr 30")}
 	srv := serve(t, s)
@@ -215,6 +219,7 @@ func TestKeptBuildsGoWhenTheListDropsThem(t *testing.T) {
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestADownloadLetGoOfGoesOnAndIsKept(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	// Big enough to arrive in many reads, so the wait ends half way.
 	noise := make([]byte, 4<<20)
@@ -260,6 +265,7 @@ func TestADownloadLetGoOfGoesOnAndIsKept(t *testing.T) {
 // Asked for again while it is still on its way, a build is not downloaded
 // a second time: the wait joins the download there is.
 func TestADownloadOnItsWayIsJoined(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	noise := make([]byte, 4<<20)
 	_, _ = rand.Read(noise)
@@ -287,6 +293,7 @@ func TestADownloadOnItsWayIsJoined(t *testing.T) {
 // Without a cache to go on into, a download is the wait, and a wait let go
 // of stops it.
 func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	noise := make([]byte, 4<<20)
 	_, _ = rand.Read(noise)
@@ -312,6 +319,7 @@ func TestWithoutACacheAWaitLetGoOfStopsTheDownload(t *testing.T) {
 // read to the end and counted as arrived. Here the body is in memory, the
 // way a socket that holds the whole build hands it over.
 func TestADownloadCalledOffStopsWhenTheBuildIsAlreadyThere(t *testing.T) {
+	t.Parallel()
 	build := make([]byte, 4<<20)
 	src := &Source{Client: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -344,6 +352,7 @@ func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f
 //
 // On the real disk: the updater keeps its builds in a folder on the disk.
 func TestABuildThatCannotBeKeptSaysSo(t *testing.T) {
+	t.Parallel()
 	data := []byte("a build")
 	sum := sha256.Sum256(data)
 	src := &Source{Cache: filepath.Join(t.TempDir(), "builds")}

@@ -251,6 +251,7 @@ func TestACaptionTrackIsNamedByWhatItIs(t *testing.T) {
 //
 // On the real disk: ffmpeg measures the captions and libass reads the file.
 func TestOneCaptionFileIsMadeOnceForManyAtOnce(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
@@ -425,6 +426,7 @@ func alphaDiff(l framewire.Layer, picture []byte, width, height int) float64 {
 //
 // On the real disk: ffmpeg measures the captions to lay out the pills.
 func TestTheWordBeingTypedIsLeftOutInItsPlace(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	ctx := context.Background()
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)

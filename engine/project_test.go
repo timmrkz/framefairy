@@ -95,9 +95,30 @@ type testEpisodes struct {
 
 // On the real disk: ffmpeg makes the episode and reads it.
 func (m *testEpisodes) make(seconds string) (string, error) {
+	return m.once(seconds+".mp4", func(path string) error {
+		// mpeg4 and aac are in every ffmpeg, the one we ship included, which
+		// has no libx264. Test episodes made with libx264 could not be made on
+		// the macOS runner once it tested against our ffmpeg.
+		out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+seconds,
+			"-f", "lavfi", "-i", "sine=f=220:d="+seconds,
+			"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("making the test episode: %s %s", err, out)
+		}
+		return nil
+	})
+}
+
+// once is the episode called name, made by making it at the path it is
+// given the first time it is asked for, and the same file every time
+// after. A test that changes it works on a copy.
+//
+// On the real disk: the episodes are made by ffmpeg.
+func (m *testEpisodes) once(name string, making func(path string) error) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if path, ok := m.files[seconds]; ok {
+	if path, ok := m.files[name]; ok {
 		return path, nil
 	}
 	if m.dir == "" {
@@ -107,18 +128,11 @@ func (m *testEpisodes) make(seconds string) (string, error) {
 		}
 		m.dir = dir
 	}
-	path := filepath.Join(m.dir, seconds+".mp4")
-	// mpeg4 and aac are in every ffmpeg, the one we ship included, which
-	// has no libx264. Test episodes made with libx264 could not be made on
-	// the macOS runner once it tested against our ffmpeg.
-	out, err := exec.Command("ffmpeg", "-loglevel", "error", "-y",
-		"-f", "lavfi", "-i", "testsrc=s=640x360:r=25:d="+seconds,
-		"-f", "lavfi", "-i", "sine=f=220:d="+seconds,
-		"-shortest", "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", path).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("making the test episode: %s %s", err, out)
+	path := filepath.Join(m.dir, name)
+	if err := making(path); err != nil {
+		return "", err
 	}
-	m.files[seconds] = path
+	m.files[name] = path
 	return path, nil
 }
 
@@ -327,6 +341,7 @@ func TestProjectSteps(t *testing.T) {
 
 // On the real disk: ffmpeg reads the episode.
 func TestProjectReportsErrors(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "2")
 	log := NewLog(&bytes.Buffer{}, false, false)
 	e := NewEngine(log, disk)

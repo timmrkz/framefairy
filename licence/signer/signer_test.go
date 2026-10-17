@@ -338,6 +338,7 @@ func TestIssued(t *testing.T) {
 // Many requests at once on one signer: every ID once, every batch whole and
 // numbered in turn, and the file reads back as it was written.
 func TestSignFromManyGoroutines(t *testing.T) {
+	t.Parallel()
 	path := recordPath(t)
 	r := open(t, path)
 	s := newSigner(t, 1, r)

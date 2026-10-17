@@ -83,6 +83,7 @@ func listJSON(t *testing.T, builds ...Build) []byte {
 }
 
 func TestParseKeepsGoodBuildsAndSortsThem(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	zipped := appZip(t, "x")
 	good := func(ch string) Build {
@@ -113,6 +114,7 @@ func TestParseKeepsGoodBuildsAndSortsThem(t *testing.T) {
 // What is not a newer commit is dropped, and the build stays either way,
 // because it can still be installed.
 func TestParseKeepsANewerCommitOnlyWhenItIsOne(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	zipped := appZip(t, "x")
 	for newest, want := range map[string]string{
@@ -142,6 +144,7 @@ func TestParseKeepsANewerCommitOnlyWhenItIsOne(t *testing.T) {
 }
 
 func TestParseRefusesWhatIsNotAList(t *testing.T) {
+	t.Parallel()
 	for _, data := range []string{"", "[]", "{", `{"channels": 3}`} {
 		if _, err := Parse([]byte(data)); err == nil {
 			t.Errorf("%q was read as a list", data)
@@ -156,6 +159,7 @@ func TestParseRefusesWhatIsNotAList(t *testing.T) {
 // followed it follows nothing until another channel is picked. It never
 // falls back to main by itself.
 func TestFollowNeverFallsBackToMain(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	zipped := appZip(t, "x")
 	list := List{Channels: []Build{
@@ -182,6 +186,7 @@ func TestFollowNeverFallsBackToMain(t *testing.T) {
 }
 
 func TestSignAndVerify(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	b := build(t, key, "main", "1", "https://example.com/main.zip", appZip(t, "x"))
 	if err := Verify(key.Public().(ed25519.PublicKey), b); err != nil {
@@ -194,6 +199,7 @@ func TestSignAndVerify(t *testing.T) {
 }
 
 func TestKeysRoundTrip(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	seed := key.Seed()
 	priv, err := PrivateKey(" " + b64(seed) + "\n")
@@ -286,6 +292,7 @@ func newUpdater(t *testing.T, src *Source, current string, key ed25519.PrivateKe
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestAnUpdateArrivesUnpacked(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pull request 20")}
 	srv := serve(t, s)
@@ -333,6 +340,7 @@ func TestAnUpdateArrivesUnpacked(t *testing.T) {
 
 // The build running is the channel's build, so there is nothing to do.
 func TestTheSameBuildIsNoUpdate(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "main")}
 	srv := serve(t, s)
@@ -347,6 +355,7 @@ func TestTheSameBuildIsNoUpdate(t *testing.T) {
 // Sideways is allowed: a build that is older by its number is still
 // installed when it is the channel's.
 func TestAnOlderNumberIsStillOffered(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pr 5")}
 	srv := serve(t, s)
@@ -360,6 +369,7 @@ func TestAnOlderNumberIsStillOffered(t *testing.T) {
 
 // A build signed with any other key is refused before it is unpacked.
 func TestABuildSignedByAnybodyElseIsRefused(t *testing.T) {
+	t.Parallel()
 	ours, theirs := testKey(t), testKey(t)
 	s := &served{zip: appZip(t, "not ours")}
 	srv := serve(t, s)
@@ -379,6 +389,7 @@ func TestABuildSignedByAnybodyElseIsRefused(t *testing.T) {
 
 // A zip swapped on the server after it was signed fails its checksum.
 func TestASwappedZipIsRefused(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{}
 	srv := serve(t, s)
@@ -397,6 +408,7 @@ func TestASwappedZipIsRefused(t *testing.T) {
 
 // A server that sends more than the list promised is cut off.
 func TestADownloadLargerThanPromisedStops(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "x"), extra: 1 << 20}
 	srv := serve(t, s)
@@ -414,6 +426,7 @@ func TestADownloadLargerThanPromisedStops(t *testing.T) {
 // A list that is missing, for example while the first build is still
 // being made, is an error to show, not a crash.
 func TestAMissingListIsAnError(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	srv := serve(t, &served{})
 	src := &Source{URL: srv.URL + "/nowhere.json", Client: srv.Client(), Retries: quick}
@@ -456,6 +469,7 @@ func FuzzParse(f *testing.F) {
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 
 func TestCommitURLOnlyNamesACommit(t *testing.T) {
+	t.Parallel()
 	if got := CommitURL("a1b2c3d4e5f6"); got != "https://github.com/timmrkz/framefairy/commit/a1b2c3d4e5f6" {
 		t.Errorf("got %q", got)
 	}
@@ -470,6 +484,7 @@ func TestCommitURLOnlyNamesACommit(t *testing.T) {
 // size and checksum, all at once. Change any of them and it no longer
 // holds, and an entry without one is not taken by an app that checks.
 func TestAClaimSaysWhichBuild(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	public := key.Public().(ed25519.PublicKey)
 	b := build(t, key, "pr-5", "0.3.0-pr5.1", "https://example.com/pr-5.zip", appZip(t, "x"))
@@ -505,6 +520,7 @@ func TestAClaimSaysWhichBuild(t *testing.T) {
 // build put in main's place, with a newer number. Its zip is ours, so the
 // signature over the zip alone lets it through. The claim does not.
 func TestABuildOfferedAsAnotherIsRefused(t *testing.T) {
+	t.Parallel()
 	key := testKey(t)
 	s := &served{zip: appZip(t, "pull request 5")}
 	srv := serve(t, s)

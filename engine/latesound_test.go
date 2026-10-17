@@ -20,6 +20,7 @@ import (
 //
 // On the real disk: ffmpeg makes the episode and reads it.
 func TestSoundResumedBeforeALatePictureIsTheSoundThere(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	path := filepath.Join(t.TempDir(), "late.mov")
 	// A tone whose pitch climbs, so sound from another moment does not

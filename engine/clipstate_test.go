@@ -299,6 +299,7 @@ func TestAClipsWordsAreTheSameMadeInPlaceOrWhole(t *testing.T) {
 // only the one it corrects. It made every word again, on every pointer
 // move on its edges.
 func TestAClipWithACorrectionMakesOnlyThatWordAgain(t *testing.T) {
+	t.Parallel()
 	tr := fromStored(longHeard(40000), nil, 0, 0, nil)
 	clip := Clip{Corrections: map[string]string{wordKey(tr.HeardWords[20000].Start): "zwei Worte"}}
 	if got := tr.Of(clip).Words[20001].Text; got != "Worte" {

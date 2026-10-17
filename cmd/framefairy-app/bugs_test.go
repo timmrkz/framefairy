@@ -295,6 +295,7 @@ func TestAPictureGoesWithoutWhatElseTheFileHeld(t *testing.T) {
 // A report takes ten pictures of PNG or JPEG or recordings, each at most 10 MB. Anything
 // else is left out with the reason, and what could be attached still is.
 func TestPicturesAreLeftOutWithTheReason(t *testing.T) {
+	t.Parallel()
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	var many []handed
 	for i := range picturesMax + 1 {

@@ -369,6 +369,7 @@ func phoneVideos(t *testing.T, dir string, seconds string) map[string]string {
 //
 // On the real disk: ffmpeg reads the episode.
 func TestProbeStandsAPhoneVideoUp(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
 	for name, path := range phoneVideos(t, t.TempDir(), "1") {
