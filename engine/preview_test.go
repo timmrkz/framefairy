@@ -33,6 +33,7 @@ func TestShowinfoTime(t *testing.T) {
 //
 // On the real disk: ffmpeg reads the episode.
 func TestPreviewFramesFromAMoment(t *testing.T) {
+	t.Parallel()
 	path := testEpisode(t, "6")
 	e := NewEngine(NewLog(io.Discard, false, false), disk)
 	info, err := e.Probe(context.Background(), path)

@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -160,9 +162,10 @@ func waitForSettled(t *testing.T, s *FrameFairy, source string) {
 
 // hearing puts a search in the queue that hears the episode until it is
 // told to stop, and then takes a moment to save what it heard, the way a
-// real one does.
-func hearing(t *testing.T, s *FrameFairy, path string) {
+// real one does. What it gives says when that save is done.
+func hearing(t *testing.T, s *FrameFairy, path string) *atomic.Bool {
 	t.Helper()
+	saved := new(atomic.Bool)
 	// Whatever carries on is stopped before the test's folder goes.
 	t.Cleanup(func() { s.jobs.cancelEpisode(path) })
 	started := make(chan struct{})
@@ -175,7 +178,9 @@ func hearing(t *testing.T, s *FrameFairy, path string) {
 			defer release()
 			close(started)
 			<-stepCtx.Done()
-			time.Sleep(200 * time.Millisecond)
+			// Long enough that a removal which did not wait would be seen.
+			time.Sleep(20 * time.Millisecond)
+			saved.Store(true)
 			return "", engine.ErrCancelled
 		})
 	select {
@@ -183,15 +188,19 @@ func hearing(t *testing.T, s *FrameFairy, path string) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the search never started hearing")
 	}
+	return saved
 }
 
 // Removing an episode while its search hears it. The search is stopped and
 // waited for, and nothing of it is left running on an episode that is gone.
 func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
 	s, source, work := anEpisodeWithWork(t)
-	hearing(t, s, source)
+	saved := hearing(t, s, source)
 	if err := s.RemoveEpisode(source, true); err != nil {
 		t.Fatalf("removing the episode: %v", err)
+	}
+	if !saved.Load() {
+		t.Error("the work folder was removed before the search had saved what it heard")
 	}
 	if _, err := s.store.files.Stat(work); !os.IsNotExist(err) {
 		t.Error("the work folder is still there")
@@ -211,6 +220,7 @@ func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
 func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 	s, source, _ := anEpisodeWithWork(t)
 	stop := make(chan struct{})
+	var asked atomic.Int64
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
@@ -232,10 +242,15 @@ func TestNothingStartsOnAnEpisodeBeingRemoved(t *testing.T) {
 				}
 				s.Search(source, engine.PlanRequest{To: 10, Count: 1, Min: 5}, "")
 				s.jobs.list()
+				asked.Add(1)
 			}
 		}()
 	}
-	time.Sleep(50 * time.Millisecond)
+	// The removal starts once every goroutine is asking, not after a
+	// guess at how long they take to get going.
+	for asked.Load() < 16 {
+		runtime.Gosched()
+	}
 	err := s.RemoveEpisode(source, true)
 	close(stop)
 	wg.Wait()

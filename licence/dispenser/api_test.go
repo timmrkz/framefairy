@@ -80,8 +80,10 @@ func (w *web) call(method, path, token string, body any, header ...string) (int,
 	w.h.ServeHTTP(rec, req)
 	var out map[string]any
 	json.Unmarshal(rec.Body.Bytes(), &out)
+	// Errorf and not Fatalf, because tests call this from goroutines,
+	// where FailNow would end only the goroutine.
 	if rec.Header().Get("Cache-Control") != "no-store" {
-		w.t.Fatalf("%s %s answered without no-store", method, path)
+		w.t.Errorf("%s %s answered without no-store", method, path)
 	}
 	return rec.Code, out
 }
@@ -108,6 +110,7 @@ func keysIn(t testing.TB, m map[string]any) []licence.Key {
 }
 
 func TestHandlerRefusesItsConfig(t *testing.T) {
+	t.Parallel()
 	e := newFixture(t, false).engine
 	good := APIConfig{PaddleSecrets: []string{paddleSecret}}
 	for name, change := range map[string]func(*APIConfig){
@@ -132,6 +135,7 @@ func TestHandlerRefusesItsConfig(t *testing.T) {
 // Use case 1 through Paddle's webhook: signed, settled with what Paddle
 // says, the same webhook twice changes nothing.
 func TestPaddleWebhook(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(10)
 	w.shop.put(Sale{Ref: "txn_01", Seats: 2, Email: "anna@example.com", At: now}, now)
@@ -159,6 +163,7 @@ func TestPaddleWebhook(t *testing.T) {
 }
 
 func TestPaddleWebhookRefuses(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(10)
 	w.shop.put(Sale{Ref: "txn_01", Seats: 1, Email: "anna@example.com", At: now}, now)
@@ -201,6 +206,7 @@ func TestPaddleWebhookRefuses(t *testing.T) {
 }
 
 func TestPaddleWebhookAnswers(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(1)
 	// An event the dispenser does not act on is taken, so Paddle stops.
@@ -267,6 +273,7 @@ func (w *web) sell(ref string, seats int, nonce string) []licence.Key {
 // to the browser that paid: the one that holds the nonce its checkout
 // page made. Bug 9 of DESIGN-REVIEW.md.
 func TestThankYouPage(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(10)
 	code, waiting := w.thanks("txn_01", nonceA)
@@ -352,6 +359,7 @@ func TestThankYouPage(t *testing.T) {
 }
 
 func TestCORS(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	req := httptest.NewRequest("OPTIONS", "/v1/lost", nil)
 	req.Header.Set("Origin", website)
@@ -381,6 +389,7 @@ func TestCORS(t *testing.T) {
 // Use case 7 through the page: the same answer whatever the address, and
 // limited per address and per caller.
 func TestLostKeyPage(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(5)
 	w.shop.sold("txn_01", "anna@example.com")
@@ -427,6 +436,7 @@ func TestLostKeyPage(t *testing.T) {
 // Use case 4: a partner's orders through its own token, which reaches no
 // other partner's.
 func TestPartnerAPI(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(10)
 	code, out := w.call("POST", "/v1/orders", bundleToken, map[string]any{"ref": "1001", "seats": 2, "email": "max@example.com"})
@@ -476,6 +486,7 @@ func TestPartnerAPI(t *testing.T) {
 // Use case 12 through the signer's endpoints, and a batch of an earlier
 // generation refused.
 func TestSignerEndpoints(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	code, out := w.call("GET", "/v1/pool", signerToken, nil)
 	if code != 200 || out["left"] != 0.0 || out["batch"] != 1000.0 {
@@ -502,6 +513,7 @@ func TestSignerEndpoints(t *testing.T) {
 
 // A full batch fits in a request, and one too large does not.
 func TestHandoverSize(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	gen := w.generation()
 	batch := sign(t, MaxStock)
@@ -516,6 +528,7 @@ func TestHandoverSize(t *testing.T) {
 
 // Use case 18: the release workflow's lists, and the record's head.
 func TestFeed(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(5)
 	keys := w.assign("txn_01", 2)
@@ -543,6 +556,7 @@ func TestFeed(t *testing.T) {
 
 // Use cases 13, 19 and 21: the scheduled runs.
 func TestCron(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(5)
 	w.shop.put(Sale{Ref: "txn_missed", Seats: 1, Email: "a@example.com", At: now}, now)
@@ -572,6 +586,7 @@ func TestCron(t *testing.T) {
 // A store that does not add up to its record fails the daily run and tells
 // us.
 func TestCronAuditTellsUs(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(2)
 	w.store.db.pool[0].State = Sold
@@ -589,6 +604,7 @@ func TestCronAuditTellsUs(t *testing.T) {
 
 // Use cases 11, 14 and 15 by hand.
 func TestAdmin(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	w.stock(6)
 	w.shop.sold("txn_01", "anna@example.com")
@@ -625,6 +641,7 @@ func TestAdmin(t *testing.T) {
 }
 
 func TestRoutes(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, false)
 	if code, out := w.call("GET", "/healthz", "", nil); code != 200 || out["status"] != "ok" {
 		t.Fatalf("health: %d %v", code, out)
@@ -648,6 +665,7 @@ type panicking struct{ *Memory }
 func (panicking) View(ctx context.Context, fn func(Tx) error) error { panic("the store broke") }
 
 func TestPanicIsOneFailedRequest(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	e, _ := New(panicking{f.store}, Config{Signers: f.engine.signers, Batch: 10, Mailer: f.mail, Orders: f.shop})
 	h, err := e.Handler(APIConfig{PaddleSecrets: []string{paddleSecret}})
@@ -665,33 +683,64 @@ func TestPanicIsOneFailedRequest(t *testing.T) {
 // webhooks, partners, the thank-you and lost-key pages, the signer and the
 // runs. Then the audit.
 func TestEndpointsAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newWeb(t, true)
 	w.stock(300)
 	for i := range 40 {
 		ref := "txn_" + string(rune('a'+i%26)) + string(rune('a'+i/26))
 		w.shop.put(Sale{Ref: ref, Seats: 1 + i%3, Email: "b@example.com", At: now, Thanks: nonceA}, now)
 	}
+	// How often each endpoint gave each answer.
+	var mu sync.Mutex
+	answered := map[string]map[int]int{}
 	var wg sync.WaitGroup
 	for g := range 10 {
 		wg.Go(func() {
 			for i := range 20 {
 				n := (g*20 + i) % 40
 				ref := "txn_" + string(rune('a'+n%26)) + string(rune('a'+n/26))
+				var what string
+				var code int
 				switch i % 6 {
 				case 0, 1:
-					w.webhook("transaction.completed", ref, now)
+					what = "webhook"
+					code, _ = w.webhook("transaction.completed", ref, now)
 				case 2:
-					w.thanks(ref, nonceA)
+					what = "thanks"
+					code, _ = w.thanks(ref, nonceA)
 				case 3:
-					w.call("POST", "/v1/orders", bundleToken, map[string]any{"ref": ref, "seats": 1})
+					what = "orders"
+					code, _ = w.call("POST", "/v1/orders", bundleToken, map[string]any{"ref": ref, "seats": 1})
 				case 4:
-					w.call("POST", "/v1/cron/mail", cronToken, nil)
+					what = "cron mail"
+					code, _ = w.call("POST", "/v1/cron/mail", cronToken, nil)
 				default:
-					w.call("GET", "/v1/pool", signerToken, nil)
+					what = "pool"
+					code, _ = w.call("GET", "/v1/pool", signerToken, nil)
 				}
+				mu.Lock()
+				if answered[what] == nil {
+					answered[what] = map[int]int{}
+				}
+				answered[what][code]++
+				mu.Unlock()
 			}
 		})
 	}
 	wg.Wait()
+	// Each answers the way it does to one request at a time. Thanks says
+	// 202 while the sale's keys are not there yet, and 200 once they are,
+	// which depends on whether its webhook came first.
+	want := map[string][]int{"webhook": {200}, "thanks": {200, 202}, "orders": {200}, "cron mail": {200}, "pool": {200}}
+	for what, ok := range want {
+		if len(answered[what]) == 0 {
+			t.Errorf("%s was never answered", what)
+		}
+		for code, n := range answered[what] {
+			if !slices.Contains(ok, code) {
+				t.Errorf("%s answered %d to %d of its requests, want %v", what, code, n, ok)
+			}
+		}
+	}
 	w.audit()
 }

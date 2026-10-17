@@ -98,11 +98,25 @@ func TestTheCaptionHeightIsTakenBack(t *testing.T) {
 func TestANewEditForgetsWhatWasUndone(t *testing.T) {
 	svc, mine, plan := anEpisodeWithAPlan(t)
 	ctx := context.Background()
+	// Each step is checked, or an undo that did nothing left nothing to
+	// redo and the test passed for that.
 	_, _ = svc.RemoveClip(ctx, mine, plan, "02", true)
-	_, _ = svc.Undo(mine)
+	if !removed(t, svc, plan, "02") {
+		t.Fatal("the clip was not removed")
+	}
+	if done, err := svc.Undo(mine); err != nil || !done.Done || removed(t, svc, plan, "02") {
+		t.Fatalf("undo %+v %v did not bring the clip back", done, err)
+	}
 	_, _ = svc.RemoveClip(ctx, mine, plan, "01", true)
-	if done, _ := svc.Redo(mine); done.Done {
-		t.Error("redo brought back what a new edit replaced")
+	if !removed(t, svc, plan, "01") {
+		t.Fatal("the new edit did not remove its clip")
+	}
+	done, err := svc.Redo(mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Done || removed(t, svc, plan, "02") {
+		t.Errorf("redo %+v brought back what a new edit replaced", done)
 	}
 }
 

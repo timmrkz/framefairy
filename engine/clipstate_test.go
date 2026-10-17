@@ -298,6 +298,9 @@ func TestAClipsWordsAreTheSameMadeInPlaceOrWhole(t *testing.T) {
 // A clip with a correction copies the words of the video and makes again
 // only the one it corrects. It made every word again, on every pointer
 // move on its edges.
+//
+// It runs alone, because testing.AllocsPerRun counts the allocations of
+// the whole process.
 func TestAClipWithACorrectionMakesOnlyThatWordAgain(t *testing.T) {
 	tr := fromStored(longHeard(40000), nil, 0, 0, nil)
 	clip := Clip{Corrections: map[string]string{wordKey(tr.HeardWords[20000].Start): "zwei Worte"}}

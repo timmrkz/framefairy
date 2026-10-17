@@ -464,14 +464,23 @@ const noLibassHelp = "this ffmpeg was built without libass, so it cannot burn in
 	"  Or render without burned-in captions for now:\n" +
 	"    framefairy ... --no-captions"
 
-// SubtitleFilter works out how this ffmpeg wants a subtitle file named, once
-// per engine.
+// SubtitleFilter works out how this ffmpeg wants a subtitle file named,
+// once for as long as the ffmpeg stays as it is, see probed.go.
 func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 	e.mu.Lock()
 	template := e.subtitleTemplate
 	e.mu.Unlock()
 	if template != "" {
 		return template, nil
+	}
+	key, keep := keyFor("subtitle filter", e.FFmpeg, "")
+	if keep {
+		if template, ok := recall[string](key); ok {
+			e.mu.Lock()
+			e.subtitleTemplate = template
+			e.mu.Unlock()
+			return template, nil
+		}
 	}
 
 	filters := run(ctx, "", e.FFmpeg, "-hide_banner", "-filters")
@@ -523,6 +532,9 @@ func (e *Engine) SubtitleFilter(ctx context.Context) (string, error) {
 			e.mu.Lock()
 			e.subtitleTemplate = candidate
 			e.mu.Unlock()
+			if keep {
+				remember(key, candidate)
+			}
 			e.Log.Detail("subtitle filter syntax: %s", chain)
 			return candidate, nil
 		}
@@ -553,21 +565,36 @@ func (e *Engine) Preflight(ctx context.Context) error {
 			return err
 		}
 	}
-	version := run(ctx, "", e.FFmpeg, "-version")
-	if version.Code != 0 {
-		e.Log.ClearProgress()
-		return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
-	}
-	first := "ffmpeg ?"
-	if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
-		first = lines[0]
+	// A tool that ran once runs again until it is replaced, so each is
+	// asked once for the process, the way the subtitle syntax is.
+	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
+	first, ran := recall[string](ffmpegKey)
+	if !ran {
+		version := run(ctx, "", e.FFmpeg, "-version")
+		if version.Code != 0 {
+			e.Log.ClearProgress()
+			return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
+		}
+		first = "ffmpeg ?"
+		if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
+			first = lines[0]
+		}
+		if keepFFmpeg {
+			remember(ffmpegKey, first)
+		}
 	}
 	e.Log.Detail("%s", first)
 
-	if run(ctx, "", e.FFprobe, "-version").Code != 0 {
-		e.Log.ClearProgress()
-		return renderErr("%s is missing, which usually means a partial ffmpeg install.",
-			e.FFprobe)
+	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
+	if _, ran := recall[bool](ffprobeKey); !ran {
+		if run(ctx, "", e.FFprobe, "-version").Code != 0 {
+			e.Log.ClearProgress()
+			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
+				e.FFprobe)
+		}
+		if keepFFprobe {
+			remember(ffprobeKey, true)
+		}
 	}
 	// Which encoder, before anything is spent. It used to insist on
 	// libx264, which is the one library that makes an ffmpeg build GPL and
@@ -707,11 +734,27 @@ func videoStartOf(stream, format map[string]any) float64 {
 // nothing else. Nought for a file with no picture or one ffprobe cannot
 // read, where a seek finds the sound as well as anything does.
 func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
+	key, keep := keyFor("picture start", e.FFprobe, path)
+	if keep {
+		if start, ok := recall[float64](key); ok {
+			return start
+		}
+	}
+	start, read := e.readPictureStart(ctx, path)
+	if read && keep && ctx.Err() == nil {
+		remember(key, start)
+	}
+	return start
+}
+
+// readPictureStart is pictureStart asked of ffprobe, and whether it
+// answered.
+func (e *Engine) readPictureStart(ctx context.Context, path string) (float64, bool) {
 	res := run(ctx, "", e.FFprobe, "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=start_time", "-show_entries", "format=start_time",
 		"-of", "json", path)
 	if res.Code != 0 {
-		return 0
+		return 0, false
 	}
 	var data struct {
 		Streams []map[string]any `json:"streams"`
@@ -719,14 +762,34 @@ func (e *Engine) pictureStart(ctx context.Context, path string) float64 {
 	}
 	decoder := json.NewDecoder(strings.NewReader(res.Stdout))
 	decoder.UseNumber()
-	if decoder.Decode(&data) != nil || len(data.Streams) == 0 {
-		return 0
+	if decoder.Decode(&data) != nil {
+		return 0, false
 	}
-	return videoStartOf(data.Streams[0], data.Format)
+	if len(data.Streams) == 0 {
+		return 0, true
+	}
+	return videoStartOf(data.Streams[0], data.Format), true
 }
 
-// Probe reads the dimensions, frame rate, duration and colour tags of a file.
+// Probe reads the dimensions, frame rate, duration and colour tags of a
+// file, once for as long as the file stays as it is, see probed.go.
 func (e *Engine) Probe(ctx context.Context, path string) (SourceInfo, error) {
+	key, keep := keyFor("probe", e.FFprobe, path)
+	if keep {
+		if info, ok := recall[SourceInfo](key); ok {
+			return info.clone(), nil
+		}
+	}
+	info, err := e.probe(ctx, path)
+	// A probe stopped halfway may have read no sound or no uneven frames
+	// without failing, which is not what the file holds.
+	if err == nil && keep && ctx.Err() == nil {
+		remember(key, info.clone())
+	}
+	return info, err
+}
+
+func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 	res := run(ctx, "", e.FFprobe, "-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries",

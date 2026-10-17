@@ -143,7 +143,14 @@ func TestMeasuringUnderEverythingAtOnce(t *testing.T) {
 		s.levels.start(path)
 		measured(t, path)
 	}
-	time.Sleep(200 * time.Millisecond)
+	// Removing waits for its measuring to end, so nothing is left of it
+	// that could write the folder back after this.
+	s.levels.mu.Lock()
+	still := s.levels.running[gone] != nil
+	s.levels.mu.Unlock()
+	if still {
+		t.Error("the removed episode is still measured")
+	}
 	if _, err := os.Stat(engine.WorkDir(gone)); !os.IsNotExist(err) {
 		t.Errorf("the removed episode's work folder is back: %v", err)
 	}

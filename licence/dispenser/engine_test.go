@@ -142,6 +142,7 @@ func order(ref string, seats int) Order {
 }
 
 func TestBoughtThroughPaddle(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(5)
 		keys, fresh, _, err := f.engine.assign(f.ctx, order("txn_01", 1))
@@ -169,6 +170,7 @@ func TestBoughtThroughPaddle(t *testing.T) {
 }
 
 func TestSeveralSeats(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(10)
 		f.engine.Assign(f.ctx, order("txn_a", 2))
@@ -193,6 +195,7 @@ func TestSeveralSeats(t *testing.T) {
 }
 
 func TestSameOrderWithOtherSeats(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(10)
 		if _, err := f.engine.Assign(f.ctx, order("txn_a", 2)); err != nil {
@@ -211,6 +214,7 @@ func TestSameOrderWithOtherSeats(t *testing.T) {
 // A sale bigger than the pool gets nothing at all, so it never holds half
 // its keys, and it is assigned in full once the pool is refilled.
 func TestPoolEmpty(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(2)
 		before := f.verify()
@@ -235,6 +239,7 @@ func TestPoolEmpty(t *testing.T) {
 }
 
 func TestKeysBeforeTheSale(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		if _, err := f.engine.Keys(f.ctx, "paddle", "txn_waiting"); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("got %v, want ErrNotFound", err)
@@ -248,6 +253,7 @@ func TestKeysBeforeTheSale(t *testing.T) {
 // Partners' orders are their own: the same reference from two partners, or
 // from a partner and Paddle, is three sales.
 func TestSourcesAreApart(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(3)
 		seen := map[licence.Key]bool{}
@@ -265,6 +271,7 @@ func TestSourcesAreApart(t *testing.T) {
 }
 
 func TestInvalidOrders(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(5)
 	before := f.verify()
@@ -300,12 +307,21 @@ func TestInvalidOrders(t *testing.T) {
 }
 
 func TestStockRefusesTheWholeBatch(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		good := sign(t, 3)
 		stranger := signWith(t, 1, strangerSigner(), 0, "")
 		unknown := signWith(t, 1, testSigner(), 9, "")
 		named := signWith(t, 1, testSigner(), 0, "Lena Fischer")
-		tampered := good[1][:len(good[1])-2] + "AA"
+		// A letter well inside the signature, where every bit of it is
+		// read. The last letter carries bits the decoder leaves out, and
+		// once in a few hundred keys "AA" was what they ended in already.
+		at := len(good[1]) - 10
+		other := byte('A')
+		if good[1][at] == 'A' {
+			other = 'B'
+		}
+		tampered := good[1][:at] + licence.Key(other) + good[1][at+1:]
 		cases := map[string][]licence.Key{
 			"signed by a stranger":     append(append([]licence.Key{}, good...), stranger...),
 			"from an unknown signer":   append(append([]licence.Key{}, good...), unknown...),
@@ -335,6 +351,7 @@ func TestStockRefusesTheWholeBatch(t *testing.T) {
 // A batch handed over twice, because the signer never heard the answer,
 // adds its keys once.
 func TestStockTwice(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		batch := f.stock(4)
 		if _, err := f.engine.Assign(f.ctx, order("txn_1", 1)); err != nil {
@@ -364,6 +381,7 @@ func TestStockTwice(t *testing.T) {
 // Two keys with the same ID cannot both be in the pool. The signer never
 // draws one twice, and the dispenser does not trust that it never will.
 func TestStockRefusesAnIDTwice(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	id := licence.ID{7, 7, 7, 7, 7, 7, 7, 7}
 	a, _ := licence.Sign(licence.Licence{Format: 1, ID: id, Signed: now}, testSigner())
@@ -377,6 +395,7 @@ func TestStockRefusesAnIDTwice(t *testing.T) {
 }
 
 func TestPoolLevel(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	l, err := f.engine.PoolLevel(f.ctx)
 	if err != nil || l.Left != 0 || l.Batch != 1000 || l.Generation != "" {
@@ -390,6 +409,7 @@ func TestPoolLevel(t *testing.T) {
 }
 
 func TestNewRefuses(t *testing.T) {
+	t.Parallel()
 	pub := testSigner().Public().(ed25519.PublicKey)
 	for name, c := range map[string]Config{
 		"no signers":      {Batch: 1000},
@@ -411,6 +431,7 @@ func TestNewRefuses(t *testing.T) {
 }
 
 func TestRecordChain(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(3)
 	f.engine.Assign(f.ctx, order("txn_1", 2))
@@ -459,6 +480,7 @@ func TestRecordChain(t *testing.T) {
 // The hash covers every field, so two lines that differ anywhere hash
 // differently, even where the field bounds could be read another way.
 func TestDigestTellsFieldsApart(t *testing.T) {
+	t.Parallel()
 	base := Line{Seq: 1, At: now, Event: "assign", Source: "paddle", Ref: "ab", Seat: 1}
 	other := base
 	other.Source, other.Ref = "paddlea", "b"
@@ -492,6 +514,7 @@ func TestDigestTellsFieldsApart(t *testing.T) {
 // gets exactly its own keys every time it asks, and the record holds one
 // line per seat and still checks.
 func TestManySalesAtOnce(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		const orders, repeats, workers = 120, 3, 16
 		f.stock(orders * 3)
@@ -582,6 +605,7 @@ func TestManySalesAtOnce(t *testing.T) {
 }
 
 func TestCancelledContext(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(1)
 	ctx, cancel := context.WithCancel(context.Background())

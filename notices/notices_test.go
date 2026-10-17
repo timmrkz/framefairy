@@ -71,6 +71,7 @@ func TestEveryNoticeIsWhole(t *testing.T) {
 // notice, at the version they compile. CI runs this on Linux and macOS, so
 // both of those are checked on every change.
 func TestEveryGoModuleCompiledInHasANotice(t *testing.T) {
+	t.Parallel()
 	list := all(t)
 	// framefairy-frames as make builds it, with ffmpeg's libraries.
 	cmd := exec.Command("go", "list", "-tags", "ffmpeglibs", "-deps", "-f",

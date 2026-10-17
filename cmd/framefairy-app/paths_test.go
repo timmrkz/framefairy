@@ -347,12 +347,22 @@ func TestPathARenderThatFailsSaysWhy(t *testing.T) {
 // is still searched, all under the race detector.
 func TestPathTwoEpisodesAndARender(t *testing.T) {
 	d := open(t)
-	var a, b string
+	// The files are made first, because a goroutine cannot end the test
+	// when making one fails, see testing.T.FailNow. Adding them is what
+	// is done at once.
+	a, b := d.episode("a", minutes5), d.episode("b", minutes5)
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); a = d.add("a", minutes5) }()
-	go func() { defer wg.Done(); b = d.add("b", minutes5) }()
+	for _, path := range []string{a, b} {
+		wg.Go(func() {
+			if added, err := d.svc.addEpisodes([]string{path}); err != nil || len(added) != 1 {
+				t.Errorf("adding %s: %v", path, err)
+			}
+		})
+	}
 	wg.Wait()
+	if t.Failed() {
+		t.FailNow()
+	}
 	d.idle(a)
 	clips := d.clips(a)
 	if len(clips) == 0 {

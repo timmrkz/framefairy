@@ -34,6 +34,7 @@ func (f *fixture) sendMail() (int, int) {
 // Use case 1: the keys go to the buyer once, and the same webhook again
 // sends nothing.
 func TestKeysAreMailedOnce(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		keys := f.assign("txn_a", 2)
@@ -55,6 +56,7 @@ func TestKeysAreMailedOnce(t *testing.T) {
 // thank-you page has the keys, and the letter goes later, to the address
 // Paddle has, after waiting longer each time.
 func TestMailFails(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		f.shop.sold("txn_a", "anna@example.com")
@@ -95,6 +97,7 @@ func TestMailFails(t *testing.T) {
 // After three days a letter is given up and we are told. The keys are
 // still on the thank-you page and the lost-key page.
 func TestMailGivenUp(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(500)
 		f.mail.failing(func(string, Letter) bool { return true })
@@ -116,6 +119,7 @@ func TestMailGivenUp(t *testing.T) {
 // Without an address from the order, and with Paddle down or not knowing
 // the sale, a letter waits.
 func TestMailWaitsForAnAddress(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		o := order("txn_a", 1)
@@ -147,6 +151,7 @@ func TestMailWaitsForAnAddress(t *testing.T) {
 // A partner's buyer gets one try, and no letter waits: the partner has the
 // keys in its answer.
 func TestPartnerMail(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		o := Order{Source: "partner:bundle-hunt", Ref: "1001", Seats: 1, Email: "max@example.com", At: now}
@@ -177,6 +182,7 @@ func TestPartnerMail(t *testing.T) {
 // Use case 11, the letter: the buyer gets the new key, at the address
 // Paddle has.
 func TestReplacedKeyIsMailed(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		f.shop.sold("txn_a", "anna@example.com")
@@ -200,6 +206,7 @@ func TestReplacedKeyIsMailed(t *testing.T) {
 // whether it bought anything or not, and an address that is no address is
 // refused.
 func TestLostKey(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(10)
 		f.shop.sold("txn_a", "anna@example.com")
@@ -254,6 +261,7 @@ func TestLostKey(t *testing.T) {
 
 // Use case 13: below a fifth of a batch, one warning a day.
 func TestPoolWarning(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(202)
 		f.assign("txn_1", 2)
@@ -292,6 +300,7 @@ func TestPoolWarning(t *testing.T) {
 // them, with the mail service failing now and then: every letter goes
 // exactly once.
 func TestSendMailRunsAtOnce(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(100)
 		var mu sync.Mutex

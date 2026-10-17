@@ -50,6 +50,7 @@ func sale(ref string) Target { return Target{Source: "paddle", Ref: ref} }
 // Use cases 8 and 10: every key of the sale is on the next list, and the
 // same adjustment twice changes nothing.
 func TestChargeback(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(10)
 		keys := f.assign("txn_a", 2)
@@ -78,6 +79,7 @@ func TestChargeback(t *testing.T) {
 
 // Use case 9: those keys leave the list again.
 func TestChargebackReversed(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(10)
 		f.assign("txn_a", 2)
@@ -101,6 +103,7 @@ func TestChargebackReversed(t *testing.T) {
 }
 
 func TestRevokeOneKey(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(10)
 		keys := f.assign("txn_a", 3)
@@ -116,6 +119,7 @@ func TestRevokeOneKey(t *testing.T) {
 }
 
 func TestRevokeRefuses(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(5)
 		keys := f.assign("txn_a", 1)
@@ -154,6 +158,7 @@ func TestRevokeRefuses(t *testing.T) {
 // Use case 11: the key is revoked, the seat holds the next pool key, and
 // the old one can never come back, not even by a reversed chargeback.
 func TestKeyPostedInPublic(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(5)
 		keys := f.assign("txn_a", 2)
@@ -193,6 +198,7 @@ func TestKeyPostedInPublic(t *testing.T) {
 }
 
 func TestReplaceRefuses(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(2)
 		keys := f.assign("txn_a", 1)
@@ -221,6 +227,7 @@ func TestReplaceRefuses(t *testing.T) {
 // Use case 14: every unsold key is revoked, sold keys keep working, and the
 // pool takes a fresh batch.
 func TestDatabaseStolen(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(6)
 		sold := f.assign("txn_a", 2)
@@ -254,6 +261,7 @@ func TestDatabaseStolen(t *testing.T) {
 // Use case 15: every key unsold in the backup is set aside, not revoked,
 // and never handed out again. The Anna example in docs/LICENCE.md.
 func TestRestoredFromBackup(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		pool := f.stock(5)
 		f.assign("txn_before", 1)
@@ -299,6 +307,7 @@ func TestRestoredFromBackup(t *testing.T) {
 // Use case 17: the genuine list is every pool key that was sold, revoked
 // ones included, and none that was not.
 func TestGenuine(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(6)
 		a := f.assign("txn_a", 2)
@@ -323,6 +332,7 @@ func TestGenuine(t *testing.T) {
 }
 
 func TestAuditFindsAStoreThatDiffers(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(4)
 	keys := f.assign("txn_a", 1)
@@ -362,8 +372,20 @@ func TestAuditFindsAStoreThatDiffers(t *testing.T) {
 // both stores, and then the audit: whatever order they ran in, the store
 // is what its record adds up to, and no key is held by two seats.
 func TestEverythingAtOnce(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(400)
+		// The batches the signer sends while everything else runs are
+		// signed here, because a goroutine cannot end the test when
+		// signing fails, see testing.T.FailNow.
+		batches := map[int][]licence.Key{}
+		for g := range 12 {
+			for i := range 30 {
+				if (g+i)%8 == 7 {
+					batches[g*30+i] = sign(t, 2)
+				}
+			}
+		}
 		var wg sync.WaitGroup
 		for g := range 12 {
 			wg.Go(func() {
@@ -392,7 +414,10 @@ func TestEverythingAtOnce(t *testing.T) {
 					case 6:
 						_, err = f.engine.Revocations(f.ctx)
 					case 7:
-						_, err = f.engine.Stock(f.ctx, f.generation(), sign(t, 2))
+						level, lerr := f.engine.PoolLevel(f.ctx)
+						if err = lerr; err == nil {
+							_, err = f.engine.Stock(f.ctx, level.Generation, batches[g*30+i])
+						}
 					}
 					if errors.Is(err, ErrNotFound) {
 						err = nil
@@ -415,6 +440,7 @@ func TestEverythingAtOnce(t *testing.T) {
 // would write one. Each case adds one such line to a record that holds a
 // sale of one seat.
 func TestAuditRefusesALineThatCouldNotHaveHappened(t *testing.T) {
+	t.Parallel()
 	type forged struct {
 		lines func(k []licence.Fingerprint) []Line
 		says  string

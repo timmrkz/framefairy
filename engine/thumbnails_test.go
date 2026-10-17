@@ -19,6 +19,7 @@ import (
 //
 // On the real disk: ffmpeg reads the short and writes its thumbnails.
 func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	short := filepath.Join(dir, "01_eins.mp4")
@@ -91,6 +92,7 @@ func TestThumbnailsAreFramesOfTheShort(t *testing.T) {
 //
 // On the real disk: ffmpeg renders the short and cuts the thumbnail from it.
 func TestAThumbnailIsTheFrameThatWasMarked(t *testing.T) {
+	t.Parallel()
 	ffmpegtest.Need(t)
 	dir := t.TempDir()
 	short := filepath.Join(dir, "01_eins.mp4")

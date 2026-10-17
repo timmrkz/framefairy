@@ -53,6 +53,7 @@ func handProject(t *testing.T, source string, log *Log) *Project {
 //
 // On the real disk: ffmpeg reads the episode the clip is heard and framed from.
 func TestAClipMadeByHand(t *testing.T) {
+	t.Parallel()
 	source := testEpisode(t, "70")
 	log, told := underwayLog()
 	p := handProject(t, source, log)

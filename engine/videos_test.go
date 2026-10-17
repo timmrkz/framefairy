@@ -2,6 +2,7 @@ package engine
 
 import (
 	"io/fs"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,6 +50,7 @@ func TestVideoPatternAndNames(t *testing.T) {
 //
 // On the real disk: what is read is the repository's own source.
 func TestVideosAreNamedOnce(t *testing.T) {
+	t.Parallel()
 	root := ".."
 	app, err := os.ReadFile(filepath.Join(root, "docs", "APP.md"))
 	if err != nil {
@@ -80,17 +82,34 @@ func TestVideosAreNamedOnce(t *testing.T) {
 		words[i] = regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(strings.TrimPrefix(ext, ".")) + `\b`)
 	}
 	most := min(3, len(VideoExtensions))
+	// Which endings each line names. A word never runs across the end of
+	// a line, so three lines name what any of them names, and each line is
+	// read once rather than in every window it is part of. Each pattern
+	// runs only on a line that holds its letters at all.
+	if len(VideoExtensions) > 64 {
+		t.Fatalf("%d endings do not fit the 64 bits a line's names are kept in", len(VideoExtensions))
+	}
+	bare := make([]string, len(VideoExtensions))
+	for i, ext := range VideoExtensions {
+		bare[i] = strings.TrimPrefix(ext, ".")
+	}
 	check := func(rel, text string) {
 		lines := strings.Split(text, "\n")
-		for i := range lines {
-			near := strings.Join(lines[i:min(i+3, len(lines))], "\n")
-			n := 0
-			for _, w := range words {
-				if w.MatchString(near) {
-					n++
+		names := make([]uint64, len(lines))
+		for i, line := range lines {
+			lower := strings.ToLower(line)
+			for k, w := range words {
+				if strings.Contains(lower, bare[k]) && w.MatchString(line) {
+					names[i] |= 1 << k
 				}
 			}
-			if n >= most {
+		}
+		for i := range lines {
+			var near uint64
+			for _, m := range names[i:min(i+3, len(lines))] {
+				near |= m
+			}
+			if n := bits.OnesCount64(near); n >= most {
 				t.Errorf("%s:%d to %d names the video endings itself, say them through VideoExtensions or point to Which files are videos in docs/APP.md", rel, i+1, i+3)
 				return
 			}

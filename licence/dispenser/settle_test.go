@@ -10,6 +10,7 @@ import (
 // A chargeback and its reversal, whichever webhook arrives first and
 // however often, end with the keys working.
 func TestSettleIsOrderFree(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		sale := Sale{Ref: "txn_a", Seats: 2, Email: "anna@example.com", At: now}
@@ -53,6 +54,7 @@ func TestSettleIsOrderFree(t *testing.T) {
 // A key posted in public stays revoked, whatever Paddle says about its
 // sale.
 func TestSettleLeavesReplacedKeys(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(5)
 		f.shop.put(Sale{Ref: "txn_a", Seats: 1, Email: "anna@example.com", At: now}, now)
@@ -70,6 +72,7 @@ func TestSettleLeavesReplacedKeys(t *testing.T) {
 }
 
 func TestSettleRefuses(t *testing.T) {
+	t.Parallel()
 	f := newFixture(t, false)
 	f.stock(5)
 	if err := f.engine.Settle(f.ctx, "txn_unknown"); !errors.Is(err, ErrNotFound) {
@@ -99,6 +102,7 @@ func TestSettleRefuses(t *testing.T) {
 // Use case 19: what never arrived as a webhook is caught up, and a sale
 // that cannot be settled does not stop the rest.
 func TestReconcile(t *testing.T) {
+	t.Parallel()
 	stores(t, func(t *testing.T, f *fixture) {
 		f.stock(3)
 		day := 24 * time.Hour

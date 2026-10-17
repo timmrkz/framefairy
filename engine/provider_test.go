@@ -421,7 +421,36 @@ func FuzzReadOpenAIStream(f *testing.F) {
 		if err == nil && replyText(reply) != heard.String() {
 			t.Errorf("heard %q, the reply says %q", heard.String(), replyText(reply))
 		}
-		_, _ = readOpenAIReply([]byte(stream))
+		// A whole reply, not streamed, says what its choices say, read
+		// here on its own, and nothing when it fails.
+		whole, err := readOpenAIReply([]byte(stream))
+		if err != nil {
+			if whole != nil {
+				t.Errorf("a reply that failed with %v came back as %+v", err, whole)
+			}
+			return
+		}
+		var body struct {
+			Choices []struct {
+				Delta, Message struct {
+					Content *string `json:"content"`
+				}
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(stream), &body); err != nil {
+			t.Fatalf("read %q, which is not JSON: %v", stream, err)
+		}
+		var said strings.Builder
+		for _, c := range body.Choices {
+			for _, text := range []*string{c.Delta.Content, c.Message.Content} {
+				if text != nil {
+					said.WriteString(*text)
+				}
+			}
+		}
+		if replyText(whole) != said.String() {
+			t.Errorf("the reply says %q, its choices %q", replyText(whole), said.String())
+		}
 	})
 }
 
