@@ -565,21 +565,36 @@ func (e *Engine) Preflight(ctx context.Context) error {
 			return err
 		}
 	}
-	version := run(ctx, "", e.FFmpeg, "-version")
-	if version.Code != 0 {
-		e.Log.ClearProgress()
-		return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
-	}
-	first := "ffmpeg ?"
-	if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
-		first = lines[0]
+	// A tool that ran once runs again until it is replaced, so each is
+	// asked once for the process, the way the subtitle syntax is.
+	ffmpegKey, keepFFmpeg := keyFor("ffmpeg version", e.FFmpeg, "")
+	first, ran := recall[string](ffmpegKey)
+	if !ran {
+		version := run(ctx, "", e.FFmpeg, "-version")
+		if version.Code != 0 {
+			e.Log.ClearProgress()
+			return renderErr("%s does not run: %s", e.FFmpeg, Scrub(version.Stderr, 200))
+		}
+		first = "ffmpeg ?"
+		if lines := strings.SplitN(version.Stdout, "\n", 2); lines[0] != "" {
+			first = lines[0]
+		}
+		if keepFFmpeg {
+			remember(ffmpegKey, first)
+		}
 	}
 	e.Log.Detail("%s", first)
 
-	if run(ctx, "", e.FFprobe, "-version").Code != 0 {
-		e.Log.ClearProgress()
-		return renderErr("%s is missing, which usually means a partial ffmpeg install.",
-			e.FFprobe)
+	ffprobeKey, keepFFprobe := keyFor("ffprobe version", e.FFprobe, "")
+	if _, ran := recall[bool](ffprobeKey); !ran {
+		if run(ctx, "", e.FFprobe, "-version").Code != 0 {
+			e.Log.ClearProgress()
+			return renderErr("%s is missing, which usually means a partial ffmpeg install.",
+				e.FFprobe)
+		}
+		if keepFFprobe {
+			remember(ffprobeKey, true)
+		}
 	}
 	// Which encoder, before anything is spent. It used to insist on
 	// libx264, which is the one library that makes an ffmpeg build GPL and

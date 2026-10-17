@@ -670,6 +670,20 @@ at least 90% of the tone from its first moment, after the fade of a cut.
 Without the lead, the quietest piece was 66% in Matroska, 83% in MP4 and
 silent in MP3.
 
+### What ffmpeg and ffprobe said, kept
+
+The app makes an engine for every job, every caption it draws and every
+video it reads. Each used to ask ffprobe five questions about the episode,
+ffmpeg for its filters and a test caption, and both tools for their
+versions, though nothing had changed. `engine/probed.go` keeps those
+answers for the process, by the path, size and modification time of the
+tool and of the file, so a file written again or a tool replaced is asked
+again. `Probe`, `pictureStart`, `SubtitleFilter` and `Preflight` ask it
+first. A probe whose context was stopped is not kept, and no caller can
+change what is kept through the `SourceInfo` it was given. What a render
+reads of each piece it cuts, `unevenPieces`, is its own stretch of the
+file and is read every time.
+
 ### Frames at their own times
 
 `cutOf` counts frame k at k over the rate after the picture's first

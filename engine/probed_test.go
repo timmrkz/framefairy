@@ -156,3 +156,35 @@ func TestTheSubtitleSyntaxIsFoundOnceForEveryEngine(t *testing.T) {
 		t.Errorf("a second engine asked the same ffmpeg %d more times", got-once)
 	}
 }
+
+// Preflight asks ffmpeg and ffprobe for their versions once for the
+// process, not once for every engine the app makes.
+//
+// On the real disk: the stand-ins are programs the engine runs.
+func TestEveryToolIsAskedItsVersionOnce(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ffmpeg, _ := countingTool(t, "ffmpeg")
+	ffprobe, _ := countingTool(t, "ffprobe")
+	versions := func() int {
+		n := 0
+		for _, tool := range []string{ffmpeg, ffprobe} {
+			data, _ := os.ReadFile(filepath.Join(filepath.Dir(tool), "asked"))
+			n += strings.Count(string(data), "-version\n")
+		}
+		return n
+	}
+	for range 3 {
+		e := &Engine{Log: NewLog(io.Discard, false, false), FFmpeg: ffmpeg, FFprobe: ffprobe,
+			SkipCaptions: true}
+		// The stand-in knows no encoder, so Preflight fails past the
+		// versions. It must fail there, not on either tool.
+		err := e.Preflight(ctx)
+		if err == nil || strings.Contains(err.Error(), "does not run") || strings.Contains(err.Error(), "partial") {
+			t.Fatalf("preflight said %v", err)
+		}
+	}
+	if got := versions(); got != 2 {
+		t.Errorf("three engines asked for a version %d times, not once for each tool", got)
+	}
+}
