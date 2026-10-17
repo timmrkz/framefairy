@@ -905,7 +905,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFrame, slowDown, BITS } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 export const sequences = [
@@ -3459,7 +3459,9 @@ async function asPreviewed(page, rate, before) {
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, -230);
   await page.keyboard.up("Control");
-  await page.waitForTimeout(300);
+  // A wheel moves the view at once, see wheel in ClipTimeline.svelte, so
+  // two frames have drawn it.
+  await nextPaint(page, 2);
   const problems = [];
   let looked = 0;
   let missed = 0;
@@ -3479,7 +3481,7 @@ async function asPreviewed(page, rate, before) {
       if (Math.abs(off) < track.w / 4) break;
       await page.mouse.move(track.x + track.w / 2, high(track));
       await page.mouse.wheel(off, 0);
-      await page.waitForTimeout(150);
+      await nextPaint(page, 2);
     }
     const g = await handles(page);
     const x0 = await xOf(page, from);
@@ -3959,16 +3961,24 @@ for (const seq of toWalk) {
           const cue = now.captions.find((c) => String(c.first) === first);
           const words = cue?.lines.flatMap((l) => l.words) ?? [];
           await page.locator(`.clip-timeline .caption[data-first="${first}"]`).first().click();
-          let lit = null;
           // Until it lights a word of this caption, since the word the last
-          // click lit stays until the frame of this one is drawn.
-          for (let i = 0; i < 30; i++) {
-            lit = await page.evaluate(() => document.querySelector(".captions .word.now")?.textContent ?? null);
-            if (lit && words.some((w) => w.text === lit)) break;
-            await page.waitForTimeout(100);
-          }
-          if (!lit || !words.some((w) => w.text === lit)) {
-            wrong = `a click on the caption block of "${words.map((w) => w.text).join(" ")}" lit ${lit ? `"${lit}"` : "no word"}`;
+          // click lit stays until the frame of this one is drawn. A word is
+          // known by where it starts as well as by what it says: two
+          // captions can share a word, and the word the click before lit
+          // then passed for this caption's.
+          const ours = words.map((w) => [w.text, w.start]);
+          const ofOurs = (ours) => {
+            const el = document.querySelector(".captions .word.now");
+            const at = Number(el?.dataset.at);
+            return !!el && ours.some(([text, start]) => text === el.textContent && Math.abs(start - at) < 0.0005);
+          };
+          await page.waitForFunction(ofOurs, ours, { polling: "raf", timeout: 3000 }).catch(() => {});
+          if (!(await page.evaluate(ofOurs, ours))) {
+            const lit = await page.evaluate(() => {
+              const el = document.querySelector(".captions .word.now");
+              return el ? `"${el.textContent}" at ${el.dataset.at}` : null;
+            });
+            wrong = `a click on the caption block of "${words.map((w) => `${w.text} at ${w.start}`).join(" ")}" lit ${lit ?? "no word"}`;
             break;
           }
         }
@@ -4039,7 +4049,7 @@ for (const seq of toWalk) {
         await page.mouse.down();
         for (let k = 1; k <= 6; k++) {
           await page.mouse.move(x + ((target - x) * k) / 6, y);
-          await page.waitForTimeout(30);
+          await nextPaint(page);
         }
         await page.waitForTimeout(300);
         const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
@@ -4706,7 +4716,7 @@ for (const seq of toWalk) {
         await page.mouse.down();
         for (let i = 1; i <= 20; i++) {
           await page.mouse.move(x + (px * i) / 20, y);
-          await page.waitForTimeout(40);
+          await nextPaint(page);
         }
         await page.mouse.up();
         if (dragShift) await page.keyboard.up("Shift");
@@ -4877,7 +4887,7 @@ for (const seq of toWalk) {
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + (px * i) / 10, y);
-          await page.waitForTimeout(30);
+          await nextPaint(page);
         }
         await page.mouse.up();
         await watchEdge(page, edgeLabel[which]);
@@ -4889,7 +4899,7 @@ for (const seq of toWalk) {
         await page.mouse.down();
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + px + (again * i) / 10, y);
-          await page.waitForTimeout(30);
+          await nextPaint(page);
         }
         // The hand stays down until the edge has left where the first drag
         // let it go, for up to two seconds, so a busy machine slow to
@@ -5049,7 +5059,7 @@ for (const seq of toWalk) {
         await page.mouse.down();
         for (let i = 1; i <= 20; i++) {
           await page.mouse.move(middle(box) + (px * i) / 20, box.y + box.h / 2);
-          await page.waitForTimeout(40);
+          await nextPaint(page);
         }
         await page.mouse.up();
         await page.waitForTimeout(500);
@@ -5745,7 +5755,10 @@ for (const seq of toWalk) {
           const landed = Number(await sized.evaluate(() => document.querySelector(".screen").dataset.playhead));
           const n = shortIndex(landed);
           if (!got || n < 0) continue;
-          const want = shortFrame(short, n, got.w, got.h);
+          // The frame and the two either side of it, in one read.
+          const near = shortFramesFrom(short, Math.max(0, n - 1), n + 1, got.w, got.h);
+          const ofShort = (m) => near[m - Math.max(0, n - 1)] ?? Buffer.alloc(0);
+          const want = ofShort(n);
           const d = captionDiff(got.pixels, want, got.w, got.h);
           compared++;
           report.push(`${landed.toFixed(2)} s, frame ${n} of the short: ${d.mean.toFixed(2)} on average`);
@@ -5764,7 +5777,7 @@ for (const seq of toWalk) {
           // highlight would not pass.
           for (const m of [n - 1, n + 1]) {
             if (m < 0) continue;
-            const other = shortFrame(short, m, got.w, got.h);
+            const other = ofShort(m);
             if (other.length !== want.length) continue;
             const o = captionDiff(want, other, got.w, got.h, 3);
             if (o.mean < 1) continue;
@@ -6036,6 +6049,9 @@ for (const seq of toWalk) {
             const f = fig.getBoundingClientRect();
             const inner = { l: f.left + fig.clientLeft, t: f.top + fig.clientTop, w: fig.clientWidth, h: fig.clientHeight };
             const b = img.getBoundingClientRect();
+            // A picture that never loaded has no size, and every sum below
+            // with it is NaN, which no comparison is true of.
+            if (!img.complete || !img.naturalWidth) return [`${img.alt || "a picture"} did not load`];
             const fit = getComputedStyle(img).objectFit;
             const s = fit === "contain" ? Math.min(b.width / img.naturalWidth, b.height / img.naturalHeight) : b.width / img.naturalWidth;
             const w = img.naturalWidth * s;
@@ -6051,6 +6067,7 @@ for (const seq of toWalk) {
           }),
         );
         if (bad.length) wrong = bad.join(", ");
+        else if (!(await page.locator("li.tile figure img").count())) wrong = "there is no picture to fit";
         break;
       }
       case "report at end": {
@@ -6104,7 +6121,8 @@ for (const seq of toWalk) {
       case "toast closed": {
         const before = await page.locator(".toast").count();
         await page.locator(".toast button.close").first().click();
-        await page.waitForTimeout(400);
+        // Within 400 ms, and on as soon as it is gone.
+        await page.waitForFunction((n) => document.querySelectorAll(".toast").length === n, before - 1, { polling: "raf", timeout: 400 }).catch(() => {});
         if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
         break;
       }
@@ -6800,7 +6818,7 @@ for (const seq of toWalk) {
         });
         const name = (await episodeOn(page)).split("/").pop();
         await page.reload();
-        await page.waitForTimeout(1200);
+        await page.locator("aside li", { hasText: name }).first().waitFor();
         await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
         await page.locator("aside ol li[data-key] button.pick").first().click();
         await settle(page);
@@ -6899,7 +6917,7 @@ for (const seq of toWalk) {
         const path = await page.evaluate(() => [...window.__calls].reverse().find((c) => c.name === "Clips")?.args[0]);
         await control(url, "/reopen");
         await page.reload();
-        await page.waitForTimeout(1200);
+        await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
         await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
         await settle(page);
         break;
@@ -8093,7 +8111,7 @@ for (const seq of toWalk) {
           })),
         );
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(300);
+        await page.locator('[role="listbox"]').waitFor({ state: "detached" });
         const got = rows.map((r) => r.name);
         const on = rows.filter((r) => r.picked).map((r) => r.name);
         if (JSON.stringify(got) !== JSON.stringify(names)) wrong = `the list offers ${JSON.stringify(got)}, not ${JSON.stringify(names)}`;
@@ -9204,7 +9222,7 @@ for (const seq of toWalk) {
           const [a, b] = [path[leg - 1], path[leg]];
           for (let i = 1; i <= 12; i++) {
             await page.mouse.move(left + (a + ((b - a) * i) / 12) * span, y);
-            await page.waitForTimeout(16);
+            await nextPaint(page);
           }
         }
         await page.mouse.up();
@@ -9495,16 +9513,21 @@ async function dropOn(page, files) {
       const frame = document.querySelector(".landing");
       return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
     });
+  // Within 300 ms each way, and on as soon as the frame stands or has gone.
+  const comes = (want) =>
+    page
+      .waitForFunction((want) => getComputedStyle(document.querySelector(".landing") ?? document.body).opacity === want && !!document.querySelector(".landing"), want, { polling: "raf", timeout: 300 })
+      .catch(() => {});
   await page.evaluate(([x, y]) => {
     window._wails.handleDragEnter();
     window._wails.handleDragOver(x, y);
   }, [x, y]);
-  await page.waitForTimeout(300);
+  await comes("1");
   const held = await landing();
   if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
   const took = await page.evaluate(([f, x, y]) => window._wails.handlePlatformFileDrop(f, x, y), [files, x, y]);
   if (!took) return `the drop at ${x}, ${y} landed on no drop target`;
-  await page.waitForTimeout(300);
+  await comes("0");
   const after = await landing();
   if (after !== "0") return `the app still wore its frame after the drop, its opacity was ${after}`;
   return null;

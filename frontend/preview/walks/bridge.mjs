@@ -260,8 +260,24 @@ export const middle = (r) => r.x + r.w / 2;
 // High on the track, over the waveform rather than the captions' band.
 export const high = (t) => t.y + t.h * 0.2;
 
+// Waits for the page to draw n frames, so whatever the walk did last has
+// reached the screen however busy the machine is.
+export async function nextPaint(page, n = 1) {
+  await page.evaluate(
+    (n) =>
+      new Promise((r) => {
+        const next = (left) => (left ? requestAnimationFrame(() => next(left - 1)) : r());
+        next(n);
+      }),
+    n,
+  );
+}
+
 // A drag of the pointer from a point, by dx, in steps the way a hand
-// moves, with shift held when asked.
+// moves, with shift held when asked. Each step is a frame of its own, the
+// way a pointer moves on screen. A step a fixed 30 ms after the last can
+// come two to a frame on a busy machine, and Chromium then hands the app
+// only the last of them.
 export async function drag(page, x, y, dx, shift) {
   if (shift) await page.keyboard.down("Shift");
   await page.mouse.move(x, y);
@@ -269,7 +285,7 @@ export async function drag(page, x, y, dx, shift) {
   const n = 6;
   for (let i = 1; i <= n; i++) {
     await page.mouse.move(x + (dx * i) / n, y);
-    await page.waitForTimeout(30);
+    await nextPaint(page);
   }
   await page.mouse.up();
   if (shift) await page.keyboard.up("Shift");
@@ -752,4 +768,17 @@ export async function cropPixels(page, source) {
 export function shortFrame(path, n, w, h) {
   return execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=eq(n\\,${n}),scale=${w}:${h}:flags=area`,
     "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+}
+
+// The frames of a short from the nth to the mth, both counted, read back
+// with ffmpeg in one go, each the way shortFrame gives one. ffmpeg decodes
+// a short from its start to reach a frame, so the frames either side of
+// one cost nothing more read with it, and three times as much read alone.
+export function shortFramesFrom(path, n, m, w, h) {
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", `select=between(n\\,${n}\\,${m}),scale=${w}:${h}:flags=area`,
+    "-fps_mode", "passthrough", "-frames:v", String(m - n + 1), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+  const size = w * h * 3;
+  const out = [];
+  for (let at = 0; at + size <= raw.length; at += size) out.push(raw.subarray(at, at + size));
+  return out;
 }
