@@ -1638,7 +1638,7 @@
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
   // The stretch each piece the clip draws is rotated in, for the rotate
-  // icon stamped in the middle of its wash: the pieces that play
+  // icon in the middle of its wash: the pieces that play
   // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
   // one's start to the last one's end, or null for a piece as filmed.
   // Issue #348.
@@ -2303,31 +2303,50 @@
   }
 
   /* A rotated stretch has the Rotate button's icon, Lucide's rotate-ccw,
-     large in its middle, in the dark of the empty track, so it reads as
-     stamped out of the wash and is the same dark over the waveform as
-     beside it. Tim's idea, issue #348: a small mark in a corner ran into
-     the keyframes, an icon really cut out of the wash showed the black of
-     the track in one place and the grey of the waveform in the next, and
-     the wash drawn over it a second time was too faint to see. It is
-     as tall as the track leaves between the keyframes along the top rule
-     and the thumbnails along the foot, 10 px each and a space of 4 px,
-     and never wider than the stretch less a space of 8 px each side, so
-     it shrinks as the clip timeline is zoomed out and the stretch
-     narrows, and sits in its middle as it is zoomed. The stretch may be
-     several pieces: each draws its own share of the one icon, placed
-     from the stretch's middle in the track's own width, 1cqw a hundredth
-     of it, the unit x() places everything in. A mask is drawn from the
-     lines at the size it is shown, so it is sharp at every size. */
-  .piece.turned::after {
+     large in its middle: the accent at half strength, so the waveform
+     still shows through it, with a dark glow round it that parts it from
+     the waveform and from the empty track alike. Tim chose it from a
+     sheet of sixteen, issue #348. A small mark in a corner ran into the
+     keyframes, an icon cut out of the wash showed the black of the track
+     in one place and the grey of the waveform in the next, the wash drawn
+     over it a second time was too faint, and a solid dark was too
+     strong. The glow is the icon's lines drawn wider and softened, with
+     the icon itself taken out, so it lies only outside it. It is as tall
+     as the track leaves between the keyframes along the top rule and the
+     thumbnails along the foot, 10 px each and a space of 4 px, and never
+     wider than the stretch less a space of 8 px each side, so it shrinks
+     as the clip timeline is zoomed out and the stretch narrows, and sits
+     in its middle as it is zoomed. The stretch may be several pieces:
+     each draws its own share of the one icon, placed from the stretch's
+     middle in the track's own width, 1cqw a hundredth of it, the unit x()
+     places everything in. A mask is drawn from the lines at the size it
+     is shown, so it is sharp at every size. */
+  .piece.turned {
     --stamp: max(0px, min(calc(var(--wave-h, 112px) - 28px), calc(var(--run-w) * 1cqw - 16px)));
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
+  }
+
+  .piece.turned::before,
+  .piece.turned::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: var(--well);
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
     mask-size: var(--stamp) var(--stamp);
     mask-position: calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%;
     mask-repeat: no-repeat;
+  }
+
+  .piece.turned::before {
+    background: color-mix(in srgb, var(--well) 85%, transparent);
+    mask-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cfilter id='b' x='-30%25' y='-30%25' width='160%25' height='160%25'%3E%3CfeGaussianBlur stdDeviation='.33'/%3E%3C/filter%3E%3Cg filter='url%28%23b%29'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/g%3E%3C/svg%3E"),
+      var(--icon);
+    mask-composite: exclude;
+  }
+
+  .piece.turned::after {
+    background: var(--accent-fill-hi);
+    mask-image: var(--icon);
   }
 
   /* The wash at the clip's two ends takes the frame's corners, so none of

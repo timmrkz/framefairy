@@ -9066,10 +9066,10 @@ for (const seq of toWalk) {
         break;
       }
       case "stamp": {
-        // The rotate icon stamped over the rotated part, worked out from
-        // the layer the stylesheet lays over each piece of it: its colour
-        // against the empty track's,
-        // the size it is drawn at and where, against the part's middle,
+        // The rotate icon over the rotated part, worked out from the two
+        // layers the stylesheet lays over each piece of it, the icon and
+        // the glow round it: how much of what is under the icon shows
+        // through, the size it is drawn at and where, against the part's middle,
         // the band the keyframes stand in along the top of the clip
         // timeline and the band the thumbnails stand in along its foot.
         const got = await page.evaluate(() => {
@@ -9083,6 +9083,7 @@ for (const seq of toWalk) {
           const pieces = [...document.querySelectorAll(".clip-timeline .piece.turned")].map((e) => {
             const r = e.getBoundingClientRect();
             const css = getComputedStyle(e, "::after");
+            const glow = getComputedStyle(e, "::before");
             const size = parseFloat(css.maskSize);
             const left = parseFloat(css.maskPosition);
             return {
@@ -9094,7 +9095,9 @@ for (const seq of toWalk) {
               at: r.left + left,
               image: css.maskImage,
               colour: css.backgroundColor,
-              well: getComputedStyle(document.querySelector(".clip-timeline .track")).backgroundColor,
+              glow: glow.maskImage,
+              glowColour: glow.backgroundColor,
+              glowCut: glow.maskComposite,
               cut: getComputedStyle(e).maskImage,
             };
           });
@@ -9114,15 +9117,30 @@ for (const seq of toWalk) {
           wrong = `the rotated part's icon is drawn with ${p.image.slice(0, 40)}, not the rotate icon`;
           break;
         }
-        // The empty track's dark, solid, so it reads as a hole in the wash
-        // and is the same over the waveform as beside it, and nothing
-        // really cut out of the piece, where the track's black and the
-        // waveform's grey showed through by turns. The wash drawn again
-        // was too faint to see.
-        if (p.colour !== p.well) {
-          wrong = `the rotate icon is ${p.colour}, not the empty track's ${p.well}`;
+        // The accent at half strength, so the waveform shows through it,
+        // which a solid dark did not, and was too strong. Its alpha is the
+        // last number of the colour, rgba() or color() alike.
+        const alpha = (c) => {
+          const n = c.match(/[\d.]+/g)?.map(Number) ?? [];
+          return /\/|rgba/.test(c) ? n[n.length - 1] : 1;
+        };
+        if (Math.abs(alpha(p.colour) - 0.5) > 0.02) {
+          wrong = `the rotate icon is ${p.colour}, not the accent at half strength`;
           break;
         }
+        // A dark glow round it, the icon's lines drawn wider and softened
+        // with the icon itself taken out, so it parts the icon from the
+        // waveform and the empty track alike and lies only outside it.
+        if (!/svg[\s\S]*svg/.test(p.glow) || !/^exclude/.test(p.glowCut)) {
+          wrong = `the rotate icon has no glow round it, its mask is ${p.glow.slice(0, 40)} with ${p.glowCut}`;
+          break;
+        }
+        if (alpha(p.glowColour) < 0.5) {
+          wrong = `the glow round the rotate icon is ${p.glowColour}, too faint to part it from the waveform`;
+          break;
+        }
+        // Nothing really cut out of the piece, where the track's black and
+        // the waveform's grey showed through by turns.
         if (p.cut !== "none") {
           wrong = `the rotated part's wash has ${p.cut.slice(0, 40)} cut out of it`;
           break;

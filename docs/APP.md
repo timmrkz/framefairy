@@ -2174,15 +2174,16 @@ lies on its side. Plan row 3.25, the design is in
   rotated, and is dragged like any other. It moves the pieces of its shot
   rotated alike and no other. Rotated back all the way, the part has the
   crop it had before, which rotating never touched.
-- **A rotated part has the Rotate icon stamped in its wash** on the clip
-  timeline, large, in its middle, in the dark of the empty track, so it
-  reads as a hole in the wash and is the same dark over the waveform as
-  beside it. It is as tall as the track leaves between the
+- **A rotated part has the Rotate icon in its middle** on the clip
+  timeline, large, in the accent at half strength so the waveform shows
+  through it, with a dark glow round it that parts it from the waveform
+  and the empty track alike. It is as tall as the track leaves between the
   keyframes and the thumbnails, shrinks with the part as the clip timeline
   is zoomed out, and stays sharp at every size. Tim's idea, issue #348,
   after a small mark in the part's corner ran into the keyframes and an
   icon really cut out of the wash showed black in one place and grey in
-  the next, and the wash drawn over it a second time was too faint. It
+  the next, the wash drawn over it a second time was too faint, and a
+  solid dark was too strong. Tim chose it from a sheet of sixteen. It
   takes no click.
 - **Undo** takes a rotation back like any other edit.
 - **A phone's video stands up by itself.** A phone that records upright
