@@ -594,9 +594,15 @@
 //                      types the letters in the Font list's search field,
 //                      finds the family first, picks it with Enter and
 //                      waits for the captions drawn in it
-//   ["font list"]      the Font list hangs on the field's left edge, every
-//                      row is as tall as the field, and each family is
-//                      drawn in its own face
+//   ["font list"]      the Font list hangs on the field's left edge with
+//                      its corners, every row is as tall as the field and
+//                      square, nothing stands between the search field and
+//                      the rows or under them, each family is drawn in its
+//                      own face, ours by name first, and the field is
+//                      drawn in the face picked
+//   ["search order", letters]
+//                      what typing the letters in the Font list finds is
+//                      in the order of the whole list, under its own head
 //   ["style is", name] the Style field says this
 //   ["style", name]    picks this style of the family, and waits for the
 //                      captions drawn in it
@@ -1270,6 +1276,13 @@ export const sequences = [
     // looks like.
     name: "the font list hangs on the field's edge with rows as tall as it, each in its own face",
     steps: [["font list"]],
+  },
+  {
+    // Found by Tim on #349: a search sorted what it found by how well it
+    // answered, so Archivo Black stood under the head of the installed
+    // fonts.
+    name: "a search of the fonts keeps the order and the heads of the list",
+    steps: [["search order", "b"]],
   },
   {
     // Found by Tim on #349: a family is picked first and then its style,
@@ -7463,8 +7476,25 @@ for (const seq of toWalk) {
         // are read once the faces have come.
         await page.evaluate(() => document.fonts.ready);
         const seen = await page.evaluate(() => {
-          const field = document.querySelector('button.pick[aria-label="Font"]').getBoundingClientRect();
+          const trigger = document.querySelector('button.pick[aria-label="Font"]');
+          const field = trigger.getBoundingClientRect();
           const list = document.querySelector(".pick-list").getBoundingClientRect();
+          const rowsBox = document.querySelector(".pick-list .pick-rows");
+          const first = document.querySelector(".pick-list .pick-rows .pick-row, .pick-list .pick-rows .pick-group");
+          const search = document.querySelector(".pick-list .pick-search").getBoundingClientRect();
+          const corner = (el) => getComputedStyle(el).borderTopLeftRadius;
+          const above = first.getBoundingClientRect().top - search.bottom;
+          // The last row, with the rows scrolled to their end, to within
+          // the part of a pixel a scroll is rounded to.
+          rowsBox.scrollTop = rowsBox.scrollHeight;
+          const all = [...document.querySelectorAll(".pick-list .pick-row")];
+          const look = {
+            corners: [corner(trigger), corner(document.querySelector(".pick-list"))],
+            rowCorner: corner(all[0]),
+            above,
+            below: rowsBox.getBoundingClientRect().bottom - all.at(-1).getBoundingClientRect().bottom,
+            face: getComputedStyle(trigger.querySelector(".said > span:last-child")).fontFamily,
+          };
           const rows = [...document.querySelectorAll(".pick-list .pick-row")].map((row) => {
             const what = row.querySelector(".what");
             const family = getComputedStyle(what).fontFamily.split(",")[0].replace(/"/g, "").trim();
@@ -7475,7 +7505,7 @@ for (const seq of toWalk) {
               drawn: document.fonts.check(`13px "${family}"`, what.textContent),
             };
           });
-          return { field: { left: field.left, height: field.height }, list: { left: list.left, height: list.height }, rows };
+          return { field: { left: field.left, height: field.height }, list: { left: list.left, height: list.height }, rows, look };
         });
         await page.keyboard.press("Escape");
         await watch.step("press", s);
@@ -7488,6 +7518,44 @@ for (const seq of toWalk) {
         else if (!narrow) wrong = "the Font list has no Bridge Narrow";
         else if (narrow.family !== "Bridge Narrow" || !narrow.drawn)
           wrong = `Bridge Narrow is drawn in ${narrow.family}${narrow.drawn ? "" : ", which has not loaded"}`;
+        else if (seen.rows.slice(0, 3).map((row) => row.name).join(", ") !== "Anton, Archivo Black, Inter")
+          wrong = `the app's fonts stand as ${seen.rows.slice(0, 3).map((row) => row.name).join(", ")}, not by name`;
+        else if (seen.look.corners[0] !== seen.look.corners[1])
+          wrong = `the list's corners are ${seen.look.corners[1]}, its field's ${seen.look.corners[0]}`;
+        else if (seen.look.rowCorner !== "0px") wrong = `a row has corners of ${seen.look.rowCorner}`;
+        else if (Math.abs(seen.look.above) > 0.5 || Math.abs(seen.look.below) >= 1)
+          wrong = `${seen.look.above.toFixed(1)} px between the search field and the first row, ${seen.look.below.toFixed(1)} under the last`;
+        else if (!seen.look.face.startsWith('"Inter Black"'))
+          wrong = `the Font field is drawn in ${seen.look.face}, not in Inter Black`;
+        break;
+      }
+      case "search order": {
+        // What a search finds stands in the order of the whole list, each
+        // row under the head of its own group.
+        const order = () =>
+          page.evaluate(() =>
+            [...document.querySelectorAll(".pick-list .pick-group, .pick-list .pick-row")].map((it) =>
+              (it.classList.contains("pick-group") ? "# " : "") + it.textContent.trim(),
+            ),
+          );
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        const whole = await order();
+        await page.keyboard.type(arg);
+        await watch.step("type", s);
+        const found = await order();
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const head = (list, name) => list.slice(0, list.indexOf(name)).filter((it) => it.startsWith("# ")).at(-1) ?? "";
+        const rows = found.filter((it) => !it.startsWith("# "));
+        const places = rows.map((name) => whole.indexOf(name));
+        if (rows.length < 2) wrong = `${arg} found ${rows.join(", ") || "nothing"}`;
+        else if (places.some((at, i) => at < 0 || (i > 0 && at < places[i - 1])))
+          wrong = `${arg} found ${rows.join(", ")}, not in the order of the list`;
+        else {
+          const moved = rows.find((name) => head(found, name) !== head(whole, name));
+          if (moved) wrong = `${moved} stands under ${head(found, moved) || "no head"} after ${arg}`;
+        }
         break;
       }
       case "style is": {

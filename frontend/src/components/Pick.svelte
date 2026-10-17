@@ -26,6 +26,7 @@
   // wearing the progress track's rounded corners.
   import { Command, Popover, Select } from "bits-ui";
   import Icon from "./Icon.svelte";
+  import { matches } from "../lib/match";
 
   let {
     value = "",
@@ -188,16 +189,27 @@
   let typed = $state("");
   let lit = $state("");
 
-  // The rows of a list to search, in their groups, a group being the rows
-  // from where it is named until the next.
+  // The rows of a list to search that answer what is typed, in their
+  // groups and in the order of the whole list, a group being the rows from
+  // where it is named until the next. They are never sorted by how well
+  // they answer: the command list did that, and with it moved a font of
+  // the app's under the head of the installed ones, see matches.
   const sections = $derived.by(() => {
     const out: { group?: string; options: typeof options }[] = [];
     for (const option of options) {
+      if (!matches(option.label, typed)) continue;
       const last = out[out.length - 1];
       if (last && last.group === option.group) last.options.push(option);
       else out.push({ group: option.group, options: [option] });
     }
     return out;
+  });
+
+  // The lit row stays on a row that is still there as the rows narrow,
+  // and goes to the first that is when it is not.
+  $effect(() => {
+    const rows = sections.flatMap((section) => section.options);
+    if (rows.length && !rows.some((option) => option.value === lit)) lit = rows[0].value;
   });
 
   // The picked row stands in the middle of the list as it opens, the way a
@@ -233,7 +245,12 @@
     {:else}
       <span class="said">
         {#if !fit}<span class="room" aria-hidden="true">{longest}</span>{/if}
-        <span class:unpicked>{shown}</span>
+        <span
+          class:unpicked
+          class:shown={!!picked?.font}
+          style:font-family={picked?.font}
+          style:font-weight={picked?.font ? picked.weight : undefined}>{shown}</span
+        >
       </span>
       <span class="mark"><Icon name="pick" size={12} /></span>
     {/if}
@@ -281,7 +298,7 @@
           {#if open}
             <div {...wrapperProps}>
               <div {...props} class="pick-list searching">
-                <Command.Root bind:value={lit} vimBindings={false} label={label}>
+                <Command.Root bind:value={lit} vimBindings={false} shouldFilter={false} {label}>
                   {#snippet child({ props: root })}
                     <div {...root} class="pick-command">
                       <Command.Input bind:value={typed}>
@@ -298,13 +315,11 @@
                             <Command.Viewport>
                               {#snippet child({ props: viewport })}
                                 <div {...viewport}>
-                                  <Command.Empty>
-                                    {#snippet child({ props: empty })}
-                                      <div {...empty} class="pick-none">Nothing matches</div>
-                                    {/snippet}
-                                  </Command.Empty>
+                                  {#if sections.length === 0}
+                                    <div class="pick-none">Nothing matches</div>
+                                  {/if}
                                   {#each sections as section, i (section.group ?? "")}
-                                    <Command.Group value={section.group ?? "first"}>
+                                    <Command.Group value={section.group ?? "ours"}>
                                       {#snippet child({ props: group })}
                                         <div {...group}>
                                           {#if section.group}
@@ -563,13 +578,19 @@
        same 29 short of the list's, being the border, the same 8, the same
        12 and the same 8. The list stands on the trigger's right edge, so
        the two names end in one line. With 4 pixels of padding here as
-       well they were out by exactly that. */
-    padding: 4px 0;
+       well they were out by exactly that.
+
+       And nothing above the first row or under the last, which Tim saw
+       as a strip of nothing between the search field and the rows. The
+       rows run from edge to edge, the way the rows of a list in Finder
+       do, and the corners are the trigger's, so the list reads as the
+       trigger opened. */
+    padding: 0;
     overflow-y: auto;
     color: var(--text);
     background: var(--ink-1);
     border: 1px solid var(--line);
-    border-radius: var(--radius-m);
+    border-radius: var(--radius-s);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   }
 
@@ -586,7 +607,6 @@
     gap: 8px;
     height: var(--control-h);
     padding: 0 8px;
-    border-radius: var(--radius-s);
     cursor: pointer;
     user-select: none;
   }
@@ -732,7 +752,6 @@
 
   .pick-rows {
     min-height: 0;
-    padding: 4px 0;
     overflow-y: auto;
   }
 

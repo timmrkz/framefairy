@@ -56,8 +56,8 @@ export interface Family {
   faces: CaptionFont[];
 }
 
-// The families of the faces, the app's own first in the order it offers
-// them, then the machine's by name.
+// The families of the faces, the app's own first and then the machine's,
+// each by name, the way Font Book lists them.
 export function families(fonts: CaptionFont[]): Family[] {
   const byName = new Map<string, Family>();
   for (const font of fonts) {
@@ -79,7 +79,7 @@ export function families(fonts: CaptionFont[]): Family[] {
         Number(!!a.italic) - Number(!!b.italic),
     );
   }
-  const ours = all.filter((f) => !f.machine);
+  const ours = all.filter((f) => !f.machine).sort((a, b) => a.name.localeCompare(b.name));
   const theirs = all.filter((f) => f.machine).sort((a, b) => a.name.localeCompare(b.name));
   return [...ours, ...theirs];
 }

@@ -26,9 +26,10 @@ const ours = [
 ];
 
 describe("families", () => {
-  it("offers ours first in their order, then the machine's by name", () => {
+  // Tim asked why the app's three stood in no order he could see.
+  it("offers ours first, then the machine's, each by name", () => {
     const list = families([...ours, ...georgia, ...typewriter]);
-    expect(list.map((f) => f.name)).toEqual(["Inter", "Anton", "American Typewriter", "Georgia"]);
+    expect(list.map((f) => f.name)).toEqual(["Anton", "Inter", "American Typewriter", "Georgia"]);
     expect(list.map((f) => f.machine)).toEqual([false, false, true, true]);
   });
 
@@ -42,8 +43,8 @@ describe("families", () => {
   it("counts a family with a face of ours as ours", () => {
     const list = families([...ours, face("Inter Light", "Inter", "Light", 300)]);
     expect(list.map((f) => [f.name, f.machine, f.faces.length])).toEqual([
-      ["Inter", false, 2],
       ["Anton", false, 1],
+      ["Inter", false, 2],
     ]);
   });
 
