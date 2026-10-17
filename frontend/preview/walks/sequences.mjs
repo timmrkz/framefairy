@@ -6413,6 +6413,32 @@ for (const seq of toWalk) {
           wrong = "the microphone did not move while it heard a voice";
           break;
         }
+        // And it moves enough to be seen: at least six tenths of its size
+        // for every step of loudness. By a third it grew 3 px for a voice
+        // talking, and Tim could hardly see it.
+        const grew = await page
+          .waitForFunction(
+            () => {
+              const b = document.querySelector("button.dictate");
+              const icon = b?.querySelector("svg");
+              const loud = parseFloat(b?.style.getPropertyValue("--loud"));
+              if (!icon || !(loud > 0.3)) return false;
+              const size = Number(icon.getAttribute("width"));
+              return icon.getBoundingClientRect().width >= size * (1 + 0.6 * loud) - 0.5;
+            },
+            null,
+            { timeout: 10000, polling: "raf" },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!grew) {
+          const at = await page.evaluate(() => {
+            const b = document.querySelector("button.dictate");
+            return `${b.querySelector("svg").getBoundingClientRect().width.toFixed(1)} px wide at a loudness of ${b.style.getPropertyValue("--loud")}`;
+          });
+          wrong = `the microphone hardly grew with the voice, ${at}`;
+          break;
+        }
         // Two notes going up say the microphone is open, while it is.
         const up = await page.evaluate(() => window.__notes.slice(-2));
         if (up.length < 2 || !up.every((n) => n.open) || up[0].f >= up[1].f) {

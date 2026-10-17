@@ -847,10 +847,11 @@
   }
 
   /* The microphone moves with the voice it hears, so the person sees they
-     are heard. It grows by up to a third, about its middle, which moves
-     nothing else in the row. */
+     are heard. It grows by up to three quarters, about its middle, 16 px
+     to 28 px in a 32 px button, which moves nothing else in the row. By a
+     third, a voice talking grew it by 3 px, and Tim could hardly see it. */
   .act.dictate :global(svg) {
-    transform: scale(calc(1 + var(--loud, 0) / 3));
+    transform: scale(calc(1 + var(--loud, 0) * 0.75));
     transition: transform 100ms linear;
   }
 
