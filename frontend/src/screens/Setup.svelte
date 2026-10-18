@@ -228,7 +228,7 @@
                         autocomplete="off"
                         spellcheck="false"
                       />
-                      <button class="act" disabled={saving || !key.trim()} onclick={saveKey}>
+                      <button class="act" data-room={"Save\nSaving"} disabled={saving || !key.trim()} onclick={saveKey}>
                         {#if saving}<Busy />{/if}
                         {saving ? "Saving" : "Save"}
                       </button>
@@ -289,7 +289,12 @@
       {#if step === 0}
         <button class="primary go" onclick={() => (step = 1)}>Continue</button>
       {:else}
-        <button class="primary go" disabled={waiting || !setup.chosen} onclick={finish}>
+        <button
+          class="primary go"
+          data-room={"Finish setup\nFetching the speech model"}
+          disabled={waiting || !setup.chosen}
+          onclick={finish}
+        >
           {#if waiting}<Busy {fraction} />{/if}
           {waiting ? "Fetching the speech model" : "Finish setup"}
         </button>
@@ -490,17 +495,5 @@
     flex: none;
     border-top: 1px solid var(--line);
     padding-top: var(--gap);
-  }
-
-  /* Room for the longer wording and then some, so the button is the same
-     size while the model is coming and when it has come. The wording is
-     measured in the harness, where the font is not the one macOS uses, so
-     the number has headroom rather than being the measurement. */
-  .go {
-    min-width: 216px;
-  }
-
-  .act {
-    min-width: 92px;
   }
 </style>

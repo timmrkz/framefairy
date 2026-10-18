@@ -297,7 +297,6 @@
     if (busy) {
       return {
         label: stopping ? "Cancelling" : "Cancel",
-        icon: "close",
         run: stopWork,
         off: stopping,
         primary: false,
@@ -312,7 +311,6 @@
     if (stopped) {
       return {
         label: "Continue",
-        icon: "play",
         run: carryOn,
         off: duration <= 0,
         primary: true,
@@ -321,7 +319,6 @@
     }
     return {
       label: "New",
-      icon: "plus",
       run: newClips,
       off: duration <= 0 || to <= 0,
       primary: true,
@@ -3218,6 +3215,7 @@
             <button
               class="new"
               class:primary={action.primary}
+              data-room={"New\nContinue\nCancel\nCancelling"}
               onclick={action.run}
               disabled={action.off}
               title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
@@ -3225,7 +3223,6 @@
               <!-- A search says how it is going in the row its next clip
                    will appear in, where it can say what it is doing as
                    well, so the button only offers to stop it. -->
-              <Icon name={action.icon} />
               {action.label}
             </button>
           </div>
@@ -3474,6 +3471,7 @@
           {@const inHand = renderingCurrent || renderAsked === current.key}
           <button
             class="primary render"
+            data-room={"Render\nRender again\nCancel\nCancelling"}
             onclick={() => (inHand ? stopRender() : render(current))}
             disabled={inHand ? renderStopping || !renderingCurrent : !!working}
             title={inHand
@@ -3863,17 +3861,6 @@
     pointer-events: none;
   }
 
-  /* Wide enough for the longest word it ever says, Cancelling, so the row
-     does not move when a search starts or is stopped. */
-  .new {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-width: 114px;
-    padding: 0 10px;
-  }
-
   /* The clip list is exactly as tall as the video preview with the track
      and the controls under it, and scrolls inside that. Its own length never
      stretches the block, which would leave a gap beside the preview. */
@@ -3950,12 +3937,6 @@
 
   .listhead .grow {
     flex: 1;
-  }
-
-  /* Room for the longest of the three words this button says, so the row
-     keeps still while a clip renders. */
-  .render {
-    min-width: 122px;
   }
 
   label {

@@ -296,6 +296,14 @@
 //                      on whole pixels with a space between them, each
 //                      with the sidebar's bin in its corner, and the
 //                      row keeps its width while Report is pressed
+//   ["buttons fit", words]
+//                      opens Advanced where there is one, and every button
+//                      on screen that holds words alone is as wide as its
+//                      words and its padding, to a pixel: its own words,
+//                      or the longest of those it names in data-room. A
+//                      button made to fill its row, like a caption
+//                      setting's name, is not about its words. Buttons
+//                      saying each of words are among them (#362)
 //   ["write", text, n] types text into the report's field and puts the
 //                      cursor n characters in, or at its end for "end"
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
@@ -1948,6 +1956,23 @@ export const sequences = [
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
+    ],
+  },
+  {
+    // Issue #362. Tim saw the buttons a size of their own, mostly much
+    // wider than their words, and some of them growing past it on his
+    // Mac. A button is as wide as its words, and one whose words change
+    // keeps the room of the longest of them, measured in its own font.
+    name: "every button is as wide as its words and no wider",
+    steps: [
+      ["buttons fit", ["New", "Render"]],
+      ["settings"],
+      ["buttons fit", ["Choose…", "Check again"]],
+      ["updates", { from: "main", list: "main,pr-20" }],
+      ["status", "A newer build is ready"],
+      ["buttons fit", ["Relaunch"]],
+      ["bugs"],
+      ["buttons fit", ["Report"]],
     ],
   },
   {
@@ -6478,6 +6503,44 @@ for (const seq of toWalk) {
         await page.waitForTimeout(200);
         const c = await page.locator(".telling").evaluate((f) => ({ ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor }));
         if (c.ours || c.caret === "rgba(0, 0, 0, 0)") wrong = `the field hides its cursor after a click into its first line: ${JSON.stringify(c)}`;
+        break;
+      }
+      case "buttons fit": {
+        const disclose = page.locator("button.disclose");
+        if ((await disclose.count()) && (await disclose.getAttribute("aria-expanded")) !== "true") {
+          await disclose.click();
+          await settle(page);
+        }
+        const seen = await page.evaluate(() => {
+          const out = [];
+          const ruler = document.createElement("span");
+          ruler.style.cssText = "position: absolute; visibility: hidden; white-space: pre";
+          document.body.append(ruler);
+          for (const b of document.querySelectorAll("button")) {
+            const r = b.getBoundingClientRect();
+            const cs = getComputedStyle(b);
+            if (!r.width || cs.visibility === "hidden" || parseFloat(cs.flexGrow) > 0) continue;
+            if (b.matches(".link") || [...b.children].some((c) => !c.classList.contains("beam"))) continue;
+            const own = b.innerText.trim();
+            if (!own) continue;
+            ruler.style.font = cs.font;
+            ruler.style.letterSpacing = cs.letterSpacing;
+            let words = 0;
+            for (const t of [own, ...(b.dataset.room ?? "").split("\n").filter(Boolean)]) {
+              ruler.textContent = t;
+              words = Math.max(words, ruler.getBoundingClientRect().width);
+            }
+            const round = ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"].reduce((n, k) => n + parseFloat(cs[k]), 0);
+            out.push({ own, width: r.width, want: words + round });
+          }
+          ruler.remove();
+          return out;
+        });
+        const problems = seen
+          .filter((b) => Math.abs(b.width - b.want) > 1)
+          .map((b) => `${b.own} is ${b.width.toFixed(1)} px wide, its words and padding ${b.want.toFixed(1)}`);
+        for (const w of arg ?? []) if (!seen.some((b) => b.own === w)) problems.push(`no button says ${w}`);
+        if (problems.length) wrong = problems.join("\n");
         break;
       }
       case "report lines up": {

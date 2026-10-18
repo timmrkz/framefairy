@@ -258,9 +258,23 @@ input {
   padding: 0 12px;
 }
 
+/* A button is as wide as its words and the padding round them, never a
+   width of its own. One whose words change as it is used, Check again and
+   Checking, names every wording it has in data-room, a line each, and
+   keeps the room of the longest, measured here in the font it is drawn
+   in, so it fits its words and the row does not move when they change. */
 button {
   cursor: pointer;
   white-space: nowrap;
+}
+
+button[data-room]::after {
+  content: attr(data-room);
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: pre;
 }
 
 button:hover:not(:disabled) {

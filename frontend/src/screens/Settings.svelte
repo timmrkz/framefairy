@@ -766,6 +766,7 @@
                    control that can do something about it. -->
               <button
                 class="act"
+                data-room={"Download\nStarting\nCancel\nCancelling"}
                 title="Stop the download. What has arrived stays, and Download carries on from it"
                 disabled={cancelling}
                 onclick={cancelFetch}
@@ -780,6 +781,7 @@
             {:else if notHere && settings.planner === "local"}
               <button
                 class="act"
+                data-room={"Download\nStarting\nCancel\nCancelling"}
                 title="Fetch {inUse?.title}, {size(inUse?.download ?? 0)}. It finds clips once it is here"
                 disabled={starting}
                 onclick={download}
@@ -853,7 +855,12 @@
               />
               <!-- A key that was refused is refused again, so Save waits
                    until the field holds something else. -->
-              <button class="act" disabled={savingKey || !key.trim() || !!keyRefused} onclick={saveKey}>
+              <button
+                class="act"
+                data-room={"Save key\nChecking"}
+                disabled={savingKey || !key.trim() || !!keyRefused}
+                onclick={saveKey}
+              >
                 {#if savingKey}<Busy />{/if}
                 {savingKey ? "Checking" : "Save key"}
               </button>
@@ -1095,6 +1102,7 @@
             />
             <button
               class="act unlock"
+              data-room={"Unlock\nChecking"}
               disabled={unlocking || !licenceKey.trim() || !!licenceRefused}
               onclick={unlock}
             >
@@ -1242,7 +1250,12 @@
                 <span class="head">What the app found</span>
                 <span class="small muted">Looked for again whenever a setting changes.</span>
               </div>
-              <button class="act" onclick={check} disabled={checking} title="Look for the tools and models again"
+              <button
+                class="act"
+                data-room={"Check again\nChecking"}
+                onclick={check}
+                disabled={checking}
+                title="Look for the tools and models again"
                 >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
               >
             </div>
@@ -1363,10 +1376,7 @@
     font-weight: 600;
   }
 
-  /* Room for the longest wording, so a row keeps still whatever its
-     button says. */
   .act {
-    min-width: 116px;
     flex: none;
   }
 
