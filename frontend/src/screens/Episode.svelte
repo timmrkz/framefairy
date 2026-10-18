@@ -29,6 +29,7 @@
     type EpisodeStatus,
     type SourceView,
     type Word,
+    type Sentence,
     onUndo,
     onLevels,
   } from "../lib/api";
@@ -81,13 +82,14 @@
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
+  import SaidList from "../components/SaidList.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
-  import { said } from "../lib/said";
+  import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/glide";
   import { unchanged } from "../lib/unchanged";
@@ -388,6 +390,53 @@
   }
   // What the transcript on disk has heard.
   const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
+
+  // The search through what was said, in the clip column, #366: whether
+  // it is open, what is typed in it, and the sentences it reads, read
+  // again whenever the transcript on disk hears more.
+  let saying = $state(false);
+  let sayTyped = $state("");
+  let sentences = $state<Sentence[] | null>(null);
+  let sayField = $state<HTMLInputElement>();
+  const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
+  let sentencesAsked = 0;
+  $effect(() => {
+    if (!saying) return;
+    const of = path;
+    void savedKey;
+    const ticket = ++sentencesAsked;
+    untrack(() => {
+      api
+        .sentences(of)
+        .then((list) => {
+          if (ticket === sentencesAsked && of === path) sentences = list ?? [];
+        })
+        .catch((err) => said(`the sentences of the video could not be read: ${errorText(err)}`, { level: "warn" }));
+    });
+  });
+  // The parts of the video the transcript has not heard yet, which the
+  // search cannot look in. A gap under a second is between two words.
+  const unheard = $derived.by(() => {
+    if (!(duration > 0)) return [] as [number, number][];
+    const out: [number, number][] = [];
+    let at = 0;
+    for (const [a, b] of [...saved].sort((x, y) => x[0] - y[0])) {
+      if (a - at >= 1) out.push([at, a]);
+      at = Math.max(at, b);
+    }
+    if (duration - at >= 1) out.push([at, duration]);
+    return out;
+  });
+  function openSaying() {
+    act("search what was said");
+    saying = true;
+    void tick().then(() => sayField?.focus());
+  }
+  function closeSaying() {
+    saying = false;
+    sayTyped = "";
+    sentences = null;
+  }
 
   // How far the loudness is measured, which is the waveform. It is measured
   // on its own from the moment the episode is added, ahead of the
@@ -2773,6 +2822,7 @@
     onhold={(held) => player?.hold(held)}
     dimmed={!onClip}
     locked={busy}
+    unheard={saying ? unheard : []}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid
@@ -3191,6 +3241,30 @@
       <aside>
         <div class="pane asks">
           <div class="row listhead">
+            {#if saying}
+              <!-- The search through what was said takes the place of the
+                   head, the way the field over the font list does, and
+                   Escape or the cross gives the head back. -->
+              <label class="sayfield">
+                <Icon name="search" size={12} />
+                <input
+                  bind:this={sayField}
+                  bind:value={sayTyped}
+                  placeholder="Search what was said"
+                  aria-label="Search what was said"
+                  onkeydown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      closeSaying();
+                    }
+                  }}
+                />
+                <button class="glyph quiet" title="Close the search, Escape does the same" aria-label="Close the search" onclick={closeSaying}>
+                  <Icon name="close" size={12} />
+                </button>
+              </label>
+            {:else}
             <h2>{lane.word}</h2>
             {#if lane.count}
               <span class="muted num">{shown.length}</span>
@@ -3211,6 +3285,9 @@
               </Info>
             </span>
             <span class="grow"></span>
+            <button class="glyph" title="Search what was said" aria-label="Search what was said" onclick={openSaying}>
+              <Icon name="search" />
+            </button>
             <button
               class="search"
               class:primary={action.primary}
@@ -3223,8 +3300,18 @@
                    well, so the button only offers to stop it. -->
               {action.label}
             </button>
+            {/if}
           </div>
           <div class="scroll list">
+            {#if saying}
+              <SaidList
+                {sentences}
+                typed={sayTyped}
+                {unheard}
+                clips={shown}
+                onseek={(at) => seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30))}
+              />
+            {:else}
             <ClipList
               clips={shown}
               live={current ? numbers : null}
@@ -3247,6 +3334,7 @@
               onremove={removeClip}
               onputback={putClipBack}
             />
+            {/if}
           </div>
         </div>
       </aside>
@@ -3952,6 +4040,43 @@
 
   .listhead .grow {
     flex: 1;
+  }
+
+  /* The search through what was said, the field over the font list in the
+     head's place: the magnifier, what is typed, and the cross. */
+  .sayfield {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--control-h);
+    padding-left: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-1);
+    color: var(--muted);
+    cursor: text;
+  }
+
+  .sayfield:focus-within {
+    border-color: var(--accent);
+  }
+
+  .sayfield input {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    color: var(--text);
+    font: inherit;
+    background: transparent;
+    border: none;
+    outline: none;
+  }
+
+  .sayfield .glyph {
+    height: calc(var(--control-h) - 2px);
   }
 
   label {

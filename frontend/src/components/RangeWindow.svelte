@@ -49,6 +49,7 @@
     most = Infinity,
     reachSays = "",
     resumes = false,
+    unheard = [],
   }: {
     duration: number;
     // The window of the search in hand, drawn while shown.
@@ -101,6 +102,9 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
+    // The parts of the video not heard yet, drawn while what was said is
+    // searched, because that search cannot look there.
+    unheard?: [number, number][];
   } = $props();
 
   // What the mark is, in its titles.
@@ -131,6 +135,19 @@
   }
 
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
+
+  // Where a part not heard yet is drawn over the track's border, beside
+  // the track in the box the track and its border fill, the way the window
+  // is: from the column its fill in the track starts on to the column it
+  // ends on, and out to the range picker's own edge where it meets an end
+  // of the video, with its round corner.
+  function unheardEdge(a: number, b: number) {
+    const first = a <= 0.5;
+    const last = b >= duration - 0.5;
+    const left = first ? "0px" : `(${on(a, inner)} + 1px)`;
+    const right = last ? "100cqw" : `(${on(b, inner)} + 1px)`;
+    return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
+  }
 
   // Where the window is drawn, beside the track rather than in it, in the
   // box the track and its border fill. An edge on a minute is drawn on
@@ -345,6 +362,12 @@
   onpointerdown={scrub}
   aria-label="The range picker"
 >
+  <!-- What has not been heard yet, in the grey of a card, under the
+       minutes so their lines still show through it. Its dashed edge is
+       drawn over the track's border, beside the track, see below. -->
+  {#each unheard as [a, b] (a)}
+    <div class="unheard" style="left: {on(a)}; width: calc({on(b)} - {on(a)})"></div>
+  {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -395,6 +418,14 @@
     </Info>
   </span>
 </div>
+<!-- The edge of what has not been heard yet, dashed the way the card in
+     the clip list that says so is, laid over the track's border so the
+     grey covers it and the dashes run along the range picker's own edge
+     and the line the window is drawn on. Under the window. -->
+{#each unheard as [a, b] (a)}
+  {@const edge = unheardEdge(a, b)}
+  <div class="unheard-edge" class:first={edge.first} class:last={edge.last} style={edge.style}></div>
+{/each}
 {#if shown}
   <!-- Only looked at, never taken hold of: the window of a search in hand
        is the search's, and a press on it is a press on the track. Drawn beside
@@ -727,6 +758,52 @@
 
   .tip.bottom.to::after {
     clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
+
+  /* A part not heard yet, the grey of a card, over the track and under
+     the minutes and the clips. */
+  .unheard {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    background: var(--ink-1);
+    pointer-events: none;
+  }
+
+  /* Its edge, a ring in the same grey that covers the track's border
+     with the dashes over it, so where a part not heard yet meets the
+     border the border is dashed too. Under the window, which comes after
+     it. */
+  .unheard-edge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  .unheard-edge::before,
+  .unheard-edge::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--ink-1);
+    border-radius: inherit;
+  }
+
+  .unheard-edge::after {
+    border: 1px dashed var(--faint);
+  }
+
+  .unheard-edge.first {
+    border-top-left-radius: var(--radius-m);
+    border-bottom-left-radius: var(--radius-m);
+  }
+
+  .unheard-edge.last {
+    border-top-right-radius: var(--radius-m);
+    border-bottom-right-radius: var(--radius-m);
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing
