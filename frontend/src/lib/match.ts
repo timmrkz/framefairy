@@ -43,3 +43,32 @@ export function matches(name: string, typed: string): boolean {
   };
   return fewest(0, -1) <= Math.ceil(want.length / 2);
 }
+
+// Where a sentence of the transcript answers what was typed in the search
+// in the clip column, as the words to set in bold, from and to in the
+// text, or null where it does not answer. A sentence answers when it holds
+// what was typed, and the words that hold it are bold. Otherwise every
+// word typed has to find a word of the sentence the way a font finds its
+// name, see matches, and every word found is bold. Nothing typed answers
+// with nothing bold.
+export function found(text: string, typed: string): [number, number][] | null {
+  const want = typed.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!want) return [];
+  // The words, each without the marks around it, which are not bold.
+  const words = [...text.matchAll(/[\p{L}\p{N}](?:\S*[\p{L}\p{N}])?/gu)].map((m) => ({
+    from: m.index,
+    to: m.index + m[0].length,
+    bare: m[0],
+  }));
+  const have = text.toLowerCase();
+  const held: [number, number][] = [];
+  for (let at = have.indexOf(want); at >= 0; at = have.indexOf(want, at + want.length)) {
+    const end = at + want.length;
+    for (const w of words) if (w.from < end && w.to > at) held.push([w.from, w.to]);
+  }
+  if (held.length) return [...new Map(held.map((r) => [r[0], r])).values()].sort((a, b) => a[0] - b[0]);
+  const asked = want.split(" ");
+  const hits = asked.map((a) => words.filter((w) => w.bare && matches(w.bare, a)));
+  if (hits.some((h) => !h.length)) return null;
+  return [...new Set(hits.flat())].sort((a, b) => a.from - b.from).map((w) => [w.from, w.to]);
+}

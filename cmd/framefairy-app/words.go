@@ -191,6 +191,20 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 	return out, nil
 }
 
+// Sentences returns what the video says, sentence by sentence, as far as
+// it has been heard, for searching it in the clip column. Before the first
+// transcription there are none, which is an empty answer and not a failure.
+func (s *FrameFairy) Sentences(path string) ([]engine.SentenceView, error) {
+	if !s.store.Known(path) {
+		return nil, errNotInLibrary
+	}
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	return engine.Sentences(t), nil
+}
+
 // SetWord corrects a word of one clip, typed in its caption box. Every
 // other clip still reads it as it was heard. A word typed empty is removed
 // from the clip, and a word the clip removed typed back in beside its

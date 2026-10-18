@@ -287,6 +287,13 @@ export interface ClipView {
   found: [number, number];
 }
 
+// One sentence of what a video says, when it is said and its words.
+export interface Sentence {
+  start: number;
+  end: number;
+  text: string;
+}
+
 // One line of a caption, the way the render lays it out.
 export interface CaptionLine {
   words: Word[];
@@ -801,6 +808,9 @@ export const api = {
   // The words said in a part of the episode, for walking the playhead
   // from word to word.
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
+  // What the video says, sentence by sentence, as far as it has been
+  // heard, for searching it in the clip column.
+  sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // Removes one word from the captions of one clip alone, the word heard
