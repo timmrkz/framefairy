@@ -3,8 +3,10 @@ import "./app.css";
 import App from "./App.svelte";
 import ReportWindow from "./screens/ReportWindow.svelte";
 import { listen } from "./lib/said";
+import { escapeLetsGo } from "./lib/keys";
 
 listen();
+window.addEventListener("keydown", escapeLetsGo);
 
 // The report window is the same page with ?window=report, see bugs.go.
 const report = new URLSearchParams(location.search).get("window") === "report";

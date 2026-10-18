@@ -87,11 +87,13 @@
   // the colour in use.
   let typed = $state<string | null>(null);
 
-  // Whether the pop-up was left with the pointer. The keyboard goes back
-  // to the trigger only when it was left with the keyboard: a colour
-  // picked with the pointer lets go of the keyboard, the way every other
-  // field in the column does, so Shift and the arrows walk the words again
-  // and Enter opens the word rather than this pop-up a second time.
+  // Whether the pop-up lets go of the keyboard as it closes. The keyboard
+  // goes back to the trigger only when a colour was taken with it: a
+  // colour picked with the pointer lets go of the keyboard, the way every
+  // other field in the column does, so Shift and the arrows walk the words
+  // again and Enter opens the word rather than this pop-up a second time.
+  // Escape lets go too, the way it does on every list and field, so no
+  // ring is left on the trigger, issue #370.
   let byPointer = false;
 
   function draw(next: HSV) {
@@ -242,6 +244,7 @@
       sideOffset={4}
       align="start"
       onInteractOutside={() => (byPointer = true)}
+      onEscapeKeydown={() => (byPointer = true)}
       onCloseAutoFocus={(e) => {
         if (!byPointer) return;
         e.preventDefault();
