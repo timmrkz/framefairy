@@ -853,7 +853,11 @@
               />
               <!-- A key that was refused is refused again, so Save waits
                    until the field holds something else. -->
-              <button class="act" disabled={savingKey || !key.trim() || !!keyRefused} onclick={saveKey}>
+              <button
+                class="act"
+                disabled={savingKey || !key.trim() || !!keyRefused}
+                onclick={saveKey}
+              >
                 {#if savingKey}<Busy />{/if}
                 {savingKey ? "Checking" : "Save key"}
               </button>
@@ -1242,7 +1246,11 @@
                 <span class="head">What the app found</span>
                 <span class="small muted">Looked for again whenever a setting changes.</span>
               </div>
-              <button class="act" onclick={check} disabled={checking} title="Look for the tools and models again"
+              <button
+                class="act"
+                onclick={check}
+                disabled={checking}
+                title="Look for the tools and models again"
                 >{#if checking}<Busy />{/if}{checking ? "Checking" : "Check again"}</button
               >
             </div>
@@ -1363,10 +1371,7 @@
     font-weight: 600;
   }
 
-  /* Room for the longest wording, so a row keeps still whatever its
-     button says. */
   .act {
-    min-width: 116px;
     flex: none;
   }
 

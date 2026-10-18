@@ -856,17 +856,13 @@
     }
   }
 
-  /* Room for the longest wording of Report, Making…, so the row keeps
-     still. */
   .act {
-    min-width: 116px;
     flex: none;
   }
 
   /* The microphone and the paperclip are square, as tall as every control
      in the row and as wide. */
   .act.square {
-    min-width: 0;
     width: var(--control-h);
     padding: 0;
   }

@@ -273,10 +273,7 @@
     color: var(--warn);
   }
 
-  /* Room for the longest wording, Cancelling, so the row keeps still
-     whatever the button says. */
   .act {
-    min-width: 104px;
     flex: none;
   }
 </style>

@@ -361,7 +361,7 @@ export interface KeptWindow {
 }
 
 // How many searches have read each part of an episode. Any window can be
-// searched, as often as anyone likes, so this only says where New goes.
+// searched, as often as anyone likes, so this only says where Search goes.
 export interface CoverageView {
   // The whole episode in parts, each with how many searches have read it.
   passes: { from: number; to: number; times: number }[];
@@ -785,7 +785,7 @@ export const api = {
   waveform: (path: string, from: number, to: number, buckets: number) =>
     call<number[]>("Waveform", path, from, to, buckets),
   render: (path: string, req: RenderRequest) => call<Job>("Render", path, req),
-  // New: finds clips in a window, hearing the episode that far first.
+  // Search: looks for clips in a window, hearing the episode that far first.
   // click names the press, so a Cancel pressed after it stops it whichever
   // of the two reaches the Go side first, see stopClipWork.
   search: (path: string, req: PlanRequest, click: string) => call<Job>("Search", path, req, click),

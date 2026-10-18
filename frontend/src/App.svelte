@@ -860,12 +860,6 @@
     font-weight: 600;
   }
 
-  /* Room for Removing, so the row of answers does not move when one is
-     clicked. */
-  .answer {
-    min-width: 96px;
-  }
-
   /* The rail keeps its own column, so nothing of the workspace ever hides
      under it. The sidebar grows over the workspace from there. */
   .shell {

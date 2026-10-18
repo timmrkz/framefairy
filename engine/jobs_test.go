@@ -593,7 +593,7 @@ func TestAPlanIsWhereTheSearchSaysItIs(t *testing.T) {
 // before anything the search does can be cut off: the pass of a window to
 // the episode's end asks ffmpeg for its length, and a search the closing
 // cancelled there left no record, and nothing to say it had been asked
-// for. The walk searching.mjs found it, New pressed and the app closed.
+// for. The walk searching.mjs found it, Search pressed and the app closed.
 //
 // On the real disk: ffmpeg is asked how long the episode is.
 func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {

@@ -107,7 +107,7 @@ type Job struct {
 	// byHand is a search called off with Cancel, which says so where its
 	// work was the way one cut off by the app closing does, see stopByHand.
 	byHand bool
-	// click is the press of New or Continue that asked for the job, named
+	// click is the press of Search or Continue that asked for the job, named
 	// by the window, see stopClips.
 	click string
 	// act is what the person did that asked for the job, so the app's log
@@ -155,7 +155,7 @@ type queue struct {
 	// shut is set when the app quits. Nothing is queued after it.
 	shut bool
 	seq  uint64
-	// calledOff is, per episode, the press of New or Continue the last
+	// calledOff is, per episode, the press of Search or Continue the last
 	// Cancel at the head of the clip list was about, see stopClips.
 	calledOff map[string]string
 }
@@ -296,7 +296,7 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	}
 	if once {
 		for _, j := range q.jobs {
-			// One that was called off and is still stopping is not it: New
+			// One that was called off and is still stopping is not it: Search
 			// pressed right after Cancel is a new search.
 			if j.Episode == episode && j.Kind == kind && (j.State == JobQueued || j.State == JobRunning) &&
 				j.ctx.Err() == nil {
@@ -611,8 +611,8 @@ func (q *queue) stopByHand(id string) {
 // work on the clips of an episode, the search and every clip made by hand,
 // the way stopByHand calls off one of them. It names the episode and not a
 // job, so it needs nothing from the Go side first: Cancel takes effect the
-// moment it is pressed, also before the search New asked for is in the
-// queue. click is the press of New or Continue the Cancel came after. A
+// moment it is pressed, also before the search that Search asked for is in the
+// queue. click is the press of Search or Continue the Cancel came after. A
 // job that press asked for and that reaches the queue later is called off
 // as it does, see addSteps. Both happen under the queue's lock, so
 // whichever of the two calls comes first, the job never starts.
@@ -923,7 +923,7 @@ func (s *FrameFairy) CancelJob(id string) {
 }
 
 // StopClipWork is Cancel at the head of the clip list: it stops all the
-// work on the clips of an episode, and the search the press of New or
+// work on the clips of an episode, and the search the press of Search or
 // Continue named click asked for, whether or not that has reached the Go
 // side yet, see stopClips.
 func (s *FrameFairy) StopClipWork(path, click string) {

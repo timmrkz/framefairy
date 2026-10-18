@@ -394,9 +394,7 @@
     width: max-content;
   }
 
-  /* Room for the longest wording, Downloading, so the row keeps still. */
   .act {
-    min-width: 116px;
     flex: none;
   }
 </style>

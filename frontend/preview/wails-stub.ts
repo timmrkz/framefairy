@@ -468,7 +468,7 @@ const llmJob = () => {
 
 // ---------------------------------------------------------------------------
 // The searches, the way the Go side runs them, see docs/JOBS.md: one job
-// from New to its clips. It hears the episode from where the transcript
+// from Search to its clips. It hears the episode from where the transcript
 // ends to the end of its window, at 600 seconds of audio a second, and then
 // finds, and its twelve clips land one at a time on the way. Cancel stops
 // it where it is, and what it heard stays. Every search the interface asks
@@ -1182,7 +1182,7 @@ const Answers = {
         ]);
       case "Episode":
         return Promise.resolve({ source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: covered >= fullLength, covered, heard: heardParts(), measured: measuredNow(), measuredParts: measuredParts(), measuredAll: measuredNow() >= fullLength - 0.01, transcriptStale: false, plans, rendered: fresh ? 0 : 1, previews: 0, work: true, everSearched: true });
-      // New. A probe reads what was asked for on window.__searches.
+      // Search. A probe reads what was asked for on window.__searches.
       case "Search": {
         const req = args[1] as { From: number; To: number; Count?: number };
         // The Go side refuses a search it cannot start, while the app

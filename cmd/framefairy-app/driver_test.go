@@ -3,7 +3,7 @@ package main
 // The driver for the path tests in paths_test.go.
 //
 // A path test is what a person does, in the words of the app: add a video,
-// press New, press Cancel, close the app and open it again, press
+// press Search, press Cancel, close the app and open it again, press
 // Continue, press Render. This file is the one place that knows which calls
 // those are, so the way work is run underneath can change and the path
 // tests stay as they are. See docs/JOBS.md.
@@ -235,7 +235,7 @@ func (d *desk) add(name, seconds string) string {
 	return path
 }
 
-// search presses New on a window.
+// search presses Search on a window.
 func (d *desk) search(path string, w window) {
 	d.svc.Search(path, w.request(), "")
 }
@@ -262,7 +262,7 @@ func (d *desk) cancel(path string) {
 	d.svc.CancelJob(j.ID)
 }
 
-// press presses New on a window, as the press named click, and gives the
+// press presses Search on a window, as the press named click, and gives the
 // job the Go side answers with.
 func (d *desk) press(path string, w window, click string) Job {
 	return d.svc.Search(path, w.request(), click)

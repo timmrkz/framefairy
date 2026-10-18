@@ -298,7 +298,7 @@ app's the day 2.121 made it a state.
 
 ### `searching.mjs`: from a new video to its clips, and a search
 
-The gestures: adding a video with Add, New, Cancel, Continue, the model
+The gestures: adding a video with Add, Search, Cancel, Continue, the model
 holding its answers, failing or answering again, the speech slow or
 quick, the app closed and opened again, another episode opened, and a
 wait. With the speech quick and the model answering, adding a video waits
@@ -310,7 +310,7 @@ rules, besides every walk's:
 | --- | --- |
 | A new video gets its first clips with no click | while the models answer and the speech is quick |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
-| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, New otherwise | asked again for a few seconds, since a row is held a moment to be read |
+| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | asked again for a few seconds, since a row is held a moment to be read |
 | No row speaks of a failure the engine did not have | |
 | At rest, as many cards and the count beside Clips as the engine has clips | |
 | How work ended stays after a restart: a search the closing cut off is interrupted, one that stopped or failed stays as it was, one that was done leaves nothing | by how the engine left the search, which `/reopen` answers with |
@@ -847,7 +847,7 @@ the settings show, read out of the page itself, and which windows it has
 open. It presses a button the
 way a click does, found by its words, and it quits the app. It adds a
 video the way Add does once a file is picked, and asks for a search the
-way New does, and with that it can quit in the same moment, stopping
+way Search does, and with that it can quit in the same moment, stopping
 everything first the way the second Cmd+Q does. Which app is
 in front comes from `lsappinfo`, which needs no permission a runner does
 not have. The app's log goes to `~/Library/Logs/FrameFairy-outside.log`
@@ -881,7 +881,7 @@ sequence reads:
 ...
 ```
 
-The second sequence is the walk `searching.mjs` that pressed New and
+The second sequence is the walk `searching.mjs` that pressed Search and
 closed the app at once: it adds a video of 90 seconds, made with the
 ffmpeg the app carries, waits for its first search to end, asks for a
 search of 30 to 60 seconds and quits in the same moment, starts the app
