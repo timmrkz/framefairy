@@ -321,6 +321,10 @@
 //                      sees it settled there, with the cursor in it
 //   ["field", selector, text]
 //                      clicks the field selector names and types text
+//   ["escape lets go", selector]
+//                      clicks the control or field, presses Escape, and
+//                      sees no list or pop-up open, the keyboard let go
+//                      of and no ring on anything
 //   ["field reads", selector, text]
 //                      the field selector names holds text
 //   ["report reads", text]
@@ -1985,6 +1989,21 @@ export const sequences = [
       ["buttons fit", ["Relaunch"]],
       ["bugs"],
       ["buttons fit", ["Report"]],
+    ],
+  },
+  {
+    // Issue #370. Tim pressed Escape on the Font list and the list let
+    // go with no ring, on the Style list and its trigger kept the ring,
+    // and in the Size field and nothing happened. Escape lets go of
+    // every list, pop-up and field the same way, everywhere in the app.
+    name: "Escape lets go of every list, pop-up and field with no ring left",
+    steps: [
+      ["escape lets go", "#caption-font"],
+      ["escape lets go", "#caption-style"],
+      ["escape lets go", "label.setting:has-text('Size') input"],
+      ["escape lets go", "button.colour >> nth=0"],
+      ["settings"],
+      ["escape lets go", "input.licence-key"],
     ],
   },
   {
@@ -4811,6 +4830,22 @@ for (const seq of toWalk) {
         const [selector, text] = arg;
         await page.locator(selector).click();
         await page.keyboard.type(text);
+        break;
+      }
+      case "escape lets go": {
+        const control = page.locator(arg).first();
+        await control.click();
+        await settle(page);
+        await page.keyboard.press("Escape");
+        await settle(page);
+        const after = await control.evaluate((el) => ({
+          open: document.querySelectorAll(".pick-list, .colour-pop").length,
+          kept: document.activeElement === el,
+          lit: [...document.querySelectorAll(":focus-visible")].map((x) => x.id || x.getAttribute("aria-label") || x.className || x.tagName),
+        }));
+        if (after.open) wrong = `${arg}: a list or pop-up is still open after Escape`;
+        else if (after.kept) wrong = `${arg} still has the keyboard after Escape`;
+        else if (after.lit.length) wrong = `${arg}: a ring is left on ${after.lit.join(", ")} after Escape`;
         break;
       }
       case "field reads": {

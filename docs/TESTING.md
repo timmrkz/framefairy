@@ -463,7 +463,9 @@ second and a half more, four times over, as fast as they would be said,
 so pieces are settled while it listens and there is more to hear for
 12 s, and then nothing, and a recording there stops by itself after 8 s
 without a word. `field` clicks a field by its selector and
-types, and `field reads` says what it holds. For a clip of two shots: `add cameras`, a video filmed by two cameras,
+types, and `field reads` says what it holds. `escape lets go` clicks a
+control or field, presses Escape and sees nothing left open, nothing
+holding the keyboard and no ring. For a clip of two shots: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click where two shots meet, `trim past` a switch,
 which drags an edge two seconds beyond it, and `look` at every piece,
 which puts the playhead in its middle with a click on the clip timeline
