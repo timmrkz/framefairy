@@ -50,6 +50,7 @@
     reachSays = "",
     resumes = false,
     unheard = [],
+    unheardLit = -1,
   }: {
     duration: number;
     // The window of the search in hand, drawn while shown.
@@ -105,6 +106,8 @@
     // The parts of the video not heard yet, drawn while what was said is
     // searched, because that search cannot look there.
     unheard?: [number, number][];
+    // The one of them whose card is under the hand, lit a step.
+    unheardLit?: number;
   } = $props();
 
   // What the mark is, in its titles.
@@ -365,8 +368,8 @@
   <!-- What has not been heard yet, in the grey of a card, under the
        minutes so their lines still show through it. Its dashed edge is
        drawn over the track's border, beside the track, see below. -->
-  {#each unheard as [a, b] (a)}
-    <div class="unheard" style="left: {on(a)}; width: calc({on(b)} - {on(a)})"></div>
+  {#each unheard as [a, b], i (a)}
+    <div class="unheard" class:lit={i === unheardLit} style="left: {on(a)}; width: calc({on(b)} - {on(a)})"></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -422,9 +425,9 @@
      the clip list that says so is, laid over the track's border so the
      grey covers it and the dashes run along the range picker's own edge
      and the line the window is drawn on. Under the window. -->
-{#each unheard as [a, b] (a)}
+{#each unheard as [a, b], i (a)}
   {@const edge = unheardEdge(a, b)}
-  <div class="unheard-edge" class:first={edge.first} class:last={edge.last} style={edge.style}></div>
+  <div class="unheard-edge" class:lit={i === unheardLit} class:first={edge.first} class:last={edge.last} style={edge.style}></div>
 {/each}
 {#if shown}
   <!-- Only looked at, never taken hold of: the window of a search in hand
@@ -769,6 +772,19 @@
     z-index: 1;
     background: var(--ink-1);
     pointer-events: none;
+  }
+
+  /* Under the hand on its card, a step brighter, the way a card is. */
+  .unheard.lit {
+    background: var(--ink-2);
+  }
+
+  .unheard-edge.lit::before {
+    border-color: var(--ink-2);
+  }
+
+  .unheard-edge.lit::after {
+    border-color: var(--muted);
   }
 
   /* Its edge, a ring in the same grey that covers the track's border

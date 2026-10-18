@@ -608,6 +608,28 @@
 //                      types the letters in the Font list's search field,
 //                      finds the family first, picks it with Enter and
 //                      waits for the captions drawn in it
+//   ["search said", word]
+//   ["search said", [word, n]]
+//                      presses the magnifier in the head of the clip column
+//                      and types the word, and sees the field take the
+//                      head's place at its height with the keyboard in it,
+//                      a card for every sentence the engine has that holds
+//                      the word and for no sentence it does not have, the
+//                      word bold in each, the clip a sentence is in named
+//                      on its card, a dashed card and a dashed part of the
+//                      range picker for every part not transcribed yet, at
+//                      least n of them, sentences in the first frame after
+//                      the press, a card's edge and its clip's mark lit
+//                      under the hand, a part not transcribed lit on the
+//                      range picker under the hand, a clip chosen there
+//                      bringing its sentence into view, a click on a card
+//                      putting the playhead on its sentence, and Escape,
+//                      with the keyboard on that card, giving the head and
+//                      the clips back. A word of "*" is the longest word
+//                      of the first sentence
+//   ["heard some"]     waits until the engine has a sentence of the video
+//                      on screen, and for the piece of audio being heard
+//                      then to land
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1321,6 +1343,31 @@ export const sequences = [
     // fonts.
     name: "a search of the fonts keeps the order and the heads of the list",
     steps: [["search order", "b"]],
+  },
+  {
+    // Tim asked for a search through what was said, in the clip column
+    // (#366): a card for each sentence, the clip it is in named on it,
+    // and the parts not heard yet drawn where the search cannot look.
+    name: "a search of what was said finds the sentences, names their clips and puts the playhead on one",
+    // A second clip, made with I, so choosing one on the range picker has
+    // somewhere to take the list.
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", "Jahre"]],
+  },
+  {
+    // The same on a video heard only as far as its first search reached,
+    // so part of it is not heard yet and says so, in the list and on the
+    // range picker.
+    name: "a search of what was said shows the parts not transcribed yet",
+    steps: [
+      // Heard slowly, and held once some of it is, so part of it is still
+      // to come while the search looks.
+      ["speech", 1500],
+      ["add", 600],
+      ["heard some"],
+      ["speech", 20000],
+      ["search said", ["*", 1]],
+      ["speech", 0],
+    ],
   },
   {
     // Found by Tim on #349: the Style list of one style lay over the Size
@@ -7884,6 +7931,208 @@ for (const seq of toWalk) {
         await watch.step("press", s);
         await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), name);
         await settled();
+        break;
+      }
+      case "heard some": {
+        const path = await episodeOn(page);
+        const until = Date.now() + 60000;
+        while (Date.now() < until && !(await ask(page, "Sentences", path))?.length) await page.waitForTimeout(250);
+        // The piece of audio being heard as the speech model is held lands
+        // before the search looks.
+        await page.waitForTimeout(2500);
+        await settled();
+        break;
+      }
+      case "search said": {
+        const path = await episodeOn(page);
+        const headHigh = () => page.evaluate(() => document.querySelector(".listhead").getBoundingClientRect().height);
+        // The clips are on their cards first, so a sentence can be told
+        // which clip it is in.
+        const listed = (await ask(page, "Clips", path)).filter((c) => !c.rejected).length;
+        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed, { timeout: 10000 });
+        await settled();
+        let [word, unheardLeast = 0] = [arg].flat();
+        if (word === "*") {
+          const first = (await ask(page, "Sentences", path))[0]?.text ?? "";
+          word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
+        }
+        const was = await headHigh();
+        // The sentences are on screen from the frame the magnifier is
+        // pressed in, never an empty column first, found by Tim.
+        const blank = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              document.querySelector('.listhead button[aria-label="Search what was said"]').click();
+              let n = 0;
+              let empty = 0;
+              const tick = () => {
+                if (!document.querySelector("ol.said li")) empty++;
+                if (++n < 20) requestAnimationFrame(tick);
+                else done(empty);
+              };
+              requestAnimationFrame(tick);
+            }),
+        );
+        await watch.step("click", s);
+        if (blank) {
+          wrong = `the column stood empty for ${blank} of 20 frames after the magnifier`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        await page.keyboard.type(word);
+        await watch.step("type", s);
+        const [sentences, clips, library] = await Promise.all([
+          ask(page, "Sentences", path),
+          ask(page, "Clips", path),
+          ask(page, "Library"),
+        ]);
+        const heard = library.find((e) => e.source === path)?.heard ?? [];
+        // The parts not heard yet, the way the workspace works them out
+        // from what the transcript on disk has heard.
+        const status = library.find((e) => e.source === path);
+        const end = (await ask(page, "Source", path))?.duration;
+        await page.waitForFunction(
+          (n) => document.querySelectorAll("ol.said li:not(.hole):not(.none)").length >= n,
+          sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase())).length,
+          { timeout: 10000 },
+        ).catch(() => {});
+        const seen = await page.evaluate(() => ({
+          focused: document.activeElement?.getAttribute("aria-label"),
+          head: document.querySelector(".listhead").getBoundingClientRect().height,
+          cards: [...document.querySelectorAll("ol.said li:not(.hole):not(.none)")].map((li) => ({
+            at: Number(li.dataset.at),
+            text: li.querySelector(".text").textContent.trim(),
+            bold: [...li.querySelectorAll(".text b")].map((b) => b.textContent),
+            clip: li.querySelector(".clipname")?.textContent.trim() ?? "",
+          })),
+          holes: document.querySelectorAll("ol.said li.hole").length,
+          edges: document.querySelectorAll(".unheard-edge").length,
+        }));
+        const holds = sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase()));
+        const texts = new Set(sentences.map((x) => x.text));
+        const gaps = (() => {
+          if (status?.transcribed) return 0;
+          let at = 0;
+          let n = 0;
+          for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
+            if (a - at >= 1) n++;
+            at = Math.max(at, b);
+          }
+          if (Number.isFinite(end) && end - at >= 1) n++;
+          return n;
+        })();
+        // The clips the engine has keeping any of the sentence a card is
+        // of, which the bridge's speech says more than once.
+        const overlapping = (c) => {
+          const x = sentences.find((y) => Math.abs(y.start - c.at) < 0.0005);
+          if (!x) return [];
+          return clips
+            .filter((k) => !k.rejected && (k.segments.length ? k.segments : [k]).some((p) => p.start < x.end && p.end > x.start))
+            .map((k) => k.title || k.slug);
+        };
+        const misnamed = (c) => (c.clip ? !overlapping(c).includes(c.clip) : overlapping(c).length > 0);
+        if (seen.focused !== "Search what was said") wrong = `the keyboard is in ${seen.focused ?? "nothing"}, not the search field`;
+        else if (seen.head !== was) wrong = `the head is ${seen.head} px high with the field, ${was} px without it`;
+        else if (!holds.length) wrong = `the engine has no sentence with ${word}, so the step proves nothing`;
+        else if (holds.some((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)))
+          wrong = `no card for "${holds.find((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)).text}"`;
+        else if (seen.cards.some((c) => !texts.has(c.text))) wrong = `a card reads "${seen.cards.find((c) => !texts.has(c.text)).text}", which the engine never said`;
+        else if (seen.cards.some((c) => !c.bold.length)) wrong = `"${seen.cards.find((c) => !c.bold.length).text}" has no word in bold`;
+        else if (seen.cards.some((c) => c.text.toLowerCase().includes(word.toLowerCase()) && !c.bold.some((b) => b.toLowerCase().includes(word.toLowerCase()))))
+          wrong = `${word} is not bold in a card that holds it`;
+        else if (seen.cards.some((c) => !sentences.some((y) => Math.abs(y.start - c.at) < 0.0005 && y.text === c.text)))
+          wrong = `the card at ${seen.cards.find((c) => !sentences.some((y) => Math.abs(y.start - c.at) < 0.0005)).at} is of no sentence the engine has there`;
+        else if (seen.cards.some(misnamed)) {
+          const c = seen.cards.find(misnamed);
+          wrong = `the card at ${c.at.toFixed(2)} names ${c.clip || "no clip"}, and the engine has it in ${overlapping(c).join(", ") || "no clip"}`;
+        }
+        else if (gaps < unheardLeast)
+          wrong = `${gaps} parts are not transcribed yet, fewer than the ${unheardLeast} this step is about: heard ${JSON.stringify(heard)} of ${end}, transcribed ${status?.transcribed}`;
+        else if (seen.holes !== gaps || seen.edges !== gaps)
+          wrong = `${gaps} parts are not heard yet, and the list shows ${seen.holes} of them and the range picker ${seen.edges}`;
+        if (wrong) {
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // The edge of a sentence a clip keeps stays under the hand, and the
+        // hand on it lights the clip's mark on the range picker, found by
+        // Tim.
+        const inClip = seen.cards.find((c) => c.clip);
+        if (inClip) {
+          const card = page.locator(`ol.said li[data-at="${inClip.at}"]`);
+          await card.hover();
+          await watch.step("hover", s);
+          const lit = await page.evaluate((at) => {
+            const li = document.querySelector(`ol.said li[data-at="${at}"]`);
+            const key = li.dataset.clip;
+            return {
+              edge: getComputedStyle(li.querySelector("button.pick")).boxShadow,
+              mark: !!document.querySelector(".track .clipmark.lit"),
+              key,
+            };
+          }, inClip.at);
+          if (!/3px 0px 0px 0px/.test(lit.edge)) wrong = `the edge of the card at ${inClip.at.toFixed(2)} is gone under the hand: ${lit.edge}`;
+          else if (!lit.mark) wrong = `the hand on a sentence of ${inClip.clip} lit no mark on the range picker`;
+        }
+        // The hand on a part not transcribed yet lights it on the range
+        // picker too.
+        if (!wrong && gaps) {
+          await page.locator("ol.said li.hole").first().hover();
+          await watch.step("hover", s);
+          if (!(await page.evaluate(() => !!document.querySelector(".track .unheard.lit") && !!document.querySelector(".unheard-edge.lit"))))
+            wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+        }
+        // A clip chosen on the range picker brings its first sentence into
+        // view, found by Tim.
+        const others = clips.filter((c) => !c.rejected);
+        if (!wrong && others.length > 1) {
+          // With nothing typed, so every sentence of the clip has a card.
+          await page.locator('input[aria-label="Search what was said"]').fill("");
+          await watch.step("type", s);
+          await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            list.scrollTop = list.scrollHeight;
+          });
+          const mark = page.locator(".track .clipmark:not(.selected)").last();
+          const label = await mark.getAttribute("aria-label");
+          const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+          const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
+          await mark.click();
+          await watch.step("click", s);
+          await page.waitForTimeout(900);
+          const parts = target ? (target.segments.length ? target.segments : [target]) : [];
+          const firstAt = sentences.find((x) => parts.some((p) => p.start < x.end && p.end > x.start))?.start;
+          const view = await page.evaluate((at) => {
+            const card = document.querySelector(`ol.said li[data-at="${at}"]`);
+            const box = document.querySelector(".scroll.list").getBoundingClientRect();
+            const r = card?.getBoundingClientRect();
+            return r ? { top: r.top - box.top, room: box.height } : null;
+          }, firstAt);
+          if (!target || !view)
+            wrong = `the mark ${label} is of no clip with sentences on screen`;
+          else if (view.top < -1 || view.top > view.room - 40)
+            wrong = `choosing ${target.title} on the range picker left its first sentence ${view.top.toFixed(0)} px down a list ${view.room.toFixed(0)} px high`;
+        }
+        // A card puts the playhead on its sentence.
+        const pick = holds[holds.length - 1];
+        await page.locator(`ol.said li[data-at="${pick.start}"] button.pick`).click();
+        await watch.step("click", s);
+        await page.waitForTimeout(300);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        if (!wrong && !(at >= pick.start - 0.001 && at <= Math.min(pick.end, pick.start + 0.2)))
+          wrong = `the card at ${pick.start.toFixed(3)} put the playhead at ${at}`;
+        // Escape with the keyboard on the card just clicked, not in the
+        // field, which did nothing for Tim.
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const back = await page.evaluate(() => ({
+          search: !!document.querySelector(".listhead button.search"),
+          said: !!document.querySelector("ol.said"),
+          edges: document.querySelectorAll(".unheard-edge").length,
+        }));
+        if (!wrong && (!back.search || back.said || back.edges))
+          wrong = `Escape left ${back.said ? "the sentences" : back.edges ? "the dashed parts on the range picker" : "no Search button"}`;
+        if (!wrong && (await headHigh()) !== was) wrong = "the head changed height after the search";
         break;
       }
       case "font list": {

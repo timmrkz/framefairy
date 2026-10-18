@@ -44,6 +44,33 @@ export function matches(name: string, typed: string): boolean {
   return fewest(0, -1) <= Math.ceil(want.length / 2);
 }
 
+// A sentence's words, each without the marks around it, which are not
+// bold, and the sentence in small letters, kept for the sentences of the
+// video in front, which are searched again at every letter typed.
+type Words = { words: { from: number; to: number; bare: string }[]; have: string };
+const known = new Map<string, Words>();
+function wordsOf(text: string): Words {
+  let w = known.get(text);
+  if (w) return w;
+  if (known.size > 50000) known.clear();
+  w = {
+    words: [...text.matchAll(/[\p{L}\p{N}](?:\S*[\p{L}\p{N}])?/gu)].map((m) => ({
+      from: m.index,
+      to: m.index + m[0].length,
+      bare: m[0],
+    })),
+    have: text.toLowerCase(),
+  };
+  known.set(text, w);
+  return w;
+}
+
+// Whether a word answers a word typed, kept for what is typed now: a
+// video says the same few thousand words over and over, and asking each
+// of them once is what keeps a search of four hours quick enough to type
+// into.
+let answers: { typed: string; of: { a: string; seen: Map<string, boolean> }[] } = { typed: "", of: [] };
+
 // Where a sentence of the transcript answers what was typed in the search
 // in the clip column, as the words to set in bold, from and to in the
 // text, or null where it does not answer. A sentence answers when it holds
@@ -54,21 +81,30 @@ export function matches(name: string, typed: string): boolean {
 export function found(text: string, typed: string): [number, number][] | null {
   const want = typed.trim().toLowerCase().replace(/\s+/g, " ");
   if (!want) return [];
-  // The words, each without the marks around it, which are not bold.
-  const words = [...text.matchAll(/[\p{L}\p{N}](?:\S*[\p{L}\p{N}])?/gu)].map((m) => ({
-    from: m.index,
-    to: m.index + m[0].length,
-    bare: m[0],
-  }));
-  const have = text.toLowerCase();
+  const { words, have } = wordsOf(text);
+  // The words that hold what was typed, walked once, since both the
+  // places it is found and the words are in order.
   const held: [number, number][] = [];
+  let w = 0;
   for (let at = have.indexOf(want); at >= 0; at = have.indexOf(want, at + want.length)) {
     const end = at + want.length;
-    for (const w of words) if (w.from < end && w.to > at) held.push([w.from, w.to]);
+    while (w < words.length && words[w].to <= at) w++;
+    for (let k = w; k < words.length && words[k].from < end; k++) {
+      if (held.at(-1)?.[0] !== words[k].from) held.push([words[k].from, words[k].to]);
+    }
   }
-  if (held.length) return [...new Map(held.map((r) => [r[0], r])).values()].sort((a, b) => a[0] - b[0]);
-  const asked = want.split(" ");
-  const hits = asked.map((a) => words.filter((w) => w.bare && matches(w.bare, a)));
-  if (hits.some((h) => !h.length)) return null;
-  return [...new Set(hits.flat())].sort((a, b) => a.from - b.from).map((w) => [w.from, w.to]);
+  if (held.length) return held;
+  if (answers.typed !== want) answers = { typed: want, of: want.split(" ").map((a) => ({ a, seen: new Map() })) };
+  const bold = new Array<boolean>(words.length).fill(false);
+  for (const { a, seen } of answers.of) {
+    let any = false;
+    for (let k = 0; k < words.length; k++) {
+      const bare = words[k].bare;
+      let yes = seen.get(bare);
+      if (yes === undefined) seen.set(bare, (yes = matches(bare, a)));
+      if (yes) any = bold[k] = true;
+    }
+    if (!any) return null;
+  }
+  return words.filter((_, k) => bold[k]).map((w) => [w.from, w.to]);
 }

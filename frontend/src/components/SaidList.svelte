@@ -4,16 +4,22 @@
   // clip's card is, its time at the head and the sentence under it. A
   // sentence a clip holds wears the chosen clip's edge, the clip's name and
   // white words, and every other one a softer grey, so the clips stand out
-  // of the transcript they came from. Where nothing was heard yet, a dashed
+  // of the transcript they came from. Where nothing was transcribed yet, a dashed
   // card says so in its place, because the search cannot look there.
   import { clock, type ClipEntry, type Sentence } from "../lib/api";
   import { found } from "../lib/match";
+  import { hoverClip } from "../lib/hover";
+  import { untrack } from "svelte";
 
   let {
     sentences,
     typed = "",
     unheard = [],
     clips = [],
+    selected = "",
+    hovered = "",
+    onhover,
+    onhoverhole,
     onseek,
   }: {
     // Null until the first answer, so a list on its way is not a list
@@ -22,8 +28,41 @@
     typed?: string;
     unheard?: [number, number][];
     clips?: ClipEntry[];
+    // The chosen clip, which the list goes to when it is chosen somewhere
+    // else, and the clip under the hand anywhere, whose sentences are lit.
+    // The hand on a sentence of a clip lights the clip everywhere else.
+    selected?: string;
+    hovered?: string;
+    onhover?: (key: string, on: boolean) => void;
+    // The part not transcribed yet under the hand, by its place among
+    // them, or -1, so the range picker lights the same part.
+    onhoverhole?: (index: number) => void;
     onseek: (at: number) => void;
   } = $props();
+
+  let list: HTMLOListElement;
+
+  // A clip chosen on the range picker or the clip timeline while the
+  // search is open brings its first sentence into view, the way choosing
+  // it brings its card into view in the clip list. The first sentence it
+  // keeps any of, which may be named for another clip over it.
+  let was: string | null = null;
+  $effect(() => {
+    const key = selected;
+    const first = was === null;
+    if (key === was) return;
+    was = key;
+    if (first) return;
+    const clip = untrack(() => clips.find((c) => c.key === key));
+    if (!clip) return;
+    const parts = clip.segments.length ? clip.segments : [{ start: clip.start, end: clip.end }];
+    const opening = untrack(() =>
+      rows.find((r) => "sentence" in r && parts.some((p) => p.start < r.sentence.end && p.end > r.sentence.start)),
+    );
+    if (!opening || !("sentence" in opening)) return;
+    const card = list?.querySelector<HTMLElement>(`li[data-at="${opening.sentence.start}"]`);
+    card?.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
 
   type Row =
     | { key: string; at: number; sentence: Sentence; bold: [number, number][]; clip: ClipEntry | null }
@@ -64,16 +103,27 @@
   }
 </script>
 
-<ol class="said">
+<ol class="said" bind:this={list}>
   {#each rows as row (row.key)}
     {#if "hole" in row}
-      <li class="hole" title="Nothing was heard here yet, so the search cannot look here. Searching a window here hears it">
+      {@const index = unheard.indexOf(row.hole)}
+      <li
+        class="hole"
+        title="Nothing was transcribed here yet, so the search cannot look here. Searching a window here transcribes it"
+        onpointerenter={() => onhoverhole?.(index)}
+        onpointerleave={() => onhoverhole?.(-1)}
+      >
         <span class="meta muted num">{clock(row.hole[0])} to {clock(row.hole[1])}</span>
-        <span class="text">Not heard yet</span>
+        <span class="text">Not transcribed yet</span>
       </li>
     {:else}
-      <li class:inclip={!!row.clip}>
-        <button class="pick" title="Put the playhead here" onclick={() => onseek(row.sentence.start)}>
+      <li
+        data-at={row.sentence.start}
+        data-clip={row.clip?.key}
+        class:lit={!!row.clip && row.clip.key === hovered}
+        {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
+      >
+        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => onseek(row.sentence.start)}>
           <span class="meta muted num">
             {clock(row.sentence.start)}
             {#if row.clip}<span class="clipname">{row.clip.title || row.clip.slug}</span>{/if}
@@ -134,7 +184,8 @@
     background: transparent;
   }
 
-  li:hover .pick {
+  li:hover .pick,
+  li.lit .pick {
     background: var(--ink-2);
   }
 
@@ -160,14 +211,13 @@
   }
 
   /* A sentence a clip holds: the chosen clip's edge, in the app's own
-     colour, its name, and its words in white. */
-  li.inclip {
-    box-shadow:
-      inset 3px 0 var(--accent),
-      inset 0 0 0 1px var(--ink-3);
+     colour, its name, and its words in white. The edge is the button's,
+     so the grey it takes under the hand does not cover it. */
+  .pick.inclip {
+    box-shadow: inset 3px 0 var(--accent);
   }
 
-  li.inclip .text {
+  .inclip .text {
     color: var(--text);
   }
 
@@ -178,8 +228,14 @@
     white-space: nowrap;
   }
 
-  /* Where nothing was heard yet, the dashed edge the range picker draws
-     round the same part. */
+  /* Where nothing was transcribed yet, the dashed edge the range picker
+     draws round the same part, a step brighter under the hand with that
+     part. */
+  li.hole:hover {
+    background: var(--ink-2);
+    border-color: var(--muted);
+  }
+
   li.hole {
     justify-content: center;
     box-shadow: none;

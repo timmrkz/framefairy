@@ -399,21 +399,34 @@
   let sentences = $state<Sentence[] | null>(null);
   let sayField = $state<HTMLInputElement>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
+  // They are read as soon as the video opens and kept, so the magnifier
+  // shows them in the frame it is pressed, and read again whenever the
+  // transcript hears more. A column left empty until the answer came was
+  // seen as a blink by Tim.
   let sentencesAsked = 0;
+  let sentencesOf = "";
   $effect(() => {
-    if (!saying) return;
     const of = path;
-    void savedKey;
+    const key = savedKey;
+    if (!saved.length) return;
+    // While the search is closed, what was read stays until it opens.
+    if (!saying && sentencesOf.startsWith(`${of}|`)) return;
+    if (sentencesOf === `${of}|${key}`) return;
     const ticket = ++sentencesAsked;
     untrack(() => {
       api
         .sentences(of)
         .then((list) => {
-          if (ticket === sentencesAsked && of === path) sentences = list ?? [];
+          if (ticket !== sentencesAsked || of !== path) return;
+          sentences = list ?? [];
+          sentencesOf = `${of}|${key}`;
         })
         .catch((err) => said(`the sentences of the video could not be read: ${errorText(err)}`, { level: "warn" }));
     });
   });
+  // The part not transcribed yet under the hand, in the list, lit on the
+  // range picker too.
+  let unheardLit = $state(-1);
   // The parts of the video the transcript has not heard yet, which the
   // search cannot look in. A gap under a second is between two words.
   const unheard = $derived.by(() => {
@@ -435,7 +448,16 @@
   function closeSaying() {
     saying = false;
     sayTyped = "";
-    sentences = null;
+    unheardLit = -1;
+  }
+  // Escape closes the search wherever the keyboard is, unless it is in a
+  // field of its own: the hand scrolled the sentences and Escape did
+  // nothing, because the field had lost the keyboard.
+  function sayKey(event: KeyboardEvent) {
+    if (event.key !== "Escape" || !saying) return;
+    if (event.defaultPrevented || keysElsewhere() || asleep(root)) return;
+    event.preventDefault();
+    closeSaying();
   }
 
   // How far the loudness is measured, which is the waveform. It is measured
@@ -2739,8 +2761,10 @@
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
+    window.addEventListener("keydown", sayKey);
     return () => {
       window.removeEventListener("keydown", walkClips);
+      window.removeEventListener("keydown", sayKey);
       window.removeEventListener("keydown", thumbnailKey);
       window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
@@ -2823,6 +2847,7 @@
     dimmed={!onClip}
     locked={busy}
     unheard={saying ? unheard : []}
+    {unheardLit}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid
@@ -3305,10 +3330,14 @@
           <div class="scroll list">
             {#if saying}
               <SaidList
-                {sentences}
+                sentences={saved.length ? sentences : []}
                 typed={sayTyped}
                 {unheard}
                 clips={shown}
+                {selected}
+                {hovered}
+                onhover={hoverClip}
+                onhoverhole={(i) => (unheardLit = i)}
                 onseek={(at) => seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30))}
               />
             {:else}

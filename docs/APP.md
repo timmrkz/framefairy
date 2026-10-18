@@ -1920,6 +1920,51 @@ the one the video preview reads from when the episode opens, so asking
 costs no start later. A file with no picture, and one that is no video at
 all, said nothing at Add before and failed in the video preview after.
 
+### Searching what was said
+
+The magnifier in the head of the clip column, left of **Search**,
+searches everything the video says, as far as it has been heard (#366).
+Search finds clips with the model. This finds a moment yourself: a line
+found is a place in the video, and I and O make a clip there.
+
+- **The field takes the head's place.** A click on the magnifier swaps
+  the whole head, Clips, the count, the info mark and Search, for a
+  search field at the same height, with the keyboard in it. Escape or the
+  cross in the field gives the head and the clip cards back. There is no
+  shortcut to open it, because the app has no ⌘ shortcuts.
+- **A card for every sentence.** While the field is open, the column shows
+  what was said as cards, each with its time at the head and a sentence
+  under it. The sentences are the engine's, `engine.Sentences`, the lines
+  the model reads grouped the way the stories recipe groups them, so a
+  sentence in the app is a sentence to the engine too.
+- **The clips stand out.** A sentence a clip keeps any of wears the chosen
+  clip's accent edge, the clip's name next to its time and its words in
+  white. Every other sentence is a softer grey.
+- **Fuzzy, like the fonts.** With nothing typed, every sentence is there.
+  Typing keeps the sentences that hold what was typed, or where every
+  word typed finds a word the way the font search finds a name, `found`
+  in `lib/match.ts`, and the words that answer are bold.
+- **A card is a place.** A click puts the playhead on its sentence.
+- **One clip in every place.** The hand on a sentence a clip keeps lights
+  that clip on the range picker and the clip timeline, the way the hand
+  on its card does, and the sentences of a clip under the hand anywhere
+  are lit. A clip chosen on the range picker or the clip timeline brings
+  its first sentence into view. The accent edge is the card's button's,
+  so the grey a card takes under the hand never covers it.
+- **What was not transcribed is said.** A part of the video the
+  transcript has not reached yet is a dashed card in its place, "Not
+  transcribed yet", because the search cannot look there. While the field
+  is open, the range picker draws the same part in the grey of a card
+  with a dashed edge, laid over its border, under the minutes so their
+  lines show through, and under the window. The hand on the card lights
+  the part on the range picker a step.
+- **Escape closes it wherever the keyboard is**, unless the keyboard is in
+  another field. Tim scrolled the sentences, pressed Escape and nothing
+  happened, because the field no longer had the keyboard.
+- **The sentences are there when it opens.** They are read once the video
+  opens and kept, and read again when the transcript hears more, so the
+  column never stands empty for a moment after the magnifier.
+
 ### Toasts
 
 What goes wrong with no place of its own on screen is said in a toast,
