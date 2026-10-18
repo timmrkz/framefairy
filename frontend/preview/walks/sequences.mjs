@@ -193,13 +193,13 @@
 //   ["searched moved"] the episode's newest search is a new one, not the
 //                      search there was at "move window", and it searched
 //                      the window where "move window" left it
-//   ["head"]           presses the clip list's head button, New, Cancel or
+//   ["head"]           presses the clip list's head button, Find clips, Cancel or
 //                      Continue
 //   ["hold", call, ms] the next call of this name waits so many
 //                      milliseconds before it reaches the Go side, the way
 //                      a busy machine delivers it late
-//   ["new and cancel"] presses New, and Cancel in the first frame the head
-//                      says it, and every frame from New to that press the
+//   ["find and cancel"] presses Find clips, and Cancel in the first frame the head
+//                      says it, and every frame from Find clips to that press the
 //                      head says Cancel and takes the click, never greyed
 //                      out
 //   ["restart"]        closes the app and opens it again on the episode
@@ -1475,7 +1475,7 @@ export const sequences = [
     name: "a step to the word beside finds its frame read while the hand rested",
     steps: [
       ["add", 40, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["heard"],
       ["read ahead", "Shift+ArrowRight"],
@@ -1517,7 +1517,7 @@ export const sequences = [
     name: "a cut's left edge dragged shows the frames before the cut, never one after it",
     steps: [
       ["add", 40, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.5],
       ["drag edge", "cut from", -60],
@@ -1965,7 +1965,7 @@ export const sequences = [
     // keeps the room of the longest of them, measured in its own font.
     name: "every button is as wide as its words and no wider",
     steps: [
-      ["buttons fit", ["New", "Render"]],
+      ["buttons fit", ["Find clips", "Render"]],
       ["settings"],
       ["buttons fit", ["Choose…", "Check again"]],
       ["updates", { from: "main", list: "main,pr-20" }],
@@ -2113,7 +2113,7 @@ export const sequences = [
     name: "a new video gets its first clips with no click",
     steps: [
       ["add", 60],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
     ],
   },
@@ -2129,7 +2129,7 @@ export const sequences = [
       ["waveform"],
       ["cards", 0],
       ["speech", 0],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
     ],
   },
@@ -2145,27 +2145,27 @@ export const sequences = [
       ["add", 15],
       ["rulers fit", 15],
       ["speech", 0],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["whole clip", 15],
       ["rulers fit", 15],
     ],
   },
   {
-    // Tim removed the one clip of a video of 15 s and pressed New, and
+    // Tim removed the one clip of a video of 15 s and pressed Find clips, and
     // every search failed with "there is nothing to make a clip of in
     // this video": the clip removed still counted as the one moment the
-    // video has. New brings it back, and New with it in the list finds
+    // video has. Find clips brings it back, and Find clips with it in the list finds
     // nothing more, fails nothing either, and says so where its clip
     // would have appeared.
     name: "a video shorter than a clip gets its clip again once it was removed",
     steps: [
       ["add", 15],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["whole clip", 15],
       ["remove clip"],
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["whole clip", 15],
       // The clip made again is the clip that was removed, so the removed
       // one is not offered back, and undoing its removal does not bring
@@ -2175,15 +2175,15 @@ export const sequences = [
       ["undo refused"],
       ["whole clip", 15],
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["whole clip", 15],
       // Tim saw the row of that search close again with nothing to say.
       // It says so now, as news: it runs down like a removed clip's row
       // and closes.
       ["row closes", ["Nothing new found", 10]],
-      // New again is a new search, and it says so again.
+      // Find clips again is a new search, and it says so again.
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["row closes", ["Nothing new found", 10]],
     ],
   },
@@ -2249,16 +2249,16 @@ export const sequences = [
       ["row", "Stopped. Click Continue"],
       ["model", "answers"],
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
     ],
   },
   {
     // Tim cancelled a search to look somewhere else, and the window stood
     // locked on the range picker until the search was carried on. Moved
-    // off it, the search is set aside: New, and a fresh search where the
+    // off it, the search is set aside: Find clips, and a fresh search where the
     // window is. Undo puts it back on the search, and Continue with it.
-    name: "after Cancel the window moves, and New searches where it was moved",
+    name: "after Cancel the window moves, and Find clips searches where it was moved",
     steps: [
       ["model", "holds"],
       ["head"],
@@ -2267,31 +2267,31 @@ export const sequences = [
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
       ["move window", "to", -0.4],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["no row", "Stopped. Click Continue"],
       ["undo"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
       ["redo"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["restart"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["no row", "Stopped. Click Continue"],
       ["model", "answers"],
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["searched moved"],
     ],
   },
   {
     // Plan row 2.131. Cancel is pressed before the Go side has heard of
-    // the search New asked for, which is held on its way there, so the
+    // the search Find clips asked for, which is held on its way there, so the
     // Cancel reaches the Go side first. The search never starts, and says
     // Stopped with Continue where its clips would have been.
-    name: "Cancel pressed at once after New stops the search before it starts",
+    name: "Cancel pressed at once after Find clips stops the search before it starts",
     steps: [
       ["hold", "Search", 1500],
-      ["new and cancel"],
+      ["find and cancel"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
       ["restart"],
@@ -2319,7 +2319,7 @@ export const sequences = [
       ["row", "Failed. Click Continue"],
       ["model", "answers"],
       ["head"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
     ],
   },
   {
@@ -2328,7 +2328,7 @@ export const sequences = [
     name: "a cut or an edge put back keeps the camera switch, and the short runs straight through it",
     steps: [
       ["add cameras", 30, 12],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["pieces", 2],
       ["mark", "found"],
       ["look", "found"],
@@ -2355,7 +2355,7 @@ export const sequences = [
     name: "a render of a 29.97 fps episode cuts on whole frames",
     steps: [
       ["add", 40, "30000/1001"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -2378,7 +2378,7 @@ export const sequences = [
     name: "the video preview on a clip's edges shows the frames its short starts and ends on",
     steps: [
       ["add", 40, "30000/1001", "late"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["trim", "start", 20],
       ["cut at", 0.3],
@@ -2399,7 +2399,7 @@ export const sequences = [
     name: "a video in Matroska shows in the video preview the frames its short has",
     steps: [
       ["add", 40, "30000/1001", "late", "mkv"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["trim", "start", 20],
       ["cut at", 0.3],
@@ -2420,7 +2420,7 @@ export const sequences = [
     name: "a short of a phone's uneven frames shows what the video preview shows",
     steps: [
       ["add", 40, "30000/1001", "uneven"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.3],
       ["cut at", 0.7],
@@ -2441,7 +2441,7 @@ export const sequences = [
     name: "a part of a phone's video rotated with R stands up in the video preview and in its short",
     steps: [
       ["add", 30, "25", "turned"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
@@ -2462,7 +2462,7 @@ export const sequences = [
     name: "a rotated part turns with its own frames under a dragged playhead, and stays rotated as its end moves",
     steps: [
       ["add", 30, "25", "turned"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
@@ -2486,7 +2486,7 @@ export const sequences = [
     name: "a rotated part keeps its rotation when the cut before it is put back and made again",
     steps: [
       ["add", 30, "25", "turned"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
@@ -2511,7 +2511,7 @@ export const sequences = [
     name: "a rotated part keeps its keyframe, and has the rotate icon drawn in its middle",
     steps: [
       ["add", 30, "25", "turned"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["cut at", 0.5],
       ["cuts", 1],
@@ -2539,7 +2539,7 @@ export const sequences = [
     name: "keyframes put with C glide the crop from one to the next in the video preview, frame by frame",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["hold", "SetCropMark", 1000],
       ["keyframe at", 0.2],
@@ -2559,7 +2559,7 @@ export const sequences = [
     name: "a keyframe before a cut glides to one after it",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
@@ -2576,7 +2576,7 @@ export const sequences = [
     name: "a thumbnail and a keyframe on the playhead's frame stand centred on its line",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["thumbnail at", 0.1],
       ["keyframe at", 0.1],
@@ -2594,7 +2594,7 @@ export const sequences = [
     name: "a keyframe goes on a clip's first and last frame with C, and comes off with C",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["keyframe on", "last"],
       ["keyframe on", "first"],
@@ -2607,7 +2607,7 @@ export const sequences = [
     name: "Put the crop back after Automatic crop brings back the keyframes and their glide",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["keyframe at", 0.2],
       ["keyframe at", 0.8],
@@ -2628,7 +2628,7 @@ export const sequences = [
     name: "a keyframe dragged past the clip's edge stops on its first or last frame and stays where it was let go",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["keyframe at", 0.5],
       ["keyframe past", "end"],
@@ -2643,7 +2643,7 @@ export const sequences = [
     name: "a thumbnail mark lights under the hand and a double-click removes it",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["thumbnail at", 0.5],
       ["thumbnail at", 0.2],
@@ -2659,7 +2659,7 @@ export const sequences = [
     name: "a click on a thumbnail or a keyframe while a word is open ends the correction, and the captions follow",
     steps: [
       ["add", 30, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["thumbnail at", 0.1],
       ["keyframe at", 0.9],
@@ -2720,7 +2720,7 @@ export const sequences = [
     name: "a step onto a word pops it over the paused frame",
     steps: [
       ["add", 40, "25"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["step onto words and see them pop", 6],
       ["step frame by frame and see nothing pop", 40],
@@ -2734,7 +2734,7 @@ export const sequences = [
     name: "a short of a picture that starts after its sound shows what the video preview shows",
     steps: [
       ["add", 40, "30000/1001", "late"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["trim", "start", -60],
       ["cut at", 0.3],
@@ -2770,7 +2770,7 @@ export const sequences = [
       ["keep", "first"],
       ["words again"],
       ["add", 120],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["render"],
       ["apart", "first"],
@@ -2795,7 +2795,7 @@ export const sequences = [
       ["keep", "first"],
       ["words again"],
       ["add namesake", 120],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["render"],
       ["apart", "first", " 2"],
@@ -2864,7 +2864,7 @@ export const sequences = [
     steps: [
       ["drop", 30, "settings"],
       ["dropped in front"],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["cards", 1],
       ["drop not a video", "workspace"],
       ["not a video"],
@@ -2910,24 +2910,24 @@ export const sequences = [
     name: "a video whose folder is deleted outside the app leaves the list",
     steps: [
       ["add", 20],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["folder removed", "away"],
       ["let go"],
       ["add", 20],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["folder removed", "closed"],
       ["let go"],
       // Tim then deleted two videos from Documents with their folders,
       // and they stayed with a red lamp, File not found.
       ["add", 20],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["folder removed", "with the video"],
       ["let go"],
       // One of them had been opened after it was deleted, which wrote its
       // chosen clip back, and the app opened on it after the update and
       // said it was not in the library.
       ["add", 20],
-      ["wait for", "New"],
+      ["wait for", "Find clips"],
       ["folder removed", "written back"],
       ["let go"],
     ],
@@ -5974,12 +5974,12 @@ for (const seq of toWalk) {
       case "hold":
         await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
         break;
-      case "new and cancel": {
+      case "find and cancel": {
         const seen = await page.evaluate(
           () =>
             new Promise((done) => {
               const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-              const head = () => pane.querySelector(".listhead button.new");
+              const head = () => pane.querySelector(".listhead button.find");
               const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
               const frames = [];
               const pressed = text(head());
@@ -5997,13 +5997,13 @@ for (const seq of toWalk) {
             }),
         );
         const greyed = seen.frames.filter((f) => f.off).length;
-        if (seen.pressed !== "New") wrong = `the head said ${seen.pressed}, not New`;
+        if (seen.pressed !== "Find clips") wrong = `the head said ${seen.pressed}, not Find clips`;
         else if (seen.frames.some((f) => f.says !== "Cancel"))
-          wrong = `after New the head said ${[...new Set(seen.frames.map((f) => f.says))].join(", ")}, not Cancel at once`;
+          wrong = `after Find clips the head said ${[...new Set(seen.frames.map((f) => f.says))].join(", ")}, not Cancel at once`;
         else if (greyed)
-          wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after New, so a press there did nothing`;
+          wrong = `the head said Cancel greyed out for ${greyed} of ${seen.frames.length} frames after Find clips, so a press there did nothing`;
         else if (seen.after !== "Cancelling") wrong = `Cancel pressed, the head said ${seen.after}, not Cancelling`;
-        console.log(`      Cancel pressed ${seen.frames.length} frames after New, ${greyed} of them greyed out`);
+        console.log(`      Cancel pressed ${seen.frames.length} frames after Find clips, ${greyed} of them greyed out`);
         await watch.step("head", s);
         break;
       }
@@ -6809,7 +6809,7 @@ for (const seq of toWalk) {
       }
       case "episode":
         await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
-        await page.locator(".listhead button.new").first().waitFor();
+        await page.locator(".listhead button.find").first().waitFor();
         await settle(page);
         break;
       case "episode watched": {
@@ -6847,7 +6847,7 @@ for (const seq of toWalk) {
           requestAnimationFrame(watch);
         });
         await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
-        await page.locator(".listhead button.new").first().waitFor();
+        await page.locator(".listhead button.find").first().waitFor();
         await settle(page);
         await page.waitForTimeout(1000);
         await page.evaluate(() => (window.__watching = false));
@@ -7252,7 +7252,7 @@ for (const seq of toWalk) {
           .waitForFunction(
             (word) => {
               const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-              return pane?.querySelector(".listhead button.new")?.textContent.replace(/\s+/g, " ").trim() === word;
+              return pane?.querySelector(".listhead button.find")?.textContent.replace(/\s+/g, " ").trim() === word;
             },
             arg,
             { timeout: 60000, polling: 200 },

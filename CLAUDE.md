@@ -273,7 +273,9 @@ messages, pull request text, code comments and chat replies.
   controls around as it comes and goes.
 - **A row never changes width as you use it.** A label that toggles, like
   Play and Pause, gets room for the longer word, so nothing wraps and
-  nothing jumps.
+  nothing jumps. A button is as wide as its words and its padding, never
+  a width of its own, and one whose words change names them all in
+  `data-room`, see `app.css`, which keeps the room of the longest.
 - **Controls in one row have the same size.** No one-off sizes for a single
   button. All controls use `--control-h` from `frontend/src/app.css`.
 - **What cannot be taken back asks first**, in the one box over the
@@ -424,7 +426,7 @@ messages, pull request text, code comments and chat replies.
 - The episode workspace is the centre of the app, in three columns: the
   settings for finding clips and for the captions on the left, the video
   preview with the crop frame and the range picker in the middle, the clip
-  list on the right with **New** above it. Under all three, the clip panel
+  list on the right with **Find clips** above it. Under all three, the clip panel
   with the zoomed timeline. The words of a clip are written out in one
   place, the caption box over the picture, which is also where they are
   corrected. The whole of it fits the window without scrolling.

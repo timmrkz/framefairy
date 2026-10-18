@@ -449,7 +449,7 @@ export async function clipList(page) {
     if (!pane) return null;
     const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
     return {
-      head: text(pane.querySelector(".listhead button.new")),
+      head: text(pane.querySelector(".listhead button.find")),
       count: Number(text(pane.querySelector(".listhead .num")) || 0),
       cards: [...pane.querySelectorAll("ol li[data-key]")].map((li) => li.dataset.key),
       rows: [...pane.querySelectorAll("ol li.ghost")]
@@ -479,13 +479,13 @@ export async function pressHead(page) {
       new Promise((done) => {
         const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
         const text = (el) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
-        const button = pane.querySelector(".listhead button.new");
+        const button = pane.querySelector(".listhead button.find");
         const pressed = text(button);
         button.click();
         requestAnimationFrame(() => {
           done({
             pressed,
-            head: text(pane.querySelector(".listhead button.new")),
+            head: text(pane.querySelector(".listhead button.find")),
             rows: [...pane.querySelectorAll("ol li.ghost .title")].map(text),
           });
         });
@@ -522,7 +522,7 @@ export async function addHEVC(url, page) {
       const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
       return (
         on.startsWith("folge-") &&
-        pane?.querySelector(".listhead button.new")?.textContent.includes("New") &&
+        pane?.querySelector(".listhead button.find")?.textContent.includes("Find clips") &&
         pane.querySelectorAll("ol li[data-key]").length > 0
       );
     },

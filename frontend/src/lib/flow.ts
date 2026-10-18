@@ -71,7 +71,7 @@ export type Passes = { from: number; to: number; times: number }[];
 // it, as long as the episode's windows are, see suggestedWindow in
 // suggest.ts. The first round walks the episode from its start, and when
 // every part has been searched once the second starts over at the start,
-// and so on, so New always does the same thing and never runs out. A part
+// and so on, so Find clips always does the same thing and never runs out. A part
 // shorter than least, too short to hold a clip, is passed over.
 //
 // A window is never left lying on material that has just been searched

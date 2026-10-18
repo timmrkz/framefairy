@@ -72,7 +72,7 @@ func TestPathClosedWhileHearing(t *testing.T) {
 	}
 }
 
-// New pressed and the app closed at once, before the search had begun:
+// Find clips pressed and the app closed at once, before the search had begun:
 // it was cancelled and said nothing after the restart, where it should say
 // Interrupted with Continue. The walk searching.mjs found it in CI. A few
 // times over, because how far a search gets before the closing reaches it
@@ -133,7 +133,7 @@ func TestPathCancelWhileHearing(t *testing.T) {
 	if n := len(d.clips(ep)); n != 0 {
 		t.Errorf("%d clips from a search called off while it heard", n)
 	}
-	// What was heard is kept, and New goes on from there.
+	// What was heard is kept, and Find clips goes on from there.
 	heardBefore, _ := d.heard(ep)
 	given := d.speech.seconds()
 	d.search(ep, firstWindow)
@@ -209,8 +209,8 @@ func TestPathAVideoAddedOnceTheModelAnswersGetsItsClips(t *testing.T) {
 	}
 }
 
-// Cancel pressed the moment after New, and reaching the Go side before
-// the search New asked for: the search is called off as it arrives, never
+// Cancel pressed the moment after Find clips, and reaching the Go side before
+// the search Find clips asked for: the search is called off as it arrives, never
 // takes a turn, and says Stopped with Continue, after a restart too. Plan
 // row 2.131.
 //
@@ -244,7 +244,7 @@ func TestPathCancelBeforeTheSearchIsAsked(t *testing.T) {
 		t.Errorf("after a restart it says %+v", o)
 	}
 	// A Cancel is about the press it came after and no other: the next
-	// New runs.
+	// Find clips runs.
 	d.press(ep, window{60, 240}, "press-2")
 	d.idle(ep)
 	if j, _ := d.svc.jobs.find(ep, engine.JobSearch); j.State != JobDone {
@@ -386,7 +386,7 @@ func TestPathTwoEpisodesAndARender(t *testing.T) {
 	}
 }
 
-// New on a window further on, in the part not heard yet, hears on from
+// Find clips on a window further on, in the part not heard yet, hears on from
 // where the transcript ends, and never from the start of the episode. Tim
 // saw a search of the half hour after the one heard start transcribing
 // from the beginning, with almost six minutes left for a window that takes

@@ -206,7 +206,7 @@ no longer than the model can read at once, see `firstSearch` in
 `cmd/framefairy-app/search.go`. Cancel on a search that runs marks its
 record stopped as it ends. A new search takes the record of one that
 stopped away. A render or a clip made by hand that stopped has only
-Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). New on an episode waits for a search that
+Continue, see row 2.169 in [GUI-PLAN.md](GUI-PLAN.md). Find clips on an episode waits for a search that
 was just called off to be on its way out first, because both write the
 same record.
 
@@ -215,19 +215,19 @@ is no logic about jobs in TypeScript.
 
 | click | call |
 | --- | --- |
-| New | `Search(path, request, press)` |
+| Find clips | `Search(path, request, press)` |
 | Render | `Render(path, request)` |
 | Continue, on a search or a render that stopped | `Continue(job, press)` |
 | Cancel at the head of the clip list | `StopClipWork(path, press)` |
 | Cancel on a render | `CancelJob(job)` |
 
 **Cancel at the head of the clip list takes effect the moment it is
-pressed.** New and Cancel are a person's actions, and Cancel means: stop
+pressed.** Find clips and Cancel are a person's actions, and Cancel means: stop
 the work on the clips of this episode. It used to call off the jobs the
-window knew, and between New and the Go side's answer it knew none, so
+window knew, and between Find clips and the Go side's answer it knew none, so
 it stood greyed out and a press there did nothing. So it names the
-episode instead of a job, and needs no answer from New. The window gives
-every press of New and Continue a name of its own, `press`, and Cancel
+episode instead of a job, and needs no answer from Find clips. The window gives
+every press of Find clips and Continue a name of its own, `press`, and Cancel
 names the press it came after. Wails hands every call to a goroutine of
 its own, so the two can reach the Go side in either order:
 
@@ -237,7 +237,7 @@ its own, so the two can reach the Go side in either order:
   never takes a turn: `Project.Search` writes its record and returns. It
   ends the way a search Cancel stopped while it ran does, Stopped with
   Continue, after a restart too.
-- New first: the search is in the queue, and Cancel stops it like any
+- Find clips first: the search is in the queue, and Cancel stops it like any
   search that runs.
 
 The note and the queue are read and written under the queue's one lock,
@@ -246,13 +246,13 @@ A search the Go side starts by itself, the first one of an episode just
 added, has no press, and Cancel stops it as work of the episode.
 `TestPathCancelBeforeTheSearchIsAsked` and
 `TestNewAndCancelInEitherOrder` hold it, and the walk sequence "Cancel
-pressed at once after New stops the search before it starts" holds the
+pressed at once after Find clips stops the search before it starts" holds the
 search's call back on its way to the Go side and presses Cancel in the
 first frame the head says it.
 
 It gets the state of every job in one event, `job`, whenever it changes,
 and reads the list once as it starts. Everything it shows about work comes
-from that: the row the next clip will appear in, New, Continue and Cancel,
+from that: the row the next clip will appear in, Find clips, Continue and Cancel,
 the fill on the range picker, the Render button of a clip, the note of a
 job that stopped. While a search runs, the range picker shows its window.
 
@@ -448,7 +448,7 @@ thrown away what they proved. So the proof came first and stayed:
 
 **Path tests, written against the old code, before anything changed.**
 Each one is what a person does, told through a small driver with the
-words of the app: add a video, press New, press Cancel, press Render,
+words of the app: add a video, press Find clips, press Cancel, press Render,
 close the app, open it again, press Continue. The driver,
 `cmd/framefairy-app/driver_test.go`, is the one place that knows which
 calls do that. The tests, in `paths_test.go`, ran green on the old code

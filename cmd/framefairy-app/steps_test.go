@@ -10,7 +10,7 @@ import (
 )
 
 // Everything the window can do to searches, renders and clips made by
-// hand, at once, from many goroutines, while they run: New, I and O,
+// hand, at once, from many goroutines, while they run: Find clips, I and O,
 // Continue, Cancel, Render, the job list read and cleared. An episode never
 // has two searches running, no two clips made by hand share an id, and when
 // it is over nothing is left running.
@@ -87,7 +87,7 @@ func TestSearchesFromEverywhereAtOnce(t *testing.T) {
 	}
 }
 
-// New and Cancel pressed one after the other reach the Go side in either
+// Find clips and Cancel pressed one after the other reach the Go side in either
 // order, each call on a goroutine of its own, the way Wails hands them
 // over. Whichever comes first, the search ends Stopped with Continue, and
 // none runs on. The model holds its answers, so a search that slipped

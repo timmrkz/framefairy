@@ -7,10 +7,10 @@
   // triangle at each end whose tip reaches into the track.
   // Laid over a short episode searched whole, the window hid every clip
   // just found, and a frame round it read as the same window, so nothing
-  // of the mark lies over the track but the tips. It says where New looks
+  // of the mark lies over the track but the tips. It says where Find clips looks
   // next, which the app decides, see nextWindow in lib/flow.ts, or where
   // Continue carries on a search that stopped. Moved off that, the search
-  // is set aside and New starts afresh where it is, see aside in
+  // is set aside and Find clips starts afresh where it is, see aside in
   // Episode.svelte. A triangle
   // drags its edge, a bar drags the whole window, and a double-click puts
   // it back where the app would have it. While clips are found the mark
@@ -99,12 +99,12 @@
     most?: number;
     reachSays?: string;
     // A search stands stopped on the window, so the mark is where Continue
-    // carries it on rather than where New looks.
+    // carries it on rather than where Find clips looks.
     resumes?: boolean;
   } = $props();
 
   // What the mark is, in its titles.
-  const says = $derived(resumes ? "Where Continue carries on the search that stopped" : "Where New looks next");
+  const says = $derived(resumes ? "Where Continue carries on the search that stopped" : "Where Find clips looks next");
 
   let track: HTMLDivElement;
   let width = $state(0);
@@ -199,7 +199,7 @@
   }
 
   // Dragging the window at rest by its outline: a bar moves all of it, a
-  // handle one edge. It follows the hand the whole way, so the New button's
+  // handle one edge. It follows the hand the whole way, so the Find clips button's
   // title and the Target's suggestion say where it is while it moves.
   let moving = $state<"" | "move" | "from" | "to">("");
 
@@ -385,10 +385,10 @@
   <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
     <Info label="What the range picker is" side="right">
       The whole video, with its clips as marks. Press or drag anywhere to move the playhead, and
-      press a mark to work on its clip. The marks at the four corners are where New looks next, or
+      press a mark to work on its clip. The marks at the four corners are where Find clips looks next, or
       where Continue carries on a search that stopped: drag a bar between them to look somewhere
       else, drag a triangle to make it shorter or longer, and double-click to put it back. Moved
-      off a search that stopped, New starts afresh where they are. It is at least as long as its clips need and at most as long as
+      off a search that stopped, Find clips starts afresh where they are. It is at least as long as its clips need and at most as long as
       the model reads at once, and flashes red when a triangle runs into either. While clips are
       being found, the window is drawn over the track. How far a search has come is on its cards in
       the clip list.

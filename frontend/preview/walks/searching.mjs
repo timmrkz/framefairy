@@ -1,5 +1,5 @@
 // A walk over finding clips: adding a video, its first search starting by
-// itself, New, Cancel, Continue, the app closed and opened again, with the
+// itself, Find clips, Cancel, Continue, the app closed and opened again, with the
 // language model holding its answers or failing and the speech model slow
 // or quick, in an order a seed decides. Besides the rules every walk
 // keeps, see rules.mjs, the clip list says after every step what the
@@ -34,7 +34,7 @@ function expected(job) {
   if (job && job.state === "interrupted") {
     return { head: ["Continue"], row: job.step === "stopped" ? "Stopped. Click Continue" : "Interrupted. Click Continue" };
   }
-  return { head: ["New"] };
+  return { head: ["Find clips"] };
 }
 
 // The clip list and the engine agree: the head button, the row of a
@@ -57,7 +57,7 @@ async function agree() {
     else if (!want.head.includes(list.head)) problem = `the head says ${list.head}, the search is ${job?.state ?? "none"}${job?.step ? ` (${job.step})` : ""}`;
     else if (want.row && !list.rows.some((r) => r.what === want.row)) problem = `no row says "${want.row}": ${JSON.stringify(list.rows)}`;
     else if (job?.state !== "failed" && list.rows.some((r) => /fail/i.test(r.what))) problem = `a row says a failure the engine did not have: ${JSON.stringify(list.rows)}`;
-    else if (list.head === "New") {
+    else if (list.head === "Find clips") {
       const clips = (await ask(page, "Clips", path)).filter((c) => !c.rejected);
       if (list.cards.length !== clips.length || list.count !== clips.length) {
         problem = `${list.cards.length} cards and the count ${list.count}, the engine has ${clips.length} clips`;
@@ -98,7 +98,7 @@ const gestures = [
           .waitForFunction(
             () => {
               const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-              return pane?.querySelector(".listhead button.new")?.textContent.includes("New") &&
+              return pane?.querySelector(".listhead button.find")?.textContent.includes("Find clips") &&
                 pane.querySelectorAll("ol li[data-key]").length > 0;
             },
             null,
@@ -113,9 +113,9 @@ const gestures = [
   {
     name: "new",
     weight: 2,
-    when: (s) => s.head === "New",
+    when: (s) => s.head === "Find clips",
     async run() {
-      return (await press("New")).said;
+      return (await press("Find clips")).said;
     },
   },
   {
@@ -128,8 +128,8 @@ const gestures = [
       // longer says Cancel, or a row says Stopping. A search that stops
       // within that frame already says Continue, which shows it too. Only
       // a press of Cancel is held to it: a search that ended between the
-      // look and the press had its button say Continue or New under the
-      // hand, and that press was of Continue or New.
+      // look and the press had its button say Continue or Find clips under the
+      // hand, and that press was of Continue or Find clips.
       if (seen.pressed === "Cancel" && seen.head === "Cancel" && !seen.rows.includes("Stopping")) {
         watch.broke("Cancel shows at once", `the frame after the click: ${JSON.stringify(seen)}`);
       }

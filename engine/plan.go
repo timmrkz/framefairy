@@ -536,7 +536,7 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 	if len(clips) == 0 && len(build.taken) > 0 {
 		// A window searched again can hold nothing but the moments its
 		// clips have. That is an answer, not a failure: the search is
-		// kept as a plan with no clips, so it counts as a pass and New
+		// kept as a plan with no clips, so it counts as a pass and Find clips
 		// moves on rather than asking about the same window again.
 		if err := build.none(); err != nil {
 			return nil, err

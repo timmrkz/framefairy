@@ -864,7 +864,7 @@ bubble scrolled by those eight pixels.
   search, of its first window, so the Go side starts it and the
   workspace only shows it. Nothing carries the transcription on through
   the rest of the episode afterwards. So there is nothing to control about
-  it but the search: **New** starts it and **Cancel** stops it, and what
+  it but the search: **Find clips** starts it and **Cancel** stops it, and what
   was heard stays, so the next search goes on from there. While another
   episode's search finds its clips, a search that hears waits and carries
   on after, because the two models want the same memory.
@@ -1174,15 +1174,15 @@ bubble scrolled by those eight pixels.
       one, so it can be read, while the fill and the time left move at
       once. The time left moves in steps of five seconds. Only the search
       reports on that row: what ffmpeg says while it frames a clip goes to
-      the log. **New** becomes **Cancel** the moment it is pressed, and
+      the log. **Find clips** becomes **Cancel** the moment it is pressed, and
       Cancel takes a press from that moment on, never greyed out while the
       Go side has not answered yet. It names the episode's work and the
-      press of New it came after, not a job, so it needs nothing from the
+      press of Find clips it came after, not a job, so it needs nothing from the
       Go side first: a search the Go side has not heard of yet is called
       off as it arrives and never starts, and says Stopped with Continue
       like any search Cancel stopped. A search that waits for the
       transcript is called off before it starts, and one that runs stops. A render is not a search, so it leaves this head alone:
-      **New** stays New and cannot be pressed until the render is done,
+      **Find clips** stays Find clips and cannot be pressed until the render is done,
       because one lane does the work. The render shows in the **Render**
       button it was started from, which fills from the moment it is
       pressed and says **Cancel**, and a click on it stops the render.
@@ -1267,7 +1267,7 @@ bubble scrolled by those eight pixels.
       stood still.
     - **A search starts in sight.** The rows still to come are often after
       the clips there are, so in a long list a search began out of sight and
-      all anyone saw was New turning into Cancel. The row the next clip
+      all anyone saw was Find clips turning into Cancel. The row the next clip
       will appear in, the one wearing the work, is brought to the top of
       the column the moment it is there, and back into view every time a
       clip lands, wherever the list has been scrolled to in between. It
@@ -1285,14 +1285,14 @@ bubble scrolled by those eight pixels.
       picker and the clip timeline.
     - **What a search was asked for is held while it runs.** Target,
       Shortest and Longest go to the model with the prompt, so they are
-      locked from New until the search has run, and dimmed. Changing Target
+      locked from Find clips until the search has run, and dimmed. Changing Target
       used to change the rows still to come while the model looked for the
       number it had been given.
     - **An empty list is never empty.** With nothing in the list and no
-      search on its way, the rows New will fill stand there as many as
+      search on its way, the rows Find clips will fill stand there as many as
       Target says, following it as it changes, and still, because nothing
       is filling them yet. When every clip there was has been removed, the
-      first of them says so, **All clips removed**, **New finds others**,
+      first of them says so, **All clips removed**, **Find clips looks for others**,
       so the empty rows read as something that happened. It gives no
       number, because the plan keeps every clip ever removed, and a count
       of them was more than the list had just shown. The empty rows open
@@ -1307,13 +1307,13 @@ bubble scrolled by those eight pixels.
       news, not a state, so it runs down in grey for as long as a removed
       clip's row can be put back, stands still under the pointer, and
       closes. Its time runs on while another video is open. Each search
-      that finds nothing says so once, so New pressed again and again
+      that finds nothing says so once, so Find clips pressed again and again
       says Finding and then this, every time. Its row used to close
       again with nothing said. It is not kept across a restart, since
       there is nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
       next clip would have appeared in, in the colour of a warning, and
-      **New** becomes **Continue**. *Interrupted. Click Continue* is a
+      **Find clips** becomes **Continue**. *Interrupted. Click Continue* is a
       search the app was closed or fell over in, with the window it was
       about under it, or with how far the transcript came when it still
       waited for the transcript, which is the first half of every search on
@@ -1331,19 +1331,19 @@ bubble scrolled by those eight pixels.
       search that was cut off, a failed one says why. **Cancel** says
       *Stopping* in that row the moment it is pressed, standing still, and
       then leaves the same row, *Stopped. Click Continue*, with how far the episode was
-      transcribed, because what it did stays and can be carried on. **New**
+      transcribed, because what it did stays and can be carried on. **Find clips**
       takes its place. Clips it wrote before it stopped stay, with the row
       after them. The window's mark stays on the window the search was
       about and can be dragged as at rest: moved anywhere else, the
-      search is set aside, its row closes, **Continue** becomes **New**,
-      and New starts a fresh search where the window is. Moved back, by
+      search is set aside, its row closes, **Continue** becomes **Find clips**,
+      and Find clips starts a fresh search where the window is. Moved back, by
       hand or with Undo, Continue carries the search on as before. It is
       read from where the window is, which is kept, so it is the same
       after a restart. Tim cancelled a search to look somewhere else and
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
       that failed.
-    - **New**, above the list, finds clips in the window, as long as the
+    - **Find clips**, above the list, finds clips in the window, as long as the
       episode's windows are, and says so while it looks. The clips it
       finds join the ones already there. After a search the window walks
       on from where the search ended, as long as it was left, so a window
@@ -1361,8 +1361,8 @@ bubble scrolled by those eight pixels.
       clip there is: the model is told which lines are clips already and
       asked for other moments, and a search that brings none ends with
       nothing added. Nothing on the range picker is taken or given back:
-      the window goes anywhere and New searches it, as often as anyone
-      likes. New is never off for want of room, and its title says
+      the window goes anywhere and Find clips searches it, as often as anyone
+      likes. Find clips is never off for want of room, and its title says
       whether it looks somewhere new or again.
     - The trash can on a row removes that clip. Its mark leaves the track at
       once, and its row stays in place for ten seconds, in red with a trash
@@ -1419,8 +1419,8 @@ bubble scrolled by those eight pixels.
       across the window's width, and a triangle hangs from each end
       of them with its tip reaching into the track. Nothing else of it
       lies over the track, so it hides no clip and does not read as a
-      window. It says where New looks next, which the app decides, see
-      New above. The four triangles are the handles: the left two drag
+      window. It says where Find clips looks next, which the app decides, see
+      Find clips above. The four triangles are the handles: the left two drag
       where the window starts and the right two where it ends. A bar
       drags the whole window and keeps its length, and a double-click on
       any of it puts it back where the app would have it. An edge lands
@@ -1441,7 +1441,7 @@ bubble scrolled by those eight pixels.
       titles say both limits in words. Under the pointer the whole mark lights up, a bar shows
       the hand that grabs and a triangle the arrows left and right. The
       triangles lie over the playhead, which a search leaves on the
-      window's start, and the bars under it. The title of New and the
+      window's start, and the bars under it. The title of Find clips and the
       suggested Target follow the hand. While its clips are found the
       mark turns into the window, drawn over the track, and back into
       the mark when the search is done, on the window after it, or when
@@ -2051,7 +2051,7 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
   - **The card becomes the clip** when it lands, still chosen, unless
     another clip has been chosen since. While the video plays it stays
     where it is playing.
-  - **New stays New.** It is the search's button, so a clip made by hand
+  - **Find clips stays Find clips.** It is the search's button, so a clip made by hand
     does not turn it into Cancel. Cancel while a search runs stops all
     the work on the clips, the search and every clip on its way, and
     Continue carries all of it on.

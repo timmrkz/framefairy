@@ -14,7 +14,7 @@ import (
 // the record, the queue gives each step its turn, and the interface only
 // says what was clicked.
 
-// Search finds clips in a window of an episode: New, and Continue on a
+// Search finds clips in a window of an episode: Find clips, and Continue on a
 // search that stopped. It hears the episode as far as the window reaches,
 // if it has not been heard that far, and the model reads the window. An
 // episode has one search at a time, so asking again while one runs gives
