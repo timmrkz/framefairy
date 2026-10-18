@@ -37,6 +37,7 @@
   import Bug from "@lucide/svelte/icons/bug";
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import Search from "@lucide/svelte/icons/search";
+  import MessageSquareQuote from "@lucide/svelte/icons/message-square-quote";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -101,6 +102,10 @@
     // The field over a list long enough to search, the magnifier of
     // Spotlight and of every search field on the Mac.
     search: Search,
+    // The transcript of the video, searched in the clip column: a speech
+    // bubble with quotes in it, the mark Apple Podcasts puts on the button
+    // that opens an episode's transcript.
+    transcript: MessageSquareQuote,
   };
 
   // The marks that are solid wherever people see them, play and pause on

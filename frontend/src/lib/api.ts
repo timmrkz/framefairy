@@ -292,6 +292,9 @@ export interface Sentence {
   start: number;
   end: number;
   text: string;
+  // The key of the clip that shows it, for a caption of a clip, which is
+  // a card of its own.
+  clip?: string;
 }
 
 // One line of a caption, the way the render lays it out.
@@ -810,7 +813,7 @@ export const api = {
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   // What the video says, sentence by sentence, as far as it has been
   // heard, for searching it in the clip column.
-  sentences: (path: string, cuts: number[]) => call<Sentence[] | null>("Sentences", path, cuts),
+  sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // Removes one word from the captions of one clip alone, the word heard

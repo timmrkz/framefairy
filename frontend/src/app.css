@@ -371,6 +371,14 @@ input[type="number"] {
   width: 80px;
 }
 
+/* What a field is for, before anything is typed in it, a step below the
+   words typed: the browser's grey read like something already written,
+   found by Tim. */
+::placeholder {
+  color: color-mix(in srgb, var(--muted) 45%, var(--faint));
+  opacity: 1;
+}
+
 input[type="text"],
 input[type="password"] {
   width: 100%;

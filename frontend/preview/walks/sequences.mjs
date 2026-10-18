@@ -610,7 +610,7 @@
 //                      waits for the captions drawn in it
 //   ["search said", word]
 //   ["search said", [word, n]]
-//                      presses the magnifier in the head of the clip column
+//                      presses the transcript button in the head of the clip column
 //                      and types the word, and sees the field take the
 //                      head's place at its height with the keyboard in it,
 //                      a card for every sentence the engine has that holds
@@ -1352,6 +1352,21 @@ export const sequences = [
     // A second clip, made with I, so choosing one on the range picker has
     // somewhere to take the list.
     steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", "Jahre"]],
+  },
+  {
+    // Found by Tim: a word corrected in the caption box read corrected in
+    // the video preview and as it was heard in the search of what was
+    // said. A clip's cards are its captions, so they read what it shows.
+    name: "a word corrected in a clip reads corrected in the search of what was said",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["search said", "Schulhoff"],
+    ],
   },
   {
     // The same on a video heard only as far as its first search reached,
@@ -3589,13 +3604,6 @@ const clockOf = (t) => {
 
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
-// The edges of the parts the clips of a video keep, which the workspace
-// cuts the cards of what was said at, the same way.
-const cutsOf = async (page, path) =>
-  (await ask(page, "Clips", path))
-    .filter((c) => !c.rejected)
-    .flatMap((c) => (c.segments.length ? c.segments : [c]).flatMap((p) => [p.start, p.end]));
-
 // How far the captions in the crop of the video preview are from a frame
 // of the short at the same size, in brightness, on average over every
 // pixel and at most, in steps of 8 bits. The captions are the rows of the
@@ -7942,7 +7950,7 @@ for (const seq of toWalk) {
       case "heard some": {
         const path = await episodeOn(page);
         const until = Date.now() + 60000;
-        while (Date.now() < until && !(await ask(page, "Sentences", path, await cutsOf(page, path)))?.length) await page.waitForTimeout(250);
+        while (Date.now() < until && !(await ask(page, "Sentences", path))?.length) await page.waitForTimeout(250);
         // The piece of audio being heard as the speech model is held lands
         // before the search looks.
         await page.waitForTimeout(2500);
@@ -7959,16 +7967,19 @@ for (const seq of toWalk) {
         await settled();
         let [word, unheardLeast = 0] = [arg].flat();
         if (word === "*") {
-          const first = (await ask(page, "Sentences", path, await cutsOf(page, path)))[0]?.text ?? "";
+          const first = (await ask(page, "Sentences", path))[0]?.text ?? "";
           word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
         }
         const was = await headHigh();
-        // The sentences are on screen from the frame the magnifier is
+        const icon = await page.evaluate(
+          () => document.querySelector('.listhead button[aria-label="Search the transcript"] svg')?.getAttribute("class") ?? "",
+        );
+        // The sentences are on screen from the frame the transcript button is
         // pressed in, never an empty column first, found by Tim.
         const blank = await page.evaluate(
           () =>
             new Promise((done) => {
-              document.querySelector('.listhead button[aria-label="Search what was said"]').click();
+              document.querySelector('.listhead button[aria-label="Search the transcript"]').click();
               let n = 0;
               let empty = 0;
               const tick = () => {
@@ -7981,7 +7992,7 @@ for (const seq of toWalk) {
         );
         await watch.step("click", s);
         if (blank) {
-          wrong = `the column stood empty for ${blank} of 20 frames after the magnifier`;
+          wrong = `the column stood empty for ${blank} of 20 frames after the transcript button`;
           await page.keyboard.press("Escape");
           break;
         }
@@ -8011,7 +8022,7 @@ for (const seq of toWalk) {
           break;
         }
         const [sentences, clips, library] = await Promise.all([
-          ask(page, "Sentences", path, await cutsOf(page, path)),
+          ask(page, "Sentences", path),
           ask(page, "Clips", path),
           ask(page, "Library"),
         ]);
@@ -8037,7 +8048,45 @@ for (const seq of toWalk) {
           holes: document.querySelectorAll("ol.said li.hole").length,
           edges: document.querySelectorAll(".unheard-edge").length,
           count: document.querySelector(".sayfield .saycount")?.textContent.trim() ?? null,
+          // The greys, as the browser has them: what no clip keeps, a
+          // clip's words, a word that answers, the field's placeholder,
+          // and a label's grey to measure them by.
+          grey: (() => {
+            const of = (sel, pseudo) => {
+              const el = document.querySelector(sel);
+              return el ? getComputedStyle(el, pseudo).color : null;
+            };
+            const probe = document.createElement("span");
+            probe.style.color = "var(--muted)";
+            document.body.append(probe);
+            const muted = getComputedStyle(probe).color;
+            probe.style.color = "var(--text)";
+            const white = getComputedStyle(probe).color;
+            // The grey the app gives what a field is for, which the browser
+            // has a grey of its own for that, a lighter one in WebKit.
+            probe.style.color = "color-mix(in srgb, var(--muted) 45%, var(--faint))";
+            const unwritten = getComputedStyle(probe).color;
+            probe.remove();
+            return {
+              out: of("ol.said li:not([data-clip]):not(.hole):not(.none) .text"),
+              clip: of("ol.said li[data-clip] .text"),
+              bold: of("ol.said li .text b"),
+              placeholder: of('input[aria-label="Search transcript"]', "::placeholder"),
+              muted,
+              white,
+              unwritten,
+            };
+          })(),
+          says: document.querySelector('input[aria-label="Search transcript"]')?.placeholder ?? null,
         }));
+        // How bright a colour of the browser's is, 0 to 255.
+        const bright = (c) => {
+          // A colour mixed in the stylesheet comes back as color(srgb ...),
+          // from 0 to 1.
+          const scale = c?.startsWith("color(") ? 255 : 1;
+          const [r, g, b] = (c?.replace(/^color\(srgb/, "").match(/[\d.]+/g) ?? []).map((v) => Number(v) * scale);
+          return c ? 0.2126 * r + 0.7152 * g + 0.0722 * b : NaN;
+        };
         const holds = sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase()));
         const texts = new Set(sentences.map((x) => x.text));
         const gaps = (() => {
@@ -8051,15 +8100,15 @@ for (const seq of toWalk) {
           if (Number.isFinite(end) && end - at >= 1) n++;
           return n;
         })();
-        // The clips the engine has keeping any of the sentence a card is
-        // of, which the bridge's speech says more than once.
-        const overlapping = (c) => {
-          const x = sentences.find((y) => Math.abs(y.start - c.at) < 0.0005);
-          if (!x) return [];
-          return clips
-            .filter((k) => !k.rejected && (k.segments.length ? k.segments : [k]).some((p) => p.start <= (x.start + x.end) / 2 && (x.start + x.end) / 2 < p.end))
-            .map((k) => k.title || k.slug);
-        };
+        // The clips the engine has showing a card at a moment, two where
+        // clips are over each other.
+        const namesAt = (c) =>
+          sentences
+            .filter((y) => Math.abs(y.start - c.at) < 0.0005)
+            .map((y) => {
+              const k = y.clip ? clips.find((q) => q.key === y.clip) : null;
+              return k ? k.title || k.slug : "";
+            });
         // A card named for a clip holds only what the clip keeps, to
         // within the word an edge falls in, found by Tim.
         const spills = (c) => {
@@ -8067,10 +8116,27 @@ for (const seq of toWalk) {
           const k = c.clip && clips.find((q) => !q.rejected && (q.title || q.slug) === c.clip);
           if (!x || !k) return false;
           const parts = k.segments.length ? k.segments : [k];
-          return !parts.some((p) => x.start >= p.start - 0.5 && x.end <= p.end + 0.5);
+          const kept = (t) => parts.some((p) => t >= p.start - 0.5 && t <= p.end + 0.5);
+          return !kept(x.start) || !kept(x.end);
         };
-        const misnamed = (c) => (c.clip ? !overlapping(c).includes(c.clip) : overlapping(c).length > 0);
-        if (seen.focused !== "Search what was said") wrong = `the keyboard is in ${seen.focused ?? "nothing"}, not the search field`;
+        const misnamed = (c) => !namesAt(c).includes(c.clip);
+        // A clip's cards are its captions, one card a caption, reading
+        // what the caption shows, found by Tim, a clip over another too.
+        const flat = (t) => t.replace(/[\s\u00ad-]/g, "");
+        let held = 0;
+        const unlike = (
+          await Promise.all(
+            clips.filter((k) => !k.rejected).map(async (k) => {
+              const view = await ask(page, "Captions", path, k.plan, k.id);
+              const blocks = (view?.captions ?? []).map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text)).join(" ")).filter((t) => t).map(flat);
+              const cards = sentences.filter((x) => x.clip === k.key).map((x) => x.text);
+              held += cards.length;
+              if (cards.length === blocks.length && cards.every((t, i) => flat(t) === blocks[i])) return null;
+              return `${k.title || k.slug} shows ${blocks.length} captions and has ${cards.length} cards, ${JSON.stringify(blocks.slice(0, 2))} against ${JSON.stringify(cards.slice(0, 2).map(flat))}`;
+            }),
+          )
+        ).find(Boolean);
+        if (seen.focused !== "Search transcript") wrong = `the keyboard is in ${seen.focused ?? "nothing"}, not the search field`;
         else if (seen.head !== was) wrong = `the head is ${seen.head} px high with the field, ${was} px without it`;
         else if (!holds.length) wrong = `the engine has no sentence with ${word}, so the step proves nothing`;
         else if (holds.some((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)))
@@ -8087,8 +8153,24 @@ for (const seq of toWalk) {
           wrong = `the card at ${seen.cards.find(spills).at.toFixed(2)} is named for its clip and holds what the clip leaves out`;
         else if (seen.cards.some(misnamed)) {
           const c = seen.cards.find(misnamed);
-          wrong = `the card at ${c.at.toFixed(2)} names ${c.clip || "no clip"}, and the engine has it in ${overlapping(c).join(", ") || "no clip"}`;
+          wrong = `the card at ${c.at.toFixed(2)} names ${c.clip || "no clip"}, and the engine has it in ${namesAt(c).join(", ") || "no clip"}`;
         }
+        else if (unlike) wrong = unlike;
+        // What no clip keeps reads in a label's grey, a clip's words a step
+        // above it and below white, and a word that answers in white, so it
+        // stands out, found by Tim.
+        else if (seen.grey.out && seen.grey.out !== seen.grey.muted) wrong = `what no clip keeps reads in ${seen.grey.out}, not the grey of a label, ${seen.grey.muted}`;
+        else if (seen.grey.clip && !(bright(seen.grey.clip) > bright(seen.grey.muted) && bright(seen.grey.clip) < bright(seen.grey.white)))
+          wrong = `a clip's words read in ${seen.grey.clip}, not between ${seen.grey.muted} and ${seen.grey.white}`;
+        else if (seen.grey.bold !== seen.grey.white) wrong = `a word that answers reads in ${seen.grey.bold}, not ${seen.grey.white}`;
+        // The field says what it is in two words, darker than what is typed
+        // and than a label, so it does not read as typed, and the button
+        // that opens it wears the transcript, found by Tim.
+        else if (seen.says !== "Search transcript") wrong = `the field says "${seen.says}"`;
+        else if (seen.grey.placeholder !== seen.grey.unwritten || !(bright(seen.grey.placeholder) < bright(seen.grey.muted)))
+          wrong = `the field's placeholder is ${seen.grey.placeholder}, not ${seen.grey.unwritten}, darker than ${seen.grey.muted}`;
+        else if (!icon.includes("lucide-message-square-quote")) wrong = `the button that opens the search wears ${icon || "nothing"}`;
+        else if (!held && clips.some((k) => !k.rejected)) wrong = "no clip has a card, so a clip's cards could not be held to its captions";
         else if (gaps < unheardLeast)
           wrong = `${gaps} parts are not transcribed yet, fewer than the ${unheardLeast} this step is about: heard ${JSON.stringify(heard)} of ${end}, transcribed ${status?.transcribed}`;
         // A search answers with sentences only. The parts not transcribed
@@ -8105,7 +8187,7 @@ for (const seq of toWalk) {
         }
         // What nothing said matches says so in two words, with no parts
         // not transcribed yet around them, found by Tim.
-        const field = page.locator('input[aria-label="Search what was said"]');
+        const field = page.locator('input[aria-label="Search transcript"]');
         await field.fill("qxzvqxzv");
         await watch.step("type", s);
         await page.waitForTimeout(200);
@@ -8158,6 +8240,39 @@ for (const seq of toWalk) {
           else if (!lit.mark) wrong = `the hand on a sentence of ${inClip.clip} lit no mark on the range picker`;
           else if (lit.alsoLit) wrong = `the hand on one sentence of ${inClip.clip} lit ${lit.alsoLit} of its ${lit.others} other sentences too`;
         }
+        // The hand going from one card of a clip to the next is on a card
+        // all the way, so the clip stays lit everywhere else and does not
+        // flicker, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await field.fill("");
+          await watch.step("type", s);
+          await page.waitForTimeout(200);
+          const pair = await page.evaluate(() => {
+            const cards = [...document.querySelectorAll("ol.said li[data-clip]")];
+            const i = cards.findIndex((li, i) => li.nextElementSibling === cards[i + 1] && cards[i + 1]?.dataset.clip === li.dataset.clip);
+            if (i < 0) return null;
+            cards[i].scrollIntoView({ block: "center" });
+            const [a, b] = [cards[i].getBoundingClientRect(), cards[i + 1].getBoundingClientRect()];
+            return { x: a.left + a.width / 2, from: a.top + a.height / 2, to: b.top + b.height / 2 };
+          });
+          if (!pair) wrong = "no clip has two cards one after the other, so going from one to the next could not be seen";
+          else {
+            let off = 0;
+            let dark = 0;
+            for (let y = pair.from; y <= pair.to; y += 1) {
+              await page.mouse.move(pair.x, y);
+              const on = await page.evaluate(() => ({
+                card: !!document.querySelector("ol.said li:hover"),
+                mark: !!document.querySelector(".track .clipmark.lit"),
+              }));
+              if (!on.card) off++;
+              if (!on.mark) dark++;
+            }
+            await watch.step("hover", s);
+            if (off || dark)
+              wrong = `the hand going from one card of a clip to the next was on no card for ${off} px and the clip's mark went dark for ${dark} px`;
+          }
+        }
         // The hand on a part not transcribed yet lights it on the range
         // picker too.
         if (!wrong && gaps) {
@@ -8200,7 +8315,7 @@ for (const seq of toWalk) {
         const others = clips.filter((c) => !c.rejected);
         if (!wrong && others.length > 1) {
           // With nothing typed, so every sentence of the clip has a card.
-          await page.locator('input[aria-label="Search what was said"]').fill("");
+          await page.locator('input[aria-label="Search transcript"]').fill("");
           await watch.step("type", s);
           await page.evaluate(() => {
             const list = document.querySelector(".scroll.list");
@@ -8211,12 +8326,12 @@ for (const seq of toWalk) {
           const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
           const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
           const parts = target ? (target.segments.length ? target.segments : [target]) : [];
-          const firstAt = sentences.find((x) => parts.some((p) => p.start <= (x.start + x.end) / 2 && (x.start + x.end) / 2 < p.end))?.start;
+          const firstAt = sentences.find((x) => x.clip === target?.key)?.start;
           // Where the card stands once the list stops moving, against where
           // the first card of the list stands, which is the top.
           const standing = () =>
             page.evaluate(
-              (at) =>
+              ([at, key]) =>
                 new Promise((done) => {
                   const list = document.querySelector(".scroll.list");
                   let last = -1;
@@ -8226,7 +8341,7 @@ for (const seq of toWalk) {
                     else still = 0;
                     last = list.scrollTop;
                     if (still < 10) return requestAnimationFrame(tick);
-                    const card = document.querySelector(`ol.said li[data-at="${at}"]`);
+                    const card = document.querySelector(`ol.said li[data-at="${at}"][data-clip="${key}"]`);
                     const head = document.querySelector("ol.said");
                     const box = list.getBoundingClientRect();
                     const r = card?.getBoundingClientRect();
@@ -8234,7 +8349,7 @@ for (const seq of toWalk) {
                   };
                   requestAnimationFrame(tick);
                 }),
-              firstAt,
+              [firstAt, target?.key],
             );
           // WebKit, which the app is drawn by on the Mac, keeps no anchor
           // when what is above the place in view changes size, and
@@ -8259,6 +8374,50 @@ for (const seq of toWalk) {
           else if (off)
             wrong = `choosing ${target.title} on the range picker${off === chosen[1] ? " a second time" : ""} left its first sentence ${off.top.toFixed(1)} px down a list ${off.room.toFixed(0)} px high, not at its top, ${off.should} px`;
         }
+        // The playhead put on a caption on the clip timeline puts the card
+        // of that caption at the top of the list, the way a clip chosen
+        // does, and so does the playhead put anywhere, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await field.fill("");
+          await watch.step("type", s);
+          await page.waitForTimeout(200);
+          await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            list.style.overflowAnchor = "none";
+            list.scrollTop = list.scrollHeight;
+          });
+          const blocks = page.locator(".captions .caption");
+          const n = await blocks.count();
+          if (n < 2) wrong = `the chosen clip has ${n} captions on the clip timeline, so going to one could not be seen`;
+          else {
+            await blocks.nth(n - 1).click();
+            await watch.step("click", s);
+            const stood = await page.evaluate(
+              () =>
+                new Promise((done) => {
+                  const list = document.querySelector(".scroll.list");
+                  let last = -1;
+                  let still = 0;
+                  const tick = () => {
+                    if (list.scrollTop === last) still++;
+                    else still = 0;
+                    last = list.scrollTop;
+                    if (still < 10) return requestAnimationFrame(tick);
+                    const box = list.getBoundingClientRect();
+                    const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                    const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+                    done({ at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop });
+                  };
+                  requestAnimationFrame(tick);
+                }),
+            );
+            const card = sentences.find((x) => x.end > stood.at);
+            if (!card) wrong = `no card after the playhead at ${stood.at}`;
+            else if (stood.top === null || Math.abs(stood.top - card.start) > 0.0005)
+              wrong = `the playhead put on a caption at ${stood.at.toFixed(2)} left ${stood.top === null ? "no card" : `the card at ${stood.top.toFixed(2)}`} at the top of the list, not the card at ${card.start.toFixed(2)}, "${card.text}"`;
+            else if (!card.clip) wrong = `the caption at ${stood.at.toFixed(2)} on the clip timeline is in a card of no clip`;
+          }
+        }
         // A card puts the playhead on its sentence, and a sentence of a
         // clip makes the clip the chosen one, found by Tim, with the list
         // left where it is. With nothing typed, so the list can move, and
@@ -8273,28 +8432,29 @@ for (const seq of toWalk) {
             const chosen = document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label");
             const byClip = Map.groupBy([...document.querySelectorAll("ol.said li[data-clip]")], (li) => li.dataset.clip);
             const other = [...byClip].find(([key, list]) => labels[key] !== chosen && list.length > 1);
-            return other ? Number(other[1][1].dataset.at) : null;
+            return other ? { at: Number(other[1][1].dataset.at), row: other[1][1].dataset.row } : null;
           },
           Object.fromEntries(clips.map((k) => [k.key, `Clip at ${clockAt(k.start)}`])),
         );
-        const pick = sentences.find((x) => Math.abs(x.start - pickAt) < 0.0005);
+        const pick = pickAt && sentences.find((x) => Math.abs(x.start - pickAt.at) < 0.0005);
         if (!pick && others.length > 1) wrong = "no clip but the chosen one has two cards, so choosing one by its sentence could not be seen";
         if (pick) {
-          const button = page.locator(`ol.said li[data-at="${pick.start}"] button.pick`);
+          const row = `ol.said li[data-row="${pickAt.row}"]`;
+          const button = page.locator(`${row} button.pick`);
           await button.scrollIntoViewIfNeeded();
-          const stood = await page.evaluate((at) => document.querySelector(`ol.said li[data-at="${at}"]`).getBoundingClientRect().top, pick.start);
+          const stood = await page.evaluate((row) => document.querySelector(row).getBoundingClientRect().top, row);
           await button.click();
           await watch.step("click", s);
           await page.waitForTimeout(300);
-          const after = await page.evaluate((at) => {
-            const li = document.querySelector(`ol.said li[data-at="${at}"]`);
+          const after = await page.evaluate((row) => {
+            const li = document.querySelector(row);
             return {
               at: Number(document.querySelector(".screen")?.dataset.playhead),
               top: li.getBoundingClientRect().top,
               key: li.dataset.clip ?? null,
               chosen: document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label") ?? null,
             };
-          }, pick.start);
+          }, row);
           const keyed = after.key ? clips.find((k) => k.key === after.key) : null;
           if (!wrong && !(after.at >= pick.start - 0.001 && after.at <= Math.min(pick.end, pick.start + 0.2)))
             wrong = `the card at ${pick.start.toFixed(3)} put the playhead at ${after.at}`;
@@ -8306,7 +8466,7 @@ for (const seq of toWalk) {
         // The keyboard on a card of what was typed, for Escape.
         await field.fill(word);
         await watch.step("type", s);
-        await page.locator(`ol.said li[data-at="${holds[0].start}"] button.pick`).click();
+        await page.locator(`ol.said li[data-at="${holds[0].start}"] button.pick`).first().click();
         await watch.step("click", s);
         // Escape with the keyboard on the card just clicked, not in the
         // field, which did nothing for Tim. The first takes back what was
@@ -8315,7 +8475,7 @@ for (const seq of toWalk) {
         await page.keyboard.press("Escape");
         await watch.step("press", s);
         const cleared = await page.evaluate(() => ({
-          typed: document.querySelector('input[aria-label="Search what was said"]')?.value ?? null,
+          typed: document.querySelector('input[aria-label="Search transcript"]')?.value ?? null,
           cards: document.querySelectorAll("ol.said li:not(.hole):not(.none)").length,
         }));
         if (!wrong && cleared.typed === null) wrong = "the first Escape after typing closed the search, not what was typed";

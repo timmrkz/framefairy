@@ -99,3 +99,28 @@ func TestACardIsCutAtTheEdgesOfAClip(t *testing.T) {
 		t.Errorf("the cards read %q, want %q", texts, want)
 	}
 }
+
+// A clip's cards are its captions, one card a caption, with the words the
+// caption shows, a correction typed in the caption box among them, and
+// named for the clip. What no clip keeps reads in sentences. Found by
+// Tim, who corrected a word of a clip and read it uncorrected in the list.
+func TestTheCardsOfAClipAreItsCaptions(t *testing.T) {
+	fsys, path := editablePlanPath(t)
+	words := append(editableTranscript().Words, Cue{Start: 30, End: 30.4, Text: "Und"}, Cue{Start: 30.5, End: 30.9, Text: "dann."})
+	tr := fromStored(words, nil, 0, 0, nil)
+	if err := SetWordText(fsys, path, "01", 12, "Dreimal", tr); err != nil {
+		t.Fatal(err)
+	}
+	clips, err := PlanSaid(fsys, path, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range SaidCards(tr, clips) {
+		got = append(got, fmt.Sprintf("%.1f-%.1f %s %s", c.Start, c.End, c.Clip, c.Text))
+	}
+	want := []string{"10.0-11.0 01 eins zwei", "12.0-13.1 01 Dreimal vier", "20.1-21.5 02 fünf sechs", "30.0-30.9  Und dann."}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Errorf("the cards read\n%q\nwant\n%q", got, want)
+	}
+}

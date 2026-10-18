@@ -404,22 +404,38 @@
   let sentences = $state<Sentence[] | null>(null);
   let sayField = $state<HTMLInputElement>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
-  // The edges of every part a clip keeps, where the cards of what was said
-  // are cut, so a card is all in a clip or all out of it.
-  const sayCuts = $derived(
-    clips.filter((c) => !c.rejected).flatMap((c) => (c.segments.length ? c.segments : [c]).flatMap((p) => [p.start, p.end])),
+  // The parts every clip keeps, whose captions are cards of their own, so
+  // the cards are read again when a clip changes, see engine.SaidCards.
+  const cutsKey = $derived(
+    clips
+      .filter((c) => !c.rejected)
+      .map((c) => `${c.key}:${(c.segments.length ? c.segments : [c]).map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`)
+      .join(","),
   );
-  const cutsKey = $derived(sayCuts.map((t) => t.toFixed(2)).join(","));
-  // They are read as soon as the video opens and kept, so the magnifier
-  // shows them in the frame it is pressed, and read again whenever the
-  // transcript hears more. A column left empty until the answer came was
+  // How many times the captions of a clip changed while it stayed the
+  // clip they are of: a word corrected or removed, a caption moved, the
+  // look of every caption changed. The cards of what was said are those
+  // captions, so they are read again. A clip chosen anew is not a change.
+  let captionsChanged = $state(0);
+  const captionsRead = new Map<string, string>();
+  $effect(() => {
+    const view = captions;
+    const key = captionsOf;
+    if (!view || !key) return;
+    const words = (view.captions ?? []).map((c) => `${c.start.toFixed(2)} ${c.lines.map((l) => l.words.map((w) => w.text).join(" ")).join(" ")}`).join("|");
+    const was = captionsRead.get(key);
+    captionsRead.set(key, words);
+    if (was !== undefined && was !== words) untrack(() => captionsChanged++);
+  });
+  // They are read as soon as the video opens and kept, so the transcript
+  // button shows them in the frame it is pressed, and read again whenever
+  // the transcript hears more. A column left empty until the answer came was
   // seen as a blink by Tim.
   let sentencesAsked = 0;
   let sentencesOf = "";
   $effect(() => {
     const of = path;
-    const key = `${savedKey}|${cutsKey}`;
-    const cuts = sayCuts;
+    const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
     if (!saved.length) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
@@ -427,7 +443,7 @@
     const ticket = ++sentencesAsked;
     untrack(() => {
       api
-        .sentences(of, cuts)
+        .sentences(of)
         .then((list) => {
           if (ticket !== sentencesAsked || of !== path) return;
           sentences = list ?? [];
@@ -1220,8 +1236,20 @@
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
   function seekTo(t: number, about?: About, wordStep = false) {
-    player?.seek(t, about, wordStep);
+    seekPlayer(t, about, wordStep);
     timeline?.fit(t);
+  }
+
+  // Where the playhead was last put by a gesture, and how many times it
+  // was, which the search through what was said follows, see SaidList.
+  // Not where it was put from that list itself, nor by choosing a clip,
+  // which the list goes to by the clip.
+  let sayTo = $state({ at: 0, n: 0 });
+  let soughtTimes = 0;
+  let seekQuiet = false;
+  function seekPlayer(t: number, about?: About, wordStep = false) {
+    player?.seek(t, about, wordStep);
+    if (!seekQuiet) sayTo = { at: t, n: ++soughtTimes };
   }
 
   // The chosen card, brought far enough into the list to be read. Walking
@@ -1252,7 +1280,11 @@
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
     // On the clip, at its start: picking a clip is a gesture about it.
-    if (clip && seek) player?.seek(clip.start, "clip");
+    if (clip && seek) {
+      seekQuiet = true;
+      seekPlayer(clip.start, "clip");
+      seekQuiet = false;
+    }
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -1369,7 +1401,7 @@
       });
       if (again) {
         void select(updated.key, false);
-        if (was.at !== undefined) player?.seek(was.at, "clip");
+        if (was.at !== undefined) seekPlayer(was.at, "clip");
       }
     } catch (err) {
       oops(errorText(err));
@@ -2495,7 +2527,7 @@
       // one puts the playhead on it. Not while the episode plays: only the
       // space bar and a click on the clip timeline change a play, see
       // edgesWhilePlaying in ClipTimeline.svelte.
-      if (done.playhead !== undefined && paused) player?.seek(done.playhead);
+      if (done.playhead !== undefined && paused) seekPlayer(done.playhead);
     } catch (err) {
       oops(errorText(err));
     } finally {
@@ -3296,8 +3328,8 @@
                 <input
                   bind:this={sayField}
                   bind:value={sayTyped}
-                  placeholder="Search what was said"
-                  aria-label="Search what was said"
+                  placeholder="Search transcript"
+                  aria-label="Search transcript"
                   onkeydown={(e) => {
                     if (e.key === "Escape") {
                       e.preventDefault();
@@ -3338,8 +3370,8 @@
               </Info>
             </span>
             <span class="grow"></span>
-            <button class="glyph" title="Search what was said" aria-label="Search what was said" onclick={openSaying}>
-              <Icon name="search" />
+            <button class="glyph" title="Search the transcript" aria-label="Search the transcript" onclick={openSaying}>
+              <Icon name="transcript" />
             </button>
             <button
               class="search"
@@ -3367,11 +3399,14 @@
                 bind:matches={sayMatches}
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
+                sought={sayTo}
                 onseek={(at, clip) => {
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
                   if (clip && clip !== selected) void select(clip, false, false);
+                  seekQuiet = true;
                   seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+                  seekQuiet = false;
                 }}
               />
             {:else}
@@ -3422,7 +3457,7 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
+        onseek={(t, about, wordStep) => seekPlayer(t, about, wordStep)}
         onahead={(times) => player?.ahead(times)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}

@@ -1922,28 +1922,38 @@ all, said nothing at Add before and failed in the video preview after.
 
 ### Searching what was said
 
-The magnifier in the head of the clip column, left of **Search**,
-searches everything the video says, as far as it has been heard (#366).
+The transcript button in the head of the clip column, left of
+**Search**, a speech bubble with quotes in it, the mark Apple Podcasts
+puts on the button that opens an episode's transcript, searches
+everything the video says, as far as it has been heard (#366).
 Search finds clips with the model. This finds a moment yourself: a line
 found is a place in the video, and I and O make a clip there.
 
-- **The field takes the head's place.** A click on the magnifier swaps
-  the whole head, Clips, the count, the info mark and Search, for a
-  search field at the same height, with the keyboard in it. The cross in
+- **The field takes the head's place.** A click on the transcript button
+  swaps the whole head, Clips, the count, the info mark and Search, for a
+  search field at the same height, with the keyboard in it. It says
+  Search transcript in a grey darker than a label, because the browser's
+  lighter grey read like something already typed, found by Tim. The cross in
   the field gives the head and the clip cards back. There is no
   shortcut to open it, because the app has no ⌘ shortcuts.
-- **A card for every sentence.** While the field is open, the column shows
-  what was said as cards, each with its time at the head and a sentence
-  under it. The sentences are the engine's, `engine.Sentences`, the lines
-  the model reads grouped the way the stories recipe groups them, so a
-  sentence in the app is a sentence to the engine too. A long sentence is
-  more than one card: a card ends at a line once it runs 8 seconds, and
-  never runs more than 12. Cards of twenty seconds and more were too much
-  to read as one place, found by Tim. A card is also cut at every edge of
-  what a clip keeps, so a card is all in a clip or all out of it.
-- **The clips stand out.** A card a clip keeps wears the chosen clip's
-  accent edge, the clip's name next to its time and its words in white.
-  Every other card is a softer grey.
+- **A card for every caption, and for every sentence between.** While
+  the field is open, the column shows what was said as cards, each with
+  its time at the head and its words under it, `engine.SaidCards`. A
+  clip's cards are its captions, one card a caption, so a block in the
+  video preview, a block on the clip timeline and a card here are one
+  thing in three places, found by Tim. A card reads what its caption
+  shows, a word corrected in the caption box among it. Two clips over
+  each other each have their cards of the same words. What no clip keeps
+  is in sentences, the engine's, `engine.Sentences`, the lines the model
+  reads grouped the way the stories recipe groups them. A long sentence
+  is more than one card: a card ends at a line once it runs 8 seconds,
+  and never runs more than 12. Cards of twenty seconds and more were too
+  much to read as one place, found by Tim. A sentence card is also cut at
+  every edge of what a clip keeps, so it never holds a word a clip shows.
+- **The clips stand out.** A card of a clip wears the chosen clip's
+  accent edge, the clip's name next to its time and its words a step
+  below white. Every other card is in the grey of a label, and the words
+  that answer what is typed are white in every card, so they stand out.
 - **Fuzzy, like the fonts.** With nothing typed, every sentence is there.
   Typing keeps the sentences that hold what was typed, or where every
   word typed finds a word the way the font search finds a name, `found`
@@ -1952,14 +1962,20 @@ found is a place in the video, and I and O make a clip there.
   The field says in grey, before its cross, how many cards match, the
   number fading in anew as it changes. Where nothing matches, the list
   says No matches.
-- **A card is a place.** A click puts the playhead on its sentence, and a
+- **A card is a place.** A click puts the playhead on its words, and a
   card of a clip makes that clip the one worked on, with the list left
-  where it is.
+  where it is. The other way round, the playhead put anywhere else, on
+  the clip timeline, the range picker or a caption block, puts the card
+  it is in at the top of the list, or the next card where nothing is
+  said. The list does not follow a video that plays.
 - **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its clip card does. In the list only the card under the hand is
-  lit, never every card of its clip with it. A clip chosen on the range picker or the clip timeline puts
-  its first sentence at the top of the list, where the first card stands,
+  lit, never every card of its clip with it. The space between two cards
+  belongs to them, half to the card above and half to the card below, so
+  the hand going from one card of a clip to the next never leaves the
+  clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline puts
+  its first card at the top of the list, where the first card stands,
   and choosing it again does it again. Every card is laid out at its own
   height, never at a height guessed for the cards out of view, because a
   guess put the place off as soon as the cards around it were laid out,

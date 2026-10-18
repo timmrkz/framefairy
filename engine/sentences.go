@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"cmp"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/spf13/afero"
 )
 
 // SentenceView is one card of what an episode says, for reading the
@@ -12,6 +15,9 @@ type SentenceView struct {
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
 	Text  string  `json:"text"`
+	// Clip is the key of the clip that shows the card, see ClipSaid, and
+	// empty for what no clip keeps.
+	Clip string `json:"clip,omitempty"`
 }
 
 // cardSeconds is how long a card of what was said grows before it ends
@@ -82,4 +88,133 @@ func Sentences(t *Transcript, cuts []float64) []SentenceView {
 		end()
 	}
 	return out
+}
+
+// ClipSaid is one clip among the cards of what was said: the name the
+// interface knows it by, the clip, and the captions it shows, on its own
+// clock, see CaptionsView.
+type ClipSaid struct {
+	Key      string
+	Clip     Clip
+	Captions []CaptionView
+}
+
+// PlanSaid is every clip of the plan at planPath that is not rejected,
+// with the captions it shows in look, for SaidCards. The key of each is
+// its ID.
+func PlanSaid(fsys afero.Fs, planPath string, t *Transcript, look *Look) ([]ClipSaid, error) {
+	plan, clips, err := LoadClips(fsys, planPath)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ClipSaid, 0, len(clips))
+	for _, c := range clips {
+		if c.Rejected || len(c.Segments) == 0 {
+			continue
+		}
+		out = append(out, ClipSaid{Key: c.ID, Clip: c, Captions: captionsView(plan, c, t, look).Captions})
+	}
+	return out, nil
+}
+
+// SaidCards is the transcript as cards to read and search, see Sentences,
+// with what the clips show in place of what they keep: a card for every
+// caption of a clip, named for the clip, with the words the caption shows,
+// corrections and all. A caption is one block in the video preview and on
+// the clip timeline, so it is one card here too, and a word corrected in
+// the caption box reads corrected here, found by Tim. What no clip keeps
+// is in cards of sentences, cut at the edges of the clips. Where two clips
+// keep the same words, each has its cards of them, because each shows them
+// in captions of its own.
+func SaidCards(t *Transcript, clips []ClipSaid) []SentenceView {
+	var cuts []float64
+	for _, c := range clips {
+		for _, s := range c.Clip.Segments {
+			cuts = append(cuts, s.Start, s.End)
+		}
+	}
+	// What the clips say is theirs, a word only some of whose sound a
+	// piece holds among it, see Said.
+	said := map[Cue]bool{}
+	for _, c := range clips {
+		for _, w := range Said(c.Clip, t.Words) {
+			said[w] = true
+		}
+	}
+	rest := &Transcript{Words: slices.DeleteFunc(slices.Clone(t.Words), func(w Cue) bool { return said[w] })}
+	out := Sentences(rest, cuts)
+	for _, c := range clips {
+		for _, caption := range c.Captions {
+			if card, ok := captionCard(c, caption); ok {
+				out = append(out, card)
+			}
+		}
+	}
+	slices.SortStableFunc(out, func(a, b SentenceView) int { return cmp.Compare(a.Start, b.Start) })
+	if out == nil {
+		out = []SentenceView{}
+	}
+	return out
+}
+
+// captionCard is one caption of a clip as a card, on the episode's clock:
+// from where its first word starts to where its last word ends.
+func captionCard(c ClipSaid, caption CaptionView) (SentenceView, bool) {
+	var words []WordView
+	for _, line := range caption.Lines {
+		words = append(words, line.Words...)
+	}
+	if len(words) == 0 {
+		return SentenceView{}, false
+	}
+	// A word drawn in halves, hyphenated at the end of a line, is one word
+	// of the card. So is a part of a correction that reads as several.
+	same := func(a, b WordView) bool {
+		return a.Said != nil && b.Said != nil && *a.Said == *b.Said &&
+			(a.Part == nil) == (b.Part == nil) && (a.Part == nil || *a.Part == *b.Part)
+	}
+	var texts []string
+	for i := 0; i < len(words); {
+		j := i + 1
+		for j < len(words) && same(words[i], words[j]) {
+			j++
+		}
+		text := words[i].Text
+		if j-i > 1 {
+			text = words[i].Whole
+			if p := words[i].Part; p != nil {
+				fields := strings.Fields(words[i].Whole)
+				text = ""
+				if *p < len(fields) {
+					text = fields[*p]
+				}
+			}
+			if text == "" {
+				var halves []string
+				for _, w := range words[i:j] {
+					halves = append(halves, w.Text)
+				}
+				text = strings.Join(halves, "")
+			}
+		}
+		texts = append(texts, text)
+		i = j
+	}
+	start := EpisodeTime(c.Clip, words[0].Start)
+	end := episodeEnd(c.Clip, words[len(words)-1].End)
+	return SentenceView{Start: start, End: max(end, start), Clip: c.Key,
+		Text: Scrub(strings.Join(texts, " "), maxLineChars)}, true
+}
+
+// episodeEnd is the moment of the episode a moment of a clip ends on: the
+// end of a piece is the end of that piece, not the start of the next.
+func episodeEnd(clip Clip, at float64) float64 {
+	offset := 0.0
+	for _, s := range clip.Segments {
+		if at <= offset+s.Duration() {
+			return s.Start + max(at-offset, 0)
+		}
+		offset += s.Duration()
+	}
+	return EpisodeTime(clip, at)
 }
