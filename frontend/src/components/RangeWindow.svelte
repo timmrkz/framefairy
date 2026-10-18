@@ -763,8 +763,8 @@
     clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
 
-  /* A part not heard yet, the grey of a card, over the track and under
-     the minutes and the clips. */
+  /* A part not transcribed yet, the grey of a card, over the track and
+     under the minutes and the clips. */
   .unheard {
     position: absolute;
     top: 0;
@@ -774,23 +774,21 @@
     pointer-events: none;
   }
 
-  /* Under the hand on its card, a step brighter, the way a card is. */
+  /* Under the hand on its card, the grey of a card under the hand, which
+     the dashes go into, the way they do on the card. */
   .unheard.lit {
     background: var(--ink-2);
   }
 
-  .unheard-edge.lit::before {
+  .unheard-edge.lit::before,
+  .unheard-edge.lit::after {
     border-color: var(--ink-2);
   }
 
-  .unheard-edge.lit::after {
-    border-color: var(--muted);
-  }
-
   /* Its edge, a ring in the same grey that covers the track's border
-     with the dashes over it, so where a part not heard yet meets the
-     border the border is dashed too. Under the window, which comes after
-     it. */
+     with the dashes of a card's edge over it, so where a part not
+     transcribed yet meets the border the border is dashed too. Under the
+     window, which comes after it. */
   .unheard-edge {
     position: absolute;
     top: 0;
@@ -809,7 +807,7 @@
   }
 
   .unheard-edge::after {
-    border: 1px dashed var(--faint);
+    border: 1px dashed var(--ink-3);
   }
 
   .unheard-edge.first {

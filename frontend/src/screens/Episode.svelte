@@ -160,6 +160,9 @@
   // so whatever they ask for fits wherever the window is.
   let roomView = $state<RoomView | null>(null);
   let selected = $state("");
+  // How many times a clip was chosen, so choosing the clip that already
+  // was chosen still takes the sentences of what was said to it.
+  let chosenTimes = $state(0);
   // The clip under the hand, on its card, on the range picker or on the
   // clip timeline. All three light it, so the same clip is found in the
   // other two at a glance. Going off one thing and onto the next can come
@@ -450,14 +453,20 @@
     sayTyped = "";
     unheardLit = -1;
   }
-  // Escape closes the search wherever the keyboard is, unless it is in a
-  // field of its own: the hand scrolled the sentences and Escape did
-  // nothing, because the field had lost the keyboard.
+  // Escape takes back one step at a time: what was typed first, so the
+  // whole of what was said is there again, and then the search itself.
+  function escapeSaying() {
+    if (sayTyped) sayTyped = "";
+    else closeSaying();
+  }
+  // Escape steps back out of the search wherever the keyboard is, unless
+  // it is in a field of its own: the hand scrolled the sentences and
+  // Escape did nothing, because the field had lost the keyboard.
   function sayKey(event: KeyboardEvent) {
     if (event.key !== "Escape" || !saying) return;
     if (event.defaultPrevented || keysElsewhere() || asleep(root)) return;
     event.preventDefault();
-    closeSaying();
+    escapeSaying();
   }
 
   // How far the loudness is measured, which is the waveform. It is measured
@@ -1226,6 +1235,7 @@
   // where it is.
   async function select(key: string, seek = true) {
     selected = key;
+    chosenTimes++;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
@@ -3281,7 +3291,7 @@
                     if (e.key === "Escape") {
                       e.preventDefault();
                       e.stopPropagation();
-                      closeSaying();
+                      escapeSaying();
                     }
                   }}
                 />
@@ -3335,6 +3345,7 @@
                 {unheard}
                 clips={shown}
                 {selected}
+                chosen={chosenTimes}
                 {hovered}
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}

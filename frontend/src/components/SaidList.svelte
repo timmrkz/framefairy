@@ -17,6 +17,7 @@
     unheard = [],
     clips = [],
     selected = "",
+    chosen = 0,
     hovered = "",
     onhover,
     onhoverhole,
@@ -32,6 +33,8 @@
     // else, and the clip under the hand anywhere, whose sentences are lit.
     // The hand on a sentence of a clip lights the clip everywhere else.
     selected?: string;
+    // Counts every time a clip is chosen, the one chosen already too.
+    chosen?: number;
     hovered?: string;
     onhover?: (key: string, on: boolean) => void;
     // The part not transcribed yet under the hand, by its place among
@@ -42,26 +45,49 @@
 
   let list: HTMLOListElement;
 
-  // A clip chosen on the range picker or the clip timeline while the
-  // search is open brings its first sentence into view, the way choosing
-  // it brings its card into view in the clip list. The first sentence it
-  // keeps any of, which may be named for another clip over it.
-  let was: string | null = null;
+  // The column the cards scroll in, which is the clip list's.
+  function scroller(): HTMLElement | null {
+    return list?.closest<HTMLElement>(".scroll") ?? null;
+  }
+
+  // What is typed is a new list, read from its top. A list scrolled half
+  // way down before typing showed the answers from half way down.
+  let typedWas: string | null = null;
   $effect(() => {
+    const now = typed;
+    if (typedWas !== null && now !== typedWas) scroller()?.scrollTo({ top: 0 });
+    typedWas = now;
+  });
+
+  // A clip chosen on the range picker or the clip timeline while the
+  // search is open puts its first sentence at the top of the list, the
+  // way choosing it brings its card into view in the clip list. The first
+  // sentence it keeps any of, which may be named for another clip over it.
+  // Choosing it again does it again, after the hand scrolled away.
+  let chosenWas: number | null = null;
+  $effect(() => {
+    const times = chosen;
     const key = selected;
-    const first = was === null;
-    if (key === was) return;
-    was = key;
-    if (first) return;
+    const opening = chosenWas === null;
+    chosenWas = times;
+    if (opening) return;
     const clip = untrack(() => clips.find((c) => c.key === key));
     if (!clip) return;
     const parts = clip.segments.length ? clip.segments : [{ start: clip.start, end: clip.end }];
-    const opening = untrack(() =>
+    const first = untrack(() =>
       rows.find((r) => "sentence" in r && parts.some((p) => p.start < r.sentence.end && p.end > r.sentence.start)),
     );
-    if (!opening || !("sentence" in opening)) return;
-    const card = list?.querySelector<HTMLElement>(`li[data-at="${opening.sentence.start}"]`);
-    card?.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (!first || !("sentence" in first)) return;
+    const card = list?.querySelector<HTMLElement>(`li[data-at="${first.sentence.start}"]`);
+    const box = scroller();
+    if (!card || !box) return;
+    // Where the card is, read once and never laid out from: every card
+    // above it is laid out at its own height, so the place is exact, and
+    // the card stands where the first card of the list stands, under the
+    // veil the list fades its ends with.
+    const head = list.firstElementChild as HTMLElement;
+    const top = card.getBoundingClientRect().top - head.getBoundingClientRect().top;
+    box.scrollTo({ top });
   });
 
   type Row =
@@ -158,10 +184,10 @@
     background: var(--ink-1);
     box-shadow: inset 0 0 0 1px var(--ink-3);
     overflow: hidden;
-    /* A long video is thousands of sentences, and only the ones in view
-       are laid out and drawn. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto var(--card-h);
+    /* Laid out whole, every card, though only a few are in view. Cards
+       out of view laid out at a guessed height put the place a clip is
+       gone to off once they were laid out, and WebKit keeps no anchor
+       that would have made up for it, found by Tim. */
   }
 
   .pick,
@@ -228,18 +254,19 @@
     white-space: nowrap;
   }
 
-  /* Where nothing was transcribed yet, the dashed edge the range picker
-     draws round the same part, a step brighter under the hand with that
-     part. */
-  li.hole:hover {
-    background: var(--ink-2);
-    border-color: var(--muted);
-  }
-
+  /* Where nothing was transcribed yet, a card like any other with its
+     edge dashed, the edge the range picker draws round the same part.
+     Under the hand it fills with the grey of every card under the hand,
+     which the dashes go into, the way a card's edge does. */
   li.hole {
     justify-content: center;
     box-shadow: none;
-    border: 1px dashed var(--faint);
+    border: 1px dashed var(--ink-3);
+  }
+
+  li.hole:hover {
+    background: var(--ink-2);
+    border-color: var(--ink-2);
   }
 
   li.hole .text {

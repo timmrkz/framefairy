@@ -7979,8 +7979,31 @@ for (const seq of toWalk) {
           await page.keyboard.press("Escape");
           break;
         }
+        // What is typed is read from the top of the list, though the hand
+        // scrolled the sentences before typing, found by Tim.
+        await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          list.scrollTop = list.scrollHeight;
+        });
+        const scrolledTo = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
+        // A letter most sentences hold, so the answers are still more than
+        // the list shows and the list could have stayed where it was.
+        await page.keyboard.type("e");
+        await watch.step("type", s);
+        await page.waitForTimeout(100);
+        const typedTop = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          return { top: list.scrollTop, more: list.scrollHeight - list.clientHeight };
+        });
+        await page.keyboard.press("Backspace");
         await page.keyboard.type(word);
         await watch.step("type", s);
+        if (scrolledTo > 0 && typedTop.more >= scrolledTo && typedTop.top !== 0) {
+          wrong = `typing in the search left the list ${typedTop.top} px down, where the hand had scrolled it to ${scrolledTo} px`;
+          await page.keyboard.press("Escape");
+          await page.keyboard.press("Escape");
+          break;
+        }
         const [sentences, clips, library] = await Promise.all([
           ask(page, "Sentences", path),
           ask(page, "Clips", path),
@@ -8050,7 +8073,10 @@ for (const seq of toWalk) {
           wrong = `${gaps} parts are not transcribed yet, fewer than the ${unheardLeast} this step is about: heard ${JSON.stringify(heard)} of ${end}, transcribed ${status?.transcribed}`;
         else if (seen.holes !== gaps || seen.edges !== gaps)
           wrong = `${gaps} parts are not heard yet, and the list shows ${seen.holes} of them and the range picker ${seen.edges}`;
+        else if (!scrolledTo || typedTop.more < scrolledTo)
+          wrong = `the sentences with an e reach ${typedTop.more} px down and the hand scrolled to ${scrolledTo} px, so typing could not be seen to go back to the top`;
         if (wrong) {
+          await page.keyboard.press("Escape");
           await page.keyboard.press("Escape");
           break;
         }
@@ -8079,8 +8105,32 @@ for (const seq of toWalk) {
         if (!wrong && gaps) {
           await page.locator("ol.said li.hole").first().hover();
           await watch.step("hover", s);
-          if (!(await page.evaluate(() => !!document.querySelector(".track .unheard.lit") && !!document.querySelector(".unheard-edge.lit"))))
-            wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+          // Lit the way every card is under the hand, the dashes gone into
+          // the grey they fill with, in the list and on the range picker,
+          // and dashed in the grey of a card's edge until then, found by
+          // Tim.
+          const look = await page.evaluate(() => {
+            const hole = getComputedStyle(document.querySelector("ol.said li.hole"));
+            const fill = document.querySelector(".track .unheard.lit");
+            const edge = document.querySelector(".unheard-edge.lit");
+            const ring = getComputedStyle(document.querySelector("ol.said li:not(.hole):not(.none)")).boxShadow;
+            return {
+              lit: !!fill && !!edge,
+              card: [hole.borderTopColor, hole.backgroundColor],
+              picker: fill && edge ? [getComputedStyle(edge, "::after").borderTopColor, getComputedStyle(fill).backgroundColor] : [],
+              ring,
+            };
+          });
+          await page.mouse.move(0, 0);
+          const rest = await page.evaluate(() => [
+            getComputedStyle(document.querySelector("ol.said li.hole")).borderTopColor,
+            getComputedStyle(document.querySelector(".unheard-edge"), "::after").borderTopColor,
+          ]);
+          if (!look.lit) wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+          else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
+          else if (look.picker[0] !== look.picker[1]) wrong = `the dashed part on the range picker, lit, has its edge in ${look.picker[0]} over ${look.picker[1]}`;
+          else if (!look.ring.includes(rest[0]) || !look.ring.includes(rest[1]))
+            wrong = `the dashes are ${rest[0]} on the card and ${rest[1]} on the range picker, and a card's edge is ${look.ring}`;
         }
         // A clip chosen on the range picker brings its first sentence into
         // view, found by Tim.
@@ -8097,23 +8147,58 @@ for (const seq of toWalk) {
           const label = await mark.getAttribute("aria-label");
           const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
           const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
-          await mark.click();
-          await watch.step("click", s);
-          await page.waitForTimeout(900);
           const parts = target ? (target.segments.length ? target.segments : [target]) : [];
           const firstAt = sentences.find((x) => parts.some((p) => p.start < x.end && p.end > x.start))?.start;
-          const view = await page.evaluate((at) => {
-            const card = document.querySelector(`ol.said li[data-at="${at}"]`);
-            const box = document.querySelector(".scroll.list").getBoundingClientRect();
-            const r = card?.getBoundingClientRect();
-            return r ? { top: r.top - box.top, room: box.height } : null;
-          }, firstAt);
-          if (!target || !view)
+          // Where the card stands once the list stops moving, against where
+          // the first card of the list stands, which is the top.
+          const standing = () =>
+            page.evaluate(
+              (at) =>
+                new Promise((done) => {
+                  const list = document.querySelector(".scroll.list");
+                  let last = -1;
+                  let still = 0;
+                  const tick = () => {
+                    if (list.scrollTop === last) still++;
+                    else still = 0;
+                    last = list.scrollTop;
+                    if (still < 10) return requestAnimationFrame(tick);
+                    const card = document.querySelector(`ol.said li[data-at="${at}"]`);
+                    const head = document.querySelector("ol.said");
+                    const box = list.getBoundingClientRect();
+                    const r = card?.getBoundingClientRect();
+                    done(r ? { top: r.top - box.top, should: parseFloat(getComputedStyle(head).paddingTop), room: box.height } : null);
+                  };
+                  requestAnimationFrame(tick);
+                }),
+              firstAt,
+            );
+          // WebKit, which the app is drawn by on the Mac, keeps no anchor
+          // when what is above the place in view changes size, and
+          // Chromium does, which hid cards laid out late moving the place
+          // a clip went to, found by Tim.
+          await page.evaluate(() => (document.querySelector(".scroll.list").style.overflowAnchor = "none"));
+          const chosen = [];
+          for (const again of [false, true]) {
+            // Chosen again after the hand scrolled away, it is gone to again.
+            if (again)
+              await page.evaluate(() => {
+                const list = document.querySelector(".scroll.list");
+                list.scrollTop = list.scrollHeight;
+              });
+            await (again ? page.locator(".track .clipmark.selected") : mark).click();
+            await watch.step("click", s);
+            chosen.push(await standing());
+          }
+          const off = chosen.find((v) => v && Math.abs(v.top - v.should) > 1);
+          if (!target || chosen.some((v) => !v))
             wrong = `the mark ${label} is of no clip with sentences on screen`;
-          else if (view.top < -1 || view.top > view.room - 40)
-            wrong = `choosing ${target.title} on the range picker left its first sentence ${view.top.toFixed(0)} px down a list ${view.room.toFixed(0)} px high`;
+          else if (off)
+            wrong = `choosing ${target.title} on the range picker${off === chosen[1] ? " a second time" : ""} left its first sentence ${off.top.toFixed(1)} px down a list ${off.room.toFixed(0)} px high, not at its top, ${off.should} px`;
         }
         // A card puts the playhead on its sentence.
+        await page.locator('input[aria-label="Search what was said"]').fill(word);
+        await watch.step("type", s);
         const pick = holds[holds.length - 1];
         await page.locator(`ol.said li[data-at="${pick.start}"] button.pick`).click();
         await watch.step("click", s);
@@ -8122,7 +8207,18 @@ for (const seq of toWalk) {
         if (!wrong && !(at >= pick.start - 0.001 && at <= Math.min(pick.end, pick.start + 0.2)))
           wrong = `the card at ${pick.start.toFixed(3)} put the playhead at ${at}`;
         // Escape with the keyboard on the card just clicked, not in the
-        // field, which did nothing for Tim.
+        // field, which did nothing for Tim. The first takes back what was
+        // typed, so every sentence is there again, and the second the
+        // search, found by Tim.
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const cleared = await page.evaluate(() => ({
+          typed: document.querySelector('input[aria-label="Search what was said"]')?.value ?? null,
+          cards: document.querySelectorAll("ol.said li:not(.hole):not(.none)").length,
+        }));
+        if (!wrong && cleared.typed === null) wrong = "the first Escape after typing closed the search, not what was typed";
+        else if (!wrong && (cleared.typed !== "" || cleared.cards < sentences.length))
+          wrong = `after the first Escape the field holds "${cleared.typed}" over ${cleared.cards} of ${sentences.length} sentences`;
         await page.keyboard.press("Escape");
         await watch.step("press", s);
         const back = await page.evaluate(() => ({

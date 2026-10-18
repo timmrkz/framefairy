@@ -1929,8 +1929,8 @@ found is a place in the video, and I and O make a clip there.
 
 - **The field takes the head's place.** A click on the magnifier swaps
   the whole head, Clips, the count, the info mark and Search, for a
-  search field at the same height, with the keyboard in it. Escape or the
-  cross in the field gives the head and the clip cards back. There is no
+  search field at the same height, with the keyboard in it. The cross in
+  the field gives the head and the clip cards back. There is no
   shortcut to open it, because the app has no ⌘ shortcuts.
 - **A card for every sentence.** While the field is open, the column shows
   what was said as cards, each with its time at the head and a sentence
@@ -1943,24 +1943,34 @@ found is a place in the video, and I and O make a clip there.
 - **Fuzzy, like the fonts.** With nothing typed, every sentence is there.
   Typing keeps the sentences that hold what was typed, or where every
   word typed finds a word the way the font search finds a name, `found`
-  in `lib/match.ts`, and the words that answer are bold.
+  in `lib/match.ts`, and the words that answer are bold. What is typed
+  is read from the top of the list, wherever the hand had scrolled it.
 - **A card is a place.** A click puts the playhead on its sentence.
 - **One clip in every place.** The hand on a sentence a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its card does, and the sentences of a clip under the hand anywhere
-  are lit. A clip chosen on the range picker or the clip timeline brings
-  its first sentence into view. The accent edge is the card's button's,
-  so the grey a card takes under the hand never covers it.
+  are lit. A clip chosen on the range picker or the clip timeline puts
+  its first sentence at the top of the list, where the first card stands,
+  and choosing it again does it again. Every card is laid out at its own
+  height, never at a height guessed for the cards out of view, because a
+  guess put the place off as soon as the cards around it were laid out,
+  and WebKit keeps no anchor that would have made up for it. The accent
+  edge is the card's button's, so the grey a card takes under the hand
+  never covers it.
 - **What was not transcribed is said.** A part of the video the
   transcript has not reached yet is a dashed card in its place, "Not
   transcribed yet", because the search cannot look there. While the field
   is open, the range picker draws the same part in the grey of a card
   with a dashed edge, laid over its border, under the minutes so their
-  lines show through, and under the window. The hand on the card lights
-  the part on the range picker a step.
-- **Escape closes it wherever the keyboard is**, unless the keyboard is in
-  another field. Tim scrolled the sentences, pressed Escape and nothing
-  happened, because the field no longer had the keyboard.
+  lines show through, and under the window. The dashes are in the grey of
+  a card's edge, and the hand on the card fills card and part with the
+  grey of a card under the hand, which the dashes go into, the way every
+  card's edge does.
+- **Escape steps back wherever the keyboard is**, unless the keyboard is
+  in another field. The first takes back what was typed, so the whole of
+  what was said is there again, and the next closes the search. Tim
+  scrolled the sentences, pressed Escape and nothing happened, because
+  the field no longer had the keyboard.
 - **The sentences are there when it opens.** They are read once the video
   opens and kept, and read again when the transcript hears more, so the
   column never stands empty for a moment after the magnifier.
