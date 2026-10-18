@@ -142,7 +142,7 @@
   let waiting = $state<string[]>([]);
   // A click has to show at once, long before the job it starts reports in.
   let starting = $state(false);
-  // The press of Find clips or Continue the work in hand was asked for by. Cancel
+  // The press of Search or Continue the work in hand was asked for by. Cancel
   // names it, so it stops that search whether or not the Go side has heard
   // of it yet, see stopWork.
   let click = "";
@@ -227,7 +227,7 @@
   const suggested = $derived(Math.min(suggestedCount(to - from, min, max), clipsAtMost));
   const count = $derived(typed > 0 ? typed : suggested);
   const shortestAtMost = $derived(longestShortest(reachAnywhere, count, 5, 180));
-  // The episode's search, as the Go side keeps it: one job from Find clips to its
+  // The episode's search, as the Go side keeps it: one job from Search to its
   // clips, which hears the episode as far as the window reaches and then
   // finds, see docs/JOBS.md. Everything the workspace shows about finding
   // clips comes from it, and the workspace decides nothing about when a
@@ -252,7 +252,7 @@
   // finding clips, so a render is not its business, and it runs in a lane
   // of its own, so it holds no search up.
   const rendering = $derived(!!renderingJob);
-  // While a search runs, the head of the clip list carries it: Find clips becomes
+  // While a search runs, the head of the clip list carries it: Search becomes
   // Cancel and the line under the head fills up. Nothing is added to the
   // column and nothing moves.
   // The clips made by hand are work of the clip list too: its Cancel stops
@@ -288,7 +288,7 @@
   // which is how it came to say Transcribing over a list of clips.
   const lane = $derived({ word: "Clips", count: true, job: working ?? null });
   const action = $derived.by(() => {
-    // Find clips is the search's button, so it turns into Cancel for a search and
+    // Search is the search's button, so it turns into Cancel for a search and
     // for nothing else: a clip made by hand wears the beam on I or O, which
     // it was started from. It turned into Cancel for those too, under a
     // hand that had only pressed I, and a click there stopped the clip
@@ -318,7 +318,7 @@
       };
     }
     return {
-      label: "Find clips",
+      label: "Search",
       run: newClips,
       off: duration <= 0 || to <= 0,
       primary: true,
@@ -350,7 +350,7 @@
   // the edge carries on for a second or two and the click looks missed.
   // It names the episode's work and the press it came after, not a job,
   // so it takes effect the moment it is pressed: it called off the jobs it
-  // knew, and between Find clips and the Go side's answer it knew none, so it
+  // knew, and between Search and the Go side's answer it knew none, so it
   // stood greyed out and a press there did nothing. The Go side stops the
   // search the press asked for even if Cancel reaches it first.
   function stopWork() {
@@ -441,7 +441,7 @@
   const shownHeard = $derived(stoppedAt ?? heard);
 
   // Whether the episode has been heard to the end of the window. A search
-  // of a window not heard yet hears it first, which the title of Find clips says.
+  // of a window not heard yet hears it first, which the title of Search says.
   const heardWindow = $derived(duration > 0 && to > 0 && covers(heard, from, to));
   // The range picker carries the transcription: how far it has come is what
   // the track draws anyway, so there is no bar of its own.
@@ -466,7 +466,7 @@
   //
   // With nothing on its way and nothing in the list, the rows stand there
   // all the same, as many as Clips says and following it as it changes,
-  // but still: they are what Find clips will fill, and nothing is filling them
+  // but still: they are what Search will fill, and nothing is filling them
   // yet. An episode whose first search was stopped, by quitting among
   // other things, had an empty column there instead.
   const comingNow = $derived(busy);
@@ -613,7 +613,7 @@
   // waiting for the transcript opens as many more as it will look for, the
   // same as one that runs. It used to open that many in all, so a list that
   // already held as many clips had no row left for the one that says what
-  // is going on, and Find clips looked as if it had done nothing until the
+  // is going on, and Search looked as if it had done nothing until the
   // transcript was there. Counting the clips of the plan rather than the
   // clips shown also opened a row for every clip removed.
   // How the last search ended, when it stopped before it was done and
@@ -661,14 +661,14 @@
   });
   // A search that stopped holds the window it was about, and the window
   // can still be moved. Moved anywhere else, the search is set aside: the
-  // row that said it stopped closes, Continue becomes Find clips again, and Find clips
+  // row that said it stopped closes, Continue becomes Search again, and Search
   // starts afresh in the window as it is now. Moved back, by hand or with
   // Undo, Continue carries the search on as before. Tim cancelled a search
   // to look somewhere else and could not, because the window stood locked
   // on the range picker until the search was carried on. It is read from
   // where the window is, so it is the same after a restart, the window
   // being kept, and only once the window is known: before that the
-  // workspace opening would flash Find clips.
+  // workspace opening would flash Search.
   const aside = $derived(
     !!halted &&
       windowRead &&
@@ -687,7 +687,7 @@
     if (!w) return;
     said(
       now
-        ? `window: moved off the stopped search's window ${clock(w.from)} to ${clock(w.to)}, Find clips starts afresh`
+        ? `window: moved off the stopped search's window ${clock(w.from)} to ${clock(w.to)}, Search starts afresh`
         : `window: back on the stopped search's window ${clock(w.from)} to ${clock(w.to)}, Continue carries it on`,
       { level: "info", video: path },
     );
@@ -760,15 +760,15 @@
   const emptied = $derived.by(() => {
     if (busy || stopped || shown.length > 0 || onTheWay.length > 0 || closing.length > 0) return null;
     if (clips.length === 0 || !clips.every((c) => c.rejected)) return null;
-    return { what: "All clips removed", left: "Find clips looks for others" };
+    return { what: "All clips removed", left: "Search looks for others" };
   });
   // The newest search ended and found nothing beyond the clips there are,
   // which is an answer, not a failure. The row its next clip would have
-  // appeared in says so: Tim pressed Find clips on a video with its one clip, and
+  // appeared in says so: Tim pressed Search on a video with its one clip, and
   // the row that said Finding closed again with nothing to say what had
   // come of it. It is news rather than a state, so it runs down for as
   // long as a removed clip's row does, in a neutral colour, and closes.
-  // Each search that finds nothing says so once, so Find clips pressed again and
+  // Each search that finds nothing says so once, so Search pressed again and
   // again is a row that says Finding and then this, every time.
   //
   // Its time is kept by the search's job, the way a removed clip's is, see
@@ -835,7 +835,7 @@
             unread + (stopped || foundNothing ? 1 : 0)),
   );
   // Whether the window has been searched before, all of it or a part.
-  // Find clips then looks there again, for moments its searches did not bring,
+  // Search then looks there again, for moments its searches did not bring,
   // and every clip there is stays.
   const searchedBefore = $derived(timesIn(coverage.passes, from, to) > 0);
   // A clip taken out leaves the track at once. Its row stays a moment
@@ -2312,7 +2312,7 @@
     return click;
   }
 
-  // Find clips. The search hears the window first if the episode has not been
+  // Search. The search hears the window first if the episode has not been
   // heard that far, all of it on the Go side, see docs/JOBS.md.
   async function findClips(replan: boolean) {
     const press = begin();
@@ -2332,7 +2332,7 @@
     );
   }
 
-  // Find clips and Continue alike. The Go side answers with the search, and one
+  // Search and Continue alike. The Go side answers with the search, and one
   // it would not start, while the app closes or the episode is being
   // removed, comes back failed already. It never runs, so nothing would
   // ever end the start the click showed: the head stood on Cancel, greyed
@@ -3207,15 +3207,14 @@
                 {:else}
                   Every clip found, in the order they were spoken, and on the
                   <b>range picker</b> as marks. Click one to work on it, the trash can takes it
-                  out. <b>Find clips</b> looks in the window chosen on the <b>range picker</b>.
+                  out. <b>Search</b> looks in the window chosen on the <b>range picker</b>.
                 {/if}
               </Info>
             </span>
             <span class="grow"></span>
             <button
-              class="find"
+              class="search"
               class:primary={action.primary}
-              data-room={"Find clips\nContinue\nCancel\nCancelling"}
               onclick={action.run}
               disabled={action.off}
               title={`${action.title}${busy && leftOfWork ? `, ${leftOfWork}` : ""}`}
@@ -3467,11 +3466,10 @@
           {/if}
           <!-- The one act that matters, so it says how it is going in the
                button it was started from, and becomes the way to stop it,
-               the same as Find clips does for a search. -->
+               the same as Search does for a search. -->
           {@const inHand = renderingCurrent || renderAsked === current.key}
           <button
             class="primary render"
-            data-room={"Render\nRender again\nCancel\nCancelling"}
             onclick={() => (inHand ? stopRender() : render(current))}
             disabled={inHand ? renderStopping || !renderingCurrent : !!working}
             title={inHand

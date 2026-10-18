@@ -228,7 +228,7 @@
                         autocomplete="off"
                         spellcheck="false"
                       />
-                      <button class="act" data-room={"Save\nSaving"} disabled={saving || !key.trim()} onclick={saveKey}>
+                      <button class="act" disabled={saving || !key.trim()} onclick={saveKey}>
                         {#if saving}<Busy />{/if}
                         {saving ? "Saving" : "Save"}
                       </button>
@@ -291,7 +291,6 @@
       {:else}
         <button
           class="primary go"
-          data-room={"Finish setup\nFetching the speech model"}
           disabled={waiting || !setup.chosen}
           onclick={finish}
         >

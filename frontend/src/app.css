@@ -74,6 +74,8 @@
   --frame-line: 2px;
   --frame-radius: 3px;
   --control-h: 32px;
+  /* The room on either side of the words in a button or a field. */
+  --control-pad: 10px;
   /* The bar at the top of the app. Where the system draws its own
      title bar, which is everywhere but macOS, this is the whole story and
      the bar is an ordinary header. On macOS the bar is the title bar, and
@@ -255,26 +257,14 @@ input {
   border-radius: var(--radius-s);
   border: 1px solid var(--line);
   background: var(--ink-2);
-  padding: 0 12px;
+  padding: 0 var(--control-pad);
 }
 
-/* A button is as wide as its words and the padding round them, never a
-   width of its own. One whose words change as it is used, Check again and
-   Checking, names every wording it has in data-room, a line each, and
-   keeps the room of the longest, measured here in the font it is drawn
-   in, so it fits its words and the row does not move when they change. */
+/* A button is as wide as the words it shows and the padding round them,
+   never a width of its own, so it fits Check again and then Checking. */
 button {
   cursor: pointer;
   white-space: nowrap;
-}
-
-button[data-room]::after {
-  content: attr(data-room);
-  display: block;
-  height: 0;
-  overflow: hidden;
-  visibility: hidden;
-  white-space: pre;
 }
 
 button:hover:not(:disabled) {

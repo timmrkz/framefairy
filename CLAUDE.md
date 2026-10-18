@@ -271,11 +271,11 @@ messages, pull request text, code comments and chat replies.
   longer goes behind a small info mark that opens a bubble on hover or on a
   click. Text that is always there is text nobody reads, and it moves the
   controls around as it comes and goes.
-- **A row never changes width as you use it.** A label that toggles, like
-  Play and Pause, gets room for the longer word, so nothing wraps and
-  nothing jumps. A button is as wide as its words and its padding, never
-  a width of its own, and one whose words change names them all in
-  `data-room`, see `app.css`, which keeps the room of the longest.
+- **A button fits the words it shows.** It is as wide as its words and
+  `--control-pad` on either side, from `frontend/src/app.css`, never a
+  width of its own. When its words change, Check again to Checking, its
+  width changes with them. Room kept for a longer wording made a button
+  wider than its words most of the time, and Tim did not want that.
 - **Controls in one row have the same size.** No one-off sizes for a single
   button. All controls use `--control-h` from `frontend/src/app.css`.
 - **What cannot be taken back asks first**, in the one box over the
@@ -288,8 +288,7 @@ messages, pull request text, code comments and chat replies.
   is clicked. Everything else saves at once and is undone with a click.
 - **A click shows at once.** Never let a control sit as if nothing happened
   while a job starts or stops. The control says what it is doing and takes no
-  second click, and it keeps room for the longer wording so the row does not
-  move. The same frame, the same everywhere the work shows: the row of a
+  second click. The same frame, the same everywhere the work shows: the row of a
   search says Stopping the moment Cancel is pressed, not a second later
   when the search has stopped. See the interface skill.
 - **What is taken away is seen going.** A row that is removed keeps its
@@ -426,7 +425,7 @@ messages, pull request text, code comments and chat replies.
 - The episode workspace is the centre of the app, in three columns: the
   settings for finding clips and for the captions on the left, the video
   preview with the crop frame and the range picker in the middle, the clip
-  list on the right with **Find clips** above it. Under all three, the clip panel
+  list on the right with **Search** above it. Under all three, the clip panel
   with the zoomed timeline. The words of a clip are written out in one
   place, the caption box over the picture, which is also where they are
   corrected. The whole of it fits the window without scrolling.

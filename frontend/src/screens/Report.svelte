@@ -719,7 +719,7 @@
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
-      <button class="act primary report" data-room={"Report\nMaking…"} onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
+      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
       </button>

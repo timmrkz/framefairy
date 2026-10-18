@@ -77,7 +77,7 @@ func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceI
 // searched, as often as anyone likes.
 type CoverageView struct {
 	// Passes is the whole episode in parts, each with how many searches
-	// have read it, see engine.SearchPasses. Find clips goes by it.
+	// have read it, see engine.SearchPasses. Search goes by it.
 	Passes []PassView `json:"passes"`
 }
 

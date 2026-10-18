@@ -560,7 +560,7 @@ the removed ones too, and asked for other moments, see version 4 in
 those all the same is left out and said in the log, the same measure as a
 moment given twice. A pass that brings nothing new writes a plan with no
 clips, so it still counts as a pass. `SearchPasses` cuts the episode into
-parts by how many searches have read them, and the app's Find clips goes where the
+parts by how many searches have read them, and the app's Search goes where the
 fewest have been, earliest first. A plan
 carries the window it was made over in `planned_with`. No part of an
 episode is ever taken or given back: any window can be searched, as often

@@ -38,7 +38,7 @@ type Pass struct {
 
 // SearchPasses cuts an episode into the parts that have been read by the
 // same number of searches, from its start to its end, the parts nobody
-// has searched too, with 0. Find clips searches where the fewest searches have
+// has searched too, with 0. Search looks where the fewest searches have
 // been, earliest first, so the first round walks the episode from its
 // start and the second starts over when every part has had one.
 func SearchPasses(plans []PlanSummary, duration float64) []Pass {

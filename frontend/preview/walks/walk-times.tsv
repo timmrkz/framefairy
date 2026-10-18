@@ -70,7 +70,7 @@
  14	sequences.mjs SEQUENCE=an episode opens on its clip, with no frame of its start on the way
  14	sequences.mjs SEQUENCE=the picture comes back after the playhead reached the end of the episode
  13	sequences.mjs SEQUENCE=While dictating the field follows the words until scrolled away, like a terminal
- 12	sequences.mjs SEQUENCE=Cancel pressed at once after Find clips stops the search before it starts
+ 12	sequences.mjs SEQUENCE=Cancel pressed at once after Search stops the search before it starts
  12	sequences.mjs SEQUENCE=Typing elsewhere while dictating keeps every word, in order
  12	sequences.mjs SEQUENCE=What is said after typing at the end of a dictation comes after the typing
  12	sequences.mjs SEQUENCE=a caption block pops for neither edge dragged in, with the playhead on it

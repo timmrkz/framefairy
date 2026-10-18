@@ -817,13 +817,13 @@
       {#snippet actions()}
         <button onclick={() => (removing = null)} disabled={!!removingHow}>Cancel</button>
         {#if ep.work}
-          <button class="answer" data-room={"Keep\nRemoving"} onclick={() => remove(ep, false)} disabled={!!removingHow}
+          <button class="answer" onclick={() => remove(ep, false)} disabled={!!removingHow}
             >{#if removingHow === "keep"}<Busy />{/if}{removingHow === "keep"
               ? "Removing"
               : "Keep"}</button
           >
         {/if}
-        <button class="answer danger" data-room={"Remove\nRemoving"} onclick={() => remove(ep, true)} disabled={!!removingHow}
+        <button class="answer danger" onclick={() => remove(ep, true)} disabled={!!removingHow}
           >{#if removingHow === "delete"}<Busy />{/if}{removingHow === "delete"
             ? "Removing"
             : "Remove"}</button

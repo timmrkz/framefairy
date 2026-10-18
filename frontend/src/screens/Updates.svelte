@@ -329,7 +329,6 @@
         {#if update.phase === "ready"}
           <button
             class="act primary"
-            data-room={"Relaunch\nRelaunching"}
             onclick={install}
             disabled={restarting}
             title="Quits and comes back as the new build. Waits while work runs"
@@ -338,7 +337,6 @@
         {:else if !update.off && following}
           <button
             class="act"
-            data-room={"Check\nChecking\nDownloading\nTry again"}
             onclick={check}
             disabled={looking || downloading}
             title="Look for a newer build of the channel now"

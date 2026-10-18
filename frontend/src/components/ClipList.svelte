@@ -571,7 +571,7 @@
 
   /* A search that stopped before it was done: the same row, still, in the
      colour of a warning. Not the red of what was taken away, because
-     nothing was lost: Find clips looks again. */
+     nothing was lost: Search looks again. */
   .stopped .title {
     color: var(--warn);
   }

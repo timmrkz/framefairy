@@ -344,7 +344,7 @@ func (p *probe) add(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// search asks for a search of a window of a video, the way Find clips does:
+// search asks for a search of a window of a video, the way Search does:
 // POST /search?video=path&from=30&to=60. With quit=1 the app quits in the
 // same moment, the way the second Cmd+Q does: everything is stopped first,
 // then the app goes. The walk searching.mjs found a search asked for then

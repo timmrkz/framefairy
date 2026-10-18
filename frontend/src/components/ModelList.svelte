@@ -183,7 +183,6 @@
                and the fill, and the one thing to do about it. -->
           <button
             class="act"
-            data-room={"Install\nStarting\nCancel\nCancelling"}
             title="Stop the download. What has arrived stays, and Install carries on from it"
             disabled={cancelling === mine.id}
             onclick={() => cancel(mine)}
@@ -194,7 +193,6 @@
         {:else}
           <button
             class="act"
-            data-room={"Install\nStarting\nCancel\nCancelling"}
             title="Fetch it and keep it on this machine"
             disabled={asked === model.name || !!running}
             onclick={() => install(model.name)}
@@ -275,8 +273,6 @@
     color: var(--warn);
   }
 
-  /* The download's button and Install take the same place, so each keeps
-     the room of the other's words, see data-room in app.css. */
   .act {
     flex: none;
   }
