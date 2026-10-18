@@ -152,3 +152,4 @@
   5	sequences.mjs SEQUENCE=the GPU draws standard video with QuickTime's look, a step for every value, and HDR as BT.2100's light
   5	sequences.mjs SEQUENCE=the buttons under the clip timeline stay square in a narrow app
   5	sequences.mjs SEQUENCE=the clip's frame and the window's bars lie on their track's borders
+ 8	sequences.mjs SEQUENCE=the playhead's time is in a field beside the buttons, and the clip's numbers on its card

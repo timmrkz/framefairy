@@ -8,9 +8,11 @@
 
   import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
+  import type { ClipNumbers } from "./ClipTimeline.svelte";
 
   let {
     clips,
+    live = null,
     arriving = [],
     selected,
     hovered = "",
@@ -31,6 +33,10 @@
     onheld,
   }: {
     clips: ClipEntry[];
+    // The chosen clip as the clip timeline has it, its start, length and
+    // pieces while an edge or a cut is dragged, so its card follows the
+    // hand rather than catching up once the edit is saved.
+    live?: ClipNumbers | null;
     // The clips on their way, whoever proposed them, each in its place in
     // the episode among the clips that are there, wearing the work that is
     // being done to it. A clip made by hand is one from the moment I or O
@@ -377,6 +383,10 @@
           onresume={(left) => onheld?.(clip.key, left)}
         />
       {:else if clip}
+        <!-- Where the clip starts, how long it comes out and in how many
+             pieces: the card is the one place that says it. -->
+        {@const now = live && live.key === clip.key ? live : null}
+        {@const pieces = now ? now.pieces : clip.segments.length}
         <button
           class="pick"
           class:current={clip.key === selected}
@@ -384,7 +394,8 @@
         >
           <span class="title">{clip.title || clip.slug}</span>
           <span class="meta muted num">
-            {clock(clip.start)}, {Math.round(clip.duration)} s
+            {clock(now ? now.start : clip.start)}, {now ? now.seconds : Math.round(clip.duration)} s, {pieces}
+            {pieces === 1 ? "piece" : "pieces"}
             {#if clip.rendered}<span class="dot ok" title="This clip is rendered"></span>{/if}
           </span>
         </button>

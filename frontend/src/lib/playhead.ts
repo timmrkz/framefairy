@@ -126,3 +126,23 @@ export function playedToEnd(p: Playhead, looping: boolean): Playhead {
 export function inEpisode(at: number, duration: number): number {
   return duration > 0 ? Math.max(0, Math.min(at, duration)) : at;
 }
+
+// The playhead's time, for the field beside the buttons under the clip
+// timeline: where the frame it stands in starts, to the millisecond. A
+// frame and not the moment itself, because the playhead is never quite
+// where it was put, and the frame is what the video preview shows and
+// what a thumbnail, a keyframe or an edge is put on. So the field steps a
+// frame at a time, finer on a video with more frames a second. frame is
+// the length of one frame and start where the picture's frames begin, see
+// frameAt in flow.ts. long says the hours, for a video of an hour or
+// more, so the field is as wide at the start of the video as at its end.
+export function playheadClock(at: number, frame: number, start: number, long: boolean): string {
+  const t = start + frameAt(at, frame, start) * frame;
+  const ms = Math.max(0, Math.round(t * 1000));
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor(ms / 60_000) % 60;
+  const s = Math.floor(ms / 1000) % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  const rest = `${two(s)}.${String(ms % 1000).padStart(3, "0")}`;
+  return long ? `${h}:${two(m)}:${rest}` : `${two(m + h * 60)}:${rest}`;
+}

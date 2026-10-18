@@ -50,7 +50,7 @@
     frameMiddle,
   } from "../lib/flow";
   import { faceLook, families, installFonts, nearestFace, styleNames } from "../lib/fonts";
-  import type { About } from "../lib/playhead";
+  import { playheadClock, type About } from "../lib/playhead";
   import {
     Reach,
     fitWindow,
@@ -186,7 +186,7 @@
   let middle = $state<HTMLDivElement>();
   // What the clip timeline has to say about the chosen clip, for the row
   // under it.
-  let numbers = $state<ClipNumbers>({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false });
+  let numbers = $state<ClipNumbers>({ key: "", start: 0, end: 0, seconds: 0, pieces: 0, saving: false });
   // The playback buttons stand in the row above the clip timeline, with
   // Render, so the video preview and the range picker have nothing under
   // them but the line that parts them from it.
@@ -1551,7 +1551,6 @@
     // 180 ms in ClipList.svelte.
     setTimeout(showChosen, 240);
   });
-  const makingTitle = $derived(onTheWay.find((x) => x.key === selected)?.title || "New clip");
 
   function inOutKey(event: KeyboardEvent) {
     const out = event.key === "o" || event.key === "O";
@@ -3232,6 +3231,7 @@
           <div class="scroll list">
             <ClipList
               clips={shown}
+              live={current ? numbers : null}
               arriving={onTheWay}
               {selected}
               {hovered}
@@ -3432,22 +3432,18 @@
         >
           <Icon name="locate" />
         </button>
-        {#if current}
-          <div class="titles">
-            <h2 class="selectable">{current.title || current.slug}</h2>
-            {#if current.reason}<p class="muted selectable">{current.reason}</p>{/if}
-          </div>
-          <span class="num">{clock(numbers.start)} to {clock(numbers.end)}</span>
-          <span class="muted num"
-            >{numbers.seconds} s, {numbers.pieces}
-            {numbers.pieces === 1 ? "piece" : "pieces"}</span
-          >
-        {:else if making}
-          <div class="titles">
-            <h2 class="selectable">{makingTitle}</h2>
-          </div>
-          <span class="num">{clock(numbers.start)} to {clock(numbers.end)}</span>
-        {/if}
+        <!-- Where the playhead is, to the frame, the way an editor shows
+             it beside its transport: a field as tall as the buttons, as
+             wide at the start of the video as at its end. What the clip
+             is, its start, length and pieces, its card in the list says,
+             so the row says it no more. Asked for by Tim, issue #361. -->
+        <output
+          class="timecode num selectable"
+          class:long={duration >= 3600}
+          aria-label="Playhead"
+          title="Where the playhead is: hours, minutes, seconds and the millisecond its frame starts on"
+          >{playheadClock(time, frameLen, frameStart, duration >= 3600)}</output
+        >
         {#if numbers.saving}<span class="muted">Saving</span>{/if}
         <span class="grow"></span>
         {#if offers.hint}<span class="muted num">{offers.hint}</span>{/if}
@@ -3613,8 +3609,29 @@
   }
 
 
-  .titles {
-    min-width: 0;
+  /* The playhead's time, in a field of its own beside the buttons: as
+     tall as a control, with the border a field has, and as wide as the
+     time with the most figures this video can have, so the row never
+     moves as the playhead does. Tabular figures, so each figure stands
+     where the one before it stood. The border, the background and the
+     corners are a field's, from app.css, and the room either side of
+     the time is a field's padding, 12px, with its border. */
+  .timecode {
+    box-sizing: border-box;
+    flex: none;
+    height: var(--control-h);
+    width: calc(9ch + 26px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  .timecode.long {
+    width: calc(11ch + 26px);
   }
 
   /* What plays and what the timeline looks at say it with a mark rather

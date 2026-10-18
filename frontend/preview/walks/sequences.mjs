@@ -668,6 +668,21 @@
 //                      along the clip timeline each show the frame that
 //                      holds the playhead
 //   ["app size", w, h] makes the app w by h pixels
+//   ["time field"]     the row under the clip timeline does not say the
+//                      chosen clip's title, and its time field, as tall as
+//                      every control, says where the frame that holds the
+//                      playhead starts, to the millisecond: on every step
+//                      of a drag along the clip timeline with the button
+//                      held, standing as wide as it stood, and after each
+//                      of three presses of →, one frame on each time
+//   ["card says"]      the chosen clip's card says where the clip starts,
+//                      how long it comes out and in how many pieces, the
+//                      engine's numbers and as many pieces as the clip
+//                      timeline draws
+//   ["card follows", px]
+//                      drags the clip's end by px with the button held,
+//                      and the chosen clip's card says the clip's new
+//                      length before the hand lets go
 //   ["square buttons"] every button in the row under the clip timeline
 //                      that wears an icon or a key's letter is as wide as
 //                      it is tall, and as tall as every control
@@ -3180,6 +3195,13 @@ export const sequences = [
     steps: [["square buttons"], ["app size", 900, 800], ["square buttons"]],
   },
   {
+    // Issue #361, asked for by Tim: the row under the clip timeline said
+    // the chosen clip's title and numbers, which its card says, and
+    // nothing said where the playhead was.
+    name: "the playhead's time is in a field beside the buttons, and the clip's numbers on its card",
+    steps: [["time field"], ["card says"], ["cut at", 0.5], ["card says"], ["card follows", -60], ["card says"]],
+  },
+  {
     name: "the crop frame at either side of the picture is drawn whole, with the shade into its corners",
     steps: [
       ["app size", 1000, 1000],
@@ -3488,6 +3510,13 @@ const switches = (pieces) =>
   pieces.slice(1).filter((p, i) => Math.abs(p.start - pieces[i].end) < 0.0005).map((p) => p.start);
 
 const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
+// A moment the way the clip list says it, clock in lib/api.ts.
+const clockOf = (t) => {
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const ss = String(Math.floor(t % 60)).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+};
 
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
@@ -7135,6 +7164,126 @@ for (const seq of toWalk) {
         await page.waitForTimeout(600);
         await settle(page);
         break;
+      case "time field": {
+        const { fps, videoStart = 0, duration = 0 } = await ask(page, "Source", await episodeOn(page));
+        // Said here the way the field must say it, from the frame, so the
+        // walk takes nobody's word for what the frame is: hours for a
+        // video of an hour or more, and the minutes always two figures.
+        const said = (at) => {
+          const k = Math.floor((Math.max(at - videoStart, 0) + 0.001) * fps);
+          const ms = Math.round((videoStart + k / fps) * 1000);
+          const two = (n) => String(n).padStart(2, "0");
+          const h = Math.floor(ms / 3600000);
+          const m = Math.floor(ms / 60000) % 60;
+          const rest = `${two(Math.floor(ms / 1000) % 60)}.${String(ms % 1000).padStart(3, "0")}`;
+          return duration >= 3600 ? `${h}:${two(m)}:${rest}` : `${two(m + h * 60)}:${rest}`;
+        };
+        const read = () =>
+          page.evaluate(() => {
+            const f = document.querySelector(".detail .row .timecode");
+            const b = f?.getBoundingClientRect();
+            return {
+              text: f?.textContent.trim() ?? null,
+              w: b?.width ?? 0,
+              h: b?.height ?? 0,
+              control: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")),
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              row: document.querySelector(".detail .row")?.textContent ?? "",
+              title: document.querySelector(".pick.current .title")?.textContent.trim() ?? "",
+            };
+          });
+        const first = await read();
+        if (first.text === null) {
+          wrong = "the row under the clip timeline has no time field";
+          break;
+        }
+        if (first.title && first.row.includes(first.title)) {
+          wrong = `the row under the clip timeline still says the clip's title, "${first.title}"`;
+          break;
+        }
+        if (Math.abs(first.h - first.control) > 0.01) {
+          wrong = `the time field is ${first.h.toFixed(2)} px tall, not ${first.control} as every control`;
+          break;
+        }
+        // Down on the clip, a third of the way along, and along it with
+        // the button held, each step a frame of its own.
+        const g = await handles(page);
+        const from = g.start.x + g.start.w;
+        const x = from + (g.end.x - from) / 3;
+        const y = high(g.track);
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        const seen = new Set();
+        for (let i = 0; i <= 12 && !wrong; i++) {
+          if (i) await page.mouse.move(x + i * 8, y);
+          await nextPaint(page, 2);
+          const r = await read();
+          seen.add(r.at);
+          if (r.text !== said(r.at)) {
+            wrong = `${i ? `${i * 8} px into the drag` : "pressed on the clip"}, with the button held, the playhead is at ${r.at.toFixed(4)} s and the time field says ${r.text}, not ${said(r.at)}`;
+          } else if (Math.abs(r.w - first.w) > 0.01) {
+            wrong = `the time field was ${first.w.toFixed(2)} px wide and is ${r.w.toFixed(2)} px at ${r.text}`;
+          }
+        }
+        await page.mouse.up();
+        await settle(page);
+        if (wrong) break;
+        if (seen.size < 4) {
+          wrong = `the drag along the clip timeline moved the playhead to ${seen.size} places, so it proves nothing`;
+          break;
+        }
+        // One frame on with each press of the arrow.
+        await page.evaluate(() => document.body.focus());
+        let was = await read();
+        for (let i = 1; i <= 3 && !wrong; i++) {
+          await page.keyboard.press("ArrowRight");
+          await nextPaint(page, 2);
+          const r = await read();
+          const step = Math.round((r.at - was.at) * fps);
+          if (step !== 1) wrong = `→ ${i} moved the playhead ${step} frames, from ${was.at.toFixed(4)} to ${r.at.toFixed(4)} s`;
+          else if (r.text !== said(r.at)) wrong = `after → ${i} the playhead is at ${r.at.toFixed(4)} s and the time field says ${r.text}, not ${said(r.at)}`;
+          was = r;
+        }
+        break;
+      }
+      case "card says": {
+        const { segments } = await engineState(page, watch.at);
+        const seconds = Math.round(segments.reduce((sum, p) => sum + p.end - p.start, 0));
+        const n = await page.locator(".clip-timeline .piece").count();
+        const want = `${clockOf(segments[0].start)}, ${seconds} s, ${n} ${n === 1 ? "piece" : "pieces"}`;
+        const ok = await page
+          .waitForFunction(
+            (want) => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() === want,
+            want,
+            { polling: 50, timeout: 3000 },
+          )
+          .then(() => true, () => false);
+        if (!ok) {
+          const got = await page.evaluate(() => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() ?? "nothing");
+          wrong = `the chosen clip's card says "${got}", not "${want}"`;
+        }
+        if (!wrong && n !== segments.length) wrong = `the clip timeline draws ${pieceCount(n)} and the engine keeps ${segments.length}`;
+        break;
+      }
+      case "card follows": {
+        const card = () => page.evaluate(() => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() ?? "");
+        const before = await card();
+        const g = await handles(page);
+        const x = middle(g.end);
+        const y = high(g.track);
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 6; i++) {
+          await page.mouse.move(x + (arg * i) / 6, y);
+          await nextPaint(page);
+        }
+        await nextPaint(page, 2);
+        const held = await card();
+        await page.mouse.up();
+        if (held === before) wrong = `with the clip's end dragged ${arg} px and the button still held, the card still says "${before}"`;
+        await watch.step("trim", s);
+        break;
+      }
       case "square buttons": {
         const got = await page.evaluate(() => {
           const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h"));
