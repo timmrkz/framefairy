@@ -1,6 +1,9 @@
 <script lang="ts" module>
   // What the row under the clip timeline says about the chosen clip.
   export type ClipNumbers = {
+    // The clip they are about, so a card reads them only for its own clip
+    // and never for a moment the ones of the clip chosen before.
+    key: string;
     start: number;
     end: number;
     seconds: number;
@@ -96,7 +99,7 @@
     onhover,
     onmark,
     centre,
-    numbers = $bindable({ start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
+    numbers = $bindable({ key: "", start: 0, end: 0, seconds: 0, pieces: 0, saving: false }),
     drawn = $bindable(false),
     waiting = false,
   }: {
@@ -238,9 +241,10 @@
     // the clip up close, its frame is.
     hovered?: string;
     onhover?: (key: string, on: boolean) => void;
-    // What the clip is, for the row under the timeline: its edges as they
-    // are dragged, how long it comes out and in how many pieces, and
-    // whether an edit is still on its way to disk.
+    // What the clip is, for its card in the clip list and the row under
+    // the timeline: its edges as they are dragged, how long it comes out
+    // and in how many pieces, and whether an edit is still on its way to
+    // disk.
     numbers?: ClipNumbers;
     // Whether the first reading of the words and the waveform has come
     // back, so the track has something of the episode on it. The workspace
@@ -253,6 +257,7 @@
   // them.
   $effect(() => {
     numbers = {
+      key: clip?.key ?? "",
       start,
       end,
       seconds: Math.round(drawnPieces.reduce((sum, p) => sum + p.end - p.start, 0)),

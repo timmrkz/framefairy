@@ -1487,7 +1487,17 @@ bubble scrolled by those eight pixels.
   sound clicked, and kept going without a new end, the play stood at the
   clip's end while the sound of its start played on for seconds. Tim
   heard both. Then the
-  title of the selected clip, why it was chosen and its numbers, and on the
+  playhead's time, in a field as tall as the buttons with a field's border:
+  where the frame the playhead stands in starts, to the millisecond, so it
+  steps a frame at a time and follows the hand as the playhead is dragged
+  and the picture as it plays, `playheadClock` in `lib/playhead.ts`. With
+  hours for a video of an hour or more, `1:05:30.417`, and without for a
+  shorter one, `05:30.417`, so the field is as wide at the start of the
+  video as at its end. The selected clip's title and numbers stood there
+  before, and they were what its card in the clip list already says, so
+  the card says them alone: where the clip starts, how long it comes out
+  and in how many pieces, `1:05:30, 28 s, 1 piece`, following the hand
+  while an edge or a cut is dragged, issue #361. On the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
   clip's short is where the clip says it went, in the folder **Shorts**
@@ -1495,8 +1505,7 @@ bubble scrolled by those eight pixels.
   it there. A short removed or written over by hand is no longer
   rendered, and a file of the same name that another episode put there
   is not this clip's. A short there is the one file outside the episode's work folder
-  the app shows or opens, because a clip of the episode made it. The time
-  is not written anywhere else: the playhead says it on both timelines.
+  the app shows or opens, because a clip of the episode made it.
   Above that row, the clip up close:
     - The arrow keys step the playhead one frame of the episode, and one
       word with shift, wherever the keyboard is as long as it is not in a

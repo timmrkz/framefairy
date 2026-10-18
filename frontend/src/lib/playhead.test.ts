@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, type Playhead } from "./playhead";
+import { inEpisode, onVideo, placeFor, placeOf, playedToEnd, playFrom, playheadClock, type Playhead } from "./playhead";
 
 // A clip of two pieces with a cut between them, at twenty-five frames a
 // second, the way the episodes are. Its start falls three quarters of a
@@ -238,5 +238,38 @@ describe("the playhead stays inside the episode", () => {
   });
   test("a duration not yet known keeps the moment", () => {
     expect(inEpisode(3, 0)).toBe(3);
+  });
+});
+
+describe("the time field says the frame the playhead is in", () => {
+  test("to the millisecond the frame starts on, not where the playhead stands in it", () => {
+    // Three quarters of a frame into the frame that starts at 1677.60.
+    expect(playheadClock(1677.63, frame, 0, true)).toBe("0:27:57.600");
+    expect(playheadClock(1677.64, frame, 0, true)).toBe("0:27:57.640");
+  });
+
+  test("a playhead a hair before a frame's start is in that frame", () => {
+    expect(playheadClock(1677.6399, frame, 0, true)).toBe("0:27:57.640");
+  });
+
+  test("frames counted from where the picture starts", () => {
+    // A picture that starts 0.25 s in, at 29.97 frames a second: its
+    // tenth frame starts 0.5837 s in, said to the nearest millisecond.
+    expect(playheadClock(0.6, 1001 / 30000, 0.25, false)).toBe("00:00.584");
+    // Before the picture starts is its first frame.
+    expect(playheadClock(0.1, 1001 / 30000, 0.25, false)).toBe("00:00.250");
+  });
+
+  test("as wide at the start of a video as at its end", () => {
+    expect(playheadClock(0, frame, 0, true)).toBe("0:00:00.000");
+    expect(playheadClock(3 * 3600 + 59.99, frame, 0, true)).toBe("3:00:59.960");
+    expect(playheadClock(0, frame, 0, false)).toBe("00:00.000");
+    expect(playheadClock(59 * 60 + 59.99, frame, 0, false)).toBe("59:59.960");
+  });
+
+  test("a millisecond that rounds up carries into the second", () => {
+    // 1/30 s frames: frame 1799 starts at 59.9667, frame 1800 at 60.
+    expect(playheadClock(59.99, 1 / 30, 0, false)).toBe("00:59.967");
+    expect(playheadClock(59.9999, 1 / 30, 0, false)).toBe("01:00.000");
   });
 });
