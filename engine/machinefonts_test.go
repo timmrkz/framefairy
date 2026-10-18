@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -411,6 +412,29 @@ func TestATinyFaceIsAFace(t *testing.T) {
 	if len(faces) != 1 || faces[0].name != "Tiny Bold" || faces[0].weight != 700 {
 		t.Fatalf("read %+v", faces)
 	}
+}
+
+// A face whose head table is cut short is no face, because the copy a
+// caption needs could not be made of it. Fuzzing found one in CI.
+func TestAFaceWithAShortHeadIsNoFace(t *testing.T) {
+	data := shortHead(tinyFace("Tiny", 400), 8)
+	if faces := readSfntFaces(bytes.NewReader(data), int64(len(data))); len(faces) != 0 {
+		t.Fatalf("read %+v", faces)
+	}
+}
+
+// shortHead says in the table directory of a single face that its head
+// table is only n bytes long.
+func shortHead(data []byte, n uint32) []byte {
+	out := slices.Clone(data)
+	count := int(binary.BigEndian.Uint16(out[4:]))
+	for i := range count {
+		at := 12 + 16*i
+		if string(out[at:at+4]) == "head" {
+			binary.BigEndian.PutUint32(out[at+12:], n)
+		}
+	}
+	return out
 }
 
 // The app reads the font folders as it starts, on a goroutine of its own,
