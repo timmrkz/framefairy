@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
+  import { fade } from "svelte/transition";
   import {
     api,
     captionFontDefault,
@@ -399,9 +400,16 @@
   // again whenever the transcript on disk hears more.
   let saying = $state(false);
   let sayTyped = $state("");
+  let sayMatches = $state(0);
   let sentences = $state<Sentence[] | null>(null);
   let sayField = $state<HTMLInputElement>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
+  // The edges of every part a clip keeps, where the cards of what was said
+  // are cut, so a card is all in a clip or all out of it.
+  const sayCuts = $derived(
+    clips.filter((c) => !c.rejected).flatMap((c) => (c.segments.length ? c.segments : [c]).flatMap((p) => [p.start, p.end])),
+  );
+  const cutsKey = $derived(sayCuts.map((t) => t.toFixed(2)).join(","));
   // They are read as soon as the video opens and kept, so the magnifier
   // shows them in the frame it is pressed, and read again whenever the
   // transcript hears more. A column left empty until the answer came was
@@ -410,7 +418,8 @@
   let sentencesOf = "";
   $effect(() => {
     const of = path;
-    const key = savedKey;
+    const key = `${savedKey}|${cutsKey}`;
+    const cuts = sayCuts;
     if (!saved.length) return;
     // While the search is closed, what was read stays until it opens.
     if (!saying && sentencesOf.startsWith(`${of}|`)) return;
@@ -418,7 +427,7 @@
     const ticket = ++sentencesAsked;
     untrack(() => {
       api
-        .sentences(of)
+        .sentences(of, cuts)
         .then((list) => {
           if (ticket !== sentencesAsked || of !== path) return;
           sentences = list ?? [];
@@ -1233,9 +1242,11 @@
 
   // seek is off for a clip chosen while the video plays, which carries on
   // where it is.
-  async function select(key: string, seek = true) {
+  // jump is off for a clip chosen by clicking one of its sentences, so the
+  // sentences stay where they are rather than go to the clip's first.
+  async function select(key: string, seek = true, jump = true) {
     selected = key;
-    chosenTimes++;
+    if (jump) chosenTimes++;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
@@ -3295,6 +3306,13 @@
                     }
                   }}
                 />
+                {#if sayTyped.trim()}
+                  <!-- How many sentences match, the number fading in anew
+                       as it changes, the way a toast comes. -->
+                  <span class="saycount muted num" title="Sentences that match">
+                    {#key sayMatches}<span in:fade={{ duration: 150 }}>{sayMatches}</span>{/key}
+                  </span>
+                {/if}
                 <button class="glyph quiet" title="Close the search, Escape does the same" aria-label="Close the search" onclick={closeSaying}>
                   <Icon name="close" size={12} />
                 </button>
@@ -3346,10 +3364,15 @@
                 clips={shown}
                 {selected}
                 chosen={chosenTimes}
-                {hovered}
+                bind:matches={sayMatches}
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
-                onseek={(at) => seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30))}
+                onseek={(at, clip) => {
+                  // A sentence of a clip makes that clip the one worked on,
+                  // the way its mark does, found by Tim.
+                  if (clip && clip !== selected) void select(clip, false, false);
+                  seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+                }}
               />
             {:else}
             <ClipList
@@ -4117,6 +4140,11 @@
 
   .sayfield .glyph {
     height: calc(var(--control-h) - 2px);
+  }
+
+  .saycount {
+    flex: none;
+    line-height: 16px;
   }
 
   label {

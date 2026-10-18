@@ -810,7 +810,7 @@ export const api = {
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
   // What the video says, sentence by sentence, as far as it has been
   // heard, for searching it in the clip column.
-  sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
+  sentences: (path: string, cuts: number[]) => call<Sentence[] | null>("Sentences", path, cuts),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // Removes one word from the captions of one clip alone, the word heard

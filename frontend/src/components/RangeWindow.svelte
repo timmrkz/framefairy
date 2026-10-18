@@ -774,15 +774,17 @@
     pointer-events: none;
   }
 
-  /* Under the hand on its card, the grey of a card under the hand, which
-     the dashes go into, the way they do on the card. */
+  /* Under the hand on its card, the grey of a card under the hand, with
+     the range picker's own border over it, which is the range picker's
+     and not the part's. With the border gone the range picker looked
+     broken, found by Tim. */
   .unheard.lit {
     background: var(--ink-2);
   }
 
   .unheard-edge.lit::before,
   .unheard-edge.lit::after {
-    border-color: var(--ink-2);
+    border-color: transparent;
   }
 
   /* Its edge, a ring in the same grey that covers the track's border

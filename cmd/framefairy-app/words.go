@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -191,10 +193,14 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 	return out, nil
 }
 
+// sentenceCutsMost is far more edges than the clips of a video have.
+const sentenceCutsMost = 100_000
+
 // Sentences returns what the video says, sentence by sentence, as far as
-// it has been heard, for searching it in the clip column. Before the first
-// transcription there are none, which is an empty answer and not a failure.
-func (s *FrameFairy) Sentences(path string) ([]engine.SentenceView, error) {
+// it has been heard, for searching it in the clip column, cut at the edges
+// of the parts the clips keep, cuts. Before the first transcription there
+// are none, which is an empty answer and not a failure.
+func (s *FrameFairy) Sentences(path string, cuts []float64) ([]engine.SentenceView, error) {
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
 	}
@@ -202,7 +208,13 @@ func (s *FrameFairy) Sentences(path string) ([]engine.SentenceView, error) {
 	if err != nil {
 		return nil, err
 	}
-	return engine.Sentences(t), nil
+	// The cuts come from the interface. More than any list of clips has
+	// are not cuts, and a time that is no number cuts nothing.
+	if len(cuts) > sentenceCutsMost {
+		return nil, fmt.Errorf("%d cuts, more than the %d any clips make", len(cuts), sentenceCutsMost)
+	}
+	cuts = slices.DeleteFunc(slices.Clone(cuts), func(t float64) bool { return math.IsNaN(t) || math.IsInf(t, 0) })
+	return engine.Sentences(t, cuts), nil
 }
 
 // SetWord corrects a word of one clip, typed in its caption box. Every

@@ -18,7 +18,7 @@
     clips = [],
     selected = "",
     chosen = 0,
-    hovered = "",
+    matches = $bindable(0),
     onhover,
     onhoverhole,
     onseek,
@@ -30,17 +30,20 @@
     unheard?: [number, number][];
     clips?: ClipEntry[];
     // The chosen clip, which the list goes to when it is chosen somewhere
-    // else, and the clip under the hand anywhere, whose sentences are lit.
-    // The hand on a sentence of a clip lights the clip everywhere else.
+    // else. The hand on a sentence of a clip lights the clip everywhere
+    // else, and only the card under the hand is lit in the list, never
+    // every sentence of the clip with it, found by Tim.
     selected?: string;
     // Counts every time a clip is chosen, the one chosen already too.
     chosen?: number;
-    hovered?: string;
+    // How many sentences answer what is typed, for the field to show.
+    matches?: number;
     onhover?: (key: string, on: boolean) => void;
     // The part not transcribed yet under the hand, by its place among
     // them, or -1, so the range picker lights the same part.
     onhoverhole?: (index: number) => void;
-    onseek: (at: number) => void;
+    // A sentence clicked, with the clip it is named for, if any.
+    onseek: (at: number, clip: string | null) => void;
   } = $props();
 
   let list: HTMLOListElement;
@@ -62,20 +65,22 @@
   // A clip chosen on the range picker or the clip timeline while the
   // search is open puts its first sentence at the top of the list, the
   // way choosing it brings its card into view in the clip list. The first
-  // sentence it keeps any of, which may be named for another clip over it.
+  // card it keeps, which may be named for another clip over it.
   // Choosing it again does it again, after the hand scrolled away.
   let chosenWas: number | null = null;
   $effect(() => {
     const times = chosen;
     const key = selected;
-    const opening = chosenWas === null;
+    const was = chosenWas;
     chosenWas = times;
-    if (opening) return;
+    // Only a clip chosen, not a clip that became the chosen one some
+    // other way, like a sentence of it clicked here.
+    if (was === null || was === times) return;
     const clip = untrack(() => clips.find((c) => c.key === key));
     if (!clip) return;
     const parts = clip.segments.length ? clip.segments : [{ start: clip.start, end: clip.end }];
     const first = untrack(() =>
-      rows.find((r) => "sentence" in r && parts.some((p) => p.start < r.sentence.end && p.end > r.sentence.start)),
+      rows.find((r) => "sentence" in r && parts.some((p) => p.start <= (r.sentence.start + r.sentence.end) / 2 && (r.sentence.start + r.sentence.end) / 2 < p.end)),
     );
     if (!first || !("sentence" in first)) return;
     const card = list?.querySelector<HTMLElement>(`li[data-at="${first.sentence.start}"]`);
@@ -94,11 +99,14 @@
     | { key: string; at: number; sentence: Sentence; bold: [number, number][]; clip: ClipEntry | null }
     | { key: string; at: number; hole: [number, number] };
 
-  // The first clip that keeps any of the sentence.
+  // The clip that keeps the card. A card is cut at the edges of what the
+  // clips keep, see engine.Sentences, so it is all in a clip or all out,
+  // and its middle says which.
   function clipOf(s: Sentence): ClipEntry | null {
+    const at = (s.start + s.end) / 2;
     for (const c of clips) {
       const parts = c.segments.length ? c.segments : [{ start: c.start, end: c.end }];
-      if (parts.some((p) => p.start < s.end && p.end > s.start)) return c;
+      if (parts.some((p) => p.start <= at && at < p.end)) return c;
     }
     return null;
   }
@@ -109,11 +117,16 @@
       const bold = found(s.text, typed);
       if (bold) out.push({ key: `s${s.start}`, at: s.start, sentence: s, bold, clip: clipOf(s) });
     }
-    if (sentences) for (const h of unheard) out.push({ key: `h${h[0]}`, at: h[0], hole: h });
+    // Where nothing was transcribed yet is said while the whole of what
+    // was said is shown. It is no answer to what is typed, found by Tim.
+    if (sentences && !typed.trim()) for (const h of unheard) out.push({ key: `h${h[0]}`, at: h[0], hole: h });
     return out.sort((a, b) => a.at - b.at);
   });
 
-  const answered = $derived(rows.some((r) => "sentence" in r));
+  const answered = $derived(rows.filter((r) => "sentence" in r).length);
+  $effect(() => {
+    matches = answered;
+  });
 
   // The sentence in pieces, bold where it answers what was typed.
   function pieces(text: string, bold: [number, number][]) {
@@ -146,10 +159,9 @@
       <li
         data-at={row.sentence.start}
         data-clip={row.clip?.key}
-        class:lit={!!row.clip && row.clip.key === hovered}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
-        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => onseek(row.sentence.start)}>
+        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => onseek(row.sentence.start, row.clip?.key ?? null)}>
           <span class="meta muted num">
             {clock(row.sentence.start)}
             {#if row.clip}<span class="clipname">{row.clip.title || row.clip.slug}</span>{/if}
@@ -162,7 +174,7 @@
     {/if}
   {/each}
   {#if sentences && typed.trim() && !answered}
-    <li class="none muted">Nothing said matches</li>
+    <li class="none muted">No matches</li>
   {/if}
 </ol>
 
@@ -210,8 +222,7 @@
     background: transparent;
   }
 
-  li:hover .pick,
-  li.lit .pick {
+  li:hover .pick {
     background: var(--ink-2);
   }
 
@@ -226,7 +237,7 @@
   /* What was said, a step softer than the words of a clip. */
   .text {
     width: 100%;
-    color: color-mix(in srgb, var(--text) 75%, var(--muted));
+    color: color-mix(in srgb, var(--text) 50%, var(--muted));
     line-height: 18px;
     white-space: normal;
     overflow-wrap: anywhere;

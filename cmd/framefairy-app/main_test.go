@@ -99,7 +99,7 @@ func TestAnEpisodeWithoutATranscriptReadsEmpty(t *testing.T) {
 	if err != nil || words == nil || len(words) != 0 {
 		t.Errorf("words got %v, %v", words, err)
 	}
-	sentences, err := svc.Sentences(source)
+	sentences, err := svc.Sentences(source, nil)
 	if err != nil || sentences == nil || len(sentences) != 0 {
 		t.Errorf("sentences got %v, %v", sentences, err)
 	}

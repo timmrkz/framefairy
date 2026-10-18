@@ -1936,20 +1936,29 @@ found is a place in the video, and I and O make a clip there.
   what was said as cards, each with its time at the head and a sentence
   under it. The sentences are the engine's, `engine.Sentences`, the lines
   the model reads grouped the way the stories recipe groups them, so a
-  sentence in the app is a sentence to the engine too.
-- **The clips stand out.** A sentence a clip keeps any of wears the chosen
-  clip's accent edge, the clip's name next to its time and its words in
-  white. Every other sentence is a softer grey.
+  sentence in the app is a sentence to the engine too. A long sentence is
+  more than one card: a card ends at a line once it runs 8 seconds, and
+  never runs more than 12. Cards of twenty seconds and more were too much
+  to read as one place, found by Tim. A card is also cut at every edge of
+  what a clip keeps, so a card is all in a clip or all out of it.
+- **The clips stand out.** A card a clip keeps wears the chosen clip's
+  accent edge, the clip's name next to its time and its words in white.
+  Every other card is a softer grey.
 - **Fuzzy, like the fonts.** With nothing typed, every sentence is there.
   Typing keeps the sentences that hold what was typed, or where every
   word typed finds a word the way the font search finds a name, `found`
   in `lib/match.ts`, and the words that answer are bold. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
-- **A card is a place.** A click puts the playhead on its sentence.
-- **One clip in every place.** The hand on a sentence a clip keeps lights
+  The field says in grey, before its cross, how many cards match, the
+  number fading in anew as it changes. Where nothing matches, the list
+  says No matches.
+- **A card is a place.** A click puts the playhead on its sentence, and a
+  card of a clip makes that clip the one worked on, with the list left
+  where it is.
+- **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
-  on its card does, and the sentences of a clip under the hand anywhere
-  are lit. A clip chosen on the range picker or the clip timeline puts
+  on its clip card does. In the list only the card under the hand is
+  lit, never every card of its clip with it. A clip chosen on the range picker or the clip timeline puts
   its first sentence at the top of the list, where the first card stands,
   and choosing it again does it again. Every card is laid out at its own
   height, never at a height guessed for the cards out of view, because a
@@ -1957,15 +1966,17 @@ found is a place in the video, and I and O make a clip there.
   and WebKit keeps no anchor that would have made up for it. The accent
   edge is the card's button's, so the grey a card takes under the hand
   never covers it.
-- **What was not transcribed is said.** A part of the video the
-  transcript has not reached yet is a dashed card in its place, "Not
-  transcribed yet", because the search cannot look there. While the field
+- **What was not transcribed is said.** With nothing typed, a part of the
+  video the transcript has not reached yet is a dashed card in its place,
+  "Not transcribed yet", because the search cannot look there. With
+  something typed the list holds only what matches. While the field
   is open, the range picker draws the same part in the grey of a card
   with a dashed edge, laid over its border, under the minutes so their
   lines show through, and under the window. The dashes are in the grey of
-  a card's edge, and the hand on the card fills card and part with the
-  grey of a card under the hand, which the dashes go into, the way every
-  card's edge does.
+  a card's edge, and the hand on the card fills it with the grey of a
+  card under the hand, which the dashes go into, the way every card's
+  edge does. The part on the range picker fills with the same grey under
+  the range picker's own border, which stays.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim
