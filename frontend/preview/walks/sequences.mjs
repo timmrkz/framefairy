@@ -792,7 +792,7 @@
 //                      turn says so, with no black along the top or the
 //                      bottom of the picture, where a frame squeezed into
 //                      the wrong shape leaves it, and the clip timeline
-//                      marks the start of every rotated part
+//                      draws the rotate icon on every rotated piece
 //   ["turned with its frames"]
 //                      since "scrub", of a video standing up by its display
 //                      matrix: every frame read off the canvas was turned
@@ -2473,6 +2473,36 @@ export const sequences = [
       ["cut at", 0.5],
       ["cuts", 1],
       ["turned", [0, 90]],
+    ],
+  },
+  {
+    // Found by Tim testing #340, issue #348: rotating a part with R took
+    // its keyframe diamond off the clip timeline, and the rotate mark
+    // stood under the diamond. The keyframe stays through four turns, and
+    // the rotate icon is stamped in the part's wash in the dark of the
+    // empty track, large, in its middle, clear of the row the keyframes are in and of the row the
+    // thumbnails are in. TestRotatingAPartKeepsItsKeyframes holds the
+    // engine to it.
+    name: "a rotated part keeps its keyframe, and has the rotate icon drawn in its middle",
+    steps: [
+      ["add", 30, "25", "turned"],
+      ["wait for", "New"],
+      ["cards", 1],
+      ["cut at", 0.5],
+      ["cuts", 1],
+      ["keyframe at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 90]],
+      ["keyframes", 1],
+      ["stamp"],
+      ["rotate at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["keyframes", 1],
+      ["rotate at", 0.75],
+      ["turned", [0, 0]],
+      ["keyframes", 1],
     ],
   },
   {
@@ -9414,6 +9444,98 @@ for (const seq of toWalk) {
         await settle(page);
         break;
       }
+      case "stamp": {
+        // The rotate icon over the rotated part, worked out from the two
+        // layers the stylesheet lays over each piece of it, the icon and
+        // the glow round it: how much of what is under the icon shows
+        // through, the size it is drawn at and where, against the part's middle,
+        // the band the keyframes stand in along the top of the clip
+        // timeline and the band the thumbnails stand in along its foot.
+        const got = await page.evaluate(() => {
+          const track = document.querySelector(".clip-timeline .track").getBoundingClientRect();
+          const band = (sel, sample) => {
+            const e = document.querySelector(sel);
+            if (!e) return sample;
+            const r = e.getBoundingClientRect();
+            return [r.top, r.bottom];
+          };
+          const pieces = [...document.querySelectorAll(".clip-timeline .piece.turned")].map((e) => {
+            const r = e.getBoundingClientRect();
+            const css = getComputedStyle(e, "::after");
+            const glow = getComputedStyle(e, "::before");
+            const size = parseFloat(css.maskSize);
+            const left = parseFloat(css.maskPosition);
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              height: r.height,
+              size,
+              at: r.left + left,
+              image: css.maskImage,
+              colour: css.backgroundColor,
+              glow: glow.maskImage,
+              glowColour: glow.backgroundColor,
+              glowCut: glow.maskComposite,
+              cut: getComputedStyle(e).maskImage,
+            };
+          });
+          return {
+            keys: band(".clip-timeline .cropdot", null),
+            thumbs: band(".clip-timeline .thumb", [track.bottom - 10, track.bottom + 9]),
+            height: track.height,
+            pieces,
+          };
+        });
+        const p = got.pieces[0];
+        if (!p) {
+          wrong = "the rotated part has no rotate icon on it";
+          break;
+        }
+        if (!/svg/.test(p.image)) {
+          wrong = `the rotated part's icon is drawn with ${p.image.slice(0, 40)}, not the rotate icon`;
+          break;
+        }
+        // The accent at half strength, so the waveform shows through it,
+        // which a solid dark did not, and was too strong. Its alpha is the
+        // last number of the colour, rgba() or color() alike.
+        const alpha = (c) => {
+          const n = c.match(/[\d.]+/g)?.map(Number) ?? [];
+          return /\/|rgba/.test(c) ? n[n.length - 1] : 1;
+        };
+        if (Math.abs(alpha(p.colour) - 0.5) > 0.02) {
+          wrong = `the rotate icon is ${p.colour}, not the accent at half strength`;
+          break;
+        }
+        // A dark glow round it, the icon's lines drawn wider and softened
+        // with the icon itself taken out, so it parts the icon from the
+        // waveform and the empty track alike and lies only outside it.
+        if (!/svg[\s\S]*svg/.test(p.glow) || !/^exclude/.test(p.glowCut)) {
+          wrong = `the rotate icon has no glow round it, its mask is ${p.glow.slice(0, 40)} with ${p.glowCut}`;
+          break;
+        }
+        if (alpha(p.glowColour) < 0.5) {
+          wrong = `the glow round the rotate icon is ${p.glowColour}, too faint to part it from the waveform`;
+          break;
+        }
+        // Nothing really cut out of the piece, where the track's black and
+        // the waveform's grey showed through by turns.
+        if (p.cut !== "none") {
+          wrong = `the rotated part's wash has ${p.cut.slice(0, 40)} cut out of it`;
+          break;
+        }
+        const top = p.top + (p.height - p.size) / 2;
+        const bottom = top + p.size;
+        const middle = p.at + p.size / 2;
+        if (p.size < got.height / 2) wrong = `the rotate icon is ${p.size.toFixed(1)} px, less than half the clip timeline's ${got.height.toFixed(0)} px`;
+        else if (Math.abs(middle - (p.left + p.right) / 2) > 1)
+          wrong = `the rotate icon's middle is at ${middle.toFixed(1)} px, not the part's, ${((p.left + p.right) / 2).toFixed(1)} px`;
+        else if (got.keys && top < got.keys[1])
+          wrong = `the rotate icon, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, reaches into the keyframes' row, to ${got.keys[1].toFixed(1)} px`;
+        else if (bottom > got.thumbs[0])
+          wrong = `the rotate icon, ${top.toFixed(1)} to ${bottom.toFixed(1)} px, reaches into the thumbnails' row, from ${got.thumbs[0].toFixed(1)} px`;
+        break;
+      }
       case "keyframes": {
         const on = await chosen(page);
         const marks = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
@@ -9638,12 +9760,11 @@ for (const seq of toWalk) {
             problems.push(`piece ${i + 1} shows black along the top or the bottom of its picture, ${seen.edges.map((e) => e.toFixed(0)).join(" and ")}, so its frame is squeezed`);
           }
         }
-        const all = await pieces();
-        // A mark where a rotated stretch starts: at the start of a part,
-        // or inside one where a cut put back joined two turned apart.
-        const parts = all.filter((p, i) => arg[i] !== 0 && (i === 0 || p.start - all[i - 1].end > 0.0005 || arg[i - 1] !== arg[i])).length;
-        const marks = await page.evaluate(() => document.querySelectorAll(".clip-timeline .turnmark").length);
-        if (marks !== parts) problems.push(`the clip timeline marks ${marks} rotated parts, not ${parts}`);
+        // Every rotated piece has the rotate icon drawn on its wash, and
+        // no other.
+        const turned = arg.filter((t) => t !== 0).length;
+        const marked = await page.evaluate(() => document.querySelectorAll(".clip-timeline .piece.turned").length);
+        if (marked !== turned) problems.push(`the clip timeline marks ${marked} pieces as rotated, not ${turned}`);
         if (problems.length) wrong = problems.join("\n");
         break;
       }

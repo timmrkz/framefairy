@@ -74,9 +74,11 @@ const (
 	keyDeg       = "deg"
 
 	// keyCropMarks is the crops a person placed on frames of a clip, each
-	// at, the moment the frame starts, and x, the left edge of the crop
-	// there, see CropMark.
+	// at, the moment the frame starts, x, the left edge of the crop there,
+	// and turn, how far the picture was rotated when it was placed, see
+	// CropMark.
 	keyCropMarks = "crop_marks"
 	keyAt        = "at"
 	keyX         = "x"
+	keyTurn      = "turn"
 )

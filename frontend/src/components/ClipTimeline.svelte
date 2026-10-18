@@ -56,8 +56,7 @@
   import { asleep, keysElsewhere } from "../lib/keys";
   import { said } from "../lib/said";
   import Info from "./Info.svelte";
-  import Icon from "./Icon.svelte";
-  import { partOf } from "../lib/rotate";
+  import { PIECES_MEET, rotationAt } from "../lib/rotate";
 
   let {
     path,
@@ -1655,18 +1654,23 @@
   );
   const markChange = (kind: MarkKind) => (kind === "thumbnail" ? onthumbnail : oncropmark);
 
-  // Where each rotated stretch of the clip starts, and how far it is
-  // rotated: the first piece of a part, or the piece where a part that
-  // had its cut put back turns, see lib/rotate.ts.
-  const rotatedParts = $derived(
-    segments
-      .map((p, i) => ({
-        at: p.start,
-        rotate: p.rotate ?? 0,
-        starts: i === partOf(segments, i)[0] || (segments[i - 1].rotate ?? 0) !== (p.rotate ?? 0),
-      }))
-      .filter((r) => r.starts && r.rotate !== 0),
-  );
+  // The stretch each piece the clip draws is rotated in, for the rotate
+  // icon in the middle of its wash: the pieces that play
+  // straight on from each other turned alike, as partOf in lib/rotate.ts reads a part, from the first
+  // one's start to the last one's end, or null for a piece as filmed.
+  // Issue #348.
+  const turnedRuns = $derived.by(() => {
+    const turns = drawnPieces.map((p) => rotationAt(clip?.rotations, p.start));
+    return drawnPieces.map((p, i) => {
+      if (!turns[i]) return null;
+      let first = i;
+      let last = i;
+      const meets = (a: number, b: number) => drawnPieces[b].start - drawnPieces[a].end <= PIECES_MEET && turns[a] === turns[b];
+      while (first > 0 && meets(first - 1, first)) first--;
+      while (last + 1 < drawnPieces.length && meets(last, last + 1)) last++;
+      return { from: drawnPieces[first].start, to: drawnPieces[last].end };
+    });
+  });
 
   // The frame on the video preview, which is how a mark knows it is the
   // one on screen. A state, never a distance.
@@ -1936,7 +1940,10 @@
           class="piece"
           class:first={i === 0}
           class:last={i === drawnPieces.length - 1}
-          style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%"
+          class:turned={!!turnedRuns[i]}
+          style="left: {x(p.start)}%; width: {x(p.end) - x(p.start)}%{turnedRuns[i]
+            ? `; --left: ${x(p.start)}; --run-left: ${x(turnedRuns[i].from)}; --run-w: ${x(turnedRuns[i].to) - x(turnedRuns[i].from)}`
+            : ''}"
         ></div>
       {/each}
       <!-- A cut is drawn over the pieces rather than between them, so a cut
@@ -2093,17 +2100,6 @@
           {/each}
         {/if}
       {/if}
-      {#if clip}
-        <!-- A rotated part says so at its start, in the top left corner of
-             its first piece, so a clip that holds a rotation shows it
-             without playing it. It takes no click: R and the Rotate button
-             are where it is changed. Plan row 3.25. -->
-        {#each rotatedParts as r (r.at)}
-          <div class="turnmark" style="left: {x(r.at)}%" data-rotate={r.rotate} aria-hidden="true">
-            <Icon name="rotate" size={14} />
-          </div>
-        {/each}
-      {/if}
     </div>
   </div>
     {#if wholeClip}
@@ -2231,6 +2227,9 @@
     overflow: hidden;
     cursor: pointer;
     touch-action: none;
+    /* Its width is the unit the icon on a rotated stretch is placed in,
+       see .piece.turned. */
+    container-type: inline-size;
   }
 
   .track.scrubbing {
@@ -2318,6 +2317,53 @@
     bottom: 0;
     background: var(--accent-wash);
     pointer-events: none;
+  }
+
+  /* A rotated stretch has the Rotate button's icon, Lucide's rotate-ccw,
+     large in its middle: the accent at half strength, so the waveform
+     still shows through it, with a dark glow round it that parts it from
+     the waveform and from the empty track alike. Tim chose it from a
+     sheet of sixteen, issue #348. A small mark in a corner ran into the
+     keyframes, an icon cut out of the wash showed the black of the track
+     in one place and the grey of the waveform in the next, the wash drawn
+     over it a second time was too faint, and a solid dark was too
+     strong. The glow is the icon's lines drawn wider and softened, with
+     the icon itself taken out, so it lies only outside it. It is as tall
+     as the track leaves between the keyframes along the top rule and the
+     thumbnails along the foot, 10 px each and a space of 4 px, and never
+     wider than the stretch less a space of 8 px each side, so it shrinks
+     as the clip timeline is zoomed out and the stretch narrows, and sits
+     in its middle as it is zoomed. The stretch may be several pieces:
+     each draws its own share of the one icon, placed from the stretch's
+     middle in the track's own width, 1cqw a hundredth of it, the unit x()
+     places everything in. A mask is drawn from the lines at the size it
+     is shown, so it is sharp at every size. */
+  .piece.turned {
+    --stamp: max(0px, min(calc(var(--wave-h, 112px) - 28px), calc(var(--run-w) * 1cqw - 16px)));
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E");
+  }
+
+  .piece.turned::before,
+  .piece.turned::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    mask-size: var(--stamp) var(--stamp);
+    mask-position: calc((var(--run-left) + var(--run-w) / 2 - var(--left)) * 1cqw - var(--stamp) / 2) 50%;
+    mask-repeat: no-repeat;
+  }
+
+  .piece.turned::before {
+    background: color-mix(in srgb, var(--well) 85%, transparent);
+    mask-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cfilter id='b' x='-30%25' y='-30%25' width='160%25' height='160%25'%3E%3CfeGaussianBlur stdDeviation='.33'/%3E%3C/filter%3E%3Cg filter='url%28%23b%29'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/g%3E%3C/svg%3E"),
+      var(--icon);
+    mask-composite: exclude;
+  }
+
+  .piece.turned::after {
+    background: var(--accent-fill-hi);
+    mask-image: var(--icon);
   }
 
   /* The wash at the clip's two ends takes the frame's corners, so none of
@@ -2598,18 +2644,6 @@
     bottom: calc(var(--frame-line) / 2 - 8px);
   }
 
-  /* The mark at the start of a rotated part: the Rotate button's icon,
-     small, in the top left corner of the part in the app's colour. */
-  .turnmark {
-    position: absolute;
-    top: 3px;
-    margin-left: 3px;
-    width: 14px;
-    height: 14px;
-    color: var(--accent-hi);
-    pointer-events: none;
-    z-index: 5;
-  }
 
   /* The playhead. */
   .at {

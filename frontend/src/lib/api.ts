@@ -239,12 +239,13 @@ export interface Segment {
   marks?: CropMark[];
 }
 
-// A crop placed by hand on one frame: the moment the frame starts, and the
-// left edge of the crop there, on the picture as it stands, see
-// engine.CropMark.
+// A crop placed by hand on one frame: the moment the frame starts, the
+// left edge of the crop there, and how far the picture was rotated when it
+// was placed, the picture the left edge is on, see engine.CropMark.
 export interface CropMark {
   at: number;
   x: number;
+  turn?: number;
 }
 
 // A stretch of the video a person rotated deg degrees to the left, 90,

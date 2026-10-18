@@ -411,7 +411,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			continue
 		}
 		var marks []CropMark
-		for _, m := range readCropMarks(entry[keyCropMarks]) {
+		for _, m := range readCropMarks(entry[keyCropMarks], spans) {
 			if insidePieces(segments, m.At) {
 				marks = append(marks, m)
 			}

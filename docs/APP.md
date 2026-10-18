@@ -2135,8 +2135,12 @@ or walks across the picture. Plan row 3.26, the design is in
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing the first of two keyframes leaves the
   crop standing at the other for the whole clip, as removing a keyframe
-  does in Resolve and Premiere. Rotating a part removes the keyframes in
-  it, which were placed on the picture as it stood.
+  does in Resolve and Premiere. Rotating a part keeps its keyframes. Each
+  was placed on the picture turned one way, and steers the part only while
+  it is turned that way: turned another way, it waits, and four turns
+  bring its glide back. A crop placed on the frame of a keyframe that
+  waits takes it to the picture as it stands. Tim found the diamonds gone
+  after a turn, issue #348.
 - **Undo** takes back adding, moving and removing one.
 
 ### Rotate
@@ -2170,8 +2174,17 @@ lies on its side. Plan row 3.25, the design is in
   rotated, and is dragged like any other. It moves the pieces of its shot
   rotated alike and no other. Rotated back all the way, the part has the
   crop it had before, which rotating never touched.
-- **A rotated part shows the Rotate icon** at its start, in the top left
-  corner of the part on the clip timeline. It takes no click.
+- **A rotated part has the Rotate icon in its middle** on the clip
+  timeline, large, in the accent at half strength so the waveform shows
+  through it, with a dark glow round it that parts it from the waveform
+  and the empty track alike. It is as tall as the track leaves between the
+  keyframes and the thumbnails, shrinks with the part as the clip timeline
+  is zoomed out, and stays sharp at every size. Tim's idea, issue #348,
+  after a small mark in the part's corner ran into the keyframes and an
+  icon really cut out of the wash showed black in one place and grey in
+  the next, the wash drawn over it a second time was too faint, and a
+  solid dark was too strong. Tim chose it from a sheet of sixteen. It
+  takes no click.
 - **Undo** takes a rotation back like any other edit.
 - **A phone's video stands up by itself.** A phone that records upright
   stores the picture lying down and says in the file how to stand it up.

@@ -88,7 +88,7 @@
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
   import { said } from "../lib/said";
-  import { pieceHolding, rotated } from "../lib/rotate";
+  import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/glide";
   import { unchanged } from "../lib/unchanged";
   import { toasts } from "../lib/toast.svelte";
@@ -1360,7 +1360,12 @@
     const was = clip.cropMarks ?? [];
     const moving = was.find((m) => from >= 0 && ms(m.at) === ms(from));
     const next = was.filter((m) => m !== moving);
-    if (to >= 0) next.push({ at: Math.round(to * 1000) / 1000, x: moving?.x ?? x });
+    if (to >= 0)
+      next.push({
+        at: Math.round(to * 1000) / 1000,
+        x: moving?.x ?? x,
+        turn: moving?.turn ?? rotationAt(clip.rotations, to),
+      });
     next.sort((a, b) => a.at - b.at);
     clips = clips.map((c) => (c.key === clip.key ? { ...c, cropMarks: next } : c));
     try {

@@ -79,7 +79,9 @@ export function pieceHolding(pieces: { start: number; end: number }[], at: numbe
 // in rather than when the engine's answer comes back, which replaces it:
 // the stretch from the middle of the cut before the part to the middle of
 // the cut after, or to that end of the video, turned, and its crop in the
-// middle of the picture rotated. The engine puts each edge on a frame.
+// middle of the picture rotated. Its keyframes stay, and steer it only
+// turned the way they were placed, see engine.CropMark. The engine puts
+// each edge on a frame.
 export function rotated(clip: ClipEntry, source: SourceView, at: number): ClipEntry {
   const i = pieceAt(clip.segments, at);
   if (i < 0) return clip;
@@ -89,7 +91,11 @@ export function rotated(clip: ClipEntry, source: SourceView, at: number): ClipEn
   const to = last + 1 < segs.length ? (segs[last].end + segs[last + 1].start) / 2 : null;
   const turned = (rotationAt(clip.rotations, segs[i].start) + 90) % 360;
   const rotations = turnStretch(clip.rotations ?? [], from, to, turned);
-  const segments: Segment[] = segs.map((s) => ({ ...s, rotate: rotationAt(rotations, s.start) }));
+  const segments: Segment[] = segs.map((s, k) => {
+    const rotate = rotationAt(rotations, s.start);
+    if (k < first || k > last) return { ...s, rotate };
+    return { ...s, rotate, marks: s.marks?.filter((m) => (m.turn ?? 0) === turned) };
+  });
   const cropLefts = clip.cropLefts.map((x, k) => {
     if (k < first || k > last || turned === 0) return x;
     const picture = pictureOf(source, turned);

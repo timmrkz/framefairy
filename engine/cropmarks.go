@@ -20,7 +20,8 @@ import (
 //
 // A mark is a moment of the video, like a thumbnail, and belongs to the
 // camera angle of the piece it lies in, the shot as the analysis framed it
-// and how far it is rotated, see angleOf. The keyframes that steer a piece
+// and how far it was rotated when the mark was placed, see angleOf and
+// markAngle. The keyframes that steer a piece
 // are those of its angle in the whole clip, so a shot cut away to and back
 // keeps gliding as if it had been seen, and a glide goes on across a cut by
 // the clip's clock, the time the short plays, with nothing of the time the
@@ -28,17 +29,21 @@ import (
 // the next after it did not glide at all, found by Tim, plan row 2.238. A
 // rotated part is another angle, so its crop still starts at its cut. A
 // keyframe a trim or a cut left outside the clip stays in the plan and
-// comes back with its piece.
+// comes back with its piece. A part rotated again keeps its keyframes,
+// which wait while the picture is turned another way and steer again once
+// it is turned back, issue #348: the diamonds used to go with the turn.
 
 // CropMark is a keyframe, a crop placed by hand on one frame: the moment
 // the frame starts, in seconds of the video, and the left edge of the crop
 // on the picture as it stands there, rotated if the piece is. It was named
 // a crop mark until Tim chose keyframe, the word editors use, on #192, and
 // the code and the plan's key, crop_marks, keep that name, so plans
-// already made keep their keyframes.
+// already made keep their keyframes. Turn is how far the picture was
+// rotated when the keyframe was placed, the picture X is on.
 type CropMark struct {
-	At float64
-	X  int
+	At   float64
+	X    int
+	Turn int
 }
 
 // MaxCropMarks is how many keyframes one clip may have.
@@ -46,14 +51,15 @@ const MaxCropMarks = 100
 
 // CropMarkView is a keyframe as the window reads it.
 type CropMarkView struct {
-	At float64 `json:"at"`
-	X  int     `json:"x"`
+	At   float64 `json:"at"`
+	X    int     `json:"x"`
+	Turn int     `json:"turn"`
 }
 
 func cropMarkViews(marks []CropMark) []CropMarkView {
 	out := make([]CropMarkView, len(marks))
 	for i, m := range marks {
-		out[i] = CropMarkView{At: m.At, X: m.X}
+		out[i] = CropMarkView{At: m.At, X: m.X, Turn: m.Turn}
 	}
 	return out
 }
@@ -63,8 +69,11 @@ func cropMarkViews(marks []CropMark) []CropMarkView {
 // is kept only if it has a moment that is a number and a left edge that is
 // a whole number in the picture's range, each moment once to the
 // millisecond, in time order and no more than MaxCropMarks of them.
-// Anything else is left out, and the crop is where the rest put it.
-func readCropMarks(raw any) []CropMark {
+// Anything else is left out, and the crop is where the rest put it. A
+// keyframe of a plan made before keyframes kept their turn, or with a turn
+// that is no quarter, was placed on the picture turned the way the clip's
+// rotations turn it at its moment, spans.
+func readCropMarks(raw any, spans []Rotation) []CropMark {
 	list, ok := raw.([]any)
 	if !ok || len(list) == 0 {
 		return nil
@@ -98,7 +107,11 @@ func readCropMarks(raw any) []CropMark {
 			continue
 		}
 		seen[key] = true
-		out = append(out, CropMark{At: roundTo(at, 3), X: x - x%2})
+		turn := RotationAt(spans, at)
+		if n, ok := toFloat(entry[keyTurn]); ok && n == math.Trunc(n) && validRotate(int(n)) {
+			turn = int(n)
+		}
+		out = append(out, CropMark{At: roundTo(at, 3), X: x - x%2, Turn: turn})
 	}
 	sort.Slice(out, func(a, b int) bool { return out[a].At < out[b].At })
 	if len(out) > MaxCropMarks {
@@ -141,8 +154,9 @@ func markedPieces(segments []Segment, angles []string, marks []CropMark) {
 			continue
 		}
 		onClip := into[holder] + m.At - segments[holder].Start
+		angle := markAngle(angles[holder], m)
 		for i := range segments {
-			if angles[i] != angles[holder] {
+			if angles[i] != angle {
 				continue
 			}
 			at := m
@@ -355,7 +369,15 @@ func (s SourceInfo) CropAt(seg Segment, at float64, cropW, width int) float64 {
 // cropMarksOf is the keyframes a clip of a plan being edited has, as the
 // plan holds them.
 func cropMarksOf(c *object) []CropMark {
-	return readCropMarks(c.values[keyCropMarks])
+	return readCropMarks(c.values[keyCropMarks], rotationsOf(c))
+}
+
+// markAngle is the camera angle a keyframe belongs to: the shot of the
+// piece it lies in, whose angle is given, turned the way the picture was
+// when the keyframe was placed. Turned another way since, the keyframe
+// waits, and steers nothing until the picture is turned back.
+func markAngle(angle string, m CropMark) string {
+	return angle[:strings.LastIndex(angle, "/")+1] + strconv.Itoa(m.Turn)
 }
 
 // setCropMarks writes a clip's keyframes in time order, or takes the key
@@ -371,6 +393,7 @@ func setCropMarks(c *object, marks []CropMark) {
 		o := newObject()
 		o.set(keyAt, roundTo(m.At, 3))
 		o.set(keyX, m.X)
+		o.set(keyTurn, m.Turn)
 		list[i] = o
 	}
 	c.set(keyCropMarks, list)
@@ -400,7 +423,7 @@ func marksOfAngle(marks []CropMark, pieces []*object, spans []Rotation, angle st
 		if h < 0 {
 			h = pieceNearest(pieces, m.At)
 		}
-		if h >= 0 && angleOf(pieces[h], spans) == angle {
+		if h >= 0 && markAngle(angleOf(pieces[h], spans), m) == angle {
 			out[i] = true
 		}
 	}
@@ -484,11 +507,11 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 			if len(kept) >= MaxCropMarks {
 				return renderErr("a clip can have %d keyframes", MaxCropMarks)
 			}
-			left := x - x%2
+			mark := CropMark{At: at, X: x - x%2, Turn: RotationAt(rotationsOf(c), at)}
 			if moving != nil {
-				left = moving.X
+				mark.X, mark.Turn = moving.X, moving.Turn
 			}
-			kept = append(kept, CropMark{At: at, X: left})
+			kept = append(kept, mark)
 		}
 		setCropMarks(c, kept)
 		return nil
