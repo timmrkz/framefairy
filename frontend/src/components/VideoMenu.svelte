@@ -34,8 +34,12 @@
   import type { EpisodeStatus, Label } from "../lib/api";
   import { freshColour } from "../lib/colour";
 
+  // How many characters a label keeps, engine.LabelLength.
+  const LabelLength = 40;
+
   let {
     ep,
+    drawn,
     shown,
     anchor,
     worn,
@@ -46,6 +50,9 @@
     onremove,
   }: {
     ep: EpisodeStatus;
+    // The label the row draws, which is the one being saved while a save
+    // is on its way, so the menu opens on what the row shows.
+    drawn: Label | null;
     // Whether the sidebar is open. The menu belongs to it, so it closes
     // when the sidebar does, for whatever reason, rather than stay over
     // a rail with no row left to hang under.
@@ -83,8 +90,15 @@
 
   // The folder the video is in, the words a label starts with: in a folder
   // of episodes each in its own folder, that is the name that tells them
-  // apart.
-  const folder = $derived(ep.source.split(/[\\/]/).slice(-2, -1)[0] ?? "");
+  // apart. A video at the root of a drive has no folder of its own, /x.mp4
+  // or C:\x.mp4, and its file name without the ending is the hint, so a
+  // colour clicked in an empty field always brings words with it.
+  const folder = $derived.by(() => {
+    const parts = ep.source.split(/[\\/]/);
+    const dir = parts.at(-2) ?? "";
+    if (dir && !/^[A-Za-z]:$/.test(dir)) return dir;
+    return (parts.at(-1) ?? "").replace(/\.[^.]*$/, "");
+  });
 
   // The menu as it opens, and as it is again once the label is removed.
   function begin(label: Label | null) {
@@ -94,7 +108,7 @@
   }
 
   function opened() {
-    begin(ep.label ?? null);
+    begin(drawn);
     putBack = false;
     pressed = false;
   }
@@ -120,6 +134,13 @@
   // Words in the field and a colour go together: the first word chooses
   // a colour and an empty field has none.
   function typed(value: string) {
+    // As many characters as the Go side keeps, counted the way it counts
+    // them: an emoji is one, where the field's own limit counted it as two.
+    const letters = [...value];
+    if (letters.length > LabelLength) {
+      value = letters.slice(0, LabelLength).join("");
+      if (field) field.value = value;
+    }
     text = value;
     if (!value.trim()) colour = "";
     else if (!colour) colour = freshColour(worn);
@@ -140,6 +161,15 @@
     colour = hex;
     ondraft(now());
     if (keep) save();
+  }
+
+  // Escape in the colour well of a video with no label: what a shade
+  // dragged there made is taken back, and the menu is empty again.
+  function noColour() {
+    text = "";
+    colour = "";
+    ondraft(null);
+    save();
   }
 
   // The cross at the end of the field: the label goes, and the menu is as
@@ -211,7 +241,8 @@
             <div
               {...props}
               bind:this={menu}
-              class="video-menu"
+              class="video-menu panel"
+              role="dialog"
               aria-label="More for {ep.name}"
               onkeydown={keepKeys}
               onpointerdown={() => (pressed = true)}
@@ -223,7 +254,6 @@
                     type="text"
                     spellcheck="false"
                     autocomplete="off"
-                    maxlength="40"
                     aria-label="Label"
                     title="A label tells this video apart from others with the same name. It stays in the app, the file keeps its name"
                     placeholder={folder || "Label"}
@@ -254,6 +284,7 @@
                     hang="end"
                     oninput={(hex) => pickColour(hex, false)}
                     onpick={(hex) => pickColour(hex)}
+                    onnone={noColour}
                   />
                 </span>
               </div>
@@ -288,19 +319,13 @@
 </Popover.Root>
 
 <style>
-  /* The menu is the panel a list in the app is, see Pick.svelte, as wide
+  /* The menu is the panel a list in the app is, .panel in app.css, as wide
      as the row it hangs under. Its rows run from edge to edge with nothing
      above or under them, and its corners clip them. */
   .video-menu {
-    z-index: 60;
     width: var(--bits-floating-anchor-width);
     padding: 0;
     overflow: hidden;
-    color: var(--text);
-    background: var(--ink-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   }
 
   /* The label's words over its colours, apart from what is done with the

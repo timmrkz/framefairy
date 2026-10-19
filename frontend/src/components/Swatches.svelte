@@ -12,6 +12,7 @@
     label,
     oninput = undefined,
     onpick,
+    onnone = undefined,
     hang = "start",
   }: {
     // The colour in use, as #rrggbb.
@@ -23,6 +24,8 @@
     oninput?: (hex: string) => void;
     // A colour picked, to be saved.
     onpick: (hex: string) => void;
+    // Escape in the colour well put back no colour at all.
+    onnone?: () => void;
     // Which edge of the well its pop-up hangs on, see Colour.svelte.
     hang?: "start" | "end";
   } = $props();
@@ -57,6 +60,7 @@
     {value}
     oninput={(hex) => hex && oninput?.(hex)}
     onchange={onpick}
+    {onnone}
   />
 </div>
 

@@ -175,8 +175,15 @@
 //                      colour of its own, Return" or ", Escape" clicks a
 //                      shade in the colour picker and leaves it with that
 //                      key, which keeps the shade or puts back the colour
-//                      before, "Return" presses Return, "Escape" puts back
-//                      what was there. The menu has to open on the label
+//                      before, and "the colour picker, Escape" opens the
+//                      picker and leaves it with Escape without a click.
+//                      Leaving the picker with Escape has to leave the
+//                      field and the colour as they were before it opened.
+//                      "Return" presses Return, "Return, the save failing"
+//                      the same with the Go side refusing the save, which
+//                      has to say so in a toast and keep the label it had,
+//                      "Escape" puts back what was there. The menu has to
+//                      open on the label
 //                      chosen, or empty with the folder's name as its hint
 //                      and no colour, hang inside the sidebar and keep it
 //                      open, and the sidebar casts no shadow on the title
@@ -2246,6 +2253,10 @@ export const sequences = [
       ["add", 12],
       ["label", [null, "Escape"]],
       ["label", [null, "Return"]],
+      // Escape in the colour picker of a video with no label leaves it
+      // with none, with a shade clicked and without.
+      ["label", [null, "the colour picker, Escape"]],
+      ["label", [null, "a colour of its own, Escape"]],
       ["label", ["Tab", "Escape"]],
       ["label", ["Tab", "Return"]],
       ["label", [null, "a colour of its own, Escape"]],
@@ -2254,6 +2265,7 @@ export const sequences = [
       ["label", [null, "Blue"]],
       ["label", ["Ben, Kindergarten", "Return"]],
       ["label", ["Anna", "Escape"]],
+      ["label", ["Dora", "Return, the save failing"]],
       ["label", ["", "Return"]],
       ["label", ["Clara", "Green after a press"]],
       ["two menus"],
@@ -6096,17 +6108,30 @@ for (const seq of toWalk) {
         if (!wrong && pill !== after.words.trim())
           wrong = `while typing, the pill says ${JSON.stringify(pill)}, not ${JSON.stringify(after.words.trim())}`;
         const ringed = after.ringed ?? reach.ringed;
-        if (how === "Return" || how === "Escape") await page.keyboard.press(how === "Return" ? "Enter" : how);
-        else if (how.startsWith("a colour of its own")) {
+        const failing = how === "Return, the save failing";
+        if (failing) await control(url, `/hold?call=SetLabel&fail=${encodeURIComponent("the disk is full")}`);
+        if (how === "Return" || how === "Escape" || failing) await page.keyboard.press(how === "Escape" ? how : "Enter");
+        else if (how.startsWith("a colour of its own") || how.startsWith("the colour picker")) {
           // A shade clicked in the colour picker at the end of the
-          // colours, and the picker left with Return or Escape, then the
-          // menu with Escape.
+          // colours, or none, and the picker left with Return or Escape,
+          // then the menu with Escape.
           await menu.locator('button[aria-label="Another colour"]').click();
           const shade = await page.locator('.colour-pop [aria-label="Shade"]').boundingBox();
-          await page.mouse.click(shade.x + shade.width * 0.8, shade.y + shade.height * 0.3);
+          if (how.startsWith("a colour of its own")) await page.mouse.click(shade.x + shade.width * 0.8, shade.y + shade.height * 0.3);
           await page.keyboard.press(how.endsWith("Return") ? "Enter" : "Escape");
           await page.locator(".colour-pop").waitFor({ state: "detached" });
           if (!(await menu.isVisible())) wrong = `${how.split(", ").pop()} in the colour picker closed the menu too`;
+          // Escape put back what was there before the picker opened: the
+          // words in the field and the colour chosen. Tim's review found a
+          // video with no label given its folder's name in white.
+          const back = await page.evaluate(() => ({
+            words: document.querySelector(".video-menu input")?.value,
+            ringed:
+              (document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ??
+                document.querySelector(".video-menu .colour.well.on")?.style.getPropertyValue("--colour"))?.trim() ?? null,
+          }));
+          if (!wrong && how.endsWith("Escape") && (back.words !== after.words || back.ringed !== ringed))
+            wrong = `Escape in the colour picker left ${JSON.stringify(back.words)} in ${back.ringed ?? "no colour"}, not ${JSON.stringify(after.words)} in ${ringed ?? "no colour"} as before it opened`;
           await page.keyboard.press("Escape");
         } else if (how === "Remove label") {
           await menu.locator('button[aria-label="Remove label"]').click();
@@ -6132,7 +6157,7 @@ for (const seq of toWalk) {
         const named = colours[how.split(" after a press")[0]];
         // A colour clicked in an empty field takes the folder's name.
         const text = after.words.trim() || (named ? folder : "");
-        let want = how === "Escape" ? was : how === "Remove label" || !text ? null : { text, colour: named ?? ringed };
+        let want = how === "Escape" || failing ? was : how === "Remove label" || !text ? null : { text, colour: named ?? ringed };
         // A shade taken with Return is a colour of the picker's own, which
         // is any but the one there was. Escape put back the one there was.
         const own = how === "a colour of its own, Return";
@@ -6150,13 +6175,24 @@ for (const seq of toWalk) {
         const alike = (a, b) => JSON.stringify(a) === JSON.stringify(b);
         if (wrong) {
           // Said already, while the menu was open.
-        } else if (!alike(kept, want)) wrong = `the Go side keeps ${says(kept)}, not ${says(want)}`;
+        } else if (failing && !(await toastSays(page)).includes("the disk is full"))
+          wrong = `the save the Go side refused says ${JSON.stringify(await toastSays(page))}, not why`;
+        else if (!alike(kept, want)) wrong = `the Go side keeps ${says(kept)}, not ${says(want)}`;
         else if (!alike(drawn.row, want)) wrong = `the row shows ${says(drawn.row)}, the Go side keeps ${says(kept)}`;
         else if (!alike(drawn.bar, want)) wrong = `the title bar shows ${says(drawn.bar)}, the Go side keeps ${says(kept)}`;
         else if (ep.name !== basename(source)) wrong = `the sidebar names the video ${ep.name}, not ${basename(source)}`;
         else if (!existsSync(source) || statSync(source).size !== size) wrong = `the video at ${source} is gone or changed`;
         else if (existsSync(join(workDir(source), "label.json")) !== !!want)
           wrong = `the work folder ${want ? "has no" : "still has a"} label.json`;
+        // The refusal is the answer here, so it is taken off the calls that
+        // failed before the rules read them, and the toast goes, so the
+        // next step finds the app as it was.
+        if (failing) {
+          await page.evaluate(() => {
+            for (const c of window.__calls) if (c.name === "SetLabel" && String(c.failed).includes("the disk is full")) c.failed = null;
+          });
+          await page.locator(".toast button.close").click();
+        }
         await watch.step("label", s);
         break;
       }

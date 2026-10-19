@@ -185,10 +185,19 @@ have.
 
 Everything saves at once: a colour when it is clicked, the words with
 Return, when the field is left or when the menu closes. The pill follows
-the words while they are typed, and Escape puts back what was there. The
-cross at the end of the field shows while it has words and removes the
-label, and so does Return on a field with no words. A label keeps at most
-40 characters on one line.
+the words while they are typed, and Escape puts back what was there. Escape
+in the colour well puts back the colour from before it opened, and on a
+video with no label that is no colour and no words, so a shade looked at
+there leaves no label behind. The cross at the end of the field shows
+while it has words and removes the label, and so does Return on a field
+with no words. A label keeps at most 40 characters on one line, an emoji
+counted as one. A video at the root of a drive, with no folder to name,
+has its file's name as the hint.
+
+A save the Go side refuses, a full disk or a work folder that cannot be
+written, says so in a toast, and the row and the title bar go back to the
+label the video still has. The pill shows only what is kept or still on
+its way.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it

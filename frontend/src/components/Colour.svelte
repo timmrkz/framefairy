@@ -30,6 +30,7 @@
     presets = [],
     oninput = undefined,
     onchange,
+    onnone = undefined,
     onsample = undefined,
     face = "field",
     on = false,
@@ -51,6 +52,10 @@
     oninput?: (hex: string | null) => void;
     // A colour picked, to be saved.
     onchange: (hex: string) => void;
+    // Escape put back no colour at all: the caller had none when the
+    // pop-up opened, a label not yet made above all, and what was picked
+    // since is to be taken back.
+    onnone?: () => void;
     // Where there is a video preview to take a colour from, the way to
     // ask it for one: over is told the colour under the pointer as it
     // moves, or nothing when it is off the picture, and done the colour
@@ -101,10 +106,13 @@
   // ring is left on the trigger, issue #370.
   let byPointer = false;
 
-  // The colour as it was when the pop-up opened. Return keeps the colour
-  // the pop-up holds and closes it, Escape puts this one back and closes
-  // it, the way Return and Escape answer a pop-up everywhere on the Mac.
-  let before = "";
+  // The colour as it was when the pop-up opened, or nothing when the
+  // caller had none. Return keeps the colour the pop-up holds and closes
+  // it, Escape puts this one back and closes it, the way Return and Escape
+  // answer a pop-up everywhere on the Mac. It is what the caller gave and
+  // not the white the square shows for no colour, or Escape on a label
+  // not yet made picked white and made one.
+  let before: string | null = null;
 
   function draw(next: HSV) {
     hsv = next;
@@ -234,7 +242,9 @@
   function putBack() {
     byPointer = true;
     typed = null;
-    if (before && readHex(value) !== before) pick(before);
+    const now = readHex(value);
+    if (before && now !== before) pick(before);
+    else if (!before && now) onnone?.();
   }
 </script>
 
@@ -243,7 +253,7 @@
   onOpenChange={(now) => {
     if (now) {
       byPointer = false;
-      before = hex;
+      before = readHex(value);
     } else leaveHex();
   }}
 >
@@ -279,7 +289,7 @@
         {#if shown}
           <div {...wrapperProps}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div {...props} class="colour-pop" aria-label={label} onkeydown={keepKeys}>
+            <div {...props} class="colour-pop panel" aria-label={label} onkeydown={keepKeys}>
               {#if presets.length}
                 <div class="presets" role="radiogroup" aria-label="Colours">
                   {#each presets as p, i (p.hex)}
@@ -444,21 +454,17 @@
     outline-offset: 3px;
   }
 
-  /* The pop-up lies over the workspace, so it wears the panel colour the
-     lists wear, with their border, corners and shadow. */
+  /* The pop-up lies over the workspace, so it is the panel the lists are,
+     .panel in app.css, with the larger corners of a pop-up that holds
+     controls rather than rows. */
   .colour-pop {
-    z-index: 60;
     display: flex;
     flex-direction: column;
     gap: 12px;
     width: 232px;
     box-sizing: border-box;
     padding: 12px;
-    color: var(--text);
-    background: var(--ink-1);
-    border: 1px solid var(--line);
     border-radius: var(--radius-m);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   }
 
   /* The colours offered first, round, the way the Mac shows a row of

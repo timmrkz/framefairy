@@ -35,9 +35,7 @@ var errLabelColour = errors.New("a label's colour is written #rrggbb")
 // spaces around it, at most LabelLength characters, and the colour in
 // small letters. A label with no words is no label, and says so with ok.
 func TidyLabel(l Label) (Label, bool) {
-	text := strings.Join(strings.FieldsFunc(l.Text, func(r rune) bool {
-		return unicode.IsSpace(r) || unicode.IsControl(r)
-	}), " ")
+	text := labelWords(l.Text)
 	if r := []rune(text); len(r) > LabelLength {
 		text = strings.TrimSpace(string(r[:LabelLength]))
 	}
@@ -46,6 +44,14 @@ func TidyLabel(l Label) (Label, bool) {
 		return Label{}, false
 	}
 	return Label{Text: text, Colour: colour}, true
+}
+
+// labelWords is the words of a label on one line, with what is not
+// written, spaces and control characters, only ever between two words.
+func labelWords(text string) string {
+	return strings.Join(strings.FieldsFunc(text, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}), " ")
 }
 
 // ReadLabel is the label of a video, or nil when it has none. A label
@@ -72,14 +78,16 @@ func ReadLabel(fsys afero.Fs, source string) *Label {
 }
 
 // WriteLabel gives a video its label. A label with no words takes the
-// label away. The colour has to be one, or nothing is written.
+// label away, and so does one of nothing but spaces and control
+// characters, which has none either. The colour has to be one, or nothing
+// is written.
 func WriteLabel(fsys afero.Fs, source string, l Label) (*Label, error) {
 	work := WorkDir(source)
 	path, err := SafeChildIn(fsys, work, labelFile)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(l.Text) == "" {
+	if labelWords(l.Text) == "" {
 		if err := fsys.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}

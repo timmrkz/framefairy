@@ -30,6 +30,20 @@ func TestLabelRoundTrip(t *testing.T) {
 	if got := Status(fsys, source, "").Label; got == nil || *got != want {
 		t.Fatalf("read back %+v, want %+v", got, want)
 	}
+	if _, err := WriteLabel(fsys, source, want); err != nil {
+		t.Fatal(err)
+	}
+	// Control characters are no words either, so they take the label
+	// away rather than being refused for the colour.
+	if l, err := WriteLabel(fsys, source, Label{Text: "\x00\t\x1b", Colour: "#0a64d6"}); err != nil || l != nil {
+		t.Fatalf("a label of control characters gave %+v, %v", l, err)
+	}
+	if got := Status(fsys, source, "").Label; got != nil {
+		t.Fatalf("the label taken away by control characters is still %+v", got)
+	}
+	if _, err := WriteLabel(fsys, source, want); err != nil {
+		t.Fatal(err)
+	}
 	if l, err := WriteLabel(fsys, source, Label{Text: " ", Colour: "#0a64d6"}); err != nil || l != nil {
 		t.Fatalf("a label with no words gave %+v, %v", l, err)
 	}

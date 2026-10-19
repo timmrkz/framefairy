@@ -671,6 +671,19 @@ input[type="password"] {
   background: var(--err);
 }
 
+/* What lies over the app for a moment, a list to pick from, a video's menu,
+   the colour picker: one panel, in the colour, border, corners and shadow
+   the lists wear, so the three are one thing and none drifts the day
+   another changes. Each keeps only its size and what is in it. */
+.panel {
+  z-index: 60;
+  color: var(--text);
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
 /* A video's label: its words in a pill of its own colour, the way Finder
    draws a tag. The colour is the accent colour picked for it, laid on the
    dark as a wash with a line round it and the words in a light shade of

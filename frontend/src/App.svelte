@@ -124,6 +124,17 @@
   // the old label back, because what is drawn is the draft until the
   // answer to saving it is in.
   let drafts = $state<Record<string, Label | null>>({});
+  // Which draft of a video is the latest, by number. A save lets go of the
+  // draft it drew only if no newer one came since. The draft itself cannot
+  // tell: a label put into the state comes back as a proxy of itself, so
+  // it is never the label it was, and the row kept drawing a label the Go
+  // side did not have, after a save that failed above all.
+  const made: Record<string, number> = {};
+  function draft(source: string, label: Label | null): number {
+    drafts[source] = label;
+    made[source] = (made[source] ?? 0) + 1;
+    return made[source];
+  }
   const labelOf = (ep: EpisodeStatus): Label | null =>
     ep.source in drafts ? drafts[ep.source] : (ep.label ?? null);
   // The rows of the sidebar, which a video's menu hangs under.
@@ -138,7 +149,7 @@
   const queued: Record<string, Promise<void>> = {};
 
   function saveLabel(ep: EpisodeStatus, label: Label | null) {
-    drafts[ep.source] = label;
+    const mine = draft(ep.source, label);
     saving[ep.source] = (saving[ep.source] ?? 0) + 1;
     const save = async () => {
       try {
@@ -151,7 +162,9 @@
         delete saving[ep.source];
         delete queued[ep.source];
       }
-      if (drafts[ep.source] === label) delete drafts[ep.source];
+      // Kept or not, the row now draws what the Go side keeps, unless a
+      // newer draft is on screen.
+      if (made[ep.source] === mine) delete drafts[ep.source];
     };
     queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
   }
@@ -713,7 +726,8 @@
                 hold(isOpen);
                 if (!isOpen) settle(ep.source);
               }}
-              ondraft={(l) => (drafts[ep.source] = l)}
+              drawn={label}
+              ondraft={(l) => draft(ep.source, l)}
               onsave={(l) => saveLabel(ep, l)}
               onreveal={() => api.reveal(ep.source)}
               onremove={() => (removing = ep)}

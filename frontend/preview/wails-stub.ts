@@ -1178,7 +1178,7 @@ const Answers = {
       // work folder. A probe reads what was saved on window.__labels.
       case "SetLabel": {
         const [path, text, colour] = args as [string, string, string];
-        const words = text.trim().replace(/\s+/g, " ").slice(0, 40);
+        const words = [...text.trim().replace(/\s+/g, " ")].slice(0, 40).join("");
         const labels = ((window as any).__labels ??= {});
         if (!words) {
           delete labels[path];
