@@ -158,6 +158,16 @@
 //                      gone
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
+//   ["label", [words, how]]
+//                      opens the three dots of the video on screen in the
+//                      sidebar, types the words in its label and leaves
+//                      the menu by how: a colour's name clicks that colour
+//                      and then Escape closes the menu, "Return" presses
+//                      Return, "Escape" puts back what was there. The menu
+//                      has to hang inside the sidebar and keep it open,
+//                      the label the Go side keeps has to be the one the
+//                      row and the title bar show, and the video has to
+//                      keep its name and its bytes
 //   ["add", seconds]   adds a new video of so many seconds with Add
 //   ["add", seconds, rate]
 //                      adds one filmed at a frame rate, "30000/1001" for
@@ -961,10 +971,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
+
+// The video's work folder, see WorkDir in engine/run.go.
+const workDir = (source) => join(dirname(source), basename(source, extname(source)) + ".framefairy");
 
 export const sequences = [
   {
@@ -2101,6 +2114,19 @@ export const sequences = [
       ["remove picture", [2, "key"]],
       ["removed goes"],
       ["pictures", 2],
+    ],
+  },
+  {
+    // Tim's videos are each youtube.mp4 in a folder of their own, and the
+    // sidebar showed the same name for all of them. A label, words and a
+    // colour from the three dots of a row, tells them apart, and the video
+    // keeps its name.
+    name: "a label tells a video apart and the video keeps its name",
+    steps: [
+      ["label", ["Ben", "Blue"]],
+      ["label", ["Ben, Kindergarten", "Return"]],
+      ["label", ["Anna", "Escape"]],
+      ["label", ["", "Return"]],
     ],
   },
   {
@@ -5782,6 +5808,71 @@ for (const seq of toWalk) {
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
+        break;
+      }
+      case "label": {
+        const [words, how] = arg;
+        const colours = { Purple: "#942192", Blue: "#0a64d6", Pink: "#c2307a", Red: "#d0342c", Green: "#38923f" };
+        const source = await episodeOn(page);
+        const was = (await ask(page, "Library")).find((e) => e.source === source)?.label ?? null;
+        const size = statSync(source).size;
+        const row = page.locator("aside li:has(button.episode.current)");
+        await page.mouse.move(20, 500);
+        await sidebarStill(page);
+        await row.hover();
+        await row.locator("button.more").click();
+        const menu = page.locator(".video-menu");
+        await menu.waitFor();
+        // The menu hangs inside the sidebar, so it reaches no further over
+        // the workspace than the sidebar does, and the sidebar stays open
+        // while the pointer is on the menu.
+        const reach = await page.evaluate(() => {
+          const m = document.querySelector(".video-menu").getBoundingClientRect();
+          const a = document.querySelector("aside").getBoundingClientRect();
+          return { m: [m.left, m.right], a: [a.left, a.right], focused: document.activeElement?.getAttribute("aria-label") };
+        });
+        if (reach.m[0] < reach.a[0] || reach.m[1] > reach.a[1])
+          wrong = `the menu reaches ${reach.m.join(" to ")}, out of the sidebar at ${reach.a.join(" to ")}`;
+        else if (reach.focused !== "Label") wrong = `the menu opened with the focus on ${reach.focused ?? "nothing"}, not on the label`;
+        await menu.locator('input[aria-label="Label"]').fill(words);
+        await menu.hover();
+        if (!wrong && !(await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
+          wrong = "the sidebar closed under the menu";
+        // The pill follows the words while they are typed.
+        const typed = await page.evaluate(() => document.querySelector("aside li:has(button.episode.current) .tag")?.textContent ?? "");
+        if (!wrong && words.trim() && typed !== words.trim())
+          wrong = `while typing, the pill says ${JSON.stringify(typed)}, not ${JSON.stringify(words)}`;
+        if (how === "Return" || how === "Escape") await page.keyboard.press(how === "Return" ? "Enter" : how);
+        else {
+          await menu.locator(`button[aria-label="${how}"]`).click();
+          await page.keyboard.press("Escape");
+        }
+        await menu.waitFor({ state: "detached" });
+        await page.mouse.move(750, 400);
+        await sidebarStill(page);
+        await settle(page);
+        const want = how === "Escape" ? was : words.trim() ? { text: words.trim(), colour: colours[how] ?? was?.colour } : null;
+        const ep = (await ask(page, "Library")).find((e) => e.source === source);
+        const kept = ep?.label ?? null;
+        const drawn = await page.evaluate(() => {
+          const pill = (el) => (el ? { text: el.textContent, colour: el.style.getPropertyValue("--tag") } : null);
+          return {
+            row: pill(document.querySelector("aside li:has(button.episode.current) .tag")),
+            bar: pill(document.querySelector("header.bar .tag")),
+          };
+        });
+        const says = (l) => (l ? `${l.text} in ${l.colour}` : "no label");
+        const alike = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        if (wrong) {
+          // Said already, while the menu was open.
+        } else if (!alike(kept, want)) wrong = `the Go side keeps ${says(kept)}, not ${says(want)}`;
+        else if (!alike(drawn.row, want)) wrong = `the row shows ${says(drawn.row)}, the Go side keeps ${says(kept)}`;
+        else if (!alike(drawn.bar, want)) wrong = `the title bar shows ${says(drawn.bar)}, the Go side keeps ${says(kept)}`;
+        else if (ep.name !== basename(source)) wrong = `the sidebar names the video ${ep.name}, not ${basename(source)}`;
+        else if (!existsSync(source) || statSync(source).size !== size) wrong = `the video at ${source} is gone or changed`;
+        else if (existsSync(join(workDir(source), "label.json")) !== !!want)
+          wrong = `the work folder ${want ? "has no" : "still has a"} label.json`;
+        await watch.step("label", s);
         break;
       }
       case "drop":
