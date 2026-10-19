@@ -599,7 +599,13 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 			break
 		}
 		at, ok := toFloat(item)
-		if !ok || !isFinite(at) || !insidePieces(segments, at) {
+		if !ok || !isFinite(at) {
+			continue
+		}
+		// Kept to the millisecond, and judged as kept: 0.9996 in a piece
+		// that ends at 1 is 1, which is past it.
+		at = roundTo(at, 3)
+		if !insidePieces(segments, at) {
 			continue
 		}
 		key := int64(math.Round(at * 1000))
@@ -607,7 +613,7 @@ func readThumbnails(raw any, segments []Segment) []float64 {
 			continue
 		}
 		seen[key] = true
-		out = append(out, roundTo(at, 3))
+		out = append(out, at)
 	}
 	sort.Float64s(out)
 	if len(out) > MaxThumbnails {
