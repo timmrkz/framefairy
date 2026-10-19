@@ -128,14 +128,6 @@
   });
   const carried = $derived(ghosts.length === 0 ? carry : null);
 
-  // The cards of clips made by hand that stopped and were removed, by
-  // key. Each keeps its place and offers itself back while its time runs
-  // down, and only then is the work forgotten, so the click is undone as
-  // easily as it was made, issue #257. The card goes once the Go side
-  // says the work is called off. Leaving the video before the time is up
-  // leaves the work as it was.
-  let puttingAway = $state<Record<string, true>>({});
-
   // The places a running search's clips take. A search asks for a number
   // of clips, and that many rows stand from the start: the first says
   // what the search is doing, the others wait. Each clip it names comes
@@ -369,11 +361,11 @@
           <span class="meta muted num">{emptied.left}</span>
         {/if}
       {:else if a}
-        {#if a.stopped && a.key in puttingAway}
-          <Removed
-            onputback={() => delete puttingAway[a.key]}
-            onend={() => a.onremove?.()}
-          />
+        {#if a.stopped && a.away}
+          <!-- A clip made by hand that stopped, being removed. Its time
+               is the episode's, see Episode, so the range picker drops its
+               mark at once and leaving the video takes nothing with it. -->
+          <Removed spent={a.away.spent} onputback={a.away.onputback} onend={a.away.onend} onresume={a.away.onresume} />
         {:else if a.stopped}
           <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>
             <span class="title">{a.what}</span>
@@ -384,7 +376,7 @@
               class="drop quiet danger"
               title="Remove this clip, so it is not made"
               aria-label="Remove the clip that stopped at {clock(a.start)}"
-              onclick={() => (puttingAway[a.key] = true)}
+              onclick={() => a.onremove?.()}
             >
               <Icon name="trash" />
             </button>

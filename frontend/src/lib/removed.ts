@@ -44,21 +44,27 @@ export function spent(r: Removed, now = Date.now()): number {
 // another episode is open, the way a removed clip's does, so coming back
 // does not say it again from the start. By the search's job: the moment
 // its row closes, in milliseconds since the epoch, and 0 once it has.
+//
+// A clip made by hand that stopped and was removed keeps its time the same
+// way, by the job that made it, under what "put away": the moment its time
+// runs out, and 0 once it has and the work is called off, see Episode.
 export type Told = Record<string, number>;
 
 const toldAside = new Map<string, Told>();
 
-// The rows an episode leaves the screen with.
-export function setAsideTold(path: string, told: Told) {
-  if (Object.keys(told).length > 0) toldAside.set(path, told);
-  else toldAside.delete(path);
+// The rows an episode leaves the screen with, of the kind what names.
+export function setAsideTold(path: string, told: Told, what = "") {
+  const key = `${what}\n${path}`;
+  if (Object.keys(told).length > 0) toldAside.set(key, told);
+  else toldAside.delete(key);
 }
 
 // The rows an episode comes back to. Those whose time ran out while it was
-// away are closed, so they do not flash up and close again.
-export function takeUpTold(path: string, now = Date.now()): Told {
-  const kept = toldAside.get(path) ?? {};
-  toldAside.delete(path);
+// away are 0, so they do not flash up and close again.
+export function takeUpTold(path: string, now = Date.now(), what = ""): Told {
+  const key = `${what}\n${path}`;
+  const kept = toldAside.get(key) ?? {};
+  toldAside.delete(key);
   return Object.fromEntries(Object.entries(kept).map(([job, until]) => [job, until > now ? until : 0]));
 }
 

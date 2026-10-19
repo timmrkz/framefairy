@@ -823,7 +823,8 @@
 //                      says Stopped with Continue in its card
 //   ["remove stopped", how]
 //                      the bin on that card is clicked, and it says
-//                      Removed with Put it back. With "put back" that is
+//                      Removed with Put it back, and its mark leaves the
+//                      range picker at once. With "put back" that is
 //                      clicked, and the card says Stopped again and the
 //                      work stays. With "for good" the time runs down, the
 //                      card goes and the Go side calls the work off
@@ -4189,6 +4190,9 @@ for (const seq of toWalk) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
+  // How long a removed thing can be put back, in seconds, secondThoughts
+  // in lib/removed.ts.
+  const removeTime = 10;
   // The job of the clip made by hand that "hand stopped" stopped.
   let handJob = "";
   // The video whose folder a walk deleted from outside the app.
@@ -7444,9 +7448,15 @@ for (const seq of toWalk) {
         // Below the app's least width, 960, too: the line a link leaves
         // with its key IDs is long enough to wrap at any width, and the
         // refusal the bridge can give wraps only there.
+        // The page has its new width, and two frames have been drawn
+        // since, so what is measured is laid out at it.
+        const resized = async (width) => {
+          await page.waitForFunction((w) => window.innerWidth === w, width);
+          await nextPaint(page, 2);
+        };
         for (const width of [1728, 1200, 960, 800, 700, 600]) {
           await page.setViewportSize({ width, height: was.height });
-          await page.waitForTimeout(150);
+          await resized(width);
           const m = await page.evaluate(() => {
             const line = document.querySelector(".licence-line");
             const field = line?.closest(".item");
@@ -7468,7 +7478,7 @@ for (const seq of toWalk) {
           }
         }
         await page.setViewportSize(was);
-        await page.waitForTimeout(150);
+        await resized(was.width);
         if (arg === "refused" && lines.size < 2) problems.push(`the refusal stood on ${[...lines].join(", ")} lines at every width, so a wrapped line was never measured`);
         if (problems.length) wrong = problems.join("\n");
         break;
@@ -8936,25 +8946,25 @@ for (const seq of toWalk) {
       }
       case "hand stopped": {
         const path = await episodeOn(page);
-        const before = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").map((j) => j.id);
+        const before = await page.evaluate(() => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key));
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("i");
-        let job = null;
-        for (let t = 0; t < 10000 && !job; t += 250) {
-          await page.waitForTimeout(250);
-          job = (await ask(page, "Jobs")).find((j) => j.kind === "clip" && j.episode === path && !before.includes(j.id));
-        }
-        if (!job) {
-          wrong = "I made no clip on a part not heard yet";
+        // The card the clip made by hand comes in, and the job it is on
+        // the way from, read off its key.
+        const key = await page
+          .waitForFunction(
+            (was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)),
+            before,
+            { timeout: 10000 },
+          )
+          .then((h) => h.jsonValue(), () => null);
+        const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
+        if (!job || job.kind !== "clip" || job.episode !== path) {
+          wrong = key ? `the card that came, ${key}, is not of a clip made by hand` : "I made no clip on a part not heard yet";
           break;
         }
         handJob = job.id;
         const card = page.locator(`li[data-key^="${handJob}/"]`);
-        const came = await card.first().waitFor({ timeout: 10000 }).then(() => true, () => false);
-        if (!came) {
-          wrong = "the clip made by hand has no card";
-          break;
-        }
         const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
         const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
         if (!busy) {
@@ -8980,6 +8990,16 @@ for (const seq of toWalk) {
           wrong = "the card that stopped has no bin to remove it with";
           break;
         }
+        // The time a remove runs is run on by hand, so nothing waits on
+        // the clock: everything else goes on in step with it.
+        if (!page.__clock) {
+          await page.clock.install();
+          page.__clock = true;
+        }
+        // The marks of clips on their way on the range picker, the card's
+        // among them.
+        const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
+        const marked = await waiting();
         await card.locator("button.drop").click();
         const removed = await card
           .locator(".gone", { hasText: "Removed" })
@@ -8987,6 +9007,12 @@ for (const seq of toWalk) {
           .then(() => true, () => false);
         if (!removed) {
           wrong = "the bin on the card that stopped did not say Removed in its place";
+          break;
+        }
+        // The range picker says what the card says, in the same frame.
+        const left = await waiting();
+        if (left !== marked - 1) {
+          wrong = `the card says Removed and the range picker still has ${left} marks of clips on their way, of ${marked}`;
           break;
         }
         if (arg === "put back") {
@@ -8998,17 +9024,21 @@ for (const seq of toWalk) {
             })
             .then(() => true, () => false);
           // Past the time a remove runs, so a put back that only hid it
-          // would have called the work off by now.
-          await page.waitForTimeout(11000);
+          // would have called the work off by now, and what that set
+          // going has come back.
+          await page.clock.runFor((removeTime + 1) * 1000);
+          await settle(page);
           const state = await stateOf();
           if (!back) wrong = "Put it back did not bring back the card that said Stopped";
+          else if ((await waiting()) !== marked) wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
           else if (state !== "interrupted") wrong = `put back, the work of the clip is ${state}, not interrupted`;
         } else {
           // The time stands still under the hand, see Busy, so the hand
-          // goes off the list.
+          // goes off the list, and then it runs out.
           await page.mouse.move(5, 5);
+          await page.clock.runFor((removeTime + 1) * 1000);
           const gone = await page
-            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 15000 })
+            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 10000 })
             .then(() => true, () => false);
           const state = await stateOf();
           if (!gone) wrong = "the card that stopped is still in the list after its time ran down";

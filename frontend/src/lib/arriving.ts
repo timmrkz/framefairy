@@ -41,19 +41,36 @@ export type Arriving = {
   // Removes a clip made by hand that stopped, so it is not made, issue
   // #257. A search's clips have none: a new search takes their place.
   onremove?: () => void;
+  // The removal under way: the card says Removed and offers the clip back
+  // while its time runs down, see Removed.
+  away?: Away;
+};
+
+// A card being removed: how much of its time it has used, in seconds, and
+// what putting it back, its time running out and its time running on
+// again after a pause do.
+export type Away = { spent: number; onputback: () => void; onend: () => void; onresume: (left: number) => void };
+
+// What the episode does with a clip made by hand that stopped: remove it,
+// say how its removal stands, and why the work could not be called off,
+// said on the card, which is Stopped again.
+export type Hand = {
+  remove: (job: Job) => void;
+  away: (job: Job) => Away | undefined;
+  refused: (job: Job) => string | undefined;
 };
 
 // arriving is every clip the jobs of an episode have on the way. A job
 // that runs shows its clips at work. One that was cut off or failed shows
 // the clip it was making where it would have appeared, until it is
-// carried on or a new search takes its place, or, made by hand, removed
-// with putAway. stopping is the jobs told to stop that have not said so
-// yet, which keep their fill and stop moving.
+// carried on or a new search takes its place, or, made by hand, removed,
+// see Hand. stopping is the jobs told to stop that have not said so yet,
+// which keep their fill and stop moving.
 export function arriving(
   jobs: Job[],
   stopping: (job: Job) => boolean,
   carryOn: (job: Job) => void,
-  putAway?: (job: Job) => void,
+  hand?: Hand,
 ): Arriving[] {
   const out: Arriving[] = [];
   for (const job of jobs) {
@@ -64,6 +81,8 @@ export function arriving(
       const key = `${job.id}/${clip.n}`;
       if (stopped) {
         const failed = job.state === "failed";
+        const byHand = job.kind === "clip" && hand ? hand : undefined;
+        const refused = byHand?.refused(job);
         out.push({
           key,
           job: job.id,
@@ -77,12 +96,13 @@ export function arriving(
             : job.step === "stopped"
               ? "Stopped. Click Continue"
               : "Interrupted. Click Continue",
-          left: failed && job.error ? job.error : clock(clip.start),
+          left: refused ?? (failed && job.error ? job.error : clock(clip.start)),
           fraction: -1,
           stopped: true,
-          full: failed ? job.error : undefined,
+          full: refused ?? (failed ? job.error : undefined),
           oncontinue: () => carryOn(job),
-          onremove: job.kind === "clip" && putAway ? () => putAway(job) : undefined,
+          onremove: byHand ? () => byHand.remove(job) : undefined,
+          away: byHand?.away(job),
         });
         continue;
       }

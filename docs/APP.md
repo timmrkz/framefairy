@@ -2082,8 +2082,13 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     Its trash can, there while the pointer is on the card, removes it:
     the card says Removed with Put it back for ten seconds, the way a
     removed clip's row does, and only then is the work called off and its
-    record forgotten, so the clip is never made. Issue #257. A search's
-    cards have no trash can, because a new search takes their place.
+    record forgotten, so the clip is never made. Its mark leaves the
+    range picker at once. The ten seconds are the video's, as a removed
+    clip's are: they run on while another video is open, and work whose
+    time ran out while it was away is called off on coming back. If the
+    work cannot be called off, the card says Stopped again and says why.
+    Issue #257. A search's cards have no trash can, because a new search
+    takes their place.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a
