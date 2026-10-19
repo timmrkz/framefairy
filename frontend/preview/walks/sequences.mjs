@@ -307,7 +307,10 @@
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
-//                      and "escape" Escape, and "ends" presses nothing
+//                      and "escape" Escape, "escape, then enter" presses
+//                      Escape and Enter right after it, while what was
+//                      said is still being written down, and "ends"
+//                      presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
 //                      It hears two notes going up once the microphone is
@@ -1922,6 +1925,57 @@ export const sequences = [
       ["dictate", "hearing"],
       ["dictate", "enter"],
       ["report reads", "ItZ * Y * froze."],
+    ],
+  },
+  {
+    // Issue #373. Tim ended a dictation and pressed Enter at once for a
+    // new line, while what he said was still being written down. The
+    // words were written in and the cursor put back in front of his new
+    // line, so what he typed next went before it. The cursor stays where
+    // he put it.
+    name: "A new line typed while what was said is written down stays where it was typed",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "escape, then enter"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\nNext"],
+    ],
+  },
+  {
+    // Issue #373. Shift+Enter while dictating put the new line after the
+    // words, and what was said next still went on the line above the
+    // cursor. The new line is typed at the end of what was said, like a
+    // letter, and what is said next goes on the new line.
+    name: "Shift+Enter while dictating starts a new line for what is said next",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["press", "Shift+Enter"],
+      ["caret at words"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "escape"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\n*Next"],
+    ],
+  },
+  {
+    // Issue #373. Tim felt the cursor was not always pushed along by
+    // what he said. After typing at the end of what was said, it stayed
+    // behind and the words heard next ran on to the right of it. It is
+    // pushed along again as soon as more is heard.
+    name: "After typing at the end of a dictation, what is said next pushes the cursor along",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "enter"],
     ],
   },
   {
@@ -6812,6 +6866,7 @@ for (const seq of toWalk) {
         } else {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
+          if (arg === "escape, then enter") await page.keyboard.press("Enter");
         }
         await page.waitForFunction(() => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate", null, {
           timeout: 20000,

@@ -242,6 +242,25 @@
     return [before.toString(), after.toString()];
   }
 
+  // count says how many letters of the field come before a place in it,
+  // and point finds the place so many letters in. The cursor is kept by
+  // these while the field's pieces are put together again, which moves
+  // every place held by a node.
+  function count(node: Node, offset: number): number {
+    const r = document.createRange();
+    r.selectNodeContents(field);
+    r.setEnd(node, offset);
+    return r.toString().length;
+  }
+  function point(n: number): [Node, number] {
+    const walk = document.createTreeWalker(field, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode() as Text | null; t; t = walk.nextNode() as Text | null) {
+      if (n <= t.length) return [t, n];
+      n -= t.length;
+    }
+    return [field, field.childNodes.length];
+  }
+
   // begin puts what will be said where the cursor is, or at the end of
   // the text, and the cursor after it.
   function begin(from?: Range) {
@@ -311,10 +330,29 @@
     return at.toString();
   }
 
+  // push keeps the cursor after the words being said when it is at their
+  // end, so what is said pushes it along, the way it does before anything
+  // is typed. Typed at the end of what was said, the cursor was left in
+  // front of the words heard next, and the next letters went in before
+  // them, issue #373.
+  function push() {
+    const sel = getSelection();
+    if (!said || !mark || !sel?.rangeCount || !sel.isCollapsed || !said.contains(sel.anchorNode)) return;
+    const gap = document.createRange();
+    gap.setStart(sel.anchorNode!, sel.anchorOffset);
+    gap.setEndBefore(mark);
+    if (gap.toString()) return;
+    const after = document.createRange();
+    after.setStartAfter(said);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  }
+
   // add puts a settled piece in at the end of what has been said.
   function add(piece: string) {
     if (!said || !mark || !field.contains(said)) begin();
     if (!said || !mark) return;
+    push();
     const before = settled();
     const text = (before.trim() && !/\s$/.test(before) ? " " : "") + piece;
     const last = mark.previousSibling;
@@ -328,6 +366,7 @@
     if ((!said || !mark || !field.contains(said)) && now) begin();
     if (!said || !mark) return;
     const rest = space(now);
+    if (now.trim()) push();
     // At the end of the report, down to its padding. Tim talked past the
     // field's last line and could not see what was written down. Not
     // while the person has scrolled away to read: then the field stays
@@ -345,8 +384,8 @@
   // settled before it and what follows it, and gives what follows.
   function space(now: string): string {
     const rest = around(said!)[1];
-    const before = settled().trim();
-    const text = (now && before ? " " : "") + now + (/^\S/.test(rest) && (now || before) ? " " : "");
+    const before = settled();
+    const text = (now && /\S$/.test(before) ? " " : "") + now + (/^\S/.test(rest) && (now || before.trim()) ? " " : "");
     if (mark!.textContent !== text) mark!.textContent = text;
     return rest;
   }
@@ -387,6 +426,7 @@
     let data: string;
     if (e.inputType === "insertText") data = e.data ?? "";
     else if (e.inputType === "insertFromPaste") data = e.dataTransfer?.getData("text/plain") ?? "";
+    else if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") data = "\n";
     else if (e.inputType === "deleteContentBackward" && (settled() + mark.textContent).trim()) data = "";
     else return;
     e.preventDefault();
@@ -401,7 +441,23 @@
     if (last?.nodeType === Node.TEXT_NODE) end.setStart(last, (last as Text).length);
     sel.removeAllRanges();
     sel.addRange(end);
-    if (data) document.execCommand("insertText", false, data);
+    // A new line the way the browser makes one: as text, a new line was
+    // a block of its own that split what was said in two.
+    if (data === "\n") {
+      document.execCommand("insertLineBreak");
+      // The browser ends a line break at the end of a block with a second
+      // one, to give the new line a height. Here the mark ends the line
+      // and gives it one, and the cursor is drawn by it, so what is said
+      // next goes on the new line and not one further down.
+      const last = mark.previousSibling;
+      if (last?.nodeType === Node.TEXT_NODE && settled().length === before.length + 2 && settled().endsWith("\n\n")) {
+        (last as Text).deleteData((last as Text).length - 1, 1);
+      }
+      const after = document.createRange();
+      after.setStartAfter(said);
+      sel.removeAllRanges();
+      sel.addRange(after);
+    } else if (data) document.execCommand("insertText", false, data);
     else if (before) document.execCommand("delete");
   }
 
@@ -449,6 +505,11 @@
   // step Cmd+Z takes back, and the cursor after it.
   // What was typed at the end of what was said is part of it, see
   // follow.
+  // The cursor stays where the person has it. What is typed or clicked
+  // while the last words are written down lands after them or before them,
+  // and is not moved: Tim ended a dictation and pressed Enter at once for
+  // a new line, and the cursor was put back in front of it, so what he
+  // typed next went before the new line, issue #373.
   function finish(kept: boolean) {
     const was = said && field.contains(said) ? said : null;
     mark?.remove();
@@ -458,11 +519,17 @@
     const at = document.createRange();
     at.setStartBefore(was);
     at.setEndAfter(was);
-    const text = was.textContent!.trim();
+    const whole = was.textContent!;
+    // Only the spaces around it, not a new line typed at its end.
+    const text = whole.replace(/^ +| +$/g, "");
+    const cut = whole.length - whole.trimStart().length;
     const [before, after] = around(was);
+    const sel = getSelection();
+    const had = sel?.rangeCount && field.contains(sel.anchorNode) ? [count(sel.anchorNode!, sel.anchorOffset), count(sel.focusNode!, sel.focusOffset)] : null;
     was.remove();
+    let words = "";
     if (kept && text) {
-      const words = (/\S$/.test(before) ? " " : "") + text + (/^\S/.test(after) ? " " : "");
+      words = (/\S$/.test(before) && /^\S/.test(text) ? " " : "") + text + (/\S$/.test(text) && /^\S/.test(after) ? " " : "");
       field.focus({ preventScroll: true });
       getSelection()?.removeAllRanges();
       getSelection()?.addRange(at);
@@ -470,6 +537,20 @@
         at.deleteContents();
         at.insertNode(document.createTextNode(words));
       }
+    }
+    // Where the cursor was, counted in the text, moved by what the words
+    // became: before them it stays, after them it moves with the text
+    // after them, and in them it keeps its place among their letters.
+    if (had) {
+      const lead = words.length - words.trimStart().length;
+      const moved = (n: number) =>
+        n <= before.length
+          ? n
+          : n >= before.length + whole.length
+            ? n - whole.length + words.length
+            : before.length + Math.min(lead + Math.max(n - before.length - cut, 0), words.length);
+      const [a, b] = [point(moved(had[0])), point(moved(had[1]))];
+      getSelection()?.setBaseAndExtent(a[0], a[1], b[0], b[1]);
     }
     // The field stays as dictating left it, with the end of the report in
     // view, down to its padding, when what was said ends it, however the
