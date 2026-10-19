@@ -2077,8 +2077,13 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     Continue carries all of it on.
   - **It searched nothing**: it counts as no search of any part. It goes
     the way every clip goes, with its trash can.
-  - **Cut off by the app closing, or failed**, its card stays where the
-    clip would have appeared, still, and a click carries it on.
+  - **Cut off by the app closing, stopped or failed**, its card stays
+    where the clip would have appeared, still, and a click carries it on.
+    Its trash can, there while the pointer is on the card, removes it:
+    the card says Removed with Put it back for ten seconds, the way a
+    removed clip's row does, and only then is the work called off and its
+    record forgotten, so the clip is never made. Issue #257. A search's
+    cards have no trash can, because a new search takes their place.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a

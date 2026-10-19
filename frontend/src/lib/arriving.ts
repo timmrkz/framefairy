@@ -38,17 +38,22 @@ export type Arriving = {
   stopped?: boolean;
   full?: string;
   oncontinue?: () => void;
+  // Removes a clip made by hand that stopped, so it is not made, issue
+  // #257. A search's clips have none: a new search takes their place.
+  onremove?: () => void;
 };
 
 // arriving is every clip the jobs of an episode have on the way. A job
 // that runs shows its clips at work. One that was cut off or failed shows
 // the clip it was making where it would have appeared, until it is
-// carried on or a new search takes its place. stopping is the jobs told to stop
-// that have not said so yet, which keep their fill and stop moving.
+// carried on or a new search takes its place, or, made by hand, removed
+// with putAway. stopping is the jobs told to stop that have not said so
+// yet, which keep their fill and stop moving.
 export function arriving(
   jobs: Job[],
   stopping: (job: Job) => boolean,
   carryOn: (job: Job) => void,
+  putAway?: (job: Job) => void,
 ): Arriving[] {
   const out: Arriving[] = [];
   for (const job of jobs) {
@@ -77,6 +82,7 @@ export function arriving(
           stopped: true,
           full: failed ? job.error : undefined,
           oncontinue: () => carryOn(job),
+          onremove: job.kind === "clip" && putAway ? () => putAway(job) : undefined,
         });
         continue;
       }

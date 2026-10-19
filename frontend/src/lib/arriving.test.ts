@@ -77,6 +77,19 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     expect(carried).toBe("c");
   });
 
+  test("a clip made by hand that stopped can be removed, a search's cannot", () => {
+    let removed = "";
+    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const search = job({ id: "s", state: "failed", underway: [{ n: 2, start: 100, end: 120, step: "failed" }] });
+    const rows = arriving([hand, search], never, nothing, (j) => (removed = j.id));
+    expect(rows.map((r) => [r.key, !!r.onremove])).toEqual([
+      ["h/1", true],
+      ["s/2", false],
+    ]);
+    rows[0].onremove?.();
+    expect(removed).toBe("h");
+  });
+
   test("done, called off and job without clips on the way have none", () => {
     expect(arriving([job({ state: "done", underway: [{ n: 1, start: 1, end: 2, step: "framing" }] })], never, nothing)).toEqual([]);
     expect(arriving([job({ state: "cancelled" })], never, nothing)).toEqual([]);

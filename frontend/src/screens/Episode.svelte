@@ -701,6 +701,9 @@
       jobs.forEpisode(path),
       () => stopping,
       (job) => void api.continueJob(job.id, "").then((j) => jobs.apply(j)),
+      // A clip made by hand that stopped is removed once its row has run
+      // down, and the Go side forgets its record, see cancelSteps.
+      (job) => api.cancelJob(job.id),
     ),
   );
   // Everything that puts the clip list on screen takes a ticket: a read of

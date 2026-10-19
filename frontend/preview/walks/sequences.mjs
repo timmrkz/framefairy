@@ -818,6 +818,16 @@
 //                      "refused" a key that is none is typed and Unlock
 //                      refuses it, and the line that says why wraps to
 //                      more lines at one width than at another
+//   ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
+//                      the head of the clip list, so the clip made by hand
+//                      says Stopped with Continue in its card
+//   ["remove stopped", how]
+//                      the bin on that card is clicked, and it says
+//                      Removed with Put it back. With "put back" that is
+//                      clicked, and the card says Stopped again and the
+//                      work stays. With "for good" the time runs down, the
+//                      card goes and the Go side calls the work off
+//   ["no hand card"]   no card of a clip made by hand is in the list
 //   ["channel", name]  the Updates page's list says this, in ten seconds
 //                      at most
 //   ["choices", names, picked]
@@ -2914,6 +2924,21 @@ export const sequences = [
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
   },
   {
+    // Issue #257: a clip made by hand whose work stopped could only be
+    // carried on, never removed, since Cancel on the Activity page went.
+    name: "a clip made by hand that stopped can be removed, and put back first",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["hand stopped"],
+      ["remove stopped", "put back"],
+      ["remove stopped", "for good"],
+      ["speech", 0],
+      ["restart"],
+      ["no hand card"],
+    ],
+  },
+  {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
     // and its pictures from the folder. The clip lost its green dot and its
     // green mark, as if it had never been rendered.
@@ -4164,6 +4189,8 @@ for (const seq of toWalk) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
+  // The job of the clip made by hand that "hand stopped" stopped.
+  let handJob = "";
   // The video whose folder a walk deleted from outside the app.
   let folderGone = "";
   // Whether the walk deleted that video too.
@@ -8900,6 +8927,96 @@ for (const seq of toWalk) {
         const short = await shortOf(page, on);
         if (!short || !existsSync(short)) wrong = "the clip has no short in its folder";
         else if (basename(short) !== `${entry?.slug}.mp4`) wrong = `the short is called ${basename(short)}, not ${entry?.slug}.mp4`;
+        break;
+      }
+      case "hand stopped": {
+        const path = await episodeOn(page);
+        const before = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").map((j) => j.id);
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        let job = null;
+        for (let t = 0; t < 10000 && !job; t += 250) {
+          await page.waitForTimeout(250);
+          job = (await ask(page, "Jobs")).find((j) => j.kind === "clip" && j.episode === path && !before.includes(j.id));
+        }
+        if (!job) {
+          wrong = "I made no clip on a part not heard yet";
+          break;
+        }
+        handJob = job.id;
+        const card = page.locator(`li[data-key^="${handJob}/"]`);
+        const came = await card.first().waitFor({ timeout: 10000 }).then(() => true, () => false);
+        if (!came) {
+          wrong = "the clip made by hand has no card";
+          break;
+        }
+        const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
+        const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
+        if (!busy) {
+          wrong = `the head of the clip list says ${(await clipList(page))?.head}, not Cancel`;
+          break;
+        }
+        await cancel.click();
+        const said = await page
+          .waitForFunction((k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob, {
+            timeout: 20000,
+          })
+          .then(() => true, () => false);
+        if (!said) wrong = `the clip made by hand says "${(await card.first().textContent())?.replace(/\s+/g, " ").trim()}", not Stopped. Click Continue`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "remove stopped": {
+        const card = page.locator(`li[data-key^="${handJob}/"]`).first();
+        const key = await card.getAttribute("data-key");
+        const stateOf = async () => (await ask(page, "Jobs")).find((j) => j.id === handJob)?.state;
+        await card.hover();
+        if (!(await card.locator("button.drop").count())) {
+          wrong = "the card that stopped has no bin to remove it with";
+          break;
+        }
+        await card.locator("button.drop").click();
+        const removed = await card
+          .locator(".gone", { hasText: "Removed" })
+          .waitFor({ timeout: 2000 })
+          .then(() => true, () => false);
+        if (!removed) {
+          wrong = "the bin on the card that stopped did not say Removed in its place";
+          break;
+        }
+        if (arg === "put back") {
+          await card.getByRole("button", { name: "Put it back" }).click();
+          await page.mouse.move(5, 5);
+          const back = await page
+            .waitForFunction((k) => document.querySelector(`li[data-key="${k}"] .title`)?.textContent.trim() === "Stopped. Click Continue", key, {
+              timeout: 2000,
+            })
+            .then(() => true, () => false);
+          // Past the time a remove runs, so a put back that only hid it
+          // would have called the work off by now.
+          await page.waitForTimeout(11000);
+          const state = await stateOf();
+          if (!back) wrong = "Put it back did not bring back the card that said Stopped";
+          else if (state !== "interrupted") wrong = `put back, the work of the clip is ${state}, not interrupted`;
+        } else {
+          // The time stands still under the hand, see Busy, so the hand
+          // goes off the list.
+          await page.mouse.move(5, 5);
+          const gone = await page
+            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 15000 })
+            .then(() => true, () => false);
+          const state = await stateOf();
+          if (!gone) wrong = "the card that stopped is still in the list after its time ran down";
+          else if (state !== "cancelled") wrong = `removed, the work of the clip is ${state}, not cancelled`;
+        }
+        await watch.step("wait", s);
+        break;
+      }
+      case "no hand card": {
+        const path = await episodeOn(page);
+        const hand = (await ask(page, "Jobs")).filter((j) => j.kind === "clip" && j.episode === path).map((j) => j.id);
+        const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
+        if (left) wrong = `${left} cards of clips made by hand are in the list`;
         break;
       }
       case "short removed": {
