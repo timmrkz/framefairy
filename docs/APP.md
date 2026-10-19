@@ -184,7 +184,9 @@ folder's name and a colour, which Tim read as a label the video did not
 have.
 
 Everything saves at once: a colour when it is clicked, the words with
-Return, when the field is left or when the menu closes. The pill follows
+Return, when the field is left or when the menu closes. Return closes the
+menu after a colour is clicked too, and the menu wears no focus ring of
+its own. The pill follows
 the words while they are typed, and Escape puts back what was there. Escape
 in the colour well puts back the colour from before it opened, and on a
 video with no label that is no colour and no words, so a shade looked at

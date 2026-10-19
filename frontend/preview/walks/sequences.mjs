@@ -170,7 +170,11 @@
 //                      leaves the menu by how: a colour's name clicks that
 //                      colour and then Escape closes the menu, the same
 //                      with " after a press" after it presses beside the
-//                      field first and holds the first save, "Remove label"
+//                      field first and holds the first save, the same with
+//                      ", then Return" closes the menu with Return from
+//                      where WebKit leaves the focus after the click,
+//                      which has to keep the colour and show no ring
+//                      round the menu, "Remove label"
 //                      clicks the cross in the field and then Escape, "a
 //                      colour of its own, Return" or ", Escape" clicks a
 //                      shade in the colour picker and leaves it with that
@@ -2268,6 +2272,9 @@ export const sequences = [
       ["label", ["Dora", "Return, the save failing"]],
       ["label", ["", "Return"]],
       ["label", ["Clara", "Green after a press"]],
+      // Tim clicked a colour on a label and pressed Return, and the menu
+      // stayed open with a ring round it.
+      ["label", [null, "Blue, then Return"]],
       ["two menus"],
     ],
   },
@@ -6137,7 +6144,7 @@ for (const seq of toWalk) {
           await menu.locator('button[aria-label="Remove label"]').click();
           await page.keyboard.press("Escape");
         } else {
-          const [colour, pressFirst] = how.split(" after a press");
+          const [colour, pressFirst] = how.replace(", then Return", "").split(" after a press");
           if (pressFirst !== undefined) {
             // A press in the menu beside the field takes the focus from it
             // and gives it to nothing, which is what WebKit does with a
@@ -6148,13 +6155,30 @@ for (const seq of toWalk) {
             await page.mouse.click(box.x + 3, box.y + 3);
           }
           await menu.locator(`button[aria-label="${colour}"]`).click();
-          await page.keyboard.press("Escape");
+          if (how.endsWith(", then Return")) {
+            // WebKit gives a pressed button no focus, so the focus is on
+            // the menu itself. A key pressed there shows the keyboard's
+            // ring wherever the focus is.
+            await menu.evaluate((m) => m.focus());
+            await page.keyboard.press("Shift");
+            const ring = await menu.evaluate((m) => {
+              const st = getComputedStyle(m);
+              return st.outlineStyle !== "none" && parseFloat(st.outlineWidth) > 0 ? `${st.outlineWidth} ${st.outlineStyle} ${st.outlineColor}` : "";
+            });
+            if (ring) wrong = `with the focus on the menu, the menu wears a ring, ${ring}`;
+            await page.keyboard.press("Enter");
+            if (!wrong && (await menu.isVisible({ timeout: 300 }).catch(() => false))) {
+              await page.waitForTimeout(300);
+              if (await menu.isVisible()) wrong = "Return after a colour was clicked left the menu open";
+            }
+            if (wrong) await page.keyboard.press("Escape");
+          } else await page.keyboard.press("Escape");
         }
         await menu.waitFor({ state: "detached" });
         await page.mouse.move(750, 400);
         await sidebarStill(page);
         await settle(page);
-        const named = colours[how.split(" after a press")[0]];
+        const named = colours[how.replace(", then Return", "").split(" after a press")[0]];
         // A colour clicked in an empty field takes the folder's name.
         const text = after.words.trim() || (named ? folder : "");
         let want = how === "Escape" || failing ? was : how === "Remove label" || !text ? null : { text, colour: named ?? ringed };

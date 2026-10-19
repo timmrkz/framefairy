@@ -194,9 +194,16 @@
 
   // The shortcuts of the workspace stand aside while the menu has the
   // keyboard, the way they do for the colour picker. Escape still reaches
-  // the menu's own layer, which closes it.
+  // the menu's own layer, which closes it. Return keeps the label and
+  // closes the menu from wherever the focus is in it but a button, which
+  // Return presses: a colour clicked in WebKit leaves the focus on the
+  // menu itself, and Tim pressed Return there and nothing closed.
   function keepKeys(event: KeyboardEvent) {
     if (event.key !== "Escape") event.stopPropagation();
+    if (event.key === "Enter" && event.target === menu) {
+      event.preventDefault();
+      close();
+    }
   }
 </script>
 
@@ -326,6 +333,12 @@
     width: var(--bits-floating-anchor-width);
     padding: 0;
     overflow: hidden;
+  }
+
+  /* The menu takes the focus only to hold it for what is in it, so it is
+     never something the keyboard points at, and wears no ring. */
+  .video-menu:focus-visible {
+    outline: none;
   }
 
   /* The label's words over its colours, apart from what is done with the
