@@ -143,19 +143,6 @@
 
   const whole = $derived(from <= 0.5 && to >= duration - 0.5);
 
-  // Where a part not heard yet is drawn over the track's border, beside
-  // the track in the box the track and its border fill, the way the window
-  // is: from the column its fill in the track starts on to the column it
-  // ends on, and out to the range picker's own edge where it meets an end
-  // of the video, with its round corner.
-  function unheardEdge(a: number, b: number) {
-    const first = a <= 0.5;
-    const last = b >= duration - 0.5;
-    const left = first ? "0px" : `(${on(a, inner)} + 1px)`;
-    const right = last ? "100cqw" : `(${on(b, inner)} + 1px)`;
-    return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
-  }
-
   // Where the window is drawn, beside the track rather than in it, in the
   // box the track and its border fill. An edge on a minute is drawn on
   // that minute's line: the line is the pixel after the moment's own, the
@@ -384,11 +371,10 @@
   onpointerdown={scrub}
   aria-label="The range picker"
 >
-  <!-- What has not been heard yet, in the grey of a card, under the
-       minutes so their lines still show through it. Its dashed edge is
-       drawn over the track's border, beside the track, see below. -->
+  <!-- What has not been heard yet, dots under the minutes so their lines
+       still show through. -->
   {#each unheard as [a, b], i (i)}
-    <div class="unheard" class:lit={i === unheardLit} style="left: {on(a)}; width: calc({on(b)} - {on(a)})"></div>
+    <div class="unheard" class:lit={i === unheardLit} style="--at: {on(a)}; --to: {on(b)}"></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -440,14 +426,6 @@
     </Info>
   </span>
 </div>
-<!-- The edge of what has not been heard yet, dashed the way the card in
-     the clip list that says so is, laid over the track's border so the
-     grey covers it and the dashes run along the range picker's own edge
-     and the line the window is drawn on. Under the window. -->
-{#each unheard as [a, b], i (i)}
-  {@const edge = unheardEdge(a, b)}
-  <div class="unheard-edge" class:lit={i === unheardLit} class:first={edge.first} class:last={edge.last} style={edge.style}></div>
-{/each}
 {#if shown}
   <!-- Only looked at, never taken hold of: the window of a search in hand
        is the search's, and a press on it is a press on the track. Drawn beside
@@ -788,6 +766,8 @@
     position: absolute;
     top: 0;
     bottom: 0;
+    left: var(--at);
+    width: calc(var(--to) - var(--at));
     z-index: 1;
     pointer-events: none;
   }
@@ -800,60 +780,27 @@
     background: var(--ink-2);
   }
 
-  /* Its dots, the card's, rising from the foot, so a part a few pixels
-     wide is its dashed edge alone and the minutes stand clear above
-     them. Lit, the part takes the grey of a card under the hand and keeps
-     its fade, found by Tim. */
+  /* Its dots, the card's, rising from the foot, so the minutes stand
+     clear above them, and with no dashed edge, which Tim found the dots
+     did without. The dots lie on one grid from the start of the range
+     picker, whole columns of it only, so a part that gives way as the
+     work hears takes them away a column at a time and never moves them,
+     and two parts share their columns. Lit, the part takes the grey of a
+     card under the hand and keeps its fade, found by Tim. */
   .unheard::before {
+    --from: round(up, var(--at), var(--dot-pitch));
     content: "";
     position: absolute;
-    inset: 0;
-    background: var(--halftone);
+    top: 0;
+    bottom: 0;
+    left: calc(var(--from) - var(--at));
+    width: max(0px, calc(round(down, var(--to), var(--dot-pitch)) - var(--from)));
+    background: var(--halftone) 0 calc(100% - var(--dot-pitch)) / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
   }
 
   .unheard.lit::before {
-    background: var(--halftone-lit);
-  }
-
-  .unheard-edge.lit::before,
-  .unheard-edge.lit::after {
-    border-color: transparent;
-  }
-
-  /* Its edge, a ring in the same grey that covers the track's border
-     with the dashes of a card's edge over it, so where a part not
-     transcribed yet meets the border the border is dashed too. Under the
-     window, which comes after it. */
-  .unheard-edge {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 3;
-    pointer-events: none;
-  }
-
-  .unheard-edge::before,
-  .unheard-edge::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border: 1px solid var(--ink-1);
-    border-radius: inherit;
-  }
-
-  .unheard-edge::after {
-    border: 1px dashed var(--ink-3);
-  }
-
-  .unheard-edge.first {
-    border-top-left-radius: var(--radius-m);
-    border-bottom-left-radius: var(--radius-m);
-  }
-
-  .unheard-edge.last {
-    border-top-right-radius: var(--radius-m);
-    border-bottom-right-radius: var(--radius-m);
+    background-image: var(--halftone-lit);
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

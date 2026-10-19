@@ -358,6 +358,7 @@
         onpointerleave={() => onhoverhole?.(-1)}
       >
         <span class="dots" aria-hidden="true"></span>
+        <span class="ring" aria-hidden="true"></span>
         <span class="meta muted num">{clock(row.hole[0])} to {clock(row.hole[1])}</span>
         <span class="text">Not transcribed yet</span>
       </li>
@@ -502,20 +503,19 @@
   }
 
   /* Where nothing was transcribed yet, a card like any other with its
-     edge dashed, the edge the range picker draws round the same part.
-     Under the hand it fills with the grey of every card under the hand,
-     which the dashes go into, the way a card's edge does. */
+     edge dashed, see .ring. Under the hand it fills with the grey of
+     every card under the hand, which the dashes go into, the way a
+     card's edge does. */
   li.hole {
     justify-content: center;
     background: transparent;
     box-shadow: none;
-    border: 1px dashed var(--ink-3);
+    border: 1px solid transparent;
   }
 
   li.hole:hover,
   li.hole.lit {
     background: var(--ink-2);
-    border-color: var(--ink-2);
   }
 
   /* The card the playhead is in, the way the chosen clip's card is in the
@@ -527,31 +527,61 @@
     background: var(--ink-3);
   }
 
-  li.hole.current {
-    border-color: var(--ink-3);
-  }
-
   li.hole .text {
     color: var(--muted);
   }
 
-  /* Its dots, rising from the foot, on nothing else. Under the hand
-     it fills with a card's grey and keeps its fade. The dashed edge stays,
-     so a part only a few pixels wide on the range picker still shows,
-     where dots have no room, found by Tim. */
-  .dots {
+  /* Its dots and its dashes, laid over the whole card, border and all,
+     in tiles of one pitch spread evenly from edge to edge, so each dash
+     stands over a column of dots or beside a row of them, and a dash
+     sits on every corner. Dashes the browser drew went their own way
+     round the dots, found by Tim. The dots rise from the foot on nothing
+     else and keep a tile clear of every edge. Under the hand the card
+     fills with a card's grey, the dots go up a step and keep their fade,
+     and the dashes go into the grey. */
+  .dots,
+  .ring {
     position: absolute;
-    inset: 0;
+    inset: -1px;
     border-radius: inherit;
-    background: var(--halftone);
-    mask-image: var(--halftone-fade);
     pointer-events: none;
+  }
+
+  .dots {
+    background: var(--halftone) 0 0 / var(--dot-pitch) var(--dot-pitch) space;
+    mask-image:
+      var(--halftone-fade),
+      linear-gradient(
+        90deg,
+        transparent var(--dot-pitch),
+        #000 0 calc(100% - var(--dot-pitch)),
+        transparent 0
+      );
+    mask-composite: intersect;
   }
 
   li.hole:hover .dots,
   li.hole.lit .dots,
   li.hole.current .dots {
-    background: var(--halftone-lit);
+    background-image: var(--halftone-lit);
+  }
+
+  .ring {
+    border: 1px solid var(--ink-3);
+    mask-image: var(--halftone-dash-x), var(--halftone-dash-y);
+    mask-size:
+      var(--dot-pitch) 100%,
+      100% var(--dot-pitch);
+    mask-repeat: space no-repeat, no-repeat space;
+  }
+
+  li.hole:hover .ring,
+  li.hole.lit .ring {
+    border-color: var(--ink-2);
+  }
+
+  li.hole.current .ring {
+    border-color: var(--ink-3);
   }
 
   li.hole .meta,

@@ -2049,18 +2049,25 @@ found is a place in the video, and I and O make a clip there.
   video the transcript has not reached yet is a dashed card in its place,
   "Not transcribed yet", because the search cannot look there. With
   something typed the list holds only what matches. While the field
-  is open, the range picker draws the same part with a dashed edge, laid
-  over its border and under the window. The dashes are in the grey of a
-  card's edge. A part is dots on nothing, a halftone grid, `--halftone`
+  is open, the range picker draws the same part under the minutes and
+  the window. A part is dots on nothing, a halftone grid, `--halftone`
   in `app.css`, that rises from the foot and thins out upwards, with none
   in the top third, so the minutes and their lines show through. A grey
   wash under the dots hid them, found by Tim, who picked this one from a
   sheet of seven. The dots are in the grey of a card's edge, never
-  brighter than the dashes or the minute lines. A part a few pixels wide
-  is its dashed edge alone, which always shows. Under the hand the part
-  goes up a step with the grey of a card under the hand, which the
-  dashes go into, the way every card's edge does, and its dots go up a
-  step too, `--halftone-lit`, keeping their fade. On the range picker the
+  brighter than the dashes or the minute lines, and keep one tile,
+  `--dot-pitch`, clear of every edge. The card's dashes are tiles of the
+  same pitch, laid on the card's box the way its dots are, spread evenly
+  from edge to edge, so every dash stands over a column of dots or
+  beside a row and a dash sits on every corner. The dashes the browser
+  drew went their own way round the dots, found by Tim. On the range
+  picker a part has no edge of its own, which Tim found the dots did
+  without, and its dots lie on one grid from the start of the range
+  picker, whole columns only, so a part that gives way loses them a
+  column at a time and they never move. Under the hand the part goes up
+  a step with the grey of a card under the hand, which the card's dashes
+  go into, the way every card's edge does, and its dots go up a step
+  too, `--halftone-lit`, keeping their fade. On the range picker the
   range picker's own border stays over the lit part. The hand on a part
   lights its card and the hand on a card lights its part, both ways
   round. The parts give way as the work hears, from what is heard, not

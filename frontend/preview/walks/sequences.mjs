@@ -8365,7 +8365,7 @@ for (const seq of toWalk) {
             clip: li.querySelector(".clipname")?.textContent.trim() ?? "",
           })),
           holes: document.querySelectorAll("ol.said li.hole").length,
-          edges: document.querySelectorAll(".unheard-edge").length,
+          edges: document.querySelectorAll(".track .unheard").length,
           count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
           // The greys, as the browser has them: what no clip keeps, a
           // clip's words, a word that answers, the field's placeholder,
@@ -8626,16 +8626,20 @@ for (const seq of toWalk) {
           const look = await page.evaluate(() => {
             const hole = getComputedStyle(document.querySelector("ol.said li.hole"));
             const fill = document.querySelector(".track .unheard.lit");
-            const edge = document.querySelector(".unheard-edge.lit");
             const ring = getComputedStyle(document.querySelector("ol.said li:not(.hole):not(.none)")).boxShadow;
             const dots = document.querySelector("ol.said li.hole .dots");
+            const dashes = document.querySelector("ol.said li.hole .ring");
             return {
-              lit: !!fill && !!edge,
+              lit: !!fill,
               dots: [dots && getComputedStyle(dots), fill && getComputedStyle(fill, "::before")].map((d) => (d ? [d.backgroundImage, d.maskImage, d.top] : null)),
-              card: [hole.borderTopColor, hole.backgroundColor],
-              picker: fill && edge
-                ? [getComputedStyle(edge, "::before").borderTopColor, getComputedStyle(edge, "::after").borderTopColor, getComputedStyle(document.querySelector(".track")).borderTopColor]
-                : [],
+              card: [dashes ? getComputedStyle(dashes).borderTopColor : null, hole.backgroundColor],
+              // The range picker draws no edge round a part, only its dots,
+              // found by Tim, and its own border stays over the part lit.
+              picker: fill
+                ? [fill, ...[...fill.children]].flatMap((el) => [getComputedStyle(el), getComputedStyle(el, "::before"), getComputedStyle(el, "::after")]).map((st) => st.borderTopStyle).filter((b) => b !== "none")
+                : ["no part lit"],
+              border: getComputedStyle(document.querySelector(".track")).borderTopColor,
+              edges: document.querySelectorAll(".unheard-edge").length,
               ring,
             };
           });
@@ -8656,10 +8660,43 @@ for (const seq of toWalk) {
           }));
           await page.mouse.move(0, 0);
           const lightsCard = fromPart.cards[onPart.index] && fromPart.cards.filter(Boolean).length === 1 && fromPart.part[onPart.index];
-          const rest = await page.evaluate(() => [
-            getComputedStyle(document.querySelector("ol.said li.hole")).borderTopColor,
-            getComputedStyle(document.querySelector(".unheard-edge"), "::after").borderTopColor,
-          ]);
+          const rest = await page.evaluate(() => {
+            const ring = document.querySelector("ol.said li.hole .ring");
+            return ring ? getComputedStyle(ring).borderTopColor : "no dashes";
+          });
+          // The dashes of a card stand over its columns of dots and beside
+          // its rows: the dots and the dashes are tiles of one pitch laid
+          // on the same box, spread from edge to edge the same way. The
+          // browser's own dashes went their own way, found by Tim. On the
+          // range picker the dots lie on one grid from its start, whole
+          // columns of it only.
+          const grid = await page.evaluate(() => {
+            const li = document.querySelector("ol.said li.hole");
+            const dots = li.querySelector(".dots");
+            const ring = li.querySelector(".ring");
+            const box = (el) => {
+              const r = el?.getBoundingClientRect();
+              return r ? [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 100) / 100).join(" ") : null;
+            };
+            const d = getComputedStyle(dots);
+            const r = ring ? getComputedStyle(ring) : null;
+            const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
+            const track = document.querySelector(".track");
+            const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
+            const columns = [...track.querySelectorAll(".unheard")].map((u) => {
+              const b = getComputedStyle(u, "::before");
+              const left = u.getBoundingClientRect().left - track.getBoundingClientRect().left - pad + parseFloat(b.left);
+              return [Math.round(left * 100) / 100, parseFloat(b.width)];
+            });
+            return {
+              pitch,
+              boxes: [box(dots), box(ring), box(li)],
+              dots: [d.backgroundSize, d.backgroundRepeat],
+              dashes: r ? [r.maskSize, r.maskRepeat, r.borderTopStyle] : null,
+              columns,
+            };
+          });
+          const tile = `${grid.pitch}px ${grid.pitch}px`;
           // Halftone dots fill both, on nothing else, rising from the foot
           // with none in the top third, where the minutes stand, at rest and
           // under the hand alike, and never brighter than the dashes or the
@@ -8678,7 +8715,7 @@ for (const seq of toWalk) {
               return [st.backgroundImage, st.maskImage, st.top, under];
             }),
           );
-          const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector(".unheard-edge:not(.lit)"), "::after").borderTopColor]);
+          const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector("ol.said li.hole .ring") ?? document.querySelector("ol.said li.hole")).borderTopColor]);
           const lum = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).reduce((a, v) => a + Number(v), 0);
           const dotColour = (d) => d[0].match(/rgba?\([^)]*\)/)?.[0] ?? "";
           const dotted = (d) => !!d && d[0].includes("radial-gradient");
@@ -8693,12 +8730,20 @@ for (const seq of toWalk) {
           else if (lum(dotColour(still[1])) > lum(lines[0]) || lum(dotColour(still[1])) > lum(lines[1]))
             wrong = `the dots, ${dotColour(still[1])}, are brighter than the minute lines, ${lines[0]}, or the dashes round them, ${lines[1]}`;
           else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
-          // On the range picker the border is the range picker's, and it
-          // stays over the part lit, found by Tim.
-          else if (look.picker[0] !== "rgba(0, 0, 0, 0)" || look.picker[1] !== "rgba(0, 0, 0, 0)" || look.picker[2] === "rgba(0, 0, 0, 0)")
-            wrong = `the dashed part on the range picker, lit, covers the border in ${look.picker[0]} and ${look.picker[1]}, over a border in ${look.picker[2]}`;
-          else if (!look.ring.includes(rest[0]) || !look.ring.includes(rest[1]))
-            wrong = `the dashes are ${rest[0]} on the card and ${rest[1]} on the range picker, and a card's edge is ${look.ring}`;
+          else if (look.picker.length || look.edges || look.border === "rgba(0, 0, 0, 0)")
+            wrong = `a part on the range picker, lit, has an edge of its own, ${[...look.picker, ...(look.edges ? [`${look.edges} edges`] : [])].join(" and ")}, over a border in ${look.border}`;
+          else if (!look.ring.includes(rest)) wrong = `the dashes are ${rest} on the card, and a card's edge is ${look.ring}`;
+          else if (!grid.dashes || grid.dashes[2] !== "solid" || grid.boxes[0] !== grid.boxes[1] || grid.boxes[1] !== grid.boxes[2])
+            wrong = `the dashes of a card are not laid on its dots' box: dashes ${JSON.stringify(grid.dashes)}, boxes of the dots, the dashes and the card ${JSON.stringify(grid.boxes)}`;
+          else if (
+            grid.dots[0] !== tile ||
+            grid.dots[1] !== "space" ||
+            grid.dashes[0] !== `${grid.pitch}px 100%, 100% ${grid.pitch}px` ||
+            grid.dashes[1] !== "space no-repeat, no-repeat space"
+          )
+            wrong = `the dashes of a card do not stand on its dots: dots in ${grid.dots.join(", ")}, dashes in ${grid.dashes.slice(0, 2).join(" laid ")}`;
+          else if (grid.columns.some(([left, width]) => left % grid.pitch || width % grid.pitch))
+            wrong = `the dots of a part on the range picker are not whole columns of one grid from its start: ${JSON.stringify(grid.columns)}`;
         }
         // The playhead put in a part not transcribed yet, on the range
         // picker, puts that part's card at the top of the list, not the
@@ -9248,7 +9293,7 @@ for (const seq of toWalk) {
         const back = await page.evaluate(() => ({
           search: !!document.querySelector(".listhead button.search"),
           said: !!document.querySelector("ol.said"),
-          edges: document.querySelectorAll(".unheard-edge").length,
+          edges: document.querySelectorAll(".track .unheard").length,
         }));
         if (!wrong && (!back.search || back.said || back.edges))
           wrong = `Escape left ${back.said ? "the sentences" : back.edges ? "the dashed parts on the range picker" : "no Search button"}`;
