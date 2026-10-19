@@ -10534,7 +10534,7 @@ async function pickCards(page, n) {
   const path = await episodeOn(page);
   const before = (await ask(page, "Clips", path)).length;
   // A clip in each shot, so two clips have their crops far apart.
-  for (const at of [8, 68]) await ask(page, "MakeClip", path, at, false);
+  for (const at of [8, 86]) await ask(page, "MakeClip", path, at, false);
   // Until the engine has written both and the clip list shows them.
   let clips = [];
   let cards = [];
