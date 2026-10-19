@@ -1236,20 +1236,8 @@
   // timeline goes there too. A view moved by hand otherwise stays where it
   // was put, which is what the crosshair in the row below it is for.
   function seekTo(t: number, about?: About, wordStep = false) {
-    seekPlayer(t, about, wordStep);
-    timeline?.fit(t);
-  }
-
-  // Where the playhead was last put by a gesture, and how many times it
-  // was, which the search through what was said follows, see SaidList.
-  // Not where it was put from that list itself, nor by choosing a clip,
-  // which the list goes to by the clip.
-  let sayTo = $state({ at: 0, n: 0 });
-  let soughtTimes = 0;
-  let seekQuiet = false;
-  function seekPlayer(t: number, about?: About, wordStep = false) {
     player?.seek(t, about, wordStep);
-    if (!seekQuiet) sayTo = { at: t, n: ++soughtTimes };
+    timeline?.fit(t);
   }
 
   // The chosen card, brought far enough into the list to be read. Walking
@@ -1280,11 +1268,7 @@
     api.chooseClip(path, key).catch(() => {});
     const clip = clips.find((c) => c.key === key);
     // On the clip, at its start: picking a clip is a gesture about it.
-    if (clip && seek) {
-      seekQuiet = true;
-      seekPlayer(clip.start, "clip");
-      seekQuiet = false;
-    }
+    if (clip && seek) player?.seek(clip.start, "clip");
     // Picking a clip puts the clip timeline back on it, the same as the
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
@@ -1401,7 +1385,7 @@
       });
       if (again) {
         void select(updated.key, false);
-        if (was.at !== undefined) seekPlayer(was.at, "clip");
+        if (was.at !== undefined) player?.seek(was.at, "clip");
       }
     } catch (err) {
       oops(errorText(err));
@@ -2527,7 +2511,7 @@
       // one puts the playhead on it. Not while the episode plays: only the
       // space bar and a click on the clip timeline change a play, see
       // edgesWhilePlaying in ClipTimeline.svelte.
-      if (done.playhead !== undefined && paused) seekPlayer(done.playhead);
+      if (done.playhead !== undefined && paused) player?.seek(done.playhead);
     } catch (err) {
       oops(errorText(err));
     } finally {
@@ -3341,7 +3325,7 @@
                 {#if sayTyped.trim()}
                   <!-- How many sentences match, the number fading in anew
                        as it changes, the way a toast comes. -->
-                  <span class="saycount muted num" title="Sentences that match">
+                  <span class="saycount muted num" title="Cards that match">
                     {#key sayMatches}<span in:fade={{ duration: 150 }}>{sayMatches}</span>{/key}
                   </span>
                 {/if}
@@ -3399,14 +3383,12 @@
                 bind:matches={sayMatches}
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
-                sought={sayTo}
+                playhead={time}
                 onseek={(at, clip) => {
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
                   if (clip && clip !== selected) void select(clip, false, false);
-                  seekQuiet = true;
                   seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
-                  seekQuiet = false;
                 }}
               />
             {:else}
@@ -3457,7 +3439,7 @@
         {lit}
         bind:numbers
         bind:drawn
-        onseek={(t, about, wordStep) => seekPlayer(t, about, wordStep)}
+        onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
         onahead={(times) => player?.ahead(times)}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
@@ -4141,7 +4123,7 @@
   }
 
   /* The search through what was said, the field over the font list in the
-     head's place: the magnifier, what is typed, and the cross. */
+     head's place: a magnifier, what is typed, the count and the cross. */
   .sayfield {
     flex: 1;
     display: flex;

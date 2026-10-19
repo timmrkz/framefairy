@@ -20,7 +20,7 @@
     clips = [],
     selected = "",
     chosen = 0,
-    sought = { at: 0, n: 0 },
+    playhead = 0,
     matches = $bindable(0),
     onhover,
     onhoverhole,
@@ -39,9 +39,8 @@
     selected?: string;
     // Counts every time a clip is chosen, the one chosen already too.
     chosen?: number;
-    // Where the playhead was last put, and how many times it was. The list
-    // goes to the card there, the way it goes to a clip chosen.
-    sought?: { at: number; n: number };
+    // Where the playhead is. The list follows it, see below.
+    playhead?: number;
     // How many sentences answer what is typed, for the field to show.
     matches?: number;
     onhover?: (key: string, on: boolean) => void;
@@ -86,24 +85,44 @@
     if (first) toTop(first.key);
   });
 
-  // The playhead put anywhere puts the card it is in at the top, or the
-  // next card after it where nothing is said, the way a clip chosen does,
-  // found by Tim. Only a gesture: the list does not follow a playing video.
-  let soughtWas: number | null = null;
+  // The list follows the playhead: the card it comes into stands at the
+  // top of the list, whether the hand put it there, on the clip timeline,
+  // a caption block or the range picker, or the video plays on into the
+  // next caption, found by Tim. Only the playhead moving moves the list,
+  // so the hand can scroll it while the video stands.
+  // The row followed is said on the list, for the walks: at the end of
+  // the list a row cannot stand at the top, and two rows look the same.
+  let followed = $state<string | null | undefined>(undefined);
   $effect(() => {
-    const { at, n } = sought;
-    const was = soughtWas;
-    soughtWas = n;
-    if (was === null || was === n) return;
-    // Of two clips over each other, the card of the chosen one.
-    const card = untrack(() => {
-      const after = rows.filter((r) => "sentence" in r && r.sentence.end > at);
-      const first = after[0];
-      if (!first || !("sentence" in first)) return first;
-      return after.find((r) => "sentence" in r && r.sentence.start === first.sentence.start && r.clip?.key === selected) ?? first;
-    });
-    if (card) toTop(card.key);
+    const t = playhead;
+    const key = untrack(() => rowAt(t)?.key ?? null);
+    const was = untrack(() => followed);
+    followed = key;
+    // Where the playhead is as the search opens is where it was, not a move.
+    if (was === undefined || !key || key === was) return;
+    toTop(key);
   });
+
+  // The row the playhead is in. Where nothing is said, the next row, so a
+  // clip chosen goes to its first caption, unless the playhead is in a
+  // pause between two captions of a clip, where the caption before stays
+  // until the next begins. A part not transcribed yet is a row too, so the
+  // playhead in one is there and not at the next words heard, found by Tim.
+  // Inside the chosen clip, the chosen clip's cards, where another clip
+  // over it has cards of the same words.
+  function rowAt(t: number): Row | null {
+    const chosen = clips.find((c) => c.key === selected);
+    const own = chosen && chosen.start <= t && t < chosen.end ? rows.filter((r) => "sentence" in r && r.clip?.key === selected) : [];
+    const among = own.length ? own : rows;
+    const end = (r: Row) => ("hole" in r ? r.hole[1] : r.sentence.end);
+    const i = among.findIndex((r) => end(r) > t);
+    if (i < 0) return among.at(-1) ?? null;
+    const row = among[i];
+    const before = among[i - 1];
+    if (row.at > t && before && "sentence" in before && "sentence" in row && before.clip && before.clip.key === row.clip?.key)
+      return before;
+    return row;
+  }
 
   // The card of a row, at the top of the list. Where it is
   // is read once and never laid out from: every card above it is laid out
@@ -160,12 +179,14 @@
   }
 </script>
 
-<ol class="said" bind:this={list}>
+<ol class="said" bind:this={list} data-followed={followed}>
   {#each rows as row (row.key)}
     {#if "hole" in row}
       {@const index = unheard.indexOf(row.hole)}
       <li
         class="hole"
+        data-at={row.hole[0]}
+        data-row={row.key}
         title="Nothing was transcribed here yet, so the search cannot look here. Searching a window here transcribes it"
         onpointerenter={() => onhoverhole?.(index)}
         onpointerleave={() => onhoverhole?.(-1)}
@@ -180,7 +201,11 @@
         data-clip={row.clip?.key}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
-        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => onseek(row.sentence.start, row.clip?.key ?? null)}>
+        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => {
+          // The playhead put on a card is where the list already is.
+          followed = row.key;
+          onseek(row.sentence.start, row.clip?.key ?? null);
+        }}>
           <span class="meta muted num">
             {clock(row.sentence.start)}
             {#if row.clip}<span class="clipname">{row.clip.title || row.clip.slug}</span>{/if}

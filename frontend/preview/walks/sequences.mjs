@@ -8310,6 +8310,53 @@ for (const seq of toWalk) {
           else if (!look.ring.includes(rest[0]) || !look.ring.includes(rest[1]))
             wrong = `the dashes are ${rest[0]} on the card and ${rest[1]} on the range picker, and a card's edge is ${look.ring}`;
         }
+        // The playhead put in a part not transcribed yet, on the range
+        // picker, puts that part's card at the top of the list, not the
+        // next words heard after it, found by Tim.
+        if (!wrong && gaps) {
+          await page.evaluate(() => (document.querySelector(".scroll.list").style.overflowAnchor = "none"));
+          const part = await page.evaluate(() => {
+            const r = [...document.querySelectorAll(".track .unheard")].at(-1).getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          });
+          await page.mouse.click(part.x, part.y);
+          await watch.step("click", s);
+          await page.waitForTimeout(300);
+          const there = await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            const box = list.getBoundingClientRect();
+            const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+            // At the top, or as near it as the end of the list lets it.
+            const end = list.scrollTop >= list.scrollHeight - list.clientHeight - 1;
+            const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => {
+              const r = li.getBoundingClientRect();
+              return end ? r.top >= box.top + pad - 1 && r.bottom <= box.bottom : Math.abs(r.top - box.top - pad) <= 1;
+            });
+            const hole = end ? [...document.querySelectorAll("ol.said li.hole")].at(-1) : top;
+            const r = hole?.getBoundingClientRect();
+            return {
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              hole:
+                !!hole?.classList.contains("hole") &&
+                !!r &&
+                r.top >= box.top &&
+                r.bottom <= box.bottom &&
+                (end || hole === top) &&
+                hole.dataset.row === document.querySelector("ol.said").dataset.followed,
+              top: top ? top.querySelector(".meta").textContent.trim() : null,
+            };
+          });
+          const hole = (() => {
+            let at = 0;
+            for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
+              if (a - at >= 1 && there.at >= at && there.at < a) return true;
+              at = Math.max(at, b);
+            }
+            return there.at >= at;
+          })();
+          if (!hole) wrong = `a press in the last part not transcribed yet put the playhead at ${there.at}, which is heard`;
+          else if (!there.hole) wrong = `the playhead in a part not transcribed yet, at ${there.at.toFixed(1)}, left ${there.top ?? "no card"} at the top of the list, not that part's card`;
+        }
         // A clip chosen on the range picker brings its first sentence into
         // view, found by Tim.
         const others = clips.filter((c) => !c.rejected);
@@ -8376,7 +8423,7 @@ for (const seq of toWalk) {
         }
         // The playhead put on a caption on the clip timeline puts the card
         // of that caption at the top of the list, the way a clip chosen
-        // does, and so does the playhead put anywhere, found by Tim.
+        // does, found by Tim.
         if (!wrong && clips.some((k) => !k.rejected)) {
           await field.fill("");
           await watch.step("type", s);
@@ -8416,6 +8463,42 @@ for (const seq of toWalk) {
             else if (stood.top === null || Math.abs(stood.top - card.start) > 0.0005)
               wrong = `the playhead put on a caption at ${stood.at.toFixed(2)} left ${stood.top === null ? "no card" : `the card at ${stood.top.toFixed(2)}`} at the top of the list, not the card at ${card.start.toFixed(2)}, "${card.text}"`;
             else if (!card.clip) wrong = `the caption at ${stood.at.toFixed(2)} on the clip timeline is in a card of no clip`;
+          }
+        }
+        // The clip played from its mark: its first caption stands at the
+        // top, and as the playhead comes into the next caption, that card
+        // stands at the top, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await page.locator(".track .clipmark.selected").click();
+          await watch.step("click", s);
+          const chosenLabel = await page.locator(".track .clipmark.selected").getAttribute("aria-label");
+          const chosenKey = clips.find((k) => `Clip at ${Math.floor(k.start / 60)}:${String(Math.floor(k.start % 60)).padStart(2, "0")}` === chosenLabel)?.key;
+          const own = sentences.filter((x) => x.clip === chosenKey);
+          if (own.length < 2) wrong = `the chosen clip has ${own.length} cards, so playing into its next one could not be seen`;
+          else {
+            await page.evaluate(() => document.activeElement?.blur());
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            const until = Date.now() + 20000;
+            let seen = null;
+            while (Date.now() < until) {
+              seen = await page.evaluate(() => {
+                const list = document.querySelector(".scroll.list");
+                const box = list.getBoundingClientRect();
+                const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, clip: top?.dataset.clip ?? null };
+              });
+              if (seen.at >= own[1].start + 0.3) break;
+              await page.waitForTimeout(100);
+            }
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            // The card the playhead is in, or the one before it in a pause.
+            const now = own.filter((x) => x.start <= seen.at).at(-1);
+            if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
+            else if (seen.top === null || Math.abs(seen.top - now.start) > 0.0005 || seen.clip !== chosenKey)
+              wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card" : `the card at ${seen.top.toFixed(2)}`} at the top of the list, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
           }
         }
         // A card puts the playhead on its sentence, and a sentence of a

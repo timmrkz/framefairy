@@ -1967,7 +1967,13 @@ found is a place in the video, and I and O make a clip there.
   where it is. The other way round, the playhead put anywhere else, on
   the clip timeline, the range picker or a caption block, puts the card
   it is in at the top of the list, or the next card where nothing is
-  said. The list does not follow a video that plays.
+  said. A part not transcribed yet is a place too, so the playhead in
+  one puts its dashed card at the top, not the next words heard after it.
+  The list follows a video that plays the same way: as the playhead comes
+  into the next caption, its card stands at the top, and in a pause
+  between two captions of a clip the caption before stays until the next
+  begins, found by Tim. Only the playhead moving moves the list, so the
+  hand can scroll it while the video stands.
 - **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its clip card does. In the list only the card under the hand is
@@ -2000,7 +2006,7 @@ found is a place in the video, and I and O make a clip there.
   the field no longer had the keyboard.
 - **The sentences are there when it opens.** They are read once the video
   opens and kept, and read again when the transcript hears more, so the
-  column never stands empty for a moment after the magnifier.
+  column never stands empty for a moment after the transcript button.
 
 ### Toasts
 
