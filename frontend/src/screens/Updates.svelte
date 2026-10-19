@@ -324,7 +324,7 @@
       </div>
 
       <!-- Where things stand, and the one thing to do about it. -->
-      <div class="item" class:on={update.phase === "ready"}>
+      <div class="item">
         <!-- A dot is work, running or waiting to be picked up. Something
              that needs a look is the triangle, the way the settings mark a
              missing key, in the colour of a warning or of a failure. Work

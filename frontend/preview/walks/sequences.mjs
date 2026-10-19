@@ -815,7 +815,8 @@
 //   ["no check"]       the line under the build offers no button
 //   ["relaunch", how]  the line under the build offers Relaunch, "waits"
 //                      greyed out with its title saying it waits for the
-//                      search, and "ready" usable again, within a minute
+//                      search, and "ready" usable again, within a minute,
+//                      and the line wears the card's own background
 //   ["build mark", what]
 //                      the line under the build starts with this mark,
 //                      "check", "triangle" or "dot", and ", warning" when
@@ -9035,7 +9036,14 @@ for (const seq of toWalk) {
           page.evaluate(() => {
             const line = document.querySelectorAll(".card.asks > .item")[1];
             const button = line?.querySelector("button");
-            return { words: (button?.textContent ?? "").trim(), off: !!button?.disabled, title: button?.title ?? "" };
+            const card = line?.closest(".card");
+            return {
+              words: (button?.textContent ?? "").trim(),
+              off: !!button?.disabled,
+              title: button?.title ?? "",
+              // A row with nothing chosen in it lets the card show through.
+              lit: !!line && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)" && getComputedStyle(line).backgroundColor !== getComputedStyle(card).backgroundColor,
+            };
           });
         let now = await read();
         for (const until = Date.now() + 60000; (now.words !== "Relaunch" || now.off !== waits) && Date.now() < until; ) {
@@ -9045,6 +9053,7 @@ for (const seq of toWalk) {
         if (now.words !== "Relaunch") wrong = `the line under the build offers ${now.words || "nothing"}, not Relaunch`;
         else if (now.off !== waits) wrong = waits ? "Relaunch can be pressed while a search runs" : "Relaunch stayed greyed out after the search ended";
         else if (waits && now.title !== "Waits until the search is done") wrong = `Relaunch's title says ${JSON.stringify(now.title)}`;
+        else if (now.lit) wrong = "the line under the build wears a grey of its own, which reads as greyed out";
         break;
       }
       case "no check": {
