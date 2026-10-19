@@ -149,12 +149,18 @@ where they are on disk, and the ones added from now on go at the foot.
 Three dots show at the end of a row while the pointer is on it, and open
 what can be done with that video, the way Finder offers it on a
 right-click: its **label**, **Show in folder** and **Remove**, which asks
-first. The dots are the sort mark's size, lit the same way and in its
-column, so the marks of the sidebar stand one under the other. The menu
-hangs under the row and is exactly as wide as it, so it reaches no further
-over the workspace than the sidebar does, and the sidebar stays open while
-it is. Its icons stand in the sidebar's column of icons and its words
-where the sidebar's words start.
+first. The dots lie in a row, the way the Mac draws More, not one over the
+other as Android does. They are the sort mark's size, lit the same way and
+in its column, so the marks of the sidebar stand one under the other. A
+row is lit while the pointer is anywhere on it, its dots included, and the
+dots take the pointer over the row's whole height, so a pointer going down
+the column of dots goes from one to the next and nothing goes dark on the
+way. Tim saw the row go dark each time the pointer reached its dots. The
+menu hangs under the row and is exactly as wide as it, so it reaches no
+further over the workspace than the sidebar does, and the sidebar stays
+open while it is. Its icons stand in the sidebar's column of icons and its
+words where the sidebar's words start, and its rows run from edge to edge,
+the way a list's do in `Pick.svelte`.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told
@@ -164,24 +170,24 @@ folder, `label.json`, see `engine.Label`. The colours are the accent
 colours of the settings, the same row of round colours with the colour
 well at its end, `Swatches.svelte`.
 
-The menu opens the way a name opens to be changed on the Mac: the words
-in the field and chosen, so Return keeps them and typing replaces them.
-A video with no label yet has the name of its folder there, and a colour
-is always chosen, the label's or one no other video wears yet. So the
-menu looks the same with a label and without one, and nothing has to be
-picked before Return. The folder's name is kept only once something is
-done with it, Return or a colour: a menu opened for Show in folder leaves
-the video as it was. Tim found a menu that opened empty, with the
-folder's name grey in it, no colour chosen and no way to take the name
-but clicking a colour, and once a colour was chosen it could not be
-taken back to how the menu had opened.
+The menu shows the label as it is, its words chosen so typing replaces
+them. A video with no label has an empty field with no colour chosen, and
+the name of its folder in grey in the field, which Tab takes, the way Tab
+takes a suggestion in a field on the Mac. The moment the field has words,
+by Tab or by typing, a colour is chosen, one no other video wears yet, and
+the pill shows in the row. A colour clicked in an empty field takes the
+folder's name with it. An empty field is no label, so the field, the
+colours and the row never disagree, and a menu opened for Show in folder
+leaves the video as it was. A round before opened the menu on the
+folder's name and a colour, which Tim read as a label the video did not
+have.
 
 Everything saves at once: a colour when it is clicked, the words with
 Return, when the field is left or when the menu closes. The pill follows
 the words while they are typed, and Escape puts back what was there. The
-cross at the end of the field removes the label, and so does Return on a
-field with no words, and the menu is then as it was before the video had
-one. A label keeps at most 40 characters on one line.
+cross at the end of the field shows while it has words and removes the
+label, and so does Return on a field with no words. A label keeps at most
+40 characters on one line.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
@@ -192,7 +198,8 @@ to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
 back to the button last clicked. Closed, it leaves room for the settings column of the workspace,
-which is exactly what it covers when it opens. **Add episode**,
+which is exactly what it covers when it opens. Open, it casts a shadow on
+the workspace to its right and none on the title bar above it. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
 its mark says a newer one is ready. Its page has the build and its commit,

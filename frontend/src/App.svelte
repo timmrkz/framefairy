@@ -971,6 +971,11 @@
     box-shadow:
       inset -1px 0 var(--line),
       8px 0 24px rgba(0, 0, 0, 0.45);
+    /* The shadow falls on the workspace to the right and nowhere else. Its
+       blur reached up over the title bar too, which Tim saw as a shadow
+       cast on the bar the sidebar hangs from. Only the right side is let
+       out, as far as the blur goes. */
+    clip-path: inset(0 -40px 0 0);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1068,8 +1073,19 @@
     min-height: 0;
   }
 
+  /* The 2 between one row and the next belongs to the row above, so the
+     pointer is always on a row on its way down the list, and no row goes
+     dark for the moment it crosses the gap. */
   li {
     position: relative;
+    padding-bottom: 2px;
+  }
+
+  /* The row is lit while the pointer is anywhere on it, the three dots
+     included: they lie over the row, and lighting the button alone made
+     the row go dark each time the pointer reached them. */
+  li:hover .episode {
+    background: var(--ink-3);
   }
 
   /* A whole number of pixels high, and the same number whether the sidebar
@@ -1098,7 +1114,6 @@
     text-align: left;
     border-color: transparent;
     background: transparent;
-    margin-bottom: 2px;
   }
 
   /* An icon's box around a lamp, so it is centred on the icons' column. */
@@ -1143,9 +1158,13 @@
     position: absolute;
     /* The three dots stand under the sort mark at the head of the list,
        one column of marks of one size: the head keeps 12 at its right and
-       the list 4, so 8 more here. Centred on the row: a control's height
-       in a 36 tall row. */
-    top: calc((36px - var(--control-h)) / 2);
+       the list 4, so 8 more here. They take the pointer over the whole
+       height of the row, gap included, so a pointer going down the
+       column of dots goes from one to the next and never off them, and
+       they are drawn a control's height in the middle of the 36, see
+       VideoMenu.svelte. */
+    top: 0;
+    bottom: 0;
     right: 8px;
     display: flex;
     gap: 2px;

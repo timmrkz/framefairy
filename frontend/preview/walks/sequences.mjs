@@ -162,25 +162,28 @@
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
 //   ["label", [words, how]]
-//                      opens the three dots of the video on screen in the
-//                      sidebar, types the words in its label, or nothing
-//                      for null, and leaves the menu by how: a colour's
-//                      name clicks that colour and then Escape closes the
-//                      menu, the same with " after a press" after it
-//                      presses beside the field first and holds the first
-//                      save, "Remove label" clicks the cross in the field
-//                      and then Escape, "a colour of its own, Return" or
-//                      ", Escape" clicks a shade in the colour picker and
-//                      leaves it with that key, which keeps the shade or
-//                      puts back the colour before, "Return" presses
-//                      Return, "Escape"
-//                      puts back what was there. The menu has to open on
-//                      the label, or the name of the video's folder,
-//                      chosen, with a colour chosen, hang inside the
-//                      sidebar and keep it open. The label the Go side
-//                      keeps has to be the one the row and the title bar
-//                      show, and the video has to keep its name and its
-//                      bytes
+//                      walks the pointer down the column of the three dots,
+//                      where every row it is on has to be lit with its dots
+//                      lit, then opens the three dots of the video on
+//                      screen in the sidebar, types the words in its label,
+//                      presses Tab for "Tab", or nothing for null, and
+//                      leaves the menu by how: a colour's name clicks that
+//                      colour and then Escape closes the menu, the same
+//                      with " after a press" after it presses beside the
+//                      field first and holds the first save, "Remove label"
+//                      clicks the cross in the field and then Escape, "a
+//                      colour of its own, Return" or ", Escape" clicks a
+//                      shade in the colour picker and leaves it with that
+//                      key, which keeps the shade or puts back the colour
+//                      before, "Return" presses Return, "Escape" puts back
+//                      what was there. The menu has to open on the label
+//                      chosen, or empty with the folder's name as its hint
+//                      and no colour, hang inside the sidebar and keep it
+//                      open, and the sidebar casts no shadow on the title
+//                      bar. Words in the field and a chosen colour go
+//                      together. The label the Go side keeps has to be the
+//                      one the row and the title bar show, and the video
+//                      has to keep its name and its bytes
 //   ["add", seconds]   adds a new video of so many seconds with Add
 //   ["add", seconds, rate]
 //                      adds one filmed at a frame rate, "30000/1001" for
@@ -2238,10 +2241,12 @@ export const sequences = [
       ["add", 12],
       ["label", [null, "Escape"]],
       ["label", [null, "Return"]],
+      ["label", ["Tab", "Escape"]],
+      ["label", ["Tab", "Return"]],
       ["label", [null, "a colour of its own, Escape"]],
       ["label", [null, "a colour of its own, Return"]],
       ["label", [null, "Remove label"]],
-      ["label", ["Ben", "Blue"]],
+      ["label", [null, "Blue"]],
       ["label", ["Ben, Kindergarten", "Return"]],
       ["label", ["Anna", "Escape"]],
       ["label", ["", "Return"]],
@@ -5938,7 +5943,7 @@ for (const seq of toWalk) {
         break;
       }
       case "label": {
-        const [words, how] = arg;
+        const [typed, how] = arg;
         const colours = { Purple: "#942192", Blue: "#0a64d6", Pink: "#c2307a", Red: "#d0342c", Green: "#38923f" };
         const source = await episodeOn(page);
         const was = (await ask(page, "Library")).find((e) => e.source === source)?.label ?? null;
@@ -5946,6 +5951,31 @@ for (const seq of toWalk) {
         const row = page.locator("aside li:has(button.episode.current)");
         await page.mouse.move(20, 500);
         await sidebarStill(page);
+        // Down the column of the three dots a pixel at a time, from the
+        // sort mark to under the last row: wherever the pointer is on a
+        // row, that row is lit and its dots are shown and lit, so going
+        // from one mark to the next lights nothing twice. Tim saw the row
+        // go dark the moment the pointer reached its dots, and every row
+        // go dark in the gap to the next. Once, on the first step, since a
+        // walk a pixel at a time takes its while.
+        const column = await page.locator("aside .order button").boundingBox();
+        const rowsAt = await page.evaluate(() => [...document.querySelectorAll("aside li")].map((li) => { const r = li.getBoundingClientRect(); return [r.top, r.bottom]; }));
+        const x = column.x + column.width / 2;
+        const once = typed === null && how === "Escape" && !was;
+        for (let y = Math.round(rowsAt[0][0]); once && !wrong && y < Math.round(rowsAt.at(-1)[1]); y++) {
+          await page.mouse.move(x, y);
+          const at = await page.evaluate(({ x, y }) => {
+            const li = document.elementFromPoint(x, y)?.closest("aside li");
+            if (!li) return "on no row";
+            const lit = (el, pseudo) => getComputedStyle(el, pseudo).backgroundColor !== "rgba(0, 0, 0, 0)";
+            if (!lit(li.querySelector(".episode"))) return "on a row that is not lit";
+            if (getComputedStyle(li.querySelector(".tools")).opacity !== "1") return "on a row whose dots are hidden";
+            const dots = li.querySelector("button.more");
+            if (!lit(dots) && !lit(dots, "::before")) return "on dots that are not lit";
+            return "";
+          }, { x, y });
+          if (at) wrong = `the pointer ${Math.round(y - rowsAt[0][0])} px down the list, in the column of the dots, is ${at}`;
+        }
         await row.hover();
         await row.locator("button.more").click();
         const menu = page.locator(".video-menu");
@@ -5953,9 +5983,9 @@ for (const seq of toWalk) {
         // The menu hangs inside the sidebar, so it reaches no further over
         // the workspace than the sidebar does, and the sidebar stays open
         // while the pointer is on the menu.
-        // It opens on the label, or the name of the video's folder for a
-        // video with none, chosen so Return keeps it and typing replaces
-        // it, and with a colour chosen, so nothing has to be picked first.
+        // It opens on the label as it is, its words chosen so typing
+        // replaces them. A video with none has an empty field with the name
+        // of its folder as a hint, no colour chosen and no cross.
         const reach = await page.evaluate(() => {
           const m = document.querySelector(".video-menu").getBoundingClientRect();
           const a = document.querySelector("aside").getBoundingClientRect();
@@ -5965,6 +5995,8 @@ for (const seq of toWalk) {
             a: [a.left, a.right],
             focused: document.activeElement?.getAttribute("aria-label"),
             words: field.value,
+            hint: field.placeholder,
+            cross: !!document.querySelector('.video-menu button[aria-label="Remove label"]'),
             chosen: field.selectionStart === 0 && field.selectionEnd === field.value.length,
             ringed:
               (document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ??
@@ -5972,33 +6004,75 @@ for (const seq of toWalk) {
             // The three dots and the sort mark are one column of marks of
             // one size, and the menu's icons stand in the sidebar's column
             // of icons, with their words where the sidebar's start.
-            marks: ["aside li:has(button.episode.current) button.more", "aside .order button"].map((q) => {
-              const r = document.querySelector(q)?.getBoundingClientRect();
-              return r && [r.left, r.right, r.height].join(" ");
+            // The dots take the pointer over the row's whole height and
+            // light a control's height of it, so what is lit is measured.
+            marks: [
+              ["aside li:has(button.episode.current) button.more", "::before"],
+              ["aside .order button", null],
+            ].map(([q, part]) => {
+              const el = document.querySelector(q);
+              const r = el?.getBoundingClientRect();
+              return r && [r.left, r.right, part ? parseFloat(getComputedStyle(el, part).height) : r.height].join(" ");
             }),
             icons: [".video-menu .item svg", "aside .foot .nav svg"].map((q) => document.querySelector(q)?.getBoundingClientRect().left),
           };
         });
+        // The sidebar's shadow falls on the workspace and not on the title
+        // bar above it: the bar over the sidebar is the colour it is far
+        // to the right of it.
+        const shade = await page.evaluate(async ({ shot, dpr }) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${shot}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(img, 0, 0);
+          const a = document.querySelector("aside").getBoundingClientRect();
+          const px = (x) => [...g.getImageData(Math.floor(x * dpr), 0, 1, 1).data.slice(0, 3)];
+          return { over: px(a.left + 40), beside: px(a.right + 300) };
+        }, { shot: (await page.screenshot({ clip: await page.evaluate(() => { const a = document.querySelector("aside").getBoundingClientRect(); return { x: 0, y: a.top - 3, width: a.right + 320, height: 1 }; }) })).toString("base64"), dpr: await page.evaluate(() => devicePixelRatio) });
         const folder = basename(dirname(source));
+        const words = was?.text ?? "";
         if (reach.m[0] < reach.a[0] || reach.m[1] > reach.a[1])
-          wrong = `the menu reaches ${reach.m.join(" to ")}, out of the sidebar at ${reach.a.join(" to ")}`;
-        else if (reach.focused !== "Label") wrong = `the menu opened with the focus on ${reach.focused ?? "nothing"}, not on the label`;
-        else if (reach.words !== (was?.text ?? folder)) wrong = `the menu opened on ${JSON.stringify(reach.words)}, not ${JSON.stringify(was?.text ?? folder)}`;
-        else if (!reach.chosen) wrong = "the menu opened with the words in the field not chosen";
+          wrong ||= `the menu reaches ${reach.m.join(" to ")}, out of the sidebar at ${reach.a.join(" to ")}`;
+        else if (shade.over.some((v, k) => Math.abs(v - shade.beside[k]) > 2))
+          wrong ||= `the title bar over the open sidebar is rgb(${shade.over}), beside it rgb(${shade.beside}): the sidebar casts its shadow on it`;
+        else if (reach.focused !== "Label") wrong ||= `the menu opened with the focus on ${reach.focused ?? "nothing"}, not on the label`;
+        else if (reach.words !== words) wrong ||= `the menu opened on ${JSON.stringify(reach.words)}, not ${JSON.stringify(words)}`;
+        else if (!was && reach.hint !== folder) wrong ||= `the field's hint is ${JSON.stringify(reach.hint)}, not the folder's name ${JSON.stringify(folder)}`;
+        else if (reach.cross !== !!was) wrong ||= `the menu opened ${reach.cross ? "with" : "without"} the cross, on ${was ? "a label" : "no label"}`;
+        else if (!reach.chosen) wrong ||= "the menu opened with the words in the field not chosen";
         else if (!reach.marks[1]) wrong = "there is no sort mark to line the three dots up with, with two videos in the list";
         else if (reach.marks[0] !== reach.marks[1])
           wrong = `the three dots stand at ${reach.marks[0]} (left, right, height), the sort mark at ${reach.marks[1]}`;
         else if (reach.icons[0] !== reach.icons[1]) wrong = `the menu's icons start at ${reach.icons[0]}, the sidebar's at ${reach.icons[1]}`;
-        else if (!reach.ringed) wrong = "the menu opened with no colour chosen";
-        else if (was && reach.ringed !== was.colour) wrong = `the menu opened on ${reach.ringed}, not the label's ${was.colour}`;
-        if (words !== null) await menu.locator('input[aria-label="Label"]').fill(words);
+        else if (reach.ringed !== (was?.colour ?? null)) wrong = `the menu opened on ${reach.ringed ?? "no colour"}, not ${was?.colour ?? "no colour"}`;
+        // Tab takes the folder's name as a hint is taken, and the first
+        // word chooses a colour.
+        const field = menu.locator('input[aria-label="Label"]');
+        if (typed === "Tab") await page.keyboard.press("Tab");
+        else if (typed !== null) await field.fill(typed);
+        const after = await page.evaluate(() => ({
+          words: document.querySelector(".video-menu input").value,
+          focused: document.activeElement?.getAttribute("aria-label"),
+          ringed: document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ?? null,
+        }));
+        if (wrong) {
+          // Said already.
+        } else if (typed === "Tab" && (after.words !== folder || after.focused !== "Label"))
+          wrong = `Tab left ${JSON.stringify(after.words)} in the field with the focus on ${after.focused ?? "nothing"}, not the folder's name in the field`;
+        else if (after.words.trim() && !after.ringed && !was?.colour) wrong = `the field says ${JSON.stringify(after.words)} and no colour is chosen`;
+        else if (!after.words.trim() && after.ringed) wrong = `the field is empty and ${after.ringed} is chosen`;
         await menu.hover();
         if (!wrong && !(await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
           wrong = "the sidebar closed under the menu";
         // The pill follows the words while they are typed.
-        const typed = await page.evaluate(() => document.querySelector("aside li:has(button.episode.current) .tag")?.textContent ?? "");
-        if (!wrong && words?.trim() && typed !== words.trim())
-          wrong = `while typing, the pill says ${JSON.stringify(typed)}, not ${JSON.stringify(words)}`;
+        const pill = await page.evaluate(() => document.querySelector("aside li:has(button.episode.current) .tag")?.textContent ?? "");
+        if (!wrong && pill !== after.words.trim())
+          wrong = `while typing, the pill says ${JSON.stringify(pill)}, not ${JSON.stringify(after.words.trim())}`;
+        const ringed = after.ringed ?? reach.ringed;
         if (how === "Return" || how === "Escape") await page.keyboard.press(how === "Return" ? "Enter" : how);
         else if (how.startsWith("a colour of its own")) {
           // A shade clicked in the colour picker at the end of the
@@ -6033,14 +6107,15 @@ for (const seq of toWalk) {
         await sidebarStill(page);
         await settle(page);
         const named = colours[how.split(" after a press")[0]];
-        const text = words === null ? reach.words : words.trim();
-        let want = how === "Escape" ? was : how === "Remove label" || !text ? null : { text, colour: named ?? reach.ringed };
+        // A colour clicked in an empty field takes the folder's name.
+        const text = after.words.trim() || (named ? folder : "");
+        let want = how === "Escape" ? was : how === "Remove label" || !text ? null : { text, colour: named ?? ringed };
         // A shade taken with Return is a colour of the picker's own, which
         // is any but the one there was. Escape put back the one there was.
         const own = how === "a colour of its own, Return";
         const ep = (await ask(page, "Library")).find((e) => e.source === source);
         const kept = ep?.label ?? null;
-        if (own && kept && kept.colour !== reach.ringed) want = { ...want, colour: kept.colour };
+        if (own && kept && kept.colour !== ringed) want = { ...want, colour: kept.colour };
         const drawn = await page.evaluate(() => {
           const pill = (el) => (el ? { text: el.textContent, colour: el.style.getPropertyValue("--tag") } : null);
           return {

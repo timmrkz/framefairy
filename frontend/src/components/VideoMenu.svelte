@@ -14,21 +14,20 @@
   // the same reason. Its icons stand in the sidebar's column of icons and
   // its words where the sidebar's words start.
   //
-  // The menu opens the way a name opens to be changed on the Mac: the
-  // words in the field and chosen, so Return keeps them and typing
-  // replaces them. A video with no label yet has the name of its folder
-  // there, which is what tells a folder of youtube.mp4s apart, and a colour
-  // is always chosen, one no other video wears yet. So the menu looks the
-  // same with a label and without one, and nothing has to be chosen before
-  // the label can be kept. The folder's name is only kept once something
-  // is done with it, Return or a colour, and a menu opened for Show in
-  // folder leaves the video as it was.
+  // The menu shows the label as it is. A video with no label has an empty
+  // field with no colour chosen, and the name of its folder in grey in the
+  // field, which is what tells a folder of youtube.mp4s apart: Tab takes
+  // it, the way Tab takes a suggestion in a field on the Mac. The moment
+  // the field has words, by Tab or by typing, a colour is chosen, one no
+  // other video wears yet, and the pill shows in the row. An empty field
+  // is no label, so the field, the colours and the row never disagree, and
+  // a menu opened for Show in folder leaves the video as it was.
   //
   // Everything saves at once, the way it does everywhere in the app: a
   // colour the moment it is clicked, the words when Return is pressed, the
   // field is left or the menu closes. The pill in the row follows the words
   // while they are typed. Escape puts back what was there, and the cross at
-  // the end of the field removes the label.
+  // the end of the field, there while it has words, removes the label.
   import { Popover } from "bits-ui";
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
@@ -70,10 +69,6 @@
   // only a change is saved and Escape has something to put back.
   let kept = $state<Label | null>(null);
   let putBack = false;
-  // Whether what the menu holds is the label to keep: a label the video
-  // has, or one the person has done something with. The folder's name the
-  // menu opens with is a suggestion until then.
-  let meant = false;
   // A press inside the menu. WebKit gives a button no focus when it is
   // clicked, so leaving the field for a colour says nothing of where the
   // focus went, and the press is how it is known to stay in the menu.
@@ -89,9 +84,8 @@
   // The menu as it opens, and as it is again once the label is removed.
   function begin(label: Label | null) {
     kept = label ? { ...label } : null;
-    text = label?.text ?? folder;
-    colour = label?.colour ?? freshColour(worn);
-    meant = !!label;
+    text = label?.text ?? "";
+    colour = label?.colour ?? "";
   }
 
   function opened() {
@@ -103,7 +97,7 @@
   // The label the menu holds now, or nothing when it has no words.
   function now(): Label | null {
     const words = text.trim();
-    return words ? { text: words, colour } : null;
+    return words ? { text: words, colour: colour || freshColour(worn) } : null;
   }
 
   function same(a: Label | null, b: Label | null) {
@@ -111,23 +105,34 @@
   }
 
   function save() {
-    if (putBack || !meant) return;
+    if (putBack) return;
     const label = now();
     if (same(label, kept)) return;
     kept = label;
     onsave(label);
   }
 
+  // Words in the field and a colour go together: the first word chooses
+  // a colour and an empty field has none.
   function typed(value: string) {
     text = value;
-    meant = true;
+    if (!value.trim()) colour = "";
+    else if (!colour) colour = freshColour(worn);
     ondraft(now());
   }
 
+  // Tab in an empty field takes the folder's name, with the caret after
+  // it so typing goes on from there. Anywhere else Tab moves on, as usual.
+  function complete(event: KeyboardEvent) {
+    if (text || !folder || event.shiftKey) return;
+    event.preventDefault();
+    typed(folder);
+    field?.setSelectionRange(folder.length, folder.length);
+  }
+
   function pickColour(hex: string, keep = true) {
-    colour = hex;
     if (!text.trim()) text = folder;
-    meant = true;
+    colour = hex;
     ondraft(now());
     if (keep) save();
   }
@@ -203,7 +208,6 @@
               onpointerdown={() => (pressed = true)}
             >
               <div class="label">
-                <span class="icon"><Icon name="tag" /></span>
                 <span class="field">
                   <input
                     bind:this={field}
@@ -219,9 +223,8 @@
                     onkeydown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        meant = true;
                         close();
-                      }
+                      } else if (e.key === "Tab") complete(e);
                     }}
                     onblur={(e) => {
                       // A colour clicked saves the words with it, so leaving
@@ -229,7 +232,7 @@
                       if (!pressed && !menu?.contains(e.relatedTarget as Node | null)) save();
                     }}
                   />
-                  {#if kept}
+                  {#if text.trim()}
                     <button class="clear quiet" title="Remove label" aria-label="Remove label" onclick={removeLabel}>
                       <Icon name="close" size={12} />
                     </button>
@@ -277,11 +280,13 @@
 
 <style>
   /* The menu is the panel a list in the app is, see Pick.svelte, as wide
-     as the row it hangs under. */
+     as the row it hangs under. Its rows run from edge to edge with nothing
+     above or under them, and its corners clip them. */
   .video-menu {
     z-index: 60;
     width: var(--bits-floating-anchor-width);
-    padding: 0 0 4px;
+    padding: 0;
+    overflow: hidden;
     color: var(--text);
     background: var(--ink-1);
     border: 1px solid var(--line);
@@ -290,27 +295,14 @@
   }
 
   /* The label's words over its colours, apart from what is done with the
-     video by a line, the way a menu on the Mac is parted. The tag stands in
-     the column of the icons below it and the field and the colours where
-     their words start. */
+     video by a line, the way a menu on the Mac is parted. The field and
+     the colours start in the column of the icons below them. */
   .label {
-    display: grid;
-    grid-template-columns: 16px minmax(0, 1fr);
-    column-gap: 8px;
-    row-gap: 10px;
-    align-items: center;
-    padding: 8px 8px 10px 9px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .label .icon {
     display: flex;
-    color: var(--muted);
-  }
-
-  .colours {
-    grid-column: 2;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px 8px 10px 9px;
+    border-bottom: 1px solid var(--line);
   }
 
   /* The cross sits inside the end of the field, the way it does in a
@@ -388,19 +380,44 @@
 
   /* The mark is the sort mark at the head of the list: as big, lit the
      same way under the pointer, and in the same column, see .tools in
-     App.svelte. */
+     App.svelte. It takes the pointer over the row's whole height, and
+     what is lit is a control's height in the middle of the 36 the row's
+     button has, where the sort mark's is in the head. */
   .more {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     flex: none;
     width: 36px;
-    padding: 0;
+    height: 100%;
+    padding: 0 0 2px;
     color: var(--muted);
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .more::before {
+    content: "";
+    position: absolute;
+    top: calc((36px - var(--control-h)) / 2);
+    left: 0;
+    right: 0;
+    height: var(--control-h);
+    border-radius: var(--radius-s);
   }
 
   .more:hover:not(:disabled),
   .more[aria-expanded="true"] {
     color: var(--text);
+    background: transparent;
+  }
+
+  .more:hover:not(:disabled)::before {
+    background: var(--lift);
+  }
+
+  .more :global(svg) {
+    position: relative;
   }
 </style>

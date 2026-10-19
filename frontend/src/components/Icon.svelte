@@ -38,7 +38,6 @@
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import Search from "@lucide/svelte/icons/search";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
-  import Tag from "@lucide/svelte/icons/tag";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -106,8 +105,6 @@
     // What can be done with a video in the sidebar, behind the three dots
     // Finder and Mail put on a row for its menu.
     more: Ellipsis,
-    // A video's label, the tag Finder puts on a file.
-    tag: Tag,
   };
 
   // The marks that are solid wherever people see them, play and pause on

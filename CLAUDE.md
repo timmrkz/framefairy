@@ -399,6 +399,14 @@ messages, pull request text, code comments and chat replies.
   workspace, because a list pushed back from the edge of the app lines up
   with nothing. A list long enough to search has a search field over its
   rows, from the same file, never a second list of its own.
+- **A menu's rows run from edge to edge.** Whatever a person picks from,
+  a list, a menu, the rows of a pop-up, the highlight of the first row
+  starts at the top edge of the panel or the line over it, and the
+  highlight of the last row ends at the bottom edge, with no strip of
+  nothing above or under them, the way the rows of a list in Finder do.
+  The panel's corners clip the rows. Tim saw such a strip twice, in the
+  font list and in a video's menu, see `Pick.svelte` and
+  `VideoMenu.svelte`.
 - **Borrow what people already know.** Where the Mac, or the apps people
   use every day, already have a way of doing something, an icon, a word, a
   place for a control, a flow like updating, do it their way. Look it up
