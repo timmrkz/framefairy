@@ -39,6 +39,9 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["press twice", key]
+//                      presses a key twice, with nothing heard by dictation
+//                      let in between
 //   ["read ahead", key] rests a second and a half, presses the key and
 //                      checks that the frame it lands on was there already,
 //                      read while the hand rested: it came from the frames
@@ -307,7 +310,12 @@
 //   ["dictate", how]   presses Dictate, waits for the words to appear grey
 //                      while they are heard, and ends the recording how
 //                      says: "button" presses Stop, "enter" presses Enter
-//                      and "escape" Escape, and "ends" presses nothing
+//                      and "escape" Escape, "escape, then enter" presses
+//                      Escape and Enter right after it, while what was
+//                      said is still being written down, "escape, the
+//                      cursor stays" sees the cursor still drawn after the
+//                      words while they are written down, and "ends"
+//                      presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
 //                      It hears two notes going up once the microphone is
@@ -327,6 +335,8 @@
 //                      of and no ring on anything
 //   ["field reads", selector, text]
 //                      the field selector names holds text
+//   ["report is text"] the report's field holds text alone, its new lines
+//                      too, and no block or line break of the browser's
 //   ["report reads", text]
 //                      the report's field reads text, where * is
 //                      whatever the speech model heard, a word or more
@@ -2005,13 +2015,104 @@ export const sequences = [
       ["dictate", "start"],
       ["dictate", "settled"],
       ["type", "Y"],
-      ["press", "Home"],
+      // The start of the report, not of the line: what is said after Y
+      // pushes the cursor along, onto a line further down.
+      ["press", "Control+Home"],
       ["press", "ArrowRight"],
       ["press", "ArrowRight"],
       ["type", "Z"],
       ["dictate", "hearing"],
       ["dictate", "enter"],
       ["report reads", "ItZ * Y * froze."],
+    ],
+  },
+  {
+    // Issue #373. Tim ended a dictation and pressed Enter at once for a
+    // new line, while what he said was still being written down. The
+    // words were written in and the cursor put back in front of his new
+    // line, so what he typed next went before it. The cursor stays where
+    // he put it.
+    name: "A new line typed while what was said is written down stays where it was typed",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "escape, then enter"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\nNext"],
+    ],
+  },
+  {
+    // Issue #373. Shift+Enter while dictating put the new line after the
+    // words, and what was said next still went on the line above the
+    // cursor. The new line is typed at the end of what was said, like a
+    // letter, and what is said next goes on the new line.
+    name: "Shift+Enter while dictating starts a new line for what is said next",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["press", "Shift+Enter"],
+      ["caret at words"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "escape"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\n*Next"],
+    ],
+  },
+  {
+    // Issue #373. Tim pressed Shift+Enter twice while dictating on his
+    // Mac. WebKit put the second new line after the words being heard, so
+    // they went on the line above the cursor, and once kept, the new lines
+    // were blocks of their own, which showed as an empty line at the end.
+    // Every new line is text, in the order it was typed.
+    name: "Two Shift+Enters while dictating make two new lines, kept as text",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["press twice", "Shift+Enter"],
+      ["caret at words"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "escape"],
+      ["report is text"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\n\n*Next"],
+    ],
+  },
+  {
+    // Issue #373. Tim ended a dictation on his Mac and the cursor jumped
+    // while the last words were written down, to the front of the line or
+    // past where the words would end, and back once they came. It stays
+    // drawn after the words until they are in.
+    name: "The cursor stays after the words while the last of them are written down",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["caret at words"],
+      // The last words take a while to write down, the way they do on a
+      // Mac after a long sentence.
+      ["hold", "StopListening", 1500],
+      ["dictate", "escape, the cursor stays"],
+    ],
+  },
+  {
+    // Issue #373. Tim felt the cursor was not always pushed along by
+    // what he said. After typing at the end of what was said, it stayed
+    // behind and the words heard next ran on to the right of it. It is
+    // pushed along again as soon as more is heard.
+    name: "After typing at the end of a dictation, what is said next pushes the cursor along",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["dictate", "settled"],
+      ["type", "Y"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "enter"],
     ],
   },
   {
@@ -4861,6 +4962,14 @@ for (const seq of toWalk) {
           wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
+      case "press twice":
+        // Nothing heard comes in between, however busy the machine.
+        await page.evaluate(() => window.__pauseEvents(true));
+        await page.keyboard.press(arg);
+        await page.keyboard.press(arg);
+        await page.evaluate(() => window.__pauseEvents(false));
+        await watch.step("press", s);
+        break;
       case "press":
         await page.keyboard.press(arg);
         await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s);
@@ -6585,7 +6694,12 @@ for (const seq of toWalk) {
         if (pictures !== want) wrong = `the report holds ${pictures} pictures, not ${want}: ${names.join(", ")}`;
         else if (recordings !== films) wrong = `the report holds ${recordings} recordings, not ${films}: ${names.join(", ")}`;
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
-        const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+        // The window closes while the call is still on its way back, and the
+        // page empties the field once it is, so a busy runner can read the
+        // field a moment before. Given a second for that.
+        const look = () => page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+        let left = await look();
+        for (const end = Date.now() + 1000; (left[0] || left[1]) && Date.now() < end; left = await look()) await new Promise((r) => setTimeout(r, 50));
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
         break;
       }
@@ -6901,6 +7015,14 @@ for (const seq of toWalk) {
         } else {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
+          if (arg === "escape, then enter") await page.keyboard.press("Enter");
+          // While the last words are written down, the cursor is still
+          // drawn after them, where they end.
+          if (arg === "escape, the cursor stays") {
+            const c = await page.locator(".telling").evaluate((f) => ({ writing: document.querySelector("button.dictate")?.getAttribute("aria-label"), ours: f.classList.contains("ours") }));
+            if (c.writing !== "Writing") wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
+            else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
+          }
         }
         await page.waitForFunction(() => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate", null, {
           timeout: 20000,
@@ -6911,6 +7033,11 @@ for (const seq of toWalk) {
         const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);
         if (down.length !== 2 || down[0].f <= down[1].f) wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
         await watch.step("dictate", s);
+        break;
+      }
+      case "report is text": {
+        const inside = await page.locator(".telling").evaluate((f) => [...f.querySelectorAll("*")].map((e) => e.outerHTML));
+        if (inside.length) wrong = `the report holds ${inside.join(", ")}, not text alone`;
         break;
       }
       case "report reads": {
