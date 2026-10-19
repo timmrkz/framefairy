@@ -45,7 +45,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import ModelList from "../components/ModelList.svelte";
-  import Colour from "../components/Colour.svelte";
+  import Swatches from "../components/Swatches.svelte";
   import Pick from "../components/Pick.svelte";
 
   let settings = $state<Settings | null>(null);
@@ -154,23 +154,6 @@
   $effect(() => {
     if (settings?.appColour) wearColour(settings.appColour);
   });
-
-  // The colours the Mac offers as an accent, in its own order, with the
-  // app's own first. A person who wants another has the colour well at
-  // the end of the row.
-  const colours = [
-    { hex: "#942192", name: "Purple, the app's own" },
-    { hex: "#0a64d6", name: "Blue" },
-    { hex: "#c2307a", name: "Pink" },
-    { hex: "#d0342c", name: "Red" },
-    { hex: "#d9731c", name: "Orange" },
-    { hex: "#b98f08", name: "Yellow" },
-    { hex: "#38923f", name: "Green" },
-    { hex: "#6e7078", name: "Graphite" },
-  ];
-  const custom = $derived(
-    !!settings && !colours.some((c) => c.hex === settings!.appColour?.toLowerCase()),
-  );
 
   // The Go side asks the company whether it takes the key before keeping
   // it, so a key it refuses is found here, where it was typed.
@@ -1002,33 +985,12 @@
               <span class="head">Accent colour</span>
               <span class="small muted">What the app picks things out in. The colours of a short are set beside its captions.</span>
             </div>
-            <div class="swatches" role="radiogroup" aria-label="Accent colour">
-              {#each colours as c (c.hex)}
-                {@const on = settings.appColour?.toLowerCase() === c.hex}
-                <button
-                  class="swatch"
-                  class:on
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={c.name}
-                  title={c.name}
-                  style="--swatch: {c.hex}"
-                  onclick={() => settings && (settings.appColour = c.hex)}
-                ></button>
-              {/each}
-              <!-- Any other colour, in the app's own colour picker. The
-                   round colours before it are its presets, so it offers
-                   none of its own. -->
-              <Colour
-                face="well"
-                on={custom}
-                label="Another colour"
-                title="Another colour"
-                value={settings.appColour ?? ""}
-                oninput={(hex) => hex && settings && (settings.appColour = hex)}
-                onchange={(hex) => settings && (settings.appColour = hex)}
-              />
-            </div>
+            <Swatches
+              label="Accent colour"
+              value={settings.appColour ?? ""}
+              oninput={(hex) => settings && (settings.appColour = hex)}
+              onpick={(hex) => settings && (settings.appColour = hex)}
+            />
           </div>
         </div>
       </div>
@@ -1405,37 +1367,6 @@
     width: var(--control-h);
     padding: 0;
     flex: none;
-  }
-
-  /* The accent colours, round, the way the Mac shows them. The chosen one
-     carries a ring in its own colour a step out from it. */
-  .swatches {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: none;
-  }
-
-  .swatch {
-    position: relative;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border-radius: 50%;
-    border: none;
-    background: var(--swatch);
-    flex: none;
-  }
-
-  .swatch:hover:not(:disabled) {
-    background: var(--swatch);
-    filter: brightness(1.15);
-  }
-
-  .swatch.on {
-    box-shadow:
-      0 0 0 2px var(--ink-1),
-      0 0 0 4px var(--swatch, var(--accent));
   }
 
   /* Advanced opens and closes like a disclosure in Finder: a chevron that

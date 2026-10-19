@@ -38,6 +38,29 @@ export function joinColour(hex: string, alpha: number): string {
   return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${a})`;
 }
 
+// The colours the Mac offers as an accent, in its own order, with the
+// app's own first. They are the round colours of the accent in the
+// settings, and the colours a video's label is made in, so the two are one
+// row of colours in two places, see Swatches.svelte.
+export const accentColours = [
+  { hex: "#942192", name: "Purple, the app's own" },
+  { hex: "#0a64d6", name: "Blue" },
+  { hex: "#c2307a", name: "Pink" },
+  { hex: "#d0342c", name: "Red" },
+  { hex: "#d9731c", name: "Orange" },
+  { hex: "#b98f08", name: "Yellow" },
+  { hex: "#38923f", name: "Green" },
+  { hex: "#6e7078", name: "Graphite" },
+];
+
+// The colour a new label starts in: the first of the accent colours that
+// no other label wears yet, so two labels never start out alike, and the
+// first again once every colour is worn.
+export function freshColour(worn: (string | undefined)[]): string {
+  const taken = new Set(worn.map((c) => c?.toLowerCase()));
+  return (accentColours.find((c) => !taken.has(c.hex)) ?? accentColours[0]).hex;
+}
+
 // The colours a caption is most often made in, offered first wherever a
 // caption's colour is picked: the white and the black of nearly every
 // caption, the yellow of subtitles, the app's own purple, which is the

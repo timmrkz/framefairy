@@ -1193,7 +1193,33 @@ const Answers = {
       }
       case "VideoNames":
         return Promise.resolve("mp4, mov, m4v or mkv");
+      // A video's label, kept here the way the Go side keeps it in the
+      // work folder. A probe reads what was saved on window.__labels.
+      case "SetLabel": {
+        const [path, text, colour] = args as [string, string, string];
+        const words = [...text.trim().replace(/\s+/g, " ")].slice(0, 40).join("");
+        const labels = ((window as any).__labels ??= {});
+        if (!words) {
+          delete labels[path];
+          return Promise.resolve(null);
+        }
+        if (!/^#[0-9a-f]{6}$/i.test(colour)) return Promise.reject(new Error("a label's colour is written #rrggbb"));
+        labels[path] = { text: words, colour: colour.toLowerCase() };
+        return Promise.resolve({ ...labels[path] });
+      }
+      // ?twins is Tim's library: every episode called youtube.mp4, each in
+      // a folder of its own.
       case "Library":
+        if (location.search.includes("twins")) {
+          const labels = (window as any).__labels ?? {};
+          const twin = (source: string, extra: object) => ({ source, name: "youtube.mp4", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true, label: labels[source], ...extra });
+          return Promise.resolve([
+            twin("/eps/ep.mp4", { name: "Mein Arm ist zersprungen", transcribed: true, covered: 14423, heard: [[0, 14423]] }),
+            twin("/eps/014 Anna/youtube.mp4", {}),
+            twin("/eps/015 Ben/youtube.mp4", {}),
+            twin("/eps/016 Clara/youtube.mp4", {}),
+          ]);
+        }
         return Promise.resolve([
           { source: "/eps/ep.mp4", name: "Mein Arm ist zersprungen", size: 1, modified: "", missing: false, transcribed: true, covered: 14423, heard: [[0, 14423]], transcriptStale: false, plans: [{ path: "/eps/ep.framefairy/logs/clips.json", name: "clips.json", from: 0, to: 1800, clips: 12, model: "gemma", modified: "" }], rendered: 1, previews: 0, work: true, everSearched: true },
           { source: "/eps/zwei.mp4", name: "Folge 12, die lange Nacht", size: 1, modified: "", missing: false, transcribed: false, covered: 900, heard: [[0, 900]], transcriptStale: false, plans: [], rendered: 0, previews: 0, work: true, everSearched: true },

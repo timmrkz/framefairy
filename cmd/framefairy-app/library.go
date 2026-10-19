@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog"
 
@@ -267,6 +269,31 @@ func (s *FrameFairy) clearLetGo(path string) {
 		theLog.line(zerolog.InfoLevel, "files").Str("video", filepath.Base(path)).
 			Msg("what was written back into the folder of a video let go is deleted")
 	}
+}
+
+// SetLabel gives a video in the library the words and the colour it is
+// told apart by in the sidebar, and says what was kept, nothing when the
+// words were taken away. Only the video's own work folder is written: the
+// video keeps its name.
+func (s *FrameFairy) SetLabel(path, text, colour string) (*engine.Label, error) {
+	if !slices.Contains(s.store.Episodes(), path) || !s.store.Known(path) {
+		return nil, errNotInLibrary
+	}
+	l, err := engine.WriteLabel(s.store.files, path, engine.Label{Text: text, Colour: colour})
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "library").Str("video", filepath.Base(path)).Err(err).
+			Msg("the video's label could not be kept")
+		return nil, err
+	}
+	if l == nil {
+		theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(path)).
+			Msg("the video's label is taken away")
+	} else {
+		theLog.line(zerolog.InfoLevel, "library").Str("video", filepath.Base(path)).
+			Int("characters", utf8.RuneCountInString(l.Text)).Str("colour", l.Colour).
+			Msg("the video has a label")
+	}
+	return l, nil
 }
 
 // Reveal shows a file in Finder, Explorer or the file manager.

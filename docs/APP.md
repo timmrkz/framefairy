@@ -146,6 +146,61 @@ the app, like whether the sidebar stays open. A library from before this
 kept no order, so its episodes stay in the order they were in, sorted by
 where they are on disk, and the ones added from now on go at the foot.
 
+Three dots show at the end of a row while the pointer is on it, and open
+what can be done with that video, the way Finder offers it on a
+right-click: its **label**, **Show in folder** and **Remove**, which asks
+first. The dots lie in a row, the way the Mac draws More, not one over the
+other as Android does. They are the sort mark's size, lit the same way and
+in its column, so the marks of the sidebar stand one under the other. A
+row is lit while the pointer is anywhere on it, its dots included, and the
+dots take the pointer over the row's whole height, so a pointer going down
+the column of dots goes from one to the next and nothing goes dark on the
+way. Tim saw the row go dark each time the pointer reached its dots. The
+menu hangs under the row and is exactly as wide as it, so it reaches no
+further over the workspace than the sidebar does, and the sidebar stays
+open while it is. Its icons stand in the sidebar's column of icons and its
+words where the sidebar's words start. Its rows are as tall as the rows of
+videos above it and run from edge to edge, the way a list's do in
+`Pick.svelte`.
+
+A label is a few words and a colour beside the video's name, in its row
+and in the title bar. It is how videos with the same file name are told
+apart, a folder of episodes that are each `youtube.mp4` above all. The
+video keeps its name and is never touched: the label is kept in its work
+folder, `label.json`, see `engine.Label`. The colours are the accent
+colours of the settings, the same row of round colours with the colour
+well at its end, `Swatches.svelte`.
+
+The menu shows the label as it is, its words chosen so typing replaces
+them. A video with no label has an empty field with no colour chosen, and
+the name of its folder in grey in the field, which Tab takes, the way Tab
+takes a suggestion in a field on the Mac. The moment the field has words,
+by Tab or by typing, a colour is chosen, one no other video wears yet, and
+the pill shows in the row. A colour clicked in an empty field takes the
+folder's name with it. An empty field is no label, so the field, the
+colours and the row never disagree, and a menu opened for Show in folder
+leaves the video as it was. A round before opened the menu on the
+folder's name and a colour, which Tim read as a label the video did not
+have.
+
+Everything saves at once: a colour when it is clicked, the words with
+Return, when the field is left or when the menu closes. Return closes the
+menu after a colour is clicked too, and the menu wears no focus ring of
+its own. The pill follows
+the words while they are typed, and Escape puts back what was there. Escape
+in the colour well puts back the colour from before it opened, and on a
+video with no label that is no colour and no words, so a shade looked at
+there leaves no label behind. The cross at the end of the field shows
+while it has words and removes the label, and so does Return on a field
+with no words. A label keeps at most 40 characters on one line, an emoji
+counted as one. A video at the root of a drive, with no folder to name,
+has its file's name as the hint.
+
+A save the Go side refuses, a full disk or a work folder that cannot be
+written, says so in a toast, and the row and the title bar go back to the
+label the video still has. The pill shows only what is kept or still on
+its way.
+
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
@@ -155,7 +210,8 @@ to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
 back to the button last clicked. Closed, it leaves room for the settings column of the workspace,
-which is exactly what it covers when it opens. **Add episode**,
+which is exactly what it covers when it opens. Open, it casts a shadow on
+the workspace to its right and none on the title bar above it. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
 marks on the rail. Updates says which build is running, and a still dot on
 its mark says a newer one is ready. Its page has the build and its commit,
@@ -2159,6 +2215,11 @@ In it, from the quickest pick to the most exact:
   with or without the #. It is drawn as it is typed and saved with Enter or
   when it is left.
 
+Return closes the pop-up and keeps the colour it holds. Escape closes it
+and puts back the colour it opened on, the way Return and Escape answer a
+pop-up everywhere on the Mac. Tim found Escape keeping the shade he had
+just dragged to, and Return doing nothing, the wrong way round.
+
 The opacity stays the number beside each colour, so the row keeps its
 width.
 
@@ -2958,8 +3019,8 @@ through is in the log of its search.
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has
 with the older ones, their size and their lines, read again whenever
-Advanced opens. The folder button shows it in Finder, the way the
-sidebar's does for a video, and the trash can removes every file of the
+Advanced opens. The folder button shows it in Finder, the way Show in
+folder does for a video in the sidebar, and the trash can removes every file of the
 log, the older ones too and nothing else in their folder, after asking.
 The app starts a new log with its next line, which says what went.
 

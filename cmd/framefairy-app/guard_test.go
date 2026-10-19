@@ -107,6 +107,12 @@ func TestNothingOutsideTheLibraryIsTouched(t *testing.T) {
 	if _, err := svc.Captions(other, elsewhere, "01"); err == nil {
 		t.Error("Captions answered for a file that is not in the library")
 	}
+	if _, err := svc.SetLabel(other, "Ben", "#942192"); err == nil {
+		t.Error("SetLabel wrote a label for a file that is not in the library")
+	}
+	if _, err := svc.SetLabel(elsewhere, "Ben", "#942192"); err == nil {
+		t.Error("SetLabel wrote a label for a file that is not a video in the library")
+	}
 	if !fileExists(elsewhere) {
 		t.Error("a file outside the library was deleted")
 	}

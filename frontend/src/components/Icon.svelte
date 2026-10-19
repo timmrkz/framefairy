@@ -38,6 +38,7 @@
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import Search from "@lucide/svelte/icons/search";
   import MessageSquareQuote from "@lucide/svelte/icons/message-square-quote";
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -106,6 +107,9 @@
     // bubble with quotes in it, the mark Apple Podcasts puts on the button
     // that opens an episode's transcript.
     transcript: MessageSquareQuote,
+    // What can be done with a video in the sidebar, behind the three dots
+    // Finder and Mail put on a row for its menu.
+    more: Ellipsis,
   };
 
   // The marks that are solid wherever people see them, play and pause on

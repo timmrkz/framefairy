@@ -161,6 +161,45 @@
 //                      gone
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
+//   ["label", [words, how]]
+//                      walks the pointer down the column of the three dots,
+//                      where every row it is on has to be lit with its dots
+//                      lit, then opens the three dots of the video on
+//                      screen in the sidebar, types the words in its label,
+//                      presses Tab for "Tab", or nothing for null, and
+//                      leaves the menu by how: a colour's name clicks that
+//                      colour and then Escape closes the menu, the same
+//                      with " after a press" after it presses beside the
+//                      field first and holds the first save, the same with
+//                      ", then Return" closes the menu with Return from
+//                      where WebKit leaves the focus after the click,
+//                      which has to keep the colour and show no ring
+//                      round the menu, "Remove label"
+//                      clicks the cross in the field and then Escape, "a
+//                      colour of its own, Return" or ", Escape" clicks a
+//                      shade in the colour picker and leaves it with that
+//                      key, which keeps the shade or puts back the colour
+//                      before, and "the colour picker, Escape" opens the
+//                      picker and leaves it with Escape without a click.
+//                      Leaving the picker with Escape has to leave the
+//                      field and the colour as they were before it opened.
+//                      "Return" presses Return, "Return, the save failing"
+//                      the same with the Go side refusing the save, which
+//                      has to say so in a toast and keep the label it had,
+//                      "Escape" puts back what was there. The menu has to
+//                      open on the label
+//                      chosen, or empty with the folder's name as its hint
+//                      and no colour, hang inside the sidebar and keep it
+//                      open, and the sidebar casts no shadow on the title
+//                      bar. Words in the field and a chosen colour go
+//                      together. The label the Go side keeps has to be the
+//                      one the row and the title bar show, and the video
+//                      has to keep its name and its bytes
+//   ["two menus"]      opens the three dots of the lowest video in the
+//                      sidebar, then those of the highest while that menu
+//                      is open. The sidebar has to stay open with only the
+//                      second menu in it, and close once the menu is
+//                      closed and the pointer has left
 //   ["add", seconds]   adds a new video of so many seconds with Add
 //   ["add", seconds, rate]
 //                      adds one filmed at a frame rate, "30000/1001" for
@@ -1000,10 +1039,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
-import { clipList, control, pressHead, fromSidebar, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
+import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
+
+// The video's work folder, see WorkDir in engine/run.go.
+const workDir = (source) => join(dirname(source), basename(source, extname(source)) + ".framefairy");
 
 export const sequences = [
   {
@@ -2292,6 +2334,38 @@ export const sequences = [
       ["remove picture", [2, "key"]],
       ["removed goes"],
       ["pictures", 2],
+    ],
+  },
+  {
+    // Tim's videos are each youtube.mp4 in a folder of their own, and the
+    // sidebar showed the same name for all of them. A label, words and a
+    // colour from the three dots of a row, tells them apart, and the video
+    // keeps its name.
+    name: "a label tells a video apart and the video keeps its name",
+    steps: [
+      // A second video, so the list has the sort mark at its head.
+      ["add", 12],
+      ["label", [null, "Escape"]],
+      ["label", [null, "Return"]],
+      // Escape in the colour picker of a video with no label leaves it
+      // with none, with a shade clicked and without.
+      ["label", [null, "the colour picker, Escape"]],
+      ["label", [null, "a colour of its own, Escape"]],
+      ["label", ["Tab", "Escape"]],
+      ["label", ["Tab", "Return"]],
+      ["label", [null, "a colour of its own, Escape"]],
+      ["label", [null, "a colour of its own, Return"]],
+      ["label", [null, "Remove label"]],
+      ["label", [null, "Blue"]],
+      ["label", ["Ben, Kindergarten", "Return"]],
+      ["label", ["Anna", "Escape"]],
+      ["label", ["Dora", "Return, the save failing"]],
+      ["label", ["", "Return"]],
+      ["label", ["Clara", "Green after a press"]],
+      // Tim clicked a colour on a label and pressed Return, and the menu
+      // stayed open with a ring round it.
+      ["label", [null, "Blue, then Return"]],
+      ["two menus"],
     ],
   },
   {
@@ -5980,6 +6054,295 @@ for (const seq of toWalk) {
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
+        break;
+      }
+      case "label": {
+        const [typed, how] = arg;
+        const colours = { Purple: "#942192", Blue: "#0a64d6", Pink: "#c2307a", Red: "#d0342c", Green: "#38923f" };
+        const source = await episodeOn(page);
+        const was = (await ask(page, "Library")).find((e) => e.source === source)?.label ?? null;
+        const size = statSync(source).size;
+        const row = page.locator("aside li:has(button.episode.current)");
+        await page.mouse.move(20, 500);
+        await sidebarStill(page);
+        // Down the column of the three dots a pixel at a time, from the
+        // sort mark to under the last row: wherever the pointer is on a
+        // row, that row is lit and its dots are shown and lit, so going
+        // from one mark to the next lights nothing twice. Tim saw the row
+        // go dark the moment the pointer reached its dots, and every row
+        // go dark in the gap to the next. Once, on the first step, since a
+        // walk a pixel at a time takes its while.
+        const column = await page.locator("aside .order button").boundingBox();
+        const rowsAt = await page.evaluate(() => [...document.querySelectorAll("aside li")].map((li) => { const r = li.getBoundingClientRect(); return [r.top, r.bottom]; }));
+        const x = column.x + column.width / 2;
+        const once = typed === null && how === "Escape" && !was;
+        for (let y = Math.round(rowsAt[0][0]); once && !wrong && y < Math.round(rowsAt.at(-1)[1]); y++) {
+          await page.mouse.move(x, y);
+          const at = await page.evaluate(({ x, y }) => {
+            const li = document.elementFromPoint(x, y)?.closest("aside li");
+            if (!li) return "on no row";
+            const lit = (el, pseudo) => getComputedStyle(el, pseudo).backgroundColor !== "rgba(0, 0, 0, 0)";
+            if (!lit(li.querySelector(".episode"))) return "on a row that is not lit";
+            if (getComputedStyle(li.querySelector(".tools")).opacity !== "1") return "on a row whose dots are hidden";
+            const dots = li.querySelector("button.more");
+            if (!lit(dots) && !lit(dots, "::before")) return "on dots that are not lit";
+            return "";
+          }, { x, y });
+          if (at) wrong = `the pointer ${Math.round(y - rowsAt[0][0])} px down the list, in the column of the dots, is ${at}`;
+        }
+        await row.hover();
+        await row.locator("button.more").click();
+        const menu = page.locator(".video-menu");
+        await menu.waitFor();
+        // The menu hangs inside the sidebar, so it reaches no further over
+        // the workspace than the sidebar does, and the sidebar stays open
+        // while the pointer is on the menu.
+        // It opens on the label as it is, its words chosen so typing
+        // replaces them. A video with none has an empty field with the name
+        // of its folder as a hint, no colour chosen and no cross.
+        const reach = await page.evaluate(() => {
+          const m = document.querySelector(".video-menu").getBoundingClientRect();
+          const a = document.querySelector("aside").getBoundingClientRect();
+          const field = document.querySelector(".video-menu input");
+          return {
+            m: [m.left, m.right],
+            a: [a.left, a.right],
+            focused: document.activeElement?.getAttribute("aria-label"),
+            words: field.value,
+            hint: field.placeholder,
+            cross: !!document.querySelector('.video-menu button[aria-label="Remove label"]'),
+            chosen: field.selectionStart === 0 && field.selectionEnd === field.value.length,
+            ringed:
+              (document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ??
+                document.querySelector(".video-menu .colour.well.on")?.style.getPropertyValue("--colour"))?.trim() ?? null,
+            // The three dots and the sort mark are one column of marks of
+            // one size, and the menu's icons stand in the sidebar's column
+            // of icons, with their words where the sidebar's start.
+            // The dots take the pointer over the row's whole height and
+            // light a control's height of it, so what is lit is measured.
+            marks: [
+              ["aside li:has(button.episode.current) button.more", "::before"],
+              ["aside .order button", null],
+            ].map(([q, part]) => {
+              const el = document.querySelector(q);
+              const r = el?.getBoundingClientRect();
+              return r && [r.left, r.right, part ? parseFloat(getComputedStyle(el, part).height) : r.height].join(" ");
+            }),
+            icons: [".video-menu .item svg", "aside .foot .nav svg"].map((q) => document.querySelector(q)?.getBoundingClientRect().left),
+            // The lit part of the dots is in the middle of the row's button,
+            // as far from its top as from its foot, and so are the dots.
+            middles: (() => {
+              const dots = document.querySelector("aside li:has(button.episode.current) button.more");
+              const b = dots.getBoundingClientRect();
+              const lit = getComputedStyle(dots, "::before");
+              const top = b.top + parseFloat(getComputedStyle(dots).borderTopWidth) + parseFloat(lit.top);
+              const row = document.querySelector("aside li:has(button.episode.current) .episode").getBoundingClientRect();
+              const glyph = dots.querySelector("svg").getBoundingClientRect();
+              return [top + parseFloat(lit.height) / 2, (glyph.top + glyph.bottom) / 2, (row.top + row.bottom) / 2];
+            })(),
+            // The menu's rows are as tall as the rows of the list it hangs
+            // under.
+            heights: [".video-menu .item", "aside .episode"].map((q) => document.querySelector(q)?.getBoundingClientRect().height),
+          };
+        });
+        // The sidebar's shadow falls on the workspace and not on the title
+        // bar above it: the bar over the sidebar is the colour it is far
+        // to the right of it.
+        const shade = await page.evaluate(async ({ shot, dpr }) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${shot}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          const g = c.getContext("2d", { willReadFrequently: true });
+          g.drawImage(img, 0, 0);
+          const a = document.querySelector("aside").getBoundingClientRect();
+          const px = (x) => [...g.getImageData(Math.floor(x * dpr), 0, 1, 1).data.slice(0, 3)];
+          return { over: px(a.left + 40), beside: px(a.right + 300) };
+        }, { shot: (await page.screenshot({ clip: await page.evaluate(() => { const a = document.querySelector("aside").getBoundingClientRect(); return { x: 0, y: a.top - 3, width: a.right + 320, height: 1 }; }) })).toString("base64"), dpr: await page.evaluate(() => devicePixelRatio) });
+        const folder = basename(dirname(source));
+        const words = was?.text ?? "";
+        if (reach.m[0] < reach.a[0] || reach.m[1] > reach.a[1])
+          wrong ||= `the menu reaches ${reach.m.join(" to ")}, out of the sidebar at ${reach.a.join(" to ")}`;
+        else if (shade.over.some((v, k) => Math.abs(v - shade.beside[k]) > 2))
+          wrong ||= `the title bar over the open sidebar is rgb(${shade.over}), beside it rgb(${shade.beside}): the sidebar casts its shadow on it`;
+        else if (reach.focused !== "Label") wrong ||= `the menu opened with the focus on ${reach.focused ?? "nothing"}, not on the label`;
+        else if (reach.words !== words) wrong ||= `the menu opened on ${JSON.stringify(reach.words)}, not ${JSON.stringify(words)}`;
+        else if (!was && reach.hint !== folder) wrong ||= `the field's hint is ${JSON.stringify(reach.hint)}, not the folder's name ${JSON.stringify(folder)}`;
+        else if (reach.cross !== !!was) wrong ||= `the menu opened ${reach.cross ? "with" : "without"} the cross, on ${was ? "a label" : "no label"}`;
+        else if (!reach.chosen) wrong ||= "the menu opened with the words in the field not chosen";
+        else if (!reach.marks[1]) wrong = "there is no sort mark to line the three dots up with, with two videos in the list";
+        else if (reach.marks[0] !== reach.marks[1])
+          wrong = `the three dots stand at ${reach.marks[0]} (left, right, height), the sort mark at ${reach.marks[1]}`;
+        else if (reach.icons[0] !== reach.icons[1]) wrong = `the menu's icons start at ${reach.icons[0]}, the sidebar's at ${reach.icons[1]}`;
+        else if (reach.middles.some((m) => m !== reach.middles[2]))
+          wrong = `the middle of the lit dots is at ${reach.middles[0]} px and of the dots at ${reach.middles[1]} px, the row's at ${reach.middles[2]} px`;
+        else if (reach.heights[0] !== reach.heights[1]) wrong = `the menu's rows are ${reach.heights[0]} px high, the list's ${reach.heights[1]} px`;
+        else if (reach.ringed !== (was?.colour ?? null)) wrong = `the menu opened on ${reach.ringed ?? "no colour"}, not ${was?.colour ?? "no colour"}`;
+        // Tab takes the folder's name as a hint is taken, and the first
+        // word chooses a colour.
+        const field = menu.locator('input[aria-label="Label"]');
+        if (typed === "Tab") await page.keyboard.press("Tab");
+        else if (typed !== null) await field.fill(typed);
+        const after = await page.evaluate(() => ({
+          words: document.querySelector(".video-menu input").value,
+          focused: document.activeElement?.getAttribute("aria-label"),
+          ringed: document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ?? null,
+        }));
+        if (wrong) {
+          // Said already.
+        } else if (typed === "Tab" && (after.words !== folder || after.focused !== "Label"))
+          wrong = `Tab left ${JSON.stringify(after.words)} in the field with the focus on ${after.focused ?? "nothing"}, not the folder's name in the field`;
+        else if (after.words.trim() && !after.ringed && !was?.colour) wrong = `the field says ${JSON.stringify(after.words)} and no colour is chosen`;
+        else if (!after.words.trim() && after.ringed) wrong = `the field is empty and ${after.ringed} is chosen`;
+        await menu.hover();
+        if (!wrong && !(await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
+          wrong = "the sidebar closed under the menu";
+        // The pill follows the words while they are typed.
+        const pill = await page.evaluate(() => document.querySelector("aside li:has(button.episode.current) .tag")?.textContent ?? "");
+        if (!wrong && pill !== after.words.trim())
+          wrong = `while typing, the pill says ${JSON.stringify(pill)}, not ${JSON.stringify(after.words.trim())}`;
+        const ringed = after.ringed ?? reach.ringed;
+        const failing = how === "Return, the save failing";
+        if (failing) await control(url, `/hold?call=SetLabel&fail=${encodeURIComponent("the disk is full")}`);
+        if (how === "Return" || how === "Escape" || failing) await page.keyboard.press(how === "Escape" ? how : "Enter");
+        else if (how.startsWith("a colour of its own") || how.startsWith("the colour picker")) {
+          // A shade clicked in the colour picker at the end of the
+          // colours, or none, and the picker left with Return or Escape,
+          // then the menu with Escape.
+          await menu.locator('button[aria-label="Another colour"]').click();
+          const shade = await page.locator('.colour-pop [aria-label="Shade"]').boundingBox();
+          if (how.startsWith("a colour of its own")) await page.mouse.click(shade.x + shade.width * 0.8, shade.y + shade.height * 0.3);
+          await page.keyboard.press(how.endsWith("Return") ? "Enter" : "Escape");
+          await page.locator(".colour-pop").waitFor({ state: "detached" });
+          if (!(await menu.isVisible())) wrong = `${how.split(", ").pop()} in the colour picker closed the menu too`;
+          // Escape put back what was there before the picker opened: the
+          // words in the field and the colour chosen. Tim's review found a
+          // video with no label given its folder's name in white.
+          const back = await page.evaluate(() => ({
+            words: document.querySelector(".video-menu input")?.value,
+            ringed:
+              (document.querySelector(".video-menu .swatch.on")?.style.getPropertyValue("--swatch") ??
+                document.querySelector(".video-menu .colour.well.on")?.style.getPropertyValue("--colour"))?.trim() ?? null,
+          }));
+          if (!wrong && how.endsWith("Escape") && (back.words !== after.words || back.ringed !== ringed))
+            wrong = `Escape in the colour picker left ${JSON.stringify(back.words)} in ${back.ringed ?? "no colour"}, not ${JSON.stringify(after.words)} in ${ringed ?? "no colour"} as before it opened`;
+          await page.keyboard.press("Escape");
+        } else if (how === "Remove label") {
+          await menu.locator('button[aria-label="Remove label"]').click();
+          await page.keyboard.press("Escape");
+        } else {
+          const [colour, pressFirst] = how.replace(", then Return", "").split(" after a press");
+          if (pressFirst !== undefined) {
+            // A press in the menu beside the field takes the focus from it
+            // and gives it to nothing, which is what WebKit does with a
+            // button pressed. The first save the Go side hears of, if one
+            // was made, waits half a second, so a later one is heard first.
+            await control(url, "/hold?call=SetLabel&ms=500");
+            const box = await menu.locator(".label").boundingBox();
+            await page.mouse.click(box.x + 3, box.y + 3);
+          }
+          await menu.locator(`button[aria-label="${colour}"]`).click();
+          if (how.endsWith(", then Return")) {
+            // WebKit gives a pressed button no focus, so the focus is on
+            // the menu itself. A key pressed there shows the keyboard's
+            // ring wherever the focus is.
+            await menu.evaluate((m) => m.focus());
+            await page.keyboard.press("Shift");
+            const ring = await menu.evaluate((m) => {
+              const st = getComputedStyle(m);
+              return st.outlineStyle !== "none" && parseFloat(st.outlineWidth) > 0 ? `${st.outlineWidth} ${st.outlineStyle} ${st.outlineColor}` : "";
+            });
+            if (ring) wrong = `with the focus on the menu, the menu wears a ring, ${ring}`;
+            await page.keyboard.press("Enter");
+            if (!wrong && (await menu.isVisible({ timeout: 300 }).catch(() => false))) {
+              await page.waitForTimeout(300);
+              if (await menu.isVisible()) wrong = "Return after a colour was clicked left the menu open";
+            }
+            if (wrong) await page.keyboard.press("Escape");
+          } else await page.keyboard.press("Escape");
+        }
+        await menu.waitFor({ state: "detached" });
+        await page.mouse.move(750, 400);
+        await sidebarStill(page);
+        await settle(page);
+        const named = colours[how.replace(", then Return", "").split(" after a press")[0]];
+        // A colour clicked in an empty field takes the folder's name.
+        const text = after.words.trim() || (named ? folder : "");
+        let want = how === "Escape" || failing ? was : how === "Remove label" || !text ? null : { text, colour: named ?? ringed };
+        // A shade taken with Return is a colour of the picker's own, which
+        // is any but the one there was. Escape put back the one there was.
+        const own = how === "a colour of its own, Return";
+        const ep = (await ask(page, "Library")).find((e) => e.source === source);
+        const kept = ep?.label ?? null;
+        if (own && kept && kept.colour !== ringed) want = { ...want, colour: kept.colour };
+        const drawn = await page.evaluate(() => {
+          const pill = (el) => (el ? { text: el.textContent, colour: el.style.getPropertyValue("--tag") } : null);
+          return {
+            row: pill(document.querySelector("aside li:has(button.episode.current) .tag")),
+            bar: pill(document.querySelector("header.bar .tag")),
+          };
+        });
+        const says = (l) => (l ? `${l.text} in ${l.colour}` : "no label");
+        const alike = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        if (wrong) {
+          // Said already, while the menu was open.
+        } else if (failing && !(await toastSays(page)).includes("the disk is full"))
+          wrong = `the save the Go side refused says ${JSON.stringify(await toastSays(page))}, not why`;
+        else if (!alike(kept, want)) wrong = `the Go side keeps ${says(kept)}, not ${says(want)}`;
+        else if (!alike(drawn.row, want)) wrong = `the row shows ${says(drawn.row)}, the Go side keeps ${says(kept)}`;
+        else if (!alike(drawn.bar, want)) wrong = `the title bar shows ${says(drawn.bar)}, the Go side keeps ${says(kept)}`;
+        else if (ep.name !== basename(source)) wrong = `the sidebar names the video ${ep.name}, not ${basename(source)}`;
+        else if (!existsSync(source) || statSync(source).size !== size) wrong = `the video at ${source} is gone or changed`;
+        else if (existsSync(join(workDir(source), "label.json")) !== !!want)
+          wrong = `the work folder ${want ? "has no" : "still has a"} label.json`;
+        // The refusal is the answer here, so it is taken off the calls that
+        // failed before the rules read them, and the toast goes, so the
+        // next step finds the app as it was.
+        if (failing) {
+          await page.evaluate(() => {
+            for (const c of window.__calls) if (c.name === "SetLabel" && String(c.failed).includes("the disk is full")) c.failed = null;
+          });
+          await page.locator(".toast button.close").click();
+        }
+        await watch.step("label", s);
+        break;
+      }
+      case "two menus": {
+        // Tim opened one video's menu while another's was open, and the
+        // sidebar closed under the new menu, which hung squeezed over the
+        // rail where nothing could be done with it. The second menu heard
+        // itself open before the first heard itself close.
+        await page.mouse.move(20, 500);
+        await sidebarStill(page);
+        const rows = page.locator("aside li:has(button.more)");
+        const [low, high] = [rows.last(), rows.first()];
+        await low.hover();
+        await low.locator("button.more").click();
+        await page.locator(".video-menu").waitFor();
+        await high.hover();
+        await high.locator("button.more").click();
+        await page.waitForTimeout(300);
+        await sidebarStill(page);
+        const now = await page.evaluate(() => {
+          const a = document.querySelector("aside");
+          const menus = [...document.querySelectorAll(".video-menu")].map((m) => m.getBoundingClientRect());
+          const r = a.getBoundingClientRect();
+          return { open: a.classList.contains("open"), menus: menus.length, inside: menus.every((m) => m.left >= r.left && m.right <= r.right) };
+        });
+        if (!now.open) wrong = `with the second menu open the sidebar is closed, and ${now.menus} menu${now.menus === 1 ? " hangs" : "s hang"} over the rail`;
+        else if (now.menus !== 1) wrong = `${now.menus} menus are open, not the one of the row clicked last`;
+        else if (!now.inside) wrong = "the second menu reaches out of the sidebar";
+        await page.keyboard.press("Escape");
+        await page.locator(".video-menu").waitFor({ state: "detached" });
+        // And once no menu is open, the sidebar closes the usual way when
+        // the pointer leaves it: no menu still counts as holding it.
+        await page.mouse.move(400, 300);
+        await page.mouse.move(750, 400);
+        await sidebarStill(page);
+        if (!wrong && (await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
+          wrong = "the sidebar stays open with no menu and the pointer away from it";
         break;
       }
       case "drop":

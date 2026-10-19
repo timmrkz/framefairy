@@ -362,7 +362,7 @@
         {#snippet child({ props, wrapperProps, open })}
           {#if open}
             <div {...wrapperProps}>
-              <div {...props} class="pick-list searching">
+              <div {...props} class="pick-list panel searching">
                 <Command.Root bind:value={lit} vimBindings={false} shouldFilter={false} {label}>
                   {#snippet child({ props: root })}
                     <div {...root} class="pick-command">
@@ -461,7 +461,7 @@
       {#snippet child({ props, wrapperProps, open })}
         {#if open}
           <div {...wrapperProps}>
-            <div {...props} class="pick-list">
+            <div {...props} class="pick-list panel">
               {#each options as option, i (option.value)}
                 {#if option.group && option.group !== options[i - 1]?.group}
                   <div class="pick-group" class:first={i === 0}>{option.group}</div>
@@ -630,7 +630,6 @@
      of the app. That is the one case a name is still cut short, and the
      whole of it is in the row's title. */
   .pick-list {
-    z-index: 60;
     width: max-content;
     min-width: var(--bits-floating-anchor-width);
     max-width: calc(var(--bits-floating-available-width, 100vw) - 8px);
@@ -651,11 +650,6 @@
        trigger opened. */
     padding: 0;
     overflow-y: auto;
-    color: var(--text);
-    background: var(--ink-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   }
 
   /* A row is as tall as a control whatever the list holds. The list is a
