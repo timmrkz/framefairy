@@ -1,9 +1,14 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // The transcript reads as sentences: a pause inside one does not split
@@ -122,5 +127,75 @@ func TestTheCardsOfAClipAreItsCaptions(t *testing.T) {
 	want := []string{"10.0-11.0 01 eins zwei", "12.0-13.1 01 Dreimal vier", "20.1-21.5 02 fünf sechs", "30.0-30.9  Und dann."}
 	if strings.Join(got, " | ") != strings.Join(want, " | ") {
 		t.Errorf("the cards read\n%q\nwant\n%q", got, want)
+	}
+}
+
+// What a clip cuts out between two of its pieces is a card of no clip
+// between the clip's cards, and in none of its captions.
+func TestWordsCutOutOfAClipAreACardOfTheirOwn(t *testing.T) {
+	fsys, path := editablePlanPath(t)
+	words := append(editableTranscript().Words, Cue{Start: 11.3, End: 11.6, Text: "ähm"})
+	slices.SortFunc(words, func(a, b Cue) int { return cmp.Compare(a.Start, b.Start) })
+	tr := fromStored(words, nil, 0, 0, nil)
+	clips, err := PlanSaid(fsys, path, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range SaidCards(tr, clips) {
+		got = append(got, fmt.Sprintf("%s %s", c.Clip, c.Text))
+	}
+	want := "01 eins zwei |  ähm | 01 drei vier | 02 fünf sechs"
+	if strings.Join(got, " | ") != want {
+		t.Errorf("the cards read %q, want %q", strings.Join(got, " | "), want)
+	}
+}
+
+// Two clips over the same words each have their cards of them, the
+// captions each shows.
+func TestTwoClipsOverTheSameWordsEachHaveTheirCards(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	path := filepath.Join("/", "ep.framefairy", "logs", "clips.json")
+	plan := `{"source": "ep.mp4", "plan_id": "p1", "clips": [
+	  {"id": "01", "slug": "eins", "segments": [{"start": 10.0, "end": 13.6}]},
+	  {"id": "02", "slug": "zwei", "segments": [{"start": 11.9, "end": 13.6}]}]}`
+	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr := editableTranscript()
+	clips, err := PlanSaid(fsys, path, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range SaidCards(tr, clips) {
+		got = append(got, fmt.Sprintf("%.1f %s %s", c.Start, c.Clip, c.Text))
+	}
+	for _, want := range []string{"10.0 01 eins zwei", "12.0 02 drei vier", "20.1  fünf sechs"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("no card %q among %q", want, got)
+		}
+	}
+	if n := len(slices.DeleteFunc(slices.Clone(got), func(s string) bool { return !strings.Contains(s, "drei") })); n != 2 {
+		t.Errorf("%d cards read drei, want one of each clip: %q", n, got)
+	}
+}
+
+// A word drawn in halves over two lines is one word of its card, and so is
+// a part of a correction that reads as several words.
+func TestACaptionCardReadsWholeWords(t *testing.T) {
+	clip := Clip{Segments: []Segment{{Start: 10, End: 20}}}
+	said, other, part0, part1 := 12.0, 15.0, 0, 1
+	caption := CaptionView{Lines: []CaptionLineView{
+		{Words: []WordView{{Start: 0, End: 1, Text: "Ich"}, {Start: 1, End: 1.5, Text: "Judo-", Said: &said, Whole: "Judostyle"}}},
+		{Words: []WordView{
+			{Start: 1.5, End: 2, Text: "style", Said: &said, Whole: "Judostyle"},
+			{Start: 2, End: 2.3, Text: "hab", Said: &other, Whole: "hab gesagt", Part: &part0},
+			{Start: 2.3, End: 2.8, Text: "gesagt", Said: &other, Whole: "hab gesagt", Part: &part1},
+		}},
+	}}
+	card, ok := captionCard(ClipSaid{Key: "01", Clip: clip}, caption)
+	if !ok || card.Text != "Ich Judostyle hab gesagt" || card.Start != 10 || card.End != 12.8 {
+		t.Errorf("the card is %+v, %v", card, ok)
 	}
 }
