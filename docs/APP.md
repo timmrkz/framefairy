@@ -2056,8 +2056,10 @@ found is a place in the video, and I and O make a clip there.
   wash under the dots hid them, found by Tim, who picked this one from a
   sheet of seven. The dots are the grey of a card's edge at a share of
   its strength, so they are quieter than the dashes and the minute
-  lines, because at full strength Tim found them too strong. In a card
-  they keep one tile, `--dot-pitch`, clear of the dashes. The card's dashes are tiles of the
+  lines, because at full strength Tim found them too strong. They go on
+  to the edge, in a card and on the range picker, like a surface: a row
+  and a column left clear round them looked cut off, found by Tim. The
+  card's dashes are tiles of the
   same pitch, laid on the card's box the way its dots are, spread evenly
   from edge to edge, so every dash stands over a column of dots or
   beside a row and a dash sits on every corner. The dashes the browser

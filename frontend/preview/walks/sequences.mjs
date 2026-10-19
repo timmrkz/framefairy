@@ -8668,10 +8668,10 @@ for (const seq of toWalk) {
           // its rows: the dots and the dashes are tiles of one pitch laid
           // on the same box, spread from edge to edge the same way. The
           // browser's own dashes went their own way, found by Tim. On the
-          // range picker the dots cover the whole part, to its foot and
-          // its sides, on one grid from the range picker's start. A row
-          // and a column left clear round them looked cut off, found by
-          // Tim.
+          // card and on the range picker the dots go on to the edge, and
+          // on the range picker they lie on one grid from its start. A
+          // row and a column left clear round them looked cut off, found
+          // by Tim.
           const grid = await page.evaluate(() => {
             const li = document.querySelector("ol.said li.hole");
             const dots = li.querySelector(".dots");
@@ -8702,7 +8702,7 @@ for (const seq of toWalk) {
             return {
               pitch,
               boxes: [box(dots), box(ring), box(li)],
-              dots: [d.backgroundSize, d.backgroundRepeat],
+              dots: [d.backgroundSize, d.backgroundRepeat, d.maskImage],
               dashes: r ? [r.maskSize, r.maskRepeat, r.borderTopStyle] : null,
               columns,
             };
@@ -8771,6 +8771,8 @@ for (const seq of toWalk) {
             grid.dashes[1] !== "space no-repeat, no-repeat space"
           )
             wrong = `the dashes of a card do not stand on its dots: dots in ${grid.dots.join(", ")}, dashes in ${grid.dashes.slice(0, 2).join(" laid ")}`;
+          else if (grid.dots[2] !== grid.columns[0]?.fade)
+            wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
           else if (grid.columns.some((c) => c.cover.some(Boolean) || c.foot !== "100%" || !c.fade.endsWith("rgb(0, 0, 0))")))
             wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
           else if (grid.columns.some((c) => c.grid % grid.pitch))

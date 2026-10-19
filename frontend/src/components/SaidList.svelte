@@ -536,8 +536,8 @@
      stands over a column of dots or beside a row of them, and a dash
      sits on every corner. Dashes the browser drew went their own way
      round the dots, found by Tim. The dots rise from the foot on nothing
-     else and keep a tile clear of the dashes, which Tim found works
-     inside an edge. Under the hand the card
+     else and go on to the edge under the dashes, like a surface: a row
+     and a column left clear round them looked cut off, found by Tim. Under the hand the card
      fills with a card's grey, the dots go up a step and keep their fade,
      and the dashes go into the grey. */
   .dots,
@@ -550,16 +550,7 @@
 
   .dots {
     background: var(--halftone) 0 0 / var(--dot-pitch) var(--dot-pitch) space;
-    mask-image:
-      var(--halftone-fade),
-      linear-gradient(
-        90deg,
-        transparent var(--dot-pitch),
-        #000 0 calc(100% - var(--dot-pitch)),
-        transparent 0
-      ),
-      linear-gradient(#000 calc(100% - var(--dot-pitch)), transparent 0);
-    mask-composite: intersect;
+    mask-image: var(--halftone-fade);
   }
 
   li.hole:hover .dots,
