@@ -6574,7 +6574,12 @@ for (const seq of toWalk) {
         if (pictures !== want) wrong = `the report holds ${pictures} pictures, not ${want}: ${names.join(", ")}`;
         else if (recordings !== films) wrong = `the report holds ${recordings} recordings, not ${films}: ${names.join(", ")}`;
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
-        const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+        // The window closes while the call is still on its way back, and the
+        // page empties the field once it is, so a busy runner can read the
+        // field a moment before. Given a second for that.
+        const look = () => page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+        let left = await look();
+        for (const end = Date.now() + 1000; (left[0] || left[1]) && Date.now() < end; left = await look()) await new Promise((r) => setTimeout(r, 50));
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
         break;
       }
