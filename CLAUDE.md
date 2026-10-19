@@ -514,6 +514,17 @@ messages, pull request text, code comments and chat replies.
   while jobs run and report. A test that makes one call at a time proves
   nothing about a queue. A race only shows on someone else's machine, and
   by then it is their bug.
+- **A test waits on a signal, never on the clock.** It goes on when what
+  it waits for has happened, and something tells it so: a channel, a
+  job's news, a callback, a program saying it is ready. It never sleeps
+  in the hope that the work is done by then, and it never polls in a loop
+  with a deadline. A wait long enough on one machine is too short on a
+  busy one, so the test fails now and then, and the waits that are long
+  enough add up to minutes of CI. Work is counted in steps, not in
+  milliseconds. A test that would hang is ended by `go test`'s own
+  `-timeout`, which shows every goroutine. The walks hold to the same,
+  see #342. Where the code under test offers only the clock, the code
+  gains the signal.
 - **A fix to the interface comes with a walk** that does what Tim did and
   checks what he saw, so the fix is proven against the real Go side and
   Tim does not have to try it by hand to know it holds. See
