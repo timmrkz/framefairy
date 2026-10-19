@@ -804,6 +804,20 @@
 //                      inside the folder the settings name for shorts, the
 //                      file is there and the app serves it, Render says
 //                      Render again and Show in folder is there
+//   ["short removed"]  the chosen clip's short and its pictures are
+//                      deleted from the disk, the way a person cleans up
+//                      after uploading them
+//   ["rendered, short gone"]
+//                      the clip still says it was rendered, its card's
+//                      green dot and its green mark on the range picker
+//                      among it, Render says Render again and Show in
+//                      folder is not there
+//   ["licence row whole"]
+//                      at several widths of the app the licence row's
+//                      field, Unlock and bin stand on whole pixels, with
+//                      "refused" a key that is none is typed and Unlock
+//                      refuses it, and the line that says why wraps to
+//                      more lines at one width than at another
 //   ["channel", name]  the Updates page's list says this, in ten seconds
 //                      at most
 //   ["choices", names, picked]
@@ -1862,6 +1876,17 @@ export const sequences = [
     ],
   },
   {
+    // Issue #339: the licence key field and Unlock stood half a pixel
+    // down, their top at 699.5, because the words beside them were an odd
+    // height, and so they would step as they faded or moved.
+    name: "the licence row stands on whole pixels, on one line and on two",
+    steps: [
+      ["settings"],
+      ["licence row whole"],
+      ["licence row whole", "refused"],
+    ],
+  },
+  {
     // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
     // removes every file of it, the older one too, after asking. Cancel
     // leaves it as it was, and the log that follows is the one new file.
@@ -2887,6 +2912,13 @@ export const sequences = [
     // a restart too, because where the short went is kept on disk.
     name: "a short rendered into the folder for shorts is known as rendered",
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
+  },
+  {
+    // Issue #384: Tim rendered a clip, uploaded the short and removed it
+    // and its pictures from the folder. The clip lost its green dot and its
+    // green mark, as if it had never been rendered.
+    name: "a clip stays rendered after its short is removed from its folder",
+    steps: [["thumbnail"], ["render"], ["rendered"], ["short removed"], ["restart"], ["rendered, short gone"]],
   },
   {
     // Plan row 2.133, found while 2.127 was fixed: a short is named after
@@ -3955,7 +3987,7 @@ function picturesOf(short) {
 // Where the clip's short is, as the clip says, or empty when it has none.
 async function shortOf(page, at) {
   const clip = (await ask(page, "Clips", at.path)).find((c) => c.plan === at.plan && c.id === at.clip);
-  return clip?.rendered ?? "";
+  return clip?.short ?? "";
 }
 
 // What is wrong with the short Render wrote for a clip, read back from
@@ -7366,6 +7398,49 @@ for (const seq of toWalk) {
         if (!wrong && /decod/i.test(trouble)) wrong = `the video preview says "${trouble}"`;
         break;
       }
+      case "licence row whole": {
+        const was = page.viewportSize();
+        const lines = new Set();
+        const problems = [];
+        if (arg === "refused") {
+          await page.locator("input.licence-key").fill("FF1-not-a-key");
+          await page.locator("input.licence-key").press("Enter");
+          const said = await page
+            .waitForFunction(() => document.querySelector(".licence-line.error")?.textContent.trim(), null, { timeout: 10000 })
+            .then(() => true, () => false);
+          if (!said) problems.push("the licence row's line says no key was refused");
+          // The refusal is the call failing, which is what was asked for.
+          await page.evaluate(() => {
+            for (const c of window.__calls) if (c.name === "SaveLicence" && c.failed) c.failed = null;
+          });
+        }
+        // Below the app's least width, 960, too: the line a link leaves
+        // with its key IDs is long enough to wrap at any width, and the
+        // refusal the bridge can give wraps only there.
+        for (const width of [1728, 1200, 960, 800, 700, 600]) {
+          await page.setViewportSize({ width, height: was.height });
+          await page.waitForTimeout(150);
+          const m = await page.evaluate(() => {
+            const line = document.querySelector(".licence-line");
+            const field = line?.closest(".item");
+            const controls = [...(field?.querySelectorAll("input, button.unlock, button.bin") ?? [])];
+            return {
+              lines: line ? Math.round(line.getBoundingClientRect().height / parseFloat(getComputedStyle(line).lineHeight)) : 0,
+              tops: controls.map((c) => [c.matches("input") ? "field" : c.matches(".unlock") ? "Unlock" : "bin", c.getBoundingClientRect().top]),
+            };
+          });
+          lines.add(m.lines);
+          if (!m.tops.length) problems.push(`at ${width} px the licence row has no field, Unlock or bin`);
+          for (const [name, top] of m.tops) {
+            if (top !== Math.round(top)) problems.push(`at ${width} px, with the line on ${m.lines} lines, the ${name} stands between two pixels, its top at ${top}`);
+          }
+        }
+        await page.setViewportSize(was);
+        await page.waitForTimeout(150);
+        if (arg === "refused" && lines.size < 2) problems.push(`the refusal stood on ${[...lines].join(", ")} lines at every width, so a wrapped line was never measured`);
+        if (problems.length) wrong = problems.join("\n");
+        break;
+      }
       case "app size":
         await page.setViewportSize({ width: arg[0], height: arg[1] });
         await page.waitForTimeout(600);
@@ -8825,6 +8900,32 @@ for (const seq of toWalk) {
         const short = await shortOf(page, on);
         if (!short || !existsSync(short)) wrong = "the clip has no short in its folder";
         else if (basename(short) !== `${entry?.slug}.mp4`) wrong = `the short is called ${basename(short)}, not ${entry?.slug}.mp4`;
+        break;
+      }
+      case "short removed": {
+        const short = await shortOf(page, await chosen(page));
+        if (!short || !existsSync(short)) {
+          wrong = "the clip has no short to remove";
+          break;
+        }
+        for (const file of [short, ...picturesOf(short)]) rmSync(file);
+        break;
+      }
+      case "rendered, short gone": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const seen = await page.evaluate(() => ({
+          dot: !!document.querySelector("button.pick.current .dot.ok"),
+          mark: !!document.querySelector(".clipmark.selected.rendered"),
+          render: document.querySelector("button.primary.render")?.textContent.trim(),
+          folder: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Show in folder"),
+        }));
+        if (!entry?.rendered) wrong = "the clip says it was never rendered";
+        else if (entry.short) wrong = `the clip says its short is at ${entry.short}, which was removed`;
+        else if (!seen.dot) wrong = "the clip's card has no green dot";
+        else if (!seen.mark) wrong = "the clip's mark on the range picker is not green";
+        else if (seen.render !== "Render again") wrong = `the Render button says ${seen.render}, not Render again`;
+        else if (seen.folder) wrong = "Show in folder is there, with no short to show";
         break;
       }
       case "pictured": {

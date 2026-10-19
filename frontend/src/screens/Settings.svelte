@@ -1054,7 +1054,7 @@
               {#if licenceRefused}<Icon name="warn" />{:else if licence.saved}<Icon name="check" />{/if}
             </span>
             <div class="words">
-              <span class="head">{licence.saved ? "Licensed" : "Licence key"}</span>
+              <span class="head licence-head">{licence.saved ? "Licensed" : "Licence key"}</span>
               <span
                 class="small line whole licence-line"
                 class:muted={!licenceRefused}
@@ -1076,7 +1076,7 @@
               </span>
               <!-- Why the key ID could not be copied, under it, where it
                    stays to be clicked again. -->
-              {#if copyRefused}<span class="small line whole error">{copyRefused}.</span>{/if}
+              {#if copyRefused}<span class="small line whole error licence-line">{copyRefused}.</span>{/if}
             </div>
             {#if !licence.saved}
             <input
@@ -1531,6 +1531,16 @@
      it is given a whole-pixel line of its own, with room for them. */
   .licence-line {
     line-height: 28px;
+  }
+
+  /* The field, Unlock and the bin are 32 px and centred beside the
+     words, so the words must be an even height or the controls stand
+     between two pixels and step as they fade, issue #339. Lines of 28 px
+     and the gaps of 2 between them are even, and the name's 19 px line is
+     not, so the name stands on 20. One pixel under it rather than a taller
+     line, so its words do not move. */
+  .licence-head {
+    padding-bottom: 1px;
   }
 
   /* A key ID, in one width, on a block of its own, the way code is set in
