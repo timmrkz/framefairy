@@ -671,6 +671,43 @@ input[type="password"] {
   background: var(--err);
 }
 
+/* What lies over the app for a moment, a list to pick from, a video's menu,
+   the colour picker: one panel, in the colour, border, corners and shadow
+   the lists wear, so the three are one thing and none drifts the day
+   another changes. Each keeps only its size and what is in it. */
+.panel {
+  z-index: 60;
+  color: var(--text);
+  background: var(--ink-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* A video's label: its words in a pill of its own colour, the way Finder
+   draws a tag. The colour is the accent colour picked for it, laid on the
+   dark as a wash with a line round it and the words in a light shade of
+   it, so a strong colour reads as a label and not as a warning. One rule
+   for the sidebar and the title bar, so the two are one pill. It is a
+   whole number of pixels high, and never wider than a glance takes in:
+   longer words end in an ellipsis and are all in the row's title. */
+.tag {
+  flex: none;
+  max-width: 110px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--tag) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tag) 24%, transparent);
+  color: color-mix(in srgb, var(--tag) 35%, white);
+  font-size: var(--size-s);
+  font-weight: 500;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .error {
   color: var(--err);
   white-space: pre-wrap;

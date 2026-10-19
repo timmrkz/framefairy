@@ -37,6 +37,7 @@
   import Bug from "@lucide/svelte/icons/bug";
   import Paperclip from "@lucide/svelte/icons/paperclip";
   import Search from "@lucide/svelte/icons/search";
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -101,6 +102,9 @@
     // The field over a list long enough to search, the magnifier of
     // Spotlight and of every search field on the Mac.
     search: Search,
+    // What can be done with a video in the sidebar, behind the three dots
+    // Finder and Mail put on a row for its menu.
+    more: Ellipsis,
   };
 
   // The marks that are solid wherever people see them, play and pause on

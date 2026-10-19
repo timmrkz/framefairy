@@ -107,6 +107,9 @@ type EpisodeStatus struct {
 	// EverSearched says whether anyone has ever searched this episode for
 	// clips, see EverSearched.
 	EverSearched bool `json:"everSearched"`
+	// Label is the words and the colour a person gave the video in the
+	// sidebar, nil when it has none, see Label.
+	Label *Label `json:"label,omitempty"`
 }
 
 // Status reads an episode's state from disk.
@@ -152,6 +155,7 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	st.Previews = countFiles(filepath.Join(work, "preview"), ".mp4")
 	st.Work = exists(fsys, work)
 	st.EverSearched = EverSearched(fsys, source)
+	st.Label = ReadLabel(fsys, source)
 	return st
 }
 
