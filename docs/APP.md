@@ -1980,16 +1980,23 @@ found is a place in the video, and I and O make a clip there.
 - **A card is a place.** A click puts the playhead on its words, and a
   card of a clip makes that clip the one worked on, with the list left
   where it is. The other way round, the playhead put anywhere else, on
-  the clip timeline, the range picker or a caption block, puts the card
-  it is in at the top of the list, or the next card where nothing is
-  said. A part not transcribed yet is a place too, so the playhead in
-  one puts its dashed card at the top, not the next words heard after it.
-  The list follows a video that plays the same way: as the playhead comes
-  into the next caption, its card stands at the top, and in a pause
-  between two captions of a clip the caption before stays until the next
-  begins, found by Tim. Only the playhead moving moves the list, so the
-  hand can scroll it while the video stands, and playing starts with the
-  card of the playhead at the top again, wherever the hand had scrolled.
+  the clip timeline, the range picker or a caption block, brings the card
+  it is in into view, or the next card where nothing is said. A part not
+  transcribed yet is a place too, so the playhead in one brings its
+  dashed card, not the next words heard after it. The card of the
+  playhead is marked in the grey the chosen clip wears in the clip list.
+  The list follows a video that plays the way the clip timeline does, by
+  turning the page: while the card of the playhead is in view the list
+  stands still, and once the card is out of view, or going out of it at
+  the foot, it comes to the top, found by Tim. In a pause between two
+  captions of a clip the caption before stays the card until the next
+  begins. Only the playhead moving moves the list, so the hand can
+  scroll it while the video stands. The playhead put again in the card
+  it stands in, and playing, bring the card back into view, wherever the
+  hand had scrolled. Cards that come in above the ones in view, as the
+  transcript grows, leave the ones in view where they stand: WebKit
+  keeps no anchor of its own, so the card of the playhead was pushed out
+  at the foot and nothing brought it back.
   A search let go of, by Escape or by taking the words away, goes back to
   the card of the playhead, the one it stood at before or the one clicked
   in the search, never to the top of the whole transcript. The search
@@ -2005,7 +2012,8 @@ found is a place in the video, and I and O make a clip there.
 - **Shift and the arrows up and down walk the cards.** While the
   transcript is in the column, they walk its cards the way they walk the
   clip list when that is shown, from the field too. The playhead goes
-  onto each card and the list follows it there. The answers to what is
+  onto each card and the card comes just into view, the way a clip
+  walked to does in the clip list. The answers to what is
   typed are walked from the first, down, or the last, up, and go round.
   The whole transcript is walked from the card of the playhead. A search
   walked and then let go of, by Escape, by taking the words away or by
@@ -2028,9 +2036,10 @@ found is a place in the video, and I and O make a clip there.
   lit, never every card of its clip with it. The space between two cards
   belongs to them, half to the card above and half to the card below, so
   the hand going from one card of a clip to the next never leaves the
-  clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline puts
-  its first card at the top of the list, where the first card stands,
-  and choosing it again does it again. Every card is laid out at its own
+  clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline leaves
+  its first card where it is when it is in view, and otherwise puts it at
+  the top of the list, where the first card stands, and choosing it
+  again does it again. Every card is laid out at its own
   height, never at a height guessed for the cards out of view, because a
   guess put the place off as soon as the cards around it were laid out,
   and WebKit keeps no anchor that would have made up for it. The accent
@@ -2040,19 +2049,23 @@ found is a place in the video, and I and O make a clip there.
   video the transcript has not reached yet is a dashed card in its place,
   "Not transcribed yet", because the search cannot look there. With
   something typed the list holds only what matches. While the field
-  is open, the range picker draws the same part in the grey of a card
-  with a dashed edge, laid over its border, under the minutes so their
-  lines show through, and under the window. The dashes are in the grey of
-  a card's edge, and the hand on the card fills it with the grey of a
-  card under the hand, which the dashes go into, the way every card's
-  edge does. The part on the range picker fills with the same grey under
-  the range picker's own border, which stays. Both are dotted, a halftone
-  grid, `--halftone` in `app.css`, that the transcript fades into: the
-  card's dots fade in from its left, and the range picker's over 24 px at
-  each end of the part, so a long part reads as dots and one a few pixels
-  wide is its dashed edge alone, which always shows, found by Tim. Under
-  the hand the whole part is dotted. Tim picked the dots from sixteen
-  textures.
+  is open, the range picker draws the same part with a dashed edge, laid
+  over its border and under the window. The dashes are in the grey of a
+  card's edge. A part is dots on nothing, a halftone grid, `--halftone`
+  in `app.css`, that rises from the foot and thins out upwards, with none
+  in the top third, so the minutes and their lines show through. A grey
+  wash under the dots hid them, found by Tim, who picked this one from a
+  sheet of seven. The dots are in the grey of a card's edge, never
+  brighter than the dashes or the minute lines. A part a few pixels wide
+  is its dashed edge alone, which always shows. Under the hand the part
+  goes up a step with the grey of a card under the hand, which the
+  dashes go into, the way every card's edge does, and its dots go up a
+  step too, `--halftone-lit`, keeping their fade. On the range picker the
+  range picker's own border stays over the lit part. The hand on a part
+  lights its card and the hand on a card lights its part, both ways
+  round. The parts give way as the work hears, from what is heard, not
+  from the transcript, which is saved in pieces: a search hearing half an
+  hour took the parts away in thirds, found by Tim.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim
