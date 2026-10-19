@@ -58,6 +58,10 @@
   // only a change is saved and Escape has something to put back.
   let kept: Label | null = null;
   let putBack = false;
+  // A press inside the menu. WebKit gives a button no focus when it is
+  // clicked, so leaving the field for a colour says nothing of where the
+  // focus went, and the press is how it is known to stay in the menu.
+  let pressed = false;
   let field = $state<HTMLInputElement>();
   let menu = $state<HTMLElement>();
 
@@ -71,6 +75,7 @@
     text = ep.label?.text ?? "";
     colour = ep.label?.colour ?? null;
     putBack = false;
+    pressed = false;
   }
 
   // The label the menu holds now, or nothing when it has no words.
@@ -117,6 +122,8 @@
   }
 </script>
 
+<svelte:window onpointerup={() => (pressed = false)} onpointercancel={() => (pressed = false)} />
+
 <Popover.Root
   bind:open
   onOpenChange={(now) => {
@@ -152,7 +159,14 @@
         {#if shown}
           <div {...wrapperProps}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div {...props} bind:this={menu} class="video-menu" aria-label="More for {ep.name}" onkeydown={keepKeys}>
+            <div
+              {...props}
+              bind:this={menu}
+              class="video-menu"
+              aria-label="More for {ep.name}"
+              onkeydown={keepKeys}
+              onpointerdown={() => (pressed = true)}
+            >
               <div class="label">
                 <input
                   bind:this={field}
@@ -176,7 +190,7 @@
                   onblur={(e) => {
                     // A colour clicked saves the words with it, so leaving
                     // the field for one saves nothing of its own.
-                    if (!menu?.contains(e.relatedTarget as Node | null)) save();
+                    if (!pressed && !menu?.contains(e.relatedTarget as Node | null)) save();
                   }}
                 />
                 <Swatches

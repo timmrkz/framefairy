@@ -162,7 +162,9 @@
 //                      opens the three dots of the video on screen in the
 //                      sidebar, types the words in its label and leaves
 //                      the menu by how: a colour's name clicks that colour
-//                      and then Escape closes the menu, "Return" presses
+//                      and then Escape closes the menu, the same with
+//                      " after a press" after it presses beside the field
+//                      first and holds the first save, "Return" presses
 //                      Return, "Escape" puts back what was there. The menu
 //                      has to hang inside the sidebar and keep it open,
 //                      the label the Go side keeps has to be the one the
@@ -2127,6 +2129,7 @@ export const sequences = [
       ["label", ["Ben, Kindergarten", "Return"]],
       ["label", ["Anna", "Escape"]],
       ["label", ["", "Return"]],
+      ["label", ["Clara", "Green after a press"]],
     ],
   },
   {
@@ -5844,14 +5847,25 @@ for (const seq of toWalk) {
           wrong = `while typing, the pill says ${JSON.stringify(typed)}, not ${JSON.stringify(words)}`;
         if (how === "Return" || how === "Escape") await page.keyboard.press(how === "Return" ? "Enter" : how);
         else {
-          await menu.locator(`button[aria-label="${how}"]`).click();
+          const [colour, pressFirst] = how.split(" after a press");
+          if (pressFirst !== undefined) {
+            // A press in the menu beside the field takes the focus from it
+            // and gives it to nothing, which is what WebKit does with a
+            // button pressed. The first save the Go side hears of, if one
+            // was made, waits half a second, so a later one is heard first.
+            await control(url, "/hold?call=SetLabel&ms=500");
+            const box = await menu.locator(".label").boundingBox();
+            await page.mouse.click(box.x + 3, box.y + 3);
+          }
+          await menu.locator(`button[aria-label="${colour}"]`).click();
           await page.keyboard.press("Escape");
         }
         await menu.waitFor({ state: "detached" });
         await page.mouse.move(750, 400);
         await sidebarStill(page);
         await settle(page);
-        const want = how === "Escape" ? was : words.trim() ? { text: words.trim(), colour: colours[how] ?? was?.colour } : null;
+        const named = colours[how.split(" after a press")[0]];
+        const want = how === "Escape" ? was : words.trim() ? { text: words.trim(), colour: named ?? was?.colour } : null;
         const ep = (await ask(page, "Library")).find((e) => e.source === source);
         const kept = ep?.label ?? null;
         const drawn = await page.evaluate(() => {

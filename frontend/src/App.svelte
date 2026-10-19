@@ -123,20 +123,31 @@
   // The rows of the sidebar, which a video's menu hangs under.
   const rows = $state<Record<string, HTMLElement>>({});
 
-  // How many labels of a video are on their way to the Go side.
+  // How many labels of a video are on their way to the Go side, and the
+  // last of them. They go one after another, in the order they were made,
+  // so the label the Go side keeps is the last one made: a colour clicked
+  // as the field is left is two saves, and two calls at once may land in
+  // either order.
   const saving: Record<string, number> = {};
+  const queued: Record<string, Promise<void>> = {};
 
-  async function saveLabel(ep: EpisodeStatus, label: Label | null) {
+  function saveLabel(ep: EpisodeStatus, label: Label | null) {
     drafts[ep.source] = label;
     saving[ep.source] = (saving[ep.source] ?? 0) + 1;
-    try {
-      const kept = await api.setLabel(ep.source, label?.text ?? "", label?.colour ?? "");
-      episodes = episodes.map((e) => (e.source === ep.source ? { ...e, label: kept ?? undefined } : e));
-    } catch (err) {
-      oops(errorText(err));
-    }
-    if (--saving[ep.source] === 0) delete saving[ep.source];
-    if (drafts[ep.source] === label) delete drafts[ep.source];
+    const save = async () => {
+      try {
+        const kept = await api.setLabel(ep.source, label?.text ?? "", label?.colour ?? "");
+        episodes = episodes.map((e) => (e.source === ep.source ? { ...e, label: kept ?? undefined } : e));
+      } catch (err) {
+        oops(errorText(err));
+      }
+      if (--saving[ep.source] === 0) {
+        delete saving[ep.source];
+        delete queued[ep.source];
+      }
+      if (drafts[ep.source] === label) delete drafts[ep.source];
+    };
+    queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
   }
 
   // A menu closed: what it drew and did not save is let go, unless a save
