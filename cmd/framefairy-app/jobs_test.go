@@ -610,9 +610,32 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	t.Parallel()
 	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
-	quick := func(ctx context.Context, p *engine.Project) (string, error) { return "ok", nil }
-	kinds := []string{"render", "model", "plan", engine.JobSearch}
 
+	// While work runs, Relaunch is refused and closes nothing.
+	block := make(chan struct{})
+	held := q.add("/eps/held.mp4", "render", "Held", func(ctx context.Context, p *engine.Project) (string, error) {
+		<-block
+		return "ok", nil
+	})
+	if reopen, ok := q.closeIfIdle(); ok {
+		reopen()
+		t.Fatal("Relaunch found the queue idle while work ran")
+	}
+	if job := q.add("/eps/more.mp4", "render", "More", func(context.Context, *engine.Project) (string, error) { return "ok", nil }); job.State == JobFailed {
+		t.Fatalf("work was refused after a Relaunch that was refused: %s", job.Error)
+	}
+	close(block)
+	for deadline := time.Now().Add(10 * time.Second); q.busy(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s never ended", held.ID)
+		}
+	}
+
+	brief := func(ctx context.Context, p *engine.Project) (string, error) {
+		time.Sleep(200 * time.Microsecond)
+		return "ok", nil
+	}
+	kinds := []string{"render", "model", "plan", engine.JobSearch}
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	for hand := range 4 {
@@ -623,7 +646,7 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 					return
 				default:
 				}
-				job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(hand+k)%len(kinds)], "Work", quick)
+				job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(hand+k)%len(kinds)], "Work", brief)
 				if job.State == JobFailed && job.Error != "the app is relaunching into a new build" {
 					t.Errorf("work refused with %q", job.Error)
 				}
@@ -632,12 +655,12 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 		})
 	}
 
-	var idle, refused int
-	deadline := time.Now().Add(400 * time.Millisecond)
-	for time.Now().Before(deadline) {
+	// Asked until the queue was found idle often enough, however fast
+	// the machine runs the work.
+	idle := 0
+	for deadline := time.Now().Add(10 * time.Second); idle < 20 && time.Now().Before(deadline); {
 		reopen, ok := q.closeIfIdle()
 		if !ok {
-			refused++
 			reopen()
 			continue
 		}
@@ -653,11 +676,11 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
-	if idle == 0 || refused == 0 {
-		t.Fatalf("Relaunch found the queue idle %d times and busy %d times, both are needed to prove anything", idle, refused)
+	if idle == 0 {
+		t.Fatal("Relaunch never found the queue idle, which proves nothing")
 	}
 	// Reopened, it takes work again.
-	if job := q.add("/eps/after.mp4", "render", "After", quick); job.State == JobFailed {
+	if job := q.add("/eps/after.mp4", "render", "After", brief); job.State == JobFailed {
 		t.Errorf("work after the queue reopened was refused: %s", job.Error)
 	}
 }
