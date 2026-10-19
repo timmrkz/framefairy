@@ -34,6 +34,7 @@
     face = "field",
     on = false,
     disabled = false,
+    hang = "start",
   }: {
     // The colour in use, as #rrggbb. Like Pick's value it goes one way
     // only: what the trigger shows is what the caller says is true.
@@ -63,6 +64,10 @@
     // round colours before it.
     on?: boolean;
     disabled?: boolean;
+    // Which edge of the trigger the pop-up hangs on. A well at the end of
+    // a row in the sidebar hangs it on its right edge, so it grows into the
+    // sidebar and not out over the workspace.
+    hang?: "start" | "end";
   } = $props();
 
   let open = $state(false);
@@ -242,7 +247,7 @@
   <Popover.Portal>
     <Popover.Content
       sideOffset={4}
-      align="start"
+      align={hang}
       onInteractOutside={() => (byPointer = true)}
       onEscapeKeydown={() => (byPointer = true)}
       onCloseAutoFocus={(e) => {

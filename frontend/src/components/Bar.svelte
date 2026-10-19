@@ -2,7 +2,11 @@
   // The bar across the top of a window of the app, see the comment on the
   // markup. The app's window and the report window both wear it, inside a
   // .shell that carries titleBar.style, see lib/chrome.svelte.ts.
-  let { title }: { title: string } = $props();
+  import type { Label } from "../lib/api";
+
+  // The label of the video on screen is its pill beside its name, the one
+  // the sidebar shows, so the two say the same thing.
+  let { title, label = null }: { title: string; label?: Label | null } = $props();
 </script>
 
 <!-- The bar across the top: the close, minimise and zoom buttons, and
@@ -25,7 +29,9 @@
      system draws its own title bar there is nothing to agree with and
      the stylesheet keeps its own numbers. -->
 <header class="bar">
-  <span class="name"><span class="what">{title}</span></span>
+  <span class="name"
+    ><span class="what">{title}</span>{#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}</span
+  >
 </header>
 
 <style>
@@ -64,6 +70,7 @@
     height: calc(2 * var(--lights-y, calc(var(--bar-h) / 2)));
     display: flex;
     align-items: center;
+    gap: 8px;
     overflow: hidden;
   }
 

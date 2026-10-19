@@ -14,6 +14,7 @@
     type UpdateState,
     onQuit,
     type EpisodeStatus,
+    type Label,
     type Added,
     errorText,
   } from "./lib/api";
@@ -28,6 +29,7 @@
   import { toasts } from "./lib/toast.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
+  import VideoMenu from "./components/VideoMenu.svelte";
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
@@ -42,11 +44,12 @@
   // it is pinned. Open, it lies over the workspace rather than pushing it,
   // so the video preview never changes size while you reach for an episode.
   let near = $state(false);
-  // The sort list lies over the app, outside the sidebar, so moving onto it
-  // is leaving the sidebar as far as the pointer can tell, and so is the
-  // keyboard going into it. The sidebar stays open while its list is.
-  let sorting = $state(false);
-  const open = $derived(shell.pinned || near || sorting);
+  // The sort list and a video's menu lie over the app, outside the
+  // sidebar, so moving onto one is leaving the sidebar as far as the
+  // pointer can tell, and so is the keyboard going into it. The sidebar
+  // stays open while one of its own is.
+  let holding = $state(false);
+  const open = $derived(shell.pinned || near || holding);
   let aside = $state<HTMLElement>();
 
   // What the sidebar knew of the pointer is out of date once its list
@@ -56,8 +59,8 @@
   // the pointer where it really is, and only a move outside closes it.
   let asking = false;
 
-  function sortList(isOpen: boolean) {
-    sorting = isOpen;
+  function hold(isOpen: boolean) {
+    holding = isOpen;
     if (!isOpen) {
       near = true;
       asking = true;
@@ -71,7 +74,7 @@
   // focus, and the next move of the pointer, once it is back, says where
   // the pointer is.
   function away() {
-    if (sorting) return;
+    if (holding) return;
     near = false;
     asking = true;
   }
@@ -84,7 +87,7 @@
   }
 
   function pointerMoved(e: PointerEvent) {
-    if (!asking || sorting) return;
+    if (!asking || holding) return;
     asking = false;
     near = !!aside?.contains(e.target as Node);
   }
@@ -95,7 +98,7 @@
   // also the press that closes the sidebar. A field being typed in is a
   // layer too: the press lets go of it, see escapeLetsGo.
   function escape(e: KeyboardEvent) {
-    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing || typing()) return;
+    if (e.key !== "Escape" || holding || shell.pinned || !near || removing || typing()) return;
     near = false;
     asking = false;
   }
@@ -109,6 +112,38 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // A label being made in a video's menu, drawn in its row and the title
+  // bar while it is typed, before it is saved. Null is a label being taken
+  // away. A read of the library while the words are typed does not put
+  // the old label back, because what is drawn is the draft until the
+  // answer to saving it is in.
+  let drafts = $state<Record<string, Label | null>>({});
+  const labelOf = (ep: EpisodeStatus): Label | null =>
+    ep.source in drafts ? drafts[ep.source] : (ep.label ?? null);
+  // The rows of the sidebar, which a video's menu hangs under.
+  const rows = $state<Record<string, HTMLElement>>({});
+
+  // How many labels of a video are on their way to the Go side.
+  const saving: Record<string, number> = {};
+
+  async function saveLabel(ep: EpisodeStatus, label: Label | null) {
+    drafts[ep.source] = label;
+    saving[ep.source] = (saving[ep.source] ?? 0) + 1;
+    try {
+      const kept = await api.setLabel(ep.source, label?.text ?? "", label?.colour ?? "");
+      episodes = episodes.map((e) => (e.source === ep.source ? { ...e, label: kept ?? undefined } : e));
+    } catch (err) {
+      oops(errorText(err));
+    }
+    if (--saving[ep.source] === 0) delete saving[ep.source];
+    if (drafts[ep.source] === label) delete drafts[ep.source];
+  }
+
+  // A menu closed: what it drew and did not save is let go, unless a save
+  // is still on its way, whose answer lets go of it.
+  function settle(source: string) {
+    if (!(source in saving)) delete drafts[source];
+  }
   // Whether the library has been read once.
   let libraryRead = $state(false);
   // The list as the sidebar shows it. The trigger is the sort mark Apple's
@@ -256,6 +291,14 @@
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
     return "Frame Fairy";
+  });
+
+  // The label of the video on screen, beside its name in the bar.
+  const titleLabel = $derived.by(() => {
+    if (nav.view.name !== "episode") return null;
+    const path = nav.view.path;
+    const ep = episodes.find((e) => e.source === path);
+    return ep ? labelOf(ep) : null;
   });
 
   // Whether a newer build of the app is ready, which the rail marks on
@@ -578,7 +621,7 @@
 <svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} onblur={away} />
 
 <div class="shell" style={titleBar.style}>
-  <Bar {title} />
+  <Bar {title} label={titleLabel} />
 
   <div class="body" class:alone={settingUp !== false}>
   {#if settingUp === null}
@@ -622,7 +665,7 @@
             align="right"
             face="icon"
             icon="sort"
-            onopenchange={sortList}
+            onopenchange={hold}
             onpick={(v) => shell.sortBy(v as EpisodeOrder)}
           />
         </span>
@@ -630,34 +673,33 @@
     </div>
     <ul class="scroll" bind:this={list}>
       {#each listed as ep (ep.source)}
-        <li>
+        {@const label = labelOf(ep)}
+        <li bind:this={rows[ep.source]}>
           <button
             class="episode"
             class:current={selected(ep.source)}
             onclick={() => nav.go({ name: "episode", path: ep.source })}
           >
             <span class="dot {dotFor(ep)}"></span>
-            <span class="name" title={summary(ep)}>{ep.name}</span>
+            <span class="line" title={label ? `${label.text}. ${summary(ep)}` : summary(ep)}>
+              <span class="name">{ep.name}</span>
+              {#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}
+            </span>
           </button>
           <span class="tools">
-            <button
-              class="glyph small"
-              title="Show in folder"
-              aria-label="Show {ep.name} in folder"
-              disabled={ep.missing}
-              onclick={() => api.reveal(ep.source)}
-            >
-              <Icon name="folder" />
-            </button>
-            <button
-              class="glyph small quiet danger"
-              title="Remove"
-              aria-label="Remove {ep.name}"
-              aria-haspopup="dialog"
-              onclick={() => (removing = ep)}
-            >
-              <Icon name="trash" />
-            </button>
+            <VideoMenu
+              {ep}
+              anchor={rows[ep.source]}
+              worn={episodes.filter((e) => e.source !== ep.source).map((e) => labelOf(e)?.colour ?? "")}
+              onopenchange={(isOpen) => {
+                hold(isOpen);
+                if (!isOpen) settle(ep.source);
+              }}
+              ondraft={(l) => (drafts[ep.source] = l)}
+              onsave={(l) => saveLabel(ep, l)}
+              onreveal={() => api.reveal(ep.source)}
+              onremove={() => (removing = ep)}
+            />
           </span>
         </li>
       {/each}
@@ -942,7 +984,7 @@
      a pointer on the row anyway. The row keeps its height, so the lamp is
      in the same place shut and open and nothing moves as the sidebar
      goes over. */
-  aside:not(.open) .episode .name,
+  aside:not(.open) .episode .line,
   aside:not(.open) .tools {
     display: none;
   }
@@ -1065,10 +1107,23 @@
     background: var(--ink-3);
   }
 
-  /* Room for the two marks, so a long name never runs under them. */
+  /* The name and the label after it, on one line. The label sits right
+     after the name rather than at the far edge, so the two read as one
+     thing, and the label keeps its words while a long name gives way.
+     Room is kept for the three dots, so neither ever runs under them: the
+     mark is 24 wide and 6 from the row's edge, the row's own padding is 8,
+     and 6 more is the gap between them. */
+  .episode .line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    padding-right: 28px;
+  }
+
   .episode .name {
     min-width: 0;
-    padding-right: 48px;
   }
 
   /* What you do with an episode itself waits until the pointer is on its
@@ -1085,19 +1140,10 @@
   }
 
   li:hover .tools,
-  .tools:focus-within {
+  .tools:focus-within,
+  .tools:has(:global([aria-expanded="true"])) {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .glyph.small {
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-s);
-  }
-
-  .glyph.small:hover:not(:disabled) {
-    background: var(--ink-3);
   }
 
   .name {
