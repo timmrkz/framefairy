@@ -1,7 +1,7 @@
 <script lang="ts">
   // What can be done with a video in the sidebar, behind the three dots at
   // the end of its row, the way Finder offers it on a right-click: the
-  // words and the colour of its label, Show in Folder and Remove.
+  // words and the colour of its label, Show in folder and Remove.
   //
   // The label is how videos with the same file name are told apart, Tim's
   // folders of youtube.mp4s above all. It is never the file's name: the
@@ -195,7 +195,7 @@
                 }}
                 disabled={ep.missing}
               >
-                Show in Folder
+                Show in folder
               </button>
               <button
                 class="item danger"

@@ -146,6 +146,27 @@ the app, like whether the sidebar stays open. A library from before this
 kept no order, so its episodes stay in the order they were in, sorted by
 where they are on disk, and the ones added from now on go at the foot.
 
+Three dots show at the end of a row while the pointer is on it, and open
+what can be done with that video, the way Finder offers it on a
+right-click: its **label**, **Show in folder** and **Remove**, which asks
+first. The menu hangs under the row and is exactly as wide as it, so it
+reaches no further over the workspace than the sidebar does, and the
+sidebar stays open while it is.
+
+A label is a few words and a colour beside the video's name, in its row
+and in the title bar. It is how videos with the same file name are told
+apart, a folder of episodes that are each `youtube.mp4` above all. The
+video keeps its name and is never touched: the label is kept in its work
+folder, `label.json`, see `engine.Label`. The colours are the accent
+colours of the settings, the same row of round colours with the colour
+well at its end, `Swatches.svelte`. A new label starts in a colour no
+other video wears yet, and a colour clicked before any words are typed
+gives the label the name of the folder the video is in. Everything saves
+at once: a colour when it is clicked, the words with Return, when the
+field is left or when the menu closes. The pill follows the words while
+they are typed, and Escape puts back what was there. A label with no
+words is taken away. It keeps at most 40 characters on one line.
+
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
 open, and clicking it while it is open closes it at once, even with the
@@ -2799,8 +2820,8 @@ through is in the log of its search.
 Between the paths and the check is **The app's log**, see
 [LOGGING.md](LOGGING.md): where the file in use is, how many files it has
 with the older ones, their size and their lines, read again whenever
-Advanced opens. The folder button shows it in Finder, the way the
-sidebar's does for a video, and the trash can removes every file of the
+Advanced opens. The folder button shows it in Finder, the way Show in
+folder does for a video in the sidebar, and the trash can removes every file of the
 log, the older ones too and nothing else in their folder, after asking.
 The app starts a new log with its next line, which says what went.
 
