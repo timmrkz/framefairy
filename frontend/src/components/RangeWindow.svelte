@@ -782,18 +782,26 @@
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
      clear above them, and with no dashed edge, which Tim found the dots
-     did without. They cover the whole part, to its foot and its sides,
-     like a surface the part is cut from: a row and a column left clear
-     round them looked cut off, found by Tim. The dots lie on one grid
-     from the start of the range picker, so a part that gives way as the
-     work hears is cut back across them and never moves them, and two
-     parts share their columns. Lit, the part takes the grey of a card
-     under the hand and keeps its fade, found by Tim. */
+     did without. They fill the part as whole columns, centred, so the
+     space from the last dot to the edge is the same on both sides and
+     about half the space between two dots: a pattern that started
+     wherever its grid fell looked off, and a row and a column left clear
+     round it looked cut off, both found by Tim. The space left over is
+     shared out exactly, so a side can take half a pixel, which is a
+     whole pixel on a Retina screen. The foot row stands a pixel up from
+     the range picker's foot, where it looked clutched to it, found by
+     Tim. Lit, the part takes the grey of a card under the hand and keeps
+     its fade, found by Tim. */
   .unheard::before {
+    --width: calc(var(--to) - var(--at));
+    --columns: round(down, var(--width), var(--dot-pitch));
     content: "";
     position: absolute;
-    inset: 0;
-    background: var(--halftone) calc(0px - var(--at)) 100% / var(--dot-pitch) var(--dot-pitch);
+    top: 0;
+    bottom: 0;
+    left: calc((var(--width) - var(--columns)) / 2);
+    width: var(--columns);
+    background: var(--halftone) 0 calc(100% - 1px) / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
   }
 

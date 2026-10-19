@@ -2066,10 +2066,11 @@ found is a place in the video, and I and O make a clip there.
   drew went their own way round the dots, found by Tim. On the range
   picker a part has no edge of its own, which Tim found the dots did
   without, and its dots cover the whole part, to its foot and its sides,
-  like a surface the part is cut from. A row and a column left clear
-  round them looked cut off, found by Tim. They lie on one grid from the
-  start of the range picker, so a part that gives way is cut back across
-  them and they never move. Under the hand the part goes up
+  as whole columns centred in the part, the same space on either side,
+  and the foot row a pixel up from the range picker's foot. A row and a
+  column left clear round them looked cut off, a pattern that started
+  wherever its grid fell looked off, and the foot row looked clutched to
+  the foot, all found by Tim. Under the hand the part goes up
   a step with the grey of a card under the hand, which the card's dashes
   go into, the way every card's edge does, and its dots go up a step
   too, `--halftone-lit`, keeping their fade. On the range picker the

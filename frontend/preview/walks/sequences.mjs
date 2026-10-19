@@ -8669,9 +8669,9 @@ for (const seq of toWalk) {
           // on the same box, spread from edge to edge the same way. The
           // browser's own dashes went their own way, found by Tim. On the
           // card and on the range picker the dots go on to the edge, and
-          // on the range picker they lie on one grid from its start. A
-          // row and a column left clear round them looked cut off, found
-          // by Tim.
+          // on the range picker they are whole columns centred in the
+          // part. A row and a column left clear round them looked cut
+          // off, found by Tim.
           const grid = await page.evaluate(() => {
             const li = document.querySelector("ol.said li.hole");
             const dots = li.querySelector(".dots");
@@ -8688,13 +8688,14 @@ for (const seq of toWalk) {
             const columns = [...track.querySelectorAll(".unheard")].map((u) => {
               const b = getComputedStyle(u, "::before");
               const part = u.getBoundingClientRect();
-              const left = part.left - track.getBoundingClientRect().left - pad;
-              // Where the grid of dots starts, from the range picker's
-              // start: a whole number of tiles.
-              const grid = (((left + parseFloat(b.backgroundPositionX)) % pitch) + pitch) % pitch;
+              const left = parseFloat(b.left);
+              const width = parseFloat(b.width);
               return {
-                grid: Math.round(grid * 100) / 100,
-                cover: [parseFloat(b.left), parseFloat(b.width) - part.width, parseFloat(b.top), parseFloat(b.height) - part.height].map((v) => Math.round(v * 100) / 100),
+                // What is left either side of the columns of dots, and how
+                // many columns there are.
+                sides: [left, part.width - left - width].map((v) => Math.round(v * 100) / 100),
+                columns: width / pitch,
+                height: [parseFloat(b.top), parseFloat(b.height) - part.height],
                 foot: b.backgroundPositionY,
                 fade: b.maskImage,
               };
@@ -8773,10 +8774,17 @@ for (const seq of toWalk) {
             wrong = `the dashes of a card do not stand on its dots: dots in ${grid.dots.join(", ")}, dashes in ${grid.dashes.slice(0, 2).join(" laid ")}`;
           else if (grid.dots[2] !== grid.columns[0]?.fade)
             wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
-          else if (grid.columns.some((c) => c.cover.some(Boolean) || c.foot !== "100%" || !c.fade.endsWith("rgb(0, 0, 0))")))
+          else if (
+            grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= grid.pitch / 2))
+          )
             wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
-          else if (grid.columns.some((c) => c.grid % grid.pitch))
-            wrong = `the dots of a part on the range picker are not on one grid from its start: ${JSON.stringify(grid.columns.map((c) => c.grid))}`;
+          // Centred, the same either side, found by Tim, who measured it.
+          else if (grid.columns.some((c) => c.sides[0] !== c.sides[1]))
+            wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => c.sides))} left and right`;
+          // And the foot row a pixel up from the range picker's foot,
+          // where it looked clutched to it, found by Tim.
+          else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
+            wrong = `the foot row of dots on the range picker is not lifted a pixel: ${grid.columns.map((c) => c.foot).join(", ")}`;
         }
         // The playhead put in a part not transcribed yet, on the range
         // picker, puts that part's card at the top of the list, not the
