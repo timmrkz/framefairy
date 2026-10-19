@@ -159,8 +159,9 @@ way. Tim saw the row go dark each time the pointer reached its dots. The
 menu hangs under the row and is exactly as wide as it, so it reaches no
 further over the workspace than the sidebar does, and the sidebar stays
 open while it is. Its icons stand in the sidebar's column of icons and its
-words where the sidebar's words start, and its rows run from edge to edge,
-the way a list's do in `Pick.svelte`.
+words where the sidebar's words start. Its rows are as tall as the rows of
+videos above it and run from edge to edge, the way a list's do in
+`Pick.svelte`.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told

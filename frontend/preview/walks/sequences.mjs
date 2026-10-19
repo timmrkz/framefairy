@@ -6015,6 +6015,20 @@ for (const seq of toWalk) {
               return r && [r.left, r.right, part ? parseFloat(getComputedStyle(el, part).height) : r.height].join(" ");
             }),
             icons: [".video-menu .item svg", "aside .foot .nav svg"].map((q) => document.querySelector(q)?.getBoundingClientRect().left),
+            // The lit part of the dots is in the middle of the row's button,
+            // as far from its top as from its foot, and so are the dots.
+            middles: (() => {
+              const dots = document.querySelector("aside li:has(button.episode.current) button.more");
+              const b = dots.getBoundingClientRect();
+              const lit = getComputedStyle(dots, "::before");
+              const top = b.top + parseFloat(getComputedStyle(dots).borderTopWidth) + parseFloat(lit.top);
+              const row = document.querySelector("aside li:has(button.episode.current) .episode").getBoundingClientRect();
+              const glyph = dots.querySelector("svg").getBoundingClientRect();
+              return [top + parseFloat(lit.height) / 2, (glyph.top + glyph.bottom) / 2, (row.top + row.bottom) / 2];
+            })(),
+            // The menu's rows are as tall as the rows of the list it hangs
+            // under.
+            heights: [".video-menu .item", "aside .episode"].map((q) => document.querySelector(q)?.getBoundingClientRect().height),
           };
         });
         // The sidebar's shadow falls on the workspace and not on the title
@@ -6048,6 +6062,9 @@ for (const seq of toWalk) {
         else if (reach.marks[0] !== reach.marks[1])
           wrong = `the three dots stand at ${reach.marks[0]} (left, right, height), the sort mark at ${reach.marks[1]}`;
         else if (reach.icons[0] !== reach.icons[1]) wrong = `the menu's icons start at ${reach.icons[0]}, the sidebar's at ${reach.icons[1]}`;
+        else if (reach.middles.some((m) => m !== reach.middles[2]))
+          wrong = `the middle of the lit dots is at ${reach.middles[0]} px and of the dots at ${reach.middles[1]} px, the row's at ${reach.middles[2]} px`;
+        else if (reach.heights[0] !== reach.heights[1]) wrong = `the menu's rows are ${reach.heights[0]} px high, the list's ${reach.heights[1]} px`;
         else if (reach.ringed !== (was?.colour ?? null)) wrong = `the menu opened on ${reach.ringed ?? "no colour"}, not ${was?.colour ?? "no colour"}`;
         // Tab takes the folder's name as a hint is taken, and the first
         // word chooses a colour.

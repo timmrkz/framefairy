@@ -339,16 +339,18 @@
     color: var(--text);
   }
 
-  /* A row of the menu is a row of the sidebar's foot: as tall as a
-     control, its icon in the sidebar's column of icons, 9 and the menu's
-     border from the row's edge as a foot row's is from the list's, its
-     words 8 after it, and lit under the pointer. */
+  /* A row of the menu is as tall as a row of the list of videos it hangs
+     under, 36, so the two read as one list. As tall as a control it looked
+     smaller than the rows over it once its lit part reached the menu's
+     edges. Its icon stands in the sidebar's column of icons, 9 and the
+     menu's border from the row's edge as a foot row's is from the list's,
+     its words 8 after it, and it is lit under the pointer. */
   .item {
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
-    height: var(--control-h);
+    height: 36px;
     padding: 0 9px;
     color: var(--text);
     text-align: left;
@@ -394,7 +396,10 @@
     padding: 0 0 2px;
     color: var(--muted);
     background: transparent;
-    border-color: transparent;
+    /* No border, which the lit part would be placed inside of: a button's
+       border of 1 put it a pixel low in the row, and Tim saw the mark
+       longer at the bottom than at the top. */
+    border: none;
   }
 
   .more::before {
