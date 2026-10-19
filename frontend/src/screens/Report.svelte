@@ -320,11 +320,15 @@
   }
 
   // caret says whether the cursor is right after the words being said,
-  // with nothing between, in the field that has the focus.
+  // with nothing between, in the field that has the focus. It stays drawn
+  // there while the last words are written down: WebKit drew its own at
+  // the front of the line or past the words on Tim's Mac, and it jumped
+  // back once they came, issue #373. A key typed or a click meanwhile
+  // gives the field its own cursor where that put it.
   function caret() {
     const sel = getSelection();
     let at = false;
-    if (listening && said && mark && field.contains(said) && document.activeElement === field && sel?.rangeCount && sel.isCollapsed) {
+    if ((listening || hearing) && said && mark && field.contains(said) && document.activeElement === field && sel?.rangeCount && sel.isCollapsed) {
       const r = sel.getRangeAt(0);
       const gap = document.createRange();
       gap.setStartAfter(mark);
@@ -627,8 +631,6 @@
   async function keep() {
     if (!listening) return;
     listening = false;
-    // The field's own cursor at once, where a key typed meanwhile puts it.
-    caret();
     chime("off");
     loud = 0;
     hearing = true;

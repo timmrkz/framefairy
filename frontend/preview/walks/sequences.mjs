@@ -39,6 +39,9 @@
 //   ["blocks"]         the clip timeline draws a block for every caption the
 //                      engine has, and for no other
 //   ["press", key]     presses a key, as Playwright names it
+//   ["press twice", key]
+//                      presses a key twice, with nothing heard by dictation
+//                      let in between
 //   ["read ahead", key] rests a second and a half, presses the key and
 //                      checks that the frame it lands on was there already,
 //                      read while the hand rested: it came from the frames
@@ -309,7 +312,9 @@
 //                      says: "button" presses Stop, "enter" presses Enter
 //                      and "escape" Escape, "escape, then enter" presses
 //                      Escape and Enter right after it, while what was
-//                      said is still being written down, and "ends"
+//                      said is still being written down, "escape, the
+//                      cursor stays" sees the cursor still drawn after the
+//                      words while they are written down, and "ends"
 //                      presses nothing
 //                      until it stops by itself and says why. Then waits
 //                      for Dictate again.
@@ -1976,8 +1981,7 @@ export const sequences = [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["dictate", "start"],
-      ["press", "Shift+Enter"],
-      ["press", "Shift+Enter"],
+      ["press twice", "Shift+Enter"],
       ["caret at words"],
       ["dictate", "hearing"],
       ["caret at words"],
@@ -1985,6 +1989,23 @@ export const sequences = [
       ["report is text"],
       ["type", "Next"],
       ["report reads", "It froze. *\n\n*Next"],
+    ],
+  },
+  {
+    // Issue #373. Tim ended a dictation on his Mac and the cursor jumped
+    // while the last words were written down, to the front of the line or
+    // past where the words would end, and back once they came. It stays
+    // drawn after the words until they are in.
+    name: "The cursor stays after the words while the last of them are written down",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["caret at words"],
+      // The last words take a while to write down, the way they do on a
+      // Mac after a long sentence.
+      ["hold", "StopListening", 1500],
+      ["dictate", "escape, the cursor stays"],
     ],
   },
   {
@@ -4852,6 +4873,14 @@ for (const seq of toWalk) {
           wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
+      case "press twice":
+        // Nothing heard comes in between, however busy the machine.
+        await page.evaluate(() => window.__pauseEvents(true));
+        await page.keyboard.press(arg);
+        await page.keyboard.press(arg);
+        await page.evaluate(() => window.__pauseEvents(false));
+        await watch.step("press", s);
+        break;
       case "press":
         await page.keyboard.press(arg);
         await watch.step(arg === "Enter" && !s.some((w) => w.focused) ? "open" : "press", s);
@@ -6898,6 +6927,13 @@ for (const seq of toWalk) {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
+          // While the last words are written down, the cursor is still
+          // drawn after them, where they end.
+          if (arg === "escape, the cursor stays") {
+            const c = await page.locator(".telling").evaluate((f) => ({ writing: document.querySelector("button.dictate")?.getAttribute("aria-label"), ours: f.classList.contains("ours") }));
+            if (c.writing !== "Writing") wrong = `the button says ${c.writing} right after Escape, not Writing, so there was nothing to look at`;
+            else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
+          }
         }
         await page.waitForFunction(() => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate", null, {
           timeout: 20000,
