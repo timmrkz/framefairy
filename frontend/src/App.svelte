@@ -92,9 +92,10 @@
   // Escape closes one thing at a time, the way a menu on the Mac does: the
   // list first, and the sidebar that hovering opened only on the next press.
   // Read before the list hears it, so the press that closes the list is not
-  // also the press that closes the sidebar.
+  // also the press that closes the sidebar. A field being typed in is a
+  // layer too: the press lets go of it, see escapeLetsGo.
   function escape(e: KeyboardEvent) {
-    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing) return;
+    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing || typing()) return;
     near = false;
     asking = false;
   }

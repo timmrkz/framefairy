@@ -968,7 +968,16 @@ bubble scrolled by those eight pixels.
     preview where it landed, see `keyAt` in `Player.svelte`.
   - **A colour picked with the pointer lets go of the keyboard**, so Shift
     and the arrows walk the words again straight after. Left with Escape,
-    the keyboard goes back to the colour, the way a list gives it back.
+    it lets go too.
+  - **Escape lets go of the keyboard everywhere**, issue #370. It closes a
+    list, a list to search or the colour pop-up and leaves no ring on its
+    trigger, see `letGo` in `Pick.svelte`. In a field being typed in, the
+    size of the captions, a setting, the report, it lets go of the field
+    and keeps what was typed, see `escapeLetsGo` in `lib/keys.ts`. The
+    plain list once kept the keyboard on its trigger and lit its ring on
+    Escape, while the list of fonts did not, and Escape did nothing in a
+    field. Whatever takes Escape for itself, a word being corrected or the
+    report while it listens, keeps it.
   - **A button pressed with the pointer keeps no keyboard**, the way a
     button on the Mac does not, see `letButtonGo` in `App.svelte`. In
     Chromium, on Windows and in the preview, a clicked button kept it, and
