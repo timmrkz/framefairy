@@ -48,6 +48,7 @@
     clip,
     making,
     captions = null,
+    captionsDue = false,
     wordFrames = null,
     drafts = {},
     time = $bindable(0),
@@ -78,6 +79,9 @@
     making?: string;
     // The captions of the selected clip, on the clip's own clock.
     captions?: CaptionsView | null;
+    // Whether the captions of the selected clip are on their way, so a
+    // frame of it waits for them, see readyAt.
+    captionsDue?: boolean;
     // Where libass puts each word of the captions of a track, see
     // WordFrame, null while they are on their way or cannot be said.
     wordFrames?: { key: string; frames: WordFrame[][] | null } | null;
@@ -212,6 +216,7 @@
       paused = true;
       nailed = false;
       if (queue === going) queue = null;
+      held = null;
       setTimeout(() => going.close());
     };
   });
@@ -237,7 +242,7 @@
     const woken = slept;
     const q = new FrameQueue(canvas, video, movieOf(source), woken);
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
-    q.over = { at: overAt, coming: comingAt };
+    q.over = { at: overAt, coming: comingAt, ready: readyAt };
     queue = q;
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
@@ -410,6 +415,7 @@
   // CaptionLayers.sought.
   export function seek(t: number, about?: About, wordStep = false) {
     const at = Math.max(0, Math.min(t, source.duration));
+    holdOverlay();
     layers.sought(wordStep);
     time = at;
     placed = placeOf(pieces, clip?.key ?? "", at, 1 / oneFrame, about, source.videoStart ?? 0);
@@ -636,6 +642,36 @@
       moved: !!clip.segments[cropped]?.moved || !!clip.segments[cropped]?.marks?.length,
     };
   });
+
+  // The video preview shows one moment at a time: a frame, and the crop
+  // frame, its shade and the captions that belong to that frame. A clip
+  // picked moved the crop frame at once and took the captions off the
+  // frame on screen, the picture came a few frames later, and its captions
+  // a few after that. Tim saw the three come one after another and wanted
+  // them at once, issue #383. So from a seek to another clip until that
+  // clip's frame is put up, with its captions, see readyAt, everything
+  // over the picture stays what it was, the clip before's, and the three
+  // change together in the frame the queue puts the new frame up in, see
+  // overAt. Shown is what was on screen in the last frame drawn: the crop
+  // as shares of the picture, the turn, the crop's left edge for the
+  // probes, the captions laid over the canvas, and whose clip.
+  type Overlaid = { key: string; crop: typeof crop; turn: number; left: number | null };
+  let held = $state.raw<(Overlaid & { over: Over | null; since: number }) | null>(null);
+  let last: Overlaid = { key: "", crop: null, turn: 0, left: null };
+  let drawnOver: Over | null = null;
+  $effect.pre(() => {
+    const now = { key: clip?.key ?? "", crop, turn, left: crop?.inside ? (dragLeft ?? cropLeft) : null };
+    if (!held) last = now;
+  });
+  // A seek to another clip than the one on screen holds what is over the
+  // picture. A seek before the frame of the last came keeps the hold it
+  // has: what is on screen is still the clip before's.
+  function holdOverlay() {
+    if (held || !queue || last.key === (clip?.key ?? "")) return;
+    held = { ...last, over: drawnOver, since: performance.now() };
+  }
+  const shownCrop = $derived(held ? held.crop : crop);
+  const shownTurn = $derived(held ? held.turn : turn);
 
   // The word being corrected: where it stands in the caption, which word of
   // the episode it is, the whole of that word, and the piece of it drawn
@@ -1172,7 +1208,7 @@
 
   // The frame the captions sit in: the crop, or the whole preview when there
   // is none to place them in.
-  const box = $derived(crop ?? { left: 0, width: 100 });
+  const box = $derived(shownCrop ?? { left: 0, width: 100 });
 
   // The captions in the picture are the short's: libass draws them on the
   // Go side from the caption file the render burns in, for each frame at
@@ -1302,16 +1338,51 @@
   );
 
   // The captions over the frame the canvas draws, and what they show for
-  // the caption box, see onScreen.
-  function overAt(frame: number, light: Light): Over | null {
+  // the caption box, see onScreen. Fresh is a frame put up for the newest
+  // gesture, which ends a hold, and anything else the frame on screen drawn
+  // again, which during a hold is drawn with what lay over it before.
+  function overAt(frame: number, light: Light, fresh = false): Over | null {
+    if (held) {
+      if (!fresh) return held.over;
+      said(`video preview: clip ${clip?.id ?? "none"} has its frame up at ${frame.toFixed(3)} s, ${Math.round(performance.now() - held.since)} ms after it was picked`, { video: path });
+      held = null;
+    }
     if (light !== shownLight) shownLight = light;
     const ask = captionAsk;
     const f = ask && framesClip(frame) ? framingOf(frame) : null;
     const size = f && layerSize(f);
     const layer = ask && size ? layers.at(frame, size) : null;
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
-    return f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    drawnOver = f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    return drawnOver;
   }
+
+  // What lies over the frame that starts at a moment is here, or is on its
+  // way and the promise says when: the captions of the clip, asked of the
+  // Go side when the clip was picked, then the layer of the frame. Null
+  // when nothing is to be laid over it.
+  function readyAt(frame: number): Promise<void> | null {
+    if (captionsDue && clip && place !== "video")
+      return new Promise((done) => {
+        dueWaiters.push(() => {
+          const next = readyAt(frame);
+          if (next) void next.then(done);
+          else done();
+        });
+      });
+    layers.set(captionAsk);
+    const f = captionAsk && framesClip(frame) ? framingOf(frame) : null;
+    const size = f && layerSize(f);
+    return size ? layers.ready(frame, size) : null;
+  }
+  let dueWaiters: (() => void)[] = [];
+  $effect(() => {
+    if (captionsDue && clip) return;
+    void captionAsk;
+    const waiting = dueWaiters;
+    dueWaiters = [];
+    untrack(() => waiting.forEach((w) => w()));
+  });
 
   function comingAt(frame: number) {
     if (!captionAsk || !framesClip(frame)) return;
@@ -1581,14 +1652,14 @@
   <div class="viewer">
   <div
     class="screen asks"
-    class:turned={turn !== 0}
-    class:sideways={turn % 180 !== 0}
+    class:turned={shownTurn !== 0}
+    class:sideways={shownTurn % 180 !== 0}
     bind:this={screen}
     data-playhead={time}
     data-shown={frameStart}
-    data-turn={turn}
-    data-crop={crop?.inside ? (dragLeft ?? cropLeft) : null}
-    style="--turn: {-turn}deg"
+    data-turn={shownTurn}
+    data-crop={held ? held.left : crop?.inside ? (dragLeft ?? cropLeft) : null}
+    style="--turn: {-shownTurn}deg"
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ask corner" onpointerdown={(e) => e.stopPropagation()}>
@@ -1619,12 +1690,12 @@
          it follows the frame's rounded corners and lies under its line,
          with nothing of the picture left bright between the two. The line
          itself is drawn in .atop, above the viewer's rounded corners. -->
-    {#if crop?.inside}
+    {#if shownCrop?.inside}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="crop"
         class:held={dragLeft !== null}
-        style="left: {crop.left}%; width: {crop.width}%"
+        style="left: {shownCrop.left}%; width: {shownCrop.width}%"
         title="Drag sideways to place the crop"
         onpointerdown={dragCrop}
       ></div>
@@ -1775,9 +1846,9 @@
        the same cell as the viewer, takes no clicks: the crop under it is
        what the hand moves. -->
   <div class="atop">
-    <div class="lid" class:sideways={turn % 180 !== 0}>
-      {#if crop?.inside}
-        <div class="frame" class:lit={dragLeft !== null} style="left: {crop.left}%; width: {crop.width}%"></div>
+    <div class="lid" class:sideways={shownTurn % 180 !== 0}>
+      {#if shownCrop?.inside}
+        <div class="frame" class:lit={dragLeft !== null} style="left: {shownCrop.left}%; width: {shownCrop.width}%"></div>
       {/if}
     </div>
   </div>

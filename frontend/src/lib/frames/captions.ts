@@ -447,6 +447,10 @@ export class CaptionLayers {
   private lift: Lift | null = null;
   private shownAt = NaN;
   private bounceFrom: number | null = null;
+  // The frames a gesture put the playhead on that wait to be put up until
+  // their own layer is here, by the key of the layer, each with what tells
+  // it the layer came, or will not, see ready.
+  private promised = new Map<string, { want: Wanted; done: (() => void)[] }>();
 
   constructor(
     private came: () => void,
@@ -481,6 +485,7 @@ export class CaptionLayers {
   get busy(): boolean {
     return (
       this.going.size > 0 ||
+      this.promised.size > 0 ||
       this.ahead.length > 0 ||
       this.waiting !== null ||
       this.popping ||
@@ -502,9 +507,48 @@ export class CaptionLayers {
       this.ahead = [];
       this.again.clear();
       this.callOff(() => true);
+      // A frame that waited for a layer of other captions waits no longer:
+      // it is put up with what there is, and asks again as it is drawn.
+      for (const k of [...this.promised.keys()]) this.keep(k);
     }
     this.ask = ask;
     this.askKey = key;
+  }
+
+  // What lies over the frame that starts at frame, asked for now and before
+  // anything else on its way, for a frame a gesture put the playhead on:
+  // what answers is done once the layer is here, or once it did not come,
+  // so the frame and its captions are put up together. Null when the layer
+  // is here already or there are no captions to draw. Tim saw a clip card
+  // picked put its picture up first and its captions a few frames later,
+  // issue #383.
+  ready(frame: number, size: [number, number]): Promise<void> | null {
+    const want = this.wanted(frame, size);
+    if (!want || this.kept.has(want.key)) return null;
+    let p = this.promised.get(want.key);
+    if (!p) {
+      p = { want, done: [] };
+      this.promised.set(want.key, p);
+    }
+    const waits = p;
+    const came = new Promise<void>((done) => waits.done.push(done));
+    if (!this.going.has(want.key)) {
+      // The frame a gesture is waiting for goes before frames read ahead.
+      if (this.going.size >= GOING) {
+        const spare = [...this.going.keys()].find((k) => !this.promised.has(k) && k !== this.waiting?.key);
+        if (spare) this.callOff((k) => k === spare);
+      }
+      this.fetch(want);
+    }
+    return came;
+  }
+
+  // The frames waiting on the layer of key are told it came, or will not.
+  private keep(key: string) {
+    const p = this.promised.get(key);
+    if (!p) return;
+    this.promised.delete(key);
+    for (const done of p.done) done();
   }
 
   private wanted(frame: number, size: [number, number]): Wanted | null {
@@ -536,6 +580,7 @@ export class CaptionLayers {
       if (!which(key)) continue;
       off.abort();
       this.going.delete(key);
+      this.keep(key);
     }
   }
 
@@ -692,6 +737,7 @@ export class CaptionLayers {
   // first, unless its layer did not come and is asked for again in a
   // moment, then the frames that asked ahead, in the order they asked.
   private more(drawn = true) {
+    for (const p of this.promised.values()) if (!this.again.has(p.want.key)) this.fetch(p.want);
     const w = this.waiting;
     if (drawn && w && !this.kept.has(w.key)) this.fetch(w);
     while (this.going.size < GOING && this.ahead.length > 0) {
@@ -740,17 +786,24 @@ export class CaptionLayers {
           this.again.delete(key);
           this.kept.set(key, layer);
           while (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value!);
-        } else if (w?.key === key) {
+          this.keep(key);
+        } else if (w?.key === key || this.promised.has(key)) {
           // Nothing is kept for a layer that did not come: the frame drawn
           // keeps the layer given last, and its own is asked for once more
-          // in a moment.
+          // in a moment. A frame waiting to be put up waits for that once
+          // more too, and is put up without it after.
           if (!this.again.has(key)) {
             this.again.add(key);
             setTimeout(() => {
               if (this.waiting?.key === key) this.fetch(this.waiting);
+              else {
+                const p = this.promised.get(key);
+                if (p) this.fetch(p.want);
+              }
             }, AGAIN);
           } else {
-            this.waiting = null;
+            if (w?.key === key) this.waiting = null;
+            this.keep(key);
             this.gaveUp(ask, "a layer", why);
           }
           this.more(false);

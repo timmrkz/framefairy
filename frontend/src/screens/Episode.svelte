@@ -2521,7 +2521,10 @@
         captionsOf = clip.key;
       })
       .catch(() => {
-        if (!dropped) captions = null;
+        if (dropped) return;
+        // None to draw, and none on the way, so nothing waits for them.
+        captions = null;
+        captionsOf = clip.key;
       });
     return () => (dropped = true);
   });
@@ -3171,6 +3174,7 @@
           sleeping={away}
           bind:time
           captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}
+          captionsDue={!!shownClip && captionsOf !== shownClip.key}
           {wordFrames}
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
