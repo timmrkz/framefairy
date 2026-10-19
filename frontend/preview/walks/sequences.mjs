@@ -7453,13 +7453,18 @@ for (const seq of toWalk) {
             const controls = [...(field?.querySelectorAll("input, button.unlock, button.bin") ?? [])];
             return {
               lines: line ? Math.round(line.getBoundingClientRect().height / parseFloat(getComputedStyle(line).lineHeight)) : 0,
+              row: field?.getBoundingClientRect().top ?? 0,
               tops: controls.map((c) => [c.matches("input") ? "field" : c.matches(".unlock") ? "Unlock" : "bin", c.getBoundingClientRect().top]),
             };
           });
           lines.add(m.lines);
           if (!m.tops.length) problems.push(`at ${width} px the licence row has no field, Unlock or bin`);
           for (const [name, top] of m.tops) {
-            if (top !== Math.round(top)) problems.push(`at ${width} px, with the line on ${m.lines} lines, the ${name} stands between two pixels, its top at ${top}`);
+            // Narrower than the app gets, what stands above the row can
+            // wrap onto half a pixel of its own on CI's fonts, so there
+            // only the row's own half pixel is looked for.
+            const at = width >= 960 ? top : top - m.row;
+            if (at !== Math.round(at)) problems.push(`at ${width} px, with the line on ${m.lines} lines, the ${name} stands between two pixels, its top at ${top}, ${top - m.row} into its row`);
           }
         }
         await page.setViewportSize(was);
