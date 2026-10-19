@@ -1920,7 +1920,9 @@ export const sequences = [
       ["dictate", "start"],
       ["dictate", "settled"],
       ["type", "Y"],
-      ["press", "Home"],
+      // The start of the report, not of the line: what is said after Y
+      // pushes the cursor along, onto a line further down.
+      ["press", "Control+Home"],
       ["press", "ArrowRight"],
       ["press", "ArrowRight"],
       ["type", "Z"],
