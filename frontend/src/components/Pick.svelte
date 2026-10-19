@@ -26,6 +26,7 @@
   // wearing the progress track's rounded corners.
   import { Command, Popover, Select } from "bits-ui";
   import Icon from "./Icon.svelte";
+  import SearchField from "./SearchField.svelte";
   import { matches } from "../lib/match";
 
   let {
@@ -310,10 +311,7 @@
                     <div {...root} class="pick-command">
                       <Command.Input bind:value={typed}>
                         {#snippet child({ props: field })}
-                          <label class="pick-search">
-                            <Icon name="search" size={12} />
-                            <input {...field} bind:value={typed} placeholder={search} />
-                          </label>
+                          <SearchField {...field} bind:value={typed} placeholder={search} />
                         {/snippet}
                       </Command.Input>
                       <Command.List>
@@ -751,32 +749,6 @@
      one edge from the field into the rows. It is a row tall above its
      line, and the line is under that, so it does not stand a pixel
      shorter than the rows it is over. */
-  .pick-search {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: calc(var(--control-h) + 1px);
-    padding: 0 8px;
-    border-bottom: 1px solid var(--line);
-    color: var(--muted);
-    cursor: text;
-  }
-
-  /* It asks nothing of the list's width, which is the rows' to set. */
-  .pick-search input {
-    flex: 1;
-    width: 0;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    color: var(--text);
-    font: inherit;
-    background: transparent;
-    border: none;
-    outline: none;
-  }
-
   .pick-rows {
     min-height: 0;
     overflow-y: auto;

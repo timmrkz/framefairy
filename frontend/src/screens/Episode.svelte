@@ -84,6 +84,7 @@
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
   import SaidList from "../components/SaidList.svelte";
+  import SearchField from "../components/SearchField.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
@@ -3328,23 +3329,22 @@
               <!-- The search through what was said takes the place of the
                    head, the way the field over the font list does, and
                    Escape or the cross gives the head back. -->
-              <label class="sayfield">
-                <Icon name="search" size={12} />
-                <input
-                  bind:this={sayField}
-                  bind:value={sayTyped}
-                  placeholder="Search transcript"
-                  aria-label="Search transcript"
-                  onkeydown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      escapeSaying();
-                    }
-                  }}
-                />
+              <SearchField
+                framed
+                bind:field={sayField}
+                bind:value={sayTyped}
+                placeholder="Search transcript"
+                aria-label="Search transcript"
+                onkeydown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    escapeSaying();
+                  }
+                }}
+              >
                 {#if sayTyped.trim()}
-                  <!-- How many sentences match, the number fading in anew
+                  <!-- How many cards match, the number fading in anew
                        as it changes, the way a toast comes. -->
                   <span class="saycount muted num" title="Cards that match">
                     {#key sayMatches}<span in:fade={{ duration: 150 }}>{sayMatches}</span>{/key}
@@ -3353,7 +3353,7 @@
                 <button class="glyph quiet" title="Close the search, Escape does the same" aria-label="Close the search" onclick={closeSaying}>
                   <Icon name="close" size={12} />
                 </button>
-              </label>
+              </SearchField>
             {:else}
             <h2>{lane.word}</h2>
             {#if lane.count}
@@ -4142,43 +4142,6 @@
 
   .listhead .grow {
     flex: 1;
-  }
-
-  /* The search through what was said, the field over the font list in the
-     head's place: a magnifier, what is typed, the count and the cross. */
-  .sayfield {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: var(--control-h);
-    padding-left: 10px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    background: var(--ink-1);
-    color: var(--muted);
-    cursor: text;
-  }
-
-  .sayfield:focus-within {
-    border-color: var(--accent);
-  }
-
-  .sayfield input {
-    flex: 1;
-    width: 0;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    color: var(--text);
-    font: inherit;
-    background: transparent;
-    border: none;
-    outline: none;
-  }
-
-  .sayfield .glyph {
-    height: calc(var(--control-h) - 2px);
   }
 
   .saycount {

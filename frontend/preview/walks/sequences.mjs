@@ -8135,7 +8135,7 @@ for (const seq of toWalk) {
           })),
           holes: document.querySelectorAll("ol.said li.hole").length,
           edges: document.querySelectorAll(".unheard-edge").length,
-          count: document.querySelector(".sayfield .saycount")?.textContent.trim() ?? null,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
           // The greys, as the browser has them: what no clip keeps, a
           // clip's words, a word that answers, the field's placeholder,
           // and a label's grey to measure them by.
@@ -8286,7 +8286,7 @@ for (const seq of toWalk) {
         const none = await page.evaluate(() => ({
           says: document.querySelector("ol.said li.none")?.textContent.trim() ?? null,
           rows: document.querySelectorAll("ol.said li:not(.none)").length,
-          count: document.querySelector(".sayfield .saycount")?.textContent.trim() ?? null,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
         }));
         if (none.says !== "No matches" || none.rows || none.count !== "0")
           wrong = `nonsense typed shows ${none.rows} cards over "${none.says}", and the field says ${none.count}`;
@@ -8306,7 +8306,7 @@ for (const seq of toWalk) {
         await page.waitForTimeout(200);
         const whole = await page.evaluate(() => ({
           holes: document.querySelectorAll("ol.said li.hole").length,
-          count: document.querySelector(".sayfield .saycount")?.textContent.trim() ?? null,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
         }));
         if (!wrong && whole.holes !== gaps) wrong = `${gaps} parts are not transcribed yet, and with nothing typed the list shows ${whole.holes}`;
         else if (!wrong && whole.count !== null) wrong = `with nothing typed the field still says ${whole.count} match`;
@@ -8528,6 +8528,10 @@ for (const seq of toWalk) {
         if (!wrong && clips.some((k) => !k.rejected)) {
           await field.fill("");
           await watch.step("type", s);
+          // The chosen clip's mark, so the clip timeline is on the clip and
+          // not where the playhead was put before the search opened.
+          await page.evaluate(() => document.querySelector(".track .clipmark.selected").click());
+          await watch.step("click", s);
           await page.waitForTimeout(200);
           await page.evaluate(() => {
             const list = document.querySelector(".scroll.list");
@@ -8536,9 +8540,18 @@ for (const seq of toWalk) {
           });
           const blocks = page.locator(".captions .caption");
           const n = await blocks.count();
-          if (n < 2) wrong = `the chosen clip has ${n} captions on the clip timeline, so going to one could not be seen`;
+          // The last block the clip timeline shows. It is zoomed in on the
+          // clip, so after a caption was corrected its last blocks can be
+          // past the edge of the app.
+          const shown = await page.evaluate(() =>
+            [...document.querySelectorAll(".captions .caption")].findLastIndex((el) => {
+              const box = el.getBoundingClientRect();
+              return box.width > 0 && box.left >= 0 && box.right <= innerWidth;
+            }),
+          );
+          if (n < 2 || shown < 1) wrong = `the chosen clip has ${n} captions on the clip timeline, ${shown + 1} of them in view, so going to one could not be seen}`;
           else {
-            await blocks.nth(n - 1).click();
+            await blocks.nth(shown).click();
             await watch.step("click", s);
             const stood = await page.evaluate(
               () =>
@@ -8719,7 +8732,7 @@ for (const seq of toWalk) {
             const what = row.querySelector(".what.shown");
             if (what) centres.push([row.textContent.trim(), ...offCentre(what, row)]);
           }
-          const search = document.querySelector(".pick-list .pick-search");
+          const search = document.querySelector(".pick-list .search");
           const head = [...document.querySelectorAll(".pick-list .pick-group")].find((it) => it.textContent.trim() === "Installed");
           const ourLast = [...document.querySelectorAll(".pick-list .pick-row")]
             .filter((row) => row.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING)
