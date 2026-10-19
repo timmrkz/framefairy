@@ -384,26 +384,44 @@ export class AppFrames {
   // ahead competed with it for the decoder and for the streams.
   ahead(ranks: number[]) {
     this.still();
-    this.aheadWanted = ranks;
+    this.aheadWanted = [...ranks];
     this.aheadNow();
   }
 
-  // Asks the frames read ahead once the hand waits for nothing.
+  // Asks the frames read ahead once the hand waits for nothing, one at a
+  // time, in the order given. They were asked all at once, and with the
+  // first frames of the clips next to the one chosen among them, a click
+  // on a card waited for its frame behind three seeks of the decoder and
+  // streams closed and opened again for the rest, issue #383.
   aheadNow() {
     const ranks = this.aheadWanted;
-    if (!ranks || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
-    this.aheadWanted = null;
+    if (!ranks || this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
     const { width, height } = this.size();
-    for (const rank of ranks) {
+    for (let rank = ranks.shift(); rank !== undefined; rank = ranks.shift()) {
       const have = this.kept.get(rank);
       if (rank < 0 || (have && have.width === width && have.height === height)) continue;
-      const w: Waiter = { rank, seq: ++this.asked, ahead: true, done: () => this.aheadOf.delete(w) };
+      const w: Waiter = {
+        rank,
+        seq: ++this.asked,
+        ahead: true,
+        done: () => {
+          this.aheadOf.delete(w);
+          queueMicrotask(() => this.aheadNow());
+        },
+      };
       this.aheadOf.add(w);
       this.aheadRead.add(rank);
       if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
       this.stats.ahead++;
       this.route(w);
+      return;
     }
+    this.aheadWanted = null;
+  }
+
+  // Whether frames are still to be read ahead, for the walks.
+  get readingAhead(): boolean {
+    return this.aheadOf.size > 0 || !!this.aheadWanted?.length;
   }
 
   // The hand asks again: what was read ahead for where it was is not

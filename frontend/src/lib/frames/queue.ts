@@ -914,13 +914,15 @@ export class FrameQueue {
   // The moments the hand is likely to step to next while paused, the first
   // frame of the word after the playhead and of the word before: their
   // frames are read while it rests, see AppFrames.ahead. Each is the first
-  // frame a play from it shows, the frame the step's cue asks for.
-  ahead(times: number[]) {
+  // frame a play from it shows, the frame the step's cue asks for. After
+  // them the first frames of other clips, at their starts, which a click on
+  // their cards puts up, see firstFrameAt.
+  ahead(times: number[], clips: number[] = []) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued")) return;
     const gesture = this.gestures;
     // Asked again for the same moments with no gesture between: the frames
     // are on their way or kept already.
-    const key = `${gesture} ${times.join(" ")}`;
+    const key = `${gesture} ${times.join(" ")} ${clips.join(" ")}`;
     if (key === this.aheadKey) return;
     this.aheadKey = key;
     this.ready.then(
@@ -933,7 +935,7 @@ export class FrameQueue {
           plan.extend(p0 + this.video!.frame);
           return plan.need(0)?.rank ?? rankAt(s, at);
         });
-        this.app.ahead(ranks);
+        this.app.ahead([...ranks, ...clips.map((at) => rankAt(s, at))]);
       },
       () => {},
     );
@@ -1235,6 +1237,13 @@ export class FrameQueue {
       this.maybeBegin();
     });
     return false;
+  }
+
+  // The moment the frame starts that a clip starting at a moment opens on,
+  // once the video is read: the frame that holds it, which a cue from the
+  // clip's start puts up first, see settle. Null before.
+  firstFrameAt(at: number): number | null {
+    return this.video && !this.closed ? this.shownAt(rankAt(this.video.samples, at)) : null;
   }
 
   private shownAt(rank: number): number {

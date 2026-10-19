@@ -426,9 +426,23 @@
   }
 
   // The moments the hand is likely to step to next, paused, whose frames
-  // are read while it rests, see FrameQueue.ahead.
-  export function ahead(times: number[]) {
-    queue?.ahead(times);
+  // are read while it rests, see FrameQueue.ahead: the words either side
+  // of the playhead, and the first frame of each of the clips given, which
+  // a click on its card puts up, with its captions, whose layer is read
+  // too, see CaptionLayers.next. On a video of hours a card clicked for
+  // the first time took half a second to show its clip, issue #383.
+  export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = []) {
+    if (!queue) return;
+    queue.ahead(times, clips.map((c) => c.clip.start));
+    const wants: Parameters<typeof layers.next>[0] = [];
+    for (const { clip: of, captions: view } of clips) {
+      const ask = askOf(of, view);
+      const frame = queue.firstFrameAt(of.start);
+      const f = ask && frame !== null ? framingOf(frame, of) : null;
+      const size = f && layerSize(f);
+      if (ask && size) wants.push({ ask, frame: frame!, size });
+    }
+    layers.next(wants);
   }
 
   // A clip made with I or O is made around the playhead, so the playhead
@@ -1233,13 +1247,19 @@
   // typed. Before libass knows where the words stand, the caption box
   // draws the whole caption itself.
   const captionAsk = $derived.by((): CaptionAsk | null => {
-    if (!clip || !captions?.track || !captions.captions?.length || captions.style.text === false) return null;
+    const ask = clip && askOf(clip, captions);
+    if (!ask || !captions?.captions) return null;
     if (fixing && (!laidWords || typed < 0)) return null;
-    const asked: Record<string, string> = { ...drafts };
-    if (dragCaptions !== null) asked.y = String(dragCaptions);
-    const typing = fixing && caption ? `${captions.captions.indexOf(caption)} ${typed}` : undefined;
-    return { path, clip: clip.key, track: captions.track, drafts: asked, typing };
+    if (dragCaptions !== null) ask.drafts.y = String(dragCaptions);
+    if (fixing && caption) ask.typing = `${captions.captions.indexOf(caption)} ${typed}`;
+    return ask;
   });
+  // The captions of a clip as the Go side draws them over its frames, with
+  // the drafts of the clip set, or null when it has none to draw.
+  function askOf(of: ClipEntry, view: CaptionsView | null | undefined): CaptionAsk | null {
+    if (!view?.track || !view.captions?.length || view.style.text === false) return null;
+    return { path, clip: of.key, track: view.track, drafts: { ...drafts } };
+  }
   // The word being typed, counted across the lines of its caption.
   const typed = $derived.by(() => {
     if (!fixing) return -1;
@@ -1297,14 +1317,14 @@
   // as shown. The same rule as the crop frame's, worked out for the frame
   // itself, since it is asked for as the frame is drawn, before the
   // workspace hears which frame that is.
-  function framingOf(frame: number): { turn: number; left: number; width: number } | null {
-    if (!clip) return null;
-    const turn = rotationAt(clip.rotations, frame);
-    const held = pieceHolding(clip.segments, frame);
-    const at = held >= 0 ? held : piece;
+  function framingOf(frame: number, of = clip): { turn: number; left: number; width: number } | null {
+    if (!of) return null;
+    const turn = rotationAt(of.rotations, frame);
+    const held = pieceHolding(of.segments, frame);
+    const at = held >= 0 ? held : of === clip ? piece : 0;
     const pic = pictureOf(source, turn);
     if (at < 0 || !pic.width || !pic.cropWidth) return null;
-    const left = dragLeft ?? leftOn(clip, at, frame, pic, true);
+    const left = (of === clip ? dragLeft : null) ?? leftOn(of, at, frame, pic, true);
     return { turn, left: left / pic.width, width: pic.cropWidth / pic.width };
   }
 

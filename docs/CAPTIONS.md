@@ -164,7 +164,12 @@ layer before it is put up, `ready` in `CaptionLayers` and `dress` in
 `queue.ts`, so the picture and its captions come in one frame, issue
 #383. The layer is asked for the moment the frame is, ahead of the frames
 read ahead, so the two take the time the slower takes. A clip just picked
-waits for its captions from the Go side first, `captionsDue`. Nothing
+waits for its captions from the Go side first, `captionsDue`, unless
+they were read while the hand rested: the captions of the clips whose
+cards stand next to the one chosen are asked for then, `readAhead` in
+`Episode.svelte`, and the layers of their first frames drawn, `next` in
+`CaptionLayers`, one at a time and only while nothing else is on its
+way, so a card clicked has its captions at once. Nothing
 waits under a dragging hand, and nothing waits longer than 600 ms,
 `DRESS_WAIT`: past that the frame goes up without its captions and the
 log says so. A frame shown before its layer has

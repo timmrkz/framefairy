@@ -343,6 +343,15 @@ const AGAIN = 250;
 // A layer asked for: the ask it belongs to, the frame and the size.
 type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
 
+// What tells one ask from another, and one layer of an ask from another.
+function keyOf(ask: CaptionAsk | null): string {
+  return ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
+}
+
+function layerKey(askKey: string, frame: number, size: [number, number]): string {
+  return `${askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`;
+}
+
 // The bounce after a word step. Shift and an arrow step from word to word,
 // and the word stepped to bounces, from rest through its peak and back to
 // rest, every word alike, a word the short shows at its peak on its one
@@ -451,6 +460,10 @@ export class CaptionLayers {
   // their own layer is here, by the key of the layer, each with what tells
   // it the layer came, or will not, see ready.
   private promised = new Map<string, { want: Wanted; done: (() => void)[] }>();
+  // The layers of the first frames of the clips a click on their cards
+  // may put up next, with captions of their own, asked for one at a time
+  // while nothing else is on its way, see next.
+  private soon: Wanted[] = [];
 
   constructor(
     private came: () => void,
@@ -500,13 +513,15 @@ export class CaptionLayers {
   }
 
   set(ask: CaptionAsk | null) {
-    const key = ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
+    const key = keyOf(ask);
     if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
     if (key !== this.askKey) {
       this.waiting = null;
       this.ahead = [];
       this.again.clear();
-      this.callOff(() => true);
+      // A layer of the new captions on its way, read for a card before it
+      // was clicked, is the one the click wants, and goes on.
+      this.callOff((k) => !k.startsWith(`${key}\n`));
       // A frame that waited for a layer of other captions waits no longer:
       // it is put up with what there is, and asks again as it is drawn.
       for (const k of [...this.promised.keys()]) this.keep(k);
@@ -554,7 +569,19 @@ export class CaptionLayers {
   private wanted(frame: number, size: [number, number]): Wanted | null {
     const ask = this.ask;
     if (!ask) return null;
-    return { key: `${this.askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`, ask, frame, size };
+    return { key: layerKey(this.askKey, frame, size), ask, frame, size };
+  }
+
+  // The layers a click is likely to want next, each of other captions than
+  // the ones laid over the frame now: the first frame of each clip whose
+  // card is next to the one chosen, see Player.ahead. They are read while
+  // nothing else is on its way, and kept, so the frame of a card clicked
+  // finds its captions here. Each call replaces the ones before.
+  next(wants: { ask: CaptionAsk; frame: number; size: [number, number] }[]) {
+    this.soon = wants
+      .map(({ ask, frame, size }) => ({ key: layerKey(keyOf(ask), frame, size), ask, frame, size }))
+      .filter((w) => !this.kept.has(w.key));
+    this.more();
   }
 
   // The playhead was put somewhere, by a word step or by anything else.
@@ -562,6 +589,10 @@ export class CaptionLayers {
   // word step, and after anything else does not.
   sought(wordStep: boolean) {
     this.bounceFrom = wordStep ? this.shownAt : null;
+    // What was to be read for the cards next to the clip the hand was on
+    // waits for the hand to rest again. The one on its way goes on while
+    // it may be the layer of the card clicked, see set.
+    this.soon = [];
     // Playing, the frames that were coming are ahead of where the playhead
     // was, not where it went. The frame on screen waiting for its own
     // stays asked for, until another is drawn in its place. Paused, what
@@ -743,6 +774,15 @@ export class CaptionLayers {
     while (this.going.size < GOING && this.ahead.length > 0) {
       const a = this.ahead.shift()!;
       if (!this.kept.has(a.key)) this.fetch(a);
+    }
+    // The layers of the clips a click may pick, one at a time and only
+    // while the video preview rests with nothing else to wait for: each is
+    // another caption file for libass, and the frame on screen comes first.
+    if (this.going.size || this.waiting || this.promised.size || this.still?.paused() === false) return;
+    for (let a = this.soon.shift(); a; a = this.soon.shift()) {
+      if (this.kept.has(a.key)) continue;
+      this.fetch(a);
+      return;
     }
   }
 

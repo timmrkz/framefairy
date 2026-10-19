@@ -204,7 +204,12 @@ closed for standing unused.
   goes to next, plan row 2.269: paused with nothing under the hand, the
   first frame of the word after the playhead and of the word before, the
   way Shift and an arrow walk, once the frame the hand asked for has
-  come, see `AppFrames.ahead`. A jump forward in an open stream brings
+  come, see `AppFrames.ahead`. After them come the first frames of the
+  clips whose cards stand nearest the one chosen, the card under the
+  pointer first, with their captions, so a card clicked puts up its clip
+  from what was read, issue #383. They are read one at a time, so a click
+  that comes before they are in waits behind one read and not three. A
+  jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told
   the moment before which nothing is wanted, `next` with a skip, so the
   frames a jump passes are decoded but never scaled. While the playhead
