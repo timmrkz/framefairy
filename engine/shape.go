@@ -278,16 +278,29 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 		case "to":
 			playhead = g.edgePlayhead(to, clip.Segments[i+1].End, true)
 		}
-		return func(pieces []*object, _ []foundPiece) ([]*object, error) {
+		return func(pieces []*object, found []foundPiece) ([]*object, error) {
 			if i+1 >= len(pieces) || number(pieces[i+1].values[keyStart]) <= number(pieces[i].values[keyEnd]) {
 				return nil, renderErr("this clip has no cut number %d", i+1)
 			}
-			out := append([]*object{}, pieces...)
-			out[i] = copyObject(pieces[i])
-			out[i].set(keyEnd, from)
-			out[i+1] = copyObject(pieces[i+1])
-			out[i+1].set(keyStart, to)
-			return out, nil
+			// An edge moved out over what the cut left out brings it back
+			// framed by the shots it shows, as putting the cut back does,
+			// so a cut across a camera switch moved back over it leaves
+			// the switch where it was. Pulled out whole, the piece beside
+			// the cut showed the other camera with its own crop.
+			end, start := number(pieces[i].values[keyEnd]), number(pieces[i+1].values[keyStart])
+			before := []*object{copyObject(pieces[i])}
+			if from > end {
+				before = meet(before, framedBack(end, from, pieces, found, clip.Rotations))
+			}
+			before[len(before)-1].set(keyEnd, from)
+			after := []*object{copyObject(pieces[i+1])}
+			if to < start {
+				after = meet(framedBack(to, start, pieces, found, clip.Rotations), after)
+			}
+			after[0].set(keyStart, to)
+			out := append(append([]*object{}, pieces[:i]...), before...)
+			out = append(out, after...)
+			return append(out, pieces[i+2:]...), nil
 		}, playhead, nil
 
 	case "join":

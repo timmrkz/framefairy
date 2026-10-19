@@ -574,10 +574,11 @@ func FuzzPlanEdits(f *testing.F) {
 				t.Fatalf("step %d emptied the plan", i/3)
 			}
 			// A move moves the edges of a cut and makes no new one, so
-			// two pieces that meet at a camera switch still meet.
+			// two pieces that meet at a camera switch still meet. It may
+			// make pieces, where an edge brings a switch back.
 			if script[i]%10 == 8 && moved == nil {
 				before, after := clipNamed(was, clip), clipNamed(clips, clip)
-				if len(after.Segments) != len(before.Segments) || len(ClipCuts(after)) != len(ClipCuts(before)) {
+				if len(ClipCuts(after)) != len(ClipCuts(before)) {
 					t.Fatalf("step %d moved a cut that was not there: %+v, then %+v",
 						i/3, before.Segments, after.Segments)
 				}
