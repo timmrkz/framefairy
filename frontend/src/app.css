@@ -61,21 +61,20 @@
      stand and a card has its time. Tim picked them from a sheet, after
      dots over the whole height hid the minutes and their lines. They are
      never brighter than the dashes round them, and under the hand they
-     go up a step with the grey of the card. One dot is one tile of
-     --dot-pitch, and the fade leaves out the row at the foot, so the
-     dots keep a tile clear of the edge.
+     go up a step with the grey of the card. They are that grey at a
+     share of its strength, because at full strength Tim found them too
+     strong. One dot is one tile of --dot-pitch, and the fade reaches the
+     foot, so the dots go on to the edge like a surface, the way Tim
+     liked them. A row and a column left clear round them looked cut off,
+     found by Tim.
      A card's dashes are tiles of the same pitch, a dash in the middle of
      each, laid the way its dots are, so every dash stands over a column
      or beside a row of dots. Dashes the browser drew went their own way,
      found by Tim. */
   --dot-pitch: 6px;
-  --halftone: radial-gradient(circle, var(--ink-3) 1.2px, transparent 1.7px);
-  --halftone-lit: radial-gradient(circle, var(--line) 1.2px, transparent 1.7px);
-  --halftone-fade: linear-gradient(
-    transparent 30%,
-    #000 calc(100% - var(--dot-pitch)),
-    transparent calc(100% - var(--dot-pitch))
-  );
+  --halftone: radial-gradient(circle, color-mix(in srgb, var(--ink-3) 70%, transparent) 1.2px, transparent 1.7px);
+  --halftone-lit: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1.2px, transparent 1.7px);
+  --halftone-fade: linear-gradient(transparent 30%, #000);
   --halftone-dash-x: linear-gradient(
     90deg,
     transparent calc(var(--dot-pitch) / 4),

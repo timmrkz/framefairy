@@ -8668,8 +8668,10 @@ for (const seq of toWalk) {
           // its rows: the dots and the dashes are tiles of one pitch laid
           // on the same box, spread from edge to edge the same way. The
           // browser's own dashes went their own way, found by Tim. On the
-          // range picker the dots lie on one grid from its start, whole
-          // columns of it only.
+          // range picker the dots cover the whole part, to its foot and
+          // its sides, on one grid from the range picker's start. A row
+          // and a column left clear round them looked cut off, found by
+          // Tim.
           const grid = await page.evaluate(() => {
             const li = document.querySelector("ol.said li.hole");
             const dots = li.querySelector(".dots");
@@ -8685,8 +8687,17 @@ for (const seq of toWalk) {
             const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
             const columns = [...track.querySelectorAll(".unheard")].map((u) => {
               const b = getComputedStyle(u, "::before");
-              const left = u.getBoundingClientRect().left - track.getBoundingClientRect().left - pad + parseFloat(b.left);
-              return [Math.round(left * 100) / 100, parseFloat(b.width)];
+              const part = u.getBoundingClientRect();
+              const left = part.left - track.getBoundingClientRect().left - pad;
+              // Where the grid of dots starts, from the range picker's
+              // start: a whole number of tiles.
+              const grid = (((left + parseFloat(b.backgroundPositionX)) % pitch) + pitch) % pitch;
+              return {
+                grid: Math.round(grid * 100) / 100,
+                cover: [parseFloat(b.left), parseFloat(b.width) - part.width, parseFloat(b.top), parseFloat(b.height) - part.height].map((v) => Math.round(v * 100) / 100),
+                foot: b.backgroundPositionY,
+                fade: b.maskImage,
+              };
             });
             return {
               pitch,
@@ -8717,7 +8728,20 @@ for (const seq of toWalk) {
           );
           const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector("ol.said li.hole .ring") ?? document.querySelector("ol.said li.hole")).borderTopColor]);
           const lum = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).reduce((a, v) => a + Number(v), 0);
-          const dotColour = (d) => d[0].match(/rgba?\([^)]*\)/)?.[0] ?? "";
+          // A dot's colour, the grey it is drawn in as rgb, and the share
+          // of its strength apart.
+          const dotColour = (d) => {
+            // The first colour of the gradient is the dot's, the second the
+            // clear round it.
+            const c = d[0].match(/rgba?\(([^)]*)\)|color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/);
+            if (!c) return ["", 1];
+            if (c[1] !== undefined) {
+              const [r, g, b, a = 1] = c[1].split(",").map(Number);
+              return [`rgb(${r}, ${g}, ${b})`, a];
+            }
+            const [r, g, b] = c.slice(2, 5).map((v) => Math.round(Number(v) * 255));
+            return [`rgb(${r}, ${g}, ${b})`, c[5] === undefined ? 1 : Number(c[5])];
+          };
           const dotted = (d) => !!d && d[0].includes("radial-gradient");
           const fade = (d) => d[1].startsWith("linear-gradient(rgba(0, 0, 0, 0) 30%");
           if (!look.lit) wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
@@ -8727,8 +8751,13 @@ for (const seq of toWalk) {
           else if (!still.every(fade) || !look.dots.every(fade))
             wrong = `the dots of a part not transcribed yet do not rise from the foot: at rest ${still.map((d) => d[1]).join(" and ")}, under the hand ${look.dots.map((d) => d[1]).join(" and ")}`;
           else if (still.some((d) => d[3] !== "rgba(0, 0, 0, 0)")) wrong = `a part not transcribed yet at rest is on ${still.map((d) => d[3]).join(" and ")}, not on nothing but its dots`;
-          else if (lum(dotColour(still[1])) > lum(lines[0]) || lum(dotColour(still[1])) > lum(lines[1]))
-            wrong = `the dots, ${dotColour(still[1])}, are brighter than the minute lines, ${lines[0]}, or the dashes round them, ${lines[1]}`;
+          else if (lum(dotColour(still[1])[0]) > lum(lines[0]) || lum(dotColour(still[1])[0]) > lum(lines[1]))
+            wrong = `the dots, ${dotColour(still[1])[0]}, are brighter than the minute lines, ${lines[0]}, or the dashes round them, ${lines[1]}`;
+          // And a share of that grey's strength, so they are quieter than
+          // the dashes round them: at full strength Tim found them too
+          // strong.
+          else if ([...still, ...look.dots].some((d) => !(dotColour(d)[1] > 0 && dotColour(d)[1] < 1)))
+            wrong = `the dots are drawn at full strength, ${[...still, ...look.dots].map((d) => dotColour(d)[1]).join(", ")}, not quieter than the dashes`;
           else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
           else if (look.picker.length || look.edges || look.border === "rgba(0, 0, 0, 0)")
             wrong = `a part on the range picker, lit, has an edge of its own, ${[...look.picker, ...(look.edges ? [`${look.edges} edges`] : [])].join(" and ")}, over a border in ${look.border}`;
@@ -8742,8 +8771,10 @@ for (const seq of toWalk) {
             grid.dashes[1] !== "space no-repeat, no-repeat space"
           )
             wrong = `the dashes of a card do not stand on its dots: dots in ${grid.dots.join(", ")}, dashes in ${grid.dashes.slice(0, 2).join(" laid ")}`;
-          else if (grid.columns.some(([left, width]) => left % grid.pitch || width % grid.pitch))
-            wrong = `the dots of a part on the range picker are not whole columns of one grid from its start: ${JSON.stringify(grid.columns)}`;
+          else if (grid.columns.some((c) => c.cover.some(Boolean) || c.foot !== "100%" || !c.fade.endsWith("rgb(0, 0, 0))")))
+            wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
+          else if (grid.columns.some((c) => c.grid % grid.pitch))
+            wrong = `the dots of a part on the range picker are not on one grid from its start: ${JSON.stringify(grid.columns.map((c) => c.grid))}`;
         }
         // The playhead put in a part not transcribed yet, on the range
         // picker, puts that part's card at the top of the list, not the

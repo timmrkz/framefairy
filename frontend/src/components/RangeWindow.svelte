@@ -782,20 +782,18 @@
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
      clear above them, and with no dashed edge, which Tim found the dots
-     did without. The dots lie on one grid from the start of the range
-     picker, whole columns of it only, so a part that gives way as the
-     work hears takes them away a column at a time and never moves them,
-     and two parts share their columns. Lit, the part takes the grey of a
-     card under the hand and keeps its fade, found by Tim. */
+     did without. They cover the whole part, to its foot and its sides,
+     like a surface the part is cut from: a row and a column left clear
+     round them looked cut off, found by Tim. The dots lie on one grid
+     from the start of the range picker, so a part that gives way as the
+     work hears is cut back across them and never moves them, and two
+     parts share their columns. Lit, the part takes the grey of a card
+     under the hand and keeps its fade, found by Tim. */
   .unheard::before {
-    --from: round(up, var(--at), var(--dot-pitch));
     content: "";
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: calc(var(--from) - var(--at));
-    width: max(0px, calc(round(down, var(--to), var(--dot-pitch)) - var(--from)));
-    background: var(--halftone) 0 calc(100% - var(--dot-pitch)) / var(--dot-pitch) var(--dot-pitch);
+    inset: 0;
+    background: var(--halftone) calc(0px - var(--at)) 100% / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
   }
 
