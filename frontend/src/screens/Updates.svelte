@@ -16,6 +16,7 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";
+  import { jobs } from "../lib/state.svelte";
 
   // A check that finds nothing is over in a tenth of a second, which is
   // a flash nobody can read: the button lit and went out and the line
@@ -144,6 +145,25 @@
     return `Checked at ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}.`;
   }
 
+  // Work running or waiting to, which Relaunch waits for: quitting into
+  // the new build would stop it half way, issue #382. The Go side refuses
+  // a Relaunch pressed all the same. In the words of the work the person
+  // started, the first there is.
+  const working = $derived.by(() => {
+    const job = jobs.list.find((j) => j.state === "running" || j.state === "queued");
+    if (!job) return "";
+    switch (job.kind) {
+      case "search":
+        return "the search";
+      case "render":
+        return "the render";
+      case "clip":
+        return "the clip being made";
+      default:
+        return "the download";
+    }
+  });
+
   const short = (commit: string) => commit.slice(0, 7);
   // A build's version ends in its commit, so the version says it all.
   const next = $derived(update?.next ?? "");
@@ -173,7 +193,9 @@
         return {
           mark: "new",
           head: "A newer build is ready",
-          more: `${next}. Relaunch to finish updating, or it goes in when you quit.${stillBuilding}`,
+          more: working
+            ? `${next}. Relaunch once ${working} is done, or it goes in when you quit.${stillBuilding}`
+            : `${next}. Relaunch to finish updating, or it goes in when you quit.${stillBuilding}`,
         };
       case "failed":
         return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
@@ -330,8 +352,8 @@
           <button
             class="act primary"
             onclick={install}
-            disabled={restarting}
-            title="Quits and comes back as the new build. Waits while work runs"
+            disabled={restarting || !!working}
+            title={working ? `Waits until ${working} is done` : "Quits and comes back as the new build"}
             >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
           >
         {:else if !update.off && following}
