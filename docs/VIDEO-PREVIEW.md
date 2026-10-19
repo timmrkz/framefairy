@@ -256,6 +256,17 @@ closed for standing unused.
   read ahead of it. Both kept the frames after a cut off the screen while
   a cut's left edge was dragged, which flickered between the two, plan
   row 2.270.
+- **One moment at a time.** The video preview shows a frame with the crop
+  frame, its shade and the captions that belong to that frame, never one
+  of them ahead of the rest. A frame a gesture puts the playhead on, paused
+  or as a play starts, is put up once its captions are there, asked for as
+  it is decoded, see [CAPTIONS.md](CAPTIONS.md). A seek to another clip
+  holds the crop frame and the captions over the frame on screen until the
+  new clip's frame goes up, and all of it changes in that one frame,
+  `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
+  frame first, the picture a few frames later and the captions a few after
+  that, issue #383. Nothing waits under a dragging hand, which follows the
+  hand.
 
 ## Speed
 
