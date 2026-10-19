@@ -1122,7 +1122,7 @@
      after the name rather than at the far edge, so the two read as one
      thing, and the label keeps its words while a long name gives way.
      Room is kept for the three dots, so neither ever runs under them: the
-     mark is 24 wide and 6 from the row's edge, the row's own padding is 8,
+     mark is 36 wide and 8 from the row's edge, the row's own padding is 8,
      and 6 more is the gap between them. */
   .episode .line {
     display: flex;
@@ -1130,7 +1130,7 @@
     gap: 6px;
     flex: 1;
     min-width: 0;
-    padding-right: 28px;
+    padding-right: 42px;
   }
 
   .episode .name {
@@ -1141,9 +1141,12 @@
      row, the way the trash can does on a clip. */
   .tools {
     position: absolute;
-    /* Centred on the row: a 24 tall mark in a 36 tall row. */
-    top: 6px;
-    right: 6px;
+    /* The three dots stand under the sort mark at the head of the list,
+       one column of marks of one size: the head keeps 12 at its right and
+       the list 4, so 8 more here. Centred on the row: a control's height
+       in a 36 tall row. */
+    top: calc((36px - var(--control-h)) / 2);
+    right: 8px;
     display: flex;
     gap: 2px;
     opacity: 0;

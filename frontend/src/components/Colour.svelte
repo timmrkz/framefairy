@@ -101,6 +101,11 @@
   // ring is left on the trigger, issue #370.
   let byPointer = false;
 
+  // The colour as it was when the pop-up opened. Return keeps the colour
+  // the pop-up holds and closes it, Escape puts this one back and closes
+  // it, the way Return and Escape answer a pop-up everywhere on the Mac.
+  let before = "";
+
   function draw(next: HSV) {
     hsv = next;
     oninput?.(hsvToHex(next));
@@ -218,14 +223,28 @@
   // pop-up's own layer, which closes it.
   function keepKeys(event: KeyboardEvent) {
     if (event.key !== "Escape") event.stopPropagation();
+    // Return on a round colour picks it, and in the hex field takes what
+    // was typed, and then closes the pop-up like Return anywhere else in it.
+    if (event.key === "Enter" && !event.defaultPrevented && !(event.target instanceof HTMLButtonElement)) {
+      event.preventDefault();
+      open = false;
+    }
+  }
+
+  function putBack() {
+    byPointer = true;
+    typed = null;
+    if (before && readHex(value) !== before) pick(before);
   }
 </script>
 
 <Popover.Root
   bind:open
   onOpenChange={(now) => {
-    if (now) byPointer = false;
-    else leaveHex();
+    if (now) {
+      byPointer = false;
+      before = hex;
+    } else leaveHex();
   }}
 >
   <Popover.Trigger {disabled}>
@@ -249,7 +268,7 @@
       sideOffset={4}
       align={hang}
       onInteractOutside={() => (byPointer = true)}
-      onEscapeKeydown={() => (byPointer = true)}
+      onEscapeKeydown={putBack}
       onCloseAutoFocus={(e) => {
         if (!byPointer) return;
         e.preventDefault();
@@ -346,6 +365,7 @@
                       if (e.key === "Enter") {
                         e.preventDefault();
                         leaveHex();
+                        open = false;
                       }
                     }}
                     onblur={leaveHex}

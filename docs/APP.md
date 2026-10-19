@@ -149,9 +149,12 @@ where they are on disk, and the ones added from now on go at the foot.
 Three dots show at the end of a row while the pointer is on it, and open
 what can be done with that video, the way Finder offers it on a
 right-click: its **label**, **Show in folder** and **Remove**, which asks
-first. The menu hangs under the row and is exactly as wide as it, so it
-reaches no further over the workspace than the sidebar does, and the
-sidebar stays open while it is.
+first. The dots are the sort mark's size, lit the same way and in its
+column, so the marks of the sidebar stand one under the other. The menu
+hangs under the row and is exactly as wide as it, so it reaches no further
+over the workspace than the sidebar does, and the sidebar stays open while
+it is. Its icons stand in the sidebar's column of icons and its words
+where the sidebar's words start.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told
@@ -159,13 +162,26 @@ apart, a folder of episodes that are each `youtube.mp4` above all. The
 video keeps its name and is never touched: the label is kept in its work
 folder, `label.json`, see `engine.Label`. The colours are the accent
 colours of the settings, the same row of round colours with the colour
-well at its end, `Swatches.svelte`. A new label starts in a colour no
-other video wears yet, and a colour clicked before any words are typed
-gives the label the name of the folder the video is in. Everything saves
-at once: a colour when it is clicked, the words with Return, when the
-field is left or when the menu closes. The pill follows the words while
-they are typed, and Escape puts back what was there. A label with no
-words is taken away. It keeps at most 40 characters on one line.
+well at its end, `Swatches.svelte`.
+
+The menu opens the way a name opens to be changed on the Mac: the words
+in the field and chosen, so Return keeps them and typing replaces them.
+A video with no label yet has the name of its folder there, and a colour
+is always chosen, the label's or one no other video wears yet. So the
+menu looks the same with a label and without one, and nothing has to be
+picked before Return. The folder's name is kept only once something is
+done with it, Return or a colour: a menu opened for Show in folder leaves
+the video as it was. Tim found a menu that opened empty, with the
+folder's name grey in it, no colour chosen and no way to take the name
+but clicking a colour, and once a colour was chosen it could not be
+taken back to how the menu had opened.
+
+Everything saves at once: a colour when it is clicked, the words with
+Return, when the field is left or when the menu closes. The pill follows
+the words while they are typed, and Escape puts back what was there. The
+cross at the end of the field removes the label, and so does Return on a
+field with no words, and the menu is then as it was before the video had
+one. A label keeps at most 40 characters on one line.
 
 The sidebar is a narrow rail until the pointer reaches the left edge, and it
 opens over the workspace while it is there. The mark at the top keeps it
@@ -2020,6 +2036,11 @@ In it, from the quickest pick to the most exact:
 - **The hex**, for a colour known by its number, a brand colour above all,
   with or without the #. It is drawn as it is typed and saved with Enter or
   when it is left.
+
+Return closes the pop-up and keeps the colour it holds. Escape closes it
+and puts back the colour it opened on, the way Return and Escape answer a
+pop-up everywhere on the Mac. Tim found Escape keeping the shade he had
+just dragged to, and Return doing nothing, the wrong way round.
 
 The opacity stays the number beside each colour, so the row keeps its
 width.

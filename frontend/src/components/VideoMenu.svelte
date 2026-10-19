@@ -11,12 +11,24 @@
   // The menu hangs under the row and is exactly as wide as it, so it never
   // reaches further over the workspace than the sidebar already does. The
   // well at the end of the colours hangs its pop-up on its right edge for
-  // the same reason.
+  // the same reason. Its icons stand in the sidebar's column of icons and
+  // its words where the sidebar's words start.
+  //
+  // The menu opens the way a name opens to be changed on the Mac: the
+  // words in the field and chosen, so Return keeps them and typing
+  // replaces them. A video with no label yet has the name of its folder
+  // there, which is what tells a folder of youtube.mp4s apart, and a colour
+  // is always chosen, one no other video wears yet. So the menu looks the
+  // same with a label and without one, and nothing has to be chosen before
+  // the label can be kept. The folder's name is only kept once something
+  // is done with it, Return or a colour, and a menu opened for Show in
+  // folder leaves the video as it was.
   //
   // Everything saves at once, the way it does everywhere in the app: a
   // colour the moment it is clicked, the words when Return is pressed, the
   // field is left or the menu closes. The pill in the row follows the words
-  // while they are typed. Escape puts back what was there.
+  // while they are typed. Escape puts back what was there, and the cross at
+  // the end of the field removes the label.
   import { Popover } from "bits-ui";
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
@@ -53,11 +65,15 @@
 
   let open = $state(false);
   let text = $state("");
-  let colour = $state<string | null>(null);
+  let colour = $state("");
   // The label as it was when the menu opened, or as it was last saved, so
   // only a change is saved and Escape has something to put back.
-  let kept: Label | null = null;
+  let kept = $state<Label | null>(null);
   let putBack = false;
+  // Whether what the menu holds is the label to keep: a label the video
+  // has, or one the person has done something with. The folder's name the
+  // menu opens with is a suggestion until then.
+  let meant = false;
   // A press inside the menu. WebKit gives a button no focus when it is
   // clicked, so leaving the field for a colour says nothing of where the
   // focus went, and the press is how it is known to stay in the menu.
@@ -65,15 +81,21 @@
   let field = $state<HTMLInputElement>();
   let menu = $state<HTMLElement>();
 
-  // The folder the video is in, the words a label starts with when a
-  // colour is clicked before anything is typed: in a folder of episodes
-  // each in its own folder, that is the name that tells them apart.
+  // The folder the video is in, the words a label starts with: in a folder
+  // of episodes each in its own folder, that is the name that tells them
+  // apart.
   const folder = $derived(ep.source.split(/[\\/]/).slice(-2, -1)[0] ?? "");
 
+  // The menu as it opens, and as it is again once the label is removed.
+  function begin(label: Label | null) {
+    kept = label ? { ...label } : null;
+    text = label?.text ?? folder;
+    colour = label?.colour ?? freshColour(worn);
+    meant = !!label;
+  }
+
   function opened() {
-    kept = ep.label ? { ...ep.label } : null;
-    text = ep.label?.text ?? "";
-    colour = ep.label?.colour ?? null;
+    begin(ep.label ?? null);
     putBack = false;
     pressed = false;
   }
@@ -81,7 +103,7 @@
   // The label the menu holds now, or nothing when it has no words.
   function now(): Label | null {
     const words = text.trim();
-    return words ? { text: words, colour: colour ?? freshColour(worn) } : null;
+    return words ? { text: words, colour } : null;
   }
 
   function same(a: Label | null, b: Label | null) {
@@ -89,7 +111,7 @@
   }
 
   function save() {
-    if (putBack) return;
+    if (putBack || !meant) return;
     const label = now();
     if (same(label, kept)) return;
     kept = label;
@@ -98,14 +120,26 @@
 
   function typed(value: string) {
     text = value;
+    meant = true;
     ondraft(now());
   }
 
   function pickColour(hex: string, keep = true) {
     colour = hex;
     if (!text.trim()) text = folder;
+    meant = true;
     ondraft(now());
     if (keep) save();
+  }
+
+  // The cross at the end of the field: the label goes, and the menu is as
+  // it was before the video had one, ready for another.
+  function removeLabel() {
+    if (kept) onsave(null);
+    begin(null);
+    ondraft(null);
+    field?.focus();
+    field?.select();
   }
 
   function close() {
@@ -135,7 +169,7 @@
 >
   <Popover.Trigger>
     {#snippet child({ props })}
-      <button {...props} class="more" title="More" aria-label="More for {ep.name}">
+      <button {...props} class="more quiet" title="More" aria-label="More for {ep.name}">
         <Icon name="more" />
       </button>
     {/snippet}
@@ -150,6 +184,7 @@
       onOpenAutoFocus={(e) => {
         e.preventDefault();
         field?.focus();
+        field?.select();
       }}
       onEscapeKeydown={() => {
         putBack = true;
@@ -168,38 +203,47 @@
               onpointerdown={() => (pressed = true)}
             >
               <div class="label">
-                <input
-                  bind:this={field}
-                  type="text"
-                  spellcheck="false"
-                  autocomplete="off"
-                  maxlength="40"
-                  aria-label="Label"
-                  title="A label tells this video apart from others with the same name. It stays in the app, the file keeps its name"
-                  placeholder={folder || "Label"}
-                  value={text}
-                  oninput={(e) => typed(e.currentTarget.value)}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (!colour && text.trim()) colour = freshColour(worn);
-                      save();
-                      close();
-                    }
-                  }}
-                  onblur={(e) => {
-                    // A colour clicked saves the words with it, so leaving
-                    // the field for one saves nothing of its own.
-                    if (!pressed && !menu?.contains(e.relatedTarget as Node | null)) save();
-                  }}
-                />
-                <Swatches
-                  label="Label colour"
-                  value={colour ?? ""}
-                  hang="end"
-                  oninput={(hex) => pickColour(hex, false)}
-                  onpick={(hex) => pickColour(hex)}
-                />
+                <span class="icon"><Icon name="tag" /></span>
+                <span class="field">
+                  <input
+                    bind:this={field}
+                    type="text"
+                    spellcheck="false"
+                    autocomplete="off"
+                    maxlength="40"
+                    aria-label="Label"
+                    title="A label tells this video apart from others with the same name. It stays in the app, the file keeps its name"
+                    placeholder={folder || "Label"}
+                    value={text}
+                    oninput={(e) => typed(e.currentTarget.value)}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        meant = true;
+                        close();
+                      }
+                    }}
+                    onblur={(e) => {
+                      // A colour clicked saves the words with it, so leaving
+                      // the field for one saves nothing of its own.
+                      if (!pressed && !menu?.contains(e.relatedTarget as Node | null)) save();
+                    }}
+                  />
+                  {#if kept}
+                    <button class="clear quiet" title="Remove label" aria-label="Remove label" onclick={removeLabel}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  {/if}
+                </span>
+                <span class="colours">
+                  <Swatches
+                    label="Label colour"
+                    value={colour}
+                    hang="end"
+                    oninput={(hex) => pickColour(hex, false)}
+                    onpick={(hex) => pickColour(hex)}
+                  />
+                </span>
               </div>
               <button
                 class="item"
@@ -209,6 +253,7 @@
                 }}
                 disabled={ep.missing}
               >
+                <Icon name="folder" />
                 Show in folder
               </button>
               <button
@@ -219,6 +264,7 @@
                   onremove();
                 }}
               >
+                <Icon name="trash" />
                 Remove
               </button>
             </div>
@@ -244,33 +290,83 @@
   }
 
   /* The label's words over its colours, apart from what is done with the
-     video by a line, the way a menu on the Mac is parted. */
+     video by a line, the way a menu on the Mac is parted. The tag stands in
+     the column of the icons below it and the field and the colours where
+     their words start. */
   .label {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 8px 8px 10px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 10px;
+    align-items: center;
+    padding: 8px 8px 10px 9px;
     margin-bottom: 4px;
     border-bottom: 1px solid var(--line);
   }
 
-  .label input {
+  .label .icon {
+    display: flex;
+    color: var(--muted);
+  }
+
+  .colours {
+    grid-column: 2;
+  }
+
+  /* The cross sits inside the end of the field, the way it does in a
+     search field on the Mac, and the words stop short of it. */
+  .field {
+    position: relative;
+    display: flex;
+    min-width: 0;
+  }
+
+  .field input {
     width: 100%;
   }
 
-  /* A row of the menu is a row of a list: as tall as a control, the name
-     where a list's names start, and lit under the pointer. */
+  .field:has(.clear) input {
+    padding-right: 28px;
+  }
+
+  .clear {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    color: var(--muted);
+  }
+
+  .clear:hover:not(:disabled) {
+    color: var(--text);
+  }
+
+  /* A row of the menu is a row of the sidebar's foot: as tall as a
+     control, its icon in the sidebar's column of icons, 9 and the menu's
+     border from the row's edge as a foot row's is from the list's, its
+     words 8 after it, and lit under the pointer. */
   .item {
     display: flex;
     align-items: center;
+    gap: 8px;
     width: 100%;
     height: var(--control-h);
-    padding: 0 8px;
+    padding: 0 9px;
     color: var(--text);
     text-align: left;
     background: transparent;
     border: none;
     border-radius: 0;
+  }
+
+  .item :global(svg) {
+    color: var(--muted);
   }
 
   .item:hover:not(:disabled),
@@ -285,27 +381,26 @@
 
   /* Remove wears the colour of a warning, the way it does in the box that
      asks before it, so it is read before it is clicked. */
-  .item.danger {
+  .item.danger,
+  .item.danger :global(svg) {
     color: var(--err);
   }
 
-  /* The mark is the size of the marks it took the place of, centred in
-     the row. */
+  /* The mark is the sort mark at the head of the list: as big, lit the
+     same way under the pointer, and in the same column, see .tools in
+     App.svelte. */
   .more {
     display: flex;
     align-items: center;
     justify-content: center;
     flex: none;
+    width: 36px;
     padding: 0;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-s);
     color: var(--muted);
   }
 
   .more:hover:not(:disabled),
   .more[aria-expanded="true"] {
     color: var(--text);
-    background: var(--ink-3);
   }
 </style>
