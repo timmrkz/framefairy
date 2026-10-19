@@ -74,11 +74,11 @@ let answers: { typed: string; of: { a: string; seen: Map<string, boolean> }[] } 
 // Where a sentence of the transcript answers what was typed in the search
 // in the clip column, as the words to set in bold, from and to in the
 // text, or null where it does not answer. A sentence answers when it holds
-// what was typed, and the words that hold it are bold. Otherwise every
-// word typed has to find a word of the sentence the way a font finds its
-// name, see matches, and every word found is bold. Nothing typed answers
-// with nothing bold.
-export function found(text: string, typed: string): [number, number][] | null {
+// what was typed, and the words that hold it are bold. Otherwise, when
+// fuzzy, every word typed has to find a word of the sentence the way a font
+// finds its name, see matches, and every word found is bold. Nothing typed
+// answers with nothing bold.
+export function found(text: string, typed: string, fuzzy = true): [number, number][] | null {
   const want = typed.trim().toLowerCase().replace(/\s+/g, " ");
   if (!want) return [];
   const { words, have } = wordsOf(text);
@@ -94,6 +94,7 @@ export function found(text: string, typed: string): [number, number][] | null {
     }
   }
   if (held.length) return held;
+  if (!fuzzy) return null;
   if (answers.typed !== want) answers = { typed: want, of: want.split(" ").map((a) => ({ a, seen: new Map() })) };
   const bold = new Array<boolean>(words.length).fill(false);
   for (const { a, seen } of answers.of) {

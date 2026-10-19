@@ -58,6 +58,15 @@ describe("found", () => {
     expect(bold(said, "genomen")).toEqual(["genommen"]);
   });
 
+  it("finds only what holds what was typed when not fuzzy", () => {
+    // Three letters find a lot of words the way a font finds its name, so
+    // the transcript asks for those only where nothing holds them.
+    expect(bold("Die Anrufmaschine im Arbeitszimmer.", "arm")).toEqual(["Anrufmaschine", "Arbeitszimmer"]);
+    expect(found("Die Anrufmaschine im Arbeitszimmer.", "arm", false)).toBeNull();
+    expect(found(said, "arm", false)?.map(([a, b]) => said.slice(a, b))).toEqual(["Arm"]);
+    expect(found(said, "genomen", false)).toBeNull();
+  });
+
   it("finds nothing where a word typed is not there", () => {
     expect(found(said, "Vater")).toBeNull();
     expect(found(said, "arm vater")).toBeNull();

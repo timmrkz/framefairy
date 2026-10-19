@@ -402,6 +402,9 @@
   let sayTyped = $state("");
   let sayMatches = $state(0);
   let sentences = $state<Sentence[] | null>(null);
+  // Why the cards could not be read the last time they were asked for,
+  // said in the list until the next read works.
+  let sentencesFailed = $state<string | null>(null);
   let sayField = $state<HTMLInputElement>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
   // The parts every clip keeps, whose captions are cards of their own, so
@@ -448,8 +451,14 @@
           if (ticket !== sentencesAsked || of !== path) return;
           sentences = list ?? [];
           sentencesOf = `${of}|${key}`;
+          sentencesFailed = null;
         })
-        .catch((err) => said(`the sentences of the video could not be read: ${errorText(err)}`, { level: "warn" }));
+        .catch((err) => {
+          said(`the sentences of the video could not be read: ${errorText(err)}`, { level: "warn" });
+          // An old failure never covers a newer answer.
+          if (ticket !== sentencesAsked || of !== path) return;
+          sentencesFailed = errorText(err);
+        });
     });
   });
   // The part not transcribed yet under the hand, in the list, lit on the
@@ -468,8 +477,15 @@
     if (duration - at >= 1) out.push([at, duration]);
     return out;
   });
+  // The clip list and the cards of what was said take turns in one
+  // scrolled column, so each keeps its own place: the clip list comes back
+  // where it was, the chosen clip in view, and the cards open at the
+  // playhead, see SaidList. The clip list came back where the cards had
+  // been scrolled to, and the cards opened where the clip list had been.
+  let clipListTop = 0;
   function openSaying() {
     act("search what was said");
+    clipListTop = root?.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? 0;
     saying = true;
     void tick().then(() => sayField?.focus());
   }
@@ -477,6 +493,11 @@
     saying = false;
     sayTyped = "";
     unheardLit = -1;
+    void tick().then(() => {
+      const list = root?.querySelector<HTMLElement>(".pane .list");
+      if (list) list.scrollTop = clipListTop;
+      showChosen();
+    });
   }
   // Escape takes back one step at a time: what was typed first, so the
   // whole of what was said is there again, and then the search itself.
@@ -3384,6 +3405,7 @@
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
                 playhead={time}
+                failed={sentencesFailed}
                 onseek={(at, clip) => {
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.

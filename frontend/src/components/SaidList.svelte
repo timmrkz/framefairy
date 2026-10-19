@@ -21,6 +21,7 @@
     selected = "",
     chosen = 0,
     playhead = 0,
+    failed = null,
     matches = $bindable(0),
     onhover,
     onhoverhole,
@@ -41,6 +42,9 @@
     chosen?: number;
     // Where the playhead is. The list follows it, see below.
     playhead?: number;
+    // Why the cards could not be read, said in the list itself, the place
+    // they would have been in, until the next read works.
+    failed?: string | null;
     // How many sentences answer what is typed, for the field to show.
     matches?: number;
     onhover?: (key: string, on: boolean) => void;
@@ -89,17 +93,22 @@
   // top of the list, whether the hand put it there, on the clip timeline,
   // a caption block or the range picker, or the video plays on into the
   // next caption, found by Tim. Only the playhead moving moves the list,
-  // so the hand can scroll it while the video stands.
+  // so the hand can scroll it while the video stands. The search opens at
+  // the playhead.
   // The row followed is said on the list, for the walks: at the end of
   // the list a row cannot stand at the top, and two rows look the same.
   let followed = $state<string | null | undefined>(undefined);
   $effect(() => {
     const t = playhead;
+    // Cards read anew are followed too: the search opens on the cards it
+    // read last, and the ones read as it opens may be cut otherwise.
+    void sentences;
     const key = untrack(() => rowAt(t)?.key ?? null);
     const was = untrack(() => followed);
     followed = key;
-    // Where the playhead is as the search opens is where it was, not a move.
-    if (was === undefined || !key || key === was) return;
+    // The search opens at the playhead, or at its top.
+    if (was === undefined && !key) scroller()?.scrollTo({ top: 0 });
+    if (!key || key === was) return;
     toTop(key);
   });
 
@@ -147,12 +156,19 @@
     return s.clip ? (clips.find((c) => c.key === s.clip) ?? null) : null;
   }
 
+  // The cards that hold what was typed, and only where none does the
+  // cards that answer it the way a font answers its name. Three letters
+  // answer a lot of words that way, and in a video of an hour the cards
+  // that hold them were lost among cards that only share their letters.
   const rows = $derived.by(() => {
     const out: Row[] = [];
-    for (const s of sentences ?? []) {
-      const bold = found(s.text, typed);
-      // Two clips over each other each have a card of the same words.
-      if (bold) out.push({ key: `s${s.start}|${s.clip ?? ""}`, at: s.start, sentence: s, bold, clip: clipOf(s) });
+    for (const fuzzy of [false, true]) {
+      for (const s of sentences ?? []) {
+        const bold = found(s.text, typed, fuzzy);
+        // Two clips over each other each have a card of the same words.
+        if (bold) out.push({ key: `s${s.start}|${s.clip ?? ""}`, at: s.start, sentence: s, bold, clip: clipOf(s) });
+      }
+      if (out.length || !typed.trim()) break;
     }
     // Where nothing was transcribed yet is said while the whole of what
     // was said is shown. It is no answer to what is typed, found by Tim.
@@ -180,6 +196,9 @@
 </script>
 
 <ol class="said" bind:this={list} data-followed={followed}>
+  {#if failed}
+    <li class="none failed" title={failed}>The transcript could not be read</li>
+  {/if}
   {#each rows as row (row.key)}
     {#if "hole" in row}
       {@const index = unheard.indexOf(row.hole)}
@@ -217,7 +236,7 @@
       </li>
     {/if}
   {/each}
-  {#if sentences && typed.trim() && !answered}
+  {#if sentences && typed.trim() && !answered && !failed}
     <li class="none muted">No matches</li>
   {/if}
 </ol>
@@ -360,5 +379,10 @@
     height: var(--card-h);
     background: transparent;
     box-shadow: none;
+  }
+
+  /* The cards could not be read, in the colour of a warning. */
+  li.failed {
+    color: var(--warn);
   }
 </style>

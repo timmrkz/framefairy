@@ -627,6 +627,12 @@
 //                      with the keyboard on that card, giving the head and
 //                      the clips back. A word of "*" is the longest word
 //                      of the first sentence
+//   ["said fails", "on"|"check"]
+//                      "on" makes every read of the cards of what was said
+//                      fail. "check" opens the search and sees the list say
+//                      the transcript could not be read, with the reason
+//                      under the pointer, then lets the reads work, opens it
+//                      again and sees the cards with nothing said of it
 //   ["heard some"]     waits until the engine has a sentence of the video
 //                      on screen, and for the piece of audio being heard
 //                      then to land
@@ -1367,6 +1373,13 @@ export const sequences = [
       ["holds", "Schulhoff"],
       ["search said", "Schulhoff"],
     ],
+  },
+  {
+    // Found in the review of #367: the cards that could not be read left
+    // the column empty, with nothing said. A clip trimmed so they are read
+    // again as the search opens.
+    name: "cards of what was said that cannot be read say so in the list",
+    steps: [["said fails", "on"], ["trim", "start", 300], ["said fails", "check"]],
   },
   {
     // The same on a video heard only as far as its first search reached,
@@ -7957,6 +7970,47 @@ for (const seq of toWalk) {
         await settled();
         break;
       }
+      // The cards of what was said cannot be read while "on", and are
+      // read again after. With "check", the search opens on cards that
+      // cannot be read, says so in the list, and says nothing of it once
+      // they can be read again.
+      case "said fails": {
+        if (arg === "on") {
+          await page.route("**/call", (route) => {
+            const body = route.request().postDataJSON?.() ?? {};
+            if (String(body.name ?? "").endsWith("Sentences")) return route.fulfill({ status: 500, body: "the disk went away" });
+            return route.fallback();
+          });
+          break;
+        }
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        await page.waitForTimeout(500);
+        const failing = await page.evaluate(() => {
+          // The failure is the answer here, so it is taken off the calls
+          // that failed before the rules read them.
+          for (const c of window.__calls) if (c.name === "Sentences" && String(c.failed).includes("the disk went away")) c.failed = null;
+          const li = document.querySelector("ol.said li.failed");
+          return li ? { says: li.textContent.trim(), why: li.title } : null;
+        });
+        await watch.step("click", s);
+        await page.unroute("**/call");
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        await watch.step("click", s);
+        await page.waitForTimeout(500);
+        const again = await page.evaluate(() => ({
+          failed: !!document.querySelector("ol.said li.failed"),
+          cards: document.querySelectorAll("ol.said li[data-at]").length,
+        }));
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (!failing) wrong = "the cards could not be read and the list said nothing of it";
+        else if (failing.says !== "The transcript could not be read" || !failing.why.includes("the disk went away"))
+          wrong = `the list said "${failing.says}", with "${failing.why}" under the pointer`;
+        else if (again.failed || !again.cards) wrong = `read again, the list still says it could not be read, over ${again.cards} cards`;
+        break;
+      }
       case "search said": {
         const path = await episodeOn(page);
         const headHigh = () => page.evaluate(() => document.querySelector(".listhead").getBoundingClientRect().height);
@@ -7971,6 +8025,15 @@ for (const seq of toWalk) {
           word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
         }
         const was = await headHigh();
+        // The playhead far into the video, so the cards opening at it can
+        // be told from the cards opening at their top.
+        const track = await page.evaluate(() => {
+          const r = document.querySelector(".track").getBoundingClientRect();
+          return { x: r.left + r.width * 0.85, y: r.top + r.height / 2 };
+        });
+        await page.mouse.click(track.x, track.y);
+        await watch.step("click", s);
+        await page.mouse.move(0, 0);
         const icon = await page.evaluate(
           () => document.querySelector('.listhead button[aria-label="Search the transcript"] svg')?.getAttribute("class") ?? "",
         );
@@ -7993,6 +8056,31 @@ for (const seq of toWalk) {
         await watch.step("click", s);
         if (blank) {
           wrong = `the column stood empty for ${blank} of 20 frames after the transcript button`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // The cards open at the playhead, not where the clip list was
+        // scrolled to, found in the review of #367. Once the cards read
+        // as it opens have come.
+        await page.waitForFunction(() => window.__pending === 0, null, { timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(100);
+        const opened = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          const ol = document.querySelector("ol.said");
+          const card = [...ol.querySelectorAll("li[data-row]")].find((li) => li.dataset.row === ol.dataset.followed);
+          if (!card) return null;
+          const box = list.getBoundingClientRect();
+          const end = list.scrollTop >= list.scrollHeight - list.clientHeight - 1;
+          const r = card.getBoundingClientRect();
+          return { top: r.top - box.top, should: parseFloat(getComputedStyle(ol).paddingTop), end, seen: r.top >= box.top && r.bottom <= box.bottom };
+        });
+        if (!opened) {
+          wrong = `the cards opened at no card of the playhead, ${await page.evaluate(() => JSON.stringify({ f: document.querySelector("ol.said").dataset.followed ?? null, at: document.querySelector(".screen")?.dataset.playhead, n: document.querySelectorAll("ol.said li").length }))}`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        if (!(Math.abs(opened.top - opened.should) <= 1 || (opened.end && opened.seen))) {
+          wrong = `the cards opened with the card of the playhead ${opened.top.toFixed(0)} px down, not at the top, ${opened.should} px`;
           await page.keyboard.press("Escape");
           break;
         }
@@ -8141,6 +8229,10 @@ for (const seq of toWalk) {
         else if (!holds.length) wrong = `the engine has no sentence with ${word}, so the step proves nothing`;
         else if (holds.some((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)))
           wrong = `no card for "${holds.find((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)).text}"`;
+        // Only the cards that hold the word, where any does: three letters
+        // answer a lot of words the way a font answers its name, found in
+        // the review of #367.
+        else if (seen.cards.length !== holds.length) wrong = `${seen.cards.length} cards answer ${word}, and ${holds.length} hold it`;
         else if (seen.cards.some((c) => !texts.has(c.text))) wrong = `a card reads "${seen.cards.find((c) => !texts.has(c.text)).text}", which the engine never said`;
         else if (seen.cards.some((c) => !c.bold.length)) wrong = `"${seen.cards.find((c) => !c.bold.length).text}" has no word in bold`;
         else if (seen.cards.some((c) => c.text.toLowerCase().includes(word.toLowerCase()) && !c.bold.some((b) => b.toLowerCase().includes(word.toLowerCase()))))
@@ -8198,6 +8290,15 @@ for (const seq of toWalk) {
         }));
         if (none.says !== "No matches" || none.rows || none.count !== "0")
           wrong = `nonsense typed shows ${none.rows} cards over "${none.says}", and the field says ${none.count}`;
+        // Three letters a few words hold, and more words have in that order
+        // the way a font has its name, sechs and verstaucht for sch: only
+        // the cards that hold them, found in the review of #367.
+        await field.fill("sch");
+        await watch.step("type", s);
+        await page.waitForTimeout(200);
+        const short = await page.evaluate(() => document.querySelectorAll("ol.said li[data-at]").length);
+        const holdShort = sentences.filter((x) => x.text.toLowerCase().includes("sch")).length;
+        if (!wrong && holdShort && short !== holdShort) wrong = `${short} cards answer sch, and ${holdShort} hold it`;
         // With nothing typed, the whole of what was said, and a dashed card
         // for every part not transcribed yet.
         await field.fill("");

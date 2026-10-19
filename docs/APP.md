@@ -1954,10 +1954,13 @@ found is a place in the video, and I and O make a clip there.
   accent edge, the clip's name next to its time and its words a step
   below white. Every other card is in the grey of a label, and the words
   that answer what is typed are white in every card, so they stand out.
-- **Fuzzy, like the fonts.** With nothing typed, every sentence is there.
-  Typing keeps the sentences that hold what was typed, or where every
-  word typed finds a word the way the font search finds a name, `found`
-  in `lib/match.ts`, and the words that answer are bold. What is typed
+- **Word for word first, then fuzzy.** With nothing typed, every card is
+  there. Typing keeps the cards that hold what was typed. Only where no
+  card holds it, the cards where every word typed finds a word the way the
+  font search finds a name, `found` in `lib/match.ts`, so a typo still
+  finds its word. Three letters find a lot of words the fuzzy way, and in
+  a video of an hour the cards that hold them were lost among them, found
+  in the review of #367. The words that answer are bold. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
   The field says in grey, before its cross, how many cards match, the
   number fading in anew as it changes. Where nothing matches, the list
@@ -1973,7 +1976,13 @@ found is a place in the video, and I and O make a clip there.
   into the next caption, its card stands at the top, and in a pause
   between two captions of a clip the caption before stays until the next
   begins, found by Tim. Only the playhead moving moves the list, so the
-  hand can scroll it while the video stands.
+  hand can scroll it while the video stands. The search opens at the
+  playhead, and the clip list comes back where it was when the search
+  closes, the chosen clip in view: the two take turns in one scrolled
+  column, and each came back where the other had been.
+- **A failed read is said.** Cards that could not be read leave a line in
+  the list, The transcript could not be read, with the reason under the
+  pointer, until the next read works.
 - **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its clip card does. In the list only the card under the hand is
