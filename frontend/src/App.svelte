@@ -47,8 +47,13 @@
   // The sort list and a video's menu lie over the app, outside the
   // sidebar, so moving onto one is leaving the sidebar as far as the
   // pointer can tell, and so is the keyboard going into it. The sidebar
-  // stays open while one of its own is.
+  // stays open while one of its own is. They are counted, not a yes or
+  // no: a video's menu opened while another's is open may hear itself open
+  // before the other hears itself close, and a yes and no let the second
+  // close the sidebar under the menu that was opening, which Tim saw as
+  // the menu squeezed into the rail.
   let holding = $state(false);
+  let holds = 0;
   const open = $derived(shell.pinned || near || holding);
   let aside = $state<HTMLElement>();
 
@@ -60,8 +65,9 @@
   let asking = false;
 
   function hold(isOpen: boolean) {
-    holding = isOpen;
-    if (!isOpen) {
+    holds = Math.max(0, holds + (isOpen ? 1 : -1));
+    holding = holds > 0;
+    if (!holding) {
       near = true;
       asking = true;
     }
@@ -700,6 +706,7 @@
           <span class="tools">
             <VideoMenu
               {ep}
+              shown={open}
               anchor={rows[ep.source]}
               worn={episodes.filter((e) => e.source !== ep.source).map((e) => labelOf(e)?.colour ?? "")}
               onopenchange={(isOpen) => {

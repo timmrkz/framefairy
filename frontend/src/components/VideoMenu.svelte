@@ -36,6 +36,7 @@
 
   let {
     ep,
+    shown,
     anchor,
     worn,
     onopenchange,
@@ -45,6 +46,10 @@
     onremove,
   }: {
     ep: EpisodeStatus;
+    // Whether the sidebar is open. The menu belongs to it, so it closes
+    // when the sidebar does, for whatever reason, rather than stay over
+    // a rail with no row left to hang under.
+    shown: boolean;
     // The row the menu hangs under and takes its width from.
     anchor: HTMLElement | undefined;
     // The colours the other videos' labels wear, so a new label starts in
@@ -152,6 +157,10 @@
     open = false;
     onopenchange(false);
   }
+
+  $effect(() => {
+    if (!shown && open) close();
+  });
 
   // The shortcuts of the workspace stand aside while the menu has the
   // keyboard, the way they do for the colour picker. Escape still reaches

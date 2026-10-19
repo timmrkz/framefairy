@@ -184,6 +184,11 @@
 //                      together. The label the Go side keeps has to be the
 //                      one the row and the title bar show, and the video
 //                      has to keep its name and its bytes
+//   ["two menus"]      opens the three dots of the lowest video in the
+//                      sidebar, then those of the highest while that menu
+//                      is open. The sidebar has to stay open with only the
+//                      second menu in it, and close once the menu is
+//                      closed and the pointer has left
 //   ["add", seconds]   adds a new video of so many seconds with Add
 //   ["add", seconds, rate]
 //                      adds one filmed at a frame rate, "30000/1001" for
@@ -2251,6 +2256,7 @@ export const sequences = [
       ["label", ["Anna", "Escape"]],
       ["label", ["", "Return"]],
       ["label", ["Clara", "Green after a press"]],
+      ["two menus"],
     ],
   },
   {
@@ -6152,6 +6158,42 @@ for (const seq of toWalk) {
         else if (existsSync(join(workDir(source), "label.json")) !== !!want)
           wrong = `the work folder ${want ? "has no" : "still has a"} label.json`;
         await watch.step("label", s);
+        break;
+      }
+      case "two menus": {
+        // Tim opened one video's menu while another's was open, and the
+        // sidebar closed under the new menu, which hung squeezed over the
+        // rail where nothing could be done with it. The second menu heard
+        // itself open before the first heard itself close.
+        await page.mouse.move(20, 500);
+        await sidebarStill(page);
+        const rows = page.locator("aside li:has(button.more)");
+        const [low, high] = [rows.last(), rows.first()];
+        await low.hover();
+        await low.locator("button.more").click();
+        await page.locator(".video-menu").waitFor();
+        await high.hover();
+        await high.locator("button.more").click();
+        await page.waitForTimeout(300);
+        await sidebarStill(page);
+        const now = await page.evaluate(() => {
+          const a = document.querySelector("aside");
+          const menus = [...document.querySelectorAll(".video-menu")].map((m) => m.getBoundingClientRect());
+          const r = a.getBoundingClientRect();
+          return { open: a.classList.contains("open"), menus: menus.length, inside: menus.every((m) => m.left >= r.left && m.right <= r.right) };
+        });
+        if (!now.open) wrong = `with the second menu open the sidebar is closed, and ${now.menus} menu${now.menus === 1 ? " hangs" : "s hang"} over the rail`;
+        else if (now.menus !== 1) wrong = `${now.menus} menus are open, not the one of the row clicked last`;
+        else if (!now.inside) wrong = "the second menu reaches out of the sidebar";
+        await page.keyboard.press("Escape");
+        await page.locator(".video-menu").waitFor({ state: "detached" });
+        // And once no menu is open, the sidebar closes the usual way when
+        // the pointer leaves it: no menu still counts as holding it.
+        await page.mouse.move(400, 300);
+        await page.mouse.move(750, 400);
+        await sidebarStill(page);
+        if (!wrong && (await page.evaluate(() => document.querySelector("aside").classList.contains("open"))))
+          wrong = "the sidebar stays open with no menu and the pointer away from it";
         break;
       }
       case "drop":
