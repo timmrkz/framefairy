@@ -1537,10 +1537,10 @@
      words, so the words must be an even height or the controls stand
      between two pixels and step as they fade, issue #339. Lines of 28 px
      and the gaps of 2 between them are even, and the name's 19 px line is
-     not, so the name stands on 20. One pixel under it rather than a taller
-     line, so its words do not move. */
+     not, so the name's lines are 20. A line each, not a pixel under the
+     name, because a narrow app wraps the name too. */
   .licence-head {
-    padding-bottom: 1px;
+    line-height: 20px;
   }
 
   /* A key ID, in one width, on a block of its own, the way code is set in
