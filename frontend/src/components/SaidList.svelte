@@ -17,6 +17,7 @@
     sentences,
     typed = "",
     unheard = [],
+    unheardLit = -1,
     clips = [],
     selected = "",
     chosen = 0,
@@ -33,6 +34,9 @@
     sentences: Sentence[] | null;
     typed?: string;
     unheard?: [number, number][];
+    // The part not transcribed yet under the hand on the range picker,
+    // whose card is lit with it.
+    unheardLit?: number;
     clips?: ClipEntry[];
     // The chosen clip, which the list goes to when it is chosen somewhere
     // else. The hand on a sentence of a clip lights the clip everywhere
@@ -62,10 +66,27 @@
 
   let list: HTMLOListElement;
 
+  // The card that stays where it stands as cards come in, see below.
+  let anchor: { key: string; top: number; typed: string } | null = null;
+
   // The column the cards scroll in, which is the clip list's.
   function scroller(): HTMLElement | null {
     return list?.closest<HTMLElement>(".scroll") ?? null;
   }
+
+  // The anchor put back where it stood. It runs before the effects that
+  // move the list, so they move it from where the hand left it.
+  $effect(() => {
+    void rows;
+    untrack(() => {
+      const was = anchor;
+      anchor = null;
+      if (!was || was.typed !== typed) return;
+      const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(was.key)}"]`);
+      const box = scroller();
+      if (card && box) box.scrollTop += card.getBoundingClientRect().top - was.top;
+    });
+  });
 
   // What is typed is a new list, read from its top. A list scrolled half
   // way down before typing showed the answers from half way down. A search
@@ -79,7 +100,6 @@
     const was = typedWas;
     typedWas = now;
     if (was === null || now === was) return;
-    walkedTo = null;
     if (now.trim() || !was.trim()) {
       scroller()?.scrollTo({ top: 0 });
       return;
@@ -95,10 +115,10 @@
   });
 
   // A clip chosen on the range picker or the clip timeline while the
-  // search is open puts its first sentence at the top of the list, the
-  // way choosing it brings its card into view in the clip list. The first
-  // card it keeps, which may be named for another clip over it.
-  // Choosing it again does it again, after the hand scrolled away.
+  // search is open brings its first sentence into view, the way choosing
+  // it brings its card into view in the clip list. The first card it
+  // keeps, which may be named for another clip over it. Choosing it again
+  // does it again, after the hand scrolled away.
   let chosenWas: number | null = null;
   $effect(() => {
     const times = chosen;
@@ -109,37 +129,62 @@
     // other way, like a sentence of it clicked here.
     if (was === null || was === times) return;
     const first = untrack(() => rows.find((r) => "sentence" in r && r.clip?.key === key));
-    if (first) toTop(first.key);
+    if (first) turnTo(first.key);
   });
 
-  // The list follows the playhead: the card it comes into stands at the
-  // top of the list, whether the hand put it there, on the clip timeline,
-  // a caption block or the range picker, or the video plays on into the
-  // next caption, found by Tim. Only the playhead moving moves the list,
-  // so the hand can scroll it while the video stands. The search opens at
-  // the playhead.
+  // The list follows the playhead the way the clip timeline does, by
+  // turning the page: the card the playhead comes into is the current
+  // one, marked the way the chosen clip is in the clip list, and while it
+  // is in view the list stands still. A card out of view, or going out of
+  // it at the foot as the video plays on, comes to the top, found by Tim.
+  // That is so wherever the playhead was put, on the clip timeline, a
+  // caption block or the range picker. Only the playhead moving moves the
+  // list, so the hand can scroll it while the video stands. The search
+  // opens at the playhead.
   // The row followed is said on the list, for the walks: at the end of
   // the list a row cannot stand at the top, and two rows look the same.
   let followed = $state<string | null | undefined>(undefined);
+  // The playhead put somewhere while the video stands brings its card into
+  // view even when it stays in the same card, the way choosing a clip
+  // again does: the hand may have scrolled the card away.
+  let playheadWas: number | null = null;
   $effect(() => {
-    void playhead;
+    const at = playhead;
     // Cards read anew are followed too: the search opens on the cards it
     // read last, and the ones read as it opens may be cut otherwise.
     void sentences;
-    untrack(() => follow(false));
+    const put = playheadWas !== null && at !== playheadWas && !untrack(() => playing);
+    playheadWas = at;
+    untrack(() => follow(false, put));
   });
 
-  // The card of the playhead to the top, when the playhead came into
-  // another card, or always.
-  function follow(always: boolean) {
+  // The card of the playhead into view, when the playhead came into
+  // another card, or always. A card walked to is brought into view the
+  // way a clip walked to is in the clip list, just far enough, see
+  // showChosen in Episode.svelte.
+  let walking = false;
+  function follow(always: boolean, put = false) {
+    const near = walking;
+    walking = false;
     const key = rowAt(playhead)?.key ?? null;
     const was = followed;
     followed = key;
     // The search opens at the playhead, or at its top.
     if (!key && (was === undefined || always)) scroller()?.scrollTo({ top: 0 });
-    if (!key || (key === was && !always)) return;
-    toTop(key);
+    if (!key || (key === was && !always && !put)) return;
+    if (near) intoView(key);
+    else turnTo(key);
   }
+
+  // The card the playhead is in, marked as the current one. In a search,
+  // only an answer the playhead is in, so a mark never says the playhead
+  // is somewhere it is not.
+  const current = $derived.by(() => {
+    const row = rows.find((r) => r.key === followed);
+    if (!row || !typed.trim()) return followed;
+    const end = "hole" in row ? row.hole[1] : row.sentence.end;
+    return row.at <= playhead + 0.001 && playhead < end ? followed : null;
+  });
 
   // The row the playhead is in. Where nothing is said, the next row, so a
   // clip chosen goes to its first caption, unless the playhead is in a
@@ -168,20 +213,43 @@
   // each card and the list follows it there. The answers are walked from
   // the first, down, or the last, up, and go round. The whole transcript
   // is walked from the card of the playhead.
-  let walkedTo: string | null = null;
+  // The walk goes on from the current card, so the one marked is where
+  // the next step starts from.
   export function walk(step: 1 | -1) {
     if (!rows.length) return;
-    let here = -1;
-    if (typed.trim()) here = rows.findIndex((r) => r.key === walkedTo);
-    else {
-      const at = rowAt(playhead);
-      here = at ? rows.indexOf(at) : -1;
-    }
+    const here = rows.findIndex((r) => r.key === current);
     const next = here < 0 ? (step > 0 ? 0 : rows.length - 1) : (here + step + rows.length) % rows.length;
     const row = rows[next];
-    walkedTo = row.key;
+    walking = true;
     if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
     else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
+  }
+
+  // Whether the card of a row is in view, inside the veil the list fades
+  // its ends with.
+  function shows(key: string): { card: HTMLElement; box: HTMLElement; veil: number; above: number; below: number } | null {
+    const card = list?.querySelector<HTMLElement>(`li[data-row="${CSS.escape(key)}"]`);
+    const box = scroller();
+    if (!card || !box) return null;
+    const veil = parseFloat(getComputedStyle(list).paddingTop) || 0;
+    const r = card.getBoundingClientRect();
+    const v = box.getBoundingClientRect();
+    return { card, box, veil, above: v.top + veil - r.top, below: r.bottom - (v.bottom - veil) };
+  }
+
+  // The page turned to the card of a row, unless it is in view.
+  function turnTo(key: string) {
+    const at = shows(key);
+    if (at && at.above <= 0.5 && at.below <= 0.5) return;
+    toTop(key);
+  }
+
+  // A card brought just far enough into view.
+  function intoView(key: string) {
+    const at = shows(key);
+    if (!at) return;
+    if (at.above > 0) at.box.scrollTop -= at.above;
+    else if (at.below > 0) at.box.scrollTop += at.below;
   }
 
   // The card of a row, at the top of the list. Where it is
@@ -224,8 +292,33 @@
     }
     // Where nothing was transcribed yet is said while the whole of what
     // was said is shown. It is no answer to what is typed, found by Tim.
-    if (sentences && !typed.trim()) for (const h of unheard) out.push({ key: `h${h[0]}`, at: h[0], hole: h });
+    // Known by their place among them, not by where they start, which
+    // moves as the work hears.
+    if (sentences && !typed.trim()) for (const [i, h] of unheard.entries()) out.push({ key: `h${i}`, at: h[0], hole: h });
     return out.sort((a, b) => a.at - b.at);
+  });
+
+  // Cards that come in above the ones in view, as the transcript grows
+  // over the part the playhead stands in, leave the ones in view where
+  // they stand. WebKit keeps no anchor of its own, so the card of the
+  // playhead was pushed out at the foot while it stayed the same card,
+  // and nothing brought it back. The anchor is the card of the playhead
+  // when it is in view, or else the first card in view. A new search is
+  // a new list and keeps nothing.
+  $effect.pre(() => {
+    void rows;
+    anchor = untrack(() => {
+      const box = scroller();
+      if (!box || !list) return null;
+      const v = box.getBoundingClientRect();
+      const shown = (li: HTMLElement) => {
+        const r = li.getBoundingClientRect();
+        return r.bottom > v.top && r.top < v.bottom;
+      };
+      const mine = followed ? list.querySelector<HTMLElement>(`li[data-row="${CSS.escape(followed)}"]`) : null;
+      const card = mine && shown(mine) ? mine : [...list.querySelectorAll<HTMLElement>("li[data-row]")].find(shown);
+      return card ? { key: card.dataset.row!, top: card.getBoundingClientRect().top, typed } : null;
+    });
   });
 
   const answered = $derived(rows.filter((r) => "sentence" in r).length);
@@ -256,6 +349,8 @@
       {@const index = unheard.indexOf(row.hole)}
       <li
         class="hole"
+        class:lit={index === unheardLit}
+        class:current={row.key === current}
         data-at={row.hole[0]}
         data-row={row.key}
         title="Nothing was transcribed here yet, so the search cannot look here. Searching a window here transcribes it"
@@ -273,7 +368,7 @@
         data-clip={row.clip?.key}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
-        <button class="pick" class:inclip={!!row.clip} title="Put the playhead here" onclick={() => {
+        <button class="pick" class:inclip={!!row.clip} class:current={row.key === current} title="Put the playhead here" onclick={() => {
           // The playhead put on a card is where the list already is.
           followed = row.key;
           onseek(row.sentence.start, row.clip?.key ?? null);
@@ -412,33 +507,51 @@
      which the dashes go into, the way a card's edge does. */
   li.hole {
     justify-content: center;
+    background: transparent;
     box-shadow: none;
     border: 1px dashed var(--ink-3);
   }
 
-  li.hole:hover {
+  li.hole:hover,
+  li.hole.lit {
     background: var(--ink-2);
     border-color: var(--ink-2);
+  }
+
+  /* The card the playhead is in, the way the chosen clip's card is in the
+     clip list, so a walk through three answers shows where it is, found
+     by Tim. */
+  .pick.current,
+  li:hover .pick.current,
+  li.hole.current {
+    background: var(--ink-3);
+  }
+
+  li.hole.current {
+    border-color: var(--ink-3);
   }
 
   li.hole .text {
     color: var(--muted);
   }
 
-  /* Its dots, faded in from the left, and all of it dotted under the
-     hand. The dashed edge stays, so a part only a few pixels wide on the
-     range picker still shows, where dots have no room, found by Tim. */
+  /* Its dots, rising from the foot, on nothing else. Under the hand
+     it fills with a card's grey and keeps its fade. The dashed edge stays,
+     so a part only a few pixels wide on the range picker still shows,
+     where dots have no room, found by Tim. */
   .dots {
     position: absolute;
     inset: 0;
     border-radius: inherit;
     background: var(--halftone);
-    mask-image: linear-gradient(90deg, transparent, #000 70%);
+    mask-image: var(--halftone-fade);
     pointer-events: none;
   }
 
-  li.hole:hover .dots {
-    mask-image: none;
+  li.hole:hover .dots,
+  li.hole.lit .dots,
+  li.hole.current .dots {
+    background: var(--halftone-lit);
   }
 
   li.hole .meta,

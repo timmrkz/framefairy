@@ -468,11 +468,15 @@
   let unheardLit = $state(-1);
   // The parts of the video the transcript has not heard yet, which the
   // search cannot look in. A gap under a second is between two words.
+  // They give way as the work hears, not as it saves, the way the edge of
+  // what is heard moves on the range picker: saving comes minutes of
+  // audio at a time, and the parts went in thirds of a window, found by
+  // Tim. See heard below.
   const unheard = $derived.by(() => {
     if (!(duration > 0)) return [] as [number, number][];
     const out: [number, number][] = [];
     let at = 0;
-    for (const [a, b] of [...saved].sort((x, y) => x[0] - y[0])) {
+    for (const [a, b] of [...shownHeard].sort((x, y) => x[0] - y[0])) {
       if (a - at >= 1) out.push([at, a]);
       at = Math.max(at, b);
     }
@@ -2965,6 +2969,7 @@
     locked={busy}
     unheard={saying ? unheard : []}
     {unheardLit}
+    onhoverunheard={(i) => (unheardLit = i)}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid
@@ -3480,6 +3485,7 @@
                 sentences={saved.length ? sentences : []}
                 typed={sayTyped}
                 {unheard}
+                {unheardLit}
                 clips={shown}
                 {selected}
                 chosen={chosenTimes}

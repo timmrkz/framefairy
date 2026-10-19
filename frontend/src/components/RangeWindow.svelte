@@ -51,6 +51,7 @@
     resumes = false,
     unheard = [],
     unheardLit = -1,
+    onhoverunheard,
   }: {
     duration: number;
     // The window of the search in hand, drawn while shown.
@@ -108,6 +109,9 @@
     unheard?: [number, number][];
     // The one of them whose card is under the hand, lit a step.
     unheardLit?: number;
+    // The one of them under the hand here, by its place among them, or -1,
+    // so its card is lit too.
+    onhoverunheard?: (index: number) => void;
   } = $props();
 
   // What the mark is, in its titles.
@@ -326,6 +330,20 @@
     onreset?.();
   }
 
+  // The part not transcribed yet under the hand lights its card in the
+  // list, the way a clip's mark lights its card, found by Tim. The parts
+  // take no pointer, so a press on one is a press on the track, and which
+  // is under the hand is read from where it is. A mark over a part is the
+  // mark's.
+  let unheardHere = -1;
+  function hoverUnheard(event: PointerEvent) {
+    const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
+    const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
+    if (i === unheardHere) return;
+    unheardHere = i;
+    onhoverunheard?.(i);
+  }
+
   function timeAt(clientX: number): number {
     const box = track.getBoundingClientRect();
     const share = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
@@ -355,7 +373,8 @@
      past them: it runs on past the track's top and bottom border, and at
      the very start or the very end it would otherwise be cut off by the
      corner. -->
-<div class="over">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="over" onpointermove={unheard.length ? hoverUnheard : undefined} onpointerleave={unheard.length ? hoverUnheard : undefined}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -368,7 +387,7 @@
   <!-- What has not been heard yet, in the grey of a card, under the
        minutes so their lines still show through it. Its dashed edge is
        drawn over the track's border, beside the track, see below. -->
-  {#each unheard as [a, b], i (a)}
+  {#each unheard as [a, b], i (i)}
     <div class="unheard" class:lit={i === unheardLit} style="left: {on(a)}; width: calc({on(b)} - {on(a)})"></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
@@ -425,7 +444,7 @@
      the clip list that says so is, laid over the track's border so the
      grey covers it and the dashes run along the range picker's own edge
      and the line the window is drawn on. Under the window. -->
-{#each unheard as [a, b], i (a)}
+{#each unheard as [a, b], i (i)}
   {@const edge = unheardEdge(a, b)}
   <div class="unheard-edge" class:lit={i === unheardLit} class:first={edge.first} class:last={edge.last} style={edge.style}></div>
 {/each}
@@ -763,14 +782,13 @@
     clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
 
-  /* A part not transcribed yet, the grey of a card, over the track and
-     under the minutes and the clips. */
+  /* A part not transcribed yet, dots over the track and under the
+     minutes and the clips, and nothing else, as Tim picked them. */
   .unheard {
     position: absolute;
     top: 0;
     bottom: 0;
     z-index: 1;
-    background: var(--ink-1);
     pointer-events: none;
   }
 
@@ -782,19 +800,20 @@
     background: var(--ink-2);
   }
 
-  /* Its dots, the card's, faded in from each end over a fixed length,
-     so a long part reads as dots and a part a few pixels wide is its
-     dashed edge alone. All of it dotted while its card is under the hand. */
+  /* Its dots, the card's, rising from the foot, so a part a few pixels
+     wide is its dashed edge alone and the minutes stand clear above
+     them. Lit, the part takes the grey of a card under the hand and keeps
+     its fade, found by Tim. */
   .unheard::before {
     content: "";
     position: absolute;
     inset: 0;
     background: var(--halftone);
-    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    mask-image: var(--halftone-fade);
   }
 
   .unheard.lit::before {
-    mask-image: none;
+    background: var(--halftone-lit);
   }
 
   .unheard-edge.lit::before,

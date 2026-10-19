@@ -56,9 +56,15 @@
      same wherever the control stands. */
   --lift: rgba(255, 255, 255, 0.08);
   /* The dots of a part not transcribed yet, in a card and on the range
-     picker, a grid of them that the transcript fades into. Picked by Tim
-     from sixteen textures. */
-  --halftone: radial-gradient(circle, rgba(255, 255, 255, 0.16) 1.2px, transparent 1.7px) 0 0 / 6px 6px;
+     picker, a grid of them rising from the foot and thinning out upwards,
+     with none in the top third, where the minutes of the range picker
+     stand and a card has its time. Tim picked them from a sheet, after
+     dots over the whole height hid the minutes and their lines. They are
+     never brighter than the dashes round them, and under the hand they
+     go up a step with the grey of the card. */
+  --halftone: radial-gradient(circle, var(--ink-3) 1.2px, transparent 1.7px) 0 0 / 6px 6px;
+  --halftone-lit: radial-gradient(circle, var(--line) 1.2px, transparent 1.7px) 0 0 / 6px 6px;
+  --halftone-fade: linear-gradient(transparent 30%, #000);
   /* The same, for a control that takes something away. It says what the
      control does as well as that the pointer is on it, which is what the
      warning outline does on a button in a box. */

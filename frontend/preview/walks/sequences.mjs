@@ -1410,6 +1410,13 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim on 19 October: while the work heard a window, the parts
+    // not transcribed yet gave way in thirds of it, each time the
+    // transcript was saved. They give way as the work hears.
+    name: "the parts not transcribed yet give way as the work hears",
+    steps: [["speech", 1500], ["add", 600], ["heard some"], ["parts give way"], ["speech", 0]],
+  },
+  {
     // Found by Tim on #349: the Style list of one style lay over the Size
     // field two pixels short of its bottom, so its border showed twice.
     name: "a list of one style covers the field under it",
@@ -8003,6 +8010,32 @@ for (const seq of toWalk) {
         await settled();
         break;
       }
+      case "parts give way": {
+        // With the transcript open while the work hears, where the first
+        // part not transcribed yet begins, against how far the saved
+        // transcript reaches, for a few seconds.
+        const path = await episodeOn(page);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        const edges = [];
+        const saves = new Set();
+        const until = Date.now() + 9000;
+        while (Date.now() < until) {
+          edges.push(await page.evaluate(() => {
+            const u = document.querySelector(".track .unheard");
+            return u ? Math.round(u.getBoundingClientRect().left * 10) / 10 : null;
+          }));
+          const status = await ask(page, "Status", path).catch(() => null);
+          saves.add(JSON.stringify(status?.heard ?? null));
+          await page.waitForTimeout(150);
+        }
+        await page.keyboard.press("Escape");
+        const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
+        if (edges.every((v) => v === null)) wrong = "no part was not transcribed yet while the work heard";
+        else if (moves < Math.max(4, 2 * saves.size))
+          wrong = `the first part not transcribed yet moved ${moves} times in 9 s while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+        break;
+      }
       case "heard some": {
         const path = await episodeOn(page);
         const until = Date.now() + 60000;
@@ -8149,8 +8182,9 @@ for (const seq of toWalk) {
           await page.keyboard.press("Escape");
           break;
         }
-        if (!(Math.abs(opened.top - opened.should) <= 1 || (opened.end && opened.seen))) {
-          wrong = `the cards opened with the card of the playhead ${opened.top.toFixed(0)} px down, not at the top, ${opened.should} px`;
+        // In view, the way the clip timeline shows the playhead's page.
+        if (!opened.seen) {
+          wrong = `the cards opened with the card of the playhead ${opened.top.toFixed(0)} px down, out of view`;
           await page.keyboard.press("Escape");
           break;
         }
@@ -8470,7 +8504,7 @@ for (const seq of toWalk) {
             const dots = document.querySelector("ol.said li.hole .dots");
             return {
               lit: !!fill && !!edge,
-              dots: [dots && getComputedStyle(dots), fill && getComputedStyle(fill, "::before")].map((d) => (d ? [d.backgroundImage, d.maskImage] : null)),
+              dots: [dots && getComputedStyle(dots), fill && getComputedStyle(fill, "::before")].map((d) => (d ? [d.backgroundImage, d.maskImage, d.top] : null)),
               card: [hole.borderTopColor, hole.backgroundColor],
               picker: fill && edge
                 ? [getComputedStyle(edge, "::before").borderTopColor, getComputedStyle(edge, "::after").borderTopColor, getComputedStyle(document.querySelector(".track")).borderTopColor]
@@ -8479,28 +8513,58 @@ for (const seq of toWalk) {
             };
           });
           await page.mouse.move(0, 0);
+          // The other way round, the hand on the part on the range picker
+          // lights its card, the way a clip's mark lights its card, found
+          // by Tim.
+          const onPart = await page.evaluate(() => {
+            const parts = [...document.querySelectorAll(".track .unheard")];
+            const r = parts.at(-1).getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height * 0.75, index: parts.length - 1 };
+          });
+          await page.mouse.move(onPart.x, onPart.y);
+          await watch.step("hover", s);
+          const fromPart = await page.evaluate(() => ({
+            cards: [...document.querySelectorAll("ol.said li.hole")].map((li) => li.classList.contains("lit")),
+            part: [...document.querySelectorAll(".track .unheard")].map((u) => u.classList.contains("lit")),
+          }));
+          await page.mouse.move(0, 0);
+          const lightsCard = fromPart.cards[onPart.index] && fromPart.cards.filter(Boolean).length === 1 && fromPart.part[onPart.index];
           const rest = await page.evaluate(() => [
             getComputedStyle(document.querySelector("ol.said li.hole")).borderTopColor,
             getComputedStyle(document.querySelector(".unheard-edge"), "::after").borderTopColor,
           ]);
-          // Halftone dots fill both, faded in at rest, from the left on the
-          // card and over 24 px at each end on the range picker, and whole
-          // under the hand. The dashes stay, so a part a few pixels wide
-          // still shows, found by Tim.
+          // Halftone dots fill both, on nothing else, rising from the foot
+          // with none in the top third, where the minutes stand, at rest and
+          // under the hand alike, and never brighter than the dashes or the
+          // minute lines, found by Tim.
           const still = await page.evaluate(() =>
-            [document.querySelector("ol.said li.hole .dots"), document.querySelector(".track .unheard")].map((d, i) => {
+            [document.querySelector("ol.said li.hole:not(.current) .dots") ?? document.querySelector("ol.said li.hole .dots"), document.querySelector(".track .unheard:not(.lit)")].map((d, i) => {
               if (!d) return null;
               const st = i ? getComputedStyle(d, "::before") : getComputedStyle(d);
-              return [st.backgroundImage, st.maskImage];
+              // The card the playhead is in is marked as such, see below,
+              // so the card at rest is read with the mark taken off.
+              const on = i ? d : d.closest("li");
+              const mark = on.classList.contains("current");
+              on.classList.remove("current");
+              const under = getComputedStyle(on).backgroundColor;
+              if (mark) on.classList.add("current");
+              return [st.backgroundImage, st.maskImage, st.top, under];
             }),
           );
+          const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector(".unheard-edge:not(.lit)"), "::after").borderTopColor]);
+          const lum = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).reduce((a, v) => a + Number(v), 0);
+          const dotColour = (d) => d[0].match(/rgba?\([^)]*\)/)?.[0] ?? "";
           const dotted = (d) => !!d && d[0].includes("radial-gradient");
+          const fade = (d) => d[1].startsWith("linear-gradient(rgba(0, 0, 0, 0) 30%");
           if (!look.lit) wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+          else if (!lightsCard) wrong = `the hand on a part not transcribed yet on the range picker lit cards ${JSON.stringify(fromPart.cards)} and parts ${JSON.stringify(fromPart.part)}, not that part and its card`;
           else if (!still.every(dotted) || !look.dots.every(dotted))
             wrong = `a part not transcribed yet is not dotted: at rest ${JSON.stringify(still)}, under the hand ${JSON.stringify(look.dots)}`;
-          else if (!still[0][1].includes("linear-gradient") || !still[1][1].includes("24px"))
-            wrong = `the dots of a part not transcribed yet do not fade in at rest: ${still[0][1]} on the card, ${still[1][1]} on the range picker`;
-          else if (look.dots.some((d) => d[1] !== "none")) wrong = `the dots under the hand are still faded: ${JSON.stringify(look.dots)}`;
+          else if (!still.every(fade) || !look.dots.every(fade))
+            wrong = `the dots of a part not transcribed yet do not rise from the foot: at rest ${still.map((d) => d[1]).join(" and ")}, under the hand ${look.dots.map((d) => d[1]).join(" and ")}`;
+          else if (still.some((d) => d[3] !== "rgba(0, 0, 0, 0)")) wrong = `a part not transcribed yet at rest is on ${still.map((d) => d[3]).join(" and ")}, not on nothing but its dots`;
+          else if (lum(dotColour(still[1])) > lum(lines[0]) || lum(dotColour(still[1])) > lum(lines[1]))
+            wrong = `the dots, ${dotColour(still[1])}, are brighter than the minute lines, ${lines[0]}, or the dashes round them, ${lines[1]}`;
           else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
           // On the range picker the border is the range picker's, and it
           // stays over the part lit, found by Tim.
@@ -8531,7 +8595,7 @@ for (const seq of toWalk) {
               const r = li.getBoundingClientRect();
               return end ? r.top >= box.top + pad - 1 && r.bottom <= box.bottom : Math.abs(r.top - box.top - pad) <= 1;
             });
-            const hole = end ? [...document.querySelectorAll("ol.said li.hole")].at(-1) : top;
+            const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
             const r = hole?.getBoundingClientRect();
             return {
               at: Number(document.querySelector(".screen")?.dataset.playhead),
@@ -8540,7 +8604,6 @@ for (const seq of toWalk) {
                 !!r &&
                 r.top >= box.top &&
                 r.bottom <= box.bottom &&
-                (end || hole === top) &&
                 hole.dataset.row === document.querySelector("ol.said").dataset.followed,
               top: top ? top.querySelector(".meta").textContent.trim() : null,
             };
@@ -8554,7 +8617,34 @@ for (const seq of toWalk) {
             return there.at >= at;
           })();
           if (!hole) wrong = `a press in the last part not transcribed yet put the playhead at ${there.at}, which is heard`;
-          else if (!there.hole) wrong = `the playhead in a part not transcribed yet, at ${there.at.toFixed(1)}, left ${there.top ?? "no card"} at the top of the list, not that part's card`;
+          else if (!there.hole) wrong = `the playhead in a part not transcribed yet, at ${there.at.toFixed(1)}, left that part's card out of view, ${there.top ?? "no card"} at the top of the list`;
+          if (!wrong) {
+            // The hand scrolls the card away and the playhead is put in the
+            // same part again: the card comes back into view, the way a clip
+            // chosen again does, though the playhead never left its card.
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+              const box = list.getBoundingClientRect();
+              list.scrollTop = hole.getBoundingClientRect().top - box.top > box.height / 2 ? 0 : list.scrollHeight;
+            });
+            await page.waitForTimeout(100);
+            const again = await page.evaluate(() => {
+              const r = [...document.querySelectorAll(".track .unheard")].at(-1).getBoundingClientRect();
+              return { x: r.left + r.width / 4, y: r.top + r.height / 2 };
+            });
+            await page.mouse.click(again.x, again.y);
+            await watch.step("click", s);
+            await page.waitForTimeout(300);
+            const back = await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+              const r = hole?.getBoundingClientRect();
+              return { at: Number(document.querySelector(".screen")?.dataset.playhead), shown: !!r && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5 };
+            });
+            if (!back.shown) wrong = `the playhead put again in the same part not transcribed yet, at ${back.at.toFixed(1)}, after the hand scrolled its card away, left the card out of view`;
+          }
         }
         // A clip chosen on the range picker brings its first sentence into
         // view, found by Tim.
@@ -8591,7 +8681,7 @@ for (const seq of toWalk) {
                     const head = document.querySelector("ol.said");
                     const box = list.getBoundingClientRect();
                     const r = card?.getBoundingClientRect();
-                    done(r ? { top: r.top - box.top, should: parseFloat(getComputedStyle(head).paddingTop), room: box.height } : null);
+                    done(r ? { top: r.top - box.top, should: parseFloat(getComputedStyle(head).paddingTop), room: box.height, seen: r.top >= box.top && r.bottom <= box.bottom } : null);
                   };
                   requestAnimationFrame(tick);
                 }),
@@ -8614,11 +8704,13 @@ for (const seq of toWalk) {
             await watch.step("click", s);
             chosen.push(await standing());
           }
-          const off = chosen.find((v) => v && Math.abs(v.top - v.should) > 1);
+          // In view where it was in view, and at the top where the page
+          // had to turn, after the hand scrolled away.
+          const off = chosen.find((v, i) => v && (i ? Math.abs(v.top - v.should) > 1 : !v.seen));
           if (!target || chosen.some((v) => !v))
             wrong = `the mark ${label} is of no clip with sentences on screen`;
           else if (off)
-            wrong = `choosing ${target.title} on the range picker${off === chosen[1] ? " a second time" : ""} left its first sentence ${off.top.toFixed(1)} px down a list ${off.room.toFixed(0)} px high, not at its top, ${off.should} px`;
+            wrong = `choosing ${target.title} on the range picker${off === chosen[1] ? " a second time" : ""} left its first sentence ${off.top.toFixed(1)} px down a list ${off.room.toFixed(0)} px high, ${off === chosen[1] ? `not at its top, ${off.should} px` : "out of view"}`;
         }
         // The playhead put on a caption on the clip timeline puts the card
         // of that caption at the top of the list, the way a clip chosen
@@ -8697,7 +8789,7 @@ for (const seq of toWalk) {
               const li = followed && document.querySelector(`ol.said li[data-row="${CSS.escape(followed)}"]`);
               const end = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
               const shown = li && li.getBoundingClientRect().top >= box.top && li.getBoundingClientRect().bottom <= box.bottom;
-              return { top: top?.dataset.row ?? null, followed, clip: li?.dataset.clip ?? null, standing: !!followed && (top?.dataset.row === followed || (end && shown)) };
+              return { top: top?.dataset.row ?? null, followed, clip: li?.dataset.clip ?? null, standing: !!followed && !!shown, end };
             });
           // A search let go of without moving the playhead goes back to the
           // card of the playhead, by Escape or by taking the words away,
@@ -8752,8 +8844,10 @@ for (const seq of toWalk) {
                 const list = document.querySelector(".scroll.list");
                 const box = list.getBoundingClientRect();
                 const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
-                const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
-                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, clip: top?.dataset.clip ?? null };
+                const li = document.querySelector("ol.said .pick.current")?.closest("li");
+                const r = li?.getBoundingClientRect();
+                const inView = !!r && r.top >= box.top + pad - 1 && r.bottom <= box.bottom - pad + 1;
+                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: li && inView ? Number(li.dataset.at) : null, clip: li?.dataset.clip ?? null };
               });
               if (seen.at >= own[1].start + 0.3) break;
               await page.waitForTimeout(100);
@@ -8770,7 +8864,93 @@ for (const seq of toWalk) {
             else if (stopped !== "Search transcript") wrong = `stopping with the space bar left the keyboard on ${stopped}, not back in the search field`;
             else if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
             else if (seen.top === null || Math.abs(seen.top - now.start) > 0.0005 || seen.clip !== chosenKey)
-              wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card" : `the card at ${seen.top.toFixed(2)}`} at the top of the list, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
+              wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card in view" : `the card at ${seen.top.toFixed(2)}`} marked as the playhead's, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
+          }
+          // The page turns the way the clip timeline's does: the list
+          // stands still while the card of the playhead is in view, and the
+          // card that comes in below the foot of the list as the video
+          // plays on is turned to the top, found by Tim. The list is made
+          // as high as the cards down to the playhead's, so the next is
+          // below it.
+          if (!wrong && own.length >= 2) {
+            // First with both cards in view: playing into the next card
+            // leaves the list where it is.
+            await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
+            await watch.step("click", s);
+            await page.waitForTimeout(200);
+            const both = await page.evaluate((rows) => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const inView = (row) => {
+                const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
+                return r.top >= box.top && r.bottom <= box.bottom;
+              };
+              return { scrolled: list.scrollTop, seen: rows.every(inView) };
+            }, [`s${own[0].start}|${chosenKey}`, `s${own[1].start}|${chosenKey}`]);
+            if (!both.seen) wrong = "the chosen clip's first two cards are not both in view, so the list standing still could not be seen";
+            else {
+              await page.evaluate(() => document.activeElement?.blur());
+              await page.keyboard.press("Space");
+              await watch.step("press", s);
+              const until = Date.now() + 20000;
+              let at = 0;
+              let moved = null;
+              while (Date.now() < until && at < own[1].start + 0.3) {
+                const now = await page.evaluate(() => ({ at: Number(document.querySelector(".screen")?.dataset.playhead), scrolled: document.querySelector(".scroll.list").scrollTop }));
+                at = now.at;
+                if (now.scrolled !== both.scrolled) moved ??= now;
+                await page.waitForTimeout(50);
+              }
+              await page.keyboard.press("Space");
+              await watch.step("press", s);
+              if (moved) wrong = `playing on into the next card, in view, moved the list ${(moved.scrolled - both.scrolled).toFixed(0)} px at ${moved.at.toFixed(2)}`;
+            }
+          }
+          if (!wrong && own.length >= 2) {
+            await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
+            await watch.step("click", s);
+            await page.waitForTimeout(200);
+            await page.evaluate((row) => {
+              const list = document.querySelector(".scroll.list");
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const card = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`);
+              const box = list.getBoundingClientRect();
+              const r = card.getBoundingClientRect();
+              list.scrollTop += r.top - box.top - pad;
+              list.style.flex = "none";
+              list.style.height = `${Math.ceil(r.height + 2 * pad + 4)}px`;
+            }, `s${own[0].start}|${chosenKey}`);
+            await page.waitForTimeout(100);
+            const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
+            await page.evaluate(() => document.activeElement?.blur());
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            const until = Date.now() + 20000;
+            let turned = null;
+            let still = true;
+            while (Date.now() < until) {
+              turned = await page.evaluate(() => {
+                const list = document.querySelector(".scroll.list");
+                const box = list.getBoundingClientRect();
+                const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop };
+              });
+              if (turned.at < own[1].start - 0.05 && turned.scrolled !== from) still = false;
+              if (turned.at >= own[1].start + 0.3) break;
+              await page.waitForTimeout(50);
+            }
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              list.style.flex = "";
+              list.style.height = "";
+            });
+            if (!still) wrong = `the list moved while the card of the playhead at ${own[0].start.toFixed(2)} was in view`;
+            else if (!(turned.at >= own[1].start + 0.3)) wrong = `the clip played to ${turned.at.toFixed(2)} and never reached its second caption`;
+            else if (turned.top === null || Math.abs(turned.top - own[1].start) > 0.0005)
+              wrong = `played on into the caption at ${own[1].start.toFixed(2)} below the foot of the list, the page turned to ${turned.top === null ? "no card" : `the card at ${turned.top.toFixed(2)}`} at the top`;
           }
         }
         // A card puts the playhead on its sentence, and a sentence of a
@@ -8828,6 +9008,15 @@ for (const seq of toWalk) {
               at: Number(document.querySelector(".screen")?.dataset.playhead),
               chosen: document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label") ?? null,
               followed: document.querySelector("ol.said")?.dataset.followed ?? null,
+              current: (() => {
+                const pick = document.querySelector("ol.said .pick.current");
+                const ink = document.createElement("i");
+                ink.style.background = "var(--ink-3)";
+                document.body.append(ink);
+                const want = getComputedStyle(ink).backgroundColor;
+                ink.remove();
+                return pick ? { row: pick.closest("li").dataset.row, grey: getComputedStyle(pick).backgroundColor === want } : null;
+              })(),
               cards: [...document.querySelectorAll("ol.said li[data-row]")].map((li) => ({ row: li.dataset.row, at: Number(li.dataset.at) })),
             }));
           for (const stay of [false, true]) {
@@ -8849,6 +9038,9 @@ for (const seq of toWalk) {
               if (!card || !(w.at >= card.start - 0.001 && w.at < card.end))
                 wrong = `Shift and the down arrow ${i + 1} times put the playhead at ${w.at.toFixed(2)}, not on answer ${i + 1} at ${from.cards[i].at.toFixed(2)}`;
               else if (w.followed !== from.cards[i].row) wrong = `walked to ${from.cards[i].row}, the list follows ${w.followed}`;
+              // Marked where it is, the way the chosen clip is, found by Tim.
+              else if (w.current?.row !== from.cards[i].row || !w.current.grey)
+                wrong = `walked to ${from.cards[i].row}, the card marked as the playhead's is ${w.current?.row ?? "none"}${w.current && !w.current.grey ? ", not in the grey of a chosen clip" : ""}`;
             }
             if (wrong) break;
             if (stay) {
@@ -8863,6 +9055,47 @@ for (const seq of toWalk) {
               wrong = `a search walked and let go of by Escape left the playhead at ${back.at.toFixed(2)} in ${back.chosen}, not back at ${from.at.toFixed(2)} in ${from.chosen}`;
             else if (stay && Math.abs(back.at - went[1].at) > 0.05)
               wrong = `Enter at the answer walked to, then Escape, moved the playhead from ${went[1].at.toFixed(2)} to ${back.at.toFixed(2)}`;
+          }
+        }
+        // A card walked to below the foot of the list is brought just into
+        // view, the way a clip walked to is in the clip list, not turned to
+        // the top, found by Tim. The list is made two cards high.
+        if (!wrong) {
+          await field.fill("");
+          await watch.step("type", s);
+          await page.waitForTimeout(200);
+          const squeezed = await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+            const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+            const i = cards.findIndex((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+            const card = cards[i];
+            if (!card || i + 2 >= cards.length) return null;
+            const box = list.getBoundingClientRect();
+            list.scrollTop += card.getBoundingClientRect().top - box.top - pad;
+            const two = cards[i + 1].getBoundingClientRect().bottom - card.getBoundingClientRect().top;
+            list.style.flex = "none";
+            list.style.height = `${Math.ceil(two + 2 * pad + 2)}px`;
+            return { next: cards[i + 2].dataset.row };
+          });
+          if (squeezed) {
+            await page.evaluate(() => document.activeElement?.blur());
+            for (let i = 0; i < 2; i++) {
+              await page.keyboard.press("Shift+ArrowDown");
+              await watch.step("press", s);
+              await page.waitForTimeout(250);
+            }
+            const stood = await page.evaluate((row) => {
+              const list = document.querySelector(".scroll.list");
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const box = list.getBoundingClientRect();
+              const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
+              list.style.flex = "";
+              list.style.height = "";
+              return { foot: r.bottom - (box.bottom - pad), followed: document.querySelector("ol.said").dataset.followed };
+            }, squeezed.next);
+            if (stood.followed !== squeezed.next) wrong = `Shift and the down arrow twice went to ${stood.followed}, not ${squeezed.next}`;
+            else if (Math.abs(stood.foot) > 1) wrong = `the card walked to below the foot of the list stands ${(-stood.foot).toFixed(0)} px above the foot, not just brought into view`;
           }
         }
         // The keyboard on a card of what was typed, for Escape.
