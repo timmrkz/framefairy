@@ -171,7 +171,7 @@ func main() {
 		probeLink()
 		svc.openedWith(e.Context().URL())
 	})
-	svc.updates = newUpdating(app.Updater, app.Quit, st, svc.jobs.busy, func(u UpdateState) {
+	svc.updates = newUpdating(app.Updater, app.Quit, st, svc.jobs.closeIfIdle, func(u UpdateState) {
 		app.Event.Emit("updates", u)
 	})
 	app.Menu.Set(appMenu(app, func() {

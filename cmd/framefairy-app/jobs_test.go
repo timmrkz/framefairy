@@ -600,3 +600,64 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 		}
 	}
 }
+
+// Relaunch finds the queue idle and closes it in one step, so no search
+// starts between the two and is stopped half way by the quit, issue #382.
+// Work is added from several goroutines at once while Relaunch asks again
+// and again: whenever it was told the queue was idle, nothing runs or
+// waits until it reopens, and work added meanwhile is refused with the
+// reason.
+func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
+	t.Parallel()
+	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+	quick := func(ctx context.Context, p *engine.Project) (string, error) { return "ok", nil }
+	kinds := []string{"render", "model", "plan", engine.JobSearch}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for hand := range 4 {
+		wg.Go(func() {
+			for k := 0; ; k++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(hand+k)%len(kinds)], "Work", quick)
+				if job.State == JobFailed && job.Error != "the app is relaunching into a new build" {
+					t.Errorf("work refused with %q", job.Error)
+				}
+				time.Sleep(time.Duration(k%3) * time.Millisecond)
+			}
+		})
+	}
+
+	var idle, refused int
+	deadline := time.Now().Add(400 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		reopen, ok := q.closeIfIdle()
+		if !ok {
+			refused++
+			reopen()
+			continue
+		}
+		idle++
+		for range 20 {
+			if q.busy() {
+				t.Fatal("work ran or waited after Relaunch found the queue idle")
+			}
+			time.Sleep(50 * time.Microsecond)
+		}
+		reopen()
+		reopen()
+	}
+	close(stop)
+	wg.Wait()
+	if idle == 0 || refused == 0 {
+		t.Fatalf("Relaunch found the queue idle %d times and busy %d times, both are needed to prove anything", idle, refused)
+	}
+	// Reopened, it takes work again.
+	if job := q.add("/eps/after.mp4", "render", "After", quick); job.State == JobFailed {
+		t.Errorf("work after the queue reopened was refused: %s", job.Error)
+	}
+}

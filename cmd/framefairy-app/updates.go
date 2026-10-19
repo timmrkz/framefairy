@@ -171,7 +171,9 @@ type updating struct {
 	round int
 	stop  context.CancelFunc
 	emit  func(UpdateState)
-	busy  func() bool
+	// idle says whether no work runs, and when none does it takes no new
+	// work until reopen is called, see queue.closeIfIdle.
+	idle func() (reopen func(), ok bool)
 	// load and save keep the picked channel, in updates.json beside the
 	// settings. Not in the settings themselves: the settings screen saves
 	// what it read, and would put back a channel picked since.
@@ -205,10 +207,10 @@ type updatesFile struct {
 	Follow string `json:"follow"`
 }
 
-func newUpdating(u *updater.Updater, quit func(), st *store, busy func() bool, emit func(UpdateState)) *updating {
+func newUpdating(u *updater.Updater, quit func(), st *store, idle func() (func(), bool), emit func(UpdateState)) *updating {
 	c := &updating{
 		own:  buildChannel,
-		busy: busy,
+		idle: idle,
 		emit: emit,
 		// Every build is downloaded by an updater of its own, and Relaunch
 		// quits the app through the one that holds it.
@@ -777,7 +779,10 @@ func unstage(w *updater.Updater) {
 
 // Restart quits into the build that is ready. Never while work runs: the
 // helper that swaps the app waits for this one to end, and a search or a
-// render would be stopped half way.
+// render would be stopped half way. And no work starts once it has found
+// none running, so none is stopped by the quit either. The Updates page
+// keeps Relaunch from being pressed while work runs, and this is what
+// holds when it is pressed all the same.
 func (c *updating) Restart() error {
 	if c.u == nil {
 		return errors.New(c.state.Off)
@@ -788,8 +793,13 @@ func (c *updating) Restart() error {
 	if !ready {
 		return errors.New("no update is ready")
 	}
-	if c.busy != nil && c.busy() {
-		return errors.New("work is still running. Restart when it is done")
+	reopen := func() {}
+	if c.idle != nil {
+		var ok bool
+		if reopen, ok = c.idle(); !ok {
+			log.Printf("relaunch refused: work is still running")
+			return errors.New("work is still running. Relaunch when it is done")
+		}
 	}
 	// The build held now is the one Relaunch puts in place, and nothing
 	// replaces it from here on.
@@ -799,12 +809,14 @@ func (c *updating) Restart() error {
 	c.relaunching = ready
 	c.mu.Unlock()
 	if !ready {
+		reopen()
 		return errors.New("no update is ready")
 	}
 	if err := held.Restart(context.Background()); err != nil {
 		c.mu.Lock()
 		c.relaunching = false
 		c.mu.Unlock()
+		reopen()
 		return err
 	}
 	return nil
