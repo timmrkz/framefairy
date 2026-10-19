@@ -242,6 +242,20 @@
     return [before.toString(), after.toString()];
   }
 
+  // write types text where the selection is, as one step for Cmd+Z. A new
+  // line is typed as one, since text with a new line in it was put in as
+  // a block of its own, which WebKit on Tim's Mac showed as an empty line
+  // at the end, and which the text of the field does not count, issue
+  // #373.
+  function write(text: string): boolean {
+    let ok = true;
+    for (const [i, line] of text.split("\n").entries()) {
+      if (i) ok = document.execCommand("insertLineBreak") && ok;
+      if (line) ok = document.execCommand("insertText", false, line) && ok;
+    }
+    return ok;
+  }
+
   // count says how many letters of the field come before a place in it,
   // and point finds the place so many letters in. The cursor is kept by
   // these while the field's pieces are put together again, which moves
@@ -435,29 +449,27 @@
     // A space between a word that was said and a word typed after it,
     // not before a full stop or a comma.
     if (data && /\S$/.test(before) && /^[^\s.,;:!?)\]}]/.test(data)) data = " " + data;
+    // A new line, typed or pasted, goes in by hand, the way the settled
+    // words do. The browser's own put it after the mark on Tim's Mac, so
+    // what was said next went on the line above the cursor, or as a block
+    // of its own, which split what was said in two, issue #373.
+    if (data.includes("\n")) {
+      const last = mark.previousSibling;
+      if (last?.nodeType === Node.TEXT_NODE) (last as Text).appendData(data);
+      else mark.before(data);
+      const after = document.createRange();
+      after.setStartAfter(said);
+      sel.removeAllRanges();
+      sel.addRange(after);
+      return typed();
+    }
     const end = document.createRange();
     end.setStartBefore(mark);
     const last = mark.previousSibling;
     if (last?.nodeType === Node.TEXT_NODE) end.setStart(last, (last as Text).length);
     sel.removeAllRanges();
     sel.addRange(end);
-    // A new line the way the browser makes one: as text, a new line was
-    // a block of its own that split what was said in two.
-    if (data === "\n") {
-      document.execCommand("insertLineBreak");
-      // The browser ends a line break at the end of a block with a second
-      // one, to give the new line a height. Here the mark ends the line
-      // and gives it one, and the cursor is drawn by it, so what is said
-      // next goes on the new line and not one further down.
-      const last = mark.previousSibling;
-      if (last?.nodeType === Node.TEXT_NODE && settled().length === before.length + 2 && settled().endsWith("\n\n")) {
-        (last as Text).deleteData((last as Text).length - 1, 1);
-      }
-      const after = document.createRange();
-      after.setStartAfter(said);
-      sel.removeAllRanges();
-      sel.addRange(after);
-    } else if (data) document.execCommand("insertText", false, data);
+    if (data) document.execCommand("insertText", false, data);
     else if (before) document.execCommand("delete");
   }
 
@@ -533,7 +545,7 @@
       field.focus({ preventScroll: true });
       getSelection()?.removeAllRanges();
       getSelection()?.addRange(at);
-      if (!document.execCommand("insertText", false, words)) {
+      if (!write(words)) {
         at.deleteContents();
         at.insertNode(document.createTextNode(words));
       }
@@ -615,6 +627,8 @@
   async function keep() {
     if (!listening) return;
     listening = false;
+    // The field's own cursor at once, where a key typed meanwhile puts it.
+    caret();
     chime("off");
     loud = 0;
     hearing = true;

@@ -330,6 +330,8 @@
 //                      of and no ring on anything
 //   ["field reads", selector, text]
 //                      the field selector names holds text
+//   ["report is text"] the report's field holds text alone, its new lines
+//                      too, and no block or line break of the browser's
 //   ["report reads", text]
 //                      the report's field reads text, where * is
 //                      whatever the speech model heard, a word or more
@@ -1959,6 +1961,28 @@ export const sequences = [
       ["dictate", "escape"],
       ["type", "Next"],
       ["report reads", "It froze. *\n*Next"],
+    ],
+  },
+  {
+    // Issue #373. Tim pressed Shift+Enter twice while dictating on his
+    // Mac. WebKit put the second new line after the words being heard, so
+    // they went on the line above the cursor, and once kept, the new lines
+    // were blocks of their own, which showed as an empty line at the end.
+    // Every new line is text, in the order it was typed.
+    name: "Two Shift+Enters while dictating make two new lines, kept as text",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["press", "Shift+Enter"],
+      ["press", "Shift+Enter"],
+      ["caret at words"],
+      ["dictate", "hearing"],
+      ["caret at words"],
+      ["dictate", "escape"],
+      ["report is text"],
+      ["type", "Next"],
+      ["report reads", "It froze. *\n\n*Next"],
     ],
   },
   {
@@ -6877,6 +6901,11 @@ for (const seq of toWalk) {
         const down = await page.evaluate((from) => window.__notes.slice(from), kept.notes);
         if (down.length !== 2 || down[0].f <= down[1].f) wrong = `it stopped with ${JSON.stringify(down)} played, not the two notes of the stop sound`;
         await watch.step("dictate", s);
+        break;
+      }
+      case "report is text": {
+        const inside = await page.locator(".telling").evaluate((f) => [...f.querySelectorAll("*")].map((e) => e.outerHTML));
+        if (inside.length) wrong = `the report holds ${inside.join(", ")}, not text alone`;
         break;
       }
       case "report reads": {
