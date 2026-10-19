@@ -28,6 +28,8 @@
   import Icon from "./Icon.svelte";
   import SearchField from "./SearchField.svelte";
   import { matches } from "../lib/match";
+  import { said } from "../lib/said";
+  import { tick } from "svelte";
 
   let {
     value = "",
@@ -228,6 +230,22 @@
     if (row) list.scrollTop = row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
   }
 
+  // Escape closes the list and lets go of the keyboard, so nothing is left
+  // lit and the space bar plays again. The two kinds of list closed
+  // differently: a list to search has the keyboard in its field and gave
+  // it back to the trigger by script, which the webview leaves unlit,
+  // while a plain list never takes it from the trigger, so the Escape was
+  // a key pressed on the trigger and lit its ring, issue #370. A field
+  // lets go on Escape the same way, see escapeLetsGo.
+  let button = $state<HTMLButtonElement>();
+  let escaped = false;
+  function letGo() {
+    if (!escaped) return;
+    escaped = false;
+    if (document.activeElement === button) button?.blur();
+    said(`pick: Escape closed ${label} and let go of it`);
+  }
+
   function choose(next: string) {
     open = false;
     onopenchange?.(false);
@@ -238,6 +256,7 @@
 {#snippet trigger(props: Record<string, unknown>)}
   <button
     {...props}
+    bind:this={button}
     class="pick"
     class:face={face === "icon"}
     class:quiet={face === "icon"}
@@ -301,7 +320,16 @@
       {#snippet child({ props })}{@render trigger(props)}{/snippet}
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content sideOffset={drop} align={edge}>
+      <Popover.Content
+        sideOffset={drop}
+        align={edge}
+        onEscapeKeydown={() => (escaped = true)}
+        onCloseAutoFocus={(e) => {
+          if (!escaped) return;
+          e.preventDefault();
+          letGo();
+        }}
+      >
         {#snippet child({ props, wrapperProps, open })}
           {#if open}
             <div {...wrapperProps}>
@@ -389,6 +417,7 @@
   onOpenChange={(next) => {
     if (next !== open) return;
     if (next) ticked = value;
+    else tick().then(letGo);
     onopenchange?.(next);
   }}
   onValueChange={(v) => onpick?.(v)}
@@ -399,7 +428,7 @@
   <Select.Portal>
     <!-- Right under the trigger and along its left edge, so the list opens
          where the eye already is. -->
-    <Select.Content sideOffset={drop} align={edge}>
+    <Select.Content sideOffset={drop} align={edge} onEscapeKeydown={() => (escaped = true)}>
       {#snippet child({ props, wrapperProps, open })}
         {#if open}
           <div {...wrapperProps}>
