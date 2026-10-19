@@ -850,7 +850,7 @@
   const marks = $derived.by(() => {
     const written = shown
       .filter((c) => !(c.key in removed))
-      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered }));
+      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: c.rendered }));
     const here = new Set(written.map((m) => m.key));
     const coming = onTheWay
       .filter((a) => !(a.clip && here.has(a.clip)))
@@ -3457,8 +3457,8 @@
           >
         {/if}
         {#if current}
-          {#if current.rendered}
-            <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
+          {#if current.short}
+            <button onclick={() => api.reveal(current.short!)}>Show in folder</button>
           {/if}
           <!-- The one act that matters, so it says how it is going in the
                button it was started from, and becomes the way to stop it,

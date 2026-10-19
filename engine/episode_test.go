@@ -114,7 +114,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 // clip's short: the clip says it is rendered and where, the episode counts
 // it, and the app may show it, see IsShort. It stays the clip's short when
 // the folder in the settings changes afterwards, and it is gone when the
-// file is. A file of the same name that another episode put in that
+// file is, while the clip still says it was rendered. A file of the same name that another episode put in that
 // folder is not this clip's short, and neither is anything beside it, and
 // the render gives the short a number rather than write over it.
 //
@@ -142,8 +142,8 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.WriteFile(other, []byte("another episode's short"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := clip().Rendered; got != "" {
-		t.Errorf("a clip never rendered says it is, at %s", got)
+	if got := clip().Short; got != "" || clip().Rendered {
+		t.Errorf("a clip never rendered says it is, at %q", got)
 	}
 	if IsShort(disk, p.Source, other) {
 		t.Error("another episode's short is taken for this clip's")
@@ -153,7 +153,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := p.Render(context.Background(), RenderRequest{Plan: plan}); err != nil {
 		t.Fatalf("%v %s", err, p.LastError())
 	}
-	if got := clip().Rendered; got != short {
+	if got := clip().Short; got != short {
 		t.Errorf("rendered into the folder for shorts, the clip says %q, not %q", got, short)
 	}
 	if !IsShort(disk, p.Source, short) {
@@ -164,7 +164,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	}
 
 	p.Base.Out = t.TempDir()
-	if got := clip().Rendered; got != short {
+	if got := clip().Short; got != short {
 		t.Errorf("after the folder in the settings changed the clip says %q, not %q", got, short)
 	}
 	beside := filepath.Join(shorts, "notes.mp4")
@@ -178,11 +178,19 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 	if err := os.Remove(short); err != nil {
 		t.Fatal(err)
 	}
-	if got := clip().Rendered; got != "" {
+	if got := clip().Short; got != "" {
 		t.Errorf("a short removed by hand is still the clip's, at %s", got)
 	}
-	if IsShort(disk, p.Source, short) || rendered() != 0 {
-		t.Error("a short removed by hand is still counted")
+	if IsShort(disk, p.Source, short) {
+		t.Error("a short removed by hand is still taken for the clip's")
+	}
+	// The short was uploaded and its folder cleaned up, #384: the clip was
+	// rendered all the same, and the episode still counts it.
+	if !clip().Rendered {
+		t.Error("a clip whose short was removed by hand no longer says it was rendered")
+	}
+	if n := rendered(); n != 1 {
+		t.Errorf("with its short removed by hand the episode counts %d shorts, not 1", n)
 	}
 }
 
@@ -230,7 +238,7 @@ func (ep shortsEpisode) render(t *testing.T) string {
 	if err := ep.p.Render(context.Background(), RenderRequest{Plan: ep.plan}); err != nil {
 		t.Fatalf("%v %s", err, ep.p.LastError())
 	}
-	short := ep.clip(t).Rendered
+	short := ep.clip(t).Short
 	if short == "" {
 		t.Fatal("a clip just rendered says it has no short")
 	}
@@ -308,7 +316,7 @@ func TestTwoEpisodesKeepTheirOwnShorts(t *testing.T) {
 	if !untouched(t, firstShort, was) {
 		t.Errorf("the second render wrote over the first episode's short at %s", firstShort)
 	}
-	if got := first.clip(t).Rendered; got != firstShort {
+	if got := first.clip(t).Short; got != firstShort {
 		t.Errorf("the first episode's clip says its short is %q, not %q", got, firstShort)
 	}
 	neitherClaims(t, first, second, firstShort, secondShort)
@@ -377,8 +385,11 @@ func TestAShortWrittenOverIsNoLongerTheClips(t *testing.T) {
 	if err := os.WriteFile(firstShort, []byte("written over by hand"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := first.clip(t).Rendered; got != "" {
+	if got := first.clip(t).Short; got != "" {
 		t.Errorf("the first episode's clip takes a file written over by hand for its own, at %s", got)
+	}
+	if !first.clip(t).Rendered {
+		t.Error("the first episode's clip, its short written over by hand, no longer says it was rendered")
 	}
 }
 
@@ -445,7 +456,7 @@ func TestAnEditIsUndoneAfterARender(t *testing.T) {
 	}
 	if c := view.Clips[0]; c.CaptionYMoved {
 		t.Error("the undo left the caption where the edit put it")
-	} else if c.Rendered == "" {
+	} else if c.Short == "" {
 		t.Error("the undo took the short away from the clip")
 	}
 }
@@ -488,7 +499,7 @@ func TestTwoClipsOfTheSameWordsAreNumbered(t *testing.T) {
 				if err != nil || len(view.Clips) != 2 {
 					t.Fatalf("the plan: %v", err)
 				}
-				if got := []string{view.Clips[0].Rendered, view.Clips[1].Rendered}; got[0] != want[0] || got[1] != want[1] {
+				if got := []string{view.Clips[0].Short, view.Clips[1].Short}; got[0] != want[0] || got[1] != want[1] {
 					t.Fatalf("the shorts are %q, not %q", got, want)
 				}
 				for i, short := range want {
@@ -519,7 +530,7 @@ func TestAPreviewLeavesTheShortAlone(t *testing.T) {
 	if !untouched(t, short, was) {
 		t.Errorf("the preview wrote over the short at %s", short)
 	}
-	if got := ep.clip(t).Rendered; got != short {
+	if got := ep.clip(t).Short; got != short {
 		t.Errorf("after the preview the clip says its short is %q, not %q", got, short)
 	}
 	entries, err := os.ReadDir(ep.p.Base.Out)

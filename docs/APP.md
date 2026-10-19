@@ -1509,11 +1509,13 @@ bubble scrolled by those eight pixels.
   while an edge or a cut is dragged, issue #361. On the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
-  clip's short is where the clip says it went, in the folder **Shorts**
-  named at the time, so Render says Render again and Show in folder shows
-  it there. A short removed or written over by hand is no longer
-  rendered, and a file of the same name that another episode put there
-  is not this clip's. A short there is the one file outside the episode's work folder
+  clip was rendered, as its clip set noted when the short was written, so
+  the green dot, the green mark and Render again stay after the short is
+  uploaded and removed from its folder, issue #384. Show in folder shows
+  the short where it went, in the folder **Shorts** named at the time,
+  and only while it is still there: a short removed or written over by
+  hand is no longer the clip's short, and a file of the same name that
+  another episode put there is not this clip's. A short there is the one file outside the episode's work folder
   the app shows or opens, because a clip of the episode made it.
   Above that row, the clip up close:
     - The arrow keys step the playhead one frame of the episode, and one

@@ -129,7 +129,8 @@ const clip = (n: number, start: number, title: string, rendered: boolean) => {
     end: last,
     segments,
     rejected: false,
-    rendered: rendered ? "/tmp/out.mp4" : undefined,
+    rendered,
+    short: rendered ? "/tmp/out.mp4" : undefined,
     captionY: 300,
     captionYMoved: false,
     // Only the moments inside a kept piece, the way the engine reads them.

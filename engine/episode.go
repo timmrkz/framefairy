@@ -144,7 +144,7 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	st.Plans = PlanSummaries(fsys, logs)
 	for _, plan := range st.Plans {
 		for _, c := range plan.clips {
-			if shortOf(plan.plan, c) != "" {
+			if renderedOf(plan.plan, c) {
 				st.Rendered++
 			}
 		}
@@ -413,8 +413,14 @@ type ClipView struct {
 	// Rotation, which the video preview turns its frames by.
 	Rotations []RotationView `json:"rotations"`
 	Rejected  bool           `json:"rejected"`
-	Rendered  string         `json:"rendered,omitempty"`
-	Preview   string         `json:"preview,omitempty"`
+	// Rendered says the clip was rendered, by the plan's record alone, see
+	// renderedOf, so it stays when the short is uploaded and removed from
+	// its folder.
+	Rendered bool `json:"rendered"`
+	// Short is where the clip's short is now, or "" when it is not there
+	// any more, see shortOf. Show in folder needs a file that is there.
+	Short   string `json:"short,omitempty"`
+	Preview string `json:"preview,omitempty"`
 	// CaptionY is where the caption line of this clip sits, as the distance
 	// from the bottom of a 1080x1920 frame, when it was placed by hand.
 	CaptionY float64 `json:"captionY"`
@@ -534,7 +540,8 @@ func (s PlanSummary) View() *PlanView {
 		for _, s := range c.Segments {
 			v.Segments = append(v.Segments, SegmentView{s.Start, s.End, s.CropX, s.Moved, s.Rotate, cropMarkViews(s.Marks)})
 		}
-		v.Rendered = shortOf(plan, c)
+		v.Rendered = renderedOf(plan, c)
+		v.Short = shortOf(plan, c)
 		if prev := filepath.Join(work, "preview", v.Basename+".mp4"); isFile(disk, prev) {
 			v.Preview = prev
 		}
@@ -543,9 +550,9 @@ func (s PlanSummary) View() *PlanView {
 	return view
 }
 
-// shortOf is where a clip's short is, or "" when it has none. It is the one
-// answer to that: the clip list, the count of an episode's shorts and what
-// the app may show or open all ask it.
+// shortOf is where a clip's short is, or "" when it has none there now.
+// It is the one answer to that: what the app may show or open asks it.
+// Whether the clip was rendered at all is renderedOf's to say.
 //
 // The plan says where each clip was last rendered, see recordShort,
 // because the folder the settings name for shorts can change after a
@@ -570,6 +577,15 @@ func shortOf(plan Plan, c Clip) string {
 		return ""
 	}
 	return short
+}
+
+// renderedOf says whether a clip was rendered. It is the plan's record
+// alone, see recordShort, and not the file: a short is uploaded and then
+// removed from its folder, or written over by hand, and the clip was
+// rendered all the same. Where the short is now is shortOf's to say.
+func renderedOf(plan Plan, c Clip) bool {
+	_, ok := recordOf(plan, c)
+	return ok
 }
 
 // shortRecord is what a plan says of a clip's short, see recordShort.

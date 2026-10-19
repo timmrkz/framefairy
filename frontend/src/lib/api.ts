@@ -271,7 +271,11 @@ export interface ClipView {
   // by, see lib/rotate.ts.
   rotations?: Rotation[];
   rejected: boolean;
-  rendered?: string;
+  // The clip was rendered, by what its plan noted at the time, so it stays
+  // when the short is uploaded and removed from its folder.
+  rendered: boolean;
+  // Where the short is now, when it is still there.
+  short?: string;
   preview?: string;
   // Where the caption line of this clip sits, as the distance from the
   // bottom of a 1080x1920 frame, when it was placed by hand.
