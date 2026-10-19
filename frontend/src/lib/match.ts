@@ -75,9 +75,9 @@ let answers: { typed: string; of: { a: string; seen: Map<string, boolean> }[] } 
 // in the clip column, as the words to set in bold, from and to in the
 // text, or null where it does not answer. A sentence answers when it holds
 // what was typed, and the words that hold it are bold. Otherwise, when
-// fuzzy, every word typed has to find a word of the sentence the way a font
-// finds its name, see matches, and every word found is bold. Nothing typed
-// answers with nothing bold.
+// fuzzy, every word typed has to be a word of the sentence typed with a
+// slip, see near, and every word found is bold. Nothing typed answers with
+// nothing bold.
 export function found(text: string, typed: string, fuzzy = true): [number, number][] | null {
   const want = typed.trim().toLowerCase().replace(/\s+/g, " ");
   if (!want) return [];
@@ -102,10 +102,46 @@ export function found(text: string, typed: string, fuzzy = true): [number, numbe
     for (let k = 0; k < words.length; k++) {
       const bare = words[k].bare;
       let yes = seen.get(bare);
-      if (yes === undefined) seen.set(bare, (yes = matches(bare, a)));
+      if (yes === undefined) seen.set(bare, (yes = near(bare.toLowerCase(), a)));
       if (yes) any = bold[k] = true;
     }
     if (!any) return null;
   }
   return words.filter((_, k) => bold[k]).map((w) => [w.from, w.to]);
+}
+
+// Whether a word of the transcript is the word typed, typed with a slip:
+// a letter too many, too few, wrong, or two letters swapped. A word of
+// up to seven letters may have one slip and a longer one two, and two
+// letters are too few to have any. A word typed from five letters on
+// may also be the start of a longer word, so a slip while typing does
+// not lose the word before it is finished. The font list's way of
+// finding a name, by its letters in order with gaps, is not used here:
+// a transcript has thousands of words, and ernste found
+// Verteidigungsministers that way.
+export function near(word: string, typed: string): boolean {
+  if (typed.length < 3) return false;
+  const slips = typed.length <= 7 ? 1 : 2;
+  if (Math.abs(word.length - typed.length) <= slips && apart(word, typed, slips) <= slips) return true;
+  return typed.length >= 5 && word.length > typed.length && apart(word.slice(0, typed.length), typed, slips) <= slips;
+}
+
+// How many slips apart two words are, letters added, taken away, changed
+// or swapped with the one beside it, counted up to most and no further.
+function apart(a: string, b: string, most: number): number {
+  const rows = [new Array<number>(b.length + 1).fill(0).map((_, j) => j)];
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    let least = i;
+    for (let j = 1; j <= b.length; j++) {
+      const change = a[i - 1] === b[j - 1] ? 0 : 1;
+      let d = Math.min(rows[i - 1][j] + 1, row[j - 1] + 1, rows[i - 1][j - 1] + change);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d = Math.min(d, rows[i - 2][j - 2] + 1);
+      row.push(d);
+      least = Math.min(least, d);
+    }
+    if (least > most) return most + 1;
+    rows.push(row);
+  }
+  return rows[a.length][b.length];
 }

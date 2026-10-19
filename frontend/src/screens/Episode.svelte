@@ -3341,6 +3341,15 @@
                     e.stopPropagation();
                     escapeSaying();
                   }
+                  // A space at the start of nothing is no search, so with
+                  // nothing typed the space bar plays and stops, and the
+                  // field lets go of the keyboard, found by Tim. The
+                  // player hears the same key on the window after this,
+                  // with the keyboard back in the workspace.
+                  if (e.code === "Space" && !e.shiftKey && !sayTyped.trim()) {
+                    e.preventDefault();
+                    sayField?.blur();
+                  }
                 }}
               >
                 {#if sayTyped.trim()}
@@ -3405,6 +3414,7 @@
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
                 playhead={time}
+                playing={!paused}
                 failed={sentencesFailed}
                 onseek={(at, clip) => {
                   // A sentence of a clip makes that clip the one worked on,

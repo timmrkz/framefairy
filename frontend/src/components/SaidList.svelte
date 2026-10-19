@@ -21,6 +21,7 @@
     selected = "",
     chosen = 0,
     playhead = 0,
+    playing = false,
     failed = null,
     matches = $bindable(0),
     onhover,
@@ -42,6 +43,9 @@
     chosen?: number;
     // Where the playhead is. The list follows it, see below.
     playhead?: number;
+    // Whether the video plays. Playing starts with the card of the
+    // playhead at the top, wherever the hand had scrolled.
+    playing?: boolean;
     // Why the cards could not be read, said in the list itself, the place
     // they would have been in, until the next read works.
     failed?: string | null;
@@ -63,12 +67,29 @@
   }
 
   // What is typed is a new list, read from its top. A list scrolled half
-  // way down before typing showed the answers from half way down.
+  // way down before typing showed the answers from half way down. A search
+  // let go of, cleared or taken back with Escape, is the playhead's list
+  // again, at the card of the playhead: the one it stood at before the
+  // search, or the one clicked in it. It went back to the top of the
+  // whole transcript, found by Tim.
   let typedWas: string | null = null;
   $effect(() => {
     const now = typed;
-    if (typedWas !== null && now !== typedWas) scroller()?.scrollTo({ top: 0 });
+    const was = typedWas;
     typedWas = now;
+    if (was === null || now === was) return;
+    if (now.trim() || !was.trim()) {
+      scroller()?.scrollTo({ top: 0 });
+      return;
+    }
+    untrack(() => follow(true));
+  });
+
+  // Playing starts at the card of the playhead. The playhead stood in it
+  // already, so nothing moved the list, and the hand had scrolled away:
+  // the list only caught up at the next caption, found by Tim.
+  $effect(() => {
+    if (playing) untrack(() => follow(true));
   });
 
   // A clip chosen on the range picker or the clip timeline while the
@@ -99,18 +120,24 @@
   // the list a row cannot stand at the top, and two rows look the same.
   let followed = $state<string | null | undefined>(undefined);
   $effect(() => {
-    const t = playhead;
+    void playhead;
     // Cards read anew are followed too: the search opens on the cards it
     // read last, and the ones read as it opens may be cut otherwise.
     void sentences;
-    const key = untrack(() => rowAt(t)?.key ?? null);
-    const was = untrack(() => followed);
+    untrack(() => follow(false));
+  });
+
+  // The card of the playhead to the top, when the playhead came into
+  // another card, or always.
+  function follow(always: boolean) {
+    const key = rowAt(playhead)?.key ?? null;
+    const was = followed;
     followed = key;
     // The search opens at the playhead, or at its top.
-    if (was === undefined && !key) scroller()?.scrollTo({ top: 0 });
-    if (!key || key === was) return;
+    if (!key && (was === undefined || always)) scroller()?.scrollTo({ top: 0 });
+    if (!key || (key === was && !always)) return;
     toTop(key);
-  });
+  }
 
   // The row the playhead is in. Where nothing is said, the next row, so a
   // clip chosen goes to its first caption, unless the playhead is in a
@@ -157,9 +184,10 @@
   }
 
   // The cards that hold what was typed, and only where none does the
-  // cards that answer it the way a font answers its name. Three letters
-  // answer a lot of words that way, and in a video of an hour the cards
-  // that hold them were lost among cards that only share their letters.
+  // cards with the word typed with a slip, see near in lib/match.ts. Three
+  // letters answer a lot of words the way a font answers its name, and in
+  // a video of an hour the cards that hold them were lost among cards
+  // that only share their letters, found in the review of #367.
   const rows = $derived.by(() => {
     const out: Row[] = [];
     for (const fuzzy of [false, true]) {

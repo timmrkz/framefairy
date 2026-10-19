@@ -1963,13 +1963,16 @@ found is a place in the video, and I and O make a clip there.
   accent edge, the clip's name next to its time and its words a step
   below white. Every other card is in the grey of a label, and the words
   that answer what is typed are white in every card, so they stand out.
-- **Word for word first, then fuzzy.** With nothing typed, every card is
-  there. Typing keeps the cards that hold what was typed. Only where no
-  card holds it, the cards where every word typed finds a word the way the
-  font search finds a name, `found` in `lib/match.ts`, so a typo still
-  finds its word. Three letters find a lot of words the fuzzy way, and in
-  a video of an hour the cards that hold them were lost among them, found
-  in the review of #367. The words that answer are bold. What is typed
+- **Word for word first, then with a slip.** With nothing typed, every
+  card is there. Typing keeps the cards that hold what was typed. Only
+  where no card holds it, the cards where every word typed is a word of
+  the card typed with a slip, a letter too many, too few, wrong or two
+  swapped, `near` in `lib/match.ts`. A word of up to seven letters may
+  have one slip and a longer one two, two letters none, and from five
+  letters on it may be the start of a longer word. So arrm finds Arm and
+  genomen finds genommen. The font list's way of finding a name, by its
+  letters in order with gaps, found Verteidigungsministers for ernste in
+  a transcript, found by Tim. The words that answer are bold. What is typed
   is read from the top of the list, wherever the hand had scrolled it.
   The field says in grey, before its cross, how many cards match, the
   number fading in anew as it changes. Where nothing matches, the list
@@ -1985,10 +1988,22 @@ found is a place in the video, and I and O make a clip there.
   into the next caption, its card stands at the top, and in a pause
   between two captions of a clip the caption before stays until the next
   begins, found by Tim. Only the playhead moving moves the list, so the
-  hand can scroll it while the video stands. The search opens at the
-  playhead, and the clip list comes back where it was when the search
-  closes, the chosen clip in view: the two take turns in one scrolled
-  column, and each came back where the other had been.
+  hand can scroll it while the video stands, and playing starts with the
+  card of the playhead at the top again, wherever the hand had scrolled.
+  A search let go of, by Escape or by taking the words away, goes back to
+  the card of the playhead, the one it stood at before or the one clicked
+  in the search, never to the top of the whole transcript. The search
+  opens at the playhead, and the clip list comes back where it was when
+  the search closes, the chosen clip in view: the two take turns in one
+  scrolled column, and each came back where the other had been.
+- **The space bar still plays.** With nothing typed in the field, the
+  space bar plays and stops and the field lets go of the keyboard,
+  because a space at the start of nothing is no search, found by Tim.
+- **A press elsewhere closes a list.** A list open, the font list among
+  them, closes the moment anything else in the app is pressed, and the
+  keyboard goes to what was pressed, the way a menu on the Mac goes. The
+  font list open and the transcript button pressed left both open, with
+  the keyboard in the font list's field, found by Tim. See `Pick.svelte`.
 - **A failed read is said.** Cards that could not be read leave a line in
   the list, The transcript could not be read, with the reason under the
   pointer, until the next read works.

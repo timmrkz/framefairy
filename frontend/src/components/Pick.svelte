@@ -246,6 +246,35 @@
     said(`pick: Escape closed ${label} and let go of it`);
   }
 
+  // A press anywhere else closes the list at once and leaves the keyboard
+  // to what was pressed, the way a menu or a popover on the Mac goes when
+  // the hand goes elsewhere. The list's own close waits a moment after the
+  // press, and when the press moves the workspace, the transcript button
+  // opening its search for one, the list is laid out anew in that moment
+  // and forgets the press: it stayed open with the keyboard in its field,
+  // found by Tim. Nor does the keyboard go back to the trigger after it.
+  let pressedAway = false;
+  $effect(() => {
+    if (!open) return;
+    const press = (e: PointerEvent) => {
+      const at = e.target as Element | null;
+      if (!at?.closest || at.closest(".pick-list") || button?.contains(at)) return;
+      // Only a list to search takes the keyboard, and would give it back.
+      pressedAway = search !== undefined;
+      open = false;
+      onopenchange?.(false);
+      said(`pick: a press elsewhere closed ${label}`);
+    };
+    document.addEventListener("pointerdown", press, true);
+    return () => document.removeEventListener("pointerdown", press, true);
+  });
+  function stayAway(e: Event) {
+    if (!pressedAway) return false;
+    pressedAway = false;
+    e.preventDefault();
+    return true;
+  }
+
   function choose(next: string) {
     open = false;
     onopenchange?.(false);
@@ -325,7 +354,7 @@
         align={edge}
         onEscapeKeydown={() => (escaped = true)}
         onCloseAutoFocus={(e) => {
-          if (!escaped) return;
+          if (stayAway(e) || !escaped) return;
           e.preventDefault();
           letGo();
         }}

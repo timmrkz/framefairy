@@ -53,16 +53,32 @@ describe("found", () => {
     expect(bold(said, "mutt")).toEqual(["Mutter"]);
   });
 
-  it("finds every word typed somewhere in the sentence, the way a font finds its name", () => {
-    expect(bold(said, "arm mutter")).toEqual(["Mutter", "Arm"]);
+  it("finds a word typed with a letter too many, too few, wrong or swapped", () => {
+    // Tim typed arrm, armm and aarm for arm and found nothing.
+    expect(bold(said, "arrm")).toEqual(["Arm"]);
+    expect(bold(said, "armm")).toEqual(["Arm"]);
+    expect(bold(said, "aarm")).toEqual(["Arm"]);
     expect(bold(said, "genomen")).toEqual(["genommen"]);
+    expect(bold(said, "mtuter")).toEqual(["Mutter"]);
+    expect(bold(said, "arrm mutter")).toEqual(["Mutter", "Arm"]);
+    expect(bold("Das ist ernst gemeint.", "ernste")).toEqual(["ernst"]);
+    // The start of a long word with a slip in it, the way it reads while
+    // the rest is still being typed.
+    expect(bold("Die Verantwortung liegt bei uns.", "verantwotr")).toEqual(["Verantwortung"]);
+  });
+
+  it("never finds a word that only holds the letters typed somewhere in it", () => {
+    // Tim typed ernste and was shown Verteidigungsministers, Veranstalter
+    // and Quereinsteigermentalität.
+    expect(found("unter politischer Führung des Verteidigungsministers.", "ernste")).toBeNull();
+    expect(found("Und die sind auch in Amerika die Veranstalter?", "ernste")).toBeNull();
+    expect(found("Glaubst du, dass es so eine Art Quereinsteigermentalität braucht, um.", "ernste")).toBeNull();
+    expect(found("Die Anrufmaschine im Arbeitszimmer.", "arm")).toBeNull();
+    // Two letters are too few to have a slip in them.
+    expect(found(said, "ma")).toBeNull();
   });
 
   it("finds only what holds what was typed when not fuzzy", () => {
-    // Three letters find a lot of words the way a font finds its name, so
-    // the transcript asks for those only where nothing holds them.
-    expect(bold("Die Anrufmaschine im Arbeitszimmer.", "arm")).toEqual(["Anrufmaschine", "Arbeitszimmer"]);
-    expect(found("Die Anrufmaschine im Arbeitszimmer.", "arm", false)).toBeNull();
     expect(found(said, "arm", false)?.map(([a, b]) => said.slice(a, b))).toEqual(["Arm"]);
     expect(found(said, "genomen", false)).toBeNull();
   });

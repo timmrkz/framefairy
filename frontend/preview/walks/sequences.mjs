@@ -632,6 +632,7 @@
 //                      the clips back. A word of "*" is the longest word
 //                      of the first sentence
 //   ["said fails", "on"|"check"]
+//   ["font then transcript"]
 //                      "on" makes every read of the cards of what was said
 //                      fail. "check" opens the search and sees the list say
 //                      the transcript could not be read, with the reason
@@ -1377,6 +1378,13 @@ export const sequences = [
       ["holds", "Schulhoff"],
       ["search said", "Schulhoff"],
     ],
+  },
+  {
+    // Tim, 19 October: the font list open and the transcript button
+    // pressed left both open, the keyboard in the font list's field, and
+    // Escape closed the font list first, though it was opened first.
+    name: "the transcript button pressed with the font list open closes the list and takes the keyboard",
+    steps: [["font then transcript"]],
   },
   {
     // Found in the review of #367: the cards that could not be read left
@@ -8009,6 +8017,33 @@ for (const seq of toWalk) {
       // read again after. With "check", the search opens on cards that
       // cannot be read, says so in the list, and says nothing of it once
       // they can be read again.
+      case "font then transcript": {
+        // The font list open, then the transcript button pressed, found
+        // by Tim: the list stayed open over the workspace with the
+        // keyboard still in its field, and Escape closed the list first.
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        await watch.step("click", s);
+        await page.waitForTimeout(300);
+        const seen = await page.evaluate(() => ({
+          list: !!document.querySelector(".pick-list"),
+          focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.placeholder ?? document.activeElement?.tagName ?? null,
+          field: !!document.querySelector(".listhead .search input"),
+        }));
+        console.log(JSON.stringify(seen));
+        if (seen.list) wrong = "the font list stayed open after the transcript button was pressed";
+        else if (!seen.field) wrong = "the transcript button opened no search";
+        else if (seen.focused !== "Search transcript") wrong = `the keyboard is in ${seen.focused}, not the transcript's field`;
+        if (!wrong) {
+          await page.keyboard.press("Escape");
+          await watch.step("press", s);
+          const after = await page.evaluate(() => !!document.querySelector(".listhead .search input"));
+          if (after) wrong = "Escape did not close the transcript search";
+        }
+        break;
+      }
       case "said fails": {
         if (arg === "on") {
           await page.route("**/call", (route) => {
@@ -8334,6 +8369,15 @@ for (const seq of toWalk) {
         const short = await page.evaluate(() => document.querySelectorAll("ol.said li[data-at]").length);
         const holdShort = sentences.filter((x) => x.text.toLowerCase().includes("sch")).length;
         if (!wrong && holdShort && short !== holdShort) wrong = `${short} cards answer sch, and ${holdShort} hold it`;
+        // The word typed with a letter twice, the way Tim typed arrm for
+        // arm, still finds every card that holds the word.
+        const slip = word.slice(0, 2) + word.slice(1);
+        await field.fill(slip);
+        await watch.step("type", s);
+        await page.waitForTimeout(200);
+        const slipped = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-at]")].map((li) => Number(li.dataset.at)));
+        const missed = holds.find((x) => !slipped.some((at) => Math.abs(at - x.start) < 0.0005));
+        if (!wrong && missed) wrong = `${slip} typed for ${word} finds ${slipped.length} cards and not "${missed.text}"`;
         // With nothing typed, the whole of what was said, and a dashed card
         // for every part not transcribed yet.
         await field.fill("");
@@ -8623,11 +8667,65 @@ for (const seq of toWalk) {
           const chosenLabel = await page.locator(".track .clipmark.selected").getAttribute("aria-label");
           const chosenKey = clips.find((k) => `Clip at ${Math.floor(k.start / 60)}:${String(Math.floor(k.start % 60)).padStart(2, "0")}` === chosenLabel)?.key;
           const own = sentences.filter((x) => x.clip === chosenKey);
+          // The card at the top of the list, and the one the list follows.
+          const topRow = () =>
+            page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const top = [...document.querySelectorAll("ol.said li[data-row]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+              const followed = document.querySelector("ol.said").dataset.followed ?? null;
+              const li = followed && document.querySelector(`ol.said li[data-row="${CSS.escape(followed)}"]`);
+              const end = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+              const shown = li && li.getBoundingClientRect().top >= box.top && li.getBoundingClientRect().bottom <= box.bottom;
+              return { top: top?.dataset.row ?? null, followed, clip: li?.dataset.clip ?? null, standing: !!followed && (top?.dataset.row === followed || (end && shown)) };
+            });
+          // A search let go of without moving the playhead goes back to the
+          // card of the playhead, by Escape or by taking the words away,
+          // not to the top of the whole transcript, found by Tim.
+          if (own.length >= 2) {
+            for (const how of ["Escape", "erase"]) {
+              const before = await topRow();
+              await field.fill(word);
+              await watch.step("type", s);
+              await page.waitForTimeout(200);
+              if (how === "Escape") await field.press("Escape");
+              else await field.fill("");
+              await watch.step(how === "Escape" ? "press" : "type", s);
+              await page.waitForTimeout(200);
+              const after = await topRow();
+              if (!wrong && (!before.standing || before.clip !== chosenKey))
+                wrong = `the clip chosen on the range picker left ${before.top} at the top, not its card ${before.followed}`;
+              else if (!wrong && (!after.standing || after.followed !== before.followed))
+                wrong = `a search let go of by ${how} left ${after.top} at the top of the list, not ${before.followed}, the card of the playhead it stood at before`;
+            }
+          }
           if (own.length < 2) wrong = `the chosen clip has ${own.length} cards, so playing into its next one could not be seen`;
-          else {
-            await page.evaluate(() => document.activeElement?.blur());
+          else if (!wrong) {
+            // The hand scrolls away, and the space bar is pressed in the
+            // empty search field: it plays, the field lets go of the
+            // keyboard, and the card of the playhead comes to the top at
+            // once, not at the next caption, found by Tim.
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              list.scrollTop = list.scrollHeight;
+            });
+            await field.focus();
             await page.keyboard.press("Space");
             await watch.step("press", s);
+            await page.waitForTimeout(250);
+            const started = await page.evaluate(() => ({
+              typed: document.querySelector(".listhead .search input")?.value ?? null,
+              focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
+              playing: document.querySelector('button[aria-label="Pause"]') !== null,
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+            }));
+            const first = await topRow();
+            if (started.typed !== "") wrong = `the space bar in the empty search field typed "${started.typed}"`;
+            else if (started.focused === "Search transcript") wrong = "the space bar in the empty search field left the keyboard in it";
+            else if (!started.playing) wrong = "the space bar in the empty search field did not play";
+            else if (started.at < own[1].start && !first.standing)
+              wrong = `playing from ${started.at.toFixed(2)} left ${first.top} at the top of a list scrolled away, not the card of the playhead ${first.followed}`;
             const until = Date.now() + 20000;
             let seen = null;
             while (Date.now() < until) {
@@ -8645,7 +8743,8 @@ for (const seq of toWalk) {
             await watch.step("press", s);
             // The card the playhead is in, or the one before it in a pause.
             const now = own.filter((x) => x.start <= seen.at).at(-1);
-            if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
+            if (wrong);
+            else if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
             else if (seen.top === null || Math.abs(seen.top - now.start) > 0.0005 || seen.clip !== chosenKey)
               wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card" : `the card at ${seen.top.toFixed(2)}`} at the top of the list, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
           }
