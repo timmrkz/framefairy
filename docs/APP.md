@@ -2966,7 +2966,12 @@ a word can be corrected while the person talks on, and what is heard
 next follows it. The Go side is told with `SettleListening`. What is
 typed right at the end of what was said settles it the same way and
 becomes part of it, so what is said next goes after the typing, not in
-front of it. Typing anywhere else, wherever the arrow keys or a click
+front of it, and pushes the cursor along again once more is heard.
+Shift+Enter there goes in the same way, as text, so what is said next
+starts on the new line, issue #373. WebKit typed a second Shift+Enter
+after the words being heard, and the kept words with new lines in them
+became blocks of their own, which showed as an empty line at the end.
+New lines are text in the field, wherever they come from. Typing anywhere else, wherever the arrow keys or a click
 put the cursor, is plain typing, and what is said next still goes at
 the end of what was said. What was said is one piece of the field that
 is never split, so Stop, Enter and Escape always take all of it. It was
@@ -2980,7 +2985,13 @@ grey, and can be corrected while the person talks on. Settled words are
 put in by hand rather than as typing, so Cmd+Z and Cmd+Y while talking
 undo and redo only what was typed. **Stop** or Enter keeps all of it,
 the last piece a moment later, written in as one step Cmd+Z takes back
-and Cmd+Shift+Z brings back again. Escape keeps it too, the way it ends
+and Cmd+Shift+Z brings back again. The cursor stays where the person
+has it while the last piece is written in: Tim pressed Enter at once
+after ending a dictation, for a new line, and the cursor was put back in
+front of it, issue #373. Until then the cursor stays drawn after the
+words, where it was, and the field's own cursor takes over only where a
+key or a click puts it: WebKit drew its own at the front of the line or
+past the words, and it jumped back once they came. Escape keeps it too, the way it ends
 Dictation on a Mac. It removed everything said once, as on claude.ai,
 and Tim lost a long report to an Escape meant for the app, with nothing
 Cmd+Z could bring back, issue #355. It also
