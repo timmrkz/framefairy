@@ -292,6 +292,12 @@ export class AppFrames {
   // them the kept frames let go of first, for aheadLost.
   private aheadRead = new Set<number>();
   private aheadEvicted = new Set<number>();
+  // The cards' frames, by rank, in the order they are read, those kept
+  // whatever else comes, and those asked for already, see cards.
+  private cardOrder: number[] = [];
+  private cardRanks = new Set<number>();
+  private cardTried = new Set<number>();
+  private cardSize = "";
   // first is the size the first stream was opened at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
   // ones, for the walks. aheadLost counts the frames the hand asked for
@@ -388,40 +394,79 @@ export class AppFrames {
     this.aheadNow();
   }
 
+  // The first frames of the clips on the cards, by rank, the likeliest to
+  // be clicked first: each is read once nothing else is wanted, after the
+  // frames the hand asked for and those of the words either side of the
+  // playhead, and kept for as long as its card is there. Plays and steps
+  // never push one out, see keep. Each call replaces the ones before, and
+  // the frames of cards no longer given are kept no longer. Tim asked for
+  // every clip on the cards to be ready to show, issue #383.
+  cards(ranks: number[]) {
+    const order = ranks.filter((r) => r >= 0);
+    if (order.join() !== this.cardOrder.join()) this.cardTried.clear();
+    this.cardOrder = order;
+    this.cardRanks = new Set(order);
+    this.aheadNow();
+  }
+
   // Asks the frames read ahead once the hand waits for nothing, one at a
-  // time, in the order given. They were asked all at once, and with the
-  // first frames of the clips next to the one chosen among them, a click
-  // on a card waited for its frame behind three seeks of the decoder and
-  // streams closed and opened again for the rest, issue #383.
+  // time, in the order given, and then the cards' frames, one at a time.
+  // They were asked all at once, and with the first frames of the clips
+  // next to the one chosen among them, a click on a card waited for its
+  // frame behind three seeks of the decoder and streams closed and opened
+  // again for the rest, issue #383.
   aheadNow() {
-    const ranks = this.aheadWanted;
-    if (!ranks || this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
-    const { width, height } = this.size();
+    if (this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
+    const ranks = this.aheadWanted ?? [];
     for (let rank = ranks.shift(); rank !== undefined; rank = ranks.shift()) {
-      const have = this.kept.get(rank);
-      if (rank < 0 || (have && have.width === width && have.height === height)) continue;
-      const w: Waiter = {
-        rank,
-        seq: ++this.asked,
-        ahead: true,
-        done: () => {
-          this.aheadOf.delete(w);
-          queueMicrotask(() => this.aheadNow());
-        },
-      };
-      this.aheadOf.add(w);
-      this.aheadRead.add(rank);
-      if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
-      this.stats.ahead++;
-      this.route(w);
+      if (rank < 0 || this.has(rank)) continue;
+      this.read(rank, false);
       return;
     }
     this.aheadWanted = null;
+    // A frame tried at another size is tried again at this one.
+    const { width, height } = this.size();
+    if (`${width}x${height}` !== this.cardSize) this.cardTried.clear();
+    this.cardSize = `${width}x${height}`;
+    const card = this.cardOrder.find((r) => !this.has(r) && !this.cardTried.has(r));
+    if (card === undefined) return;
+    this.cardTried.add(card);
+    this.read(card, true);
   }
 
-  // Whether frames are still to be read ahead, for the walks.
+  // Whether the frame of a rank is kept at the size frames are read at.
+  private has(rank: number): boolean {
+    const f = this.kept.get(rank);
+    const { width, height } = this.size();
+    return !!f && f.width === width && f.height === height;
+  }
+
+  // Reads one frame ahead of the hand: a card's, which is tried once
+  // unless the hand withdrew it on the way, or another.
+  private read(rank: number, card: boolean) {
+    const w: Waiter = {
+      rank,
+      seq: ++this.asked,
+      ahead: true,
+      done: () => {
+        this.aheadOf.delete(w);
+        if (card && w.gone) this.cardTried.delete(rank);
+        queueMicrotask(() => this.aheadNow());
+      },
+    };
+    this.aheadOf.add(w);
+    this.aheadRead.add(rank);
+    if (this.aheadRead.size > 256) this.aheadRead.delete(this.aheadRead.values().next().value!);
+    this.stats.ahead++;
+    this.route(w);
+  }
+
+  // Whether frames are still to be read ahead, the cards' among them, for
+  // the walks.
   get readingAhead(): boolean {
-    return this.aheadOf.size > 0 || !!this.aheadWanted?.length;
+    return (
+      this.aheadOf.size > 0 || !!this.aheadWanted?.length || this.cardOrder.some((r) => !this.has(r) && !this.cardTried.has(r))
+    );
   }
 
   // The hand asks again: what was read ahead for where it was is not
@@ -496,10 +541,23 @@ export class AppFrames {
     }
     this.kept.set(rank, frame);
     this.keptBytes += bytes(frame);
+    // The cards' frames are kept apart from the count, and never let go of
+    // for a newer frame: their number is held to what the memory allows
+    // by whoever gives them, see Player.ahead.
+    let free = this.keptBytes;
+    let count = this.kept.size;
+    for (const [r, f] of this.kept)
+      if (this.cardRanks.has(r)) {
+        free -= bytes(f);
+        count--;
+      }
     for (const [r, f] of this.kept) {
-      if (this.keptBytes <= KEPT_BYTES && this.kept.size <= KEPT_FRAMES) break;
+      if (free <= KEPT_BYTES && count <= KEPT_FRAMES) break;
+      if (this.cardRanks.has(r)) continue;
       this.kept.delete(r);
       this.keptBytes -= bytes(f);
+      free -= bytes(f);
+      count--;
       f.close();
       if (this.aheadRead.delete(r)) {
         this.aheadEvicted.add(r);

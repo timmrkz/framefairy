@@ -204,11 +204,15 @@ closed for standing unused.
   goes to next, plan row 2.269: paused with nothing under the hand, the
   first frame of the word after the playhead and of the word before, the
   way Shift and an arrow walk, once the frame the hand asked for has
-  come, see `AppFrames.ahead`. After them come the first frames of the
-  clips whose cards stand nearest the one chosen, the card under the
-  pointer first, with their captions, so a card clicked puts up its clip
-  from what was read, issue #383. They are read one at a time, so a click
-  that comes before they are in waits behind one read and not three. A
+  come, see `AppFrames.ahead`. After them come the first frames of
+  the clips on the cards, the card under the pointer first and then the
+  cards nearest the one chosen, with their captions, so a card clicked
+  puts up its clip from what was read, issue #383. They are read once the
+  workspace is on screen, a clip a search finds or Mark In makes as it
+  comes, and kept for as long as the card is there, apart from the frames
+  a play or a step keeps, as many as 400 MB holds, `CARDS_BYTES` in
+  `Player.svelte`. Everything read ahead goes one at a time, so a click
+  that comes before it is in waits behind one read and not three. A
   jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told
   the moment before which nothing is wanted, `next` with a skip, so the

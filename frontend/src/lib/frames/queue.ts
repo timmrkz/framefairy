@@ -728,7 +728,7 @@ export class FrameQueue {
 
   // The size a frame is decoded at: the canvas's, no larger than the
   // file's own.
-  private previewSize(): { width: number; height: number } {
+  previewSize(): { width: number; height: number } {
     const v = this.video!;
     const scale = Math.min(1, this.canvas.width / v.width, this.canvas.height / v.height);
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -914,15 +914,13 @@ export class FrameQueue {
   // The moments the hand is likely to step to next while paused, the first
   // frame of the word after the playhead and of the word before: their
   // frames are read while it rests, see AppFrames.ahead. Each is the first
-  // frame a play from it shows, the frame the step's cue asks for. After
-  // them the first frames of other clips, at their starts, which a click on
-  // their cards puts up, see firstFrameAt.
-  ahead(times: number[], clips: number[] = []) {
+  // frame a play from it shows, the frame the step's cue asks for.
+  ahead(times: number[]) {
     if (this.closed || (this.state !== "paused" && this.state !== "cued")) return;
     const gesture = this.gestures;
     // Asked again for the same moments with no gesture between: the frames
     // are on their way or kept already.
-    const key = `${gesture} ${times.join(" ")} ${clips.join(" ")}`;
+    const key = `${gesture} ${times.join(" ")}`;
     if (key === this.aheadKey) return;
     this.aheadKey = key;
     this.ready.then(
@@ -935,7 +933,21 @@ export class FrameQueue {
           plan.extend(p0 + this.video!.frame);
           return plan.need(0)?.rank ?? rankAt(s, at);
         });
-        this.app.ahead([...ranks, ...clips.map((at) => rankAt(s, at))]);
+        this.app.ahead(ranks);
+      },
+      () => {},
+    );
+  }
+
+  // The clips on the cards, by their starts, the likeliest to be clicked
+  // first: the frame each opens on is read once nothing else is wanted and
+  // held for a click on its card, see AppFrames.cards.
+  cards(starts: number[]) {
+    this.ready.then(
+      () => {
+        if (this.closed || !this.app) return;
+        const s = this.video!.samples;
+        this.app.cards(starts.map((at) => rankAt(s, at)));
       },
       () => {},
     );

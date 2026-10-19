@@ -1679,53 +1679,56 @@
   // new clip's moments.
   let captionsOf = $state<string | null>(null);
 
-  // The clips a click is likely to pick next: the card under the pointer,
-  // then the cards nearest the one chosen, as many as CLIPS_AHEAD. Their
-  // captions are asked for while the hand rests, and the video preview
-  // reads their first frames and lays out those captions over them, so a
-  // card clicked puts up its clip at once, see Player.ahead. On a video of
-  // hours a card clicked for the first time took half a second, issue #383.
-  // The frames read ahead are few, see KEPT_FRAMES in lib/frames/app.ts,
-  // so the cards furthest away are left to be read when they are clicked.
-  const CLIPS_AHEAD = 6;
+  // The clips on the cards, the likeliest to be clicked first: the card
+  // under the pointer, then the cards nearest the one chosen. Their
+  // captions are asked for one at a time once the workspace is on screen,
+  // and the video preview reads the frame each opens on and lays out its
+  // captions over it, so a card clicked puts up its clip at once, see
+  // Player.ahead. A clip a search finds or Mark In makes joins them as it
+  // comes. On a video of hours a card clicked for the first time took half
+  // a second, issue #383, and Tim asked for every clip to be ready.
   // Their captions, by the clip as it is: every edit replaces the clip, so
   // what is kept for one is what asking again would give, see captions.
   const viewsAhead = new WeakMap<ClipEntry, CaptionsView>();
   const viewsAsked = new WeakSet<ClipEntry>();
+  let viewAsking = false;
   // The words either side of the playhead the clip timeline asked to be
   // read ahead last, which go first.
   let wordsAhead: number[] = [];
   function readAhead(times = wordsAhead) {
     wordsAhead = times;
     untrack(() => {
-      if (!player) return;
+      if (!player || !ready) return;
       const list = shown.filter((c) => !c.rejected);
       const here = Math.max(0, list.findIndex((c) => c.key === current?.key));
-      const near = list
+      const cards = list
         .map((c, i) => ({ c, far: c.key === hovered ? -1 : Math.abs(i - here) + (i < here ? 0.5 : 0) }))
         .filter(({ c }) => c.key !== current?.key)
         .sort((a, b) => a.far - b.far)
-        .slice(0, CLIPS_AHEAD)
         .map(({ c }) => c);
-      for (const c of near) {
-        if (viewsAsked.has(c)) continue;
-        viewsAsked.add(c);
+      // One captions call at a time, the likeliest card first.
+      const next = viewAsking ? undefined : cards.find((c) => !viewsAsked.has(c));
+      if (next) {
+        viewAsking = true;
+        viewsAsked.add(next);
         api
-          .captions(path, c.plan, c.id)
+          .captions(path, next.plan, next.id)
           .then((view) => {
-            if (!view) return;
-            viewsAhead.set(c, view);
-            readAhead();
+            if (view) viewsAhead.set(next, view);
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            viewAsking = false;
+            readAhead();
+          });
       }
-      player.ahead(times, near.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
+      player.ahead(times, cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
     });
   }
   // Read again as the cards change, and as the pointer comes to one: the
   // card under it is the likeliest to be clicked.
   $effect(() => {
-    void [hovered, shown, current];
+    void [hovered, shown, current, ready];
     readAhead();
   });
 

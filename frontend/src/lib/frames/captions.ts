@@ -460,10 +460,12 @@ export class CaptionLayers {
   // their own layer is here, by the key of the layer, each with what tells
   // it the layer came, or will not, see ready.
   private promised = new Map<string, { want: Wanted; done: (() => void)[] }>();
-  // The layers of the first frames of the clips a click on their cards
-  // may put up next, with captions of their own, asked for one at a time
-  // while nothing else is on its way, see next.
+  // The layers of the first frames of the clips on the cards, each with
+  // captions of its own, still to be asked for, one at a time while
+  // nothing else is on its way, and the keys of all of them, which are
+  // kept whatever else comes, see next.
   private soon: Wanted[] = [];
+  private cards = new Set<string>();
 
   constructor(
     private came: () => void,
@@ -572,15 +574,15 @@ export class CaptionLayers {
     return { key: layerKey(this.askKey, frame, size), ask, frame, size };
   }
 
-  // The layers a click is likely to want next, each of other captions than
-  // the ones laid over the frame now: the first frame of each clip whose
-  // card is next to the one chosen, see Player.ahead. They are read while
-  // nothing else is on its way, and kept, so the frame of a card clicked
-  // finds its captions here. Each call replaces the ones before.
+  // The layers of the first frames of the clips on the cards, each of its
+  // own captions, the likeliest to be clicked first, see Player.ahead.
+  // They are read while nothing else is on its way, and kept for as long
+  // as their cards are there, so the frame of a card clicked finds its
+  // captions here. Each call replaces the ones before.
   next(wants: { ask: CaptionAsk; frame: number; size: [number, number] }[]) {
-    this.soon = wants
-      .map(({ ask, frame, size }) => ({ key: layerKey(keyOf(ask), frame, size), ask, frame, size }))
-      .filter((w) => !this.kept.has(w.key));
+    const all = wants.map(({ ask, frame, size }) => ({ key: layerKey(keyOf(ask), frame, size), ask, frame, size }));
+    this.cards = new Set(all.map((w) => w.key));
+    this.soon = all.filter((w) => !this.kept.has(w.key));
     this.more();
   }
 
@@ -589,10 +591,6 @@ export class CaptionLayers {
   // word step, and after anything else does not.
   sought(wordStep: boolean) {
     this.bounceFrom = wordStep ? this.shownAt : null;
-    // What was to be read for the cards next to the clip the hand was on
-    // waits for the hand to rest again. The one on its way goes on while
-    // it may be the layer of the card clicked, see set.
-    this.soon = [];
     // Playing, the frames that were coming are ahead of where the playhead
     // was, not where it went. The frame on screen waiting for its own
     // stays asked for, until another is drawn in its place. Paused, what
@@ -775,8 +773,8 @@ export class CaptionLayers {
       const a = this.ahead.shift()!;
       if (!this.kept.has(a.key)) this.fetch(a);
     }
-    // The layers of the clips a click may pick, one at a time and only
-    // while the video preview rests with nothing else to wait for: each is
+    // The layers of the clips on the cards, one at a time and only while
+    // the video preview rests with nothing else to wait for: each is
     // another caption file for libass, and the frame on screen comes first.
     if (this.going.size || this.waiting || this.promised.size || this.still?.paused() === false) return;
     for (let a = this.soon.shift(); a; a = this.soon.shift()) {
@@ -825,7 +823,15 @@ export class CaptionLayers {
         if (layer) {
           this.again.delete(key);
           this.kept.set(key, layer);
-          while (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value!);
+          // The cards' layers are kept apart from the count, see next.
+          let over = this.kept.size - KEPT;
+          for (const k of this.kept.keys()) if (this.cards.has(k)) over--;
+          for (const k of [...this.kept.keys()]) {
+            if (over <= 0) break;
+            if (this.cards.has(k)) continue;
+            this.kept.delete(k);
+            over--;
+          }
           this.keep(key);
         } else if (w?.key === key || this.promised.has(key)) {
           // Nothing is kept for a layer that did not come: the frame drawn

@@ -425,23 +425,38 @@
     sought = queue;
   }
 
+  // How much the clips on the cards may keep ready, frames and captions
+  // together: about 10 MB a clip at the size of Tim's video preview, so
+  // about 40 clips. A Mac with 8 GB runs the app as well as his.
+  const CARDS_BYTES = 400 << 20;
+
   // The moments the hand is likely to step to next, paused, whose frames
   // are read while it rests, see FrameQueue.ahead: the words either side
-  // of the playhead, and the first frame of each of the clips given, which
-  // a click on its card puts up, with its captions, whose layer is read
-  // too, see CaptionLayers.next. On a video of hours a card clicked for
-  // the first time took half a second to show its clip, issue #383.
+  // of the playhead. And the clips on the cards, the likeliest to be
+  // clicked first: the frame each opens on is read once nothing else is
+  // wanted, with the layer of its captions, and both are kept for a click
+  // on its card, see FrameQueue.cards and CaptionLayers.next. As many as
+  // CARDS_BYTES holds, the first given first. On a video of hours a card
+  // clicked for the first time took half a second, issue #383.
   export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = []) {
     if (!queue) return;
-    queue.ahead(times, clips.map((c) => c.clip.start));
+    queue.ahead(times);
+    const starts: number[] = [];
     const wants: Parameters<typeof layers.next>[0] = [];
+    let used = 0;
     for (const { clip: of, captions: view } of clips) {
-      const ask = askOf(of, view);
       const frame = queue.firstFrameAt(of.start);
-      const f = ask && frame !== null ? framingOf(frame, of) : null;
+      if (frame === null) break;
+      const pic = queue.previewSize();
+      const ask = askOf(of, view);
+      const f = ask ? framingOf(frame, of) : null;
       const size = f && layerSize(f);
-      if (ask && size) wants.push({ ask, frame: frame!, size });
+      used += pic.width * pic.height * 4 + (size ? size[0] * size[1] * 4 : 0);
+      if (used > CARDS_BYTES) break;
+      starts.push(of.start);
+      if (ask && size) wants.push({ ask, frame, size });
     }
+    queue.cards(starts);
     layers.next(wants);
   }
 

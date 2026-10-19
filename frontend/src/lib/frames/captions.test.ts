@@ -200,6 +200,29 @@ describe("the layers of the captions", () => {
     return { asked, answer };
   }
 
+  it("keeps the layers of the cards' clips while the frames of a play take the rest", async () => {
+    const { asked, answer } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    const card = { path: "/v.mp4", clip: "b", track: "card", drafts: {} };
+    layers.next([{ ask: card, frame: 84, size: [10, 20] }]);
+    await vi.waitFor(() => expect(asked.length).toBe(1));
+    answer.shift()!();
+    await vi.waitFor(() => expect(layers.busy).toBe(false));
+    // The clip chosen plays on through more frames than are kept besides.
+    const played = { path: "/v.mp4", clip: "a", track: "abc", drafts: {} };
+    layers.set(played);
+    for (let i = 0; i < 60; i++) {
+      layers.coming(i, [10, 20]);
+      answer.shift()!();
+      await vi.waitFor(() => expect(layers.busy).toBe(false));
+    }
+    expect(asked.length).toBe(61);
+    // The first of the play's is gone, the card's is there.
+    expect(layers.ready(0, [10, 20])).not.toBeNull();
+    layers.set(card);
+    expect(layers.ready(84, [10, 20])).toBeNull();
+  });
+
   it("keeps no layer that did not come, and asks for it once more", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {
