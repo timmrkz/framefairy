@@ -218,9 +218,10 @@ func (g Gesture) change(plan Plan, clip Clip, t *Transcript, keepPause float64) 
 	case "move":
 		// A cut is a gap between two pieces. Two pieces that meet have
 		// none, which is where a search parts a clip at a camera switch,
-		// and moving that edge would pull one shot over the other.
+		// and moving that edge would pull one shot over the other. That is
+		// checked once, on the pieces the move is made to, below.
 		i := g.Index
-		if i < 0 || i+1 >= len(clip.Segments) || clip.Segments[i+1].Start <= clip.Segments[i].End {
+		if i < 0 || i+1 >= len(clip.Segments) {
 			return nil, -1, renderErr("this clip has no cut number %d", i+1)
 		}
 		from, to := g.From, g.To

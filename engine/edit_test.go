@@ -506,11 +506,16 @@ func FuzzPlanEdits(f *testing.F) {
 		if len(script) > 3*planEditsRead {
 			script = script[:3*planEditsRead]
 		}
+		_, was, err := LoadClips(fsys, path)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for i := 0; i+2 < len(script); i += 3 {
 			clip := "01"
 			if script[i+1]%2 == 1 {
 				clip = "02"
 			}
+			var moved error
 			switch script[i] % 10 {
 			case 9:
 				// Add at one moment, or move or remove the thumbnail at
@@ -529,7 +534,11 @@ func FuzzPlanEdits(f *testing.F) {
 			case 7:
 				_ = JoinCut(fsys, path, clip, at(script[i+1]), tr)
 			case 8:
-				_ = MoveCut(fsys, path, clip, int(script[i+1])%4,
+				// The cut is read from the bits above the one that picks
+				// the clip, so clip 02 is asked to move its camera switch,
+				// cut 0, too. With the cut read from the same bit, it
+				// only ever moved cuts 1 and 3, #271.
+				moved = MoveCut(fsys, path, clip, int(script[i+1]/2)%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
 				_ = TrimClip(fsys, path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
@@ -564,6 +573,16 @@ func FuzzPlanEdits(f *testing.F) {
 			if len(clips) == 0 {
 				t.Fatalf("step %d emptied the plan", i/3)
 			}
+			// A move moves the edges of a cut and makes no new one, so
+			// two pieces that meet at a camera switch still meet.
+			if script[i]%10 == 8 && moved == nil {
+				before, after := clipNamed(was, clip), clipNamed(clips, clip)
+				if len(after.Segments) != len(before.Segments) || len(ClipCuts(after)) != len(ClipCuts(before)) {
+					t.Fatalf("step %d moved a cut that was not there: %+v, then %+v",
+						i/3, before.Segments, after.Segments)
+				}
+			}
+			was = clips
 			for _, c := range clips {
 				if len(c.Thumbnails) > MaxThumbnails {
 					t.Fatalf("clip %s asks for %d pictures", c.ID, len(c.Thumbnails))
@@ -599,6 +618,16 @@ func FuzzPlanEdits(f *testing.F) {
 			}
 		}
 	})
+}
+
+// clipNamed is the clip of clips with the id, or none.
+func clipNamed(clips []Clip, id string) Clip {
+	for _, c := range clips {
+		if c.ID == id {
+			return c
+		}
+	}
+	return Clip{}
 }
 
 // The app makes one edit per click, and a click can land while the last one

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 // The default recipe is middle with the pauses marked, Tim's choice of
@@ -251,6 +253,50 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(WorkDir(source), "logs", "clips.json")); !os.IsNotExist(err) {
 		t.Error("the comparison wrote the episode's own plan")
+	}
+}
+
+// A file a search writes the moment it begins is the search's own. A
+// file's time comes from the system's coarse clock, a few milliseconds
+// behind time.Now, so judged by the clock such a file read as written
+// before the search began, and the comparison kept no prompt for it,
+// #365. A file the search did not write is not its own.
+//
+// On the real disk: the coarse clock the disk stamps a file with is what
+// this is about, and memory stamps with time.Now.
+func TestAFileWrittenAsTheSearchBeginsIsItsOwn(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	prompt := filepath.Join(dir, "plan-prompt.txt")
+	kept := filepath.Join(dir, "reply-before.json")
+	for _, path := range []string{prompt, kept} {
+		if err := afero.WriteFile(disk, path, []byte("the search before"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for round := range 200 {
+		before := writtenIn(disk, filepath.Join(dir, "*"))
+		// The prompts of two recipes are not the same length.
+		body := strings.Repeat("prompt ", 1+round%2)
+		if err := afero.WriteFile(disk, prompt, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		reply := filepath.Join(dir, fmt.Sprintf("reply-%d.json", round))
+		if err := afero.WriteFile(disk, reply, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !before.changed(disk, prompt) {
+			t.Fatalf("round %d: the prompt written as the search began reads as written before it", round)
+		}
+		if !before.changed(disk, reply) {
+			t.Fatalf("round %d: the answer the search saved reads as written before it", round)
+		}
+		if before.changed(disk, kept) {
+			t.Fatalf("round %d: an answer of the search before reads as this one's", round)
+		}
+		if before.changed(disk, filepath.Join(dir, "missing.json")) {
+			t.Fatalf("round %d: a file that is not there reads as written", round)
+		}
 	}
 }
 

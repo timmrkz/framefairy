@@ -310,11 +310,14 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 // quit runs on with nobody to stop it.
 func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 	t.Parallel()
-	var events, broken atomic.Int64
+	var events, broken, fell atomic.Int64
 	q := newQueue(memoryStore(), func(u JobUpdate) {
 		events.Add(1)
 		if u.Job.ID == "" || u.Job.Episode == "" || u.Job.Lane == "" || u.Job.State == "" {
 			broken.Add(1)
+		}
+		if u.Job.State == JobFailed && strings.Contains(u.Job.Error, "stopped unexpectedly") {
+			fell.Add(1)
 		}
 		// Some of the window's news cannot be delivered at all.
 		if strings.HasSuffix(u.Job.ID, "3") {
@@ -386,9 +389,23 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 		return &wg
 	}
 
+	// The hands go on until work that broke has run, and for 300 ms at
+	// least. A fixed 300 ms was not enough on a busy Mac runner: every
+	// lane sat on work that waits until it is called off, and none of the
+	// work that panics reached a lane, so the test proved nothing about
+	// a panic.
 	stop := make(chan struct{})
 	wg := hands(stop)
 	time.Sleep(300 * time.Millisecond)
+	deadline := time.Now().Add(20 * time.Second)
+	for fell.Load() == 0 {
+		if time.Now().After(deadline) {
+			close(stop)
+			wg.Wait()
+			t.Fatal("no work that broke reached a lane in 20 s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	close(stop)
 	wg.Wait()
 
@@ -402,7 +419,7 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 		job := q.add("/eps/d.mp4", kind, "After", quick)
 		after[job.ID] = job
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	deadline = time.Now().Add(20 * time.Second)
 	for len(after) > 0 {
 		for _, j := range q.list() {
 			if _, waited := after[j.ID]; waited && j.State == JobDone {

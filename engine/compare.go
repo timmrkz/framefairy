@@ -165,6 +165,13 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if o.Seed == 0 {
 			o.Seed = compareSeed
 		}
+		// What the search writes is told from what was there before by
+		// what was on disk before it, not by the clock: a file's time is
+		// the system's coarse clock, a few milliseconds behind time.Now,
+		// so a prompt written straight after the search began read as
+		// written before it, and the comparison kept none.
+		dir := filepath.Join(work, "experiments", name)
+		before := writtenIn(e.Files, filepath.Join(logs, "*"), filepath.Join(dir, "*"))
 		began := time.Now()
 		err := e.execute(ctx, o)
 		run := RecipeRun{Recipe: name, Seconds: time.Since(began).Seconds()}
@@ -176,18 +183,17 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		}
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.
-		dir := filepath.Join(work, "experiments", name)
 		if body, err := afero.ReadFile(e.Files, filepath.Join(logs, "plan-prompt.txt")); err == nil &&
-			!modifiedBefore(e.Files, filepath.Join(logs, "plan-prompt.txt"), began) {
+			before.changed(e.Files, filepath.Join(logs, "plan-prompt.txt")) {
 			run.PromptChars = runeLen(string(body))
 			keepCopy(e.Files, dir, "prompt.txt", body)
 		}
 		var reply string
-		reply, run.Use = lastLocalAnswer(e.Files, logs, began)
+		reply, run.Use = lastLocalAnswer(e.Files, logs, before)
 		if body, err := afero.ReadFile(e.Files, reply); reply != "" && err == nil {
 			keepCopy(e.Files, dir, "reply.json", body)
 		}
-		run.Plan = newestPlan(e.Files, dir, began)
+		run.Plan = newestPlan(e.Files, dir, before)
 		if run.Plan != "" {
 			heard, err := SavedTranscript(e.Files, opts.Source, logs, opts.ASRModel, opts.SilenceDB)
 			if err != nil {
@@ -214,10 +220,39 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 	return runs, report, nil
 }
 
-// modifiedBefore is true for a file last written before t, or not there.
-func modifiedBefore(fsys afero.Fs, path string, t time.Time) bool {
+// written is what was on disk before a search: when each file was last
+// written and how long it was. The length is there for a file written
+// again within one tick of the coarse clock, which keeps its time.
+type written map[string]writtenFile
+
+type writtenFile struct {
+	at   time.Time
+	size int64
+}
+
+// writtenIn notes every file that matches the patterns.
+func writtenIn(fsys afero.Fs, patterns ...string) written {
+	w := written{}
+	for _, pattern := range patterns {
+		matches, _ := afero.Glob(fsys, pattern)
+		for _, m := range matches {
+			if info, err := fsys.Stat(m); err == nil && !info.IsDir() {
+				w[m] = writtenFile{info.ModTime(), info.Size()}
+			}
+		}
+	}
+	return w
+}
+
+// changed is true for a file that is there now and was not before, or
+// was written since.
+func (w written) changed(fsys afero.Fs, path string) bool {
 	info, err := fsys.Stat(path)
-	return err != nil || info.ModTime().Before(t)
+	if err != nil {
+		return false
+	}
+	was, ok := w[path]
+	return !ok || !info.ModTime().Equal(was.at) || info.Size() != was.size
 }
 
 // keepCopy writes a copy into dir. A copy that cannot be written costs the
@@ -241,16 +276,16 @@ type modelUse struct {
 	Reading, Seconds                                     float64
 }
 
-// lastLocalAnswer finds the answer saved since began and reads what the
+// lastLocalAnswer finds the answer saved since before and reads what the
 // local model said about it. It is all zero for the API, and the path empty
 // for an answer reused.
-func lastLocalAnswer(fsys afero.Fs, logs string, began time.Time) (path string, use modelUse) {
+func lastLocalAnswer(fsys afero.Fs, logs string, before written) (path string, use modelUse) {
 	matches, _ := afero.Glob(fsys, filepath.Join(logs, "reply-*.json"))
 	var newest string
 	var at time.Time
 	for _, m := range matches {
 		info, err := fsys.Stat(m)
-		if err != nil || info.ModTime().Before(began) || info.ModTime().Before(at) {
+		if err != nil || !before.changed(fsys, m) || info.ModTime().Before(at) {
 			continue
 		}
 		newest, at = m, info.ModTime()
@@ -295,8 +330,8 @@ func lastLocalAnswer(fsys afero.Fs, logs string, began time.Time) (path string, 
 	return newest, use
 }
 
-// newestPlan is the plan written in dir since began.
-func newestPlan(fsys afero.Fs, dir string, began time.Time) string {
+// newestPlan is the plan written in dir since before.
+func newestPlan(fsys afero.Fs, dir string, before written) string {
 	matches, _ := afero.Glob(fsys, filepath.Join(dir, "clips*.json"))
 	sort.Slice(matches, func(a, b int) bool {
 		ia, _ := fsys.Stat(matches[a])
@@ -304,7 +339,7 @@ func newestPlan(fsys afero.Fs, dir string, began time.Time) string {
 		return ia != nil && ib != nil && ia.ModTime().After(ib.ModTime())
 	})
 	for _, m := range matches {
-		if info, err := fsys.Stat(m); err == nil && !info.ModTime().Before(began) {
+		if before.changed(fsys, m) {
 			return m
 		}
 	}
