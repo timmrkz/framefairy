@@ -55,8 +55,9 @@
     // The part not transcribed yet under the hand, by its place among
     // them, or -1, so the range picker lights the same part.
     onhoverhole?: (index: number) => void;
-    // A sentence clicked, with the clip it is named for, if any.
-    onseek: (at: number, clip: string | null) => void;
+    // A sentence clicked, with the clip it is named for, if any, or a card
+    // walked to with Shift and an arrow, with where it ends.
+    onseek: (at: number, clip: string | null, walked?: { end: number }) => void;
   } = $props();
 
   let list: HTMLOListElement;
@@ -78,6 +79,7 @@
     const was = typedWas;
     typedWas = now;
     if (was === null || now === was) return;
+    walkedTo = null;
     if (now.trim() || !was.trim()) {
       scroller()?.scrollTo({ top: 0 });
       return;
@@ -160,6 +162,28 @@
     return row;
   }
 
+  // Shift and the arrows up and down walk the cards shown, the way they
+  // walk the clip list while it is shown, so the answers to a search are
+  // gone through from the keyboard, found by Tim. The playhead goes onto
+  // each card and the list follows it there. The answers are walked from
+  // the first, down, or the last, up, and go round. The whole transcript
+  // is walked from the card of the playhead.
+  let walkedTo: string | null = null;
+  export function walk(step: 1 | -1) {
+    if (!rows.length) return;
+    let here = -1;
+    if (typed.trim()) here = rows.findIndex((r) => r.key === walkedTo);
+    else {
+      const at = rowAt(playhead);
+      here = at ? rows.indexOf(at) : -1;
+    }
+    const next = here < 0 ? (step > 0 ? 0 : rows.length - 1) : (here + step + rows.length) % rows.length;
+    const row = rows[next];
+    walkedTo = row.key;
+    if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
+    else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
+  }
+
   // The card of a row, at the top of the list. Where it is
   // is read once and never laid out from: every card above it is laid out
   // at its own height, so the place is exact, and the card stands where
@@ -238,6 +262,7 @@
         onpointerenter={() => onhoverhole?.(index)}
         onpointerleave={() => onhoverhole?.(-1)}
       >
+        <span class="dots" aria-hidden="true"></span>
         <span class="meta muted num">{clock(row.hole[0])} to {clock(row.hole[1])}</span>
         <span class="text">Not transcribed yet</span>
       </li>
@@ -398,6 +423,27 @@
 
   li.hole .text {
     color: var(--muted);
+  }
+
+  /* Its dots, faded in from the left, and all of it dotted under the
+     hand. The dashed edge stays, so a part only a few pixels wide on the
+     range picker still shows, where dots have no room, found by Tim. */
+  .dots {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--halftone);
+    mask-image: linear-gradient(90deg, transparent, #000 70%);
+    pointer-events: none;
+  }
+
+  li.hole:hover .dots {
+    mask-image: none;
+  }
+
+  li.hole .meta,
+  li.hole .text {
+    position: relative;
   }
 
   li.none {

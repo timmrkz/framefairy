@@ -1999,6 +1999,21 @@ found is a place in the video, and I and O make a clip there.
 - **The space bar still plays.** With nothing typed in the field, the
   space bar plays and stops and the field lets go of the keyboard,
   because a space at the start of nothing is no search, found by Tim.
+  Stopping gives the field the keyboard back, so what is typed next is a
+  search again, unless the keyboard or the hand went somewhere else
+  while it played.
+- **Shift and the arrows up and down walk the cards.** While the
+  transcript is in the column, they walk its cards the way they walk the
+  clip list when that is shown, from the field too. The playhead goes
+  onto each card and the list follows it there. The answers to what is
+  typed are walked from the first, down, or the last, up, and go round.
+  The whole transcript is walked from the card of the playhead. A search
+  walked and then let go of, by Escape, by taking the words away or by
+  its cross, puts the playhead and the chosen clip back where they stood
+  before the first step, the way a search through a document goes back
+  to where it began, found by Tim. Enter at a card walked to stays there,
+  and so does a card clicked or the playhead moved off the card walked
+  to, because then the person went where they meant to go.
 - **A press elsewhere closes a list.** A list open, the font list among
   them, closes the moment anything else in the app is pressed, and the
   keyboard goes to what was pressed, the way a menu on the Mac goes. The
@@ -2031,7 +2046,13 @@ found is a place in the video, and I and O make a clip there.
   a card's edge, and the hand on the card fills it with the grey of a
   card under the hand, which the dashes go into, the way every card's
   edge does. The part on the range picker fills with the same grey under
-  the range picker's own border, which stays.
+  the range picker's own border, which stays. Both are dotted, a halftone
+  grid, `--halftone` in `app.css`, that the transcript fades into: the
+  card's dots fade in from its left, and the range picker's over 24 px at
+  each end of the part, so a long part reads as dots and one a few pixels
+  wide is its dashed edge alone, which always shows, found by Tim. Under
+  the hand the whole part is dotted. Tim picked the dots from sixteen
+  textures.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim

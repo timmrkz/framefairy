@@ -8467,8 +8467,10 @@ for (const seq of toWalk) {
             const fill = document.querySelector(".track .unheard.lit");
             const edge = document.querySelector(".unheard-edge.lit");
             const ring = getComputedStyle(document.querySelector("ol.said li:not(.hole):not(.none)")).boxShadow;
+            const dots = document.querySelector("ol.said li.hole .dots");
             return {
               lit: !!fill && !!edge,
+              dots: [dots && getComputedStyle(dots), fill && getComputedStyle(fill, "::before")].map((d) => (d ? [d.backgroundImage, d.maskImage] : null)),
               card: [hole.borderTopColor, hole.backgroundColor],
               picker: fill && edge
                 ? [getComputedStyle(edge, "::before").borderTopColor, getComputedStyle(edge, "::after").borderTopColor, getComputedStyle(document.querySelector(".track")).borderTopColor]
@@ -8481,7 +8483,24 @@ for (const seq of toWalk) {
             getComputedStyle(document.querySelector("ol.said li.hole")).borderTopColor,
             getComputedStyle(document.querySelector(".unheard-edge"), "::after").borderTopColor,
           ]);
+          // Halftone dots fill both, faded in at rest, from the left on the
+          // card and over 24 px at each end on the range picker, and whole
+          // under the hand. The dashes stay, so a part a few pixels wide
+          // still shows, found by Tim.
+          const still = await page.evaluate(() =>
+            [document.querySelector("ol.said li.hole .dots"), document.querySelector(".track .unheard")].map((d, i) => {
+              if (!d) return null;
+              const st = i ? getComputedStyle(d, "::before") : getComputedStyle(d);
+              return [st.backgroundImage, st.maskImage];
+            }),
+          );
+          const dotted = (d) => !!d && d[0].includes("radial-gradient");
           if (!look.lit) wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+          else if (!still.every(dotted) || !look.dots.every(dotted))
+            wrong = `a part not transcribed yet is not dotted: at rest ${JSON.stringify(still)}, under the hand ${JSON.stringify(look.dots)}`;
+          else if (!still[0][1].includes("linear-gradient") || !still[1][1].includes("24px"))
+            wrong = `the dots of a part not transcribed yet do not fade in at rest: ${still[0][1]} on the card, ${still[1][1]} on the range picker`;
+          else if (look.dots.some((d) => d[1] !== "none")) wrong = `the dots under the hand are still faded: ${JSON.stringify(look.dots)}`;
           else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
           // On the range picker the border is the range picker's, and it
           // stays over the part lit, found by Tim.
@@ -8741,9 +8760,14 @@ for (const seq of toWalk) {
             }
             await page.keyboard.press("Space");
             await watch.step("press", s);
+            // Stopping gives the search field the keyboard back, the one
+            // the space bar took it from, found by Tim.
+            await page.waitForTimeout(200);
+            const stopped = await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null);
             // The card the playhead is in, or the one before it in a pause.
             const now = own.filter((x) => x.start <= seen.at).at(-1);
             if (wrong);
+            else if (stopped !== "Search transcript") wrong = `stopping with the space bar left the keyboard on ${stopped}, not back in the search field`;
             else if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
             else if (seen.top === null || Math.abs(seen.top - now.start) > 0.0005 || seen.clip !== chosenKey)
               wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card" : `the card at ${seen.top.toFixed(2)}`} at the top of the list, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
@@ -8793,6 +8817,53 @@ for (const seq of toWalk) {
             wrong = `a sentence of ${keyed.title || keyed.slug} clicked left ${after.chosen ?? "no clip"} chosen`;
           else if (!wrong && Math.abs(after.top - stood) > 1)
             wrong = `a sentence clicked moved the list ${(after.top - stood).toFixed(0)} px`;
+        }
+        // Shift and the arrows up and down walk the answers to a search,
+        // the playhead onto each and the list after it, and letting go of
+        // the search goes back to where the playhead and the chosen clip
+        // stood, unless Enter said to stay, found by Tim.
+        if (!wrong && holds.length >= 2) {
+          const where = () =>
+            page.evaluate(() => ({
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              chosen: document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label") ?? null,
+              followed: document.querySelector("ol.said")?.dataset.followed ?? null,
+              cards: [...document.querySelectorAll("ol.said li[data-row]")].map((li) => ({ row: li.dataset.row, at: Number(li.dataset.at) })),
+            }));
+          for (const stay of [false, true]) {
+            if (wrong) break;
+            await field.fill(word);
+            await watch.step("type", s);
+            await page.waitForTimeout(200);
+            const from = await where();
+            const went = [];
+            for (let i = 0; i < 2; i++) {
+              await field.press("Shift+ArrowDown");
+              await watch.step("press", s);
+              await page.waitForTimeout(250);
+              went.push(await where());
+            }
+            for (const [i, w] of went.entries()) {
+              const card = sentences.find((x) => Math.abs(x.start - from.cards[i].at) < 0.0005);
+              if (wrong) break;
+              if (!card || !(w.at >= card.start - 0.001 && w.at < card.end))
+                wrong = `Shift and the down arrow ${i + 1} times put the playhead at ${w.at.toFixed(2)}, not on answer ${i + 1} at ${from.cards[i].at.toFixed(2)}`;
+              else if (w.followed !== from.cards[i].row) wrong = `walked to ${from.cards[i].row}, the list follows ${w.followed}`;
+            }
+            if (wrong) break;
+            if (stay) {
+              await field.press("Enter");
+              await watch.step("press", s);
+            }
+            await field.press("Escape");
+            await watch.step("press", s);
+            await page.waitForTimeout(250);
+            const back = await where();
+            if (!stay && (Math.abs(back.at - from.at) > 0.05 || back.chosen !== from.chosen))
+              wrong = `a search walked and let go of by Escape left the playhead at ${back.at.toFixed(2)} in ${back.chosen}, not back at ${from.at.toFixed(2)} in ${from.chosen}`;
+            else if (stay && Math.abs(back.at - went[1].at) > 0.05)
+              wrong = `Enter at the answer walked to, then Escape, moved the playhead from ${went[1].at.toFixed(2)} to ${back.at.toFixed(2)}`;
+          }
         }
         // The keyboard on a card of what was typed, for Escape.
         await field.fill(word);

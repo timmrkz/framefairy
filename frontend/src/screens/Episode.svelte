@@ -407,6 +407,7 @@
   // said in the list until the next read works.
   let sentencesFailed = $state<string | null>(null);
   let sayField = $state<HTMLInputElement>();
+  let saidList = $state<{ walk: (step: 1 | -1) => void }>();
   const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
   // The parts every clip keeps, whose captions are cards of their own, so
   // the cards are read again when a clip changes, see engine.SaidCards.
@@ -500,6 +501,53 @@
       showChosen();
     });
   }
+  // Where the playhead and the chosen clip stood when Shift and an arrow
+  // first walked the answers to what is typed, and the card it was walked
+  // to last. A search let go of, by Escape, by erasing what was typed or
+  // by its cross, goes back there, the way a search through a document
+  // goes back to where it began, found by Tim. Unless the playhead left
+  // the card it was walked to, or a card was clicked, or Enter pressed:
+  // then the person went where they meant to go, and stays.
+  let sayFrom: { at: number; clip: string } | null = null;
+  let sayOn: [number, number] | null = null;
+  function walkSaid(step: 1 | -1) {
+    saidList?.walk(step);
+  }
+  let typedBefore = "";
+  $effect(() => {
+    const now = sayTyped.trim();
+    const was = typedBefore;
+    typedBefore = now;
+    if (now || !was) return;
+    untrack(() => {
+      const from = sayFrom;
+      const on = sayOn;
+      sayFrom = null;
+      sayOn = null;
+      if (!from || !on || time < on[0] - 0.05 || time >= on[1]) return;
+      said(`search what was said: let go of, back to ${from.at.toFixed(2)}${from.clip ? ` in ${from.clip}` : ""}`);
+      if (from.clip !== selected) {
+        if (from.clip) void select(from.clip, false, false);
+        else selected = "";
+      }
+      seekTo(from.at);
+    });
+  });
+
+  // The space bar in the field with nothing typed plays, and the field
+  // lets go of the keyboard for it. Stopping again gives the field the
+  // keyboard back, so what is typed next is a search, found by Tim. Not
+  // once the keyboard or the hand went somewhere else in between.
+  let sayRefocus = false;
+  $effect(() => {
+    if (!paused || !sayRefocus) return;
+    sayRefocus = false;
+    if (saying && !typing()) untrack(() => sayField?.focus());
+  });
+  function sayElsewhere(event: Event) {
+    if (event.target !== sayField) sayRefocus = false;
+  }
+
   // Escape takes back one step at a time: what was typed first, so the
   // whole of what was said is there again, and then the search itself.
   function escapeSaying() {
@@ -2759,6 +2807,12 @@
     // for themselves.
     if (keysElsewhere() || asleep(root)) return;
     if (document.activeElement?.getAttribute("role") === "slider") return;
+    // While the transcript is shown in the column, its cards are walked.
+    if (saying) {
+      event.preventDefault();
+      walkSaid(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
     event.preventDefault();
@@ -2821,7 +2875,11 @@
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
     window.addEventListener("keydown", sayKey);
+    window.addEventListener("focusin", sayElsewhere);
+    window.addEventListener("pointerdown", sayElsewhere, true);
     return () => {
+      window.removeEventListener("focusin", sayElsewhere);
+      window.removeEventListener("pointerdown", sayElsewhere, true);
       window.removeEventListener("keydown", walkClips);
       window.removeEventListener("keydown", sayKey);
       window.removeEventListener("keydown", thumbnailKey);
@@ -3349,6 +3407,20 @@
                   if (e.code === "Space" && !e.shiftKey && !sayTyped.trim()) {
                     e.preventDefault();
                     sayField?.blur();
+                    sayRefocus = paused;
+                  }
+                  // Shift and the arrows up and down walk the cards from
+                  // the field too, where they would select its text.
+                  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    walkSaid(e.key === "ArrowDown" ? 1 : -1);
+                  }
+                  // Enter stays at the card walked to.
+                  if (e.key === "Enter" && sayFrom) {
+                    e.preventDefault();
+                    said("search what was said: Enter stays at the card walked to");
+                    sayFrom = null;
                   }
                 }}
               >
@@ -3404,6 +3476,7 @@
           <div class="scroll list">
             {#if saying}
               <SaidList
+                bind:this={saidList}
                 sentences={saved.length ? sentences : []}
                 typed={sayTyped}
                 {unheard}
@@ -3416,7 +3489,11 @@
                 playhead={time}
                 playing={!paused}
                 failed={sentencesFailed}
-                onseek={(at, clip) => {
+                onseek={(at, clip, walked) => {
+                  if (walked && sayTyped.trim()) {
+                    sayFrom ??= { at: time, clip: selected };
+                    sayOn = [at, walked.end];
+                  } else if (!walked) sayFrom = null;
                   // A sentence of a clip makes that clip the one worked on,
                   // the way its mark does, found by Tim.
                   if (clip && clip !== selected) void select(clip, false, false);

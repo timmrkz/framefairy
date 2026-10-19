@@ -782,6 +782,21 @@
     background: var(--ink-2);
   }
 
+  /* Its dots, the card's, faded in from each end over a fixed length,
+     so a long part reads as dots and a part a few pixels wide is its
+     dashed edge alone. All of it dotted while its card is under the hand. */
+  .unheard::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--halftone);
+    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+
+  .unheard.lit::before {
+    mask-image: none;
+  }
+
   .unheard-edge.lit::before,
   .unheard-edge.lit::after {
     border-color: transparent;
