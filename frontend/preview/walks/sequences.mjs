@@ -1491,6 +1491,13 @@ export const sequences = [
     ],
   },
   {
+    // Found by Tim on 20 October: Shift and the down arrow stopped at the
+    // card before a part not transcribed yet, and the up arrow went past
+    // it. The speech model is held, so the part stays where it is.
+    name: "Shift and the arrows walk onto a part not transcribed yet and off it",
+    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
+  },
+  {
     // Found by Tim on 19 October: while the work heard a window, the parts
     // not transcribed yet gave way in thirds of it, each time the
     // transcript was saved. They give way as the work hears.
@@ -8671,7 +8678,7 @@ for (const seq of toWalk) {
           });
           edges.push(seen?.left ?? null);
           if (seen) dots.push(seen);
-          const status = await ask(page, "Status", path).catch(() => null);
+          const status = await ask(page, "Episode", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
           await page.waitForTimeout(150);
         }
@@ -8691,6 +8698,80 @@ for (const seq of toWalk) {
           else if (moving.some((d) => d.side !== 0))
             wrong = `the dots of the part giving way stop short of its edge, ${moving.find((d) => d.side !== 0).side} px in, so the edge does not wipe them`;
         }
+        break;
+      }
+      case "walk over a part": {
+        // Shift and the arrows walk onto a part not transcribed yet and off
+        // it again, one card at a step both ways. Down stopped at the card
+        // before it, and up went past it, found by Tim: that card ran on a
+        // little past where the hearing reached, as a word heard at the
+        // edge can, since the engine keeps a word by where it starts. So
+        // here the card before the part runs half a second on into it. The
+        // speech model is held, so the edge stays where it is, and the app
+        // is opened again so it reads the cards that way from the start.
+        const path = await episodeOn(page);
+        const call = async (route, name, args) => (await route.fetch({ postData: JSON.stringify({ name, args }) })).json();
+        const later = async (route) => {
+          const body = route.request().postDataJSON?.() ?? {};
+          if (!String(body.name ?? "").endsWith("Sentences")) return route.fallback();
+          const answer = await route.fetch();
+          const cards = await answer.json();
+          // Where the hearing has got to, saved or not, which is where the
+          // part begins.
+          const jobs = (await call(route, "Jobs", [])) ?? [];
+          const saved = (await call(route, "Episode", [path]))?.heard ?? [];
+          const edge = Math.max(
+            ...jobs.filter((j) => j.episode === path && j.progress?.covered).map((j) => j.progress.covered),
+            ...saved.filter(([a]) => a < 1).map(([, b]) => b),
+          );
+          const last = cards.filter((c) => c.start < edge).at(-1);
+          if (last && Number.isFinite(edge)) last.end = edge + 0.5;
+          return route.fulfill({ response: answer, json: cards });
+        };
+        await page.route("**/call", later);
+        await page.reload();
+        await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
+        await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
+        await settle(page);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li.hole");
+        const around = await page.evaluate(() => {
+          const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+          const i = cards.findIndex((li, i) => i && li.classList.contains("hole") && !cards[i - 1].classList.contains("hole"));
+          if (i < 0) return null;
+          return [cards[i - 1], cards[i], cards[(i + 1) % cards.length]].map((li) => li.dataset.row);
+        });
+        if (!around) {
+          wrong = "no part not transcribed yet with a card before it";
+          break;
+        }
+        // A step is done once the list has had a frame to follow the
+        // playhead: the key moves it at once, and the list follows in the
+        // same frame.
+        const stepped = async (press) => {
+          await press();
+          return page.evaluate(
+            () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(document.querySelector("ol.said").dataset.followed)))),
+          );
+        };
+        const keys = async (key) => {
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+        };
+        const went = [
+          await stepped(async () => {
+            await page.locator(`ol.said li[data-row="${around[0]}"] button.pick`).click();
+            await watch.step("click", s);
+          }),
+        ];
+        for (const key of ["Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowUp", "Shift+ArrowUp"]) went.push(await stepped(() => keys(key)));
+        await page.unroute("**/call", later);
+        const want = [around[0], around[1], around[2], around[1], around[0]];
+        console.log(JSON.stringify({ around, went }));
+        if (went.join(" ") !== want.join(" "))
+          wrong = `Shift and the arrows from the card before a part not transcribed yet went ${went.join(", ")}, not ${want.join(", ")}`;
         break;
       }
       case "heard some": {

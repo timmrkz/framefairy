@@ -198,8 +198,15 @@
     const own = chosen && chosen.start <= t && t < chosen.end ? rows.filter((r) => "sentence" in r && r.clip?.key === selected) : [];
     const among = own.length ? own : rows;
     const end = (r: Row) => ("hole" in r ? r.hole[1] : r.sentence.end);
-    const i = among.findIndex((r) => end(r) > t);
+    let i = among.findIndex((r) => end(r) > t);
     if (i < 0) return among.at(-1) ?? null;
+    // Two rows can hold the same moment at their edge: a card heard up to
+    // the edge of what was heard can run on a little past it, into the part
+    // not transcribed yet after it. The playhead is then in the row that
+    // began last, so a step onto that part lands in it. In the card before,
+    // Shift and the down arrow stood still there and the up arrow went past
+    // it, found by Tim.
+    while (among[i + 1] && among[i + 1].at <= t && end(among[i + 1]) > t) i++;
     const row = among[i];
     const before = among[i - 1];
     if (row.at > t && before && "sentence" in before && "sentence" in row && before.clip && before.clip.key === row.clip?.key)

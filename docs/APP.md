@@ -2073,7 +2073,12 @@ found is a place in the video, and I and O make a clip there.
   onto each card and the card comes just into view, the way a clip
   walked to does in the clip list. The answers to what is
   typed are walked from the first, down, or the last, up, and go round.
-  The whole transcript is walked from the card of the playhead. A search
+  The whole transcript is walked from the card of the playhead, a
+  "Not transcribed yet" card among them, one card at a step either way.
+  Where a card runs on a little into the part after it, the playhead put
+  at the start of that part is in the part, not in the card, so a step
+  down no longer stands still at the card before it and a step up no
+  longer goes past it, found by Tim. A search
   walked and then let go of, by Escape, by taking the words away or by
   its cross, puts the playhead and the chosen clip back where they stood
   before the first step, the way a search through a document goes back
