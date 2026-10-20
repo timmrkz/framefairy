@@ -156,6 +156,29 @@ func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 	}
 }
 
+// A part turned the way another part already is takes the crop placed on
+// that one, since the pieces turned alike share one crop. It stood in the
+// middle of the picture instead, the clip then had two crops turned 90,
+// and the fuzzing found it on main, #402.
+func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	rotate(t, fsys, path, 13.5)
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	rotate(t, fsys, path, 10.5)
+	if err := cropsAlike(fsys, path); err != nil {
+		t.Fatal(err)
+	}
+	turns, crops := rotations(t, fsys, path)
+	for i, c := range crops {
+		if turns[i] != 90 || c == nil || *c != 400 {
+			t.Errorf("piece %d is turned %d and plays with %v, not 90 with the crop placed on the other part",
+				i, turns[i], fmtCrop(c))
+		}
+	}
+}
+
 // The crop as filmed is the whole clip's, so a part that is turned keeps
 // it for when it is turned back. Placed on the pieces standing as filmed
 // alone, a part turned by mistake and turned back again brought its old
