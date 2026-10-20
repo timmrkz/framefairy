@@ -9028,13 +9028,13 @@ for (const seq of toWalk) {
             return ring ? getComputedStyle(ring).borderTopColor : "no dashes";
           });
           // The dashes of a card stand over its columns of dots and beside
-          // its rows: the dots and the dashes are tiles of one pitch laid
-          // on the same box, spread from edge to edge the same way. The
-          // browser's own dashes went their own way, found by Tim. On the
-          // card and on the range picker the dots go on to the edge, and
-          // on the range picker they are whole columns centred in the
-          // part. A row and a column left clear round them looked cut
-          // off, found by Tim.
+          // its rows: the dots are whole columns and rows of one pitch,
+          // centred in the card with room on every side, and the dashes
+          // run at that pitch over exactly their span. The browser's own
+          // dashes went their own way, dots on to the edge sat too close to
+          // the dashes, and a row and a column left clear looked cut off,
+          // all found by Tim. On the range picker the dots are whole
+          // columns centred in the part.
           const grid = await page.evaluate(() => {
             const li = document.querySelector("ol.said li.hole");
             const dots = li.querySelector(".dots");
@@ -9045,6 +9045,12 @@ for (const seq of toWalk) {
             };
             const d = getComputedStyle(dots);
             const r = ring ? getComputedStyle(ring) : null;
+            const round = (v) => Math.round(v * 100) / 100;
+            const c = li.getBoundingClientRect();
+            const o = dots.getBoundingClientRect();
+            // The room left round the dots, left, right, top and foot.
+            const room = [o.left - c.left, c.right - o.right, o.top - c.top, c.bottom - o.bottom].map(round);
+            const px = (t) => (t ?? "").match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
             const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
             const track = document.querySelector(".track");
             const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
@@ -9065,9 +9071,12 @@ for (const seq of toWalk) {
             });
             return {
               pitch,
-              boxes: [box(dots), box(ring), box(li)],
+              boxes: [box(ring), box(li)],
+              room,
+              span: [round(o.width), round(o.height)],
               dots: [d.backgroundSize, d.backgroundRepeat, d.maskImage],
-              dashes: r ? [r.maskSize, r.maskRepeat, r.borderTopStyle] : null,
+              dashes: r ? [r.maskSize, r.maskRepeat, r.borderTopStyle, r.maskPosition] : null,
+              laid: r ? [...px(r.maskSize), ...px(r.maskPosition)].map(round) : [],
               columns,
             };
           });
@@ -9126,15 +9135,20 @@ for (const seq of toWalk) {
           else if (look.picker.length || look.edges || look.border === "rgba(0, 0, 0, 0)")
             wrong = `a part on the range picker, lit, has an edge of its own, ${[...look.picker, ...(look.edges ? [`${look.edges} edges`] : [])].join(" and ")}, over a border in ${look.border}`;
           else if (!look.ring.includes(rest)) wrong = `the dashes are ${rest} on the card, and a card's edge is ${look.ring}`;
-          else if (!grid.dashes || grid.dashes[2] !== "solid" || grid.boxes[0] !== grid.boxes[1] || grid.boxes[1] !== grid.boxes[2])
-            wrong = `the dashes of a card are not laid on its dots' box: dashes ${JSON.stringify(grid.dashes)}, boxes of the dots, the dashes and the card ${JSON.stringify(grid.boxes)}`;
+          else if (!grid.dashes || grid.dashes[2] !== "solid" || grid.boxes[0] !== grid.boxes[1])
+            wrong = `the dashes of a card are not on its edge: dashes ${JSON.stringify(grid.dashes)}, boxes of the dashes and the card ${JSON.stringify(grid.boxes)}`;
+          else if (grid.dots[0] !== tile || grid.dots[1] !== "repeat" || grid.span.some((v) => Math.abs(v / grid.pitch - Math.round(v / grid.pitch)) > 0.01))
+            wrong = `the dots of a card are not whole columns and rows: ${grid.span.join(" by ")} px in tiles of ${grid.dots[0]}, ${grid.dots[1]}`;
+          // Room on every side, the same either way, found by Tim.
+          else if (grid.room[0] !== grid.room[1] || grid.room[2] !== grid.room[3] || grid.room.some((v) => v < 2 || v >= 2 + grid.pitch / 2))
+            wrong = `the dots of a card are not centred in it with room round them: ${grid.room.join(", ")} px left, right, top and foot`;
+          // The dashes over exactly the dots' span, so each stands over a
+          // column or beside a row and none falls outside.
           else if (
-            grid.dots[0] !== tile ||
-            grid.dots[1] !== "space" ||
-            grid.dashes[0] !== `${grid.pitch}px 100%, 100% ${grid.pitch}px` ||
-            grid.dashes[1] !== "space no-repeat, no-repeat space"
+            !grid.dashes[1].split(", ").every((r) => r === "no-repeat") ||
+            grid.laid.join(" ") !== [grid.span[0], grid.span[1], grid.room[0], 0, 0, grid.room[2]].join(" ")
           )
-            wrong = `the dashes of a card do not stand on its dots: dots in ${grid.dots.join(", ")}, dashes in ${grid.dashes.slice(0, 2).join(" laid ")}`;
+            wrong = `the dashes of a card do not stand on its dots: dots ${grid.span.join(" by ")} px at ${grid.room[0]} and ${grid.room[2]} px in, dashes laid ${grid.dashes[0]} at ${grid.dashes[3]}, ${grid.dashes[1]}`;
           else if (grid.dots[2] !== grid.columns[0]?.fade)
             wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
           else if (

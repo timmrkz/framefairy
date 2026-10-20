@@ -2112,13 +2112,14 @@ found is a place in the video, and I and O make a clip there.
   wash under the dots hid them, found by Tim, who picked this one from a
   sheet of seven. The dots are the grey of a card's edge at a share of
   its strength, so they are quieter than the dashes and the minute
-  lines, because at full strength Tim found them too strong. They go on
-  to the edge, in a card and on the range picker, like a surface: a row
-  and a column left clear round them looked cut off, found by Tim. The
-  card's dashes are tiles of the
-  same pitch, laid on the card's box the way its dots are, spread evenly
-  from edge to edge, so every dash stands over a column of dots or
-  beside a row and a dash sits on every corner. The dashes the browser
+  lines, because at full strength Tim found them too strong. A row and
+  a column left clear round them looked cut off, found by Tim. In a card
+  they are whole columns and rows, centred, with at least 2 px of room
+  inside the dashes on every side, because dots right on to the edge sat
+  too close to the dashes, found by Tim. The grid is worked out from the
+  card's own size, and the card's dashes run at the same pitch over
+  exactly the span of the dots, so every dash stands over a column of
+  dots or beside a row. The dashes the browser
   drew went their own way round the dots, found by Tim. On the range
   picker a part has no edge of its own, which Tim found the dots did
   without, and its dots cover the whole part, to its foot and its sides,

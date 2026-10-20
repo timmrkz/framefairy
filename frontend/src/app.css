@@ -67,24 +67,24 @@
      foot, so the dots go on to the edge like a surface, the way Tim
      liked them. A row and a column left clear round them looked cut off,
      found by Tim.
-     A card's dashes are tiles of the same pitch, a dash in the middle of
-     each, laid the way its dots are, so every dash stands over a column
-     or beside a row of dots. Dashes the browser drew went their own way,
+     A card's dashes run at the same pitch, a dash in the middle of each
+     tile, laid where its dots are, so every dash stands over a column or
+     beside a row of dots. Dashes the browser drew went their own way,
      found by Tim. */
   --dot-pitch: 6px;
   --halftone: radial-gradient(circle, color-mix(in srgb, var(--ink-3) 70%, transparent) 1.2px, transparent 1.7px);
   --halftone-lit: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1.2px, transparent 1.7px);
   --halftone-fade: linear-gradient(transparent 30%, #000);
-  --halftone-dash-x: linear-gradient(
+  --halftone-dash-x: repeating-linear-gradient(
     90deg,
-    transparent calc(var(--dot-pitch) / 4),
+    transparent 0 calc(var(--dot-pitch) / 4),
     #000 0 calc(var(--dot-pitch) * 3 / 4),
-    transparent 0
+    transparent 0 var(--dot-pitch)
   );
-  --halftone-dash-y: linear-gradient(
-    transparent calc(var(--dot-pitch) / 4),
+  --halftone-dash-y: repeating-linear-gradient(
+    transparent 0 calc(var(--dot-pitch) / 4),
     #000 0 calc(var(--dot-pitch) * 3 / 4),
-    transparent 0
+    transparent 0 var(--dot-pitch)
   );
   /* The same, for a control that takes something away. It says what the
      control does as well as that the pointer is on it, which is what the

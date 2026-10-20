@@ -357,8 +357,10 @@
         onpointerenter={() => onhoverhole?.(index)}
         onpointerleave={() => onhoverhole?.(-1)}
       >
-        <span class="dots" aria-hidden="true"></span>
-        <span class="ring" aria-hidden="true"></span>
+        <span class="face" aria-hidden="true">
+          <span class="dots"></span>
+          <span class="ring"></span>
+        </span>
         <span class="meta muted num">{clock(row.hole[0])} to {clock(row.hole[1])}</span>
         <span class="text">Not transcribed yet</span>
       </li>
@@ -531,25 +533,38 @@
     color: var(--muted);
   }
 
-  /* Its dots and its dashes, laid over the whole card, border and all,
-     in tiles of one pitch spread evenly from edge to edge, so each dash
-     stands over a column of dots or beside a row of them, and a dash
-     sits on every corner. Dashes the browser drew went their own way
-     round the dots, found by Tim. The dots rise from the foot on nothing
-     else and go on to the edge under the dashes, like a surface: a row
-     and a column left clear round them looked cut off, found by Tim. Under the hand the card
-     fills with a card's grey, the dots go up a step and keep their fade,
-     and the dashes go into the grey. */
-  .dots,
-  .ring {
+  /* Its dots and its dashes, on one grid of --dot-pitch: whole columns
+     and rows of dots, centred in the card with --room at least on every
+     side, and a dash on the edge over each column and beside each row.
+     Dashes the browser drew went their own way round the dots, dots on
+     to the edge sat too close to the dashes, and dots a whole tile in
+     looked cut off, all found by Tim. The grid is worked out from the
+     card's own size, the face being a container of it, so the dots and
+     the dashes are laid from the same numbers and the same either side.
+     A side can take half a pixel, which is a whole pixel on a Retina
+     screen. The dots rise from the foot on nothing else. Under the hand
+     the card fills with a card's grey, the dots go up a step and keep
+     their fade, and the dashes go into the grey. */
+  .face {
+    --room: 2px;
+    --columns: round(down, 100cqw - 2 * var(--room), var(--dot-pitch));
+    --rows: round(down, 100cqh - 2 * var(--room), var(--dot-pitch));
+    --left: calc((100cqw - var(--columns)) / 2);
+    --top: calc((100cqh - var(--rows)) / 2);
     position: absolute;
     inset: -1px;
     border-radius: inherit;
     pointer-events: none;
+    container-type: size;
   }
 
   .dots {
-    background: var(--halftone) 0 0 / var(--dot-pitch) var(--dot-pitch) space;
+    position: absolute;
+    left: var(--left);
+    top: var(--top);
+    width: var(--columns);
+    height: var(--rows);
+    background: var(--halftone) 0 0 / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
   }
 
@@ -559,13 +574,22 @@
     background-image: var(--halftone-lit);
   }
 
+  /* The edge is solid and its mask makes the dashes, a run of them as
+     long as the dots' columns along the top and the foot, and as long as
+     their rows down the sides, so no dash falls outside the grid. */
   .ring {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
     border: 1px solid var(--ink-3);
     mask-image: var(--halftone-dash-x), var(--halftone-dash-y);
     mask-size:
-      var(--dot-pitch) 100%,
-      100% var(--dot-pitch);
-    mask-repeat: space no-repeat, no-repeat space;
+      var(--columns) 100%,
+      100% var(--rows);
+    mask-position:
+      var(--left) 0,
+      0 var(--top);
+    mask-repeat: no-repeat;
   }
 
   li.hole:hover .ring,
