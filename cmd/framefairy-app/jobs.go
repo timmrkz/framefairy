@@ -154,7 +154,10 @@ type queue struct {
 	closed map[string]int
 	// shut is set when the app quits. Nothing is queued after it.
 	shut bool
-	seq  uint64
+	// relaunching is set once Relaunch has found no work running, and
+	// nothing is queued after it either, see closeIfIdle.
+	relaunching bool
+	seq         uint64
 	// calledOff is, per episode, the press of Search or Continue the last
 	// Cancel at the head of the clip list was about, see stopClips.
 	calledOff map[string]string
@@ -248,6 +251,10 @@ func (q *queue) queueFor(episode, kind, label, plan string, clips []string, once
 		q.mu.Unlock()
 		return q.refuse(episode, kind, label, "the app is closing")
 	}
+	if q.relaunching {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the app is relaunching into a new build")
+	}
 	if once {
 		for i := len(q.jobs) - 1; i >= 0; i-- {
 			j := q.jobs[i]
@@ -293,6 +300,10 @@ func (q *queue) addSteps(episode, kind, label string, once bool, prepare func(*J
 	if q.shut {
 		q.mu.Unlock()
 		return q.refuse(episode, kind, label, "the app is closing", prepare)
+	}
+	if q.relaunching {
+		q.mu.Unlock()
+		return q.refuse(episode, kind, label, "the app is relaunching into a new build", prepare)
 	}
 	if once {
 		for _, j := range q.jobs {
@@ -435,12 +446,36 @@ func (q *queue) refuse(episode, kind, label, reason string, with ...func(*Job)) 
 func (q *queue) busy() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	return q.busyLocked()
+}
+
+func (q *queue) busyLocked() bool {
 	for _, j := range q.jobs {
 		if j.State == JobQueued || j.State == JobRunning {
 			return true
 		}
 	}
 	return false
+}
+
+// closeIfIdle is how Relaunch asks the queue. When no job runs or waits,
+// it takes no new job from now on and says yes, and reopen takes the no
+// back, for a relaunch that did not happen. When work runs it says no and
+// changes nothing. The looking and the closing are one step under the
+// lock: a search started between Relaunch finding the queue idle and the
+// app quitting was stopped half way by the quit, issue #382.
+func (q *queue) closeIfIdle() (reopen func(), idle bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.busyLocked() {
+		return func() {}, false
+	}
+	q.relaunching = true
+	return sync.OnceFunc(func() {
+		q.mu.Lock()
+		q.relaunching = false
+		q.mu.Unlock()
+	}), true
 }
 
 func (q *queue) list() []Job {

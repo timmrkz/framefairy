@@ -181,6 +181,15 @@ export interface EpisodeStatus {
   // Whether anyone has ever searched this episode for clips. It stays true
   // when the clips are removed again.
   everSearched: boolean;
+  // The words and the colour the video is told apart by in the sidebar,
+  // kept in its work folder and never in its file name.
+  label?: Label;
+}
+
+// A video's label, see engine.Label. The colour is #rrggbb.
+export interface Label {
+  text: string;
+  colour: string;
 }
 
 export interface Word {
@@ -896,6 +905,8 @@ export const api = {
   jobs: () => call<Job[]>("Jobs"),
   cancelJob: (id: string) => call<void>("CancelJob", id),
   reveal: (path: string) => call<void>("Reveal", path),
+  // No words take the label away, and the answer is then null.
+  setLabel: (path: string, text: string, colour: string) => call<Label | null>("SetLabel", path, text, colour),
   // Updates, see docs/UPDATES.md. Following a channel looks at once, and a
   // newer build downloads by itself and waits for a restart.
   updates: () => call<UpdateState>("Updates"),

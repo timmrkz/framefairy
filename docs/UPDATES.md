@@ -564,6 +564,18 @@ to be gone the moment a newer one began, and for good if that one failed.
 A build that Relaunch or quitting has begun to put in place is never
 removed, whatever arrives after it.
 
+**Relaunch waits for the work running.** Quitting into the new build
+would stop a search, a render or a download half way, so while one runs
+or waits the button is greyed out, its title says what it waits for, and
+the line under the build says Relaunch once the search is done. It comes
+back by itself when the work ends. The Go side holds the same line:
+`Restart` refuses while work runs, and from the moment it finds none, the
+queue takes no new work, see `closeIfIdle` in
+`cmd/framefairy-app/jobs.go`, so no search starts between the look and
+the quit. Following another channel only downloads, so it stops nothing.
+Quitting stops the work the way any quit does, after asking, and the
+search says Stopped with Continue in the new build. Issue #382.
+
 **Quitting with a build ready puts it in place**, the way Chrome does:
 the next start is the new build, and nothing opens by itself in between.
 Relaunch does the same at once, through Wails' updater, whose own step

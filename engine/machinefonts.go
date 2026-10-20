@@ -203,6 +203,7 @@ const (
 	fontFilesMost   = 10000
 	facesInFileMost = 64
 	tablesMost      = 200
+	headTableSize   = 54
 	nameTableMost   = 1 << 20
 	cmapTableMost   = 8 << 20
 	fontFileMost    = 512 << 20
@@ -364,6 +365,11 @@ func readSfntFace(r io.ReaderAt, size, offset int64) (sfntFace, bool) {
 		if _, ok := tables[tag]; !ok {
 			return sfntFace{}, false
 		}
+	}
+	// Every head table is 54 bytes. A shorter one is no face, and the copy
+	// of it a caption needs could not be made.
+	if tables["head"].length < headTableSize {
+		return sfntFace{}, false
 	}
 	_, glyf := tables["glyf"]
 	_, cff := tables["CFF "]

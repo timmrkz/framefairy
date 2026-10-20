@@ -152,7 +152,7 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 	picked := stored
 	c := &updating{
 		own:  own,
-		busy: func() bool { return busy },
+		idle: func() (func(), bool) { return func() {}, !busy },
 		emit: func(s UpdateState) {
 			mu.Lock()
 			sent = append(sent, s)
