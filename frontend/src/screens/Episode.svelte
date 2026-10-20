@@ -633,7 +633,7 @@
       // in the log. In a row of the list it is a sentence.
       const said = search.error?.trim() ?? "";
       const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
-      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
+      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}`, failed: true };
     }
     // Called off with Cancel, or cut off by the app closing: the same row
     // either way, because either way what it did stays and Continue

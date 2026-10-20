@@ -492,6 +492,8 @@
 //                      longer there, no toast says it again, the video
 //                      preview has not moved, and the clip list is as it
 //                      was
+//   ["row says all"]   the row of a search that failed shows the whole of
+//                      its reason, nothing cut off, on a whole pixel
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -2663,6 +2665,7 @@ export const sequences = [
       ["head"],
       ["wait for", "Continue"],
       ["row", "Failed. Click Continue"],
+      ["row says all"],
       ["model", "answers"],
       ["head"],
       ["wait for", "Search"],
@@ -8242,6 +8245,24 @@ for (const seq of toWalk) {
         // The clip on screen may be a new one now, the first of a video
         // just added, and the watch follows it.
         else await watch.step("wait", s);
+        break;
+      }
+      case "row says all": {
+        // Issue #311: Tim saw "Anthropic is busy and did not a…", and the
+        // part that said what to do was the part cut off.
+        const row = await page.evaluate(() => {
+          const li = document.querySelector("li.next.stopped");
+          const meta = li?.querySelector(".meta");
+          if (!li || !meta) return null;
+          return {
+            said: meta.textContent.trim(),
+            cut: meta.scrollWidth > meta.clientWidth + 0.5 || meta.scrollHeight > meta.clientHeight + 0.5,
+            height: li.getBoundingClientRect().height,
+          };
+        });
+        if (!row) wrong = "no row says how the search ended";
+        else if (row.cut) wrong = `the row cuts its reason short: "${row.said}"`;
+        else if (Math.abs(row.height - Math.round(row.height)) > 0.01) wrong = `the row is ${row.height} px high, not a whole number of pixels`;
         break;
       }
       case "row": {
