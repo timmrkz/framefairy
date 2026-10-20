@@ -152,12 +152,12 @@
 //                      the episode for more than nought. The clip has to
 //                      move along the clip timeline the other way on every
 //                      swipe
-//   ["cut switch", n]  double-clicks on the clip timeline where the clip's
-//                      nth shot meets the next, from 1, which cuts a part
-//                      out across the camera switch
+//   ["cut switch", n]  double-clicks on the clip timeline on the camera
+//                      switch of the video added with "add cameras", which
+//                      cuts a part out across it. n is 1, the one switch
 //   ["trim past", edge, n]
 //                      drags the clip's "start" or "end" edge two seconds
-//                      past the nth camera switch, so the shot beyond it is
+//                      past that camera switch, so the camera beyond it is
 //                      gone
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
@@ -232,7 +232,12 @@
 //   ["look", label]    remembers, for every piece of the clip, the crop
 //                      frame in the video preview with the playhead in the
 //                      middle of the piece, put there with a click on the
-//                      clip timeline: where it stands and what it shows
+//                      clip timeline: where it stands and what it shows.
+//                      A piece the camera switches in is looked at in the
+//                      middle of each camera
+//   ["one crop", label]
+//                      at every moment looked at, the crop frame stood in
+//                      the same place
 //   ["move window", handle, share]
 //                      drags the window's mark on the range picker, its
 //                      "to" or "from" triangle or its "bar", by this share
@@ -725,9 +730,10 @@
 //                      look, and at each moment looked at the crop frame
 //                      stands where it stood and shows what it showed
 //   ["shots", label]   the short, read back from disk: every frame shows
-//                      what the crop frame showed on its shot at the look,
-//                      and at every camera switch the sound runs straight
-//                      on, no 10 ms of it quieter than 80% of the tone
+//                      what the crop frame showed on its camera at the
+//                      look, and where two pieces meet the sound runs
+//                      straight on, no 10 ms of it quieter than 80% of the
+//                      tone
 //   ["from the app", n]
 //                      the picture comes from the Go side, and n clicks
 //                      along the clip timeline each show the frame that
@@ -2589,15 +2595,20 @@ export const sequences = [
     ],
   },
   {
-    // Tim's steps for #116, on a clip a search parted at a camera switch
-    // into two pieces, each with the crop of its own shot.
-    name: "a cut or an edge put back keeps the camera switch, and the short runs straight through it",
+    // #396, from Tim: his podcast has two cameras, and a clip has one crop
+    // across them, which only keyframes move. The search finds the clip of
+    // two cameras in one piece, a cut across the switch and an edge
+    // trimmed past it and put back leave it so, the crop dragged on the
+    // first camera stands there on the second too, and the short shows
+    // every frame through that one crop.
+    name: "a clip filmed by two cameras has one crop, through a cut, a trim and a drag",
     steps: [
       ["add cameras", 30, 12],
       ["wait for", "Search"],
-      ["pieces", 2],
+      ["pieces", 1],
       ["mark", "found"],
       ["look", "found"],
+      ["one crop", "found"],
       ["cut switch", 1],
       ["cuts", 1],
       ["join", 1],
@@ -2605,12 +2616,14 @@ export const sequences = [
       ["framed", "found"],
       ["same", "found"],
       ["trim past", "end", 1],
-      ["pieces", 1],
       ["reset", "end"],
       ["framed", "found"],
       ["same", "found"],
+      ["crop to", "left"],
+      ["look", "moved"],
+      ["one crop", "moved"],
       ["render"],
-      ["shots", "found"],
+      ["shots", "moved"],
     ],
   },
   {
@@ -3824,11 +3837,6 @@ async function modelsNamed(page) {
   return { planner: s.planner, llmModel: s.llmModel, apiModel: s.apiModel, asrModel: s.asrModel };
 }
 
-// Where the clip's shots meet: every place one piece runs straight into
-// the next, with nothing cut out between them.
-const switches = (pieces) =>
-  pieces.slice(1).filter((p, i) => Math.abs(p.start - pieces[i].end) < 0.0005).map((p) => p.start);
-
 const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 // A moment the way the clip list says it, clock in lib/api.ts.
 const clockOf = (t) => {
@@ -4278,6 +4286,8 @@ for (const seq of toWalk) {
   await watch.start();
   const marks = {};
   const looks = {};
+  // The second the video added with "add cameras" switches camera at.
+  let cameraSwitch = null;
   const kept = {};
   // The models the settings name, at "settings", and the episode that was
   // on screen before them.
@@ -5955,15 +5965,15 @@ for (const seq of toWalk) {
         break;
       }
       case "cut switch": {
-        const at = switches((await engineState(page, watch.at)).segments)[arg - 1];
+        const at = cameraSwitch;
         const g = await handles(page);
         await page.mouse.dblclick(await xOf(page, at), high(g.track));
         await watch.step("cut", s);
         break;
       }
       case "trim past": {
-        const [edge, n] = arg;
-        const at = switches((await engineState(page, watch.at)).segments)[n - 1];
+        const [edge] = arg;
+        const at = cameraSwitch;
         const g = await handles(page);
         const to = await xOf(page, edge === "end" ? at - 2 : at + 2);
         await drag(page, middle(g[edge]), high(g.track), to - middle(g[edge]), false);
@@ -5972,14 +5982,36 @@ for (const seq of toWalk) {
       }
       case "look": {
         const fps = await rate(page);
+        const pieces = (await engineState(page, watch.at)).segments;
         looks[arg] = [];
-        for (const p of (await engineState(page, watch.at)).segments) {
-          const at = (p.start + p.end) / 2;
-          if (!(await seekTo(page, at, fps))) {
-            wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
-            break;
+        looks[arg].pieces = pieces.length;
+        for (const p of pieces) {
+          const parts =
+            cameraSwitch !== null && cameraSwitch > p.start + 0.5 && cameraSwitch < p.end - 0.5
+              ? [
+                  { start: p.start, end: cameraSwitch },
+                  { start: cameraSwitch, end: p.end },
+                ]
+              : [{ start: p.start, end: p.end }];
+          for (const part of parts) {
+            const at = (part.start + part.end) / 2;
+            if (!(await seekTo(page, at, fps))) {
+              wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+              break;
+            }
+            looks[arg].push({ ...part, at, frame: await cropFrame(page) });
           }
-          looks[arg].push({ ...p, at, frame: await cropFrame(page) });
+          if (wrong) break;
+        }
+        break;
+      }
+      case "one crop": {
+        const then = looks[arg];
+        const first = then[0]?.frame;
+        const other = then.find((l) => !l.frame || !first || Math.abs(l.frame.left - first.left) > 0.005);
+        if (!first) wrong = `at "${arg}" there was no crop frame to look at`;
+        else if (other) {
+          wrong = `at ${other.at.toFixed(2)} the crop frame stood ${other.frame ? (100 * other.frame.left).toFixed(1) + "% in" : "nowhere"}, and at ${then[0].at.toFixed(2)} ${(100 * first.left).toFixed(1)}%, at "${arg}"`;
         }
         break;
       }
@@ -6009,8 +6041,8 @@ for (const seq of toWalk) {
           if (wrong) break;
         }
         const n = await page.locator(".clip-timeline .piece").count();
-        if (!wrong && n !== then.length) {
-          wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.length} as at "${arg}"`;
+        if (!wrong && n !== then.pieces) {
+          wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.pieces} as at "${arg}"`;
         }
         break;
       }
@@ -6054,7 +6086,7 @@ for (const seq of toWalk) {
             if (l < least.l) least = { l, t };
           }
           if (least.l < 0.8 * steady) {
-            wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two shots meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
+            wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two pieces meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
           }
         }
         break;
@@ -6481,6 +6513,7 @@ for (const seq of toWalk) {
       }
       case "add cameras": {
         const [seconds, at] = arg;
+        cameraSwitch = at;
         await control(url, `/pick?seconds=${seconds}&switch=${at}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);

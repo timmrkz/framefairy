@@ -461,26 +461,29 @@ its pieces change and never after, and read by `readFound` in
 `engine/clips.go`, which takes nothing but two numbers in order. A double-click
 on an edge of the clip on the clip timeline trims it back there.
 
-**What is put back keeps its camera switch.** A search parts a clip at
-every camera switch, and each piece carries the crop of its own shot. So a
-clip also keeps the pieces it was found with, `found_segments`, written by
-`editPieces` with `found` and read by `foundPieces` in `engine/edit.go`,
-which takes them only as pieces in order and otherwise uses the pieces the
-clip has. Whatever a gesture brings back, a cut put back or an edge moved
-out over what the clip leaves out, is framed by the shots it shows,
-`framedBack` in `engine/shape.go`: a shot runs from the start of its piece
-to the start of the next, and a shot a piece of the clip still shows takes
-that piece's crop, so a crop placed by hand comes back with it. Pieces of
-one shot that meet become one piece again, `meet`, and two shots stay two.
-A join used to stretch the piece before the cut over the one after it, so
-a cut made across the switch at 12.80 and put back left one piece from
-9.60 to 16.00, and the second shot was shown through the first shot's
-crop. An edge put back after it had trimmed a shot away did the same.
-Where a search had already left out the part with the switch in it,
-nobody knows where the switch is, and the part goes with the shot before.
-Two pieces that meet have no cut between them, so a join or a move there
-is refused. `engine/shots_test.go` holds the cases, and `FuzzPlanEdits`
-checks that no edit ever makes one piece of two shots.
+**What is put back takes the clip's crop.** A clip has one crop, and one
+for each way a part of it is turned, see Rotation below. Whatever a gesture
+brings back, a cut put back or an edge moved out over what the clip leaves
+out, is framed like the pieces turned the way it is, `framedBack` in
+`engine/shape.go`, so a crop placed by hand comes back with it. Pieces
+that meet become one piece again, `meet`, unless a rotation starts or ends
+between them, `partedAtTurns`. Two pieces that meet have no cut between
+them, so a join or a move there is refused. A clip once also kept the
+pieces it was found with, `found_segments`, to frame what was put back by
+the camera it showed. A clip used to be parted at every camera switch with
+a crop for each camera, which Tim never saw at work in his own two-camera
+podcast, #396. The crop as filmed, `crop_x`, is the whole
+clip's, kept on every piece, turned or not, because a part turned back
+plays with it. Only the crop on the picture turned, `crop_x_turned`, is
+shared by the pieces turned alike alone. A plan from before that plays
+every piece with the crop of its first piece placed by hand, or of its
+first piece where none was, `oneCrop` in `engine/clips.go`, since a crop
+a person placed is a decision and one the analysis chose a guess. Its
+next change of pieces writes it so and takes `found_segments` away,
+`oneFraming` and `framingOf` in `engine/edit.go`. `engine/shots_test.go`
+holds the cases, and `FuzzPlanEdits` checks in the plan file after every
+edit, rotations among them, that a clip has one crop as filmed and one
+for each turn.
 
 Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
 picture of the short is taken at. `readThumbnails` in `engine/clips.go`
@@ -641,8 +644,8 @@ was found later:
   `TestAnEdgeIsMovedOnTheClockItIsDrawnOn`.
 
 The sound fades for 15 ms at the clip's two ends and at every cut, which
-keeps a hard cut from clicking, and nowhere else. Two pieces that meet at
-a camera switch are heard straight on: each piece used to fade out and in
+keeps a hard cut from clicking, and nowhere else. Two pieces that meet,
+where a rotation starts, are heard straight on: each piece used to fade out and in
 as if something were cut, a dip of 30 ms in the middle of a word.
 `TestTwoShotsThatMeetRenderWithoutASeam` in `engine/seam_test.go` renders
 two shots that meet from a steady tone and a picture a step brighter on
@@ -1091,7 +1094,9 @@ edge of a stretch: a gesture that would make one parts it there,
 is the shape of the short in the picture rotated. A rotated piece keeps
 its crop on the rotated picture as `crop_x_turned`, apart from the one it
 has as filmed, which stays as it was. Absent, it stands in the middle. A
-crop placed by hand moves every piece of one shot rotated alike, `angleOf`.
+crop placed by hand on a rotated part moves every piece of the clip
+rotated alike, `rotationOf`, and one placed on the picture as filmed
+moves every piece of the clip.
 `LoadClips` checks the rotations and refuses a plan whose stretches
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).
@@ -1102,8 +1107,8 @@ frame, `SetCropMark` in `engine/cropmarks.go`. They are kept in the clip as
 `crop_marks`, each `at`, the start of its frame, and `x`, the left edge of
 the crop there, read like thumbnails: a mark that is not a number and a
 whole left edge is left out, and so is one outside every piece, which stays
-in the plan and comes back with its piece. A mark steers the pieces of its
-camera angle in the whole clip, `markedPieces`. A piece is given each mark
+in the plan and comes back with its piece. A mark steers the pieces of the
+clip turned the way it was placed, `markedPieces`. A piece is given each mark
 at the moment of the video it would be at on the piece's stretch were
 nothing cut out, the clip's clock read from the piece's start, so the glide,
 worked out on frames of the video, runs across a cut the way the short
@@ -1122,33 +1127,34 @@ chroma shared between two columns. That is within half a pixel of the
 short of the glide on every frame, and a slow glide moves on every frame.
 The video preview works the glide out in `lib/glide.ts`, and the two are
 held to one table, `frontend/src/lib/glide.cases.json`. A crop placed by hand on a mark's
-frame moves that mark, and anywhere else it moves the angle's crop and
-every mark of the angle as far as the crop shown there moved, `SetCrop`.
-Automatic crop removes the angle's marks, and a rotation removes the marks
+frame moves that mark, and anywhere else it moves the clip's crop and
+every mark of the clip as far as the crop shown there moved, `SetCrop`,
+on the pieces turned the way the one there is. Automatic crop removes the
+marks of that turn, and a rotation removes the marks
 of the stretch it turns, since they were placed on a picture of another
 shape.
 
-Each camera angle in a clip gets one crop, measured across the whole shot and
-held still, so removing a pause never makes the picture jump. Framing
-decodes only what a clip keeps, and each kept span once. One ffmpeg run per
-span finds its camera switches and hands back small grey frames, one every
+A clip gets one crop, measured across everything it keeps and held still,
+so removing a pause never makes the picture jump, and only the keyframes a
+person sets move it. Framing decodes only what a clip keeps, and each kept
+span once. One ffmpeg run per span hands back small grey frames, one every
 0.4 s from its start and the one a tenth of a second before its end, each
-with its moment, `readSpan`. The faces are looked for on those frames, and
-where the clip leaves the episode and comes back, the frame it leaves on is
-compared with the frame it comes back to, which answers whether it comes
-back to the same camera without decoding what was cut out. These were three
-reads of the same seconds, eleven ffmpeg runs for a clip in three pieces:
-a clip of 24 s from a 1080p video was framed in 18.1 s on the cloud
-machine, and is now in 9.9 s, with the same crops. A part of a shot too
-short to hold one of the frames is read on its own. The decoding is asked of the system's own video decoder,
+with its moment, `readSpan`, and the faces are looked for on those frames.
+A span shorter than a quarter of a second is not read. Framing used to
+look for camera switches in the same run, part the clip at each one and
+measure a crop for each camera, and to compare the frames either side of
+a cut to know whether the clip came back to the same camera. Tim never
+saw a crop change at a camera switch in his own podcast, which has two,
+and a clip now has one crop, #396.
+The decoding is asked of the system's own video decoder,
 VideoToolbox on macOS, and falls back to the processor by itself where
 there is none, which today is every Windows and Linux build. If the system
 decoder refuses a file, the same work is done again on the processor and
-everything after it goes there too. The same happens when looking for
-camera switches runs out of time, a minute and four times the span: ffmpeg
+everything after it goes there too. The same happens when reading a
+span's frames runs out of time, a minute and four times the span: ffmpeg
 has hung there once, and a search waited on it for good. If the processor
-runs out of time as well, the span is framed without switches, with a
-warning, rather than the clip failing. Which decoder does the work is found
+runs out of time as well, the clip is framed without that span's frames,
+with a warning, rather than the clip failing. Which decoder does the work is found
 once per episode file, by decoding one frame the way framing does and
 reading what ffmpeg says, and written to the log as `framing decodes
 video on VideoToolbox` or `on the processor`. A single frame has 15 s,
@@ -1622,7 +1628,7 @@ Everything else is in `engine/`:
                 and timings
   undo.go       an edit remembered as the files before and after it, and
                 put back clip by clip, so what landed since stays
-  analysis.go   camera switches and framing
+  analysis.go   framing
   cropwork.go   how far placing the crop of one clip has come
   faces.go      the built-in face detector
   clips.go      the plan file and crop geometry

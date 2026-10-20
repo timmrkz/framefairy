@@ -8,11 +8,11 @@ import (
 // ---------------------------------------------------------------------------
 // How far placing the crop of one clip has come
 //
-// Placing the crop is two passes over what a clip keeps: ffmpeg scans each
-// piece for camera switches, and then frames are sampled from each shot to
-// find where the faces are. Both go through every second the clip keeps
-// once, so the work is twice the clip's length in seconds, and each piece
-// scanned and each shot sampled is that much of it done.
+// Placing the crop is two passes over what a clip keeps: ffmpeg reads the
+// frames of each piece, and then the faces are looked for on them. Both go
+// through every second the clip keeps once, so the work is twice the clip's
+// length in seconds, and each piece read and the clip measured is that much
+// of it done.
 //
 // Between two of those the share moves on by the clock, at the speed the
 // work has gone so far, and never past the end of the piece in hand. So a
