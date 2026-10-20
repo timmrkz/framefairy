@@ -852,6 +852,10 @@
 //                      the line under the build comes to say this head, in
 //                      ten seconds at most, and more somewhere after it
 //   ["no check"]       the line under the build offers no button
+//   ["relaunch", how]  the line under the build offers Relaunch, "waits"
+//                      greyed out with its title saying it waits for the
+//                      search, and "ready" usable again, within a minute,
+//                      and the line wears the card's own background
 //   ["build mark", what]
 //                      the line under the build starts with this mark,
 //                      "check", "triangle" or "dot", and ", warning" when
@@ -3482,6 +3486,28 @@ export const sequences = [
       ["channel", "PR #20, conflicts"],
       ["build mark", "dot, warning"],
       ["warned"],
+    ],
+  },
+  {
+    // Tim could relaunch into another build while a clip search ran, which
+    // stops the search half way (#382). Relaunch waits for it, following
+    // another channel meanwhile stops nothing, and once the search ends
+    // Relaunch can be pressed again by itself.
+    name: "Relaunch waits while a search runs, and the search goes on",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["wait for", "Cancel"],
+      ["updates", { from: "main", list: "main,pr-20" }],
+      ["status", "A newer build is ready", "Relaunch once the search is done"],
+      ["relaunch", "waits"],
+      ["follow", "PR #20"],
+      ["status", "A newer build is ready", "Relaunch once the search is done"],
+      ["relaunch", "waits"],
+      ["hearing"],
+      ["speech", 0],
+      ["relaunch", "ready"],
+      ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
   },
 ];
@@ -9365,6 +9391,32 @@ for (const seq of toWalk) {
       case "fits": {
         const now = await updatesPage(page);
         if (now.slack < 0 || now.slack > 60) wrong = `the list's trigger keeps ${Math.round(now.slack)} px beside ${now.channel}, room for a longer name`;
+        break;
+      }
+      case "relaunch": {
+        const waits = arg === "waits";
+        const read = () =>
+          page.evaluate(() => {
+            const line = document.querySelectorAll(".card.asks > .item")[1];
+            const button = line?.querySelector("button");
+            const card = line?.closest(".card");
+            return {
+              words: (button?.textContent ?? "").trim(),
+              off: !!button?.disabled,
+              title: button?.title ?? "",
+              // A row with nothing chosen in it lets the card show through.
+              lit: !!line && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)" && getComputedStyle(line).backgroundColor !== getComputedStyle(card).backgroundColor,
+            };
+          });
+        let now = await read();
+        for (const until = Date.now() + 60000; (now.words !== "Relaunch" || now.off !== waits) && Date.now() < until; ) {
+          await page.waitForTimeout(100);
+          now = await read();
+        }
+        if (now.words !== "Relaunch") wrong = `the line under the build offers ${now.words || "nothing"}, not Relaunch`;
+        else if (now.off !== waits) wrong = waits ? "Relaunch can be pressed while a search runs" : "Relaunch stayed greyed out after the search ended";
+        else if (waits && now.title !== "Waits until the search is done") wrong = `Relaunch's title says ${JSON.stringify(now.title)}`;
+        else if (now.lit) wrong = "the line under the build wears a grey of its own, which reads as greyed out";
         break;
       }
       case "no check": {
