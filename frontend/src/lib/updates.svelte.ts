@@ -177,9 +177,15 @@ class Updates {
       this.#show(u);
       return;
     }
+    // Only the looking is held. Everything else the answer brings, the
+    // channel list above all, is shown at once: a list held back with
+    // the looking offered the channels from before the check, which the
+    // app now listens to from its start, so the page opened in the middle
+    // of a check that began before it.
     const left = LOOK_AT_LEAST - (Date.now() - this.#lookingSince);
     if (this.shown?.phase === "checking" && left > 0) {
       clearTimeout(this.#held);
+      this.#show({ ...u, phase: "checking" });
       this.#held = setTimeout(() => this.#latest && this.#show(this.#latest), left);
       return;
     }
