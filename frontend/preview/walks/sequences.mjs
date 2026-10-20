@@ -1537,6 +1537,22 @@ export const sequences = [
     steps: [["edges alike"]],
   },
   {
+    // Found by Tim on 20 October: a card under the hand was lit a step
+    // less than the card the keys were on, and a part not transcribed yet
+    // walked to with the keys lit nothing on the range picker, where the
+    // hand on its card lit it there. Whatever is lit is lit one way.
+    name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
+    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+  },
+  {
+    // Found by Tim on 20 October: the clip chosen with the keys had its
+    // mark on the range picker and its frame on the clip timeline a step
+    // darker than the hand on its card made them, and a clip's card under
+    // the hand was a step darker than the chosen one.
+    name: "the hand and the keys light a clip the same",
+    steps: [["one light", "clips"]],
+  },
+  {
     // Found by Tim on 20 October: Shift and the arrows brought a clip
     // walked to just into view, so the walk went on at the foot of the
     // list. They turn the page, the way the transcript does as it plays.
@@ -8963,6 +8979,121 @@ for (const seq of toWalk) {
           wrong = `the clip walked up to above the top of the clip list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
         break;
       }
+      case "one light": {
+        // What is lit is lit one way, whether the hand is on it or the
+        // keys brought it there, found by Tim: a card under the hand was a
+        // step darker than the card the keys were on, the clip chosen was
+        // a step darker on the range picker and the clip timeline than the
+        // hand on its card made it, and a part not transcribed yet walked
+        // to lit nothing on the range picker.
+        const look = (selector, prop) =>
+          page.evaluate(
+            ({ selector, prop }) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const el = document.querySelector(selector);
+                    done(el ? getComputedStyle(el)[prop] : null);
+                  }),
+                ),
+              ),
+            { selector, prop },
+          );
+        if (arg === "said") {
+          await page.mouse.move(1, 1);
+          await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+          await watch.step("click", s);
+          await page.waitForSelector("ol.said li.hole");
+          const around = await page.evaluate(() => {
+            const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+            const i = cards.findIndex((li, i) => i > 1 && li.classList.contains("hole") && !cards[i - 1].classList.contains("hole") && !cards[i - 2].classList.contains("hole"));
+            return i < 0 ? null : [cards[i - 2], cards[i - 1], cards[i]].map((li) => li.dataset.row);
+          });
+          if (!around) {
+            wrong = "no part not transcribed yet with two cards before it";
+            break;
+          }
+          const [other, before, hole] = around.map((key) => `ol.said li[data-row="${key}"]`);
+          await page.locator(`${before} button.pick`).click();
+          await watch.step("click", s);
+          await page.mouse.move(1, 1);
+          const keyed = await look(`${before} button.pick`, "backgroundColor");
+          await page.locator(`${other} button.pick`).hover();
+          await watch.step("hover", s);
+          const handed = await look(`${other} button.pick`, "backgroundColor");
+          // The keys onto the part, with the hand away.
+          await page.mouse.move(1, 1);
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press("Shift+ArrowDown");
+          await watch.step("press", s);
+          const part = await page.evaluate(
+            (hole) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const li = document.querySelector(hole);
+                    const parts = [...document.querySelectorAll(".track .unheard")];
+                    const lit = parts.filter((u) => u.classList.contains("lit"));
+                    done({
+                      current: li.classList.contains("current"),
+                      card: getComputedStyle(li).backgroundColor,
+                      // The part lit is the one the card stands for, the
+                      // parts and their cards in the same order.
+                      lit: lit.map((u) => parts.indexOf(u)),
+                      mine: [...document.querySelectorAll("ol.said li.hole")].indexOf(li),
+                      fill: lit.length ? getComputedStyle(lit[0]).backgroundColor : null,
+                    });
+                  }),
+                ),
+              ),
+            hole,
+          );
+          console.log(JSON.stringify({ keyed, handed, part }));
+          if (keyed !== handed) wrong = `the card under the hand is ${handed} and the card the keys are on is ${keyed}`;
+          else if (!part.current) wrong = "Shift and the down arrow did not go onto the part not transcribed yet";
+          else if (part.card !== keyed) wrong = `the part not transcribed yet the keys are on is ${part.card} in the list, not the grey of every lit card, ${keyed}`;
+          else if (part.lit.join() !== String(part.mine))
+            wrong = `the part not transcribed yet the keys are on lit parts ${JSON.stringify(part.lit)} on the range picker, not its own, ${part.mine}`;
+          else if (part.fill !== keyed) wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not the grey of its card, ${keyed}`;
+          break;
+        }
+        // A clip's card under the hand and the chosen clip's card, and the
+        // chosen clip on the range picker and the clip timeline, with the
+        // hand away and with the hand on its card.
+        const path = await episodeOn(page);
+        let have = (await ask(page, "Clips", path)) ?? [];
+        if (have.length < 2) {
+          await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
+          await page.waitForFunction(() => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= 2, null, { timeout: 0 });
+        }
+        await settle(page);
+        const keys = await page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]:not(.next)")].map((li) => li.dataset.key));
+        const card = (key) => `aside ol li[data-key="${key}"] button.pick`;
+        await page.locator(card(keys[0])).click();
+        await watch.step("click", s);
+        await settle(page);
+        await page.mouse.move(1, 1);
+        const away = {
+          card: await look(card(keys[0]), "backgroundColor"),
+          mark: await look(".track .clipmark.selected", "borderTopColor"),
+          frame: await look(".clip-timeline .span.frame", "borderTopColor"),
+        };
+        await page.locator(card(keys[0])).hover();
+        await watch.step("hover", s);
+        const on = {
+          mark: await look(".track .clipmark.selected", "borderTopColor"),
+          frame: await look(".clip-timeline .span.frame", "borderTopColor"),
+        };
+        await page.locator(card(keys[1])).hover();
+        await watch.step("hover", s);
+        const other = await look(card(keys[1]), "backgroundColor");
+        await page.mouse.move(1, 1);
+        console.log(JSON.stringify({ away, on, other }));
+        if (other !== away.card) wrong = `a clip's card under the hand is ${other} and the chosen clip's card is ${away.card}`;
+        else if (away.mark !== on.mark) wrong = `the chosen clip's mark on the range picker is ${away.mark}, and ${on.mark} with the hand on its card`;
+        else if (away.frame !== on.frame) wrong = `the chosen clip's frame on the clip timeline is ${away.frame}, and ${on.frame} with the hand on its card`;
+        break;
+      }
       case "walk over a part": {
         // Shift and the arrows walk onto a part not transcribed yet and off
         // it again, one card at a step both ways. Down stopped at the card
@@ -9616,17 +9747,23 @@ for (const seq of toWalk) {
           // under the hand alike, and never brighter than the dashes or the
           // minute lines, found by Tim.
           const still = await page.evaluate(() =>
-            [document.querySelector("ol.said li.hole:not(.current) .dots") ?? document.querySelector("ol.said li.hole .dots"), document.querySelector(".track .unheard:not(.lit)")].map((d, i) => {
+            [
+              document.querySelector("ol.said li.hole:not(.current) .dots") ?? document.querySelector("ol.said li.hole .dots"),
+              document.querySelector(".track .unheard:not(.lit)") ?? document.querySelector(".track .unheard"),
+            ].map((d, i) => {
               if (!d) return null;
-              const st = i ? getComputedStyle(d, "::before") : getComputedStyle(d);
               // The card the playhead is in is marked as such, see below,
-              // so the card at rest is read with the mark taken off.
+              // and its part on the range picker is lit with it, so both
+              // at rest are read with the mark taken off.
               const on = i ? d : d.closest("li");
-              const mark = on.classList.contains("current");
-              on.classList.remove("current");
+              const mark = i ? "lit" : "current";
+              const had = on.classList.contains(mark);
+              on.classList.remove(mark);
+              const st = i ? getComputedStyle(d, "::before") : getComputedStyle(d);
+              const look = [st.backgroundImage, st.maskImage, st.top];
               const under = getComputedStyle(on).backgroundColor;
-              if (mark) on.classList.add("current");
-              return [st.backgroundImage, st.maskImage, st.top, under];
+              if (had) on.classList.add(mark);
+              return [...look, under];
             }),
           );
           const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector("ol.said li.hole .ring") ?? document.querySelector("ol.said li.hole")).borderTopColor]);

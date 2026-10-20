@@ -466,6 +466,10 @@
   // The part not transcribed yet under the hand, in the list, lit on the
   // range picker too.
   let unheardLit = $state(-1);
+  // The one whose card the playhead is in, lit on the range picker the
+  // same way: a part is lit one way, by the hand or by the keys, found by
+  // Tim.
+  let unheardOn = $state(-1);
   // The parts of the video the transcript has not heard yet, which the
   // search cannot look in. A gap under a second is between two words.
   // They give way as the work hears, not as it saves, the way the edge of
@@ -3156,6 +3160,7 @@
     locked={busy}
     unheard={saying ? unheard : []}
     {unheardLit}
+    unheardOn={saying ? unheardOn : -1}
     giving={live && !stoppedAt ? live[1] : -1}
     onhoverunheard={(i) => (unheardLit = i)}
     onmove={moveWindow}
@@ -3679,6 +3684,7 @@
                 {selected}
                 chosen={chosenTimes}
                 bind:matches={sayMatches}
+                bind:holeOn={unheardOn}
                 onhover={hoverClip}
                 onhoverhole={(i) => (unheardLit = i)}
                 playhead={time}

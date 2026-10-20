@@ -25,6 +25,7 @@
     playing = false,
     failed = null,
     matches = $bindable(0),
+    holeOn = $bindable(-1),
     onhover,
     onhoverhole,
     onseek,
@@ -55,6 +56,10 @@
     failed?: string | null;
     // How many sentences answer what is typed, for the field to show.
     matches?: number;
+    // The part not transcribed yet whose card the playhead is in, by its
+    // place among them, or -1, so the range picker lights it the way it
+    // lights the one under the hand.
+    holeOn?: number;
     onhover?: (key: string, on: boolean) => void;
     // The part not transcribed yet under the hand, by its place among
     // them, or -1, so the range picker lights the same part.
@@ -186,6 +191,10 @@
     if (!row || !typed.trim()) return followed;
     const end = "hole" in row ? row.hole[1] : row.sentence.end;
     return row.at <= playhead + 0.001 && playhead < end ? followed : null;
+  });
+  $effect(() => {
+    const row = rows.find((r) => r.key === current);
+    holeOn = row && "hole" in row ? unheard.indexOf(row.hole) : -1;
   });
 
   // The row the playhead is in. Where nothing is said, the next row, so a
@@ -488,8 +497,11 @@
     background: transparent;
   }
 
+  /* Under the hand, the grey of the card the keys are on, see .current:
+     a card is lit one way, however it is reached. The hand lit a card a
+     step less than the keys did, found by Tim. */
   li:hover .pick {
-    background: var(--ink-2);
+    background: var(--ink-3);
   }
 
   .meta {
@@ -532,8 +544,8 @@
   }
 
   /* Where nothing was transcribed yet, a card like any other with its
-     edge dashed, see .ring. Under the hand it fills with the grey of
-     every card under the hand, which the dashes go into, the way a
+     edge dashed, see .ring. Lit, under the hand or the keys, it fills
+     with the grey of every lit card, which the dashes go into, the way a
      card's edge does. */
   li.hole {
     justify-content: center;
@@ -542,16 +554,12 @@
     border: 1px solid transparent;
   }
 
-  li.hole:hover,
-  li.hole.lit {
-    background: var(--ink-2);
-  }
-
   /* The card the playhead is in, the way the chosen clip's card is in the
      clip list, so a walk through three answers shows where it is, found
      by Tim. */
   .pick.current,
-  li:hover .pick.current,
+  li.hole:hover,
+  li.hole.lit,
   li.hole.current {
     background: var(--ink-3);
   }
@@ -617,15 +625,6 @@
       var(--left) 0,
       0 var(--top);
     mask-repeat: no-repeat;
-  }
-
-  li.hole:hover .ring,
-  li.hole.lit .ring {
-    border-color: var(--ink-2);
-  }
-
-  li.hole.current .ring {
-    border-color: var(--ink-3);
   }
 
   li.hole .meta,

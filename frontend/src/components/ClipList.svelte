@@ -506,17 +506,15 @@
     text-align: left;
   }
 
-  li:hover .pick,
-  li.lit .pick {
-    background: var(--ink-2);
-  }
-
   /* The chosen clip, in the same grey every chosen row in the app uses,
      with the app's own colour down its edge, .clip-edge in app.css, so it
-     is plain which card it is without reading any of them. */
+     is plain which card it is without reading any of them. A card under
+     the hand, or lit by the hand on its clip somewhere else, takes the
+     same grey: a card is lit one way, by the hand or by the keys. The
+     hand lit it a step less than the keys did, found by Tim. */
+  li:hover .pick,
+  li.lit .pick,
   .pick.current,
-  li:hover .pick.current,
-  li.lit .pick.current,
   .next.current {
     background: var(--ink-3);
   }
@@ -556,7 +554,7 @@
   }
 
   .next:hover {
-    background: var(--ink-2);
+    background: var(--ink-3);
   }
 
   /* The row the next clip will appear in, saying what it is waiting on,

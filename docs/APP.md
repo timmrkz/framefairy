@@ -2107,6 +2107,13 @@ found is a place in the video, and I and O make a clip there.
 - **A failed read is said.** Cards that could not be read leave a line in
   the list, The transcript could not be read, with the reason under the
   pointer, until the next read works.
+- **One light.** Whatever is lit is lit one way, whether the hand is on
+  it or the keys brought it there. A card under the hand takes the grey
+  of the card the keys are on, in the transcript and in the clip list,
+  and the clip chosen is lit on the range picker and the clip timeline
+  the way the hand on its card lights it. The hand lit a card a step
+  less than the keys did, and the keys lit a clip's mark and frame a
+  step less than the hand did, found by Tim.
 - **One clip in every place.** The hand on a card a clip keeps lights
   that clip on the range picker and the clip timeline, the way the hand
   on its clip card does. In the list only the card under the hand is
@@ -2148,13 +2155,15 @@ found is a place in the video, and I and O make a clip there.
   and the foot row a pixel up from the range picker's foot. A row and a
   column left clear round them looked cut off, a pattern that started
   wherever its grid fell looked off, and the foot row looked clutched to
-  the foot, all found by Tim. Under the hand the part goes up
-  a step with the grey of a card under the hand, which the card's dashes
+  the foot, all found by Tim. Lit, the part goes up
+  a step with the grey of every lit card, which the card's dashes
   go into, the way every card's edge does, and its dots go up a step
   too, `--halftone-lit`, keeping their fade. On the range picker the
   range picker's own border stays over the lit part. The hand on a part
   lights its card and the hand on a card lights its part, both ways
-  round. The parts give way as the work hears, from what is heard, not
+  round, and the keys on its card light the part as well, the same
+  way. Walked to with the keys it lit nothing on the range picker,
+  found by Tim. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
   hour took the parts away in thirds, found by Tim. While the work hears
   into a part, its dots stand still, laid from its right edge, which

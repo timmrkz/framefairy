@@ -488,7 +488,10 @@ input[type="password"] {
 
    A mark is lit, .lit, while the hand is on the same clip somewhere else,
    its card in the clip list or its mark on the other track, and looks
-   exactly as it does under the pointer. */
+   exactly as it does under the pointer. The clip chosen is lit as well,
+   however it was chosen: a clip is lit one way, by the hand or by the
+   keys. Chosen with the keys, its frame was a step darker than the hand
+   made it, found by Tim. */
 .clipmark {
   --clipmark-h: round(16%, 2px);
   position: absolute;
@@ -513,19 +516,14 @@ input[type="password"] {
   background: var(--ok);
 }
 
-.clipmark.selected {
+.clipmark.selected,
+.clipmark.selected:hover:not(:disabled) {
   --clipmark-h: round(44%, 2px);
   box-sizing: border-box;
   min-width: 10px;
   background: var(--accent-wash);
-  border: var(--frame-line) solid var(--accent);
+  border: var(--frame-line) solid var(--accent-hi);
   border-radius: var(--frame-radius);
-}
-
-.clipmark.selected:hover:not(:disabled),
-.clipmark.selected.lit {
-  background: var(--accent-wash);
-  border-color: var(--accent-hi);
 }
 
 /* The chosen clip while the playhead is on the video rather than on the

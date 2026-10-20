@@ -51,6 +51,7 @@
     resumes = false,
     unheard = [],
     unheardLit = -1,
+    unheardOn = -1,
     giving = -1,
     onhoverunheard,
   }: {
@@ -110,6 +111,8 @@
     unheard?: [number, number][];
     // The one of them whose card is under the hand, lit a step.
     unheardLit?: number;
+    // The one whose card the playhead is in, lit the same way.
+    unheardOn?: number;
     // Where the work is hearing now, or -1. The part that starts there
     // gives way as the work hears, so its dots stand still while its edge
     // passes over them.
@@ -379,7 +382,7 @@
   <!-- What has not been heard yet, dots under the minutes so their lines
        still show through. -->
   {#each unheard as [a, b], i (i)}
-    <div class="unheard" class:lit={i === unheardLit} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
+    <div class="unheard" class:lit={i === unheardLit || i === unheardOn} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -777,12 +780,12 @@
     pointer-events: none;
   }
 
-  /* Under the hand on its card, the grey of a card under the hand, with
+  /* Under the hand or the keys on its card, the grey of a lit card, with
      the range picker's own border over it, which is the range picker's
      and not the part's. With the border gone the range picker looked
      broken, found by Tim. */
   .unheard.lit {
-    background: var(--ink-2);
+    background: var(--ink-3);
   }
 
   /* Its dots, the card's, rising from the foot, so the minutes stand
