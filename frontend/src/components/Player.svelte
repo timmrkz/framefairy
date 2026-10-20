@@ -425,9 +425,11 @@
     sought = queue;
   }
 
-  // How much the clips on the cards may keep ready, frames and captions
-  // together: about 10 MB a clip at the size of Tim's video preview, so
-  // about 40 clips. A Mac with 8 GB runs the app as well as his.
+  // How much the frames of the clips on the cards may keep ready: a frame
+  // is its pixels at the canvas's size, 4 bytes each, about 8 MB at the
+  // size of Tim's video preview, so about 48 clips. A Mac with 8 GB runs
+  // the app as well as his. Their captions are not counted: a layer is
+  // only the box its words are drawn in, a few hundred kilobytes.
   const CARDS_BYTES = 400 << 20;
 
   // The moments the hand is likely to step to next, paused, whose frames
@@ -451,7 +453,7 @@
       const ask = askOf(of, view);
       const f = ask ? framingOf(frame, of) : null;
       const size = f && layerSize(f);
-      used += pic.width * pic.height * 4 + (size ? size[0] * size[1] * 4 : 0);
+      used += pic.width * pic.height * 4;
       if (used > CARDS_BYTES) break;
       starts.push(of.start);
       if (ask && size) wants.push({ ask, frame, size });
