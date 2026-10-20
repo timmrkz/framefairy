@@ -1532,9 +1532,15 @@ modification time in nanoseconds, `recordShort`. `shortOf` in
 clip set names, if it is still the size and the time it was written with.
 A clip it names nothing for has no short, wherever a file of its name
 lies: every render of a clip set in `logs/`, the app's and the command
-line's, notes its shorts. The clip list asks `shortOf` for `ClipView.Rendered`, `Status` counts the shorts with
-it, and `IsShort` asks it for the app, which shows or opens no file
-outside an episode's work folder but a short of one of its clips.
+line's, notes its shorts. The clip list asks `shortOf` for `ClipView.Short`,
+which Show in folder opens, and `IsShort` asks it for the app, which shows
+or opens no file outside an episode's work folder but a short of one of
+its clips.
+
+Whether a clip was rendered is the note alone, `renderedOf`, read as
+`ClipView.Rendered` and counted by `Status`. A short is uploaded and then
+removed from its folder, and the clip was rendered all the same, issue
+#384.
 
 It is written down rather than worked out from the settings because the
 settings say where the next short goes, not where the last one went: the
@@ -1542,7 +1548,8 @@ folder can change after a render. The size and the time are written down
 because a file of the short's name is not proof that it is the short:
 another episode's render with `--out`, or a person, can write over it, and
 the clip then took a short it did not make for its own. A short moved,
-removed or written over is not the clip's, so the clip is not rendered.
+removed or written over is not the clip's, so the clip has no short to
+show, though it still was rendered.
 The clip set is untrusted, so it names a folder and a file name that must
 be the clip's own name or that with a number, `ownName`, and a link in
 that folder counts only when it leads to a file of that name inside it.
