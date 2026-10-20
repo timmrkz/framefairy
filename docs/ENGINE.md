@@ -475,7 +475,8 @@ a crop for each camera, which Tim never saw at work in his own two-camera
 podcast, #396. The crop as filmed, `crop_x`, is the whole
 clip's, kept on every piece, turned or not, because a part turned back
 plays with it. Only the crop on the picture turned, `crop_x_turned`, is
-shared by the pieces turned alike alone. A plan from before that plays
+shared by the pieces turned alike alone, and a piece standing as filmed
+has none, #413. A plan from before that plays
 every piece with the crop of its first piece placed by hand, or of its
 first piece where none was, `oneCrop` in `engine/clips.go`, since a crop
 a person placed is a decision and one the analysis chose a guess. Its

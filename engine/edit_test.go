@@ -639,8 +639,8 @@ func FuzzPlanEdits(f *testing.F) {
 
 // cropsAlike fails unless every clip of a plan file has one crop: the crop
 // as filmed and the automatic one behind it alike on every piece, turned
-// or not, and the crop on the picture turned alike on the pieces turned
-// one way.
+// or not, the crop on the picture turned alike on the pieces turned one
+// way, and none on a piece standing as filmed.
 func cropsAlike(fsys afero.Fs, path string) error {
 	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
@@ -678,6 +678,10 @@ func cropsAlike(fsys afero.Fs, path string) error {
 			}
 			turn := RotationAt(spans, number(seg[keyStart]))
 			if turn == 0 {
+				if _, ok := seg[keyCropXTurned]; ok {
+					return fmt.Errorf("clip %s has a crop turned on a piece standing as filmed: %v",
+						c.ID, c.Segments)
+				}
 				continue
 			}
 			if was, ok := turned[turn]; ok && was != show(seg, keyCropXTurned) {
