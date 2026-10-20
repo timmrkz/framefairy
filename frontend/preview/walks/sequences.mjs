@@ -11151,6 +11151,39 @@ async function pickCards(page, n) {
   await canLook(page);
   const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
   const problems = [];
+  // What went to and from the Go side about captions, and what the video
+  // preview said in the log, each by the clock of this machine: told with
+  // a click that changed more than once, to say which of them came late.
+  const heard = [];
+  const callOf = (r) => {
+    try {
+      return JSON.parse(r.postData() ?? "");
+    } catch {
+      return null;
+    }
+  };
+  const asked = (r) => {
+    const u = r.url();
+    if (u.includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} asked` });
+    const call = u.endsWith("/call") ? callOf(r) : null;
+    if (call?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions asked" });
+    if (call?.name?.endsWith("Said"))
+      for (const l of call.args?.[0] ?? []) if (String(l.text).startsWith("video preview")) heard.push({ at: l.at, what: l.text });
+  };
+  const answered = (r) => {
+    const u = r.url();
+    if (u.includes("/frames/captions?"))
+      heard.push({ at: Date.now(), what: `layer at ${new URL(u).searchParams.get("at")} answered ${r.response() ? "" : "nothing"}` });
+    if (u.endsWith("/call") && callOf(r)?.name?.endsWith("Captions")) heard.push({ at: Date.now(), what: "Captions answered" });
+  };
+  const failed = (r) => {
+    if (r.url().includes("/frames/captions?")) heard.push({ at: Date.now(), what: `layer failed, ${r.failure()?.errorText}` });
+  };
+  page.on("request", asked);
+  page.on("requestfinished", answered);
+  page.on("requestfailed", failed);
+  const late = [];
+  const clicks = [];
   for (let i = 0; i < n; i++) {
     const held = i % 2 === 1;
     let key;
@@ -11167,6 +11200,8 @@ async function pickCards(page, n) {
       const others = cards.filter((k) => k !== current);
       key = others[i % others.length];
     }
+    const clicked = Date.now();
+    clicks.push(clicked);
     const { looks } = await clickCard(page, key, null);
     if (held) await control(url, "/hold?call=Captions&ms=0&times=0");
     const first = looks[0];
@@ -11175,7 +11210,7 @@ async function pickCards(page, n) {
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
     const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
     if (!last.captions) problems.push(`${card}: the clip has no caption at its start, so its captions cannot be seen to come`);
-    else if (changes.length !== 1)
+    else if (changes.length !== 1) {
       problems.push(
         `${card}: the video preview changed ${changes.length} times, not once: ${changes
           .map((l) => {
@@ -11185,9 +11220,20 @@ async function pickCards(page, n) {
           })
           .join(", ")}`,
       );
-    else if (held && changes[0].t < 100) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 100 ms could have`);
+      late.push({ card: i + 1, clicked });
+    } else if (held && changes[0].t < 100) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 100 ms could have`);
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
+  }
+  // The log is written a quarter of a second after it is said, said.ts,
+  // so what is told of the last click may be short of its last lines.
+  page.off("request", asked);
+  page.off("requestfinished", answered);
+  page.off("requestfailed", failed);
+  for (const { card, clicked } of late) {
+    const next = clicks.find((t) => t > clicked) ?? Infinity;
+    const near = heard.filter((h) => h.at >= clicked - 50 && h.at < next - 50).sort((a, b) => a.at - b.at);
+    problems.push(`card ${card}, from its click: ${near.map((h) => `${h.at - clicked} ms ${h.what}`).join(", ")}`);
   }
   return problems.length ? problems.join("\n") : null;
 }
