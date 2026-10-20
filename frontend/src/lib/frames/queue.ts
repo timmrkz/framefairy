@@ -96,6 +96,9 @@ export type Stats = {
   // The longest a frame a gesture put the playhead on waited for what lies
   // over it, milliseconds, see dress.
   dressWait: number;
+  // Frames a gesture put the playhead on that were put up without what
+  // lies over it, because it did not come in DRESS_WAIT, see dress.
+  bare: number;
   // Plays started, a seek while playing and a new program included. A
   // press of L starts none, see relooped.
   starts: number;
@@ -502,6 +505,7 @@ export class FrameQueue {
     late: 0,
     lateSound: 0,
     dressWait: 0,
+    bare: 0,
     starts: 0,
     soundDecoded: 0,
     soundScheduled: 0,
@@ -1244,8 +1248,10 @@ export class FrameQueue {
     return Promise.race([came.then(() => "came" as const), late]).then((how) => {
       clearTimeout(timer);
       const wanted = ticket === this.ticket && !this.closed;
-      if (how === "late" && wanted)
+      if (how === "late" && wanted) {
+        this.stats.bare++;
         this.trace(`the captions of frame ${rank} did not come in ${DRESS_WAIT} ms, the frame is put up without them`);
+      }
       else if (wanted) this.stats.dressWait = Math.max(this.stats.dressWait, Math.round(performance.now() - asked));
       return wanted;
     });

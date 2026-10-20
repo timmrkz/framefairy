@@ -233,7 +233,9 @@
 //                      every animation frame from the click reads the crop
 //                      frame and the canvas: the picture, the crop frame and
 //                      the captions over it change once, together, issue
-//                      #383
+//                      #383. A click whose captions the app says did not
+//                      come in the 600 ms a frame waits is taken again on
+//                      another new clip, up to three times
 //   ["wake on a caption"]
 //                      puts the playhead on a clip that starts on a
 //                      caption, adds another video and goes back to the
@@ -11149,6 +11151,8 @@ async function pickCards(page, n) {
   if (typeof clips === "string") return clips;
   const path = await episodeOn(page);
   await canLook(page);
+  // Where the new clips are made, each starting on a caption, the last
+  // ones for a click taken again.
   const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
   const problems = [];
   // What went to and from the Go side about captions, and what the video
@@ -11184,7 +11188,7 @@ async function pickCards(page, n) {
   page.on("requestfailed", failed);
   const late = [];
   const clicks = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0, again = 0; i < n; i++) {
     const held = i % 2 === 1;
     let key;
     if (held) {
@@ -11193,7 +11197,7 @@ async function pickCards(page, n) {
       // busy with other walks too. Held 250 ms, the way there took 624 ms
       // once beside three other walkers, and the frame went up first.
       await control(url, "/hold?call=Captions&ms=100&times=100");
-      [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh[(i - 1) / 2], false));
+      [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
     } else {
       await restAhead(page);
       const { cards, current } = await cardsNow(page);
@@ -11202,8 +11206,21 @@ async function pickCards(page, n) {
     }
     const clicked = Date.now();
     clicks.push(clicked);
+    const bare = await page.evaluate(() => window.__frameQueue.stats.bare);
     const { looks } = await clickCard(page, key, null);
     if (held) await control(url, "/hold?call=Captions&ms=0&times=0");
+    // A frame put up without its captions, which did not come in the 600
+    // ms it waits, is the machine and not the app: libass took 590 ms to
+    // draw one layer once in make changed, beside three other walkers,
+    // where it takes 15 here alone. The app says so, stats.bare, and the
+    // click is taken again on another new clip, up to three times, so
+    // captions that never come in time fail all four.
+    if (held && again < 3 && fresh.length && (await page.evaluate((was) => window.__frameQueue.stats.bare > was, bare))) {
+      console.log(`        card ${i + 1}: its captions did not come in 600 ms on this busy machine, again on another new clip`);
+      again++;
+      i--;
+      continue;
+    }
     const first = looks[0];
     const last = looks[looks.length - 1];
     const changes = changesOf(looks);
