@@ -803,6 +803,7 @@
               <Episode
                 {path}
                 away={path !== asked && path !== warming}
+                inLibrary={episodes.find((e) => e.source === path)}
                 onchange={refresh}
                 onready={() => {
                   readied[path] = true;

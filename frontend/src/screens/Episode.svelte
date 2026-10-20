@@ -98,6 +98,7 @@
     onchange,
     onready,
     away = false,
+    inLibrary,
   }: {
     path: string;
     onchange: () => void;
@@ -106,6 +107,9 @@
     // Another episode has been picked, and this workspace only stays on
     // screen until that one is ready, see App.svelte.
     away?: boolean;
+    // The video as the library read it last, which it does each time the
+    // app comes to the front, see App.svelte.
+    inLibrary?: EpisodeStatus;
   } = $props();
 
   // The workspace's own element. Another episode's workspace can stand in
@@ -193,13 +197,36 @@
   // The workspace measures itself: how much height the app leaves it,
   // and how wide it is. From those two the video preview gets the biggest
   // size it can have, and the columns beside it take everything else.
-  // A video whose file is gone says so once, in the video preview, where
-  // its picture would be. It stood in a line over the workspace, which
-  // pushed everything down, and Tim saw a toast say it a second time.
-  // Issue #311.
+  // A video whose file is gone says so in a toast, once each time it goes,
+  // and its video preview shows nothing of what it showed. It stood in a
+  // line over the workspace, which pushed everything down, and Tim saw a
+  // toast say it a second time. Issue #311.
   const gone = $derived(
     `The video file is no longer at ${path}. Put it back there, or remove the video from the list.`,
   );
+  // When the library says otherwise than the workspace, the workspace reads
+  // the video again. Tim put a file back in Finder, the sidebar saw it
+  // as the app came to the front, and the video preview went on showing
+  // nothing: one part of the app knew and the other did not.
+  // Once for each read of the library, so two answers that disagree for a
+  // moment do not ask each other again and again.
+  $effect(() => {
+    if (!inLibrary || away) return;
+    const gone = inLibrary.missing;
+    const now = untrack(() => status);
+    if (!now || gone === now.missing) return;
+    untrack(() => {
+      tell(`the library says the file is ${gone ? "gone" : "back"}, read again`);
+      void load();
+    });
+  });
+  let saidGone = false;
+  $effect(() => {
+    const now = !!status?.missing;
+    if (now === saidGone) return;
+    saidGone = now;
+    if (now) untrack(() => toasts.say(where(), gone, { video: path }));
+  });
   let paused = $state(true);
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
@@ -234,6 +261,25 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
+  // A search that fails while the app is open says why in a toast, with
+  // Report for what the person cannot put right alone. Its row goes on
+  // saying Failed with Continue, after a restart too. One seen failed
+  // only as the app opened has said why already, the time it failed.
+  // Only its state and id are read, see the rule on watching jobs.
+  let failedSeenRunning = "";
+  $effect(() => {
+    const id = search?.id ?? "";
+    const state = search?.state;
+    if (state === "running" || state === "queued") {
+      failedSeenRunning = id;
+      return;
+    }
+    if (state !== "failed" || !id || failedSeenRunning !== id) return;
+    failedSeenRunning = "";
+    const why = untrack(() => reasonOf(search?.error));
+    tell(`search failed: ${why}`);
+    toasts.say(where(), why, { video: path, report: true });
+  });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
@@ -621,6 +667,12 @@
   // over in the middle, or failed with a reason. It is said in the first
   // row still to come and points to Continue, and nothing starts by
   // itself. A search called off by hand leaves nothing to say.
+  // Why a search failed, as a sentence. The engine's reasons begin in
+  // lower case, the way an error does in the log.
+  function reasonOf(error?: string): string {
+    const said = error?.trim() ?? "";
+    return said ? said[0].toUpperCase() + said.slice(1) : "The search failed, and no reason was given.";
+  }
   const halted = $derived.by(() => {
     if (!search || busy) return null;
     if (search.state !== "interrupted" && search.state !== "failed") return null;
@@ -629,11 +681,10 @@
     const window = `Window ${clock(start)} to ${clock(end)}`;
     const span = { from: start, to: end, window };
     if (search.state === "failed") {
-      // The engine's reasons begin in lower case, the way an error does
-      // in the log. In a row of the list it is a sentence.
-      const said = search.error?.trim() ?? "";
-      const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
-      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}`, failed: true };
+      // Why is said in a toast as it fails, see failedNow. A card is no
+      // place to carry a reason, and cut to one line it lost the part
+      // that said what to do, issue #311.
+      return { ...span, what: "Failed. Click Continue", left: window, full: `${window}. ${reasonOf(search.error)}` };
     }
     // Called off with Cancel, or cut off by the app closing: the same row
     // either way, because either way what it did stays and Continue
@@ -3327,7 +3378,7 @@
           bind:offers
           {path}
           {source}
-          missing={status?.missing ? gone : ""}
+          missing={!!status?.missing}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3650,10 +3701,6 @@
         {/if}
       </div>
     </div>
-  {:else if status?.missing}
-    <!-- Gone before the app ever saw its picture: there is no video
-         preview to say it in, and nothing else in the workspace. -->
-    <p class="gone selectable">{gone}</p>
   {/if}
 </section>
 
@@ -3846,18 +3893,6 @@
      makes of it is what the whole workspace is tall. */
   .middle {
     min-width: 0;
-  }
-
-  /* A video gone before its picture was ever seen, said in the middle of
-     the workspace the way the video preview says it over its picture. */
-  .gone {
-    display: grid;
-    place-items: center;
-    height: var(--space);
-    margin: 0;
-    padding: 0 var(--edge);
-    text-align: center;
-    color: var(--muted);
   }
 
   .settings {

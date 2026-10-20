@@ -70,7 +70,7 @@
     pictured = $bindable(false),
     frameStart = $bindable(NaN),
     sleeping = false,
-    missing = "",
+    missing = false,
   }: {
     path: string;
     source: SourceView;
@@ -148,9 +148,10 @@
     // but the frame on its canvas and what it plays: no decoder on the
     // Go side, no frames kept, no sound card.
     sleeping?: boolean;
-    // Why the video cannot be shown at all, its file being gone, said
-    // where the picture would be. The video preview then reads nothing.
-    missing?: string;
+    // The video's file is gone. The video preview then reads nothing and
+    // shows nothing of what it showed, and a toast says why, see
+    // Episode.svelte.
+    missing?: boolean;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -1718,7 +1719,7 @@
        Everything drawn over the picture stands in .screen, the picture's
        own box, so the crop and the captions are in shares of the picture
        and not of the viewer. -->
-  <div class="stack" class:missing={!!missing}>
+  <div class="stack" class:missing>
   <div class="viewer">
   <div
     class="screen asks"
@@ -1746,9 +1747,7 @@
     <!-- The picture. The queue draws every frame onto it, the size the
          stylesheet makes it, in the episode's own shape. -->
     <canvas bind:this={canvas} use:watchSize onclick={toggle}></canvas>
-    {#if missing}
-      <p class="failed selectable">{missing}</p>
-    {:else if failed}
+    {#if failed && !missing}
       <p class="failed selectable">{failed}</p>
     {:else if trouble}
       <p class="trouble selectable">{trouble}</p>
@@ -2002,8 +2001,8 @@
   }
 
   /* A video whose file is gone shows nothing of what it showed last, the
-     crop and the captions with it, only why. */
-  .missing .screen > :not(.failed),
+     crop and the captions with it. */
+  .missing .screen > *,
   .missing .atop {
     visibility: hidden;
   }

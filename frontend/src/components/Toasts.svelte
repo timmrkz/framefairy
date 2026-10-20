@@ -5,6 +5,7 @@
   import Icon from "./Icon.svelte";
   import { secondThoughts } from "../lib/removed";
   import { toasts, type Toast } from "../lib/toast.svelte";
+  import { api } from "../lib/api";
 
   // The toasts, in the top right corner of the window they are about,
   // under its bar, the corner macOS brings its own notes in at. They lie
@@ -36,7 +37,21 @@
       out:fade={{ duration: 150 }}
     >
       <span class="mark"><Icon name="warn" /></span>
-      <p class="text selectable">{t.text}</p>
+      <div class="body">
+        <p class="text selectable">{t.text}</p>
+        {#if t.report}
+          <!-- Report a Problem, with the toast's words already written in
+               it, for a failure the person cannot put right alone. -->
+          <button
+            class="report"
+            title="Opens Report a Problem with this message written in it"
+            onclick={() => {
+              api.reportAbout(t.text).catch(() => {});
+              toasts.close(t.id, "closed");
+            }}>Report</button
+          >
+        {/if}
+      </div>
       <button class="quiet bin close" aria-label="Close" title="Close" onclick={() => toasts.close(t.id, "closed")}>
         <Icon name="close" />
       </button>
@@ -94,8 +109,22 @@
     color: var(--err);
   }
 
-  .text {
+  .body {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  /* Under the words, where a note on macOS has its button, and as wide
+     as its word. */
+  .report {
+    margin-bottom: 4px;
+  }
+
+  .text {
     min-width: 0;
     margin: 0;
     padding: 6px 0;

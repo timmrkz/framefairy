@@ -85,7 +85,7 @@
     // while it runs, so the end of the story is where the story was told.
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
-    stopped?: { what: string; left: string; full: string; failed?: boolean } | null;
+    stopped?: { what: string; left: string; full: string } | null;
     // The clips just taken out. Each keeps its place in the list for a
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
@@ -324,7 +324,6 @@
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
-      class:failed={lead && !next && !!stopped?.failed}
       class:told={lead && !next && !stopped && !!emptied?.fades}
       class:lit={!!clip && clip.key === hovered}
       title={lead && !next ? (stopped?.full ?? emptied?.full) : undefined}
@@ -621,26 +620,5 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  /* A search that failed says the whole of why, and what to do, over as
-     many lines as it takes. Cut to one line, the part that said what to do
-     was the part nobody saw, issue #311. A failure is rare, and while it
-     stands it matters more than one row being the height of the rest. */
-  .next.failed {
-    height: auto;
-    min-height: var(--card-h);
-    padding-block: 10px;
-  }
-
-  /* A whole number of pixels a line, so the row is a whole number of
-     them however many lines it takes. */
-  .failed .title {
-    line-height: 19px;
-  }
-
-  .failed .meta {
-    white-space: normal;
-    line-height: 18px;
   }
 </style>
