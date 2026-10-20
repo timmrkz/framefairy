@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +39,7 @@ func twoCameras(t *testing.T) (string, SourceInfo) {
 }
 
 // framingEngine frames by what is in focus rather than by faces. These
-// tests are about which shots a clip is made of, and looking for faces in
+// tests are about how a clip is framed, and looking for faces in
 // every sampled frame under the race detector is most of a minute.
 func framingEngine() *Engine {
 	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
@@ -48,56 +47,31 @@ func framingEngine() *Engine {
 	return e
 }
 
-func TestFrameDifference(t *testing.T) {
-	a := []byte{0, 10, 20, 30}
-	if d := frameDifference(a, a); d != 0 {
-		t.Errorf("the same frame differs by %v", d)
-	}
-	if d := frameDifference(a, []byte{10, 0, 30, 20}); d != 10 {
-		t.Errorf("difference %v, want 10", d)
-	}
-	if d := frameDifference(nil, a); d != 255 {
-		t.Errorf("nothing to compare reads %v", d)
-	}
-}
-
-func TestAClipThatComesBackToItsCameraIsOneShot(t *testing.T) {
+// A clip has one crop, whatever cameras it shows. It used to be parted at
+// every camera switch, with a crop for each camera, #396.
+func TestAClipHasOneCropAcrossCameraSwitches(t *testing.T) {
 	t.Parallel()
 	path, source := twoCameras(t)
 	e := framingEngine()
 	ctx := context.Background()
 
-	// Out of the first camera, over everything on the second, and back to
-	// the first: one shot, measured once, framed the same on both sides.
-	cache := newCropCache()
-	segments, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {22, 28}}, source, 202, cache, nil)
+	// Out of the first camera and back on the second: one crop for both.
+	segments, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {12, 18}}, source, 202, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(segments) != 2 || len(cache.crops) != 1 {
-		t.Fatalf("%d segment(s), %d shot(s) measured, want 2 and 1", len(segments), len(cache.crops))
-	}
-	if fmtCrop(segments[0].CropX) != fmtCrop(segments[1].CropX) {
-		t.Errorf("one camera framed two ways: %s and %s", fmtCrop(segments[0].CropX), fmtCrop(segments[1].CropX))
+	if len(segments) != 2 || segments[0].CropX == nil ||
+		fmtCrop(segments[0].CropX) != fmtCrop(segments[1].CropX) {
+		t.Fatalf("two cameras in one clip: %+v, want two pieces with one crop", segments)
 	}
 
-	// Out of the first camera and back on the second: two shots.
-	cache = newCropCache()
-	if _, err := e.ClipSegments(ctx, path, []Span{{2, 8}, {12, 18}}, source, 202, cache, nil); err != nil {
-		t.Fatal(err)
-	}
-	if len(cache.crops) != 2 {
-		t.Errorf("coming back on another camera measured %d shot(s)", len(cache.crops))
-	}
-
-	// A kept span with a switch inside it is split at the switch.
-	cache = newCropCache()
-	segments, err = e.ClipSegments(ctx, path, []Span{{7, 13}}, source, 202, cache, nil)
+	// A kept span with a switch inside it stays one piece.
+	segments, err = e.ClipSegments(ctx, path, []Span{{7, 13}}, source, 202, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(segments) != 2 || math.Abs(segments[0].End-10) > 0.1 {
-		t.Errorf("a switch inside a span: %+v", segments)
+	if len(segments) != 1 || segments[0].Start != 7 || segments[0].End != 13 {
+		t.Errorf("a switch inside a span: %+v, want the span as it is", segments)
 	}
 }
 
@@ -126,11 +100,11 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	}
 	e := framingEngine()
 	e.FFmpeg = refusing
-	segments, err := e.ClipSegments(context.Background(), path, []Span{{7, 13}}, source, 202, newCropCache(), nil)
+	segments, err := e.ClipSegments(context.Background(), path, []Span{{7, 13}}, source, 202, nil)
 	if err != nil {
 		t.Fatalf("framing failed instead of going round: %v", err)
 	}
-	if len(segments) != 2 || !e.softDecode.Load() {
+	if len(segments) != 1 || segments[0].CropX == nil || !e.softDecode.Load() {
 		t.Errorf("segments %+v, on the processor from now on: %v", segments, e.softDecode.Load())
 	}
 }
@@ -214,7 +188,7 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 		t.Error("the system's decoder is still used after it hung")
 	}
 
-	// A frame pulled for comparing two cameras is ended the same way.
+	// A frame pulled on its own is ended the same way.
 	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
 	began = time.Now()
@@ -224,43 +198,30 @@ func TestFramingGoesOnWhenTheSystemDecoderHangs(t *testing.T) {
 	}
 }
 
-// An ffmpeg that stops working while it looks for camera switches is
-// ended, and the switches are looked for again with the processor
-// decoding. The first macOS test run with ffmpeg 7.1.5 had one hang there
-// for six minutes, and nothing ended it: the search would have waited
-// for good.
-func TestShotDetectionThatHangsIsEnded(t *testing.T) {
-	was := shotLimit
-	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
-	t.Cleanup(func() { shotLimit = was })
+// An ffmpeg that stops working while it reads the frames for the crop is
+// ended, and the frames are read again with the processor decoding. The
+// first macOS test run with ffmpeg 7.1.5 had one hang there for six
+// minutes, and nothing ended it: the search would have waited for good.
+// Not parallel: it shortens spanLimit, a package variable.
+func TestReadingFramesThatHangsIsEnded(t *testing.T) {
+	was := spanLimit
+	spanLimit = func(float64) time.Duration { return 300 * time.Millisecond }
+	t.Cleanup(func() { spanLimit = was })
 
 	e := NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, false)
-	began := time.Now()
-	cuts, err := e.DetectShots(context.Background(), "episode.mp4", 10, 20)
-	if err != nil {
+	if _, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil {
 		t.Fatal(err)
-	}
-	if took := time.Since(began); took > 5*time.Second {
-		t.Errorf("finding camera switches took %s", took)
-	}
-	if len(cuts) != 1 || math.Abs(cuts[0]-14.5) > 0.01 {
-		t.Errorf("switches %v, want one at 14.5", cuts)
 	}
 	if !e.softDecode.Load() {
 		t.Error("the system's decoder is still used after it hung")
 	}
 
-	// One that hangs either way gives no switches rather than no clip.
+	// One that hangs either way gives no frames rather than no clip.
 	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
-	began = time.Now()
-	cuts, err = e.DetectShots(context.Background(), "episode.mp4", 10, 20)
-	if err != nil || len(cuts) != 0 {
-		t.Errorf("an ffmpeg that always hangs: %v, %v", cuts, err)
-	}
-	if took := time.Since(began); took > 5*time.Second {
-		t.Errorf("giving up took %s", took)
+	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
+		t.Errorf("an ffmpeg that always hangs: %d frames, %v", len(frames), err)
 	}
 }
 
@@ -269,12 +230,12 @@ func TestShotDetectionThatHangsIsEnded(t *testing.T) {
 // #201, the ffmpeg of the probe was stopped after its fifteen seconds and
 // went on sitting in the system's decoder, and the test waited on it for
 // eight minutes, until the run was killed. Here the stop does nothing, as
-// it did there. Not parallel: it shortens frameLimit, shotLimit and
+// it did there. Not parallel: it shortens frameLimit, spanLimit and
 // leaveAfter and stands in for stopProcess, package variables.
 func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
-	limits, shots, leave, stop := frameLimit, shotLimit, leaveAfter, stopProcess
+	limits, spans, leave, stop := frameLimit, spanLimit, leaveAfter, stopProcess
 	frameLimit = 300 * time.Millisecond
-	shotLimit = func(float64) time.Duration { return 300 * time.Millisecond }
+	spanLimit = func(float64) time.Duration { return 300 * time.Millisecond }
 	leaveAfter = 300 * time.Millisecond
 	var mu sync.Mutex
 	var left []*os.Process
@@ -285,7 +246,7 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() {
-		frameLimit, shotLimit, leaveAfter, stopProcess = limits, shots, leave, stop
+		frameLimit, spanLimit, leaveAfter, stopProcess = limits, spans, leave, stop
 		mu.Lock()
 		defer mu.Unlock()
 		for _, p := range left {
@@ -308,8 +269,8 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 		t.Errorf("the log does not say the decoder was left behind: %q", said.String())
 	}
 
-	// Pulling frames, and looking for camera switches with the frames
-	// coming out of ffmpeg as it reads, are left the same way.
+	// Pulling one frame, and reading the frames of a span as ffmpeg
+	// decodes it, are left the same way.
 	e = NewEngine(NewLog(io.Discard, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
 	began = time.Now()
@@ -323,11 +284,11 @@ func TestASystemDecoderThatWillNotEndIsLeftBehind(t *testing.T) {
 	e = NewEngine(NewLog(&said, false, false), afero.NewMemMapFs())
 	e.FFmpeg = stuckFFmpeg(t, true)
 	began = time.Now()
-	if read, err := e.readSpan(context.Background(), "episode.mp4", 10, 20, true); err != nil || len(read.cuts) != 0 {
-		t.Errorf("an ffmpeg left behind while it looks for switches: %v, %v", read.cuts, err)
+	if frames, err := e.readSpan(context.Background(), "episode.mp4", 10, 20); err != nil || len(frames) != 0 {
+		t.Errorf("an ffmpeg left behind while it reads the frames: %d frames, %v", len(frames), err)
 	}
 	if took := time.Since(began); took > 5*time.Second {
-		t.Errorf("looking for switches took %s", took)
+		t.Errorf("reading the frames took %s", took)
 	}
 	if !strings.Contains(said.String(), "did not end") {
 		t.Errorf("the log does not say ffmpeg was left behind: %q", said.String())

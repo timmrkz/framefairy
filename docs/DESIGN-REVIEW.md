@@ -161,7 +161,7 @@ Still there:
 - The TypeScript types and caption constants are copied by hand
   (`api.ts:880-899`, ASSESSMENT 25).
 - `found` and `found_segments` keep the same fact twice
-  (`engine/edit.go:610-625`).
+  (`engine/edit.go:610-625`). #396 took `found_segments` out.
 - The loudness is kept twice, in `words.frames` and `levels.frames`, from
   two decodes of the same sound (see the engine section).
 - The caption overrides, bug 7.
@@ -205,6 +205,10 @@ frames for the faces. The frames either side of a gap are the last and
 first frames of the neighbouring pieces, so `sameShot` needs no run of
 its own. The same work in 3 runs took **8.7 s, measured**, 2.1 times
 faster. Framing the first clip is most of the wait for it.
+
+#396 took the camera switches out of framing, `DetectShots` and
+`sameShot` with them, so a clip has one crop and each kept span is read
+once for its faces.
 
 On a Mac, `-hwaccel auto` with no output format copies every frame back
 to memory and scales it in software. Keeping the frame on the GPU and
