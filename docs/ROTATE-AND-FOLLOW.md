@@ -21,11 +21,11 @@ and nothing changes for a video that is fine as it is.
   has a start, an end and one crop, `CropX`, the left edge in pixels of
   the video. The crop is always the full height of the video and only
   moves sideways.
-- The crop belongs to the camera angle, not the piece: `ClipSegments` in
-  `engine/analysis.go` gives every piece of the same shot the same crop,
-  measured once from where the faces are, and `SetCrop` in
-  `engine/edit.go` moves every piece of that angle together. One crop per
-  angle, standing still for the whole clip.
+- The crop belongs to the clip, not the piece: `ClipSegments` in
+  `engine/analysis.go` gives every piece the same crop, measured once from
+  where the faces are, and `SetCrop` in `engine/edit.go` moves every piece
+  together. One crop per clip, standing still for the whole clip. It once
+  was one crop per camera angle, which #396 took out.
 - A double-click in the clip on the clip timeline cuts a part out, and its
   edges are dragged to size. The render plays straight over it.
 - `BuildFilterGraph` in `engine/render.go` builds one ffmpeg chain per
@@ -96,7 +96,7 @@ crop.
   playhead stands on a keyframe.
 - **Dragging the crop frame places the crop, and nothing else.** With the
   playhead on a keyframe, it moves that keyframe's crop. Anywhere else it
-  moves the crop of the whole camera angle, every keyframe of it by the same
+  moves the crop of the whole clip, every keyframe of it by the same
   distance, which is today's drag for a clip with no keyframes.
 - **No keyframe, or one, is a crop that stands still**, today's behaviour.
   **Two or more make it move**: it glides from each keyframe to the next.
@@ -124,7 +124,7 @@ three rules work out the rest:
 - **A glide goes on across a cut, by the time the short plays.** A cut
   takes time out of the clip, not out of the glide, so a keyframe before
   a cut and one after it glide from one to the other with nothing jumping
-  at the cut. A rotated part is another camera angle with keyframes of its
+  at the cut. A rotated part has a crop and keyframes of its
   own, so the rotate case needs nothing at all: the rotated part begins at
   the cut over the spin, and its crop is there from its first frame. The
   first design stopped every glide at a cut, and Tim found a keyframe
@@ -150,7 +150,7 @@ their own:
   half below it. So on the same frame the diamond sits just under the
   thumbnail, both on the frame's line, and each takes its own click,
   drag and double-click.
-- **Automatic crop** removes every keyframe of the angle and brings back the
+- **Automatic crop** removes every keyframe of the clip and brings back the
   placement the engine found.
 
 ### 6. What the engine can do by itself, later
@@ -158,12 +158,12 @@ their own:
 The app should not need Tim to do even this much, so two rows follow the
 two above:
 
-- **It finds a rotated part.** The face finder already samples every shot
-  for faces. A shot where it finds none upright but finds them rotated a
-  quarter is a rotated part, and the spin before it is where the shot
-  detector fires many times in a second. The engine then proposes the cut
+- **It finds a rotated part.** The face finder already samples every clip
+  for faces. A stretch where it finds none upright but finds them rotated a
+  quarter is a rotated part, and the spin before it is where the picture
+  changes all over many times in a second. The engine then proposes the cut
   over the spin and the rotation, and R or Undo takes them back.
-- **It follows a subject that moves.** Where the faces in a shot do not
+- **It follows a subject that moves.** Where the faces in a clip do not
   settle on one place, the engine puts keyframes at a few moments
   itself instead of one, and the glide does the rest. Marks made by
   hand override its keyframes.
@@ -173,7 +173,7 @@ two above:
 - **The plan.** A rotation is kept for a part of the clip as its start and end
   in seconds of the video and a quarter count, the way caption times are
   kept against the video, so trimming a clip or moving a cut's edge does
-  not lose it. The keyframes are kept with the camera angle as pairs of a
+  not lose it. The keyframes are kept with the clip as pairs of a
   moment in the video and a left edge. `editPlan` writes both, `LoadClips`
   checks both, and an old plan without them reads as no rotation and one
   still crop. The fuzz targets that read a plan read the new fields.

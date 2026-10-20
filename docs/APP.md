@@ -1162,9 +1162,10 @@ bubble scrolled by those eight pixels.
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only
-  then. The new place applies to every piece of the clip filmed from the same
-  camera angle. **Automatic crop** appears once a crop was moved and brings
-  back the automatic placement for that angle, removing its keyframes
+  then. The new place applies to the whole clip, every piece of it, since a
+  clip has one crop. A part turned with Rotate is the one exception and
+  keeps a crop of its own. **Automatic crop** appears once a crop was
+  moved and brings back the automatic placement, removing the keyframes
   with it, and **Put the crop back** takes that click back again, crop
   marks and all. A click on the frame without dragging plays
   or pauses.
@@ -1654,9 +1655,8 @@ bubble scrolled by those eight pixels.
       where the clip was found is a frame's start, and the frame nearest
       the hand is that one. A search used to leave its edges between
       frames, and the end went back to 24.80 where the clip had ended at
-      24.72. A shot the trim had taken away comes back with its own crop,
-      from the camera switch, the same as a cut put back, see
-      [ENGINE.md](ENGINE.md).
+      24.72. What the trim had taken away comes back with the clip's crop,
+      the same as a cut put back, see [ENGINE.md](ENGINE.md).
     - **The playhead goes with the edge.** While either edge of a clip or
       of a cut is dragged, the playhead stands on it and the video preview
       shows that frame, the clip as it is being dragged, with its captions.
@@ -2203,16 +2203,16 @@ or walks across the picture. Plan row 3.26, the design is in
   crop glides from each to the next over the whole time between them,
   starting and settling gently, the way a camera operator pans. The
   tempo is where the keyframes are: two far apart are a slow drift, and
-  two a frame apart are an instant move. A keyframe moves only the crop
-  of its own shot, and a glide goes on across a cut by the time the
+  two a frame apart are an instant move. A keyframe moves the crop of
+  the whole clip, and a glide goes on across a cut by the time the
   short plays, so a keyframe before a cut and one after it glide from one
   to the other the way they would were the cut a moment of the clip, and
   nothing jumps at the cut. A glide used to stop at a cut, so those two
-  did not glide at all, found by Tim. A part turned with Rotate is
-  another shot, so its crop still starts at its cut.
+  did not glide at all, found by Tim. A part turned with Rotate has
+  a crop of its own, so its crop still starts at its cut.
 - **Dragging the crop frame places the crop, and nothing else.** With the
   playhead on a keyframe it moves that keyframe. Anywhere else it moves
-  the crop of the whole shot, every keyframe of it by the same distance,
+  the crop of the whole clip, every keyframe of it by the same distance,
   kept inside the picture.
 - **The video preview follows the glide frame by frame** while the clip
   plays, so what plays is what renders. The glide is not rounded to a
@@ -2229,7 +2229,7 @@ or walks across the picture. Plan row 3.26, the design is in
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past
   the clip's edge it stops on the first or last frame and does not jump.
-- **Automatic crop** removes every keyframe of the shot and brings back
+- **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing the first of two keyframes leaves the
   crop standing at the other for the whole clip, as removing a keyframe
@@ -2269,7 +2269,7 @@ lies on its side. Plan row 3.25, the design is in
   making a new one never changes how a frame is turned, and a crop placed
   on a rotated part stays with its frames.
 - **The crop of a rotated part starts in the middle** of the picture
-  rotated, and is dragged like any other. It moves the pieces of its shot
+  rotated, and is dragged like any other. It moves the pieces of the clip
   rotated alike and no other. Rotated back all the way, the part has the
   crop it had before, which rotating never touched.
 - **A rotated part has the Rotate icon in its middle** on the clip
