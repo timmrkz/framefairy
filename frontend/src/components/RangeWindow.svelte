@@ -51,6 +51,7 @@
     resumes = false,
     unheard = [],
     unheardLit = -1,
+    giving = -1,
     onhoverunheard,
   }: {
     duration: number;
@@ -109,6 +110,10 @@
     unheard?: [number, number][];
     // The one of them whose card is under the hand, lit a step.
     unheardLit?: number;
+    // Where the work is hearing now, or -1. The part that starts there
+    // gives way as the work hears, so its dots stand still while its edge
+    // passes over them.
+    giving?: number;
     // The one of them under the hand here, by its place among them, or -1,
     // so its card is lit too.
     onhoverunheard?: (index: number) => void;
@@ -374,7 +379,7 @@
   <!-- What has not been heard yet, dots under the minutes so their lines
        still show through. -->
   {#each unheard as [a, b], i (i)}
-    <div class="unheard" class:lit={i === unheardLit} style="--at: {on(a)}; --to: {on(b)}"></div>
+    <div class="unheard" class:lit={i === unheardLit} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -794,15 +799,26 @@
      its fade, found by Tim. */
   .unheard::before {
     --width: calc(var(--to) - var(--at));
-    --columns: round(down, var(--width), var(--dot-pitch));
+    --side: calc((var(--width) - round(down, var(--width), var(--dot-pitch))) / 2);
     content: "";
     position: absolute;
     top: 0;
     bottom: 0;
-    left: calc((var(--width) - var(--columns)) / 2);
-    width: var(--columns);
-    background: var(--halftone) 0 calc(100% - 1px) / var(--dot-pitch) var(--dot-pitch);
+    left: var(--side);
+    right: var(--side);
+    background: var(--halftone) right 0 bottom 1px / var(--dot-pitch) var(--dot-pitch);
     mask-image: var(--halftone-fade);
+  }
+
+  /* While the work hears into a part, its dots stand still and the edge
+     wipes over them, a dot at a time and smoothly. Centred, they moved
+     half a pixel with every pixel of the edge and stepped back half a dot
+     each time a column went, so the pattern walked back and forth, found
+     by Tim. The right edge is where something heard begins or the video
+     ends, so it never moves, and the dots are laid from it. Once the work
+     stops, the part holds still and its dots are centred again. */
+  .unheard.giving::before {
+    --side: 0px;
   }
 
   .unheard.lit::before {

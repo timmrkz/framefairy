@@ -8650,14 +8650,27 @@ for (const seq of toWalk) {
         const path = await episodeOn(page);
         await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
         await watch.step("click", s);
+        // Where its dots end on the right, too, which must not move while
+        // its left edge does: centred, the pattern walked back and forth
+        // as the edge passed over it, found by Tim.
         const edges = [];
+        const dots = [];
         const saves = new Set();
         const until = Date.now() + 9000;
         while (Date.now() < until) {
-          edges.push(await page.evaluate(() => {
+          const seen = await page.evaluate(() => {
             const u = document.querySelector(".track .unheard");
-            return u ? Math.round(u.getBoundingClientRect().left * 10) / 10 : null;
-          }));
+            if (!u) return null;
+            const box = u.getBoundingClientRect();
+            const cs = getComputedStyle(u, "::before");
+            return {
+              left: Math.round(box.left * 10) / 10,
+              end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
+              side: parseFloat(cs.left),
+            };
+          });
+          edges.push(seen?.left ?? null);
+          if (seen) dots.push(seen);
           const status = await ask(page, "Status", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
           await page.waitForTimeout(150);
@@ -8667,6 +8680,17 @@ for (const seq of toWalk) {
         if (edges.every((v) => v === null)) wrong = "no part was not transcribed yet while the work heard";
         else if (moves < Math.max(4, 2 * saves.size))
           wrong = `the first part not transcribed yet moved ${moves} times in 9 s while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+        else {
+          // The samples taken while the edge moved, from the first move
+          // to the last, the dots' right end in each.
+          const moving = dots.filter((d, i) => i && d.left !== dots[i - 1].left || dots[i + 1] && dots[i + 1].left !== d.left);
+          const ends = [...new Set(moving.map((d) => d.end))];
+          console.log(JSON.stringify({ moves, ends: ends.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
+          if (ends.length > 1)
+            wrong = `the dots of the part giving way moved while its edge did, their right end at ${ends.slice(0, 6).join(", ")} px`;
+          else if (moving.some((d) => d.side !== 0))
+            wrong = `the dots of the part giving way stop short of its edge, ${moving.find((d) => d.side !== 0).side} px in, so the edge does not wipe them`;
+        }
         break;
       }
       case "heard some": {
@@ -9198,11 +9222,19 @@ for (const seq of toWalk) {
             const track = document.querySelector(".track");
             const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
             const columns = [...track.querySelectorAll(".unheard")].map((u) => {
+              // A part the work is hearing into has its dots laid from its
+              // right edge, up to its left edge, see the walk of the parts
+              // giving way. What it is once the work stops is read with
+              // that taken off.
+              const giving = u.classList.contains("giving");
+              const g = getComputedStyle(u, "::before");
+              const laid = giving ? [parseFloat(g.left), parseFloat(g.right), g.backgroundPositionX] : null;
+              u.classList.remove("giving");
               const b = getComputedStyle(u, "::before");
               const part = u.getBoundingClientRect();
               const left = parseFloat(b.left);
               const width = parseFloat(b.width);
-              return {
+              const at = {
                 // What is left either side of the columns of dots, and how
                 // many columns there are.
                 sides: [left, part.width - left - width].map((v) => Math.round(v * 100) / 100),
@@ -9210,7 +9242,10 @@ for (const seq of toWalk) {
                 height: [parseFloat(b.top), parseFloat(b.height) - part.height],
                 foot: b.backgroundPositionY,
                 fade: b.maskImage,
+                laid,
               };
+              if (giving) u.classList.add("giving");
+              return at;
             });
             return {
               pitch,
@@ -9303,6 +9338,8 @@ for (const seq of toWalk) {
             wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => c.sides))} left and right`;
           // And the foot row a pixel up from the range picker's foot,
           // where it looked clutched to it, found by Tim.
+          else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || c.laid[1] !== 0 || !/^(right|100%)/.test(c.laid[2]))))
+            wrong = `the dots of a part the work hears into are not laid from its right edge to its left: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
           else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
             wrong = `the foot row of dots on the range picker is not lifted a pixel: ${grid.columns.map((c) => c.foot).join(", ")}`;
         }

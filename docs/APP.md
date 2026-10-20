@@ -2137,7 +2137,11 @@ found is a place in the video, and I and O make a clip there.
   lights its card and the hand on a card lights its part, both ways
   round. The parts give way as the work hears, from what is heard, not
   from the transcript, which is saved in pieces: a search hearing half an
-  hour took the parts away in thirds, found by Tim.
+  hour took the parts away in thirds, found by Tim. While the work hears
+  into a part, its dots stand still, laid from its right edge, which
+  never moves, and its left edge wipes over them as it goes. Centred, the
+  pattern walked back and forth as the edge passed, found by Tim. Once
+  the work stops, the dots are centred in the part again.
 - **Escape steps back wherever the keyboard is**, unless the keyboard is
   in another field. The first takes back what was typed, so the whole of
   what was said is there again, and the next closes the search. Tim

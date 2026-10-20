@@ -3047,6 +3047,7 @@
     locked={busy}
     unheard={saying ? unheard : []}
     {unheardLit}
+    giving={live && !stoppedAt ? live[1] : -1}
     onhoverunheard={(i) => (unheardLit = i)}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
