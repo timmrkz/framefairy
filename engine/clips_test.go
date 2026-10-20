@@ -227,11 +227,15 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
 	if first.ID != "01" || first.Slug != "Erste-Wahl" || first.Basename() != "01_Erste-Wahl" {
 		t.Errorf("names %q %q", first.ID, first.Slug)
 	}
-	if len(first.Segments) != 2 || first.Segments[0].Start != 10 || first.Segments[0].CropX != nil {
+	// A clip has one crop, #396: the one placed by hand on the second
+	// piece, over the first piece's automatic one.
+	if len(first.Segments) != 2 || first.Segments[0].Start != 10 {
 		t.Errorf("segments %+v", first.Segments)
 	}
-	if !first.Segments[1].Moved || *first.Segments[1].CropX != 300 {
-		t.Errorf("hand-placed crop %+v", first.Segments[1])
+	for _, seg := range first.Segments {
+		if !seg.Moved || seg.CropX == nil || *seg.CropX != 300 {
+			t.Errorf("a piece does not play with the crop placed by hand: %+v", seg)
+		}
 	}
 	if first.Duration() != 4 {
 		t.Errorf("duration %v", first.Duration())

@@ -1159,9 +1159,10 @@ bubble scrolled by those eight pixels.
   on the box without dragging plays or pauses.
 - **Moving the crop:** drag the frame sideways when the automatic crop is
   off. The frame is there while the playhead is in the clip, and only
-  then. The new place applies to every piece of the clip filmed from the same
-  camera angle. **Automatic crop** appears once a crop was moved and brings
-  back the automatic placement for that angle, removing its keyframes
+  then. The new place applies to the whole clip, every piece of it, since a
+  clip has one crop. A part turned with Rotate is the one exception and
+  keeps a crop of its own. **Automatic crop** appears once a crop was
+  moved and brings back the automatic placement, removing the keyframes
   with it, and **Put the crop back** takes that click back again, crop
   marks and all. A click on the frame without dragging plays
   or pauses.
@@ -1569,11 +1570,13 @@ bubble scrolled by those eight pixels.
   while an edge or a cut is dragged, issue #361. On the
   right what a reset threw away,
   **Render** and, once rendered, **Show in folder**. Rendered means the
-  clip's short is where the clip says it went, in the folder **Shorts**
-  named at the time, so Render says Render again and Show in folder shows
-  it there. A short removed or written over by hand is no longer
-  rendered, and a file of the same name that another episode put there
-  is not this clip's. A short there is the one file outside the episode's work folder
+  clip was rendered, as its clip set noted when the short was written, so
+  the green dot, the green mark and Render again stay after the short is
+  uploaded and removed from its folder, issue #384. Show in folder shows
+  the short where it went, in the folder **Shorts** named at the time,
+  and only while it is still there: a short removed or written over by
+  hand is no longer the clip's short, and a file of the same name that
+  another episode put there is not this clip's. A short there is the one file outside the episode's work folder
   the app shows or opens, because a clip of the episode made it.
   Above that row, the clip up close:
     - The arrow keys step the playhead one frame of the episode, and one
@@ -1649,9 +1652,8 @@ bubble scrolled by those eight pixels.
       where the clip was found is a frame's start, and the frame nearest
       the hand is that one. A search used to leave its edges between
       frames, and the end went back to 24.80 where the clip had ended at
-      24.72. A shot the trim had taken away comes back with its own crop,
-      from the camera switch, the same as a cut put back, see
-      [ENGINE.md](ENGINE.md).
+      24.72. What the trim had taken away comes back with the clip's crop,
+      the same as a cut put back, see [ENGINE.md](ENGINE.md).
     - **The playhead goes with the edge.** While either edge of a clip or
       of a cut is dragged, the playhead stands on it and the video preview
       shows that frame, the clip as it is being dragged, with its captions.
@@ -2140,8 +2142,18 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     Continue carries all of it on.
   - **It searched nothing**: it counts as no search of any part. It goes
     the way every clip goes, with its trash can.
-  - **Cut off by the app closing, or failed**, its card stays where the
-    clip would have appeared, still, and a click carries it on.
+  - **Cut off by the app closing, stopped or failed**, its card stays
+    where the clip would have appeared, still, and a click carries it on.
+    Its trash can, there while the pointer is on the card, removes it:
+    the card says Removed with Put it back for ten seconds, the way a
+    removed clip's row does, and only then is the work called off and its
+    record forgotten, so the clip is never made. Its mark leaves the
+    range picker at once. The ten seconds are the video's, as a removed
+    clip's are: they run on while another video is open, and work whose
+    time ran out while it was away is called off on coming back. If the
+    work cannot be called off, the card says Stopped again and says why.
+    Issue #257. A search's cards have no trash can, because a new search
+    takes their place.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a
@@ -2188,16 +2200,16 @@ or walks across the picture. Plan row 3.26, the design is in
   crop glides from each to the next over the whole time between them,
   starting and settling gently, the way a camera operator pans. The
   tempo is where the keyframes are: two far apart are a slow drift, and
-  two a frame apart are an instant move. A keyframe moves only the crop
-  of its own shot, and a glide goes on across a cut by the time the
+  two a frame apart are an instant move. A keyframe moves the crop of
+  the whole clip, and a glide goes on across a cut by the time the
   short plays, so a keyframe before a cut and one after it glide from one
   to the other the way they would were the cut a moment of the clip, and
   nothing jumps at the cut. A glide used to stop at a cut, so those two
-  did not glide at all, found by Tim. A part turned with Rotate is
-  another shot, so its crop still starts at its cut.
+  did not glide at all, found by Tim. A part turned with Rotate has
+  a crop of its own, so its crop still starts at its cut.
 - **Dragging the crop frame places the crop, and nothing else.** With the
   playhead on a keyframe it moves that keyframe. Anywhere else it moves
-  the crop of the whole shot, every keyframe of it by the same distance,
+  the crop of the whole clip, every keyframe of it by the same distance,
   kept inside the picture.
 - **The video preview follows the glide frame by frame** while the clip
   plays, so what plays is what renders. The glide is not rounded to a
@@ -2214,7 +2226,7 @@ or walks across the picture. Plan row 3.26, the design is in
   double-click removes it. While it is dragged it stands on the start of
   the frame under the hand, where it stays once let go, so dragged past
   the clip's edge it stops on the first or last frame and does not jump.
-- **Automatic crop** removes every keyframe of the shot and brings back
+- **Automatic crop** removes every keyframe of the clip and brings back
   the crop the engine found, and **Put the crop back** brings back the
   keyframes with the crop. Removing the first of two keyframes leaves the
   crop standing at the other for the whole clip, as removing a keyframe
@@ -2254,7 +2266,7 @@ lies on its side. Plan row 3.25, the design is in
   making a new one never changes how a frame is turned, and a crop placed
   on a rotated part stays with its frames.
 - **The crop of a rotated part starts in the middle** of the picture
-  rotated, and is dragged like any other. It moves the pieces of its shot
+  rotated, and is dragged like any other. It moves the pieces of the clip
   rotated alike and no other. Rotated back all the way, the part has the
   crop it had before, which rotating never touched.
 - **A rotated part has the Rotate icon in its middle** on the clip

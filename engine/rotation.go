@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 )
 
 // A phone turned while it records keeps writing the picture the way it
@@ -172,14 +171,6 @@ func rotationOf(seg *object, spans []Rotation) int {
 	return RotationAt(spans, number(seg.values[keyStart]))
 }
 
-// angleOf is the camera angle a piece shows, as a crop moved by hand sees
-// it: the shot, by the crop the analysis chose for it, and how far it is
-// rotated. A crop placed by hand moves every piece of one shot rotated
-// alike, and no other.
-func angleOf(seg *object, spans []Rotation) string {
-	return fmt.Sprint(autoCrop(seg)) + "/" + strconv.Itoa(rotationOf(seg, spans))
-}
-
 // partedAtTurns is a clip's pieces parted where a rotation starts or ends
 // inside one, so that every piece is turned one way throughout, which the
 // render needs: its crop is placed on the picture as that piece stands. A
@@ -187,8 +178,8 @@ func angleOf(seg *object, spans []Rotation) string {
 // or an edge is dragged out past a stretch rotated on its own.
 //
 // The part that is turned differently from the piece it came from takes
-// the crop of a piece of the same shot turned that way, or none, which
-// stands in the middle.
+// the crop of a piece turned that way, or none, which stands in the
+// middle.
 func partedAtTurns(pieces []*object, spans []Rotation) []*object {
 	if len(spans) == 0 {
 		return pieces
@@ -216,7 +207,7 @@ func partedAtTurns(pieces []*object, spans []Rotation) []*object {
 			if rotationOf(after, spans) != rotationOf(before, spans) {
 				after.remove(keyCropXTurned)
 				for _, other := range pieces {
-					if v, ok := other.get(keyCropXTurned); ok && angleOf(other, spans) == angleOf(after, spans) {
+					if v, ok := other.get(keyCropXTurned); ok && rotationOf(other, spans) == rotationOf(after, spans) {
 						after.set(keyCropXTurned, v)
 						break
 					}

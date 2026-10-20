@@ -244,7 +244,7 @@ them is touched:
 | --- | --- |
 | Render a clip: seek, crop, scale, pad, audio fades, concat, burn in captions, encode | `engine/render.go` |
 | Read the episode's shape, frame rate and colour tags | `engine/ffmpeg.go` |
-| Scene cuts and the grey stream the face finder reads | `engine/analysis.go` |
+| The grey stream the face finder reads | `engine/analysis.go` |
 | Loudness readings for the transcript | `engine/audio.go` |
 
 Only the last line of the render command changes: `-c:v libx264 -crf N`

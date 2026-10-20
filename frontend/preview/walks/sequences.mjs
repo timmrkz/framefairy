@@ -152,12 +152,12 @@
 //                      the episode for more than nought. The clip has to
 //                      move along the clip timeline the other way on every
 //                      swipe
-//   ["cut switch", n]  double-clicks on the clip timeline where the clip's
-//                      nth shot meets the next, from 1, which cuts a part
-//                      out across the camera switch
+//   ["cut switch", n]  double-clicks on the clip timeline on the camera
+//                      switch of the video added with "add cameras", which
+//                      cuts a part out across it. n is 1, the one switch
 //   ["trim past", edge, n]
 //                      drags the clip's "start" or "end" edge two seconds
-//                      past the nth camera switch, so the shot beyond it is
+//                      past that camera switch, so the camera beyond it is
 //                      gone
 //   ["model", how]     the language model "holds" its answers, "fails" or
 //                      "answers"
@@ -251,7 +251,12 @@
 //   ["look", label]    remembers, for every piece of the clip, the crop
 //                      frame in the video preview with the playhead in the
 //                      middle of the piece, put there with a click on the
-//                      clip timeline: where it stands and what it shows
+//                      clip timeline: where it stands and what it shows.
+//                      A piece the camera switches in is looked at in the
+//                      middle of each camera
+//   ["one crop", label]
+//                      at every moment looked at, the crop frame stood in
+//                      the same place
 //   ["move window", handle, share]
 //                      drags the window's mark on the range picker, its
 //                      "to" or "from" triangle or its "bar", by this share
@@ -744,9 +749,10 @@
 //                      look, and at each moment looked at the crop frame
 //                      stands where it stood and shows what it showed
 //   ["shots", label]   the short, read back from disk: every frame shows
-//                      what the crop frame showed on its shot at the look,
-//                      and at every camera switch the sound runs straight
-//                      on, no 10 ms of it quieter than 80% of the tone
+//                      what the crop frame showed on its camera at the
+//                      look, and where two pieces meet the sound runs
+//                      straight on, no 10 ms of it quieter than 80% of the
+//                      tone
 //   ["from the app", n]
 //                      the picture comes from the Go side, and n clicks
 //                      along the clip timeline each show the frame that
@@ -868,6 +874,31 @@
 //                      inside the folder the settings name for shorts, the
 //                      file is there and the app serves it, Render says
 //                      Render again and Show in folder is there
+//   ["short removed"]  the chosen clip's short and its pictures are
+//                      deleted from the disk, the way a person cleans up
+//                      after uploading them
+//   ["rendered, short gone"]
+//                      the clip still says it was rendered, its card's
+//                      green dot and its green mark on the range picker
+//                      among it, Render says Render again and Show in
+//                      folder is not there
+//   ["licence row whole"]
+//                      at several widths of the app the licence row's
+//                      field, Unlock and bin stand on whole pixels, with
+//                      "refused" a key that is none is typed and Unlock
+//                      refuses it, and the line that says why wraps to
+//                      more lines at one width than at another
+//   ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
+//                      the head of the clip list, so the clip made by hand
+//                      says Stopped with Continue in its card
+//   ["remove stopped", how]
+//                      the bin on that card is clicked, and it says
+//                      Removed with Put it back, and its mark leaves the
+//                      range picker at once. With "put back" that is
+//                      clicked, and the card says Stopped again and the
+//                      work stays. With "for good" the time runs down, the
+//                      card goes and the Go side calls the work off
+//   ["no hand card"]   no card of a clip made by hand is in the list
 //   ["channel", name]  the Updates page's list says this, in ten seconds
 //                      at most
 //   ["choices", names, picked]
@@ -1972,6 +2003,17 @@ export const sequences = [
     ],
   },
   {
+    // Issue #339: the licence key field and Unlock stood half a pixel
+    // down, their top at 699.5, because the words beside them were an odd
+    // height, and so they would step as they faded or moved.
+    name: "the licence row stands on whole pixels, on one line and on two",
+    steps: [
+      ["settings"],
+      ["licence row whole"],
+      ["licence row whole", "refused"],
+    ],
+  },
+  {
     // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
     // removes every file of it, the older one too, after asking. Cancel
     // leaves it as it was, and the log that follows is the one new file.
@@ -2597,15 +2639,20 @@ export const sequences = [
     ],
   },
   {
-    // Tim's steps for #116, on a clip a search parted at a camera switch
-    // into two pieces, each with the crop of its own shot.
-    name: "a cut or an edge put back keeps the camera switch, and the short runs straight through it",
+    // #396, from Tim: his podcast has two cameras, and a clip has one crop
+    // across them, which only keyframes move. The search finds the clip of
+    // two cameras in one piece, a cut across the switch and an edge
+    // trimmed past it and put back leave it so, the crop dragged on the
+    // first camera stands there on the second too, and the short shows
+    // every frame through that one crop.
+    name: "a clip filmed by two cameras has one crop, through a cut, a trim and a drag",
     steps: [
       ["add cameras", 30, 12],
       ["wait for", "Search"],
-      ["pieces", 2],
+      ["pieces", 1],
       ["mark", "found"],
       ["look", "found"],
+      ["one crop", "found"],
       ["cut switch", 1],
       ["cuts", 1],
       ["join", 1],
@@ -2613,12 +2660,14 @@ export const sequences = [
       ["framed", "found"],
       ["same", "found"],
       ["trim past", "end", 1],
-      ["pieces", 1],
       ["reset", "end"],
       ["framed", "found"],
       ["same", "found"],
+      ["crop to", "left"],
+      ["look", "moved"],
+      ["one crop", "moved"],
       ["render"],
-      ["shots", "found"],
+      ["shots", "moved"],
     ],
   },
   {
@@ -3029,6 +3078,28 @@ export const sequences = [
     // a restart too, because where the short went is kept on disk.
     name: "a short rendered into the folder for shorts is known as rendered",
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
+  },
+  {
+    // Issue #257: a clip made by hand whose work stopped could only be
+    // carried on, never removed, since Cancel on the Activity page went.
+    name: "a clip made by hand that stopped can be removed, and put back first",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["hand stopped"],
+      ["remove stopped", "put back"],
+      ["remove stopped", "for good"],
+      ["speech", 0],
+      ["restart"],
+      ["no hand card"],
+    ],
+  },
+  {
+    // Issue #384: Tim rendered a clip, uploaded the short and removed it
+    // and its pictures from the folder. The clip lost its green dot and its
+    // green mark, as if it had never been rendered.
+    name: "a clip stays rendered after its short is removed from its folder",
+    steps: [["thumbnail"], ["render"], ["rendered"], ["short removed"], ["restart"], ["rendered, short gone"]],
   },
   {
     // Plan row 2.133, found while 2.127 was fixed: a short is named after
@@ -3810,11 +3881,6 @@ async function modelsNamed(page) {
   return { planner: s.planner, llmModel: s.llmModel, apiModel: s.apiModel, asrModel: s.asrModel };
 }
 
-// Where the clip's shots meet: every place one piece runs straight into
-// the next, with nothing cut out between them.
-const switches = (pieces) =>
-  pieces.slice(1).filter((p, i) => Math.abs(p.start - pieces[i].end) < 0.0005).map((p) => p.start);
-
 const pieceCount = (n) => `${n} piece${n === 1 ? "" : "s"}`;
 // A moment the way the clip list says it, clock in lib/api.ts.
 const clockOf = (t) => {
@@ -4119,7 +4185,7 @@ function picturesOf(short) {
 // Where the clip's short is, as the clip says, or empty when it has none.
 async function shortOf(page, at) {
   const clip = (await ask(page, "Clips", at.path)).find((c) => c.plan === at.plan && c.id === at.clip);
-  return clip?.rendered ?? "";
+  return clip?.short ?? "";
 }
 
 // What is wrong with the short Render wrote for a clip, read back from
@@ -4264,6 +4330,8 @@ for (const seq of toWalk) {
   await watch.start();
   const marks = {};
   const looks = {};
+  // The second the video added with "add cameras" switches camera at.
+  let cameraSwitch = null;
   const kept = {};
   // The models the settings name, at "settings", and the episode that was
   // on screen before them.
@@ -4296,6 +4364,11 @@ for (const seq of toWalk) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
+  // How long a removed thing can be put back, in seconds, secondThoughts
+  // in lib/removed.ts.
+  const removeTime = 10;
+  // The job of the clip made by hand that "hand stopped" stopped.
+  let handJob = "";
   // The video whose folder a walk deleted from outside the app.
   let folderGone = "";
   // Whether the walk deleted that video too.
@@ -5936,15 +6009,15 @@ for (const seq of toWalk) {
         break;
       }
       case "cut switch": {
-        const at = switches((await engineState(page, watch.at)).segments)[arg - 1];
+        const at = cameraSwitch;
         const g = await handles(page);
         await page.mouse.dblclick(await xOf(page, at), high(g.track));
         await watch.step("cut", s);
         break;
       }
       case "trim past": {
-        const [edge, n] = arg;
-        const at = switches((await engineState(page, watch.at)).segments)[n - 1];
+        const [edge] = arg;
+        const at = cameraSwitch;
         const g = await handles(page);
         const to = await xOf(page, edge === "end" ? at - 2 : at + 2);
         await drag(page, middle(g[edge]), high(g.track), to - middle(g[edge]), false);
@@ -5953,14 +6026,36 @@ for (const seq of toWalk) {
       }
       case "look": {
         const fps = await rate(page);
+        const pieces = (await engineState(page, watch.at)).segments;
         looks[arg] = [];
-        for (const p of (await engineState(page, watch.at)).segments) {
-          const at = (p.start + p.end) / 2;
-          if (!(await seekTo(page, at, fps))) {
-            wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
-            break;
+        looks[arg].pieces = pieces.length;
+        for (const p of pieces) {
+          const parts =
+            cameraSwitch !== null && cameraSwitch > p.start + 0.5 && cameraSwitch < p.end - 0.5
+              ? [
+                  { start: p.start, end: cameraSwitch },
+                  { start: cameraSwitch, end: p.end },
+                ]
+              : [{ start: p.start, end: p.end }];
+          for (const part of parts) {
+            const at = (part.start + part.end) / 2;
+            if (!(await seekTo(page, at, fps))) {
+              wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
+              break;
+            }
+            looks[arg].push({ ...part, at, frame: await cropFrame(page) });
           }
-          looks[arg].push({ ...p, at, frame: await cropFrame(page) });
+          if (wrong) break;
+        }
+        break;
+      }
+      case "one crop": {
+        const then = looks[arg];
+        const first = then[0]?.frame;
+        const other = then.find((l) => !l.frame || !first || Math.abs(l.frame.left - first.left) > 0.005);
+        if (!first) wrong = `at "${arg}" there was no crop frame to look at`;
+        else if (other) {
+          wrong = `at ${other.at.toFixed(2)} the crop frame stood ${other.frame ? (100 * other.frame.left).toFixed(1) + "% in" : "nowhere"}, and at ${then[0].at.toFixed(2)} ${(100 * first.left).toFixed(1)}%, at "${arg}"`;
         }
         break;
       }
@@ -5990,8 +6085,8 @@ for (const seq of toWalk) {
           if (wrong) break;
         }
         const n = await page.locator(".clip-timeline .piece").count();
-        if (!wrong && n !== then.length) {
-          wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.length} as at "${arg}"`;
+        if (!wrong && n !== then.pieces) {
+          wrong = `the clip timeline draws ${pieceCount(n)}, not ${then.pieces} as at "${arg}"`;
         }
         break;
       }
@@ -6035,7 +6130,7 @@ for (const seq of toWalk) {
             if (l < least.l) least = { l, t };
           }
           if (least.l < 0.8 * steady) {
-            wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two shots meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
+            wrong = `at ${least.t.toFixed(4)} s into the short, by ${p.start.toFixed(2)} in the episode where two pieces meet, the sound is down to ${((100 * least.l) / steady).toFixed(0)}% of the tone`;
           }
         }
         break;
@@ -6425,6 +6520,7 @@ for (const seq of toWalk) {
       }
       case "add cameras": {
         const [seconds, at, codec] = arg;
+        cameraSwitch = at;
         await control(url, `/pick?seconds=${seconds}&switch=${at}${codec ? `&codec=${codec}` : ""}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
         await watch.step("add", s);
@@ -7817,6 +7913,60 @@ for (const seq of toWalk) {
         if (!wrong && !streams) wrong = "the picture did not come from the Go side";
         const trouble = await page.evaluate(() => document.querySelector(".screen")?.textContent.trim() ?? "");
         if (!wrong && /decod/i.test(trouble)) wrong = `the video preview says "${trouble}"`;
+        break;
+      }
+      case "licence row whole": {
+        const was = page.viewportSize();
+        const lines = new Set();
+        const problems = [];
+        if (arg === "refused") {
+          await page.locator("input.licence-key").fill("FF1-not-a-key");
+          await page.locator("input.licence-key").press("Enter");
+          const said = await page
+            .waitForFunction(() => document.querySelector(".licence-line.error")?.textContent.trim(), null, { timeout: 10000 })
+            .then(() => true, () => false);
+          if (!said) problems.push("the licence row's line says no key was refused");
+          // The refusal is the call failing, which is what was asked for.
+          await page.evaluate(() => {
+            for (const c of window.__calls) if (c.name === "SaveLicence" && c.failed) c.failed = null;
+          });
+        }
+        // Below the app's least width, 960, too: the line a link leaves
+        // with its key IDs is long enough to wrap at any width, and the
+        // refusal the bridge can give wraps only there.
+        // The page has its new width, and two frames have been drawn
+        // since, so what is measured is laid out at it.
+        const resized = async (width) => {
+          await page.waitForFunction((w) => window.innerWidth === w, width);
+          await nextPaint(page, 2);
+        };
+        for (const width of [1728, 1200, 960, 800, 700, 600]) {
+          await page.setViewportSize({ width, height: was.height });
+          await resized(width);
+          const m = await page.evaluate(() => {
+            const line = document.querySelector(".licence-line");
+            const field = line?.closest(".item");
+            const controls = [...(field?.querySelectorAll("input, button.unlock, button.bin") ?? [])];
+            return {
+              lines: line ? Math.round(line.getBoundingClientRect().height / parseFloat(getComputedStyle(line).lineHeight)) : 0,
+              row: field?.getBoundingClientRect().top ?? 0,
+              tops: controls.map((c) => [c.matches("input") ? "field" : c.matches(".unlock") ? "Unlock" : "bin", c.getBoundingClientRect().top]),
+            };
+          });
+          lines.add(m.lines);
+          if (!m.tops.length) problems.push(`at ${width} px the licence row has no field, Unlock or bin`);
+          for (const [name, top] of m.tops) {
+            // Narrower than the app gets, what stands above the row can
+            // wrap onto half a pixel of its own on CI's fonts, so there
+            // only the row's own half pixel is looked for.
+            const at = width >= 960 ? top : top - m.row;
+            if (at !== Math.round(at)) problems.push(`at ${width} px, with the line on ${m.lines} lines, the ${name} stands between two pixels, its top at ${top}, ${top - m.row} into its row`);
+          }
+        }
+        await page.setViewportSize(was);
+        await resized(was.width);
+        if (arg === "refused" && lines.size < 2) problems.push(`the refusal stood on ${[...lines].join(", ")} lines at every width, so a wrapped line was never measured`);
+        if (problems.length) wrong = problems.join("\n");
         break;
       }
       case "app size":
@@ -9293,6 +9443,142 @@ for (const seq of toWalk) {
         const short = await shortOf(page, on);
         if (!short || !existsSync(short)) wrong = "the clip has no short in its folder";
         else if (basename(short) !== `${entry?.slug}.mp4`) wrong = `the short is called ${basename(short)}, not ${entry?.slug}.mp4`;
+        break;
+      }
+      case "hand stopped": {
+        const path = await episodeOn(page);
+        const before = await page.evaluate(() => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key));
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        // The card the clip made by hand comes in, and the job it is on
+        // the way from, read off its key.
+        const key = await page
+          .waitForFunction(
+            (was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)),
+            before,
+            { timeout: 10000 },
+          )
+          .then((h) => h.jsonValue(), () => null);
+        const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
+        if (!job || job.kind !== "clip" || job.episode !== path) {
+          wrong = key ? `the card that came, ${key}, is not of a clip made by hand` : "I made no clip on a part not heard yet";
+          break;
+        }
+        handJob = job.id;
+        const card = page.locator(`li[data-key^="${handJob}/"]`);
+        const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
+        const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
+        if (!busy) {
+          wrong = `the head of the clip list says ${(await clipList(page))?.head}, not Cancel`;
+          break;
+        }
+        await cancel.click();
+        const said = await page
+          .waitForFunction((k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob, {
+            timeout: 20000,
+          })
+          .then(() => true, () => false);
+        if (!said) wrong = `the clip made by hand says "${(await card.first().textContent())?.replace(/\s+/g, " ").trim()}", not Stopped. Click Continue`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "remove stopped": {
+        const card = page.locator(`li[data-key^="${handJob}/"]`).first();
+        const key = await card.getAttribute("data-key");
+        const stateOf = async () => (await ask(page, "Jobs")).find((j) => j.id === handJob)?.state;
+        await card.hover();
+        if (!(await card.locator("button.drop").count())) {
+          wrong = "the card that stopped has no bin to remove it with";
+          break;
+        }
+        // The time a remove runs is run on by hand, so nothing waits on
+        // the clock: everything else goes on in step with it.
+        if (!page.__clock) {
+          await page.clock.install();
+          page.__clock = true;
+        }
+        // The marks of clips on their way on the range picker, the card's
+        // among them.
+        const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
+        const marked = await waiting();
+        await card.locator("button.drop").click();
+        const removed = await card
+          .locator(".gone", { hasText: "Removed" })
+          .waitFor({ timeout: 2000 })
+          .then(() => true, () => false);
+        if (!removed) {
+          wrong = "the bin on the card that stopped did not say Removed in its place";
+          break;
+        }
+        // The range picker says what the card says, in the same frame.
+        const left = await waiting();
+        if (left !== marked - 1) {
+          wrong = `the card says Removed and the range picker still has ${left} marks of clips on their way, of ${marked}`;
+          break;
+        }
+        if (arg === "put back") {
+          await card.getByRole("button", { name: "Put it back" }).click();
+          await page.mouse.move(5, 5);
+          const back = await page
+            .waitForFunction((k) => document.querySelector(`li[data-key="${k}"] .title`)?.textContent.trim() === "Stopped. Click Continue", key, {
+              timeout: 2000,
+            })
+            .then(() => true, () => false);
+          // Past the time a remove runs, so a put back that only hid it
+          // would have called the work off by now, and what that set
+          // going has come back.
+          await page.clock.runFor((removeTime + 1) * 1000);
+          await settle(page);
+          const state = await stateOf();
+          if (!back) wrong = "Put it back did not bring back the card that said Stopped";
+          else if ((await waiting()) !== marked) wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
+          else if (state !== "interrupted") wrong = `put back, the work of the clip is ${state}, not interrupted`;
+        } else {
+          // The time stands still under the hand, see Busy, so the hand
+          // goes off the list, and then it runs out.
+          await page.mouse.move(5, 5);
+          await page.clock.runFor((removeTime + 1) * 1000);
+          const gone = await page
+            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 10000 })
+            .then(() => true, () => false);
+          const state = await stateOf();
+          if (!gone) wrong = "the card that stopped is still in the list after its time ran down";
+          else if (state !== "cancelled") wrong = `removed, the work of the clip is ${state}, not cancelled`;
+        }
+        await watch.step("wait", s);
+        break;
+      }
+      case "no hand card": {
+        const path = await episodeOn(page);
+        const hand = (await ask(page, "Jobs")).filter((j) => j.kind === "clip" && j.episode === path).map((j) => j.id);
+        const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
+        if (left) wrong = `${left} cards of clips made by hand are in the list`;
+        break;
+      }
+      case "short removed": {
+        const short = await shortOf(page, await chosen(page));
+        if (!short || !existsSync(short)) {
+          wrong = "the clip has no short to remove";
+          break;
+        }
+        for (const file of [short, ...picturesOf(short)]) rmSync(file);
+        break;
+      }
+      case "rendered, short gone": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const seen = await page.evaluate(() => ({
+          dot: !!document.querySelector("button.pick.current .dot.ok"),
+          mark: !!document.querySelector(".clipmark.selected.rendered"),
+          render: document.querySelector("button.primary.render")?.textContent.trim(),
+          folder: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Show in folder"),
+        }));
+        if (!entry?.rendered) wrong = "the clip says it was never rendered";
+        else if (entry.short) wrong = `the clip says its short is at ${entry.short}, which was removed`;
+        else if (!seen.dot) wrong = "the clip's card has no green dot";
+        else if (!seen.mark) wrong = "the clip's mark on the range picker is not green";
+        else if (seen.render !== "Render again") wrong = `the Render button says ${seen.render}, not Render again`;
+        else if (seen.folder) wrong = "Show in folder is there, with no short to show";
         break;
       }
       case "pictured": {

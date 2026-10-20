@@ -67,3 +67,13 @@ describe("a search that found nothing", () => {
     expect(toldSpent(1000, 50000)).toBe(secondThoughts);
   });
 });
+
+describe("a clip made by hand that stopped and was removed", () => {
+  test("keeps its time apart from a search's rows, and its run out time comes back as 0", () => {
+    setAsideTold("a.mp4", { s1: 5000 });
+    setAsideTold("a.mp4", { h1: 5000, h2: 9000 }, "put away");
+    expect(takeUpTold("a.mp4", 6000, "put away")).toEqual({ h1: 0, h2: 9000 });
+    expect(takeUpTold("a.mp4", 1000)).toEqual({ s1: 5000 });
+    expect(takeUpTold("a.mp4", 1000, "put away")).toEqual({});
+  });
+});

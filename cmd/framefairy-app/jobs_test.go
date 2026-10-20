@@ -308,14 +308,25 @@ func TestQuittingStopsEveryJob(t *testing.T) {
 // middle of them. A lane that died of a panic leaves the work queued
 // behind it waiting for good, and a job that slipped past a close or the
 // quit runs on with nobody to stop it.
+//
+// Nothing the test does itself waits on the clock. Each step goes on when
+// the queue's news says what it waits for has happened, and the hands are
+// counted in rounds, not in milliseconds: 300 ms of hands was not enough
+// on a busy Mac runner for any work that breaks to reach a lane, #387. A
+// queue that never gets there hangs the test until go test's own
+// -timeout, which shows every goroutine. The queue's own waits still poll
+// the clock, cancelEpisode every 100 ms and shutDown every 50 ms up to
+// stopWait, and that is #394.
 func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 	t.Parallel()
 	var events, broken atomic.Int64
+	news := newJobNews()
 	q := newQueue(memoryStore(), func(u JobUpdate) {
 		events.Add(1)
 		if u.Job.ID == "" || u.Job.Episode == "" || u.Job.Lane == "" || u.Job.State == "" {
 			broken.Add(1)
 		}
+		news.heard(u.Job)
 		// Some of the window's news cannot be delivered at all.
 		if strings.HasSuffix(u.Job.ID, "3") {
 			panic("the window went away")
@@ -337,18 +348,29 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 		panic("the work broke")
 	}
 	works := []func(context.Context, *engine.Project) (string, error){waiting, quick, breaks}
+	fell := func(j Job) bool {
+		return j.State == JobFailed && strings.Contains(j.Error, "stopped unexpectedly")
+	}
 
 	// hands does everything the window can do, from several goroutines at
-	// once, until stop is closed.
-	hands := func(stop chan struct{}) *sync.WaitGroup {
-		var wg sync.WaitGroup
+	// once, until stop is closed. Each hand counts down rounds when it has
+	// gone round that often.
+	hands := func(stop chan struct{}, rounds int) (all, went *sync.WaitGroup) {
+		all, went = &sync.WaitGroup{}, &sync.WaitGroup{}
 		for hand := range 8 {
-			wg.Add(1)
+			all.Add(1)
+			went.Add(1)
 			go func() {
-				defer wg.Done()
+				defer all.Done()
 				for k := 0; ; k++ {
+					if k == rounds {
+						went.Done()
+					}
 					select {
 					case <-stop:
+						if k < rounds {
+							went.Done()
+						}
 						return
 					default:
 					}
@@ -383,72 +405,64 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 				}
 			}()
 		}
-		return &wg
+		return all, went
 	}
 
+	// The hands go on until each has gone round 20 times and work that
+	// broke has run and ended as failed, so the test is about a panic.
 	stop := make(chan struct{})
-	wg := hands(stop)
-	time.Sleep(300 * time.Millisecond)
+	all, went := hands(stop, 20)
+	went.Wait()
+	news.until(func(jobs map[string]Job) bool {
+		for _, j := range jobs {
+			if fell(j) {
+				return true
+			}
+		}
+		return false
+	})
 	close(stop)
-	wg.Wait()
+	all.Wait()
 
 	// No lane died of the panics: work queued on each after all of it
 	// still runs and ends, once what still waits there is called off.
 	for _, j := range q.list() {
 		q.cancel(j.ID)
 	}
-	after := map[string]Job{}
+	after := map[string]bool{}
 	for _, kind := range kinds {
-		job := q.add("/eps/d.mp4", kind, "After", quick)
-		after[job.ID] = job
+		after[q.add("/eps/d.mp4", kind, "After", quick).ID] = true
 	}
-	deadline := time.Now().Add(20 * time.Second)
-	for len(after) > 0 {
-		for _, j := range q.list() {
-			if _, waited := after[j.ID]; waited && j.State == JobDone {
-				delete(after, j.ID)
+	news.until(func(jobs map[string]Job) bool {
+		for id := range after {
+			if jobs[id].State != JobDone {
+				return false
 			}
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d lanes never ran the work queued after the panics: %v", len(after), after)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return true
+	})
 
 	// Then the app quits while the window is still at it.
 	stop = make(chan struct{})
-	wg = hands(stop)
-	time.Sleep(100 * time.Millisecond)
+	all, went = hands(stop, 10)
+	went.Wait()
 	stopped := q.shutDown()
 	close(stop)
-	wg.Wait()
+	all.Wait()
 	if !stopped {
 		t.Error("the jobs did not stop when the app quit")
 	}
 	if j := q.add("/eps/e.mp4", "render", "Render", waiting); j.State != JobFailed {
 		t.Errorf("work was queued after the app quit: %s", j.State)
 	}
-	// What was running when it quit has ended, and nothing slipped in
-	// while it did.
-	deadline = time.Now().Add(20 * time.Second)
-	for {
-		var left []string
-		for _, j := range q.list() {
-			if j.State == JobQueued || j.State == JobRunning {
-				left = append(left, j.ID+" "+j.Episode+" "+j.State)
-			}
-		}
-		if len(left) == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("still going after the app quit: %v", left)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	// What was running when it quit has ended, which shutDown waited
+	// for, and nothing slipped in while it did.
 	failed := 0
 	for _, j := range q.list() {
-		if j.State == JobFailed && strings.Contains(j.Error, "stopped unexpectedly") {
+		if j.State == JobQueued || j.State == JobRunning {
+			t.Errorf("%s %s is still %s after the app quit", j.ID, j.Episode, j.State)
+		}
+		if fell(j) {
 			failed++
 		}
 	}
@@ -460,6 +474,40 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 	}
 	if broken.Load() != 0 {
 		t.Errorf("%d job snapshots came out half written", broken.Load())
+	}
+}
+
+// jobNews is what the window has heard of each job, the newest snapshot
+// by its number, for a test to wait on.
+type jobNews struct {
+	mu     sync.Mutex
+	change *sync.Cond
+	jobs   map[string]Job
+}
+
+func newJobNews() *jobNews {
+	n := &jobNews{jobs: map[string]Job{}}
+	n.change = sync.NewCond(&n.mu)
+	return n
+}
+
+// heard keeps a snapshot unless a newer one of the job came first.
+func (n *jobNews) heard(j Job) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if have, ok := n.jobs[j.ID]; ok && have.Seq >= j.Seq {
+		return
+	}
+	n.jobs[j.ID] = j
+	n.change.Broadcast()
+}
+
+// until waits for the news that makes done true.
+func (n *jobNews) until(done func(map[string]Job) bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for !done(n.jobs) {
+		n.change.Wait()
 	}
 }
 

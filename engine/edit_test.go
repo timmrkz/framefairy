@@ -479,16 +479,22 @@ func FuzzPlanEdits(f *testing.F) {
 	// Thumbnails added, moved and removed while the clip is cut and
 	// trimmed under them.
 	f.Add([]byte{9, 104, 0, 9, 104, 120, 6, 110, 125, 9, 120, 0, 0, 100, 112})
-	// Trim clip 02 past the camera switch and put the end back, then cut
-	// across the switch and put the cut back.
+	// Trim clip 02 past where its cameras switched and put the end back,
+	// then cut across there and put the cut back.
 	f.Add([]byte{0, 201, 205, 0, 201, 220, 6, 205, 215, 7, 211, 0})
+	// Rotate the first part of clip 01, then place its crop on the part
+	// after the cut, which left the turned part its old crop as filmed,
+	// found by the review of #398.
+	f.Add([]byte{4, 104, 3, 2, 124, 100})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		fsys, path := editablePlanPath(t)
-		// Clip 02 is two shots that meet at a camera switch at 21, the way
-		// a search parts a clip, and no edit may make one piece of them.
+		// Clip 02 is two pieces that meet at 21, the way a search parted a
+		// clip at a camera switch before #396, with the clip's one crop.
+		// engine/shots_test.go holds how a plan with a crop for each camera
+		// is made one.
 		if err := afero.WriteFile(fsys, path, []byte(strings.Replace(editablePlan,
 			`"segments": [{"start": 20.0, "end": 22.0}]`,
-			`"segments": [{"start": 20.0, "end": 21.0, "crop_x": 100}, {"start": 21.0, "end": 22.0, "crop_x": 500}]`,
+			`"segments": [{"start": 20.0, "end": 21.0, "crop_x": 100}, {"start": 21.0, "end": 22.0, "crop_x": 100}]`,
 			1)), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -506,11 +512,16 @@ func FuzzPlanEdits(f *testing.F) {
 		if len(script) > 3*planEditsRead {
 			script = script[:3*planEditsRead]
 		}
+		_, was, err := LoadClips(fsys, path)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for i := 0; i+2 < len(script); i += 3 {
 			clip := "01"
 			if script[i+1]%2 == 1 {
 				clip = "02"
 			}
+			var moved error
 			switch script[i] % 10 {
 			case 9:
 				// Add at one moment, or move or remove the thumbnail at
@@ -529,7 +540,12 @@ func FuzzPlanEdits(f *testing.F) {
 			case 7:
 				_ = JoinCut(fsys, path, clip, at(script[i+1]), tr)
 			case 8:
-				_ = MoveCut(fsys, path, clip, int(script[i+1])%4,
+				// The cut is read from the byte that picks the edit, so
+				// any cut of either clip can be moved to any time, and
+				// clip 02 is asked to move its camera switch, cut 0, too.
+				// With the cut read from the bit that picks the clip, it
+				// only ever moved cuts 1 and 3, #271.
+				moved = MoveCut(fsys, path, clip, int(script[i]/10)%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
 				_ = TrimClip(fsys, path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))
@@ -540,7 +556,11 @@ func FuzzPlanEdits(f *testing.F) {
 			case 3:
 				_ = ResetCrop(fsys, path, clip, at(script[i+1]))
 			case 4:
-				_ = SetRejected(fsys, nil, path, clip, script[i+2]%2 == 0)
+				if script[i+2]%4 == 3 {
+					_ = RotatePart(fsys, path, clip, at(script[i+1]), at25)
+				} else {
+					_ = SetRejected(fsys, nil, path, clip, script[i+2]%2 == 0)
+				}
 			case 5:
 				if script[i+2]%4 == 0 {
 					_ = ResetCaptionY(fsys, path, clip)
@@ -553,6 +573,11 @@ func FuzzPlanEdits(f *testing.F) {
 			if err != nil {
 				t.Fatalf("step %d left a plan that does not load: %v", i/3, err)
 			}
+			// One crop, read from the file, since LoadClips plays any
+			// clip with one and a check through it could not fail.
+			if err := cropsAlike(fsys, path); err != nil {
+				t.Fatalf("step %d: %v", i/3, err)
+			}
 			if plan.Raw["custom"] == nil || plan.Raw["plan_id"] != "p1" {
 				t.Fatalf("step %d lost a field the loader does not know", i/3)
 			}
@@ -564,6 +589,16 @@ func FuzzPlanEdits(f *testing.F) {
 			if len(clips) == 0 {
 				t.Fatalf("step %d emptied the plan", i/3)
 			}
+			// A move moves the edges of a cut and makes no new one, so
+			// two pieces that meet still meet.
+			if script[i]%10 == 8 && moved == nil {
+				before, after := clipNamed(was, clip), clipNamed(clips, clip)
+				if len(ClipCuts(after)) != len(ClipCuts(before)) {
+					t.Fatalf("step %d moved a cut that was not there: %+v, then %+v",
+						i/3, before.Segments, after.Segments)
+				}
+			}
+			was = clips
 			for _, c := range clips {
 				if len(c.Thumbnails) > MaxThumbnails {
 					t.Fatalf("clip %s asks for %d pictures", c.ID, len(c.Thumbnails))
@@ -580,9 +615,6 @@ func FuzzPlanEdits(f *testing.F) {
 							c.ID, k, seg.Start, previous)
 					}
 					previous = seg.End
-					if c.ID == "02" && seg.Start < 21 && seg.End > 21 {
-						t.Fatalf("step %d made one piece of two shots: %+v", i/3, c.Segments)
-					}
 				}
 				if c.Duration() <= 0 {
 					t.Fatalf("clip %s is %v long", c.ID, c.Duration())
@@ -599,6 +631,68 @@ func FuzzPlanEdits(f *testing.F) {
 			}
 		}
 	})
+}
+
+// cropsAlike fails unless every clip of a plan file has one crop: the crop
+// as filmed and the automatic one behind it alike on every piece, turned
+// or not, and the crop on the picture turned alike on the pieces turned
+// one way.
+func cropsAlike(fsys afero.Fs, path string) error {
+	data, err := afero.ReadFile(fsys, path)
+	if err != nil {
+		return err
+	}
+	var plan struct {
+		Clips []struct {
+			ID        string           `json:"id"`
+			Rotations any              `json:"rotations"`
+			Segments  []map[string]any `json:"segments"`
+		} `json:"clips"`
+	}
+	if err := json.Unmarshal(data, &plan); err != nil {
+		return err
+	}
+	show := func(seg map[string]any, key string) string {
+		v, ok := seg[key]
+		if !ok {
+			return "none"
+		}
+		return fmt.Sprint(v)
+	}
+	for _, c := range plan.Clips {
+		spans, err := readRotations(c.Rotations)
+		if err != nil {
+			return err
+		}
+		turned := map[int]string{}
+		for _, seg := range c.Segments {
+			first := c.Segments[0]
+			for _, key := range []string{keyCropX, keyCropXAuto} {
+				if show(seg, key) != show(first, key) {
+					return fmt.Errorf("clip %s has two crops as filmed: %v", c.ID, c.Segments)
+				}
+			}
+			turn := RotationAt(spans, number(seg[keyStart]))
+			if turn == 0 {
+				continue
+			}
+			if was, ok := turned[turn]; ok && was != show(seg, keyCropXTurned) {
+				return fmt.Errorf("clip %s has two crops turned %d: %v", c.ID, turn, c.Segments)
+			}
+			turned[turn] = show(seg, keyCropXTurned)
+		}
+	}
+	return nil
+}
+
+// clipNamed is the clip of clips with the id, or none.
+func clipNamed(clips []Clip, id string) Clip {
+	for _, c := range clips {
+		if c.ID == id {
+			return c
+		}
+	}
+	return Clip{}
 }
 
 // The app makes one edit per click, and a click can land while the last one
