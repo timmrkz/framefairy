@@ -349,11 +349,14 @@ what the first frame uses and what every other system keeps. In native
 fullscreen there is no title bar and no buttons, so the height stays as it
 was and the name moves to the left edge rather than the bar collapsing.
 
-The name of what is on screen, and its label beside it, are centred in the
-bar, which is where macOS centres the buttons. They are not centred on the
-middle of the close button's frame: AppKit makes that frame taller than
-the circle it draws, and a name on its middle sat a point above the
-circles. The name's box is
+The name of what is on screen, and its label beside it, are centred where
+macOS centres the buttons. That is not the bar's middle: macOS draws the
+edge of the window over the top 2 points of the page and centres the
+buttons in what is left under it, a point below the middle. AppKit's frame
+for the close button says the middle all the same, so it is no measure of
+where the circles are drawn, and the name's box starts under the edge
+instead. Away from the buttons, on other systems and in fullscreen, the
+name is centred in the whole bar. The name's box is
 trimmed to the capitals and the baseline, so it is the letters that are
 centred and not the space a line of text reserves around them, and then it
 is padded back out so a name with a tail below the baseline, `YouTube.mp4`,

@@ -23,13 +23,11 @@
      What was really wrong was asking for a toolbar, which makes the bar
      taller and makes macOS inset the buttons to centre them in it. See
      the WebviewWindowOptions in main.go.
-     Then the buttons are on the bar's middle because the bar is what
-     they were centred in, so the name is centred in the bar too. It once
-     went in a box on the middle of the close button's frame, which
-     AppKit makes taller than the circle it draws, and the name and its
-     label sat a point above the circles, #399. Where the system draws
-     its own title bar there is nothing to agree with and the stylesheet
-     keeps its own numbers. -->
+     Then the buttons are centred in the bar, under the edge of the
+     window macOS draws over its top, and the name is centred in the
+     same place, see .name below. Where the system draws its own title
+     bar there is nothing to agree with and the stylesheet keeps its
+     own numbers. -->
 <header class="bar">
   <span class="name"
     ><span class="what">{title}</span>{#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}</span
@@ -58,9 +56,9 @@
   }
 
   /* The name stands in a box as tall as the bar, so it is centred on the
-     bar's middle, which is the buttons' middle. It starts one space after
-     the last of them. Nothing is moved by a transform, so nothing is put
-     on a compositing surface of its own and the whole pixel rule holds. */
+     bar's middle, and starts one space after the buttons. Nothing is
+     moved by a transform, so nothing is put on a compositing surface of
+     its own and the whole pixel rule holds. */
   .bar .name {
     position: absolute;
     top: 0;
@@ -112,6 +110,19 @@
       line-height: normal;
       padding: 0;
     }
+  }
+
+  /* Where macOS puts its buttons in the bar, it draws the edge of the
+     window over the top 2 points of the page and centres the buttons in
+     what is left under it, not in the whole bar. Read off two pictures
+     of Tim's Mac, at 2 pixels a point: a bar 32 high, the edge over its
+     first 2, the circles centred 17 down, the name and its label 16
+     down, #399. AppKit's own frame for the close button says 16, so it
+     is no measure of where the circles are drawn, and the box starts
+     under the edge instead. */
+  :global(.shell[style*="--lights-r"]) .bar .name {
+    top: 2px;
+    height: calc(var(--bar-h) - 2px);
   }
 
   /* Where the system draws its own title bar the name keeps the left of

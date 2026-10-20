@@ -21,10 +21,10 @@ import (
 // exactly the title bar, which centres the buttons in it by construction,
 // on every version of macOS and at every control size.
 //
-// The name is centred in the bar, which is where macOS centres the
-// buttons, so there is no middle of theirs to tell: the frame AppKit
-// gives a button reaches higher than the circle it draws, and a name on
-// that frame's middle sat a point above the circles, #399.
+// There is no middle of the buttons to tell. AppKit's frame for the
+// close button is on the bar's middle while macOS draws the circles a
+// point lower, under the window's edge, so the stylesheet centres the
+// name there itself, see Bar.svelte and #399. The frame is still logged.
 //
 // All zeros mean the system draws its own title bar, which is every other
 // system, and then the stylesheet keeps its own numbers.
@@ -39,7 +39,7 @@ type Chrome struct {
 
 // chromeRaw is what the system answers, in points and unrounded. Where
 // the close button's frame starts and ends, from the top, is only ever
-// logged: it shows whether the circles are still on the bar's middle.
+// logged, so a report says where AppKit thinks the buttons are.
 type chromeRaw struct {
 	bar, left, right      float64
 	closeTop, closeBottom float64
