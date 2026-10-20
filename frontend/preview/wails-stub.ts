@@ -1403,12 +1403,12 @@ const Answers = {
         if (location.search.includes("full") && args[0] !== "report") {
           // Native fullscreen: the title bar is gone and the buttons with
           // it, and the bar keeps the height it had.
-          return Promise.resolve({ bar: 52, left: 0, right: 0, middle: 0 });
+          return Promise.resolve({ bar: 52, left: 0, right: 0 });
         }
         return Promise.resolve(
           location.search.includes("mac")
-            ? { bar: 52, left: 20, right: 92, middle: 26 }
-            : { bar: 0, left: 0, right: 0, middle: 0 },
+            ? { bar: 52, left: 20, right: 92 }
+            : { bar: 0, left: 0, right: 0 },
         );
       case "ChosenClip":
         return Promise.resolve((window as any).__chosen ?? "");

@@ -4,6 +4,7 @@ import (
 	"math"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -27,17 +28,18 @@ type Chrome struct {
 	Bar int `json:"bar"`
 	// The left edge of the first of those buttons and the right edge of the
 	// last, so the name of what is on screen starts after them.
+	// The name is centred in the bar, which is where macOS centres the
+	// buttons, so there is no middle of theirs to tell: the frame AppKit
+	// gives a button reaches higher than the circle it draws, and a name
+	// on that frame's middle sat a point above the circles, #399.
 	Left  int `json:"left"`
 	Right int `json:"right"`
-	// The middle of those buttons, from the top of the page, so the
-	// name sits on their line rather than on the bar's.
-	Middle int `json:"middle"`
 }
 
 // chromeRaw is what the system answers, in points and unrounded.
 type chromeRaw struct {
-	bar, left, right, middle float64
-	fullscreen               bool
+	bar, left, right float64
+	fullscreen       bool
 }
 
 // chromeWatch keeps the furniture up to date. It measures when macOS says
@@ -99,7 +101,7 @@ func (c *chromeWatch) settle(raw chromeRaw) Chrome {
 		// with, so the name simply moves to the left edge.
 		return Chrome{Bar: c.outside}
 	}
-	out := Chrome{Bar: px(raw.bar), Left: px(raw.left), Right: px(raw.right), Middle: px(raw.middle)}
+	out := Chrome{Bar: px(raw.bar), Left: px(raw.left), Right: px(raw.right)}
 	if out.Bar > 0 {
 		c.outside = out.Bar
 	}
@@ -127,7 +129,13 @@ func (c *chromeWatch) publish() {
 	c.said = now
 	c.told = true
 	c.mu.Unlock()
-	if same || c.app == nil {
+	if same {
+		return
+	}
+	theLog.line(zerolog.DebugLevel, "window").Str("event", c.event).
+		Int("bar", now.Bar).Int("left", now.Left).Int("right", now.Right).
+		Msg("the title bar was measured")
+	if c.app == nil {
 		return
 	}
 	c.app.Event.Emit(c.event, now)

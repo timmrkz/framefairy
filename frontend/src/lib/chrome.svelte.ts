@@ -6,19 +6,19 @@ import { api, onChrome, type Chrome, type ChromeWindow } from "./api";
 //
 // Nothing here works a size out from a measurement of the page. This is
 // the one thing the stylesheet cannot know, asked for once and told
-// again when it changes, and handed over as four numbers it lays itself
+// again when it changes, and handed over as three numbers it lays itself
 // out from.
 //
 // The app's window and the report window have the same kind of title
-// bar, so both lay their bar out from four numbers, see Bar.svelte, each
+// bar, so both lay their bar out from three numbers, see Bar.svelte, each
 // from its own: the app's window can be fullscreen while the report
 // window is not.
 class TitleBar {
-  chrome = $state<Chrome>({ bar: 0, left: 0, right: 0, middle: 0 });
+  chrome = $state<Chrome>({ bar: 0, left: 0, right: 0 });
   // The height is given whenever there is one. Where the buttons are is
   // given only when there are buttons, so that in native fullscreen, where
-  // macOS takes them away, the stylesheet falls back to centring the name
-  // in the bar rather than being told to centre it on nothing.
+  // macOS takes them away, the name moves to the left edge rather than
+  // keeping room for buttons that are not there.
   style = $derived.by(() => {
     const c = this.chrome;
     const parts: string[] = [];
@@ -26,7 +26,6 @@ class TitleBar {
     if (c.right > 0) {
       parts.push(`--lights-l: ${c.left}px`);
       parts.push(`--lights-r: ${c.right}px`);
-      parts.push(`--lights-y: ${c.middle}px`);
     }
     return parts.join("; ");
   });

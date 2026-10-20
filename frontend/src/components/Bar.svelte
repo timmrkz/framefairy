@@ -24,10 +24,12 @@
      taller and makes macOS inset the buttons to centre them in it. See
      the WebviewWindowOptions in main.go.
      Then the buttons are on the bar's middle because the bar is what
-     they were centred in. The name goes in a box whose middle is their
-     middle, which is the same thing said the other way round. Where the
-     system draws its own title bar there is nothing to agree with and
-     the stylesheet keeps its own numbers. -->
+     they were centred in, so the name is centred in the bar too. It once
+     went in a box on the middle of the close button's frame, which
+     AppKit makes taller than the circle it draws, and the name and its
+     label sat a point above the circles, #399. Where the system draws
+     its own title bar there is nothing to agree with and the stylesheet
+     keeps its own numbers. -->
 <header class="bar">
   <span class="name"
     ><span class="what">{title}</span>{#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}</span
@@ -55,19 +57,16 @@
     --wails-draggable: drag;
   }
 
-  /* The name stands in a box that reaches from the top of the bar to as
-     far below the buttons' middle as that middle is below the top, so the
-     middle of the box is the middle of the buttons. It starts one space
-     after the last of them. Nothing is moved by a transform, so nothing
-     is put on a compositing surface of its own and the whole pixel rule
-     holds. Where there are no buttons in the page the box is the
-     bar, and the name is centred in it. */
+  /* The name stands in a box as tall as the bar, so it is centred on the
+     bar's middle, which is the buttons' middle. It starts one space after
+     the last of them. Nothing is moved by a transform, so nothing is put
+     on a compositing surface of its own and the whole pixel rule holds. */
   .bar .name {
     position: absolute;
     top: 0;
     left: calc(var(--lights-r, 0px) + var(--gap));
     right: var(--gap);
-    height: calc(2 * var(--lights-y, calc(var(--bar-h) / 2)));
+    height: var(--bar-h);
     display: flex;
     align-items: center;
     gap: 8px;
