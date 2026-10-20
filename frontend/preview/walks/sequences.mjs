@@ -10987,11 +10987,13 @@ async function dropOn(page, files) {
 // The walks of issue #383 wait on what the app tells, never on the clock.
 // Until the workspace in front has asked the captions of every card and
 // read ahead what it reads for them, see rested in Episode.svelte.
-const restAhead = (page) => page.evaluate(() => window.__readAheadRested());
+function restAhead(page) {
+  return page.evaluate(() => window.__readAheadRested());
+}
 
 // So many animation frames of the page.
-const animationFrames = (page, n) =>
-  page.evaluate(
+function animationFrames(page, n) {
+  return page.evaluate(
     (n) =>
       new Promise((done) => {
         let k = 0;
@@ -11000,9 +11002,13 @@ const animationFrames = (page, n) =>
       }),
     n,
   );
+}
 
-// The keys of the cards in the clip list.
-const cardKeys = (page) => page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]")].map((li) => li.dataset.key));
+// The keys of the cards of the clips in the clip list, not of one on its
+// way.
+function cardKeys(page) {
+  return page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]:not(.next):not(.ghost)")].map((li) => li.dataset.key));
+}
 
 // Does make, then the keys of the n cards that are not among was, once the
 // clip list shows them.
@@ -11011,14 +11017,14 @@ async function newCards(page, n, make) {
   const shown = page.evaluate(
     ({ was, n }) =>
       new Promise((done) => {
-        const look = () => [...document.querySelectorAll("aside ol li[data-key]")].map((li) => li.dataset.key).filter((k) => !was.includes(k));
+        const look = () => [...document.querySelectorAll("aside ol li[data-key]:not(.next):not(.ghost)")].map((li) => li.dataset.key).filter((k) => !was.includes(k));
         const o = new MutationObserver(() => {
           const keys = look();
           if (keys.length < n) return;
           o.disconnect();
           done(keys);
         });
-        o.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-key"] });
+        o.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-key", "class"] });
         if (look().length >= n) {
           o.disconnect();
           done(look());
@@ -11032,17 +11038,18 @@ async function newCards(page, n, make) {
 
 // Makes a clip in each shot of the video of two cameras with Mark In, so
 // two clips have their crops far apart, each starting on a caption, and
-// waits until the clip list shows them. The clips, or what went wrong.
+// waits until the clip list shows them. Every clip the engine has, or what went wrong.
 async function shotClips(page) {
   const path = await episodeOn(page);
   const keys = await newCards(page, 2, async () => {
     for (const at of [8, 86]) await ask(page, "MakeClip", path, at, false);
   });
-  const clips = (await ask(page, "Clips", path)).filter((c) => keys.includes(c.key));
+  const all = await ask(page, "Clips", path);
+  const clips = all.filter((c) => keys.includes(c.key));
   if (clips.length < 2) return `Mark In made ${clips.length} clips the engine has, not 2`;
   const lefts = new Set(clips.map((c) => Math.round(c.cropLefts?.[0] ?? -1)));
   if (lefts.size < 2) return `every clip has its crop at ${[...lefts][0]}, so the crop frame cannot be seen to move`;
-  return clips;
+  return all;
 }
 
 // The key of the card chosen, and of the cards in the clip list.
@@ -11122,7 +11129,9 @@ function clickCard(page, key, start) {
 }
 
 // The animation frames on which what the video preview shows changed.
-const changesOf = (looks) => looks.filter((l, j) => j > 0 && (l.crop !== looks[j - 1].crop || l.canvas !== looks[j - 1].canvas));
+function changesOf(looks) {
+  return looks.filter((l, j) => j > 0 && (l.crop !== looks[j - 1].crop || l.canvas !== looks[j - 1].canvas));
+}
 
 // Clicks the clip cards in turn, n times, and reads on every animation
 // frame from the click what the video preview shows: the crop frame's place
@@ -11140,7 +11149,7 @@ async function pickCards(page, n) {
   if (typeof clips === "string") return clips;
   const path = await episodeOn(page);
   await canLook(page);
-  const fresh = [20, 40, 60, 100, 30, 50, 70, 110];
+  const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
   const problems = [];
   for (let i = 0; i < n; i++) {
     const held = i % 2 === 1;
@@ -11264,7 +11273,7 @@ async function wakeOnCaption(page) {
   if (typeof clips === "string") return clips;
   await canLook(page);
   const clip = clips.find((c) => Math.abs(c.start - 8) < 2) ?? clips[0];
-  const other = clips.find((c) => c !== clip);
+  const other = clips.find((c) => Math.abs(c.start - 86) < 2) ?? clips.find((c) => c !== clip);
   await clickCard(page, clip.key, null);
   const first = await episodeOn(page);
   const name = basename(first);
@@ -11272,9 +11281,14 @@ async function wakeOnCaption(page) {
   const front = page.evaluate(
     (name) =>
       new Promise((done) => {
-        const on = () => document.querySelector("aside button.episode.current .name")?.textContent;
+        // The video added is in front once its workspace is the only one
+        // in the page, the one before put to sleep, see App.svelte.
+        const there = () => {
+          const on = document.querySelector("aside button.episode.current .name")?.textContent;
+          return on && on !== name && document.querySelectorAll(".workspace").length === 1 && !document.querySelector(".workspace.behind");
+        };
         const o = new MutationObserver(() => {
-          if (!on() || on() === name) return;
+          if (!there()) return;
           o.disconnect();
           done();
         });
@@ -11284,7 +11298,6 @@ async function wakeOnCaption(page) {
   );
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
   await front;
-  await page.locator(".listhead button.search").first().waitFor();
   await restAhead(page);
   await page.evaluate(() => {
     for (const [i, w] of [...document.querySelectorAll(".workspace")].entries()) w.dataset.walk = String(i);
