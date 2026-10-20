@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
+  import Confirm from "../components/Confirm.svelte";
   import { toasts } from "../lib/toast.svelte";
   // A line in the app's log. said is the words being dictated here.
   import { said as log } from "../lib/said";
@@ -117,6 +118,46 @@
     return all.sort((a, b) => order(a.p.id) - order(b.p.id));
   });
   const order = (id: string) => Number(id.slice(1)) || 0;
+
+  // Whether there is nothing to report: no words and no pictures. Report
+  // and Clear are off then, issue #415. Words still being written down
+  // after a dictation may be on their way, so Report waits for them
+  // rather than being off.
+  const nothing = $derived(!what.trim() && pictures.length === 0 && !hearing);
+
+  // Clear empties the report, the words and every picture, once the box
+  // over the page has asked, issue #415. A report that turned out to be
+  // for nothing had to be emptied by hand, a picture at a time.
+  let clearing = $state(false);
+  // What Clear takes, in the words of the box that asks first.
+  const goes = $derived.by(() => {
+    const films = pictures.filter((p) => p.recording).length;
+    const shots = pictures.length - films;
+    const parts = [
+      what.trim() ? "what you wrote" : "",
+      shots === 1 ? "the picture" : shots ? `the ${shots} pictures` : "",
+      films === 1 ? "the recording" : films ? `the ${films} recordings` : "",
+    ].filter(Boolean);
+    const all = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : (parts[0] ?? "");
+    return `${all.charAt(0).toUpperCase()}${all.slice(1)} ${parts.length > 1 || pictures.length > 1 ? "go" : "goes"}.`;
+  });
+  async function clearAll() {
+    clearing = false;
+    log("report: cleared", { level: "info" });
+    // The words go at once, and a save still to come would bring them back.
+    if (saving) clearTimeout(saving);
+    saving = null;
+    field.textContent = "";
+    what = "";
+    removed = {};
+    pictures = [];
+    field.focus({ preventScroll: true });
+    try {
+      took(await api.clearReport());
+    } catch (e) {
+      oops(sentence(e));
+    }
+  }
 
   // took shows what the Go side says the draft holds now, with why a
   // picture was left out.
@@ -681,19 +722,18 @@
   // only tabs between buttons when full keyboard access is on, so WebKit
   // passed over Report to the first picture, or with none to nothing on
   // the page. The page moves the focus itself, as Confirm.svelte does.
-  // Tab while dictating keeps what was said, as Enter does, and goes on.
+  // While dictating Tab does nothing: only Enter, Escape and the button
+  // end a dictation, as Tim asked.
   const stops = () => [field, report, ...document.querySelectorAll<HTMLElement>(".pictures figure, .pictures button.back")];
   const named = (e: Element | null) => (e === field ? "the field" : e === report ? "Report" : (e?.getAttribute("aria-label") ?? e?.textContent?.trim() ?? "nothing"));
-  async function tab(e: KeyboardEvent) {
+  function tab(e: KeyboardEvent) {
     const here = document.activeElement as HTMLElement | null;
+    if (listening) {
+      e.preventDefault();
+      return;
+    }
     if (!here || !stops().includes(here)) return;
     e.preventDefault();
-    if (listening && here === field) {
-      log("report: Tab keeps what was said", { level: "info" });
-      keep();
-      // Report takes the focus once it is no longer off while listening.
-      await tick();
-    }
     const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled);
     const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length];
     next.focus();
@@ -743,6 +783,11 @@
     // are in it, issue #404.
     if (hearing) log("report: Report waits for the last words of the dictation", { level: "info" });
     await writing;
+    // Nothing was said after all, so there is nothing to report.
+    if (!what.trim() && pictures.length === 0) {
+      making = false;
+      return;
+    }
     // Nothing is kept from here: the Go side lets go of the draft and
     // closes the window, which would otherwise keep the text again as it
     // went.
@@ -830,6 +875,16 @@
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
+      <!-- Away from Report, so the hand going for Report does not find
+           it, and it asks first anyway. -->
+      <button
+        class="act danger clear"
+        onclick={() => (clearing = true)}
+        disabled={nothing || making || listening || hearing || attaching}
+        title="Empties this report, what you wrote and everything attached, after asking"
+      >
+        Clear
+      </button>
       <!-- Only what the microphone hears, and why a recording stopped by
            itself. What the buttons are doing shows on the buttons, how the
            page works is in the info mark, and what went wrong is a toast.
@@ -851,13 +906,13 @@
           Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z takes it back. Attach
           screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
           to ten of 10 MB each.
-          What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,
+          What you write and attach stays here when you close the window, and Clear empties it all after asking. Report saves one zip file on the Desktop,
           shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what
           else their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
-      <button bind:this={report} class="act primary report" onclick={make} disabled={making || listening || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
+      <button bind:this={report} class="act primary report" onclick={make} disabled={nothing || making || listening || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
       </button>
@@ -900,6 +955,15 @@
       {/each}
     </ul>
     </div>
+  {/if}
+  {#if clearing}
+    <Confirm title="Clear this report?" oncancel={() => (clearing = false)}>
+      <p>{goes} This cannot be taken back.</p>
+      {#snippet actions()}
+        <button onclick={() => (clearing = false)}>Cancel</button>
+        <button class="danger" onclick={clearAll}>Clear</button>
+      {/snippet}
+    </Confirm>
   {/if}
 </section>
 

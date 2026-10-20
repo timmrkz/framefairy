@@ -2927,6 +2927,22 @@ beside **Report** says how the page works and what goes in a report.
 Tim found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
+**Clear**, beside the paperclip and away from Report, empties the
+report, what was written and every picture and recording, issue #415.
+It asks first in the box over the page, which says what goes, because
+nothing brings it back. Report and Clear are off while there is
+nothing to report, no words and no pictures.
+
+Tab goes from the field to Report, then through the pictures and back
+to the field, and Shift+Tab the other way, issue #404, so Enter, Tab and
+Enter end a dictation and make the report. The page moves the focus
+itself: macOS tabs past buttons unless full keyboard access is on, so
+Tab went from the field to the first picture, or with none to nothing
+Tim could see. Report pressed while the last words of a dictation are
+still written down says Making at once and waits for them, so they are
+in the report. While dictating Tab does nothing: only Enter, Escape and
+the microphone end a dictation, as Tim asked.
+
 The pictures are for screenshots and screen recordings. They come from
 the paperclip's open box, from a drop anywhere on the window, or from a
 paste into the field. Ten at most and 10 MB each. A picture is PNG or

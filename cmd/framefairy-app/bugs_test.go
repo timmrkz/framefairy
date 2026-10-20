@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -483,6 +484,70 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 	s.report.dropped([]string{shot})
 	if len(told) != 1 || len(told[0].Pictures) != 2 {
 		t.Fatalf("a drop told the window %+v", told)
+	}
+}
+
+// Clear empties the draft, the text and every picture, removed ones too,
+// and it stays empty after a restart. Issue #415.
+func TestClearEmptiesTheDraft(t *testing.T) {
+	files := afero.NewMemMapFs()
+	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	if err := s.SaveReportText("It froze."); err != nil {
+		t.Fatal(err)
+	}
+	d := s.report.attach("drop", []handed{{name: "a.png", data: pngOf(t, 8, 8)}, {name: "b.png", data: pngOf(t, 9, 9)}})
+	ids := []string{d.Pictures[0].ID, d.Pictures[1].ID}
+	s.RemovePicture(ids[1])
+	if d := s.ClearReport(); d.Text != "" || len(d.Pictures) != 0 || d.Error != "" {
+		t.Fatalf("cleared, the draft is %+v", d)
+	}
+	for _, id := range ids {
+		if _, err := files.Stat("/config/report/" + id + ".png"); err == nil {
+			t.Fatalf("picture %s is still kept after Clear", id)
+		}
+	}
+	s = &FrameFairy{report: newReporting(files, "/config/report")}
+	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
+		t.Fatalf("after a restart the cleared draft is %+v", d)
+	}
+	// A picture attached after Clear gets an id of its own.
+	if d := s.report.attach("drop", []handed{{name: "c.png", data: pngOf(t, 8, 8)}}); len(d.Pictures) != 1 || slices.Contains(ids, d.Pictures[0].ID) {
+		t.Fatalf("attached after Clear, the draft is %+v", d)
+	}
+}
+
+// Clear while pictures are dropped and text is typed, from several at
+// once: none of it races, and every picture the draft ends with still
+// has its file. Issue #415.
+func TestClearWhileTheDraftChanges(t *testing.T) {
+	t.Parallel()
+	files := afero.NewMemMapFs()
+	s := &FrameFairy{report: newReporting(files, "/config/report")}
+	pic := pngOf(t, 8, 8)
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Go(func() {
+			for j := range 5 {
+				switch (i + j) % 3 {
+				case 0:
+					s.report.attach("drop", []handed{{name: "a.png", data: pic}})
+				case 1:
+					_ = s.SaveReportText(fmt.Sprintf("words %d %d", i, j))
+				case 2:
+					s.ClearReport()
+				}
+			}
+		})
+	}
+	wg.Wait()
+	d := s.ReportDraft()
+	if len(d.Pictures) > picturesMax {
+		t.Fatalf("the draft holds %d pictures", len(d.Pictures))
+	}
+	for _, p := range d.Pictures {
+		if _, err := files.Stat("/config/report/" + p.ID + ".png"); err != nil {
+			t.Fatalf("picture %s is in the draft without its file", p.ID)
+		}
 	}
 }
 

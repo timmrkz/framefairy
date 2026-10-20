@@ -352,6 +352,13 @@
 //   ["tab", to]        presses Tab, and the focus is on to, with its ring
 //                      drawn: "Report", "the field" or "picture i", from 1
 //   ["shift tab", to]  the same with Shift+Tab
+//   ["dictating"]      the microphone still listens, its button says Stop
+//   ["report on", on]  Report and Clear can be pressed, or with false are
+//                      off, as they are with nothing to report
+//   ["clear", how]     presses Clear, and the box over the page asks
+//                      first, with the keyboard on Cancel and saying
+//                      what goes. "cancel" presses Escape, "clear" presses
+//                      Clear in the box. The box is gone after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -2209,6 +2216,58 @@ export const sequences = [
     ],
   },
   {
+    // Issue #404. Tab while dictating stopped it, and Tim wants only Enter,
+    // Escape and the button to end a dictation. Tab does nothing then.
+    name: "Tab while dictating does nothing",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["dictate", "start"],
+      ["tab", "the field"],
+      ["dictating"],
+      ["dictate", "enter"],
+      ["report reads", "It froze. *"],
+    ],
+  },
+  {
+    // Issue #415. On an empty report Tab still went to Report, lit, with
+    // nothing to send. Report and Clear are off until there is something.
+    name: "Report and Clear are off with nothing to report",
+    steps: [
+      ["bugs"],
+      ["report on", false],
+      ["tab", "the field"],
+      ["write", "x", "end"],
+      ["report on", true],
+      ["press", "ControlOrMeta+A"],
+      ["press", "Backspace"],
+      ["report on", false],
+      ["attach", 1],
+      ["report on", true],
+    ],
+  },
+  {
+    // Issue #415. Tim asked for one button that empties a report that
+    // turned out to be for nothing, after asking, rather than removing
+    // the text and every picture by hand.
+    name: "Clear asks first, then empties the words and the pictures for good",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 2],
+      ["clear", "cancel"],
+      ["pictures", 2],
+      ["report reads", "It froze."],
+      ["clear", "clear"],
+      ["pictures", 0],
+      ["report on", false],
+      ["close report"],
+      ["bugs"],
+      ["report reads", ""],
+      ["pictures", 0],
+    ],
+  },
+  {
     // Issue #404. Tab and Enter straight after Enter, while the last words
     // are still written down, make the report with every word said in it.
     name: "Tab and Enter right after a dictation make the report with every word said",
@@ -2284,7 +2343,7 @@ export const sequences = [
       ["status", "A newer build is ready"],
       ["buttons fit", ["Relaunch"]],
       ["bugs"],
-      ["buttons fit", ["Report"]],
+      ["buttons fit", ["Clear", "Report"]],
     ],
   },
   {
@@ -7167,6 +7226,39 @@ for (const seq of toWalk) {
           .then(() => true)
           .catch(() => false);
         if (!went) wrong = "a removed picture still stands in its place after its time";
+        break;
+      }
+      case "dictating": {
+        const now = await page.locator("button.dictate").getAttribute("aria-label");
+        if (now !== "Stop") wrong = `the microphone button says ${now}, so the dictation stopped`;
+        break;
+      }
+      case "report on": {
+        const off = await page.evaluate(() => [document.querySelector("button.report").disabled, document.querySelector("button.clear").disabled]);
+        if (off[0] === arg) wrong = `Report is ${arg ? "off" : "on"} with ${arg ? "something" : "nothing"} to report`;
+        else if (off[1] === arg) wrong = `Clear is ${arg ? "off" : "on"} with ${arg ? "something" : "nothing"} to report`;
+        break;
+      }
+      case "clear": {
+        await page.locator("button.clear").click();
+        await page.locator("dialog[open]").waitFor();
+        const box = await page.evaluate(() => ({
+          title: document.querySelector("dialog[open] h2")?.textContent.trim(),
+          says: document.querySelector("dialog[open] .body")?.textContent.trim(),
+          focused: document.activeElement?.textContent.trim(),
+        }));
+        if (box.title !== "Clear this report?") wrong = `Clear asked ${JSON.stringify(box.title)}`;
+        else if (box.focused !== "Cancel") wrong = `the box opened with the keyboard on ${box.focused}, not Cancel`;
+        else if (!/ go(es)?\. This cannot be taken back\.$/.test(box.says)) wrong = `the box says ${JSON.stringify(box.says)}`;
+        if (wrong) break;
+        if (arg === "cancel") await page.keyboard.press("Escape");
+        else await page.locator("dialog[open] button.danger").click();
+        await page.locator("dialog[open]").waitFor({ state: "detached" });
+        if (arg === "clear") {
+          // The pictures go at once, without the moment a removed one stays.
+          const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+          if (left[0] || left[1]) wrong = `after Clear the field holds "${left[0]}" and ${left[1]} pictures`;
+        }
         break;
       }
       case "tab":
