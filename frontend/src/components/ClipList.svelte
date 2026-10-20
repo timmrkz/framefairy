@@ -323,6 +323,7 @@
       style={g !== undefined && !lead ? `--wait-in: ${(row.place ?? g) * 800}ms` : undefined}
       class:next={!!a || lead}
       class:current={!!a && a.key === selected}
+      class:clip-edge={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
       class:told={lead && !next && !stopped && !!emptied?.fades}
       class:lit={!!clip && clip.key === hovered}
@@ -405,6 +406,7 @@
         <button
           class="pick"
           class:current={clip.key === selected}
+          class:clip-edge={clip.key === selected}
           onclick={() => onselect(clip.key)}
         >
           <span class="title">{clip.title || clip.slug}</span>
@@ -510,14 +512,13 @@
   }
 
   /* The chosen clip, in the same grey every chosen row in the app uses,
-     with the app's own colour down its edge so it is plain which card it
-     is without reading any of them. */
+     with the app's own colour down its edge, .clip-edge in app.css, so it
+     is plain which card it is without reading any of them. */
   .pick.current,
   li:hover .pick.current,
   li.lit .pick.current,
   .next.current {
     background: var(--ink-3);
-    box-shadow: inset 3px 0 var(--accent);
   }
 
   /* What is left of a clip that was taken out: the same row, in its place,

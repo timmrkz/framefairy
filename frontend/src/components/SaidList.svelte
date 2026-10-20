@@ -381,7 +381,7 @@
         data-clip={row.clip?.key}
         {@attach row.clip ? hoverClip(row.clip.key, onhover) : undefined}
       >
-        <button class="pick" class:inclip={!!row.clip} class:current={row.key === current} title="Put the playhead here" onclick={() => {
+        <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} title="Put the playhead here" onclick={() => {
           // The playhead put on a card is where the list already is.
           followed = row.key;
           onseek(row.sentence.start, row.clip?.key ?? null);
@@ -496,13 +496,9 @@
     font-weight: 600;
   }
 
-  /* A caption of a clip: the chosen clip's edge, in the app's own
-     colour, its name, and its words a step below white. The edge is the button's,
-     so the grey it takes under the hand does not cover it. */
-  .pick.inclip {
-    box-shadow: inset 3px 0 var(--accent);
-  }
-
+  /* A caption of a clip: the chosen clip's edge, .clip-edge in app.css,
+     its name, and its words a step below white. The edge is the
+     button's, so the grey it takes under the hand does not cover it. */
   .inclip .text {
     color: color-mix(in srgb, var(--text) 60%, var(--muted));
   }

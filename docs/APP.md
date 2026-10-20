@@ -2023,7 +2023,10 @@ found is a place in the video, and I and O make a clip there.
   every edge of what a clip keeps, so it never holds a word a clip shows.
 - **The clips stand out.** A card of a clip wears the chosen clip's
   accent edge, the clip's name next to its time and its words a step
-  below white. Every other card is in the grey of a label, and the words
+  below white. The edge is one and the same in both lists, `.clip-edge`
+  in `app.css`: a bar 4 px wide down the card's left side, which the
+  card's rounded corners cut off straight. In the transcript it curved
+  round the corners and was a pixel narrower, found by Tim. Every other card is in the grey of a label, and the words
   that answer what is typed are white in every card, so they stand out.
 - **Word for word first, then with a slip.** With nothing typed, every
   card is there. Typing keeps the cards that hold what was typed. Only

@@ -1529,6 +1529,13 @@ export const sequences = [
     steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
   },
   {
+    // Found by Tim on 20 October: the edge of a clip's card in the
+    // transcript curved round its corners, where the clip list's is a
+    // straight bar the corners cut off. Both are one bar, a pixel wider.
+    name: "the edge of a clip's card is the same in the transcript and the clip list",
+    steps: [["edges alike"]],
+  },
+  {
     // Found by Tim on 20 October: Shift and the arrows brought a clip
     // walked to just into view, so the walk went on at the foot of the
     // list. They turn the page, the way the transcript does as it plays.
@@ -8804,6 +8811,77 @@ for (const seq of toWalk) {
         }
         break;
       }
+      case "edges alike": {
+        // The edge of a card of the chosen clip looks the same in the
+        // transcript and in the clip list: a bar down the left 4 px wide,
+        // cut off straight by the card's rounded corners. In the
+        // transcript it curved round them and was a pixel narrower, found
+        // by Tim. Read off a screenshot, row by row, as how many pixels of
+        // the app's colour each row holds at the card's left.
+        const edgeOf = async (selector) => {
+          const box = await page.evaluate((selector) => {
+            const r = document.querySelector(selector)?.getBoundingClientRect();
+            return r ? { x: r.left, y: r.top, height: r.height } : null;
+          }, selector);
+          if (!box) return null;
+          const clip = { x: Math.floor(box.x), y: Math.floor(box.y), width: 12, height: Math.floor(box.height) };
+          const shot = (await page.screenshot({ clip })).toString("base64");
+          return page.evaluate(async (data) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${data}`;
+            await img.decode();
+            const c = document.createElement("canvas");
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data;
+            const rows = [];
+            for (let y = 0; y < c.height; y++) {
+              let n = 0;
+              for (let x = 0; x < c.width; x++) {
+                const i = (y * c.width + x) * 4;
+                if (d[i] - d[i + 1] > 40 && d[i + 2] - d[i + 1] > 40) n++;
+              }
+              rows.push(n);
+            }
+            return { rows, scale: img.width / 12 };
+          }, shot);
+        };
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li[data-clip] button.pick");
+        // A card of a clip wholly in view, so nothing of the veil lies
+        // over it.
+        const card = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list").getBoundingClientRect();
+          const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+          const li = [...document.querySelectorAll("ol.said li[data-clip]")].find((li) => {
+            const r = li.getBoundingClientRect();
+            return r.top >= list.top + pad && r.bottom <= list.bottom - pad;
+          });
+          return li?.dataset.row ?? null;
+        });
+        if (!card) {
+          wrong = "no card of a clip wholly in view in the transcript";
+          break;
+        }
+        const said = await edgeOf(`ol.said li[data-row="${card}"] button.pick`);
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        await page.waitForSelector("aside ol li .pick.current");
+        await page.mouse.move(1, 1);
+        const listed = await edgeOf("aside ol li .pick.current");
+        const ends = (e) => [...e.rows.slice(0, 10), ...e.rows.slice(-10)].join(",");
+        const middle = (e) => e.rows[Math.floor(e.rows.length / 2)];
+        console.log(JSON.stringify({ said: { ends: ends(said), middle: middle(said) }, listed: { ends: ends(listed), middle: middle(listed) } }));
+        if (middle(listed) !== 4 * listed.scale) wrong = `the edge of the chosen clip in the clip list is ${middle(listed) / listed.scale} px wide, not 4`;
+        else if (middle(said) !== 4 * said.scale) wrong = `the edge of a clip's card in the transcript is ${middle(said) / said.scale} px wide, not 4`;
+        else if (ends(said) !== ends(listed))
+          wrong = `the edge of a clip's card in the transcript ends at its corners in rows of ${ends(said)} pixels, and in the clip list in rows of ${ends(listed)}`;
+        break;
+      }
       case "walk the clip list": {
         // Shift and the arrows walk the clip list the way they walk the
         // transcript, turning the page: a clip walked down to below the
@@ -9365,14 +9443,14 @@ for (const seq of toWalk) {
             // its clip with it, found by Tim.
             const others = [...document.querySelectorAll(`ol.said li[data-clip="${key}"]`)].filter((x) => x !== li);
             return {
-              edge: getComputedStyle(li.querySelector("button.pick")).boxShadow,
+              edge: getComputedStyle(li.querySelector("button.pick"), "::before").width,
               mark: !!document.querySelector(".track .clipmark.lit"),
               others: others.length,
               alsoLit: others.filter((x) => getComputedStyle(x.querySelector("button.pick")).backgroundColor === grey).length,
               key,
             };
           }, inClip.at);
-          if (!/3px 0px 0px 0px/.test(lit.edge)) wrong = `the edge of the card at ${inClip.at.toFixed(2)} is gone under the hand: ${lit.edge}`;
+          if (lit.edge !== "4px") wrong = `the edge of the card at ${inClip.at.toFixed(2)} is gone under the hand: ${lit.edge}`;
           else if (!lit.mark) wrong = `the hand on a sentence of ${inClip.clip} lit no mark on the range picker`;
           else if (lit.alsoLit) wrong = `the hand on one sentence of ${inClip.clip} lit ${lit.alsoLit} of its ${lit.others} other sentences too`;
         }
