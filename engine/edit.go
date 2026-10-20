@@ -723,33 +723,73 @@ func checkedPieces(change pieceChange, pieces []*object, spans []Rotation, frame
 	return out, nil
 }
 
-// oneFraming gives every piece of a clip turned one way the framing of the
-// first piece turned that way, and makes pieces that meet framed alike one
-// piece. A clip has one crop, and one for each way a part of it is turned,
-// #396. One framed before that has a crop for each camera it shows, and
-// takes the first from its next change on, the crop it already plays
-// with, see oneCrop.
+// oneFraming gives every piece of a clip the clip's crop, and makes pieces
+// that meet framed alike one piece. A clip has one crop, and one for each
+// way a part of it is turned, #396. One framed before that has a crop for
+// each camera it shows, and takes the one it already plays with from its
+// next change on, see framingOf.
 func oneFraming(pieces []*object, spans []Rotation) []*object {
-	first := map[int]*object{}
+	upright, turned := framingOf(pieces, spans)
 	var out []*object
 	for _, seg := range pieces {
 		turn := rotationOf(seg, spans)
-		like, ok := first[turn]
-		if !ok {
-			first[turn] = seg
-		} else if !sameFraming(seg, like) {
+		like := turned[turn]
+		if turn == 0 {
+			like = upright
+		}
+		if !sameFraming(seg, upright, keyCropX, keyCropXAuto) || !sameFraming(seg, like, keyCropXTurned) {
 			seg = copyObject(seg)
-			for _, key := range []string{keyCropX, keyCropXAuto, keyCropXTurned} {
-				if v, ok := like.get(key); ok {
-					seg.set(key, v)
-				} else {
-					seg.remove(key)
-				}
-			}
+			copyFraming(seg, upright, keyCropX, keyCropXAuto)
+			copyFraming(seg, like, keyCropXTurned)
 		}
 		out = meet(out, []*object{seg})
 	}
 	return out
+}
+
+// framingOf is the piece a clip takes its crop from, and for each way a
+// part of it is turned the piece that part takes its crop from. The crop
+// as filmed, crop_x, is the whole clip's, turned or not, since a part
+// turned back plays with it. Only the crop on the picture turned,
+// crop_x_turned, is a turn's own. Of a clip framed before #396, with a
+// crop for each camera, the first piece placed by hand is taken, since a
+// crop a person placed is a decision and one the analysis chose a guess,
+// and the first piece where none was. A turn takes its first piece placed
+// on the picture turned, or its first piece.
+func framingOf(pieces []*object, spans []Rotation) (*object, map[int]*object) {
+	var upright *object
+	turned := map[int]*object{}
+	for _, seg := range pieces {
+		if upright == nil || (movedByHand(seg) && !movedByHand(upright)) {
+			upright = seg
+		}
+		turn := rotationOf(seg, spans)
+		_, placed := seg.get(keyCropXTurned)
+		if like, ok := turned[turn]; !ok {
+			turned[turn] = seg
+		} else if _, had := like.get(keyCropXTurned); placed && !had {
+			turned[turn] = seg
+		}
+	}
+	return upright, turned
+}
+
+// movedByHand says whether a piece's crop as filmed was placed by hand.
+func movedByHand(seg *object) bool {
+	_, moved := seg.get(keyCropXAuto)
+	return moved
+}
+
+// copyFraming gives a piece the keys of another's framing, or takes them
+// away where the other has none.
+func copyFraming(seg, like *object, keys ...string) {
+	for _, key := range keys {
+		if v, ok := like.get(key); ok {
+			seg.set(key, v)
+		} else {
+			seg.remove(key)
+		}
+	}
 }
 
 // piecesOnFrames is a clip's pieces with their edges on the episode's
@@ -859,9 +899,9 @@ func applyCut(pieces []*object, from, to float64) []*object {
 }
 
 // SetCrop places the crop of a clip by hand, as the left edge in source
-// pixels, at a moment of it. Every piece of the clip turned the way the
-// piece at that moment is moves with it, so a clip has one crop for the
-// picture as filmed, and one for each way a part of it is turned. The
+// pixels, at a moment of it. A clip has one crop for the picture as
+// filmed, which every piece keeps, turned or not, and one for each way a
+// part of it is turned, which the pieces turned alike share. The
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
@@ -922,20 +962,23 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			}
 			setCropMarks(c, marks)
 		}
+		// The crop as filmed is the whole clip's, so a piece that is
+		// turned keeps it too, for when it is turned back. A rotated
+		// piece's crop is on the picture rotated, kept apart from the one
+		// it has as filmed, and only the pieces turned alike share it, see
+		// keyCropXTurned. Placed on the pieces as filmed alone, a part
+		// turned and turned back again brought its old crop back, and the
+		// clip played with that one, found by the review of #398.
+		upright, _ := framingOf(pieces, spans)
+		auto := autoCrop(upright)
 		for _, seg := range pieces {
-			if rotationOf(seg, spans) != turn {
-				continue
-			}
-			// A rotated piece's crop is on the picture rotated, kept
-			// apart from the one it has as filmed, see keyCropXTurned.
 			if turn != 0 {
-				seg.set(keyCropXTurned, left)
+				if rotationOf(seg, spans) == turn {
+					seg.set(keyCropXTurned, left)
+				}
 				continue
 			}
-			if _, moved := seg.get(keyCropXAuto); !moved {
-				value, _ := seg.get(keyCropX)
-				seg.set(keyCropXAuto, value)
-			}
+			seg.set(keyCropXAuto, auto)
 			seg.set(keyCropX, left)
 		}
 		return nil
@@ -1374,10 +1417,12 @@ func ClearCaptionY(fsys afero.Fs, planPath string) (int, error) {
 	return changed, nil
 }
 
-// ResetCrop brings back the automatic crop of a clip, for every piece
-// turned the way the piece at a moment is, and removes every keyframe of
-// that turn. A clip framed before #396 can have pieces with different
-// automatic crops, one for each camera, and they all take the first.
+// ResetCrop brings back the automatic crop of a clip for the way the piece
+// at a moment is turned, and removes every keyframe of that turn. As
+// filmed, that is the crop of every piece, turned or not, and on a picture
+// turned, the crop of the pieces turned alike. A clip framed before #396
+// can have pieces with different automatic crops, one for each camera,
+// and they all take the one of the piece framingOf names.
 func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
@@ -1401,18 +1446,14 @@ func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
 			}
 			setCropMarks(c, kept)
 		}
-		var auto any
-		found := false
+		upright, _ := framingOf(pieces, spans)
+		auto := autoCrop(upright)
 		for _, seg := range pieces {
-			if rotationOf(seg, spans) != turn {
-				continue
-			}
 			if turn != 0 {
-				seg.remove(keyCropXTurned)
+				if rotationOf(seg, spans) == turn {
+					seg.remove(keyCropXTurned)
+				}
 				continue
-			}
-			if !found {
-				auto, found = autoCrop(seg), true
 			}
 			if auto == nil {
 				seg.remove(keyCropX)

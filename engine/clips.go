@@ -338,6 +338,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 		}
 		var segments []Segment
 		var turns []int
+		var uprights []framed
 		for _, segAny := range rawSegments {
 			seg, ok := segAny.(map[string]any)
 			if !ok {
@@ -392,6 +393,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			// picture as it stands rotated, kept apart from the crop it
 			// has unrotated, see keyCropXTurned.
 			_, moved := seg[keyCropXAuto]
+			uprights = append(uprights, framed{cropX, moved})
 			rotate := RotationAt(spans, start)
 			if rotate != 0 {
 				cropX, moved = nil, false
@@ -410,7 +412,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 		if len(segments) == 0 {
 			continue
 		}
-		oneCrop(segments)
+		oneCrop(segments, uprights)
 		var marks []CropMark
 		for _, m := range readCropMarks(entry[keyCropMarks], spans) {
 			if insidePieces(segments, m.At) {
@@ -642,18 +644,41 @@ func insidePieces(segments []Segment, at float64) bool {
 	return false
 }
 
-// oneCrop gives every piece of a clip turned one way the crop of the first
-// piece turned that way. A clip has one crop, and one for each way a part
-// of it is turned, #396. One framed before that has a crop for each
-// camera it shows, and plays with the first.
-func oneCrop(segments []Segment) {
+// framed is the crop a piece has as filmed, and whether it was placed by
+// hand.
+type framed struct {
+	cropX *int
+	moved bool
+}
+
+// oneCrop gives every piece of a clip the clip's crop. A clip has one crop
+// as filmed, which every piece keeps, turned or not, and one for each way
+// a part of it is turned, #396. uprights is each piece's crop as filmed.
+// One framed before that has a crop for each camera it shows, and plays
+// with the one of the piece framingOf in engine/edit.go names: the first
+// placed by hand, or the first.
+func oneCrop(segments []Segment, uprights []framed) {
+	clip := uprights[0]
+	for _, u := range uprights {
+		if u.moved {
+			clip = u
+			break
+		}
+	}
 	first := map[int]int{}
 	for i, s := range segments {
-		f, ok := first[s.Rotate]
-		if !ok {
-			first[s.Rotate] = i
+		if s.Rotate == 0 {
+			segments[i].CropX, segments[i].Moved = clip.cropX, clip.moved
 			continue
 		}
-		segments[i].CropX, segments[i].Moved = segments[f].CropX, segments[f].Moved
+		if f, ok := first[s.Rotate]; !ok || (s.Moved && !segments[f].Moved) {
+			first[s.Rotate] = i
+		}
+	}
+	for i, s := range segments {
+		if s.Rotate != 0 {
+			f := first[s.Rotate]
+			segments[i].CropX, segments[i].Moved = segments[f].CropX, segments[f].Moved
+		}
 	}
 }

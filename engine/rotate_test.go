@@ -156,6 +156,42 @@ func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 	}
 }
 
+// The crop as filmed is the whole clip's, so a part that is turned keeps
+// it for when it is turned back. Placed on the pieces standing as filmed
+// alone, a part turned by mistake and turned back again brought its old
+// crop with it, and the clip played with that one, found by the review of
+// #398. The same with Automatic crop pressed while a part was turned.
+func TestACropPlacedByHandSurvivesARotationTakenBack(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	rotate(t, fsys, path, 11.5) // the part before the cut turns 90
+	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 { // three more quarter turns stand it as filmed again
+		rotate(t, fsys, path, 11.5)
+	}
+	_, crops := rotations(t, fsys, path)
+	for i, c := range crops {
+		if c == nil || *c != 400 {
+			t.Errorf("piece %d plays with %v, not the crop placed by hand", i, fmtCrop(c))
+		}
+	}
+
+	rotate(t, fsys, path, 11.5)
+	if err := ResetCrop(fsys, path, "01", 13.5); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		rotate(t, fsys, path, 11.5)
+	}
+	_, crops = rotations(t, fsys, path)
+	for i, c := range crops {
+		if c == nil || *c != 120 {
+			t.Errorf("after Automatic crop, piece %d plays with %v, not the automatic 120", i, fmtCrop(c))
+		}
+	}
+}
+
 // An edit leaves what it is not about alone: the crop placed by hand on a
 // rotated part survives a crop put back on another part, in the file and
 // as the render reads it.

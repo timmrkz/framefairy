@@ -578,9 +578,12 @@ func meet(a, b []*object) []*object {
 }
 
 // sameFraming says whether two pieces are framed alike: the same crop, and
-// the same automatic crop behind it.
-func sameFraming(a, b *object) bool {
-	for _, key := range []string{keyCropX, keyCropXAuto, keyCropXTurned} {
+// the same automatic crop behind it, or alike in the keys named.
+func sameFraming(a, b *object, keys ...string) bool {
+	if len(keys) == 0 {
+		keys = []string{keyCropX, keyCropXAuto, keyCropXTurned}
+	}
+	for _, key := range keys {
 		x, okA := a.get(key)
 		y, okB := b.get(key)
 		if okA != okB || fmt.Sprint(x) != fmt.Sprint(y) {

@@ -472,12 +472,18 @@ them, so a join or a move there is refused. A clip once also kept the
 pieces it was found with, `found_segments`, to frame what was put back by
 the camera it showed. A clip used to be parted at every camera switch with
 a crop for each camera, which Tim never saw at work in his own two-camera
-podcast, #396. A plan from before that plays every piece turned one way
-with the crop of the first, `oneCrop` in `engine/clips.go`, and its next
-change of pieces writes it so and takes `found_segments` away,
-`oneFraming` in `engine/edit.go`. `engine/shots_test.go` holds the cases,
-and `FuzzPlanEdits` checks that every piece of a clip turned one way has
-the same crop after every edit.
+podcast, #396. The crop as filmed, `crop_x`, is the whole
+clip's, kept on every piece, turned or not, because a part turned back
+plays with it. Only the crop on the picture turned, `crop_x_turned`, is
+shared by the pieces turned alike alone. A plan from before that plays
+every piece with the crop of its first piece placed by hand, or of its
+first piece where none was, `oneCrop` in `engine/clips.go`, since a crop
+a person placed is a decision and one the analysis chose a guess. Its
+next change of pieces writes it so and takes `found_segments` away,
+`oneFraming` and `framingOf` in `engine/edit.go`. `engine/shots_test.go`
+holds the cases, and `FuzzPlanEdits` checks in the plan file after every
+edit, rotations among them, that a clip has one crop as filmed and one
+for each turn.
 
 Thumbnails are kept per clip in `thumbnails`, the moments of the episode a
 picture of the short is taken at. `readThumbnails` in `engine/clips.go`
@@ -1088,8 +1094,9 @@ edge of a stretch: a gesture that would make one parts it there,
 is the shape of the short in the picture rotated. A rotated piece keeps
 its crop on the rotated picture as `crop_x_turned`, apart from the one it
 has as filmed, which stays as it was. Absent, it stands in the middle. A
-crop placed by hand moves every piece of the clip rotated alike,
-`rotationOf`.
+crop placed by hand on a rotated part moves every piece of the clip
+rotated alike, `rotationOf`, and one placed on the picture as filmed
+moves every piece of the clip.
 `LoadClips` checks the rotations and refuses a plan whose stretches
 overlap or turn by anything but a quarter, and reads every piece's turn
 from them. See [ROTATE-AND-FOLLOW.md](ROTATE-AND-FOLLOW.md).

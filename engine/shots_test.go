@@ -118,3 +118,33 @@ func TestACropOnAnOldClipIsTheCropOfTheWholeClip(t *testing.T) {
 		t.Errorf("the plan keeps the second camera's crop: %s", data)
 	}
 }
+
+// An old clip where a crop was placed by hand on one camera plays with that
+// crop, not with the automatic crop of its first piece. A crop a person
+// placed is a decision, and one the analysis chose a guess, found by the
+// review of #398. Its next change writes it so.
+func TestAnOldClipKeepsTheCropPlacedByHand(t *testing.T) {
+	fsys, path := writePlanAt(t, strings.Replace(shotsPlan,
+		`"crop_x": 900}`, `"crop_x": 700, "crop_x_auto": 900}`, 1))
+	placed := []Segment{
+		{Start: 9.6, End: 12.8, CropX: intPtr(700), Moved: true},
+		{Start: 12.8, End: 16, CropX: intPtr(700), Moved: true}}
+	shotsAre(t, fsys, path, "as loaded", placed)
+	g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(ToWords), Frames: at25}
+	if err := Reshape(fsys, nil, path, "01", g, shotsTranscript(), 0.1); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range clipByID(t, fsys, path, "01").Segments {
+		if p.CropX == nil || *p.CropX != 700 || !p.Moved {
+			t.Errorf("after a cut, a piece from %.2f plays with %s, not the crop placed by hand",
+				p.Start, fmtCrop(p.CropX))
+		}
+	}
+	data, err := afero.ReadFile(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"crop_x": 300`) {
+		t.Errorf("the plan still keeps the first camera's automatic crop: %s", data)
+	}
+}
