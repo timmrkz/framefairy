@@ -530,6 +530,13 @@ export class CaptionLayers {
     }
     this.ask = ask;
     this.askKey = key;
+    this.settleRest();
+  }
+
+  // The frame on screen drawn again with what lies over it now.
+  private drawAgain() {
+    this.came();
+    this.settleRest();
   }
 
   // What lies over the frame that starts at frame, asked for now and before
@@ -611,6 +618,7 @@ export class CaptionLayers {
       this.going.delete(key);
       this.keep(key);
     }
+    this.settleRest();
   }
 
   // The layer of the frame that starts at frame, or while it is on its way
@@ -713,14 +721,14 @@ export class CaptionLayers {
         // Without its parts the frame shows its own layer.
         this.gaveUp(ask, "the word lifted out", why);
         this.lift = null;
-        this.came();
+        this.drawAgain();
         return;
       }
       lift.rest = rest;
       lift.word = word;
       if (!lift.bouncing || !lift.bounce || typeof requestAnimationFrame !== "function") {
         lift.done = true;
-        this.came();
+        this.drawAgain();
         return;
       }
       // The bounce, one scale for each frame of the screen, by the clock
@@ -733,7 +741,7 @@ export class CaptionLayers {
         if (lift.done) lift.scale = 1;
         else lift.tick = requestAnimationFrame(step);
         this.stats.bounced++;
-        this.came();
+        this.drawAgain();
       };
       lift.tick = requestAnimationFrame(step);
     });
@@ -766,6 +774,29 @@ export class CaptionLayers {
   // first, unless its layer did not come and is asked for again in a
   // moment, then the frames that asked ahead, in the order they asked.
   private more(drawn = true) {
+    this.moreNow(drawn);
+    this.settleRest();
+  }
+
+  // Settles once no layer is on its way and every card's layer is here or
+  // was given up on, for the walks and the tests, which wait on it rather
+  // than on the clock.
+  rested(): Promise<void> {
+    return new Promise((done) => {
+      this.restWaiters.push(done);
+      this.settleRest();
+    });
+  }
+  private restWaiters: (() => void)[] = [];
+
+  private settleRest() {
+    if (this.busy || this.soon.some((a) => !this.kept.has(a.key))) return;
+    const was = this.restWaiters;
+    this.restWaiters = [];
+    for (const done of was) done();
+  }
+
+  private moreNow(drawn: boolean) {
     for (const p of this.promised.values()) if (!this.again.has(p.want.key)) this.fetch(p.want);
     const w = this.waiting;
     if (drawn && w && !this.kept.has(w.key)) this.fetch(w);
@@ -860,7 +891,7 @@ export class CaptionLayers {
         // that asked ahead.
         if (w && this.kept.has(w.key)) {
           this.waiting = null;
-          this.came();
+          this.drawAgain();
         }
         this.more();
       });

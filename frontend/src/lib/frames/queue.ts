@@ -944,7 +944,7 @@ export class FrameQueue {
   // first: the frame each opens on is read once nothing else is wanted and
   // held for a click on its card, see AppFrames.cards.
   cards(starts: number[]) {
-    this.ready.then(
+    this.cardsGiven = this.ready.then(
       () => {
         if (this.closed || !this.app) return;
         const s = this.video!.samples;
@@ -952,6 +952,16 @@ export class FrameQueue {
       },
       () => {},
     );
+  }
+  // The cards given last, once the frames have them, see rested.
+  private cardsGiven: Promise<void> = Promise.resolve();
+
+  // Settles once the frames read ahead are in, the cards' among them, for
+  // the walks, see AppFrames.rested.
+  async rested(): Promise<void> {
+    await this.ready;
+    await this.cardsGiven;
+    await this.app?.rested();
   }
 
   play() {

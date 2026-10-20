@@ -447,6 +447,11 @@ export class AppFrames {
   // frame behind three seeks of the decoder and streams closed and opened
   // again for the rest, issue #383. The cards wait while it plays.
   aheadNow() {
+    this.readNext();
+    this.settleRest();
+  }
+
+  private readNext() {
     if (this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
     const ranks = this.aheadWanted ?? [];
     for (let rank = ranks.shift(); rank !== undefined; rank = ranks.shift()) {
@@ -490,8 +495,24 @@ export class AppFrames {
     this.route(w);
   }
 
-  // Whether frames are still to be read ahead, the cards' among them, for
-  // the walks.
+  // Settles once nothing is left to read ahead, the cards' frames among
+  // them, for the walks, which wait on it rather than on the clock.
+  rested(): Promise<void> {
+    return new Promise((done) => {
+      this.restWaiters.push(done);
+      this.settleRest();
+    });
+  }
+  private restWaiters: (() => void)[] = [];
+
+  private settleRest() {
+    if (this.readingAhead && !this.closed) return;
+    const was = this.restWaiters;
+    this.restWaiters = [];
+    for (const done of was) done();
+  }
+
+  // Whether frames are still to be read ahead, the cards' among them.
   get readingAhead(): boolean {
     this.fitCards();
     return (
@@ -507,6 +528,7 @@ export class AppFrames {
     this.aheadWanted = null;
     for (const w of this.aheadOf) w.gone = true;
     this.aheadOf.clear();
+    this.settleRest();
   }
 
   route(w: Waiter) {
@@ -615,6 +637,7 @@ export class AppFrames {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.settleRest();
     void fetch(`/frames/release?${new URLSearchParams({ path: this.path })}`).catch(() => {});
     for (const w of this.parked) w.done(null);
     this.parked = [];

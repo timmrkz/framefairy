@@ -244,6 +244,9 @@
     q.trace = (line) => said(`video preview: ${line}`, { video: path });
     q.over = { at: overAt, coming: comingAt, ready: readyAt };
     queue = q;
+    const opened = queueOpened;
+    queueOpened = [];
+    for (const done of opened) done();
     if (pixels[0]) q.resize(pixels[0], pixels[1]);
     q.listen((s) => {
       if (queue === q) heard(s);
@@ -260,6 +263,12 @@
           { level: "warn", video: path },
         );
       }, after * 1000);
+    q.ready.then(
+      () => {
+        if (queue === q) ahead(...askedAhead);
+      },
+      () => {},
+    );
     q.ready.catch((e: Error) => {
       said(`video preview: could not be opened: ${e.message}`, { level: "error", video: path });
       if (queue !== q) return;
@@ -435,23 +444,50 @@
   // kept, being only the box its words are drawn in, a few hundred
   // kilobytes. On a video of hours a card clicked for the first time took
   // half a second, issue #383.
+  //
+  // What was asked last is asked again of a queue as it opens, once it
+  // knows the video: a workspace woken asks before its queue is there.
+  let askedAhead: [number[], { clip: ClipEntry; captions: CaptionsView | null }[]] = [[], []];
   export function ahead(times: number[], clips: { clip: ClipEntry; captions: CaptionsView | null }[] = []) {
+    askedAhead = [times, clips];
     if (!queue) return;
     queue.ahead(times);
     const starts: number[] = [];
     const wants: Parameters<typeof layers.next>[0] = [];
+    // The layers of the frames a word step goes to, first: a step waits
+    // for its frame's captions before it is put up, see FrameQueue.dress,
+    // and each step lights another word, so its layer is a new one. Found
+    // by the review of #385.
+    const ask = captionAsk;
+    for (const at of ask ? times : []) {
+      const frame = queue.firstFrameAt(at);
+      const f = frame !== null && framesClip(frame) ? framingOf(frame) : null;
+      const size = f && layerSize(f);
+      if (frame !== null && ask && size) wants.push({ ask, frame, size });
+    }
     for (const { clip: of, captions: view } of clips) {
       const frame = queue.firstFrameAt(of.start);
       if (frame === null) break;
-      const ask = askOf(of, view);
-      const f = ask ? framingOf(frame, of) : null;
+      const card = askOf(of, view);
+      const f = card ? framingOf(frame, of) : null;
       const size = f && layerSize(f);
       starts.push(of.start);
-      if (ask && size) wants.push({ ask, frame, size });
+      if (card && size) wants.push({ ask: card, frame, size });
     }
     queue.cards(starts);
     layers.next(wants);
   }
+
+  // Settles once what was read ahead is in, the frames and the layers of
+  // their captions, for the walks, which wait on it rather than on the
+  // clock.
+  export async function rested(): Promise<void> {
+    // Woken, the queue opens in the task after the frame that shows the
+    // workspace again.
+    if (!queue && !sleeping) await new Promise<void>((done) => queueOpened.push(done));
+    await Promise.all([queue?.rested().catch(() => {}), layers.rested()]);
+  }
+  let queueOpened: (() => void)[] = [];
 
   // A clip made with I or O is made around the playhead, so the playhead
   // is on it from the moment it is there: making it is a gesture about

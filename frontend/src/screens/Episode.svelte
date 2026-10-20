@@ -1692,13 +1692,18 @@
   const viewsAhead = new WeakMap<ClipEntry, CaptionsView>();
   const viewsAsked = new WeakSet<ClipEntry>();
   let viewAsking = false;
+  // Told when a captions call ends, see rested.
+  let viewsTold: (() => void)[] = [];
   // The words either side of the playhead the clip timeline asked to be
   // read ahead last, which go first.
   let wordsAhead: number[] = [];
   function readAhead(times = wordsAhead) {
     wordsAhead = times;
     untrack(() => {
-      if (!player || !ready) return;
+      // Asleep, the video preview has no frames to read them into, and a
+      // search running on the video in the background would ask the
+      // captions of every clip it finds. Woken, it reads them again.
+      if (!player || !ready || away) return;
       const list = shown.filter((c) => !c.rejected);
       const here = Math.max(0, list.findIndex((c) => c.key === current?.key));
       const cards = list
@@ -1716,19 +1721,51 @@
           .then((view) => {
             if (view) viewsAhead.set(next, view);
           })
-          .catch(() => {})
+          .then(
+            () => {
+              viewAsking = false;
+              readAhead();
+            },
+            // Asked again when the cards next change, not at once, so a
+            // Go side that keeps failing is not asked over and over.
+            () => {
+              viewAsking = false;
+              viewsAsked.delete(next);
+            },
+          )
           .finally(() => {
-            viewAsking = false;
-            readAhead();
+            const told = viewsTold;
+            viewsTold = [];
+            for (const done of told) done();
           });
       }
       player.ahead(times, cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
     });
   }
-  // Read again as the cards change, and as the pointer comes to one: the
-  // card under it is the likeliest to be clicked.
+  // Settles once the captions of every card were asked for and what the
+  // video preview reads ahead is in, for the walks, which wait on it
+  // rather than on the clock.
+  async function rested(): Promise<void> {
+    for (;;) {
+      await new Promise<void>((done) => {
+        if (!viewAsking) done();
+        else viewsTold.push(done);
+      });
+      await player?.rested();
+      if (!viewAsking) return;
+    }
+  }
   $effect(() => {
-    void [hovered, shown, current, ready];
+    if (away) return;
+    (window as unknown as { __readAheadRested?: () => Promise<void> }).__readAheadRested = rested;
+  });
+
+  // Read again as the cards change, and as the pointer comes to one: the
+  // card under it is the likeliest to be clicked. And as the workspace
+  // wakes: its video preview opens with frames of its own, which have
+  // none of the cards', found by the review of #385.
+  $effect(() => {
+    void [hovered, shown, current, ready, away];
     readAhead();
   });
 

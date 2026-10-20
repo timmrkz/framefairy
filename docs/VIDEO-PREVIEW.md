@@ -204,7 +204,8 @@ closed for standing unused.
   goes to next, plan row 2.269: paused with nothing under the hand, the
   first frame of the word after the playhead and of the word before, the
   way Shift and an arrow walk, once the frame the hand asked for has
-  come, see `AppFrames.ahead`. After them come the first frames of
+  come, see `AppFrames.ahead`, and the layers of their captions, which a
+  step waits for before its frame is put up. After them come the first frames of
   the clips on the cards, the card under the pointer first and then the
   cards nearest the one chosen, with their captions, so a card clicked
   puts up its clip from what was read, issue #383. They are read once the
@@ -213,7 +214,9 @@ closed for standing unused.
   a play or a step keeps, as many frames as 400 MB holds at the size
   frames are read at, counted again when that size changes, `CARDS_BYTES`
   in `lib/frames/app.ts`. They are read only while paused, never on a
-  second decoder beside a play. Everything read ahead goes one at a time, so a click
+  second decoder beside a play, and read again when a workspace is woken,
+  whose video preview opens with frames of its own. A workspace asleep
+  reads none. Everything read ahead goes one at a time, so a click
   that comes before it is in waits behind one read and not three. A
   jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told

@@ -227,8 +227,9 @@
 //                      the same with its picture in HEVC, 10-bit, which
 //                      the Go side decodes, the way Tim's camera files are
 //   ["pick cards", n]  makes a clip in each shot with Mark In, then clicks
-//                      the clip cards in turn n times, every other time with
-//                      the clip's captions held back by the Go side, and on
+//                      the clip cards in turn n times, every other time on a
+//                      clip made just then, with the Go side's answers about
+//                      captions held back, and on
 //                      every animation frame from the click reads the crop
 //                      frame and the canvas: the picture, the crop frame and
 //                      the captions over it change once, together, issue
@@ -238,7 +239,8 @@
 //                      caption, adds another video and goes back to the
 //                      first from the sidebar, its frames slow to open:
 //                      the video preview keeps its frame and never goes
-//                      black on the way
+//                      black on the way, and a card clicked then is put up
+//                      from what was read ahead
 //   ["pick rested cards", n]
 //                      the same clips, then clicks the cards in turn n
 //                      times, each after the hand rested, and checks each
@@ -10982,31 +10984,62 @@ async function dropOn(page, files) {
 // picture it missed is white, and a note over the picture, like the one
 // the bridge's sound gives, is put away: the frame, the shade and the
 // viewer are drawn as they are. See ["frame whole"].
-// Clicks the clip cards in turn, n times, and reads on every animation
-// frame from the click what the video preview shows: the crop frame's place
-// and the canvas whole, the picture with the captions libass drew over it.
-// What is shown before the click and what is shown once it has settled are
-// two moments, and every animation frame in between is one or the other.
-// Tim saw the crop frame jump first, then the picture, then the captions,
-// issue #383. Every other click holds the clip's captions back on the Go
-// side for a moment, the way a video of hours answers, so the picture has
-// to wait for them rather than come first.
+// The walks of issue #383 wait on what the app tells, never on the clock.
+// Until the workspace in front has asked the captions of every card and
+// read ahead what it reads for them, see rested in Episode.svelte.
+const restAhead = (page) => page.evaluate(() => window.__readAheadRested());
+
+// So many animation frames of the page.
+const animationFrames = (page, n) =>
+  page.evaluate(
+    (n) =>
+      new Promise((done) => {
+        let k = 0;
+        const step = () => (++k >= n ? done() : requestAnimationFrame(step));
+        requestAnimationFrame(step);
+      }),
+    n,
+  );
+
+// The keys of the cards in the clip list.
+const cardKeys = (page) => page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]")].map((li) => li.dataset.key));
+
+// Does make, then the keys of the n cards that are not among was, once the
+// clip list shows them.
+async function newCards(page, n, make) {
+  const was = await cardKeys(page);
+  const shown = page.evaluate(
+    ({ was, n }) =>
+      new Promise((done) => {
+        const look = () => [...document.querySelectorAll("aside ol li[data-key]")].map((li) => li.dataset.key).filter((k) => !was.includes(k));
+        const o = new MutationObserver(() => {
+          const keys = look();
+          if (keys.length < n) return;
+          o.disconnect();
+          done(keys);
+        });
+        o.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-key"] });
+        if (look().length >= n) {
+          o.disconnect();
+          done(look());
+        }
+      }),
+    { was, n },
+  );
+  await make();
+  return shown;
+}
+
 // Makes a clip in each shot of the video of two cameras with Mark In, so
 // two clips have their crops far apart, each starting on a caption, and
 // waits until the clip list shows them. The clips, or what went wrong.
 async function shotClips(page) {
   const path = await episodeOn(page);
-  const before = (await ask(page, "Clips", path)).length;
-  for (const at of [8, 86]) await ask(page, "MakeClip", path, at, false);
-  // Until the engine has written both and the clip list shows them.
-  let clips = [];
-  let cards = [];
-  for (let t = 0; t < 60000 && (clips.length < before + 2 || cards.length !== clips.length); t += 250) {
-    await page.waitForTimeout(250);
-    clips = await ask(page, "Clips", path);
-    cards = (await clipList(page))?.cards ?? [];
-  }
-  if (clips.length < before + 2) return `Mark In made ${clips.length - before} clips, not 2`;
+  const keys = await newCards(page, 2, async () => {
+    for (const at of [8, 86]) await ask(page, "MakeClip", path, at, false);
+  });
+  const clips = (await ask(page, "Clips", path)).filter((c) => keys.includes(c.key));
+  if (clips.length < 2) return `Mark In made ${clips.length} clips the engine has, not 2`;
   const lefts = new Set(clips.map((c) => Math.round(c.cropLefts?.[0] ?? -1)));
   if (lefts.size < 2) return `every clip has its crop at ${[...lefts][0]}, so the crop frame cannot be seen to move`;
   return clips;
@@ -11029,7 +11062,7 @@ async function canLook(page) {
     // libass drew over it. And whether a caption stands at the playhead,
     // so the walk knows it had captions to see.
     window.__look = () => {
-      const c = document.querySelector(".screen canvas");
+      const c = document.querySelector(".workspace.front .screen canvas") ?? document.querySelector(".screen canvas");
       const frame = document.querySelector(".atop .frame");
       const crop = frame ? `${frame.style.left} ${frame.style.width}` : "none";
       if (!c?.width || !c.height) return { crop, canvas: 0, captions: false };
@@ -11046,138 +11079,174 @@ async function canLook(page) {
   });
 }
 
+// Clicks the card of key and reads what the video preview shows on every
+// animation frame from the click, until it has changed, the workspace has
+// read ahead again what the click asks it to and no layer of captions is
+// on its way, and ten frames after. What it showed, with how many
+// milliseconds after the click, and of the clip's first frame, at the
+// moment start, whether it was handed over from the frames kept.
+function clickCard(page, key, start) {
+  return page.evaluate(
+    ({ key, start }) =>
+      new Promise((done) => {
+        const frames = window.__appFrames;
+        const first = start === null ? null : window.__frameQueue.firstFrameAt(start);
+        const kept = frames.stats.kept;
+        const looks = [{ ...window.__look(), t: 0 }];
+        const t0 = performance.now();
+        document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
+        let rested = false;
+        void window.__readAheadRested().then(() => (rested = true));
+        let after = 0;
+        const next = () => {
+          const t = performance.now() - t0;
+          const l = { ...window.__look(), t };
+          const was = looks[looks.length - 1];
+          looks.push(l);
+          const changed = looks.some((x, j) => j > 0 && (x.crop !== looks[j - 1].crop || x.canvas !== looks[j - 1].canvas));
+          if (l.crop !== was.crop || l.canvas !== was.canvas) after = 0;
+          else if (changed && rested && !window.__captionLayers.busy) after++;
+          if (after < 10) return requestAnimationFrame(next);
+          // The frames handed over from the kept ones since the click.
+          const since = frames.stats.keptRanks.slice(-(frames.stats.kept - kept) || frames.stats.keptRanks.length);
+          done({
+            first,
+            kept: first !== null && frames.stats.kept > kept && since.some((r) => Math.abs(frames.ptsOf(r) - first) < 1e-6),
+            looks,
+          });
+        };
+        requestAnimationFrame(next);
+      }),
+    { key, start },
+  );
+}
+
+// The animation frames on which what the video preview shows changed.
+const changesOf = (looks) => looks.filter((l, j) => j > 0 && (l.crop !== looks[j - 1].crop || l.canvas !== looks[j - 1].canvas));
+
+// Clicks the clip cards in turn, n times, and reads on every animation
+// frame from the click what the video preview shows: the crop frame's place
+// and the canvas whole, the picture with the captions libass drew over it.
+// What is shown before the click and what is shown once it has settled are
+// two moments, and every animation frame in between is one or the other.
+// Tim saw the crop frame jump first, then the picture, then the captions,
+// issue #383. Every other click is on a clip made just then, whose
+// captions were not read ahead, with the Go side's answers about captions
+// held back for a moment, the way a video of hours answers: the frame
+// waits on the Go side for its captions, captionsDue in Episode.svelte,
+// rather than coming first. The others are on the clips read ahead.
 async function pickCards(page, n) {
   const clips = await shotClips(page);
   if (typeof clips === "string") return clips;
-  await page.waitForTimeout(1500);
+  const path = await episodeOn(page);
   await canLook(page);
+  const fresh = [20, 40, 60, 100, 30, 50, 70, 110];
   const problems = [];
   for (let i = 0; i < n; i++) {
-    const { cards, current } = await cardsNow(page);
-    const others = cards.filter((k) => k !== current);
-    const key = others[i % others.length];
     const held = i % 2 === 1;
-    if (held) await control(url, "/hold?call=Captions&ms=250");
-    const looks = await page.evaluate(
-      (key) =>
-        new Promise((done) => {
-          const looks = [{ ...window.__look(), t: 0 }];
-          const t0 = performance.now();
-          document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
-          const next = () => {
-            const t = performance.now() - t0;
-            looks.push({ ...window.__look(), t });
-            if (t < 2500) requestAnimationFrame(next);
-            else done(looks);
-          };
-          requestAnimationFrame(next);
-        }),
-      key,
-    );
-    const same = (a, b) => a.crop === b.crop && a.canvas === b.canvas;
+    let key;
+    if (held) {
+      await control(url, "/hold?call=Captions&ms=250&times=100");
+      [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh[(i - 1) / 2], false));
+    } else {
+      await restAhead(page);
+      const { cards, current } = await cardsNow(page);
+      const others = cards.filter((k) => k !== current);
+      key = others[i % others.length];
+    }
+    const { looks } = await clickCard(page, key, null);
+    if (held) await control(url, "/hold?call=Captions&ms=0&times=0");
     const first = looks[0];
     const last = looks[looks.length - 1];
-    const changes = looks.filter((l, j) => j > 0 && !same(l, looks[j - 1]));
+    const changes = changesOf(looks);
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
-    if (same(first, last)) problems.push(`card ${i + 1}${held ? ", captions held" : ""}: nothing changed in 2.5 s`);
-    else if (!last.captions) problems.push(`card ${i + 1}: the clip has no caption at its start, so its captions cannot be seen to come`);
-    else if (changes.length > 1)
+    const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
+    if (!last.captions) problems.push(`${card}: the clip has no caption at its start, so its captions cannot be seen to come`);
+    else if (changes.length !== 1)
       problems.push(
-        `card ${i + 1}${held ? ", captions held" : ""}: the video preview changed ${changes.length} times, not once: ${changes
-          .map((l, j) => {
+        `${card}: the video preview changed ${changes.length} times, not once: ${changes
+          .map((l) => {
             const was = looks[looks.indexOf(l) - 1];
             const what = [l.crop !== was.crop ? "crop frame" : "", l.canvas !== was.canvas ? "canvas" : ""];
             return `${say(l)} (${what.filter(Boolean).join(" and ")})`;
           })
           .join(", ")}`,
       );
-    else console.log(`        card ${i + 1}${held ? ", captions held" : ""}: one change, ${say(changes[0])}`);
+    else if (held && changes[0].t < 250) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 250 ms could have`);
+    else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
+    else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }
   return problems.length ? problems.join("\n") : null;
 }
 
-// Clicks the cards in turn n times, each once the hand has rested and the
-// video preview has read the first frame of every clip on the cards, and
-// its captions, the second time after the clip chosen played for nine
-// seconds, 45 frames of this video, more than the video preview keeps
-// besides the cards'.
+// Clicks the cards in turn n times, each once the workspace has read
+// ahead the first frame of every clip on the cards and its captions, the
+// second time after the clip chosen played a hundred frames, more than the
+// video preview keeps besides the cards'.
 // Each card clicked must put up its clip from what was read, its frame
 // from the frames kept and its captions from the layers kept, so nothing
 // is decoded or drawn for it after the click, and in one change. Issue
-// #383.
+// #383. And nothing is read ahead while the clip plays, found by the
+// review of #385.
 async function pickRested(page, n) {
   const clips = await shotClips(page);
   if (typeof clips === "string") return clips;
   await canLook(page);
-  // The captions the page asks the Go side to draw, by the moment, and how
-  // many are on their way.
-  const drawn = [];
-  let going = 0;
-  const captions = (r) => r.url().includes("/frames/captions?");
-  const asked = (r) => captions(r) && (going++, drawn.push(new URL(r.url()).searchParams.get("at")));
-  const over = (r) => captions(r) && going--;
-  page.on("request", asked);
-  page.on("requestfinished", over);
-  page.on("requestfailed", over);
   const problems = [];
-  try {
-    for (let i = 0; i < n; i++) {
-      if (i === 1) {
-        await page.keyboard.press("Space");
-        await page.waitForFunction(() => window.__frameQueue.state === "playing", null, { timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(9000);
-        await page.keyboard.press("Space");
-      }
-      // At rest: nothing read ahead still to come, and no captions on their
-      // way, for 400 ms.
-      let quiet = 0;
-      for (let t = 0; t < 20000 && quiet < 4; t += 100) {
-        await page.waitForTimeout(100);
-        const reading = await page.evaluate(() => window.__appFrames?.readingAhead ?? true);
-        quiet = reading || going > 0 ? 0 : quiet + 1;
-      }
-      if (quiet < 4) return `card ${i + 1}: the video preview still read ahead 20 s after the click before`;
-      const { cards, current } = await cardsNow(page);
-      const others = cards.filter((k) => k !== current);
-      const key = others[i % others.length];
-      const start = clips.find((c) => c.key === key)?.start;
-      if (start === undefined) return `card ${i + 1}: the clip of card ${key} is not one the engine has`;
-      drawn.length = 0;
-      const got = await page.evaluate(
-        ({ key, start }) =>
+  for (let i = 0; i < n; i++) {
+    if (i === 1) {
+      const ahead = await page.evaluate(() => window.__appFrames.stats.ahead);
+      await page.keyboard.press("Space");
+      await page.evaluate(
+        () =>
           new Promise((done) => {
-            const frames = window.__appFrames;
-            const first = window.__frameQueue.firstFrameAt(start);
-            const kept = frames.stats.kept;
-            const looks = [{ ...window.__look(), t: 0 }];
-            const t0 = performance.now();
-            document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
-            const next = () => {
-              const t = performance.now() - t0;
-              looks.push({ ...window.__look(), t });
-              if (t < 1500) return requestAnimationFrame(next);
-              // The frames handed over from the kept ones since the click.
-              const since = frames.stats.keptRanks.slice(-(frames.stats.kept - kept) || frames.stats.keptRanks.length);
-              done({ first, kept: frames.stats.kept > kept && since.some((r) => Math.abs(frames.ptsOf(r) - first) < 1e-6), looks });
-            };
-            requestAnimationFrame(next);
+            const q = window.__frameQueue;
+            const from = q.stats.drawn;
+            const off = q.listen(() => {
+              if (q.stats.drawn - from < 100) return;
+              off();
+              done();
+            });
           }),
-        { key, start },
       );
-      const changes = got.looks.filter((l, j) => j > 0 && (l.crop !== got.looks[j - 1].crop || l.canvas !== got.looks[j - 1].canvas));
-      const late = drawn.filter((at) => Math.abs(Number(at) - got.first) < 1e-6).length;
-      const card = `card ${i + 1}${i === 1 ? ", after a play" : ""}, the clip at ${start.toFixed(2)} s`;
-      if (!got.kept) problems.push(`${card}: its first frame, at ${got.first.toFixed(3)} s, was decoded after the click, not read ahead`);
-      if (late) problems.push(`${card}: its captions were drawn after the click, not read ahead`);
-      if (changes.length !== 1) problems.push(`${card}: the video preview changed ${changes.length} times, not once`);
-      if (got.kept && !late && changes.length === 1) console.log(`        ${card}: put up from what was read ahead, ${Math.round(changes[0].t)} ms after the click`);
+      const read = (await page.evaluate(() => window.__appFrames.stats.ahead)) - ahead;
+      await page.keyboard.press("Space");
+      if (read) problems.push(`${read} frames were read ahead while the clip played`);
     }
-  } finally {
-    page.off("request", asked);
-    page.off("requestfinished", over);
-    page.off("requestfailed", over);
+    await restAhead(page);
+    const { cards, current } = await cardsNow(page);
+    const others = cards.filter((k) => k !== current);
+    const key = others[i % others.length];
+    const start = clips.find((c) => c.key === key)?.start;
+    if (start === undefined) return `card ${i + 1}: the clip of card ${key} is not one the engine has`;
+    const card = `card ${i + 1}${i === 1 ? ", after a play" : ""}, the clip at ${start.toFixed(2)} s`;
+    const problem = await clickedFromAhead(page, key, start, card);
+    if (problem) problems.push(problem);
   }
   return problems.length ? problems.join("\n") : null;
+}
+
+// Clicks the card of key, of the clip at start, and checks it was put up
+// from what was read ahead, in one change. What went wrong, or null.
+async function clickedFromAhead(page, key, start, card) {
+  // The captions the page asks the Go side to draw, by the moment.
+  const drawn = [];
+  const asked = (r) => r.url().includes("/frames/captions?") && drawn.push(new URL(r.url()).searchParams.get("at"));
+  page.on("request", asked);
+  try {
+    const got = await clickCard(page, key, start);
+    const changes = changesOf(got.looks);
+    const late = drawn.filter((at) => Math.abs(Number(at) - got.first) < 1e-6).length;
+    const problems = [];
+    if (!got.kept) problems.push(`${card}: its first frame, at ${got.first.toFixed(3)} s, was decoded after the click, not read ahead`);
+    if (late) problems.push(`${card}: its captions were drawn after the click, not read ahead`);
+    if (changes.length !== 1) problems.push(`${card}: the video preview changed ${changes.length} times, not once`);
+    if (problems.length) return problems.join("\n");
+    console.log(`        ${card}: put up from what was read ahead, ${Math.round(changes[0].t)} ms after the click`);
+    return null;
+  } finally {
+    page.off("request", asked);
+  }
 }
 
 // Puts the playhead on a clip that starts on a caption, adds another
@@ -11186,22 +11255,37 @@ async function pickRested(page, n) {
 // frame reads the video preview in front. The workspace woken keeps the
 // frame and the captions it had until its own frame is drawn again, and
 // never shows a black canvas between them. Tim saw it go black for a
-// frame on the video whose frame had captions, in #385.
+// frame on the video whose frame had captions, in #385. Then a card of
+// the video gone back to is put up from what was read ahead, which it was
+// not until the pointer came to another card, found by the review of
+// #385.
 async function wakeOnCaption(page) {
   const clips = await shotClips(page);
   if (typeof clips === "string") return clips;
+  await canLook(page);
   const clip = clips.find((c) => Math.abs(c.start - 8) < 2) ?? clips[0];
-  await page.locator(`aside ol li[data-key="${clip.key}"] button.pick`).click();
-  await page.waitForFunction(() => document.querySelector(".screen .captions"), null, { timeout: 10000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  const other = clips.find((c) => c !== clip);
+  await clickCard(page, clip.key, null);
   const first = await episodeOn(page);
+  const name = basename(first);
   await control(url, "/pick?seconds=20");
+  const front = page.evaluate(
+    (name) =>
+      new Promise((done) => {
+        const on = () => document.querySelector("aside button.episode.current .name")?.textContent;
+        const o = new MutationObserver(() => {
+          if (!on() || on() === name) return;
+          o.disconnect();
+          done();
+        });
+        o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+      }),
+    name,
+  );
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  for (let t = 0; t < 30000 && (await episodeOn(page)) === first; t += 250) await page.waitForTimeout(250);
-  if ((await episodeOn(page)) === first) return "the video added did not come in front";
+  await front;
   await page.locator(".listhead button.search").first().waitFor();
-  await settle(page);
-  await page.waitForTimeout(1500);
+  await restAhead(page);
   await page.evaluate(() => {
     for (const [i, w] of [...document.querySelectorAll(".workspace")].entries()) w.dataset.walk = String(i);
     window.__looks = [];
@@ -11230,14 +11314,17 @@ async function wakeOnCaption(page) {
     };
     requestAnimationFrame(step);
   });
+  // The frames of the video gone back to open only once the page has drawn
+  // twenty animation frames since they were asked, about 330 ms.
   const slow = async (route) => {
-    await new Promise((done) => setTimeout(done, 400));
+    await animationFrames(page, 20).catch(() => {});
     await route.continue().catch(() => {});
   };
   await page.route(/\/frames\/open\?/, slow);
   try {
-    await fromSidebar(page, () => page.locator("aside li", { hasText: basename(first) }).first().click());
-    await page.waitForTimeout(1500);
+    await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
+    await restAhead(page);
+    await animationFrames(page, 10);
   } finally {
     await page.unroute(/\/frames\/open\?/, slow);
   }
@@ -11247,18 +11334,18 @@ async function wakeOnCaption(page) {
   });
   const was = looks[0]?.front;
   const i = looks.findIndex((l) => l.front !== was && l.canvas);
-  if (i < 0) return `the video preview of ${basename(first)} never came in front`;
+  if (i < 0) return `the video preview of ${name} never came in front`;
   const woken = looks.slice(i).filter((l) => l.front === looks[i].front);
   const t0 = woken[0].at;
   const say = (l) => `${Math.round(l.at - t0)} ms`;
-  if (woken[0].light < 32) return `${basename(first)} came back with a black canvas`;
-  if (!woken.at(-1).captions) return `${basename(first)} came back on a frame with no caption, so a redraw for its captions cannot be seen`;
+  if (woken[0].light < 32) return `${name} came back with a black canvas`;
+  if (!woken.at(-1).captions) return `${name} came back on a frame with no caption, so a redraw for its captions cannot be seen`;
   const dark = woken.filter((l) => l.light < 32);
-  if (dark.length) return `the video preview went black for ${dark.length} animation frames, from ${say(dark[0])} after ${basename(first)} came back`;
+  if (dark.length) return `the video preview went black for ${dark.length} animation frames, from ${say(dark[0])} after ${name} came back`;
   const changes = woken.filter((l, j) => j > 0 && l.canvas !== woken[j - 1].canvas);
-  if (changes.length > 1) return `the video preview changed ${changes.length} times after ${basename(first)} came back: ${changes.map(say).join(", ")}`;
-  console.log(`        ${basename(first)} came back on its own frame, ${woken.length} animation frames read, ${changes.length} changes`);
-  return null;
+  if (changes.length > 1) return `the video preview changed ${changes.length} times after ${name} came back: ${changes.map(say).join(", ")}`;
+  console.log(`        ${name} came back on its own frame, ${woken.length} animation frames read, ${changes.length} changes`);
+  return clickedFromAhead(page, other.key, other.start, `after ${name} came back, the card of the clip at ${other.start.toFixed(2)} s`);
 }
 
 async function frameWhole(page, turned) {
