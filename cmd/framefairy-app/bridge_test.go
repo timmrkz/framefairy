@@ -1127,6 +1127,8 @@ func lastReport(dir string) ([]string, error) {
 
 // lastReportFile is what the file whose name ends in name holds in the
 // newest report, so a walk can read what the report says was written.
+//
+// On the real disk: a report is a zip on the Desktop.
 func lastReportFile(dir, name string) (string, error) {
 	z, err := newestReport(dir)
 	if z == nil || err != nil {
@@ -1149,6 +1151,8 @@ func lastReportFile(dir, name string) (string, error) {
 }
 
 // newestReport opens the zip last made in dir, or none when there is none.
+//
+// On the real disk: a report is a zip on the Desktop.
 func newestReport(dir string) (*zip.ReadCloser, error) {
 	zips, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
 	if len(zips) == 0 {
