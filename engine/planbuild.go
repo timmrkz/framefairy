@@ -868,6 +868,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 			b.mu.Unlock()
 			clip = added
 			b.written = true
+			b.opts.wrote.note(func(w *wroteFiles) { w.plan = path })
 		} else if !b.written {
 			body, err := MarshalPlan(PlanFile{Source: filepath.Base(b.sourcePath), PlanID: b.planID,
 				PlannedWith: b.stamp, Clips: []PlanClip{clip}})
@@ -878,6 +879,7 @@ func (b *planBuilder) land(card int, clip PlanClip) error {
 				return err
 			}
 			b.written = true
+			b.opts.wrote.note(func(w *wroteFiles) { w.plan = path })
 		} else if err := appendClip(b.e.Files, path, clip); err != nil {
 			switch {
 			case os.IsNotExist(err):
@@ -925,6 +927,7 @@ func (b *planBuilder) none() error {
 		return err
 	}
 	b.written = true
+	b.opts.wrote.note(func(w *wroteFiles) { w.plan = path })
 	return nil
 }
 
