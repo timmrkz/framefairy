@@ -171,6 +171,46 @@ func TestACutPutBackBringsBackAShotItSwallowed(t *testing.T) {
 		{Start: 13.4, End: 16, CropX: intPtr(300)}})
 }
 
+// A cut across the switch whose edge is moved back over it brings back
+// what it had left out framed by the shots it shows, the way putting the
+// cut back does. The piece after the cut was pulled out over the switch
+// whole, with the crop of the camera after it, which CI's fuzzing found
+// in #393 once FuzzPlanEdits could move this cut.
+func TestACutMovedBackOverTheSwitchKeepsTheSwitch(t *testing.T) {
+	tr := shotsTranscript()
+	for _, g := range []Gesture{
+		{Kind: "move", Edge: "to", To: 12.4, Frames: at25},
+		{Kind: "move", Edge: "from", From: 13.2, Frames: at25},
+		{Kind: "move", From: 12.4, To: 12.6, Frames: at25},
+	} {
+		fsys, path := writePlanAt(t, shotsPlan)
+		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
+			t.Fatal(err)
+		}
+		cuts := ClipCuts(clipByID(t, fsys, path, "01"))
+		if len(cuts) != 1 {
+			t.Fatalf("a move of edge %q left %d cuts", g.Edge, len(cuts))
+		}
+		var want []Segment
+		if cuts[0].From < 12.8 {
+			want = append(want, Segment{Start: 9.6, End: cuts[0].From, CropX: intPtr(300)})
+		} else {
+			want = append(want, Segment{Start: 9.6, End: 12.8, CropX: intPtr(300)},
+				Segment{Start: 12.8, End: cuts[0].From, CropX: intPtr(900)})
+		}
+		if cuts[0].To < 12.8 {
+			want = append(want, Segment{Start: cuts[0].To, End: 12.8, CropX: intPtr(300)},
+				Segment{Start: 12.8, End: 16, CropX: intPtr(900)})
+		} else {
+			want = append(want, Segment{Start: cuts[0].To, End: 16, CropX: intPtr(900)})
+		}
+		shotsAre(t, fsys, path, fmt.Sprintf("after a move of edge %q", g.Edge), want)
+	}
+}
+
 // Two pieces that meet have no cut between them, so there is nothing to
 // put back or move there, and a gesture that names the switch is refused.
 func TestASwitchIsNoCut(t *testing.T) {
