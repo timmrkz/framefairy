@@ -1504,6 +1504,13 @@ export const sequences = [
     steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
   },
   {
+    // Found by Tim on 20 October: Shift and the arrows brought a clip
+    // walked to just into view, so the walk went on at the foot of the
+    // list. They turn the page, the way the transcript does as it plays.
+    name: "Shift and the arrows turn the page of the clip list",
+    steps: [["walk the clip list"]],
+  },
+  {
     // Found by Tim on 19 October: while the work heard a window, the parts
     // not transcribed yet gave way in thirds of it, each time the
     // transcript was saved. They give way as the work hears.
@@ -8733,6 +8740,86 @@ for (const seq of toWalk) {
         }
         break;
       }
+      case "walk the clip list": {
+        // Shift and the arrows walk the clip list the way they walk the
+        // transcript, turning the page: a clip walked down to below the
+        // foot of the list comes to the top, and one walked up to above
+        // its top comes to the foot. It was brought just into view, and
+        // went on standing at the foot as the walk went down, found by
+        // Tim. Three clips are made by hand after the one there is, so the
+        // list has pages, and the list is made two cards high.
+        const path = await episodeOn(page);
+        const have = (await ask(page, "Clips", path)) ?? [];
+        const after = Math.max(0, ...have.map((c) => c.end));
+        for (let k = 1; k <= 3; k++) await ask(page, "MakeClip", path, after + 30 * k, false);
+        const cards = "aside ol li[data-key]:not(.next)";
+        await page.waitForFunction(({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 3 }, { timeout: 0 });
+        await settle(page);
+        const keys = await page.evaluate((cards) => [...document.querySelectorAll(cards)].map((li) => li.dataset.key), cards);
+        await page.locator(`aside ol li[data-key="${keys[0]}"] button.pick`).first().click();
+        await watch.step("click", s);
+        await settle(page);
+        // The same veil the list fades its ends with, see showChosen.
+        const veil = 16;
+        await page.evaluate(
+          ({ cards, veil }) => {
+            const list = document.querySelector(".pane .list");
+            const [one, two] = document.querySelectorAll(cards);
+            list.scrollTop += one.getBoundingClientRect().top - list.getBoundingClientRect().top - veil;
+            const high = two.getBoundingClientRect().bottom - one.getBoundingClientRect().top;
+            list.style.flex = "none";
+            list.style.height = `${Math.ceil(high + 2 * veil)}px`;
+            list.scrollTop += one.getBoundingClientRect().top - list.getBoundingClientRect().top - veil;
+          },
+          { cards, veil },
+        );
+        await page.evaluate(() => document.activeElement?.blur());
+        // Where a card stands in the list once the list has had a frame
+        // to follow the clip chosen, from its top and from its foot.
+        const stood = (key) =>
+          page.evaluate(
+            ({ key, veil }) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const list = document.querySelector(".pane .list");
+                    const box = list.getBoundingClientRect();
+                    const r = document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"]`).getBoundingClientRect();
+                    const chosen = document.querySelector("aside ol li .pick.current")?.closest("li")?.dataset.key ?? null;
+                    done({ top: r.top - (box.top + veil), foot: box.bottom - veil - r.bottom, scroll: list.scrollTop, chosen });
+                  }),
+                ),
+              ),
+            { key, veil },
+          );
+        const press = async (key) => {
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+          await settle(page);
+        };
+        const before = await stood(keys[0]);
+        await press("Shift+ArrowDown");
+        const second = await stood(keys[1]);
+        await press("Shift+ArrowDown");
+        const down = await stood(keys[2]);
+        await press("Shift+ArrowUp");
+        const up = await stood(keys[1]);
+        await page.evaluate(() => {
+          const list = document.querySelector(".pane .list");
+          list.style.flex = "";
+          list.style.height = "";
+        });
+        console.log(JSON.stringify({ keys, before, second, down, up }));
+        if (second.chosen !== keys[1]) wrong = `Shift and the down arrow chose ${second.chosen}, not ${keys[1]}`;
+        else if (Math.abs(second.scroll - before.scroll) > 0.5) wrong = `the clip walked to in view moved the clip list ${(second.scroll - before.scroll).toFixed(0)} px`;
+        else if (down.chosen !== keys[2]) wrong = `Shift and the down arrow twice chose ${down.chosen}, not ${keys[2]}`;
+        else if (Math.abs(down.top) > 1)
+          wrong = `the clip walked down to below the foot of the clip list stands ${down.top.toFixed(0)} px below the top, not turned to the top`;
+        else if (up.chosen !== keys[1]) wrong = `Shift and the up arrow chose ${up.chosen}, not ${keys[1]}`;
+        else if (Math.abs(up.foot) > 1)
+          wrong = `the clip walked up to above the top of the clip list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+        break;
+      }
       case "walk over a part": {
         // Shift and the arrows walk onto a part not transcribed yet and off
         // it again, one card at a step both ways. Down stopped at the card
@@ -9941,45 +10028,74 @@ for (const seq of toWalk) {
               wrong = `Enter at the answer walked to, then Escape, moved the playhead from ${went[1].at.toFixed(2)} to ${back.at.toFixed(2)}`;
           }
         }
-        // A card walked to below the foot of the list is brought just into
-        // view, the way a clip walked to is in the clip list, not turned to
-        // the top, found by Tim. The list is made two cards high.
+        // A card walked to out of view turns the page, the way playing
+        // does: walked down past the foot, it comes to the top, and walked
+        // up past the top, to the foot. It was brought just into view, and
+        // went on standing at the foot as the walk went down, found by
+        // Tim. The list is made two cards high.
         if (!wrong) {
           await field.fill("");
           await watch.step("type", s);
-          await page.waitForTimeout(200);
           const squeezed = await page.evaluate(() => {
             const list = document.querySelector(".scroll.list");
             const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
             const cards = [...document.querySelectorAll("ol.said li[data-row]")];
             const i = cards.findIndex((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
             const card = cards[i];
-            if (!card || i + 2 >= cards.length) return null;
+            if (!card || i + 3 >= cards.length) return null;
             const box = list.getBoundingClientRect();
             list.scrollTop += card.getBoundingClientRect().top - box.top - pad;
             const two = cards[i + 1].getBoundingClientRect().bottom - card.getBoundingClientRect().top;
             list.style.flex = "none";
             list.style.height = `${Math.ceil(two + 2 * pad + 2)}px`;
-            return { next: cards[i + 2].dataset.row };
+            return { rows: [cards[i + 1].dataset.row, cards[i + 2].dataset.row] };
           });
-          if (squeezed) {
+          if (!squeezed) wrong = "too few cards after the card of the playhead to walk a page";
+          else {
             await page.evaluate(() => document.activeElement?.blur());
-            for (let i = 0; i < 2; i++) {
-              await page.keyboard.press("Shift+ArrowDown");
+            // Where a card stands in the list once the list has had a
+            // frame to follow the playhead, from its top and from its foot.
+            const stood = (row) =>
+              page.evaluate(
+                (row) =>
+                  new Promise((done) =>
+                    requestAnimationFrame(() =>
+                      requestAnimationFrame(() => {
+                        const list = document.querySelector(".scroll.list");
+                        const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                        const box = list.getBoundingClientRect();
+                        const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
+                        done({ top: r.top - (box.top + pad), foot: (box.bottom - pad) - r.bottom, scroll: list.scrollTop, followed: document.querySelector("ol.said").dataset.followed });
+                      }),
+                    ),
+                  ),
+                row,
+              );
+            const press = async (key) => {
+              await page.keyboard.press(key);
               await watch.step("press", s);
-              await page.waitForTimeout(250);
-            }
-            const stood = await page.evaluate((row) => {
+            };
+            const before = await stood(squeezed.rows[0]);
+            await press("Shift+ArrowDown");
+            const second = await stood(squeezed.rows[0]);
+            await press("Shift+ArrowDown");
+            const down = await stood(squeezed.rows[1]);
+            await press("Shift+ArrowUp");
+            const up = await stood(squeezed.rows[0]);
+            await page.evaluate(() => {
               const list = document.querySelector(".scroll.list");
-              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
-              const box = list.getBoundingClientRect();
-              const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
               list.style.flex = "";
               list.style.height = "";
-              return { foot: r.bottom - (box.bottom - pad), followed: document.querySelector("ol.said").dataset.followed };
-            }, squeezed.next);
-            if (stood.followed !== squeezed.next) wrong = `Shift and the down arrow twice went to ${stood.followed}, not ${squeezed.next}`;
-            else if (Math.abs(stood.foot) > 1) wrong = `the card walked to below the foot of the list stands ${(-stood.foot).toFixed(0)} px above the foot, not just brought into view`;
+            });
+            console.log(JSON.stringify({ page: squeezed.rows, second, down, up }));
+            if (second.followed !== squeezed.rows[0]) wrong = `Shift and the down arrow went to ${second.followed}, not ${squeezed.rows[0]}`;
+            else if (Math.abs(second.scroll - before.scroll) > 0.5) wrong = `the card walked to in view moved the list ${(second.scroll - before.scroll).toFixed(0)} px`;
+            else if (down.followed !== squeezed.rows[1]) wrong = `Shift and the down arrow twice went to ${down.followed}, not ${squeezed.rows[1]}`;
+            else if (Math.abs(down.top) > 1)
+              wrong = `the card walked down to below the foot of the list stands ${down.top.toFixed(0)} px below the top, not turned to the top`;
+            else if (up.followed !== squeezed.rows[0]) wrong = `Shift and the up arrow went to ${up.followed}, not ${squeezed.rows[0]}`;
+            else if (Math.abs(up.foot) > 1)
+              wrong = `the card walked up to above the top of the list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
           }
         }
         // The keyboard on a card of what was typed, for Escape.

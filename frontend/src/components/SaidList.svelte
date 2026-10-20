@@ -159,20 +159,19 @@
   });
 
   // The card of the playhead into view, when the playhead came into
-  // another card, or always. A card walked to is brought into view the
-  // way a clip walked to is in the clip list, just far enough, see
-  // showChosen in Episode.svelte.
-  let walking = false;
+  // another card, or always. A card walked to turns the page the way
+  // playing does, in the way it was walked, see pageTo.
+  let walking: 0 | 1 | -1 = 0;
   function follow(always: boolean, put = false) {
-    const near = walking;
-    walking = false;
+    const step = walking;
+    walking = 0;
     const key = rowAt(playhead)?.key ?? null;
     const was = followed;
     followed = key;
     // The search opens at the playhead, or at its top.
     if (!key && (was === undefined || always)) scroller()?.scrollTo({ top: 0 });
     if (!key || (key === was && !always && !put)) return;
-    if (near) intoView(key);
+    if (step) pageTo(key, step);
     else turnTo(key);
   }
 
@@ -227,7 +226,7 @@
     const here = rows.findIndex((r) => r.key === current);
     const next = here < 0 ? (step > 0 ? 0 : rows.length - 1) : (here + step + rows.length) % rows.length;
     const row = rows[next];
-    walking = true;
+    walking = step;
     if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
     else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
   }
@@ -251,12 +250,16 @@
     toTop(key);
   }
 
-  // A card brought just far enough into view.
-  function intoView(key: string) {
+  // The page turned to a card walked to, unless it is in view: walked
+  // down, it comes to the top, the way the next card does as the video
+  // plays, and walked up, to the foot, so the page before is shown. It
+  // was brought just into view, and went on standing at the foot as the
+  // walk went down, found by Tim.
+  function pageTo(key: string, step: 1 | -1) {
     const at = shows(key);
-    if (!at) return;
-    if (at.above > 0) at.box.scrollTop -= at.above;
-    else if (at.below > 0) at.box.scrollTop += at.below;
+    if (!at || (at.above <= 0.5 && at.below <= 0.5)) return;
+    if (step > 0) toTop(key);
+    else at.box.scrollTop += at.below;
   }
 
   // The card of a row, at the top of the list. Where it is

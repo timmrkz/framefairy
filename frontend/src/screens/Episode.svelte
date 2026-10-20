@@ -1394,8 +1394,12 @@
   // The chosen card, brought far enough into the list to be read. Walking
   // the list with the arrows otherwise chooses cards that are not on
   // screen, and the veil over each end means a card only just inside the
-  // list is a card half faded away.
-  function showChosen() {
+  // list is a card half faded away. A card walked to out of view turns
+  // the page, the way the transcript does as the video plays: walked
+  // down, it comes to the top, and walked up, to the foot. Brought just
+  // into view, it went on standing at the foot as the walk went down,
+  // found by Tim.
+  function showChosen(step: 0 | 1 | -1 = 0) {
     const list = root?.querySelector<HTMLElement>(".pane .list");
     const card = list?.querySelector<HTMLElement>(".pick.current, li.next.current")?.closest("li");
     if (!list || !card) return;
@@ -1403,15 +1407,19 @@
     const veil = 16;
     const box = card.getBoundingClientRect();
     const view = list.getBoundingClientRect();
-    if (box.top < view.top + veil) list.scrollTop -= view.top + veil - box.top;
-    else if (box.bottom > view.bottom - veil) list.scrollTop += box.bottom - view.bottom + veil;
+    const above = view.top + veil - box.top;
+    const below = box.bottom - (view.bottom - veil);
+    if (above <= 0.5 && below <= 0.5) return;
+    if (step > 0 || (!step && above > 0)) list.scrollTop -= above;
+    else list.scrollTop += below;
   }
 
   // seek is off for a clip chosen while the video plays, which carries on
   // where it is.
   // jump is off for a clip chosen by clicking one of its sentences, so the
   // sentences stay where they are rather than go to the clip's first.
-  async function select(key: string, seek = true, jump = true) {
+  // step is the way the clip list was walked to it, see showChosen.
+  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
     selected = key;
     if (jump) chosenTimes++;
     // The episode remembers what is being worked on, so opening it again
@@ -1424,7 +1432,7 @@
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
     await tick();
-    showChosen();
+    showChosen(step);
     timeline?.fit();
   }
 
@@ -2906,7 +2914,7 @@
     const next = here < 0 ? (step > 0 ? 0 : list.length - 1) : here + step;
     const clip = list[(next + list.length) % list.length];
     if (!clip) return;
-    select(clip.key);
+    select(clip.key, true, true, step);
     seekTo(clip.start, "clip");
   }
 

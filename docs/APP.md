@@ -2070,8 +2070,12 @@ found is a place in the video, and I and O make a clip there.
 - **Shift and the arrows up and down walk the cards.** While the
   transcript is in the column, they walk its cards the way they walk the
   clip list when that is shown, from the field too. The playhead goes
-  onto each card and the card comes just into view, the way a clip
-  walked to does in the clip list. The answers to what is
+  onto each card. A card walked to out of view turns the page, the way
+  playing does: walked down, it comes to the top, and walked up, to the
+  foot, so the page before is shown. A clip walked to in the clip list
+  turns the page the same way. Both were brought just into view, and
+  then went on standing at the foot as the walk went down, found by
+  Tim. The answers to what is
   typed are walked from the first, down, or the last, up, and go round.
   The whole transcript is walked from the card of the playhead, a
   "Not transcribed yet" card among them, one card at a step either way.
