@@ -291,7 +291,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(e.Files, opts.Source) {
-		return nil, fmt.Errorf("source not found: %s", opts.Source)
+		return nil, videoGone(opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
 		return nil, errors.New("the planner must be local or api")
@@ -344,6 +344,9 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, e.fail(ctx, ctx.Err())
+		}
+		if inWords(err) {
+			return nil, err
 		}
 		return nil, fmt.Errorf("cannot read %s: %w", opts.Source, err)
 	}

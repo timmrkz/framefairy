@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/ffmpegtest"
 )
 
 func TestProviderFor(t *testing.T) {
@@ -610,5 +612,24 @@ func TestUnreachableSaysWhatToCheck(t *testing.T) {
 	want := `Could not reach Anthropic. Check the internet connection, then try again. The system said: Post "https://api.anthropic.com/v1/messages": dial tcp: lookup api.anthropic.com: no such host`
 	if got := (&Engine{}).planFailed(context.Background(), err).Error(); got != want {
 		t.Errorf("%q", got)
+	}
+}
+
+// A video whose file has gone says where it was and what to do, whether
+// it is found gone before the work starts or by ffprobe while it runs,
+// and a search says it as it is. Issue #311.
+func TestAVideoThatIsGoneSaysWhere(t *testing.T) {
+	ffmpegtest.Need(t)
+	const path = "/Users/tim/Movies/My First Memory 12.mp4"
+	want := "The video file is no longer at " + path + ". Put it back there, then try again."
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), afero.NewMemMapFs())
+	_, err := e.Probe(context.Background(), path)
+	if err == nil || e.planFailed(context.Background(), err).Error() != want {
+		t.Errorf("ffprobe on a gone video: %v", err)
+	}
+	opts := DefaultOptions()
+	opts.Source = path
+	if _, err := e.prepare(context.Background(), opts, nil); err == nil || err.Error() != want {
+		t.Errorf("a run of a gone video: %v", err)
 	}
 }

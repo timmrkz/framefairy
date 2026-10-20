@@ -43,6 +43,12 @@ func saidErr(format string, a ...any) error {
 	return &RenderError{Msg: sprintf(format, a...), Said: true}
 }
 
+// videoGone is a video whose file is no longer where it was added from:
+// moved, renamed, or on a drive that is not there now.
+func videoGone(path string) error {
+	return saidErr("The video file is no longer at %s. Put it back there, then try again.", path)
+}
+
 // inWords says whether err is a failure already said in a person's words.
 func inWords(err error) bool {
 	var r *RenderError
@@ -815,6 +821,9 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
 	if res.Code != 0 {
+		if !exists(e.Files, path) {
+			return SourceInfo{}, videoGone(path)
+		}
 		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
 	}
 	var data struct {
