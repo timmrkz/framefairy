@@ -721,6 +721,7 @@ export class FrameQueue {
     );
     app.trace = (line) => this.trace(line);
     app.onPassing = (rank, frame, seq) => this.passing(rank, frame, seq);
+    app.paused = () => this.state !== "playing" && this.state !== "starting";
     // For the walks, which read how the frames came.
     (window as unknown as { __appFrames?: AppFrames }).__appFrames = app;
     return app;
@@ -728,7 +729,7 @@ export class FrameQueue {
 
   // The size a frame is decoded at: the canvas's, no larger than the
   // file's own.
-  previewSize(): { width: number; height: number } {
+  private previewSize(): { width: number; height: number } {
     const v = this.video!;
     const scale = Math.min(1, this.canvas.width / v.width, this.canvas.height / v.height);
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -1120,11 +1121,15 @@ export class FrameQueue {
   }
 
   private report(drew = false, passing = false) {
+    const playing = this.state === "playing" || this.state === "starting";
+    // A play that stopped lets the cards' frames be read again, see
+    // AppFrames.paused.
+    if (!playing) this.app?.aheadNow();
     this.emit({
       at: this.at,
       frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
       drew,
-      playing: this.state === "playing" || this.state === "starting",
+      playing,
       ended: this.state === "ended",
       drawnAt: performance.now(),
       trouble: this.trouble,

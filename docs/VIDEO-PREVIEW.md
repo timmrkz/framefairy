@@ -210,8 +210,10 @@ closed for standing unused.
   puts up its clip from what was read, issue #383. They are read once the
   workspace is on screen, a clip a search finds or Mark In makes as it
   comes, and kept for as long as the card is there, apart from the frames
-  a play or a step keeps, as many frames as 400 MB holds, `CARDS_BYTES` in
-  `Player.svelte`. Everything read ahead goes one at a time, so a click
+  a play or a step keeps, as many frames as 400 MB holds at the size
+  frames are read at, counted again when that size changes, `CARDS_BYTES`
+  in `lib/frames/app.ts`. They are read only while paused, never on a
+  second decoder beside a play. Everything read ahead goes one at a time, so a click
   that comes before it is in waits behind one read and not three. A
   jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told

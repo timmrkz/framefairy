@@ -33,6 +33,12 @@ type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] }
 // with little memory keeps no more than that.
 const KEPT_FRAMES = 40;
 const KEPT_BYTES = 192 << 20;
+// How much the frames of the clips on the cards may keep besides: a frame
+// is its pixels at the size frames are read at, 4 bytes each, about 8 MB
+// at the size of Tim's video preview, so about 48 clips. The likeliest
+// cards are kept first, and the count is made again when that size
+// changes, see cards.
+const CARDS_BYTES = 400 << 20;
 const REACH = 1.5;
 // How many streams are kept open: one for each of the queue's two
 // decoders, and one more for a still or a seek while they play.
@@ -292,12 +298,20 @@ export class AppFrames {
   // them the kept frames let go of first, for aheadLost.
   private aheadRead = new Set<number>();
   private aheadEvicted = new Set<number>();
-  // The cards' frames, by rank, in the order they are read, those kept
+  // The cards' frames, by rank, in the order they are read, those of them
+  // CARDS_BYTES holds at the size frames are read at, which are kept
   // whatever else comes, and those asked for already, see cards.
   private cardOrder: number[] = [];
   private cardRanks = new Set<number>();
   private cardTried = new Set<number>();
   private cardSize = "";
+  // Whether the video preview stands still. A card's frame read during a
+  // play is a second decoder seeking in the file the play decodes, so the
+  // cards wait for the pause, the way their captions do, see
+  // CaptionLayers.more.
+  paused: () => boolean = () => true;
+  // What the cards' frames may keep, a field for the tests.
+  cardsBytes = CARDS_BYTES;
   // first is the size the first stream was opened at, for the walks.
   // keptRanks are the ranks of the frames last handed over from the kept
   // ones, for the walks. aheadLost counts the frames the hand asked for
@@ -401,12 +415,29 @@ export class AppFrames {
   // never push one out, see keep. Each call replaces the ones before, and
   // the frames of cards no longer given are kept no longer. Tim asked for
   // every clip on the cards to be ready to show, issue #383.
+  //
+  // A frame that could not be decoded is not tried again for a new order
+  // alone: the order changes with every card the pointer passes.
   cards(ranks: number[]) {
     const order = ranks.filter((r) => r >= 0);
-    if (order.join() !== this.cardOrder.join()) this.cardTried.clear();
+    const was = new Set(this.cardOrder);
+    if (order.length !== was.size || order.some((r) => !was.has(r))) this.cardTried.clear();
     this.cardOrder = order;
-    this.cardRanks = new Set(order);
+    this.cardSize = "";
+    this.fitCards();
     this.aheadNow();
+  }
+
+  // The cards CARDS_BYTES holds at the size frames are read at now, the
+  // likeliest first. A size of its own tries again the frames that could
+  // not be decoded at the one before.
+  private fitCards() {
+    const { width, height } = this.size();
+    const size = `${width}x${height}`;
+    if (size === this.cardSize) return;
+    if (this.cardSize) this.cardTried.clear();
+    this.cardSize = size;
+    this.cardRanks = new Set(this.cardOrder.slice(0, Math.floor(this.cardsBytes / Math.max(1, width * height * 4))));
   }
 
   // Asks the frames read ahead once the hand waits for nothing, one at a
@@ -414,7 +445,7 @@ export class AppFrames {
   // They were asked all at once, and with the first frames of the clips
   // next to the one chosen among them, a click on a card waited for its
   // frame behind three seeks of the decoder and streams closed and opened
-  // again for the rest, issue #383.
+  // again for the rest, issue #383. The cards wait while it plays.
   aheadNow() {
     if (this.aheadOf.size || this.closed || this.parked.length || this.streams.some((s) => s.handWaits)) return;
     const ranks = this.aheadWanted ?? [];
@@ -424,11 +455,9 @@ export class AppFrames {
       return;
     }
     this.aheadWanted = null;
-    // A frame tried at another size is tried again at this one.
-    const { width, height } = this.size();
-    if (`${width}x${height}` !== this.cardSize) this.cardTried.clear();
-    this.cardSize = `${width}x${height}`;
-    const card = this.cardOrder.find((r) => !this.has(r) && !this.cardTried.has(r));
+    if (!this.paused()) return;
+    this.fitCards();
+    const card = this.cardOrder.find((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r));
     if (card === undefined) return;
     this.cardTried.add(card);
     this.read(card, true);
@@ -464,8 +493,11 @@ export class AppFrames {
   // Whether frames are still to be read ahead, the cards' among them, for
   // the walks.
   get readingAhead(): boolean {
+    this.fitCards();
     return (
-      this.aheadOf.size > 0 || !!this.aheadWanted?.length || this.cardOrder.some((r) => !this.has(r) && !this.cardTried.has(r))
+      this.aheadOf.size > 0 ||
+      !!this.aheadWanted?.length ||
+      this.cardOrder.some((r) => this.cardRanks.has(r) && !this.has(r) && !this.cardTried.has(r))
     );
   }
 
@@ -542,8 +574,8 @@ export class AppFrames {
     this.kept.set(rank, frame);
     this.keptBytes += bytes(frame);
     // The cards' frames are kept apart from the count, and never let go of
-    // for a newer frame: their number is held to what the memory allows
-    // by whoever gives them, see Player.ahead.
+    // for a newer frame: their number is held to CARDS_BYTES, see cards.
+    this.fitCards();
     let free = this.keptBytes;
     let count = this.kept.size;
     for (const [r, f] of this.kept)
