@@ -265,3 +265,61 @@ describe("GoSound", () => {
     }
   });
 });
+
+// Found by Tim testing #385: a video gone back to from the sidebar went
+// black for a frame before its picture came back. Its workspace was woken
+// with its own frame on the canvas, and the new queue cleared it, setting
+// the canvas to the size it had, and drew it again over nothing when its
+// captions came.
+describe("a workspace woken again", () => {
+  function woken() {
+    let writes = 0;
+    let width = 640;
+    let height = 360;
+    const c = {
+      getContext: () => null,
+      get width() {
+        return width;
+      },
+      set width(w: number) {
+        writes++;
+        width = w;
+      },
+      get height() {
+        return height;
+      },
+      set height(h: number) {
+        writes++;
+        height = h;
+      },
+    } as unknown as HTMLCanvasElement;
+    const q = new FrameQueue(
+      c,
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 2, height: 2, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+      true,
+    );
+    const drawn: unknown[] = [];
+    (q as unknown as { screen: unknown }).screen = { draw: (f: unknown) => drawn.push(f) };
+    return { q, drawn, writes: () => writes };
+  }
+
+  test("keeps its frame on a canvas of the size it had", () => {
+    const { q, drawn, writes } = woken();
+    q.resize(640, 360);
+    expect(writes()).toBe(0);
+    expect(drawn).toEqual([]);
+  });
+
+  test("draws nothing again before it has a frame of its own", () => {
+    const { q, drawn } = woken();
+    q.repaint();
+    expect(drawn).toEqual([]);
+  });
+
+  test("still takes a new size, which the canvas had to give up its frame for", () => {
+    const { q, writes } = woken();
+    q.resize(800, 450);
+    expect(writes()).toBe(2);
+  });
+});
