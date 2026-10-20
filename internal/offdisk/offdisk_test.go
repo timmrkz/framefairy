@@ -113,6 +113,10 @@ func TestTheOsFs(t *testing.T) {
 	_ = afero.NewOsFs()
 }
 
+func TestAProgram(t *testing.T) {
+	_ = standin.Write("ffmpeg", nil, 0o755)
+}
+
 // On the real disk, because the lock between two programs is the system's.
 func TestSaidAbove(t *testing.T) {
 	_ = t.TempDir()
@@ -137,6 +141,7 @@ func TestAFieldNamedDisk(t *testing.T) {
 		"x_test.go:16 TestAWrite goes to the real disk with os.WriteFile",
 		"x_test.go:20 TestTheDisk goes to the real disk with disk",
 		"x_test.go:24 TestTheOsFs goes to the real disk with afero.NewOsFs",
+		"x_test.go:28 TestAProgram goes to the real disk with standin.Write",
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("found\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -222,6 +227,8 @@ func touches(body *ast.BlockStmt) string {
 				how = "os." + sel.Sel.Name
 			case pkg != nil && pkg.Name == "afero" && sel.Sel.Name == "NewOsFs":
 				how = "afero.NewOsFs"
+			case pkg != nil && pkg.Name == "standin" && sel.Sel.Name == "Write":
+				how = "standin.Write"
 			}
 		case *ast.Ident:
 			if n.Name == "disk" {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"framefairy/internal/standin"
 )
 
 // An app bundle as small as can be: a program that says which build it is,
@@ -17,7 +19,7 @@ func bundle(t *testing.T, at, says string) {
 	if err := os.MkdirAll(macos, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(macos, "framefairy-app"), []byte(says), 0o755); err != nil {
+	if err := standin.Write(filepath.Join(macos, "framefairy-app"), []byte(says), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("MacOS/framefairy-app", filepath.Join(at, "Contents", "Current")); err != nil {

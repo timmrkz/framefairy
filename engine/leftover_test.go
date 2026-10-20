@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"framefairy/internal/standin"
 )
 
 // leftover starts a stand-in for a llama-server that outlived its app: a
@@ -29,7 +31,7 @@ func leftover(t *testing.T, args ...string) *standingServer {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "llama-server")
 	body := "#!/bin/sh\ntrap 'exit 0' INT TERM\nwhile true; do sleep 0.05; done\n"
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+	if err := standin.Write(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(script, args...)

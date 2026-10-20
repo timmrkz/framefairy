@@ -15,6 +15,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/standin"
 )
 
 // A new copy of the app on a machine with nothing on it. Everything here
@@ -567,7 +568,7 @@ func placeLlamaServer(t *testing.T) {
 	// It is named in the environment, the one way to give the app a tool
 	// that is not beside it: the app never looks on the search path.
 	server := filepath.Join(dir, "llama-server")
-	if err := os.WriteFile(server, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := standin.Write(server, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FRAMEFAIRY_LLAMA_SERVER", server)

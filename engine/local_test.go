@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/standin"
 )
 
 func TestPlanSchemaIsValidJSON(t *testing.T) {
@@ -130,7 +132,7 @@ func TestTheServerLogIsKeptBeforeTheLogsFolderExists(t *testing.T) {
 	dir := t.TempDir()
 	server := filepath.Join(dir, "llama-server")
 	script := "#!/bin/sh\necho \"buffer size stand-in $*\"\nexec sleep 30\n"
-	if err := os.WriteFile(server, []byte(script), 0o755); err != nil {
+	if err := standin.Write(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	model := filepath.Join(dir, "model.gguf")
@@ -290,7 +292,7 @@ func TestTheServerIsHandedAKeyOfItsOwn(t *testing.T) {
 	dir := t.TempDir()
 	server := filepath.Join(dir, "llama-server")
 	script := "#!/bin/sh\necho \"key=$LLAMA_API_KEY args=$*\"\nexec sleep 30\n"
-	if err := os.WriteFile(server, []byte(script), 0o755); err != nil {
+	if err := standin.Write(server, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	model := filepath.Join(dir, "model.gguf")
