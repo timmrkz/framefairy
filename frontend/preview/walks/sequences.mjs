@@ -924,6 +924,12 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["rail mark", what]
+//                      Updates at the foot of the sidebar wears this mark
+//                      now, in the frame the line under the build is read
+//                      in, since both are drawn from the one state: "none",
+//                      or a "dot" and its colour, ", accent", ", warning"
+//                      or ", failure", read from what is painted
 //   ["turned", quarters]
 //                      the engine has the clip's pieces rotated so many
 //                      degrees each, in order, and with the playhead put in
@@ -3601,6 +3607,7 @@ export const sequences = [
       ["channel", "Choose a channel"],
       ["choices", ["Branch main", "PR #143"], ""],
       ["status", "Built on this Mac", "It stays as it is until you choose a channel to follow."],
+      ["rail mark", "none"],
       ["no check"],
       ["follow", "Branch main"],
       ["at once", "Looking for a newer build"],
@@ -3614,6 +3621,7 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
+      ["rail mark", "dot, accent"],
       ["choices", ["Branch main", "PR #20"], "Branch main"],
     ],
   },
@@ -3623,6 +3631,7 @@ export const sequences = [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
       ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
       ["build mark", "triangle, warning"],
+      ["rail mark", "dot, warning"],
       ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
@@ -3641,6 +3650,7 @@ export const sequences = [
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "PR #20, conflicts"],
       ["build mark", "dot, warning"],
+      ["rail mark", "dot, warning"],
       ["warned"],
     ],
   },
@@ -3803,6 +3813,29 @@ async function shownOnPlayhead(page) {
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
 // and hands back what it said last.
+// The mark on Updates in the sidebar, by the colour its dot is painted
+// in, "none" without one. Tim followed a pull request that closed and the
+// Updates page wore a warning while the sidebar wore nothing, #406.
+function railMark() {
+  const button = [...document.querySelectorAll("aside button.nav")].find((b) =>
+    (b.textContent ?? "").includes("Updates"),
+  );
+  const dot = button?.querySelector(".mark .dot");
+  if (!dot || getComputedStyle(dot).display === "none") return "none";
+  const paint = (v) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${v})`;
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  };
+  const colour = getComputedStyle(dot).backgroundColor;
+  const named = { "--accent": "accent", "--warn": "warning", "--err": "failure" };
+  for (const [v, name] of Object.entries(named)) if (colour === paint(v)) return `dot, ${name}`;
+  return `dot, ${colour}`;
+}
+
 async function updatesComeTo(page, ok) {
   let now = await updatesPage(page);
   for (let i = 0; i < 100 && !ok(now); i++) {
@@ -9808,6 +9841,11 @@ for (const seq of toWalk) {
       case "build mark": {
         const now = await updatesComeTo(page, (u) => u.mark === arg);
         if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "rail mark": {
+        const now = await page.evaluate(railMark);
+        if (now !== arg) wrong = `Updates in the sidebar wears ${now}, not ${arg}`;
         break;
       }
       case "warned": {
