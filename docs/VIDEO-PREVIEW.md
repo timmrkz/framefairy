@@ -204,7 +204,22 @@ closed for standing unused.
   goes to next, plan row 2.269: paused with nothing under the hand, the
   first frame of the word after the playhead and of the word before, the
   way Shift and an arrow walk, once the frame the hand asked for has
-  come, see `AppFrames.ahead`. A jump forward in an open stream brings
+  come, see `AppFrames.ahead`, and the layers of their captions, which a
+  step waits for before its frame is put up. After them come the first frames of
+  the clips on the cards, the card under the pointer first and then the
+  cards nearest the one chosen, with their captions, so a card clicked
+  puts up its clip from what was read, issue #383. They are read once the
+  workspace is on screen, a clip a search finds or Mark In makes as it
+  comes, and kept for as long as the card is there, apart from the frames
+  a play or a step keeps, as many frames as 400 MB holds at the size
+  frames are read at, counted again when that size changes, `CARDS_BYTES`
+  in `lib/frames/app.ts`. They are read only while paused, never on a
+  second decoder beside a play, and read again when a workspace is woken,
+  whose video preview opens with frames of its own. A workspace asleep
+  reads none. Their captions wait while a word stepped onto is lifted
+  out and bounces, which comes first. Everything read ahead goes one at a time, so a click
+  that comes before it is in waits behind one read and not three. A
+  jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told
   the moment before which nothing is wanted, `next` with a skip, so the
   frames a jump passes are decoded but never scaled. While the playhead
@@ -256,6 +271,17 @@ closed for standing unused.
   read ahead of it. Both kept the frames after a cut off the screen while
   a cut's left edge was dragged, which flickered between the two, plan
   row 2.270.
+- **One moment at a time.** The video preview shows a frame with the crop
+  frame, its shade and the captions that belong to that frame, never one
+  of them ahead of the rest. A frame a gesture puts the playhead on, paused
+  or as a play starts, is put up once its captions are there, asked for as
+  it is decoded, see [CAPTIONS.md](CAPTIONS.md). A seek to another clip
+  holds the crop frame and the captions over the frame on screen until the
+  new clip's frame goes up, and all of it changes in that one frame,
+  `held` in `Player.svelte`. Tim saw a clip card clicked move the crop
+  frame first, the picture a few frames later and the captions a few after
+  that, issue #383. Nothing waits under a dragging hand, which follows the
+  hand.
 
 ## Speed
 
