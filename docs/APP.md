@@ -2089,7 +2089,10 @@ found is a place in the video, and I and O make a clip there.
   Where a card runs on a little into the part after it, the playhead put
   at the start of that part is in the part, not in the card, so a step
   down no longer stands still at the card before it and a step up no
-  longer goes past it, found by Tim. A search
+  longer goes past it, found by Tim. A card clicked or walked to is the
+  card of the playhead for as long as the playhead is in it, so a card
+  that begins just before a part, a word heard at its edge, lights
+  itself when it is clicked and not the part, found by Tim. A search
   walked and then let go of, by Escape, by taking the words away or by
   its cross, puts the playhead and the chosen clip back where they stood
   before the first step, the way a search through a document goes back

@@ -155,6 +155,9 @@
     void sentences;
     const put = playheadWas !== null && at !== playheadWas && !untrack(() => playing);
     playheadWas = at;
+    // A card aimed at holds only while the playhead is in it.
+    const row = aimed && untrack(() => rows.find((r) => r.key === aimed));
+    if (!row || !holds(row, at)) aimed = null;
     untrack(() => follow(false, put));
   });
 
@@ -193,6 +196,8 @@
   // Inside the chosen clip, the chosen clip's cards, where another clip
   // over it has cards of the same words.
   function rowAt(t: number): Row | null {
+    const mine = aimed && rows.find((r) => r.key === aimed);
+    if (mine && holds(mine, t)) return mine;
     const chosen = clips.find((c) => c.key === selected);
     const own = chosen && chosen.start <= t && t < chosen.end ? rows.filter((r) => "sentence" in r && r.clip?.key === selected) : [];
     const among = own.length ? own : rows;
@@ -213,6 +218,20 @@
     return row;
   }
 
+  // The card clicked or walked to last, which is the card of the playhead
+  // for as long as the playhead is in it. Two rows can hold the same
+  // moment, a card that runs on a little into the part not transcribed yet
+  // after it, and the playhead is then read as in the row that began last,
+  // see rowAt. A card clicked there lit the part after it, and only a
+  // second click lit the card, found by Tim.
+  let aimed: string | null = null;
+
+  // Whether a row holds a moment, from its start to its end.
+  function holds(row: Row, t: number) {
+    const end = "hole" in row ? row.hole[1] : row.sentence.end;
+    return row.at <= t + 0.001 && t < end;
+  }
+
   // Shift and the arrows up and down walk the cards shown, the way they
   // walk the clip list while it is shown, so the answers to a search are
   // gone through from the keyboard, found by Tim. The playhead goes onto
@@ -227,6 +246,7 @@
     const next = here < 0 ? (step > 0 ? 0 : rows.length - 1) : (here + step + rows.length) % rows.length;
     const row = rows[next];
     walking = step;
+    aimed = row.key;
     if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
     else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
   }
@@ -384,6 +404,7 @@
         <button class="pick" class:inclip={!!row.clip} class:clip-edge={!!row.clip} class:current={row.key === current} title="Put the playhead here" onclick={() => {
           // The playhead put on a card is where the list already is.
           followed = row.key;
+          aimed = row.key;
           onseek(row.sentence.start, row.clip?.key ?? null);
         }}>
           <span class="meta muted num">

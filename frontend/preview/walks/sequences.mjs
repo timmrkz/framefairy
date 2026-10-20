@@ -1524,7 +1524,8 @@ export const sequences = [
   {
     // Found by Tim on 20 October: Shift and the down arrow stopped at the
     // card before a part not transcribed yet, and the up arrow went past
-    // it. The speech model is held, so the part stays where it is.
+    // it. Then a click on that card lit the part. The speech model is
+    // held, so the part stays where it is.
     name: "Shift and the arrows walk onto a part not transcribed yet and off it",
     steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
   },
@@ -8968,9 +8969,10 @@ for (const seq of toWalk) {
         // before it, and up went past it, found by Tim: that card ran on a
         // little past where the hearing reached, as a word heard at the
         // edge can, since the engine keeps a word by where it starts. So
-        // here the card before the part runs half a second on into it. The
-        // speech model is held, so the edge stays where it is, and the app
-        // is opened again so it reads the cards that way from the start.
+        // here the card before the part runs half a second on into it, and
+        // begins just before it. The speech model is held, so the edge
+        // stays where it is, and the app is opened again so it reads the
+        // cards that way from the start.
         const path = await episodeOn(page);
         const call = async (route, name, args) => (await route.fetch({ postData: JSON.stringify({ name, args }) })).json();
         const later = async (route) => {
@@ -8987,7 +8989,14 @@ for (const seq of toWalk) {
             ...saved.filter(([a]) => a < 1).map(([, b]) => b),
           );
           const last = cards.filter((c) => c.start < edge).at(-1);
-          if (last && Number.isFinite(edge)) last.end = edge + 0.5;
+          if (last && Number.isFinite(edge)) {
+            last.end = edge + 0.5;
+            // And it starts just before the edge, the way a card of one
+            // word heard at the edge does, so the playhead put on the card
+            // by a click lands in the part after it as well. The part lit
+            // then, not the card clicked, found by Tim.
+            last.start = edge - 0.02;
+          }
           return route.fulfill({ response: answer, json: cards });
         };
         await page.route("**/call", later);
