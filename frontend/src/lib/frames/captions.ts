@@ -629,7 +629,10 @@ export class CaptionLayers {
     // The word stays lifted only over the frame it was lifted from,
     // paused. New captions over that frame, a word corrected or the style
     // changed, lift it again at rest.
-    if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) this.drop();
+    if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) {
+      this.drop();
+      this.more();
+    }
     if (!want) return null;
     // The frame now on screen, whether its own layer is there yet or not,
     // so a second word step before it came bounces the word it lands on,
@@ -722,6 +725,7 @@ export class CaptionLayers {
         this.gaveUp(ask, "the word lifted out", why);
         this.lift = null;
         this.drawAgain();
+        this.more();
         return;
       }
       lift.rest = rest;
@@ -729,6 +733,7 @@ export class CaptionLayers {
       if (!lift.bouncing || !lift.bounce || typeof requestAnimationFrame !== "function") {
         lift.done = true;
         this.drawAgain();
+        this.more();
         return;
       }
       // The bounce, one scale for each frame of the screen, by the clock
@@ -742,6 +747,7 @@ export class CaptionLayers {
         else lift.tick = requestAnimationFrame(step);
         this.stats.bounced++;
         this.drawAgain();
+        if (lift.done) this.more();
       };
       lift.tick = requestAnimationFrame(step);
     });
@@ -806,8 +812,12 @@ export class CaptionLayers {
     }
     // The layers of the clips on the cards, one at a time and only while
     // the video preview rests with nothing else to wait for: each is
-    // another caption file for libass, and the frame on screen comes first.
-    if (this.going.size || this.waiting || this.promised.size || this.still?.paused() === false) return;
+    // another caption file for libass, and the frame on screen comes first,
+    // and so does a word lifted out of it and its bounce. Read beside the
+    // bounce, they took the screen's frames from it on a busy machine,
+    // and the walk saw the word pop over three of them and not grow.
+    const lifting = this.lift !== null && !this.lift.done;
+    if (this.going.size || this.waiting || this.promised.size || lifting || this.still?.paused() === false) return;
     for (let a = this.soon.shift(); a; a = this.soon.shift()) {
       if (this.kept.has(a.key)) continue;
       this.fetch(a);

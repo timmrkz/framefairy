@@ -216,7 +216,8 @@ closed for standing unused.
   in `lib/frames/app.ts`. They are read only while paused, never on a
   second decoder beside a play, and read again when a workspace is woken,
   whose video preview opens with frames of its own. A workspace asleep
-  reads none. Everything read ahead goes one at a time, so a click
+  reads none. Their captions wait while a word stepped onto is lifted
+  out and bounces, which comes first. Everything read ahead goes one at a time, so a click
   that comes before it is in waits behind one read and not three. A
   jump forward in an open stream brings
   the frame before it too, for the arrow to the left. The decoder is told
