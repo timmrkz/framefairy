@@ -534,11 +534,12 @@ func FuzzPlanEdits(f *testing.F) {
 			case 7:
 				_ = JoinCut(fsys, path, clip, at(script[i+1]), tr)
 			case 8:
-				// The cut is read from the bits above the one that picks
-				// the clip, so clip 02 is asked to move its camera switch,
-				// cut 0, too. With the cut read from the same bit, it
+				// The cut is read from the byte that picks the edit, so
+				// any cut of either clip can be moved to any time, and
+				// clip 02 is asked to move its camera switch, cut 0, too.
+				// With the cut read from the bit that picks the clip, it
 				// only ever moved cuts 1 and 3, #271.
-				moved = MoveCut(fsys, path, clip, int(script[i+1]/2)%4,
+				moved = MoveCut(fsys, path, clip, int(script[i]/10)%4,
 					at(script[i+1]), at(script[i+2]), tr, 0.1, ToWords)
 			case 0:
 				_ = TrimClip(fsys, path, clip, at(script[i+1]), at(script[i+2]), tr, 0.1, Snap(script[i+2]%2 == 0))

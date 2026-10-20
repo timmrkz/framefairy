@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 )
@@ -297,6 +298,39 @@ func TestAFileWrittenAsTheSearchBeginsIsItsOwn(t *testing.T) {
 		if before.changed(disk, filepath.Join(dir, "missing.json")) {
 			t.Fatalf("round %d: a file that is not there reads as written", round)
 		}
+	}
+
+	// A prompt written again at the same length is told by its time. The
+	// times are set by hand, so no clock decides what this test sees.
+	then := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	if err := afero.WriteFile(disk, prompt, []byte("the same prompt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := disk.Chtimes(prompt, then, then); err != nil {
+		t.Fatal(err)
+	}
+	before := writtenIn(disk, filepath.Join(dir, "*"))
+	if err := afero.WriteFile(disk, prompt, []byte("the next prompt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := disk.Chtimes(prompt, then.Add(time.Millisecond), then.Add(time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if !before.changed(disk, prompt) {
+		t.Fatal("a prompt written again at the same length and a later time reads as written before")
+	}
+	// Written again at the same length within one tick of the clock, a
+	// file looks the same as before and reads as not written. That is the
+	// gap left in Compare until the search says what it wrote, #395.
+	before = writtenIn(disk, filepath.Join(dir, "*"))
+	if err := afero.WriteFile(disk, prompt, []byte("the last prompt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := disk.Chtimes(prompt, then.Add(time.Millisecond), then.Add(time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if before.changed(disk, prompt) {
+		t.Fatal("a file with the same time and length reads as written, so the gap is closed and the comment above is out of date")
 	}
 }
 
