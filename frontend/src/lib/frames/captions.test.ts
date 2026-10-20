@@ -200,6 +200,29 @@ describe("the layers of the captions", () => {
     return { asked, answer };
   }
 
+  it("keeps the layers of the cards' clips while the frames of a play take the rest", async () => {
+    const { asked, answer } = answering();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    const card = { path: "/v.mp4", clip: "b", track: "card", drafts: {} };
+    layers.next([{ ask: card, frame: 84, size: [10, 20] }]);
+    expect(asked.length).toBe(1);
+    answer.shift()!();
+    await layers.rested();
+    // The clip chosen plays on through more frames than are kept besides.
+    const played = { path: "/v.mp4", clip: "a", track: "abc", drafts: {} };
+    layers.set(played);
+    for (let i = 0; i < 60; i++) {
+      layers.coming(i, [10, 20]);
+      answer.shift()!();
+      await layers.rested();
+    }
+    expect(asked.length).toBe(61);
+    // The first of the play's is gone, the card's is there.
+    expect(layers.ready(0, [10, 20])).not.toBeNull();
+    layers.set(card);
+    expect(layers.ready(84, [10, 20])).toBeNull();
+  });
+
   it("keeps no layer that did not come, and asks for it once more", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {
@@ -569,6 +592,39 @@ describe("the bounce after a word step", () => {
     await flush();
     expect(at(2.0)?.pixels[0]).toBe(105);
     expect(layers.stats.popped).toBe(2);
+  });
+
+  // Found in CI on #385: with the layers of the cards and of the words
+  // either side read ahead, one was read beside the bounce and took the
+  // screen's frames from it on a busy runner, and the walk saw "er" pop
+  // over three frames and not grow.
+  it("reads no card's layer while a word is lifted out or bounces, and reads it once the word is at rest", async () => {
+    const asked = goSide(
+      () => 2,
+      () => "1.0000",
+    );
+    const s = screen();
+    const layers = new CaptionLayers(() => {}, { paused: () => true });
+    layers.set({ path: "/v.mp4", clip: "a", track: "abc", drafts: {} });
+    layers.at(1.0, [10, 20]);
+    await flush();
+    layers.sought(true);
+    layers.at(1.5, [10, 20]);
+    await flush();
+    layers.at(1.5, [10, 20]);
+    expect(layers.popping).toBe(true);
+    const card = { path: "/v.mp4", clip: "b", track: "card", drafts: {} };
+    layers.next([{ ask: card, frame: 84, size: [10, 20] }]);
+    await flush();
+    const ofCard = () => asked.filter((a) => a.includes("track=card"));
+    expect(ofCard()).toEqual([]);
+    for (let ms = 1000; s.waiting; ms += 1000 / 60) {
+      s.frame(ms);
+      if (s.waiting) expect(ofCard()).toEqual([]);
+    }
+    expect(layers.popping).toBe(false);
+    expect(ofCard().length).toBe(1);
+    await layers.rested();
   });
 
   // Found by the second review: Shift and an arrow pressed twice quickly

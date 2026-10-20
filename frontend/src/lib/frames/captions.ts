@@ -343,6 +343,15 @@ const AGAIN = 250;
 // A layer asked for: the ask it belongs to, the frame and the size.
 type Wanted = { key: string; ask: CaptionAsk; frame: number; size: [number, number] };
 
+// What tells one ask from another, and one layer of an ask from another.
+function keyOf(ask: CaptionAsk | null): string {
+  return ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
+}
+
+function layerKey(askKey: string, frame: number, size: [number, number]): string {
+  return `${askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`;
+}
+
 // The bounce after a word step. Shift and an arrow step from word to word,
 // and the word stepped to bounces, from rest through its peak and back to
 // rest, every word alike, a word the short shows at its peak on its one
@@ -447,6 +456,16 @@ export class CaptionLayers {
   private lift: Lift | null = null;
   private shownAt = NaN;
   private bounceFrom: number | null = null;
+  // The frames a gesture put the playhead on that wait to be put up until
+  // their own layer is here, by the key of the layer, each with what tells
+  // it the layer came, or will not, see ready.
+  private promised = new Map<string, { want: Wanted; done: (() => void)[] }>();
+  // The layers of the first frames of the clips on the cards, each with
+  // captions of its own, still to be asked for, one at a time while
+  // nothing else is on its way, and the keys of all of them, which are
+  // kept whatever else comes, see next.
+  private soon: Wanted[] = [];
+  private cards = new Set<string>();
 
   constructor(
     private came: () => void,
@@ -481,6 +500,7 @@ export class CaptionLayers {
   get busy(): boolean {
     return (
       this.going.size > 0 ||
+      this.promised.size > 0 ||
       this.ahead.length > 0 ||
       this.waiting !== null ||
       this.popping ||
@@ -495,22 +515,82 @@ export class CaptionLayers {
   }
 
   set(ask: CaptionAsk | null) {
-    const key = ask ? `${ask.path}\n${ask.track}\n${ask.typing ?? ""}\n${new URLSearchParams(ask.drafts)}` : "";
+    const key = keyOf(ask);
     if (!ask || ask.path !== this.ask?.path || ask.clip !== this.ask?.clip) this.last = null;
     if (key !== this.askKey) {
       this.waiting = null;
       this.ahead = [];
       this.again.clear();
-      this.callOff(() => true);
+      // A layer of the new captions on its way, read for a card before it
+      // was clicked, is the one the click wants, and goes on.
+      this.callOff((k) => !k.startsWith(`${key}\n`));
+      // A frame that waited for a layer of other captions waits no longer:
+      // it is put up with what there is, and asks again as it is drawn.
+      for (const k of [...this.promised.keys()]) this.keep(k);
     }
     this.ask = ask;
     this.askKey = key;
+    this.settleRest();
+  }
+
+  // The frame on screen drawn again with what lies over it now.
+  private drawAgain() {
+    this.came();
+    this.settleRest();
+  }
+
+  // What lies over the frame that starts at frame, asked for now and before
+  // anything else on its way, for a frame a gesture put the playhead on:
+  // what answers is done once the layer is here, or once it did not come,
+  // so the frame and its captions are put up together. Null when the layer
+  // is here already or there are no captions to draw. Tim saw a clip card
+  // picked put its picture up first and its captions a few frames later,
+  // issue #383.
+  ready(frame: number, size: [number, number]): Promise<void> | null {
+    const want = this.wanted(frame, size);
+    if (!want || this.kept.has(want.key)) return null;
+    let p = this.promised.get(want.key);
+    if (!p) {
+      p = { want, done: [] };
+      this.promised.set(want.key, p);
+    }
+    const waits = p;
+    const came = new Promise<void>((done) => waits.done.push(done));
+    if (!this.going.has(want.key)) {
+      // The frame a gesture is waiting for goes before frames read ahead.
+      if (this.going.size >= GOING) {
+        const spare = [...this.going.keys()].find((k) => !this.promised.has(k) && k !== this.waiting?.key);
+        if (spare) this.callOff((k) => k === spare);
+      }
+      this.fetch(want);
+    }
+    return came;
+  }
+
+  // The frames waiting on the layer of key are told it came, or will not.
+  private keep(key: string) {
+    const p = this.promised.get(key);
+    if (!p) return;
+    this.promised.delete(key);
+    for (const done of p.done) done();
   }
 
   private wanted(frame: number, size: [number, number]): Wanted | null {
     const ask = this.ask;
     if (!ask) return null;
-    return { key: `${this.askKey}\n${frame.toFixed(6)}\n${size[0]}x${size[1]}`, ask, frame, size };
+    return { key: layerKey(this.askKey, frame, size), ask, frame, size };
+  }
+
+  // The layers of the first frames of the clips on the cards, each of its
+  // own captions, the likeliest to be clicked first, see Player.ahead.
+  // They are read while nothing else is on its way, and kept for as long
+  // as their cards are there, so the frame of a card clicked finds its
+  // captions here. Each call replaces the ones before.
+  next(wants: { ask: CaptionAsk; frame: number; size: [number, number] }[]) {
+    const all = wants.map(({ ask, frame, size }) => ({ key: layerKey(keyOf(ask), frame, size), ask, frame, size }));
+    this.cards = new Set(all.map((w) => w.key));
+    this.soon = all.filter((w) => !this.kept.has(w.key));
+    this.more();
   }
 
   // The playhead was put somewhere, by a word step or by anything else.
@@ -536,7 +616,9 @@ export class CaptionLayers {
       if (!which(key)) continue;
       off.abort();
       this.going.delete(key);
+      this.keep(key);
     }
+    this.settleRest();
   }
 
   // The layer of the frame that starts at frame, or while it is on its way
@@ -547,7 +629,10 @@ export class CaptionLayers {
     // The word stays lifted only over the frame it was lifted from,
     // paused. New captions over that frame, a word corrected or the style
     // changed, lift it again at rest.
-    if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) this.drop();
+    if (lift && (!want || lift.frame !== frame || lift.size.join() !== size.join() || !this.still?.paused())) {
+      this.drop();
+      this.more();
+    }
     if (!want) return null;
     // The frame now on screen, whether its own layer is there yet or not,
     // so a second word step before it came bounces the word it lands on,
@@ -639,14 +724,16 @@ export class CaptionLayers {
         // Without its parts the frame shows its own layer.
         this.gaveUp(ask, "the word lifted out", why);
         this.lift = null;
-        this.came();
+        this.drawAgain();
+        this.more();
         return;
       }
       lift.rest = rest;
       lift.word = word;
       if (!lift.bouncing || !lift.bounce || typeof requestAnimationFrame !== "function") {
         lift.done = true;
-        this.came();
+        this.drawAgain();
+        this.more();
         return;
       }
       // The bounce, one scale for each frame of the screen, by the clock
@@ -659,7 +746,8 @@ export class CaptionLayers {
         if (lift.done) lift.scale = 1;
         else lift.tick = requestAnimationFrame(step);
         this.stats.bounced++;
-        this.came();
+        this.drawAgain();
+        if (lift.done) this.more();
       };
       lift.tick = requestAnimationFrame(step);
     });
@@ -692,11 +780,48 @@ export class CaptionLayers {
   // first, unless its layer did not come and is asked for again in a
   // moment, then the frames that asked ahead, in the order they asked.
   private more(drawn = true) {
+    this.moreNow(drawn);
+    this.settleRest();
+  }
+
+  // Settles once no layer is on its way and every card's layer is here or
+  // was given up on, for the walks and the tests, which wait on it rather
+  // than on the clock.
+  rested(): Promise<void> {
+    return new Promise((done) => {
+      this.restWaiters.push(done);
+      this.settleRest();
+    });
+  }
+  private restWaiters: (() => void)[] = [];
+
+  private settleRest() {
+    if (this.busy || this.soon.some((a) => !this.kept.has(a.key))) return;
+    const was = this.restWaiters;
+    this.restWaiters = [];
+    for (const done of was) done();
+  }
+
+  private moreNow(drawn: boolean) {
+    for (const p of this.promised.values()) if (!this.again.has(p.want.key)) this.fetch(p.want);
     const w = this.waiting;
     if (drawn && w && !this.kept.has(w.key)) this.fetch(w);
     while (this.going.size < GOING && this.ahead.length > 0) {
       const a = this.ahead.shift()!;
       if (!this.kept.has(a.key)) this.fetch(a);
+    }
+    // The layers of the clips on the cards, one at a time and only while
+    // the video preview rests with nothing else to wait for: each is
+    // another caption file for libass, and the frame on screen comes first,
+    // and so does a word lifted out of it and its bounce. Read beside the
+    // bounce, they took the screen's frames from it on a busy machine,
+    // and the walk saw the word pop over three of them and not grow.
+    const lifting = this.lift !== null && !this.lift.done;
+    if (this.going.size || this.waiting || this.promised.size || lifting || this.still?.paused() === false) return;
+    for (let a = this.soon.shift(); a; a = this.soon.shift()) {
+      if (this.kept.has(a.key)) continue;
+      this.fetch(a);
+      return;
     }
   }
 
@@ -739,18 +864,33 @@ export class CaptionLayers {
         if (layer) {
           this.again.delete(key);
           this.kept.set(key, layer);
-          while (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value!);
-        } else if (w?.key === key) {
+          // The cards' layers are kept apart from the count, see next.
+          let over = this.kept.size - KEPT;
+          for (const k of this.kept.keys()) if (this.cards.has(k)) over--;
+          for (const k of [...this.kept.keys()]) {
+            if (over <= 0) break;
+            if (this.cards.has(k)) continue;
+            this.kept.delete(k);
+            over--;
+          }
+          this.keep(key);
+        } else if (w?.key === key || this.promised.has(key)) {
           // Nothing is kept for a layer that did not come: the frame drawn
           // keeps the layer given last, and its own is asked for once more
-          // in a moment.
+          // in a moment. A frame waiting to be put up waits for that once
+          // more too, and is put up without it after.
           if (!this.again.has(key)) {
             this.again.add(key);
             setTimeout(() => {
               if (this.waiting?.key === key) this.fetch(this.waiting);
+              else {
+                const p = this.promised.get(key);
+                if (p) this.fetch(p.want);
+              }
             }, AGAIN);
           } else {
-            this.waiting = null;
+            if (w?.key === key) this.waiting = null;
+            this.keep(key);
             this.gaveUp(ask, "a layer", why);
           }
           this.more(false);
@@ -761,7 +901,7 @@ export class CaptionLayers {
         // that asked ahead.
         if (w && this.kept.has(w.key)) {
           this.waiting = null;
-          this.came();
+          this.drawAgain();
         }
         this.more();
       });
