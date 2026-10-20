@@ -142,3 +142,35 @@ func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 		t.Fatalf("the windows are told on %q and %q", a, r)
 	}
 }
+
+// A report says what macOS answered about the title bar, in points with
+// their fractions and with the close button's frame, and what the
+// interface was told, once for each change. The frame is what #399 was
+// read from. It changes measureChrome, a package variable, so it runs
+// alone.
+func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
+	_, read := testLog(t)
+	answer := chromeRaw{bar: 29.5, left: 12, right: 72, closeTop: 6, closeBottom: 22}
+	was := measureChrome
+	measureChrome = func(*application.WebviewWindow) chromeRaw { return answer }
+	defer func() { measureChrome = was }()
+
+	c := &chromeWatch{event: chromeEvent("app")}
+	c.publish()
+	c.publish()
+	lines := read()
+	said := 0
+	for _, l := range lines {
+		if l["msg"] == "the title bar was measured" {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("two measurements of an unmoved app logged %d lines, want 1", said)
+	}
+	has(t, find(lines, "the title bar was measured"), map[string]any{
+		"level": "debug", "from": "window", "event": "chrome",
+		"bar": 29.5, "left": 12, "right": 72, "close_top": 6, "close_bottom": 22, "fullscreen": false,
+		"told": map[string]any{"bar": 30, "left": 12, "right": 72},
+	})
+}

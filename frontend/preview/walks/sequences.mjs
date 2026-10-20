@@ -6332,9 +6332,19 @@ for (const seq of toWalk) {
       case "title bar": {
         // What macOS answered on Tim's Mac, read off his screenshot, and
         // the Go side tells the page the way it does after a resize.
+        // The page is watched before the Go side speaks, so the step goes
+        // on the moment the shell carries the new bar, and not a moment
+        // the clock picked.
+        await page.evaluate(() => {
+          const shell = document.querySelector(".shell");
+          const told = () => shell.getAttribute("style")?.includes("--bar-h: 30px");
+          window.__barTold = new Promise((done) => {
+            const seen = new MutationObserver(() => told() && (seen.disconnect(), done()));
+            seen.observe(shell, { attributes: true, attributeFilter: ["style"] });
+          });
+        });
         await control(url, "/chrome?bar=30&left=12&right=72");
-        await page.waitForFunction(() => document.querySelector(".shell")?.getAttribute("style")?.includes("--bar-h: 30px"));
-        await settle(page);
+        await page.evaluate(() => window.__barTold);
         const seen = await page.evaluate(() => {
           const box = (el) => el?.getBoundingClientRect();
           const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap"));

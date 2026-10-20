@@ -21,6 +21,11 @@ import (
 // exactly the title bar, which centres the buttons in it by construction,
 // on every version of macOS and at every control size.
 //
+// The name is centred in the bar, which is where macOS centres the
+// buttons, so there is no middle of theirs to tell: the frame AppKit
+// gives a button reaches higher than the circle it draws, and a name on
+// that frame's middle sat a point above the circles, #399.
+//
 // All zeros mean the system draws its own title bar, which is every other
 // system, and then the stylesheet keeps its own numbers.
 type Chrome struct {
@@ -28,18 +33,17 @@ type Chrome struct {
 	Bar int `json:"bar"`
 	// The left edge of the first of those buttons and the right edge of the
 	// last, so the name of what is on screen starts after them.
-	// The name is centred in the bar, which is where macOS centres the
-	// buttons, so there is no middle of theirs to tell: the frame AppKit
-	// gives a button reaches higher than the circle it draws, and a name
-	// on that frame's middle sat a point above the circles, #399.
 	Left  int `json:"left"`
 	Right int `json:"right"`
 }
 
-// chromeRaw is what the system answers, in points and unrounded.
+// chromeRaw is what the system answers, in points and unrounded. Where
+// the close button's frame starts and ends, from the top, is only ever
+// logged: it shows whether the circles are still on the bar's middle.
 type chromeRaw struct {
-	bar, left, right float64
-	fullscreen       bool
+	bar, left, right      float64
+	closeTop, closeBottom float64
+	fullscreen            bool
 }
 
 // chromeWatch keeps the furniture up to date. It measures when macOS says
@@ -82,10 +86,16 @@ var measureChrome = func(window *application.WebviewWindow) chromeRaw {
 
 // measure asks where the furniture is and puts the answer on whole pixels.
 func (c *chromeWatch) measure() Chrome {
+	now, _ := c.measured()
+	return now
+}
+
+// measured is measure with what the system answered beside it.
+func (c *chromeWatch) measured() (Chrome, chromeRaw) {
 	raw := measureChrome(c.window)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.settle(raw)
+	return c.settle(raw), raw
 }
 
 // settle turns one answer into what the interface is told. It is the whole
@@ -123,7 +133,7 @@ func px(v float64) int {
 // not what it was told last time. Dragging the app by its corner raises
 // one of these a frame, and almost none of them change anything.
 func (c *chromeWatch) publish() {
-	now := c.measure()
+	now, raw := c.measured()
 	c.mu.Lock()
 	same := c.told && c.said == now
 	c.said = now
@@ -132,8 +142,11 @@ func (c *chromeWatch) publish() {
 	if same {
 		return
 	}
+	// What macOS answered, in points, and what the interface is told.
 	theLog.line(zerolog.DebugLevel, "window").Str("event", c.event).
-		Int("bar", now.Bar).Int("left", now.Left).Int("right", now.Right).
+		Float64("bar", raw.bar).Float64("left", raw.left).Float64("right", raw.right).
+		Float64("close_top", raw.closeTop).Float64("close_bottom", raw.closeBottom).
+		Bool("fullscreen", raw.fullscreen).Interface("told", now).
 		Msg("the title bar was measured")
 	if c.app == nil {
 		return
