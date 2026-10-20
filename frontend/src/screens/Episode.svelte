@@ -1947,6 +1947,96 @@
   // new clip's moments.
   let captionsOf = $state<string | null>(null);
 
+  // The clips on the cards, the likeliest to be clicked first: the card
+  // under the pointer, then the cards nearest the one chosen. Their
+  // captions are asked for one at a time once the workspace is on screen,
+  // and the video preview reads the frame each opens on and lays out its
+  // captions over it, so a card clicked puts up its clip at once, see
+  // Player.ahead. A clip a search finds or Mark In makes joins them as it
+  // comes. On a video of hours a card clicked for the first time took half
+  // a second, issue #383, and Tim asked for every clip to be ready.
+  // Their captions, by the clip as it is: every edit replaces the clip, so
+  // what is kept for one is what asking again would give, see captions.
+  const viewsAhead = new WeakMap<ClipEntry, CaptionsView>();
+  const viewsAsked = new WeakSet<ClipEntry>();
+  let viewAsking = false;
+  // Told when a captions call ends, see rested.
+  let viewsTold: (() => void)[] = [];
+  // The words either side of the playhead the clip timeline asked to be
+  // read ahead last, which go first.
+  let wordsAhead: number[] = [];
+  function readAhead(times = wordsAhead) {
+    wordsAhead = times;
+    untrack(() => {
+      // Asleep, the video preview has no frames to read them into, and a
+      // search running on the video in the background would ask the
+      // captions of every clip it finds. Woken, it reads them again.
+      if (!player || !ready || away) return;
+      const list = shown.filter((c) => !c.rejected);
+      const here = Math.max(0, list.findIndex((c) => c.key === current?.key));
+      const cards = list
+        .map((c, i) => ({ c, far: c.key === hovered ? -1 : Math.abs(i - here) + (i < here ? 0.5 : 0) }))
+        .filter(({ c }) => c.key !== current?.key)
+        .sort((a, b) => a.far - b.far)
+        .map(({ c }) => c);
+      // One captions call at a time, the likeliest card first.
+      const next = viewAsking ? undefined : cards.find((c) => !viewsAsked.has(c));
+      if (next) {
+        viewAsking = true;
+        viewsAsked.add(next);
+        api
+          .captions(path, next.plan, next.id)
+          .then((view) => {
+            if (view) viewsAhead.set(next, view);
+          })
+          .then(
+            () => {
+              viewAsking = false;
+              readAhead();
+            },
+            // Asked again when the cards next change, not at once, so a
+            // Go side that keeps failing is not asked over and over.
+            () => {
+              viewAsking = false;
+              viewsAsked.delete(next);
+            },
+          )
+          .finally(() => {
+            const told = viewsTold;
+            viewsTold = [];
+            for (const done of told) done();
+          });
+      }
+      player.ahead(times, cards.map((c) => ({ clip: c, captions: viewsAhead.get(c) ?? null })));
+    });
+  }
+  // Settles once the captions of every card were asked for and what the
+  // video preview reads ahead is in, for the walks, which wait on it
+  // rather than on the clock.
+  async function rested(): Promise<void> {
+    for (;;) {
+      await new Promise<void>((done) => {
+        if (!viewAsking) done();
+        else viewsTold.push(done);
+      });
+      await player?.rested();
+      if (!viewAsking) return;
+    }
+  }
+  $effect(() => {
+    if (away) return;
+    (window as unknown as { __readAheadRested?: () => Promise<void> }).__readAheadRested = rested;
+  });
+
+  // Read again as the cards change, and as the pointer comes to one: the
+  // card under it is the likeliest to be clicked. And as the workspace
+  // wakes: its video preview opens with frames of its own, which have
+  // none of the cards', found by the review of #385.
+  $effect(() => {
+    void [hovered, shown, current, ready, away];
+    readAhead();
+  });
+
   // Whether the workspace has the episode on it: the window on the range
   // picker, a picture on the canvas, the clip timeline drawn and the
   // captions of the clip it opened on. Opening another episode keeps the
@@ -2781,15 +2871,26 @@
       return () => (dropped = true);
     }
     let dropped = false;
+    // Read while the hand rested, see readAhead: drawn at once, and asked
+    // for again below in case anything changed that does not replace the
+    // clip.
+    const early = viewsAhead.get(clip);
+    if (early) {
+      captions = early;
+      captionsOf = clip.key;
+    }
     api
       .captions(path, clip.plan, clip.id)
       .then((view) => {
-        if (dropped) return;
+        if (dropped || (early && view?.track === early.track)) return;
         captions = view;
         captionsOf = clip.key;
       })
       .catch(() => {
-        if (!dropped) captions = null;
+        if (dropped || early) return;
+        // None to draw, and none on the way, so nothing waits for them.
+        captions = null;
+        captionsOf = clip.key;
       });
     return () => (dropped = true);
   });
@@ -3455,6 +3556,7 @@
           sleeping={away}
           bind:time
           captions={shownClip && captionsOf === shownClip.key ? shownCaptions : null}
+          captionsDue={!!shownClip && captionsOf !== shownClip.key}
           {wordFrames}
           drafts={captionDrafts}
           onplayclip={(c) => api.clipPlayed(c.plan, c.id).catch(() => {})}
@@ -3642,7 +3744,7 @@
         bind:numbers
         bind:drawn
         onseek={(t, about, wordStep) => player?.seek(t, about, wordStep)}
-        onahead={(times) => player?.ahead(times)}
+        onahead={readAhead}
         onhold={(held) => player?.hold(held)}
         dimmed={!onClip}
         onreshape={(g, playhead) => (current ? reshape(current, g, playhead) : Promise.resolve())}

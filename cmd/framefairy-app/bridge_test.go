@@ -416,8 +416,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		ms, _ := strconv.Atoi(q.Get("ms"))
+		times, err := strconv.Atoi(q.Get("times"))
+		if err != nil {
+			times = 1
+		}
 		b.mu.Lock()
 		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
+		b.holdsLeft[q.Get("call")] = min(max(times, 0), 100)
 		if reason := q.Get("fail"); reason != "" {
 			b.fails[q.Get("call")] = reason
 		}
@@ -624,6 +629,8 @@ type bridge struct {
 	// holds is how long the next call of a name waits before it reaches
 	// the service, the way a busy machine delivers it late, see /hold.
 	holds map[string]time.Duration
+	// holdsLeft is how many calls of a name the hold is still for.
+	holdsLeft map[string]int
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
@@ -691,12 +698,15 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 
 // held is how long a call of this name waits before it reaches the
 // service, and the reason it fails with instead, if it does. A hold is for
-// the next call of the name only.
+// the next call of the name, or the next so many, see /hold.
 func (b *bridge) held(name string) (time.Duration, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	wait, fails := b.holds[name], b.fails[name]
-	delete(b.holds, name)
+	if b.holdsLeft[name]--; b.holdsLeft[name] <= 0 {
+		delete(b.holds, name)
+		delete(b.holdsLeft, name)
+	}
 	delete(b.fails, name)
 	return wait, fails
 }
@@ -783,7 +793,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}, fails: map[string]string{}}
+		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
