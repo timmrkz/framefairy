@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,13 +8,14 @@ import (
 	"github.com/spf13/afero"
 )
 
-// A clip a search finds is in pieces that meet at every camera switch, and
-// each piece carries the crop of its own shot. Putting back what a gesture
-// took out, a cut or an edge, has to bring the switch back with it, or the
-// second shot is shown through the first shot's crop.
+// A clip has one crop, #396. A search used to part a clip at every camera
+// switch and give each camera a crop of its own, and a plan made then still
+// holds those pieces. Such a clip plays with the crop of its first piece,
+// and takes it for good at its next change.
 
 // shotsPlan is one clip of two shots that meet at a camera switch at
-// 12.80, the way ClipSegments writes them.
+// 12.80, the way ClipSegments wrote them before #396, each with a crop of
+// its own.
 const shotsPlan = `{"clips": [{"id": "01", "segments": [
   {"start": 9.6, "end": 12.8, "crop_x": 300},
   {"start": 12.8, "end": 16.0, "crop_x": 900}]}]}`
@@ -48,25 +48,29 @@ func shotsAre(t *testing.T, fsys afero.Fs, path, when string, want []Segment) {
 	}
 }
 
-func twoShots() []Segment {
-	return []Segment{{Start: 9.6, End: 12.8, CropX: intPtr(300)}, {Start: 12.8, End: 16, CropX: intPtr(900)}}
+// A clip framed for two cameras plays with one crop, its first.
+func TestAClipFramedForTwoCamerasPlaysWithOneCrop(t *testing.T) {
+	fsys, path := writePlanAt(t, shotsPlan)
+	shotsAre(t, fsys, path, "as loaded", []Segment{
+		{Start: 9.6, End: 12.8, CropX: intPtr(300)},
+		{Start: 12.8, End: 16, CropX: intPtr(300)}})
 }
 
-// A cut made across the switch and put back leaves the clip as it was: two
-// pieces meeting at 12.80, each with its own crop.
-func TestACutPutBackKeepsTheCameraSwitch(t *testing.T) {
+// A cut made across the old switch and put back leaves one piece with one
+// crop, and the pieces the clip was found with go from the plan.
+func TestACutPutBackOverAnOldSwitchLeavesOnePiece(t *testing.T) {
 	tr := shotsTranscript()
 	for _, snap := range []Snap{ToFrames, ToWords} {
-		fsys, path := writePlanAt(t, shotsPlan)
+		fsys, path := writePlanAt(t, strings.Replace(shotsPlan, `"segments": [`,
+			`"found_segments": [{"start": 9.6, "end": 12.8, "crop_x": 300}, {"start": 12.8, "end": 16.0, "crop_x": 900}], "segments": [`, 1))
 		g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(snap), Frames: at25}
 		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
 		cut := ClipCuts(clipByID(t, fsys, path, "01"))
-		if len(cut) != 1 || cut[0].From >= 12.8 || cut[0].To <= 12.8 {
-			t.Fatalf("the cut does not cross the switch: %+v", cut)
+		if len(cut) != 1 {
+			t.Fatalf("with snap %v the clip has the cuts %+v", snap, cut)
 		}
-		// What the hand sees while it puts the cut back is what is saved.
 		join := Gesture{Kind: "join", From: (cut[0].From + cut[0].To) / 2}
 		shaped, err := ShapeClip(fsys, path, "01", join, tr, 0.1)
 		if err != nil {
@@ -75,174 +79,72 @@ func TestACutPutBackKeepsTheCameraSwitch(t *testing.T) {
 		if err := Reshape(fsys, nil, path, "01", join, tr, 0.1); err != nil {
 			t.Fatal(err)
 		}
-		shotsAre(t, fsys, path, fmt.Sprintf("with snap %v, after the cut is put back", snap), twoShots())
-		saved := clipByID(t, fsys, path, "01").Segments
-		if len(shaped.Pieces) != len(saved) {
-			t.Fatalf("shown %+v, saved %+v", shaped.Pieces, saved)
+		one := []Segment{{Start: 9.6, End: 16, CropX: intPtr(300)}}
+		shotsAre(t, fsys, path, "after the cut is put back", one)
+		if len(shaped.Pieces) != 1 || shaped.Pieces[0].Start != 9.6 || shaped.Pieces[0].End != 16 {
+			t.Errorf("with snap %v, shown %+v while putting the cut back, saved %+v", snap, shaped.Pieces, one)
 		}
-		for i, p := range shaped.Pieces {
-			if p.Start != saved[i].Start || p.End != saved[i].End {
-				t.Errorf("shown %+v, saved %+v", shaped.Pieces, saved)
-			}
+		data, err := afero.ReadFile(fsys, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "found_segments") {
+			t.Errorf("with snap %v, the plan still keeps the pieces the clip was found with", snap)
 		}
 	}
 }
 
-// A crop placed by hand on the second shot while the cut was there stays
-// on the second shot when the cut is put back.
-func TestACutPutBackKeepsACropPlacedByHand(t *testing.T) {
+// A crop placed by hand on an old clip is the crop of the whole clip, and
+// Automatic crop brings back the one its first piece was found with.
+func TestACropOnAnOldClipIsTheCropOfTheWholeClip(t *testing.T) {
 	fsys, path := writePlanAt(t, shotsPlan)
-	tr := shotsTranscript()
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
 	if err := SetCrop(fsys, path, "01", 15, 700, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
-	shotsAre(t, fsys, path, "after the cut is put back", []Segment{
-		{Start: 9.6, End: 12.8, CropX: intPtr(300)},
+	shotsAre(t, fsys, path, "after a crop placed on the second camera", []Segment{
+		{Start: 9.6, End: 12.8, CropX: intPtr(700), Moved: true},
 		{Start: 12.8, End: 16, CropX: intPtr(700), Moved: true}})
-}
-
-// An edge trimmed past the switch takes the whole other shot with it, and
-// putting the edge back where the clip was found brings that shot back,
-// with its own crop, from the switch.
-func TestAnEdgePutBackKeepsTheCameraSwitch(t *testing.T) {
-	tr := shotsTranscript()
-	for _, c := range []struct {
-		edge     string
-		to, back float64
-	}{{"end", 12.0, 16.0}, {"start", 13.6, 9.6}} {
-		fsys, path := writePlanAt(t, shotsPlan)
-		trim := Gesture{Kind: "trim", Edge: c.edge, From: c.to, Frames: at25}
-		if err := Reshape(fsys, nil, path, "01", trim, tr, 0.1); err != nil {
-			t.Fatal(err)
-		}
-		if n := len(clipByID(t, fsys, path, "01").Segments); n != 1 {
-			t.Fatalf("trimming the %s to %v left %d pieces", c.edge, c.to, n)
-		}
-		back := Gesture{Kind: "trim", Edge: c.edge, From: c.back, Frames: at25}
-		if err := Reshape(fsys, nil, path, "01", back, tr, 0.1); err != nil {
-			t.Fatal(err)
-		}
-		shotsAre(t, fsys, path, "after the "+c.edge+" is put back", twoShots())
-	}
-}
-
-// Pieces of one shot still become one piece when the cut between them is
-// put back.
-func TestACutPutBackInOneShotLeavesOnePiece(t *testing.T) {
-	fsys, path := writePlanAt(t, `{"clips": [{"id": "01", "segments": [
-      {"start": 9.6, "end": 16.0, "crop_x": 300}]}]}`)
-	tr := shotsTranscript()
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
+	if err := ResetCrop(fsys, path, "01", 15); err != nil {
 		t.Fatal(err)
 	}
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
-	shotsAre(t, fsys, path, "after the cut is put back", []Segment{{Start: 9.6, End: 16, CropX: intPtr(300)}})
-}
-
-// A cut that swallowed a whole shot, a cutaway between two pieces of the
-// same camera, brings the cutaway back when it is put back, with its own
-// crop, and the camera either side of it keeps its own.
-func TestACutPutBackBringsBackAShotItSwallowed(t *testing.T) {
-	fsys, path := writePlanAt(t, `{"clips": [{"id": "01", "segments": [
-      {"start": 9.6, "end": 12.8, "crop_x": 300},
-      {"start": 12.8, "end": 13.4, "crop_x": 900},
-      {"start": 13.4, "end": 16.0, "crop_x": 300}]}]}`)
-	tr := shotsTranscript()
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 14.0, Frames: at25}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
-	if n := len(clipByID(t, fsys, path, "01").Segments); n != 2 {
-		t.Fatalf("the cut left %d pieces, not 2", n)
-	}
-	if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 13}, tr, 0.1); err != nil {
-		t.Fatal(err)
-	}
-	shotsAre(t, fsys, path, "after the cut is put back", []Segment{
+	shotsAre(t, fsys, path, "after Automatic crop", []Segment{
 		{Start: 9.6, End: 12.8, CropX: intPtr(300)},
-		{Start: 12.8, End: 13.4, CropX: intPtr(900)},
-		{Start: 13.4, End: 16, CropX: intPtr(300)}})
-}
-
-// Two pieces that meet have no cut between them, so there is nothing to
-// put back or move there, and a gesture that names the switch is refused.
-func TestASwitchIsNoCut(t *testing.T) {
-	tr := shotsTranscript()
-	for _, g := range []Gesture{
-		{Kind: "join", From: 12.8},
-		{Kind: "move", Index: 0, From: 12.0, To: 13.5, Frames: at25},
-	} {
-		fsys, path := writePlanAt(t, shotsPlan)
-		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err == nil {
-			t.Errorf("a %s at the switch was made", g.Kind)
-		}
-		shotsAre(t, fsys, path, "after a "+g.Kind+" at the switch", twoShots())
+		{Start: 12.8, End: 16, CropX: intPtr(300)}})
+	data, err := afero.ReadFile(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "900") {
+		t.Errorf("the plan keeps the second camera's crop: %s", data)
 	}
 }
 
-// The pieces a clip was found with are read from the plan, which anyone
-// can write. Pieces out of order, or not pieces at all, are not read, and
-// the pieces the clip has stand in for them.
-func TestFoundPiecesThatAreNotPiecesAreNotRead(t *testing.T) {
-	tr := shotsTranscript()
-	for _, found := range []string{
-		`"found_segments": "the whole episode"`,
-		`"found_segments": [{"start": 12.8, "end": 16.0}, {"start": 9.6, "end": 12.8}]`,
-		`"found_segments": [{"start": 9.6, "end": 9.6}]`,
-		`"found_segments": [7]`,
-	} {
-		fsys, path := writePlanAt(t, strings.Replace(shotsPlan, `{"id": "01", `, `{"id": "01", `+found+`, `, 1))
-		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "cut", From: 12.0, To: 13.5, Frames: at25}, tr, 0.1); err != nil {
-			t.Fatal(err)
-		}
-		cut := ClipCuts(clipByID(t, fsys, path, "01"))[0]
-		if err := Reshape(fsys, nil, path, "01", Gesture{Kind: "join", From: 12.75}, tr, 0.1); err != nil {
-			t.Fatal(err)
-		}
-		// The switch was cut out before anything knew where it was, so the
-		// part goes with the shot before it, and each shot keeps its crop.
-		shotsAre(t, fsys, path, "with "+found, []Segment{
-			{Start: 9.6, End: cut.To, CropX: intPtr(300)}, {Start: cut.To, End: 16, CropX: intPtr(900)}})
+// An old clip where a crop was placed by hand on one camera plays with that
+// crop, not with the automatic crop of its first piece. A crop a person
+// placed is a decision, and one the analysis chose a guess, found by the
+// review of #398. Its next change writes it so.
+func TestAnOldClipKeepsTheCropPlacedByHand(t *testing.T) {
+	fsys, path := writePlanAt(t, strings.Replace(shotsPlan,
+		`"crop_x": 900}`, `"crop_x": 700, "crop_x_auto": 900}`, 1))
+	placed := []Segment{
+		{Start: 9.6, End: 12.8, CropX: intPtr(700), Moved: true},
+		{Start: 12.8, End: 16, CropX: intPtr(700), Moved: true}}
+	shotsAre(t, fsys, path, "as loaded", placed)
+	g := Gesture{Kind: "cut", From: 12.0, To: 13.5, ToWords: bool(ToWords), Frames: at25}
+	if err := Reshape(fsys, nil, path, "01", g, shotsTranscript(), 0.1); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// The pieces a clip was found with are kept the first time anything
-// changes it, and never after.
-func TestTheFoundPiecesAreKeptOnce(t *testing.T) {
-	fsys, path := writePlanAt(t, shotsPlan)
-	tr := shotsTranscript()
-	for _, g := range []Gesture{
-		{Kind: "trim", Edge: "end", From: 14, Frames: at25},
-		{Kind: "trim", Edge: "start", From: 13.6, Frames: at25},
-	} {
-		if err := Reshape(fsys, nil, path, "01", g, tr, 0.1); err != nil {
-			t.Fatal(err)
+	for _, p := range clipByID(t, fsys, path, "01").Segments {
+		if p.CropX == nil || *p.CropX != 700 || !p.Moved {
+			t.Errorf("after a cut, a piece from %.2f plays with %s, not the crop placed by hand",
+				p.Start, fmtCrop(p.CropX))
 		}
 	}
 	data, err := afero.ReadFile(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var plan struct {
-		Clips []struct {
-			Found []struct {
-				Start float64 `json:"start"`
-				End   float64 `json:"end"`
-				CropX int     `json:"crop_x"`
-			} `json:"found_segments"`
-		} `json:"clips"`
-	}
-	if err := json.Unmarshal(data, &plan); err != nil {
-		t.Fatal(err)
-	}
-	if got := fmt.Sprint(plan.Clips[0].Found); got != "[{9.6 12.8 300} {12.8 16 900}]" {
-		t.Errorf("the clip keeps %s as the pieces it was found with", got)
+	if strings.Contains(string(data), `"crop_x": 300`) {
+		t.Errorf("the plan still keeps the first camera's automatic crop: %s", data)
 	}
 }

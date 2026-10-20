@@ -19,15 +19,12 @@ import (
 // instant move. See docs/ROTATE-AND-FOLLOW.md.
 //
 // A mark is a moment of the video, like a thumbnail, and belongs to the
-// camera angle of the piece it lies in, the shot as the analysis framed it
-// and how far it was rotated when the mark was placed, see angleOf and
-// markAngle. The keyframes that steer a piece
-// are those of its angle in the whole clip, so a shot cut away to and back
-// keeps gliding as if it had been seen, and a glide goes on across a cut by
-// the clip's clock, the time the short plays, with nothing of the time the
+// turn the picture had when the mark was placed. The keyframes that steer
+// a piece are those of its turn in the whole clip, so a glide goes on
+// across a cut by the clip's clock, the time the short plays, with nothing of the time the
 // cut took out. A glide used to stop at a cut, so a keyframe before one and
 // the next after it did not glide at all, found by Tim, plan row 2.238. A
-// rotated part is another angle, so its crop still starts at its cut. A
+// rotated part is turned another way, so its crop still starts at its cut. A
 // keyframe a trim or a cut left outside the clip stays in the plan and
 // comes back with its piece. A part rotated again keeps its keyframes,
 // which wait while the picture is turned another way and steer again once
@@ -121,14 +118,14 @@ func readCropMarks(raw any, spans []Rotation) []CropMark {
 }
 
 // markedPieces gives each piece of a clip the keyframes that steer it:
-// the keyframes of its camera angle in the whole clip. angles is each
-// piece's angle, as angleOf gives it. A keyframe that lies in no piece
+// the keyframes of its turn in the whole clip. turns is how far each piece
+// is rotated, see rotationOf. A keyframe that lies in no piece
 // steers nothing. A keyframe is given to a piece at the moment of the video
 // it would be at on that piece's stretch were nothing cut out, the clip's
 // clock read from the piece's start, so the glide, which is worked out on
 // frames of the video, runs across a cut the way the short plays it. In
 // the piece's own part, where nothing is cut out, that is its own moment.
-func markedPieces(segments []Segment, angles []string, marks []CropMark) {
+func markedPieces(segments []Segment, turns []int, marks []CropMark) {
 	if len(marks) == 0 {
 		return
 	}
@@ -154,9 +151,8 @@ func markedPieces(segments []Segment, angles []string, marks []CropMark) {
 			continue
 		}
 		onClip := into[holder] + m.At - segments[holder].Start
-		angle := markAngle(angles[holder], m)
 		for i := range segments {
-			if angles[i] != angle {
+			if turns[i] != m.Turn {
 				continue
 			}
 			at := m
@@ -372,14 +368,6 @@ func cropMarksOf(c *object) []CropMark {
 	return readCropMarks(c.values[keyCropMarks], rotationsOf(c))
 }
 
-// markAngle is the camera angle a keyframe belongs to: the shot of the
-// piece it lies in, whose angle is given, turned the way the picture was
-// when the keyframe was placed. Turned another way since, the keyframe
-// waits, and steers nothing until the picture is turned back.
-func markAngle(angle string, m CropMark) string {
-	return angle[:strings.LastIndex(angle, "/")+1] + strconv.Itoa(m.Turn)
-}
-
 // setCropMarks writes a clip's keyframes in time order, or takes the key
 // away when there are none.
 func setCropMarks(c *object, marks []CropMark) {
@@ -411,37 +399,17 @@ func pieceHolding(pieces []*object, at float64) int {
 	return -1
 }
 
-// marksOfAngle is which of a clip's keyframes belong to one camera
-// angle, by their index. A keyframe lies in a piece of it, or, where a trim or
-// a cut hides it, beside the nearest piece of it, so a crop placed or put
-// back for the angle takes it along too, and a trim taken back brings
-// back a keyframe that agrees with the rest.
-func marksOfAngle(marks []CropMark, pieces []*object, spans []Rotation, angle string) map[int]bool {
+// marksTurned is which of a clip's keyframes belong to one turn of the
+// picture, by their index, so a crop placed or put back for that turn
+// takes them along too.
+func marksTurned(marks []CropMark, turn int) map[int]bool {
 	out := map[int]bool{}
 	for i, m := range marks {
-		h := pieceHolding(pieces, m.At)
-		if h < 0 {
-			h = pieceNearest(pieces, m.At)
-		}
-		if h >= 0 && markAngle(angleOf(pieces[h], spans), m) == angle {
+		if m.Turn == turn {
 			out[i] = true
 		}
 	}
 	return out
-}
-
-// pieceNearest is the piece of a plan being edited whose start or end is
-// nearest a moment, the earlier of two as near, or minus one for a clip
-// with no pieces.
-func pieceNearest(pieces []*object, at float64) int {
-	best, gap := -1, math.Inf(1)
-	for i, seg := range pieces {
-		d := max(number(seg.values[keyStart])-at, at-number(seg.values[keyEnd]), 0)
-		if d < gap {
-			best, gap = i, d
-		}
-	}
-	return best
 }
 
 // SetCropMark adds, moves or removes a keyframe of a clip, the way
@@ -519,20 +487,20 @@ func SetCropMark(fsys afero.Fs, planPath, clipID string, from, to float64, x int
 }
 
 // cropShown is the left edge of the crop a piece of a plan being edited
-// shows on the frame a moment means: gliding over the keyframes of its angle
+// shows on the frame a moment means: gliding over the keyframes of its turn
 // in the clip, each kept inside a picture so wide for a crop so wide the
-// way the render keeps it, or the crop of its angle, or nil where it
+// way the render keeps it, or the crop of its turn, or nil where it
 // stands in the middle. A width no wider than the crop is a picture not
 // known, and the keyframes are taken as they are.
 func cropShown(c *object, pieces []*object, target int, at float64, frames SourceInfo, cropW, width int) *int {
 	spans := rotationsOf(c)
 	segments := make([]Segment, len(pieces))
-	angles := make([]string, len(pieces))
+	turns := make([]int, len(pieces))
 	for i, seg := range pieces {
 		segments[i] = Segment{Start: number(seg.values[keyStart]), End: number(seg.values[keyEnd])}
-		angles[i] = angleOf(seg, spans)
+		turns[i] = rotationOf(seg, spans)
 	}
-	markedPieces(segments, angles, cropMarksOf(c))
+	markedPieces(segments, turns, cropMarksOf(c))
 	if marks := segments[target].Marks; len(marks) > 0 {
 		if width <= cropW {
 			width = math.MaxInt32
@@ -548,16 +516,6 @@ func cropShown(c *object, pieces []*object, target int, at float64, frames Sourc
 		return &n
 	}
 	return nil
-}
-
-// angleKey is the camera angle of a piece as LoadClips reads it, the same
-// as angleOf gives for a plan being edited.
-func angleKey(seg map[string]any, rotate int) string {
-	auto, ok := seg[keyCropXAuto]
-	if !ok {
-		auto = seg[keyCropX]
-	}
-	return fmt.Sprint(auto) + "/" + strconv.Itoa(rotate)
 }
 
 // marksText is a clip's keyframes for the log, each its moment and left

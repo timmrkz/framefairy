@@ -327,8 +327,8 @@ another. When it is written, the same blocks stay.
 
 A clip made by hand says how far placing its crop has come, see
 `engine/cropwork.go`. The work is twice what the clip keeps in seconds,
-once scanned for camera switches and once sampled for faces, and each
-piece scanned and each shot sampled is that much of it done. Between two
+once read by ffmpeg and once sampled for faces, and each piece read and
+the clip sampled is that much of it done. Between two
 of them the share moves on by the clock, at the speed the work has gone so
 far, never past the piece in hand. The job holds the progress line while
 it does, so the scans inside it neither show their own progress nor clear

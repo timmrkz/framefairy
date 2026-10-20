@@ -74,7 +74,7 @@
     type Removed,
     type Told,
   } from "../lib/removed";
-  import { arriving, OnTheWay, type Arriving } from "../lib/arriving";
+  import { arriving, OnTheWay, type Arriving, type Away } from "../lib/arriving";
   import { holdAhead } from "../lib/frames/queue";
   import { wordFramesOf, type WordFrame } from "../lib/frames/captions";
   import RangeWindow from "../components/RangeWindow.svelte";
@@ -701,8 +701,85 @@
       jobs.forEpisode(path),
       () => stopping,
       (job) => void api.continueJob(job.id, "").then((j) => jobs.apply(j)),
+      {
+        remove: (job) => putAside(job.id),
+        away: (job) => awayOf(job.id),
+        refused: (job) => refused[job.id],
+      },
     ),
   );
+
+  // A clip made by hand that stopped can be removed, so it is not made,
+  // issue #257. Its card says Removed and offers it back for as long as a
+  // removed clip's row does, and only then is the work called off, and
+  // the Go side forgets its record, see cancelSteps. The time is the
+  // episode's, kept by the job the way a search's row that found nothing
+  // is, see lib/removed.ts: it runs on while another video is open, and
+  // work whose time ran out while it was away is called off on coming
+  // back. By the job: the moment its time runs out, and 0 once it has.
+  let putAway = $state<Told>(untrack(() => takeUpTold(path, Date.now(), "put away")));
+  // Why the work of a card could not be called off, by the job. The card
+  // is Stopped again and says it there, the one place it belongs to.
+  let refused = $state<Record<string, string>>({});
+
+  function putAside(job: string) {
+    const { [job]: _, ...rest } = refused;
+    refused = rest;
+    putAway = { ...putAway, [job]: Date.now() + secondThoughts * 1000 };
+  }
+
+  function awayOf(job: string): Away | undefined {
+    if (!(job in putAway)) return undefined;
+    const until = putAway[job];
+    return {
+      // Once called off, the row has no time left, and stays until the
+      // job says it is gone.
+      spent: until === 0 ? secondThoughts : toldSpent(until),
+      onputback: () => {
+        if (putAway[job] === 0) return;
+        const { [job]: _, ...rest } = putAway;
+        putAway = rest;
+      },
+      onend: () => callOff(job),
+      onresume: (left) => {
+        if (putAway[job]) putAway = { ...putAway, [job]: Date.now() + left * 1000 };
+      },
+    };
+  }
+
+  function callOff(job: string) {
+    if (putAway[job] === 0) return;
+    putAway = { ...putAway, [job]: 0 };
+    send(job);
+  }
+
+  function send(job: string) {
+    api.cancelJob(job).catch((err) => {
+      const { [job]: _, ...rest } = putAway;
+      putAway = rest;
+      const why = `Could not remove it: ${errorText(err)}`;
+      refused = { ...refused, [job]: why };
+      said(`clip list: the clip made by hand by ${job} could not be removed, ${why}`, { level: "warn", video: path });
+    });
+  }
+
+  // Work whose time ran out while the video was away is called off now.
+  for (const [job, until] of Object.entries(untrack(() => putAway))) if (until === 0) send(job);
+
+  // A card whose work was called off goes when its job says so, and what
+  // was kept of its time, or why it could not go, goes with it. So does
+  // one whose job runs again. A job not heard of yet, as the video opens,
+  // keeps its time.
+  $effect(() => {
+    const here = new Set(arrivingNow.filter((a) => a.stopped).map((a) => a.job));
+    const known = new Set(jobs.forEpisode(path).map((j) => j.id));
+    untrack(() => {
+      const kept = Object.entries(putAway).filter(([job, until]) => here.has(job) || (until !== 0 && !known.has(job)));
+      if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
+      const still = Object.entries(refused).filter(([job]) => here.has(job));
+      if (still.length < Object.keys(refused).length) refused = Object.fromEntries(still);
+    });
+  });
   // Everything that puts the clip list on screen takes a ticket: a read of
   // the whole list and the answer to an edit alike. A read asked for before
   // an edit can answer after it, and it knows nothing of the edit, so a clip
@@ -850,10 +927,10 @@
   const marks = $derived.by(() => {
     const written = shown
       .filter((c) => !(c.key in removed))
-      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: !!c.rendered }));
+      .map((c) => ({ key: c.key, start: c.start, end: c.end, rendered: c.rendered }));
     const here = new Set(written.map((m) => m.key));
     const coming = onTheWay
-      .filter((a) => !(a.clip && here.has(a.clip)))
+      .filter((a) => !(a.clip && here.has(a.clip)) && !a.away)
       .map((a) => {
         const first = a.pieces?.[0]?.[0] ?? a.start;
         const last = a.pieces?.[a.pieces.length - 1]?.[1] ?? a.end;
@@ -1186,6 +1263,7 @@
     return () => {
       setAside(path, $state.snapshot(removed));
       setAsideTold(path, $state.snapshot(told));
+      setAsideTold(path, $state.snapshot(putAway), "put away");
     };
   });
 
@@ -3457,8 +3535,8 @@
           >
         {/if}
         {#if current}
-          {#if current.rendered}
-            <button onclick={() => api.reveal(current.rendered!)}>Show in folder</button>
+          {#if current.short}
+            <button onclick={() => api.reveal(current.short!)}>Show in folder</button>
           {/if}
           <!-- The one act that matters, so it says how it is going in the
                button it was started from, and becomes the way to stop it,

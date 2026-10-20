@@ -361,11 +361,26 @@
           <span class="meta muted num">{emptied.left}</span>
         {/if}
       {:else if a}
-        {#if a.stopped}
+        {#if a.stopped && a.away}
+          <!-- A clip made by hand that stopped, being removed. Its time
+               is the episode's, see Episode, so the range picker drops its
+               mark at once and leaving the video takes nothing with it. -->
+          <Removed spent={a.away.spent} onputback={a.away.onputback} onend={a.away.onend} onresume={a.away.onresume} />
+        {:else if a.stopped}
           <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>
             <span class="title">{a.what}</span>
             <span class="meta muted num">{a.left}</span>
           </button>
+          {#if a.onremove}
+            <button
+              class="drop quiet danger"
+              title="Remove this clip, so it is not made"
+              aria-label="Remove the clip that stopped at {clock(a.start)}"
+              onclick={() => a.onremove?.()}
+            >
+              <Icon name="trash" />
+            </button>
+          {/if}
         {:else}
           {@const search = carry && carry.job === a.job ? carry : null}
           {@const own = carried && a.key === carrying ? carried : null}

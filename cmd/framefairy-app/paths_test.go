@@ -310,7 +310,7 @@ func TestPathRenderedToTheEnd(t *testing.T) {
 	// clip knows it is there: Render says Render again, and Show in folder
 	// shows it, which only a file of the library may be. A file beside it
 	// is not one.
-	short := d.clips(ep)[0].Rendered
+	short := d.clips(ep)[0].Short
 	if !slices.Contains(d.shorts(), short) {
 		t.Fatalf("the clip says its short is at %q, the shorts are %v", short, d.shorts())
 	}
@@ -380,8 +380,8 @@ func TestPathTwoEpisodesAndARender(t *testing.T) {
 	// Both episodes' clips are named alike, so the first one's short is
 	// where the second one's would go, and it is still not the second's.
 	for _, c := range d.clips(b) {
-		if c.Rendered != "" {
-			t.Errorf("%s of the second episode, never rendered, says it is, at %s", c.ID, c.Rendered)
+		if c.Short != "" || c.Rendered {
+			t.Errorf("%s of the second episode, never rendered, says it is, at %s", c.ID, c.Short)
 		}
 	}
 }

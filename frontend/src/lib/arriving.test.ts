@@ -77,6 +77,41 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     expect(carried).toBe("c");
   });
 
+  test("a clip made by hand that stopped can be removed, a search's cannot", () => {
+    let removed = "";
+    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const search = job({ id: "s", state: "failed", underway: [{ n: 2, start: 100, end: 120, step: "failed" }] });
+    const rows = arriving([hand, search], never, nothing, {
+      remove: (j) => (removed = j.id),
+      away: () => undefined,
+      refused: () => undefined,
+    });
+    expect(rows.map((r) => [r.key, !!r.onremove])).toEqual([
+      ["h/1", true],
+      ["s/2", false],
+    ]);
+    rows[0].onremove?.();
+    expect(removed).toBe("h");
+  });
+
+  test("a clip made by hand being removed says so, and one whose work could not be called off says why", () => {
+    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const away = { spent: 3, onputback: nothing, onend: nothing, onresume: nothing };
+    const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away, refused: () => undefined });
+    expect(row.away).toBe(away);
+    const [said] = arriving([hand], never, nothing, {
+      remove: nothing,
+      away: () => undefined,
+      refused: () => "Could not remove it: the app did not answer",
+    });
+    expect([said.away, said.what, said.left, said.full]).toEqual([
+      undefined,
+      "Stopped. Click Continue",
+      "Could not remove it: the app did not answer",
+      "Could not remove it: the app did not answer",
+    ]);
+  });
+
   test("done, called off and job without clips on the way have none", () => {
     expect(arriving([job({ state: "done", underway: [{ n: 1, start: 1, end: 2, step: "framing" }] })], never, nothing)).toEqual([]);
     expect(arriving([job({ state: "cancelled" })], never, nothing)).toEqual([]);

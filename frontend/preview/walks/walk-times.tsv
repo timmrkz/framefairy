@@ -7,7 +7,7 @@
  63	playback.mjs SEED=1 HEVC=1
  63	searching.mjs SEED=2
  63	searching.mjs SEED=3
- 61	sequences.mjs SEQUENCE=a cut or an edge put back keeps the camera switch, and the short runs straight through it
+ 61	sequences.mjs SEQUENCE=a clip filmed by two cameras has one crop, through a cut, a trim and a drag
  59	playback.mjs SEED=2
  59	timeline.mjs SEED=2
  58	timeline.mjs SEED=1
