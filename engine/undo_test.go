@@ -2,10 +2,13 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 )
@@ -250,5 +253,230 @@ func TestUndoAndRedoAtOnceLeaveAPlan(t *testing.T) {
 	wg.Wait()
 	if _, _, err := LoadClips(fsys, path); err != nil {
 		t.Fatalf("the plan no longer loads: %v", err)
+	}
+}
+
+// A search over a window searched before writes its plan anew, in place of
+// the one there was, and that can happen while an edit is being made,
+// between the two pictures the history takes. The plan written anew is
+// not the edit's. Undoing the edit put the clips of the search before back
+// into the new plan, beside the new search's clips, and its id with them
+// (#309).
+func TestUndoLeavesAPlanASearchWroteAnewDuringTheEdit(t *testing.T) {
+	fsys, path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	anew := `{"source": "ep.mp4", "plan_id": "p2", "clips": [
+  {"id": "t10-01", "slug": "neu", "segments": [{"start": 30.0, "end": 32.0}], "words": [[30.1, 30.5, "neu"]]}]}`
+	change := edited(t, fsys, logs, func() error {
+		if err := SetRejected(fsys, nil, path, "01", true); err != nil {
+			return err
+		}
+		return writePlanFile(fsys, path, []byte(anew))
+	}).LeaveOutNewClips()
+	if change != nil {
+		if _, err := change.Undo(); err != nil && !errors.Is(err, ErrChangedSince) {
+			t.Fatal(err)
+		}
+	}
+	plan, clips, err := LoadClips(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, c := range clips {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, " ") != "t10-01" {
+		t.Errorf("after the undo the plan holds %v, the new search's clip alone", ids)
+	}
+	if id, _ := plan.Raw["plan_id"].(string); id != "p2" {
+		t.Errorf("after the undo the plan is %q, not the new search's p2", id)
+	}
+}
+
+// A search takes a removed clip out of its plan once it has made it again,
+// see DropRemoved, and that too can land during an edit. Undoing the edit
+// puts back what the edit did, and not the clip the search took out.
+func TestUndoLeavesAClipASearchTookOutDuringTheEdit(t *testing.T) {
+	fsys, path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	if err := SetRejected(fsys, nil, path, "02", true); err != nil {
+		t.Fatal(err)
+	}
+	change := edited(t, fsys, logs, func() error {
+		if err := SetRejected(fsys, nil, path, "01", true); err != nil {
+			return err
+		}
+		return DropRemoved(fsys, path, "02")
+	}).LeaveOutNewClips()
+	if change == nil {
+		t.Fatal("the edit itself was lost with the clip the search took out")
+	}
+	if _, err := change.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	clips := clipsOf(t, fsys, path)
+	if clips["01"].Rejected {
+		t.Error("the undo did not put the clip back")
+	}
+	if _, back := clips["02"]; back {
+		t.Error("the undo brought back the clip the search took out")
+	}
+	if _, err := change.Redo(); err != nil {
+		t.Fatal(err)
+	}
+	if clips := clipsOf(t, fsys, path); !clips["01"].Rejected || len(clips) != 1 {
+		t.Errorf("redo: %+v", clips)
+	}
+}
+
+// A search lands its clips in a plan, and takes out a removed clip it has
+// made again, while the app edits the plan, removes clips and puts them
+// back, and undoes and redoes, from several goroutines at once, the way
+// the app's history does it: every edit between two snapshots, one at a
+// time, and a step that would write over something changed since given
+// up with the steps before it. No clip the search landed is lost, none it
+// took out comes back, no id is there twice, and the plan always loads
+// (#309).
+func TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved(t *testing.T) {
+	t.Parallel()
+	fsys, path := editablePlanPath(t)
+	logs := filepath.Dir(path)
+	if err := SetRejected(fsys, nil, path, "02", true); err != nil {
+		t.Fatal(err)
+	}
+
+	// The app's history of the episode, see cmd/framefairy-app/history.go.
+	var hist sync.Mutex
+	var undo, redo []*Change
+	edit := func(fn func() error) {
+		hist.Lock()
+		defer hist.Unlock()
+		before := TakeSnapshot(fsys, nil, logs)
+		_ = fn()
+		if change := ChangeBetween(before, TakeSnapshot(fsys, nil, logs)).LeaveOutNewClips(); change != nil {
+			undo, redo = append(undo, change), nil
+		}
+	}
+	step := func(back bool) {
+		hist.Lock()
+		defer hist.Unlock()
+		from, to := &undo, &redo
+		if !back {
+			from, to = to, from
+		}
+		if len(*from) == 0 {
+			return
+		}
+		change := (*from)[len(*from)-1]
+		var err error
+		if back {
+			_, err = change.Undo()
+		} else {
+			_, err = change.Redo()
+		}
+		if errors.Is(err, ErrChangedSince) {
+			undo, redo = nil, nil
+			return
+		}
+		if err != nil {
+			t.Errorf("undo or redo: %v", err)
+			return
+		}
+		*from, *to = (*from)[:len(*from)-1], append(*to, change)
+	}
+
+	// The search lands a clip every few reads of the hands, so the two
+	// meet however slow the machine is.
+	const landing = 16
+	var reads atomic.Int64
+	searched := make(chan struct{})
+	go func() {
+		defer close(searched)
+		for i := 1; i <= landing; i++ {
+			for reads.Load() < int64(3*i) {
+				time.Sleep(100 * time.Microsecond)
+			}
+			clip := PlanClip{ID: fmt.Sprintf("s%02d", i), Slug: "neu",
+				Segments: []PlanSegment{{Start: PyFloat(40 + 3*i), End: PyFloat(42 + 3*i)}}}
+			if err := appendClip(fsys, path, clip); err != nil {
+				t.Errorf("landing %s: %v", clip.ID, err)
+			}
+			if i == landing/2 {
+				if err := DropRemoved(fsys, path, "02"); err != nil {
+					t.Errorf("taking out 02: %v", err)
+				}
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for hand := range 6 {
+		wg.Go(func() {
+			for k := 0; ; k++ {
+				select {
+				case <-searched:
+					return
+				default:
+				}
+				_, clips, err := LoadClips(fsys, path)
+				if err != nil {
+					t.Errorf("the plan does not load: %v", err)
+					return
+				}
+				reads.Add(1)
+				// 02 stays removed until the search takes it out.
+				id := clips[(hand+k)%len(clips)].ID
+				if id == "02" {
+					id = "01"
+				}
+				switch (hand + k) % 5 {
+				case 0, 1:
+					edit(func() error { return SetRejected(fsys, nil, path, id, k%2 == 0) })
+				case 2:
+					edit(func() error { return SetCaptionY(fsys, path, id, float64(k%9)/10) })
+				case 3:
+					step(true)
+				case 4:
+					step(false)
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	// Undone all the way back, as far as the history goes, and done again.
+	for range 2 * len(undo) {
+		step(true)
+	}
+	for range 2 * len(redo) {
+		step(false)
+	}
+	plan, clips, err := LoadClips(fsys, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, c := range clips {
+		seen[c.ID]++
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Errorf("%s is in the plan %d times", id, n)
+		}
+	}
+	for i := 1; i <= landing; i++ {
+		if seen[fmt.Sprintf("s%02d", i)] == 0 {
+			t.Errorf("s%02d, landed by the search, is gone", i)
+		}
+	}
+	if seen["02"] > 0 {
+		t.Error("02, taken out by the search, came back")
+	}
+	if seen["01"] == 0 {
+		t.Error("01 is gone, and no search took it out")
+	}
+	if id, _ := plan.Raw["plan_id"].(string); id != "p1" {
+		t.Errorf("the plan is %q now", id)
 	}
 }
