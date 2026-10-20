@@ -388,11 +388,63 @@ func TestAFailedCheckSaysWhy(t *testing.T) {
 	c.mu.Unlock()
 	c.check()
 	s := c.State()
-	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The channel list is not readable") || s.Checked.IsZero() {
+	if s.Phase != "failed" || s.Problem != "The list of builds could not be read. Try again later." || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
 	}
-	if strings.Contains(s.Problem, "updater:") {
-		t.Errorf("the problem reads %q", s.Problem)
+	if !strings.HasPrefix(s.Detail, "The channel list is not readable") || strings.Contains(s.Detail, "updater:") {
+		t.Errorf("what the system said reads %q", s.Detail)
+	}
+}
+
+// Tim checked with Wi-Fi off and the page showed the Go error, an address
+// and a port, as the reason. A list that cannot be reached says so in
+// words, and what the system said is kept apart. Issue #417. A server
+// that has closed is what a Mac without a network answers with.
+func TestACheckWithNoNetworkSaysSoInWords(t *testing.T) {
+	cs := newChannelServer(t)
+	c, _ := newTestUpdating(t, cs, false)
+	cs.srv.Close()
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
+	c.check()
+	s := c.State()
+	if s.Phase != "failed" || s.Problem != "Could not reach GitHub, where the builds come from. Check the internet connection, then try again." {
+		t.Errorf("%+v", s)
+	}
+	if !strings.HasPrefix(s.Detail, "The channel list could not be fetched") || strings.Contains(s.Problem, "tcp") {
+		t.Errorf("the problem reads %q, what the system said %q", s.Problem, s.Detail)
+	}
+}
+
+// What a check or a download says in words, from the error the updater
+// hands back, which is text once it has joined its providers' errors.
+func TestUpdateProblemInWords(t *testing.T) {
+	offline := "Could not reach GitHub, where the builds come from. Check the internet connection, then try again."
+	for _, c := range []struct {
+		err         string
+		downloading bool
+		says        string
+	}{
+		// What Tim's Mac said with Wi-Fi off, on 2026-10-20.
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/timmrkz/framefairy/releases/download/dev/channels.json": read tcp 192.168.178.31:54974->20.250.119.67:443: read: can't assign requested address`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": dial tcp: lookup github.com: no such host`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`, false, offline},
+		{"updater: all providers failed: channels: the channel list answered 404 Not Found", false, "The list of builds was not found. Try again in a few minutes."},
+		{"updater: all providers failed: channels: the channel list answered 503 Service Unavailable", false, "GitHub is busy and did not answer. Try again in a few minutes."},
+		{"updater: all providers failed: channels: the channel list answered 403 Forbidden", false, "GitHub refused to hand over the builds. Try again later."},
+		{"updater: all providers failed: channels: the channel list is not readable: unexpected EOF", false, "The list of builds could not be read. Try again later."},
+		{"the build of main is not signed with this key", true, "The new build could not be verified, so it was not used. Try again later."},
+		{"the build did not arrive as the channel list says it is", true, "The new build could not be verified, so it was not used. Try again later."},
+		{"the download stopped: read tcp 10.0.0.2:5000->1.2.3.4:443: connection reset by peer", true, "The download broke off. Check the internet connection, then try again."},
+		{"the build answered 404 Not Found", true, "The new build was not found. Try again in a few minutes."},
+		{"the build could not be written to the cache: no space left on device", true, "The new build could not be saved on this Mac. Check that the disk has room, then try again."},
+		{"something nobody foresaw", false, "Something went wrong while looking for a newer build. Try again."},
+		{"something nobody foresaw", true, "The download did not arrive whole. Try again."},
+	} {
+		if got := updateProblem(errors.New(c.err), c.downloading); got != c.says {
+			t.Errorf("%s\nsays %q\nnot  %q", c.err, got, c.says)
+		}
 	}
 }
 
