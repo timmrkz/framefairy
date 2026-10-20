@@ -111,13 +111,18 @@ func ChangeBetween(before, after *Snapshot) *Change {
 	return c
 }
 
-// LeaveOutNewClips takes out of the change every clip that was not there
-// before it, and every plan that was not there before it. An edit changes
-// clips, it never makes them, so a clip that appears between the two
-// snapshots of an edit is a search landing it at that moment. Kept in the
-// change, it was the edit's, and undoing the edit took away a clip the
-// person had never touched. What is left is nil when the edit itself
-// changed nothing.
+// LeaveOutNewClips takes out of the change what a search did while the
+// edit was made, between its two snapshots, and keeps what the edit did.
+// An edit changes clips. It never makes them, never takes one out of a
+// plan and never writes a plan anew, and a search does all three: it
+// lands a clip, it drops a removed clip it has made again, see
+// DropRemoved, and over a window searched before it writes its plan in
+// place of the one there was. So a clip that appears is the search's, a
+// clip that goes is the search's, and so is a plan that appeared or was
+// written anew, with another plan id. Kept in the change, undoing the edit
+// took away a clip the person had never touched, or put back clips the
+// search had replaced, issue #309. What is left is nil when the edit
+// itself changed nothing.
 func (c *Change) LeaveOutNewClips() *Change {
 	if c == nil {
 		return nil
@@ -125,17 +130,16 @@ func (c *Change) LeaveOutNewClips() *Change {
 	var kept []string
 	for _, path := range c.paths {
 		was, now := c.before[path], c.after[path]
-		if !was.there {
-			// A plan that appeared: a search wrote its first clip.
+		if !was.there || writtenAnew(was, now) {
+			// A plan that appeared, a search's first clip, or a plan a
+			// search wrote in place of the one there was.
 			delete(c.before, path)
 			delete(c.after, path)
 			continue
 		}
 		if now.there {
-			if trimmed, ok := withoutNewClips(was, now); ok {
-				now = trimmed
-				c.after[path] = now
-			}
+			was, now = clipsOfBoth(was, now)
+			c.before[path], c.after[path] = was, now
 			if sameState(was, now) {
 				delete(c.before, path)
 				delete(c.after, path)
@@ -151,37 +155,51 @@ func (c *Change) LeaveOutNewClips() *Change {
 	return c
 }
 
-// withoutNewClips is the plan now with only the clips it had before.
-func withoutNewClips(was, now fileState) (fileState, bool) {
-	before, err := splitPlan(was)
-	if err != nil || before == nil {
-		return now, false
+// writtenAnew says whether a plan there before and after is another plan
+// after, by its id: a search wrote it in place of the one there was.
+func writtenAnew(was, now fileState) bool {
+	before, errA := splitPlan(was)
+	after, errB := splitPlan(now)
+	if errA != nil || errB != nil || before == nil || after == nil {
+		return false
 	}
-	after, err := splitPlan(now)
-	if err != nil || after == nil {
-		return now, false
+	a, _ := before.top.get(keyPlanID)
+	b, _ := after.top.get(keyPlanID)
+	return !equalJSON(a, b)
+}
+
+// clipsOfBoth is the plan before and after with only the clips it holds in
+// both: what the edit did to them, and none of what appeared or went.
+func clipsOfBoth(was, now fileState) (fileState, fileState) {
+	before, errA := splitPlan(was)
+	after, errB := splitPlan(now)
+	if errA != nil || errB != nil || before == nil || after == nil {
+		return was, now
 	}
-	var list []any
+	return onlyClipsOf(was, before, after), onlyClipsOf(now, after, before)
+}
+
+// onlyClipsOf is state, split as parts, with only the clips other holds
+// too. It is state as it is when nothing has to go.
+func onlyClipsOf(state fileState, parts, other *planParts) fileState {
+	list := []any{}
 	dropped := false
-	for _, id := range after.ids {
-		if before.clips[id] == nil {
+	for _, id := range parts.ids {
+		if other.clips[id] == nil {
 			dropped = true
 			continue
 		}
-		list = append(list, after.clips[id])
+		list = append(list, parts.clips[id])
 	}
 	if !dropped {
-		return now, false
+		return state
 	}
-	if list == nil {
-		list = []any{}
-	}
-	after.top.values[keyClips] = list
-	body, err := marshalNoEscape(after.top)
+	parts.top.values[keyClips] = list
+	body, err := marshalNoEscape(parts.top)
 	if err != nil {
-		return now, false
+		return state
 	}
-	return fileState{there: true, body: body}, true
+	return fileState{there: true, body: body}
 }
 
 // sameState says whether two states of a plan hold the same fields and the
