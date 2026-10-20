@@ -11155,7 +11155,11 @@ async function pickCards(page, n) {
     const held = i % 2 === 1;
     let key;
     if (held) {
-      await control(url, "/hold?call=Captions&ms=250&times=100");
+      // Held 100 ms, so the captions' whole way stays well inside the 600
+      // ms a frame waits for them, DRESS_WAIT in queue.ts, on a machine
+      // busy with other walks too. Held 250 ms, the way there took 624 ms
+      // once beside three other walkers, and the frame went up first.
+      await control(url, "/hold?call=Captions&ms=100&times=100");
       [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh[(i - 1) / 2], false));
     } else {
       await restAhead(page);
@@ -11181,7 +11185,7 @@ async function pickCards(page, n) {
           })
           .join(", ")}`,
       );
-    else if (held && changes[0].t < 250) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 250 ms could have`);
+    else if (held && changes[0].t < 100) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 100 ms could have`);
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }
