@@ -195,6 +195,13 @@
 //                      together. The label the Go side keeps has to be the
 //                      one the row and the title bar show, and the video
 //                      has to keep its name and its bytes
+//   ["title bar"]      lays the app's window out the way macOS does on
+//                      Tim's Mac, a title bar 30 points high with its
+//                      buttons from 12 to 72 points in. macOS draws the
+//                      window's edge over the top 2 points and the line
+//                      at the foot takes the last, so the name of the
+//                      video and its label have to be centred between
+//                      the two, and start one space after the buttons
 //   ["two menus"]      opens the three dots of the lowest video in the
 //                      sidebar, then those of the highest while that menu
 //                      is open. The sidebar has to stay open with only the
@@ -2386,6 +2393,20 @@ export const sequences = [
       // stayed open with a ring round it.
       ["label", [null, "Blue, then Return"]],
       ["two menus"],
+    ],
+  },
+  {
+    // Tim saw the label pill in the title bar a point higher than the
+    // buttons, #399, twice, and then half a point low once it was
+    // centred under the edge of the window alone. What he sees as the
+    // bar runs from that edge to the line at its foot.
+    name: "the name of a video and its label are centred in the title bar",
+    steps: [
+      // A second video, so the sidebar has the sort mark the label step
+      // starts from.
+      ["add", 12],
+      ["label", ["nicolas", "Return"]],
+      ["title bar"],
     ],
   },
   {
@@ -6403,6 +6424,47 @@ for (const seq of toWalk) {
           await page.locator(".toast button.close").click();
         }
         await watch.step("label", s);
+        break;
+      }
+      case "title bar": {
+        // What macOS answered on Tim's Mac, read off his screenshot, and
+        // the Go side tells the page the way it does after a resize.
+        // The page is watched before the Go side speaks, so the step goes
+        // on the moment the shell carries the new bar, and not a moment
+        // the clock picked.
+        await page.evaluate(() => {
+          const shell = document.querySelector(".shell");
+          const told = () => shell.getAttribute("style")?.includes("--bar-h: 30px");
+          window.__barTold = new Promise((done) => {
+            const seen = new MutationObserver(() => told() && (seen.disconnect(), done()));
+            seen.observe(shell, { attributes: true, attributeFilter: ["style"] });
+          });
+        });
+        await control(url, "/chrome?bar=30&left=12&right=72");
+        await page.evaluate(() => window.__barTold);
+        const seen = await page.evaluate(() => {
+          const box = (el) => el?.getBoundingClientRect();
+          const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap"));
+          const bar = box(document.querySelector("header.bar"));
+          const name = box(document.querySelector("header.bar .what"));
+          const pill = box(document.querySelector("header.bar .tag"));
+          return { gap, bar: [bar.top, bar.height], name: name && [name.left, name.top, name.height], pill: pill && [pill.top, pill.height] };
+        });
+        // The middle of the bar Tim sees, read off his pictures: under
+        // the window's edge over its top 2 points and over the line on
+        // its last. A quarter of a point is the most the letters may be
+        // off, because half a point is what Tim saw.
+        const centre = seen.bar[0] + 2 + (seen.bar[1] - 3) / 2;
+        const off = (top, height) => top + height / 2 - centre;
+        if (seen.bar[1] !== 30) wrong = `the title bar is ${seen.bar[1]} px high, macOS laid it out 30 high`;
+        else if (!seen.name || !seen.pill) wrong = `the title bar shows ${seen.name ? "no label" : "no name"}`;
+        else if (Math.abs(off(seen.name[1], seen.name[2])) > 0.25)
+          wrong = `the name's capitals stand ${Math.abs(off(seen.name[1], seen.name[2])).toFixed(2)} px ${off(seen.name[1], seen.name[2]) < 0 ? "above" : "below"} the middle of the bar`;
+        else if (Math.abs(off(...seen.pill)) > 0.25)
+          wrong = `the label stands ${Math.abs(off(...seen.pill)).toFixed(2)} px ${off(...seen.pill) < 0 ? "above" : "below"} the middle of the bar`;
+        else if (Math.abs(seen.name[0] - (72 + seen.gap)) > 0.5)
+          wrong = `the name starts at ${seen.name[0].toFixed(1)} px, one space after the buttons is ${72 + seen.gap}`;
+        await watch.step("title bar", s);
         break;
       }
       case "two menus": {

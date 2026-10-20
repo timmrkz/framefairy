@@ -336,20 +336,27 @@ bar is what they were centred in. Everywhere else the system draws its own
 title bar above the app and this one is an ordinary header.
 
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
-four numbers in whole pixels, the title bar's height and the left edge,
-right edge and middle of those buttons, and the interface is told again
+three numbers in whole pixels, the title bar's height and the left and
+right edge of those buttons, and the interface is told again
 on its window's event whenever the answer changes, `chrome` for the app's
 window and `chrome-report` for the report window, each measured on its own: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
-back, and nothing is measured on the page. The four numbers land on the
-shell as `--bar-h`, `--lights-l`, `--lights-r` and `--lights-y`, and the
-bar lays itself out from them. `--bar-h` is in `app.css` as well, which is
+back, and nothing is measured on the page. The three numbers land on the
+shell as `--bar-h`, `--lights-l` and `--lights-r`, and the bar lays itself
+out from them. `--bar-h` is in `app.css` as well, which is
 what the first frame uses and what every other system keeps. In native
 fullscreen there is no title bar and no buttons, so the height stays as it
 was and the name moves to the left edge rather than the bar collapsing.
 
-The name of what is on screen sits on the buttons' line. Its box is
+The name of what is on screen, and its label beside it, are centred in
+the bar a person sees. That is not the bar's middle: macOS draws the edge
+of the window over the top 2 points of the page, and the line at the foot
+takes the last point, so the name's box runs from under the edge to the
+line. macOS centres its buttons under the edge alone, half a point lower,
+and AppKit's frame for the close button says the middle of the whole bar,
+so neither is a measure for the name. Away from the buttons, on other systems and in fullscreen, the
+name is centred in the whole bar. The name's box is
 trimmed to the capitals and the baseline, so it is the letters that are
 centred and not the space a line of text reserves around them, and then it
 is padded back out so a name with a tail below the baseline, `YouTube.mp4`,
