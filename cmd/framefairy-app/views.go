@@ -29,9 +29,15 @@ func (s *FrameFairy) Clips(ctx context.Context, path string) ([]ClipEntry, error
 	if !s.store.Known(path) {
 		return nil, errNotInLibrary
 	}
-	info, err := s.probe(ctx, path)
-	if err != nil {
-		return nil, err
+	// A video whose file is gone keeps its clips. Its picture says the
+	// file is gone, and the list stays as it was, so nothing is said twice
+	// and nothing seems lost. Its crops are fitted to the picture it had,
+	// or left as the plan keeps them when the app never saw it.
+	info := sources.lastOf(path)
+	if _, err := s.store.files.Stat(path); err == nil {
+		if info, err = s.probe(ctx, path); err != nil {
+			return nil, err
+		}
 	}
 	out := []ClipEntry{}
 	for _, summary := range plansOf(s.store.files, path) {
@@ -65,11 +71,24 @@ func (s *FrameFairy) cropWidth(info engine.SourceInfo) int {
 func (s *FrameFairy) entryOf(plan string, c engine.ClipView, info engine.SourceInfo) ClipEntry {
 	entry := ClipEntry{ClipView: c, Key: filepath.Base(plan) + "/" + c.ID, Plan: plan}
 	for _, seg := range c.Segments {
+		if info.Width == 0 {
+			entry.CropLefts = append(entry.CropLefts, keptCrop(seg.CropX))
+			continue
+		}
 		upright := info.Rotated(seg.Rotate)
 		cw := s.cropWidth(upright)
 		entry.CropLefts = append(entry.CropLefts, engine.ClampCropX(seg.CropX, cw, upright.Width))
 	}
 	return entry
+}
+
+// keptCrop is a crop as the plan keeps it, for a clip with no picture to
+// fit it to.
+func keptCrop(x *int) int {
+	if x == nil {
+		return 0
+	}
+	return *x
 }
 
 // CoverageView says how many searches have read each part of an episode.

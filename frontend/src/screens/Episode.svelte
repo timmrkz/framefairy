@@ -193,12 +193,13 @@
   // The workspace measures itself: how much height the app leaves it,
   // and how wide it is. From those two the video preview gets the biggest
   // size it can have, and the columns beside it take everything else.
-  // What sits above the workspace when anything does: the line that says
-  // the file is missing. What else goes wrong is a toast. It is
-  // nothing at all most of the time, and it never changes because the
-  // app was resized, so reading it costs nothing while the app is being
-  // resized.
-  let aboveH = $state(0);
+  // A video whose file is gone says so once, in the video preview, where
+  // its picture would be. It stood in a line over the workspace, which
+  // pushed everything down, and Tim saw a toast say it a second time.
+  // Issue #311.
+  const gone = $derived(
+    `The video file is no longer at ${path}. Put it back there, or remove the video from the list.`,
+  );
   let paused = $state(true);
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
@@ -587,10 +588,9 @@
     return `${first} Clips are found by themselves once the window is transcribed.`;
   });
   // The whole layout is worked out by the browser, in the stylesheet at
-  // the foot of this file, from the size of the app and two numbers that
-  // have nothing to do with it: the shape of the episode and how tall
-  // anything above the workspace is. Neither changes while the app is
-  // being resized, so resizing it costs no JavaScript at all and the
+  // the foot of this file, from the size of the app and one number that
+  // has nothing to do with it: the shape of the episode. It does not
+  // change while the app is being resized, so resizing it costs no JavaScript at all and the
   // workspace keeps up with the edge of the app the way a native app
   // does. Measuring a height, working out another height from it and
   // writing that back is a round trip per frame, and the parts that
@@ -2968,25 +2968,10 @@
 
 
 
-<!-- Two numbers the stylesheet needs and cannot know: the shape of this
-     episode, and how tall whatever is above the workspace came out. Both
-     stay put while the app is resized, so the whole layout below is the
-     browser's own work from there on. -->
-<section
-  bind:this={root}
-  style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
->
-  <!-- Everything that stands above the workspace, together, so its height
-       is one number the layout can take off the app. It is not there at
-       all most of the time, and an empty row would still cost a space. -->
-  {#if status?.missing}
-    <div class="above" bind:clientHeight={aboveH}>
-      <p class="error">
-        The file is no longer at {path}. Move it back, or remove it from the list.
-      </p>
-    </div>
-  {/if}
-
+<!-- The one number the stylesheet needs and cannot know: the shape of
+     this episode. It stays put while the app is resized, so the whole
+     layout below is the browser's own work from there on. -->
+<section bind:this={root} style="--ar: {ratio}">
   {#if source}
     <div class="stage">
       <div class="settings">
@@ -3342,6 +3327,7 @@
           bind:offers
           {path}
           {source}
+          missing={status?.missing ? gone : ""}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3664,6 +3650,10 @@
         {/if}
       </div>
     </div>
+  {:else if status?.missing}
+    <!-- Gone before the app ever saw its picture: there is no video
+         preview to say it in, and nothing else in the workspace. -->
+    <p class="gone selectable">{gone}</p>
   {/if}
 </section>
 
@@ -3673,14 +3663,13 @@
      pass as the resize, so dragging the edge of the app moves the
      workspace with it instead of a frame or two behind it.
 
-     Two numbers come from outside: --ar, the shape of the episode, and
-     --above, the height of anything standing over the workspace. Neither
-     changes because the app was resized. The rest is the size of the app
+     One number comes from outside: --ar, the shape of the episode. It
+     does not change because the app was resized. The rest is the size of the app
      itself and the tokens from app.css. */
   section {
     /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
-    --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
+    --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge));
     /* The middle column, the rest of the app's width once the two sides,
        --spans from app.css, have theirs, with a space either side of it. */
     --mid-w: calc(100dvw - var(--spans) - 2 * var(--gap));
@@ -3857,6 +3846,18 @@
      makes of it is what the whole workspace is tall. */
   .middle {
     min-width: 0;
+  }
+
+  /* A video gone before its picture was ever seen, said in the middle of
+     the workspace the way the video preview says it over its picture. */
+  .gone {
+    display: grid;
+    place-items: center;
+    height: var(--space);
+    margin: 0;
+    padding: 0 var(--edge);
+    text-align: center;
+    color: var(--muted);
   }
 
   .settings {

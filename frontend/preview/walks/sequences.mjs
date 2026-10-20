@@ -483,6 +483,15 @@
 //                      sidebar and the library, its workspace is closed,
 //                      nothing writes its folder back and the video file
 //                      itself is still there, unless it was deleted too
+//   ["file moved away"]
+//                      moves the file of the video on screen away from
+//                      outside the app, the way Finder does, while
+//                      another video is on screen, and opens it again
+//                      from the sidebar: the video preview says once,
+//                      over where its picture was, that the file is no
+//                      longer there, no toast says it again, the video
+//                      preview has not moved, and the clip list is as it
+//                      was
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -1073,7 +1082,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
@@ -3296,6 +3305,19 @@ export const sequences = [
       ["wait for", "Search"],
       ["folder removed", "written back"],
       ["let go"],
+    ],
+  },
+  {
+    // Issue #311. Tim moved a video's file away in Finder and opened the
+    // video again. A red line over the workspace said the file was gone
+    // and pushed everything down, and a toast said it a second time.
+    name: "a video whose file is moved away says so once, in the video preview",
+    steps: [
+      ["add", 20],
+      ["wait for", "Search"],
+      ["add", 20],
+      ["wait for", "Search"],
+      ["file moved away"],
     ],
   },
   {
@@ -9740,6 +9762,46 @@ for (const seq of toWalk) {
           wrong = `a workspace is still open with no video picked in the sidebar`;
         }
         await settle(page);
+        break;
+      }
+      case "file moved away": {
+        const source = await episodeOn(page);
+        const front = ".workspace.front";
+        const picture = () =>
+          page.evaluate((f) => {
+            const r = document.querySelector(`${f} .screen`)?.getBoundingClientRect();
+            return r ? { top: r.top, left: r.left, width: r.width, height: r.height } : null;
+          }, front);
+        const was = await picture();
+        const listed = (await clipList(page))?.cards ?? [];
+        const buttons = page.locator("aside button.episode");
+        const mine = await buttons.evaluateAll((all) => all.findIndex((b) => b.classList.contains("current")));
+        await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
+        await settle(page);
+        renameSync(source, `${source}.away`);
+        await fromSidebar(page, () => buttons.nth(mine).click());
+        // Whatever says the file is gone, in the video preview or, as it
+        // was, in a red line over the workspace.
+        await page.locator(`${front} .screen .failed, ${front} .error`).first().waitFor();
+        // Every call the workspace made on waking has been answered, so a
+        // toast any of them would bring is there by now.
+        await settle(page);
+        const says = await page.evaluate((f) => {
+          const at = (q) => document.querySelector(`${f} ${q}`)?.textContent.trim() ?? "";
+          return at(".screen .failed") || (at(".error") && `nothing, a line over the workspace does: ${at(".error")}`);
+        }, front);
+        const toast = await toastSays(page);
+        const now = await picture();
+        const cards = (await clipList(page))?.cards ?? [];
+        const moved = (a, b) => !a || !b || ["top", "left", "width", "height"].some((k) => Math.abs(a[k] - b[k]) > 0.5);
+        if (says !== `The video file is no longer at ${source}. Put it back there, or remove the video from the list.`) {
+          wrong = `the video preview says "${says}"`;
+        } else if (toast) wrong = `a toast says it a second time: "${toast}"`;
+        else if (moved(was, now)) wrong = `the video preview moved from ${JSON.stringify(was)} to ${JSON.stringify(now)}`;
+        else if (JSON.stringify(cards) !== JSON.stringify(listed)) {
+          wrong = `the clip list held ${listed.join(", ") || "nothing"} and holds ${cards.join(", ") || "nothing"}`;
+        }
+        renameSync(`${source}.away`, source);
         break;
       }
       case "add namesake":
