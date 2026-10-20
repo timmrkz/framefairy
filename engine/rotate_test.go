@@ -28,7 +28,7 @@ const rotatablePlan = `{
   "clips": [
     {"id": "01", "slug": "eins",
      "segments": [{"start": 10.0, "end": 11.1, "crop_x": 120},
-                  {"start": 11.1, "end": 12.0, "crop_x": 300},
+                  {"start": 11.1, "end": 12.0, "crop_x": 120},
                   {"start": 13.0, "end": 14.0, "crop_x": 120}]}
   ]
 }`
@@ -118,30 +118,29 @@ func TestRotateTurnsTheStretchOfThePartAndFourTurnsBringItBack(t *testing.T) {
 		}
 	}
 	_, crops := rotations(t, fsys, path)
-	if crops[0] == nil || *crops[0] != 120 || crops[1] == nil || *crops[1] != 300 {
-		t.Errorf("rotated back, the part does not have the crops it had")
+	if crops[0] == nil || *crops[0] != 120 || crops[1] == nil || *crops[1] != 120 {
+		t.Errorf("rotated back, the part does not have the crop it had")
 	}
 }
 
-// A crop placed by hand on a rotated piece moves the pieces of its shot
-// rotated alike and no other: not the pieces of that shot standing as
-// filmed, and not a piece of another shot. Rotating used to forget which
-// shot a piece shows, and a crop then spread to every rotated piece.
-func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
+// A crop placed by hand on a rotated piece moves the pieces of the clip
+// rotated alike and no other: not the pieces standing as filmed. Rotating
+// used to forget how a piece was framed, and a crop then spread to every
+// rotated piece.
+func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 13.5)
 	if err := SetCrop(fsys, path, "01", 13.5, 400, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
 	_, crops := rotations(t, fsys, path)
-	if crops[0] == nil || *crops[0] != 120 {
-		t.Errorf("the crop of a piece of the shot standing as filmed moved with the rotated one")
+	if crops[0] == nil || *crops[0] != 120 || crops[1] == nil || *crops[1] != 120 {
+		t.Errorf("the crop of the pieces standing as filmed moved with the rotated one")
 	}
 	if crops[2] == nil || *crops[2] != 400 {
 		t.Errorf("the rotated part did not take its crop")
 	}
-	// Both parts turned: the first piece is the same shot as the last,
-	// the second another shot.
+	// Both parts turned: every piece is turned alike and shares the crop.
 	rotate(t, fsys, path, 10.5)
 	if err := SetCrop(fsys, path, "01", 13.5, 500, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
@@ -150,11 +149,10 @@ func TestACropOnARotatedPieceStaysWithItsShotTurnedAlike(t *testing.T) {
 	if turns[0] != 90 || turns[1] != 90 || turns[2] != 90 {
 		t.Fatalf("the pieces are rotated %v, not all 90", turns)
 	}
-	if crops[0] == nil || *crops[0] != 500 || crops[2] == nil || *crops[2] != 500 {
-		t.Errorf("the shot's two rotated pieces do not share the crop placed on one: %v %v", crops[0], crops[2])
-	}
-	if crops[1] != nil {
-		t.Errorf("a piece of another shot took the crop, %d", *crops[1])
+	for i, c := range crops {
+		if c == nil || *c != 500 {
+			t.Errorf("piece %d of the pieces turned alike does not share the crop placed on one: %v", i, c)
+		}
 	}
 }
 

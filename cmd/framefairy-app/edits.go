@@ -29,8 +29,9 @@ func editLine(level zerolog.Level, path, clipID string, took time.Duration) *zer
 		Int64("ms", took.Milliseconds())
 }
 
-// SetCrop places the crop of the shot at a moment of a clip by hand, as the
-// left edge in source pixels, and returns the clip as it is now.
+// SetCrop places the crop of a clip by hand, for the pieces turned the way
+// the one at a moment is, as the left edge in source pixels, and returns
+// the clip as it is now.
 func (s *FrameFairy) SetCrop(ctx context.Context, path, plan, clipID string, at float64, left int) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary
@@ -344,8 +345,8 @@ func (s *FrameFairy) ShapeCaptionTime(path, plan, clipID string, word float64, e
 	return view, err
 }
 
-// ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, and returns the clip as it is now.
+// ResetCrop brings back the automatic crop of a clip, for the pieces turned
+// the way the one at a moment is, and returns the clip as it is now.
 func (s *FrameFairy) ResetCrop(ctx context.Context, path, plan, clipID string, at float64) (ClipEntry, error) {
 	if !s.store.PlanOf(path, plan) {
 		return ClipEntry{}, errNotInLibrary

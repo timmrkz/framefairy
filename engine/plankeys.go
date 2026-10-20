@@ -48,9 +48,9 @@ const (
 	keyCorrections = "corrections"
 	keyThumbnails  = "thumbnails"
 	keyFound       = "found"
-	// keyFoundSegments is the pieces a clip was found with, each with the
-	// framing of its shot, so what a gesture puts back is framed by the
-	// shot it shows.
+	// keyFoundSegments is the pieces a clip was found with, each framed for
+	// the camera it showed. Plans from before #396 have it, and the next
+	// change to the clip's pieces takes it away.
 	keyFoundSegments = "found_segments"
 
 	// A segment of a clip.

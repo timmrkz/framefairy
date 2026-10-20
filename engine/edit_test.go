@@ -479,13 +479,14 @@ func FuzzPlanEdits(f *testing.F) {
 	// Thumbnails added, moved and removed while the clip is cut and
 	// trimmed under them.
 	f.Add([]byte{9, 104, 0, 9, 104, 120, 6, 110, 125, 9, 120, 0, 0, 100, 112})
-	// Trim clip 02 past the camera switch and put the end back, then cut
-	// across the switch and put the cut back.
+	// Trim clip 02 past where its cameras switched and put the end back,
+	// then cut across there and put the cut back.
 	f.Add([]byte{0, 201, 205, 0, 201, 220, 6, 205, 215, 7, 211, 0})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		fsys, path := editablePlanPath(t)
-		// Clip 02 is two shots that meet at a camera switch at 21, the way
-		// a search parts a clip, and no edit may make one piece of them.
+		// Clip 02 is two shots that meet at a camera switch at 21, each with
+		// a crop of its own, the way a search parted a clip before #396. It
+		// plays with one crop, and takes it at its first change.
 		if err := afero.WriteFile(fsys, path, []byte(strings.Replace(editablePlan,
 			`"segments": [{"start": 20.0, "end": 22.0}]`,
 			`"segments": [{"start": 20.0, "end": 21.0, "crop_x": 100}, {"start": 21.0, "end": 22.0, "crop_x": 500}]`,
@@ -575,8 +576,7 @@ func FuzzPlanEdits(f *testing.F) {
 				t.Fatalf("step %d emptied the plan", i/3)
 			}
 			// A move moves the edges of a cut and makes no new one, so
-			// two pieces that meet at a camera switch still meet. It may
-			// make pieces, where an edge brings a switch back.
+			// two pieces that meet still meet.
 			if script[i]%10 == 8 && moved == nil {
 				before, after := clipNamed(was, clip), clipNamed(clips, clip)
 				if len(ClipCuts(after)) != len(ClipCuts(before)) {
@@ -595,15 +595,18 @@ func FuzzPlanEdits(f *testing.F) {
 					}
 				}
 				var previous float64
+				crops := map[int]string{}
 				for k, seg := range c.Segments {
 					if seg.Start < previous {
 						t.Fatalf("clip %s: piece %d starts at %v, before %v ends",
 							c.ID, k, seg.Start, previous)
 					}
 					previous = seg.End
-					if c.ID == "02" && seg.Start < 21 && seg.End > 21 {
-						t.Fatalf("step %d made one piece of two shots: %+v", i/3, c.Segments)
+					crop := fmtCrop(seg.CropX)
+					if was, ok := crops[seg.Rotate]; ok && was != crop {
+						t.Fatalf("step %d left clip %s with two crops: %+v", i/3, c.ID, c.Segments)
 					}
+					crops[seg.Rotate] = crop
 				}
 				if c.Duration() <= 0 {
 					t.Fatalf("clip %s is %v long", c.ID, c.Duration())

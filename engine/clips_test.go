@@ -230,8 +230,9 @@ func TestLoadClipsCleansWhatItKeeps(t *testing.T) {
 	if len(first.Segments) != 2 || first.Segments[0].Start != 10 || first.Segments[0].CropX != nil {
 		t.Errorf("segments %+v", first.Segments)
 	}
-	if !first.Segments[1].Moved || *first.Segments[1].CropX != 300 {
-		t.Errorf("hand-placed crop %+v", first.Segments[1])
+	// A clip has one crop, #396: the second piece plays with the first's.
+	if first.Segments[1].Moved || first.Segments[1].CropX != nil {
+		t.Errorf("the second piece has a crop of its own: %+v", first.Segments[1])
 	}
 	if first.Duration() != 4 {
 		t.Errorf("duration %v", first.Duration())

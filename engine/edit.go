@@ -586,8 +586,8 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 }
 
 // PiecesMeet is the most two pieces of a clip may stand apart and still
-// play straight on, with no cut between them: a camera switch a search
-// parted a clip at, not a cut. The window reads pieces by the same rule,
+// play straight on, with no cut between them: the edge of a rotated part,
+// not a cut. The window reads pieces by the same rule,
 // partOf in lib/rotate.ts.
 const PiecesMeet = 0.0005
 
@@ -650,51 +650,8 @@ func pieceSpan(pieces []*object) float64 {
 }
 
 // pieceChange is what a gesture does to a clip's pieces. It is handed the
-// pieces in order and the pieces the clip was found with, and answers with
-// the pieces that replace them.
-type pieceChange func(pieces []*object, found []foundPiece) ([]*object, error)
-
-// foundPiece is one piece a clip was found with, with its edges read.
-type foundPiece struct {
-	start, end float64
-	seg        *object
-}
-
-// foundPieces are the pieces a clip was found with, each with the framing
-// of its shot. They are kept in the plan, found_segments, the first time
-// anything changes the clip's pieces, the way found keeps its edges, so a
-// clip never changed was found with the pieces it has. A list that is not
-// pieces in order, one after the other, is not read, and the pieces the
-// clip has stand in for it.
-func foundPieces(c *object) []foundPiece {
-	read := func(list []*object) []foundPiece {
-		var out []foundPiece
-		for _, seg := range list {
-			start, err1 := ParseTime(seg.values[keyStart])
-			end, err2 := ParseTime(seg.values[keyEnd])
-			if err1 != nil || err2 != nil || end <= start ||
-				(len(out) > 0 && start < out[len(out)-1].end) {
-				return nil
-			}
-			out = append(out, foundPiece{start, end, seg})
-		}
-		return out
-	}
-	if list, ok := c.values[keyFoundSegments].([]any); ok && len(list) <= MaxSegments {
-		var kept []*object
-		for _, item := range list {
-			if seg, ok := item.(*object); ok {
-				kept = append(kept, seg)
-			}
-		}
-		if len(kept) == len(list) {
-			if found := read(kept); len(found) > 0 {
-				return found
-			}
-		}
-	}
-	return read(segmentObjects(c))
-}
+// pieces in order and answers with the pieces that replace them.
+type pieceChange func(pieces []*object) ([]*object, error)
 
 // editPieces is the one way the pieces of a clip are rebuilt. The change is
 // handed the pieces in order and answers with the pieces that replace them.
@@ -710,22 +667,14 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 			return err
 		}
 		before := segmentObjects(c)
-		found := foundPieces(c)
-		out, err := checkedPieces(change, before, found, rotationsOf(c), frames)
+		out, err := checkedPieces(change, before, rotationsOf(c), frames)
 		if err != nil {
 			return err
 		}
-		// The pieces the clip was found with, kept the first time anything
-		// changes them, so what a gesture puts back later is framed by the
-		// shot it shows. A clip changed before this was kept keeps the
-		// pieces it has now.
-		if _, ok := c.values[keyFoundSegments]; !ok && len(found) > 0 {
-			kept := make([]any, len(found))
-			for i, f := range found {
-				kept[i] = copyObject(f.seg)
-			}
-			c.set(keyFoundSegments, kept)
-		}
+		// The pieces a clip was found with were kept, once, to frame what
+		// a gesture put back by the camera it showed. A clip has one crop
+		// now, #396, so a plan that still has them loses them.
+		c.remove(keyFoundSegments)
 		// Where the clip's edges were before anything changed them, kept
 		// the first time anything does, so a double-click on an edge can
 		// put it back. A clip that has it already keeps what it has.
@@ -753,12 +702,12 @@ func editPieces(fsys afero.Fs, rec *Records, planPath, clipID string, change pie
 // checkedPieces makes a change to a clip's pieces, puts their edges on
 // the episode's frames, see PieceOnFrames, and checks that what comes
 // back is a clip a person can still watch and the render can still make.
-func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, spans []Rotation, frames SourceInfo) ([]*object, error) {
-	out, err := change(pieces, found)
+func checkedPieces(change pieceChange, pieces []*object, spans []Rotation, frames SourceInfo) ([]*object, error) {
+	out, err := change(pieces)
 	if err != nil {
 		return nil, err
 	}
-	out = partedAtTurns(out, spans)
+	out = partedAtTurns(oneFraming(out, spans), spans)
 	if out, err = piecesOnFrames(out, frames); err != nil {
 		return nil, err
 	}
@@ -774,11 +723,40 @@ func checkedPieces(change pieceChange, pieces []*object, found []foundPiece, spa
 	return out, nil
 }
 
+// oneFraming gives every piece of a clip turned one way the framing of the
+// first piece turned that way, and makes pieces that meet framed alike one
+// piece. A clip has one crop, and one for each way a part of it is turned,
+// #396. One framed before that has a crop for each camera it shows, and
+// takes the first from its next change on, the crop it already plays
+// with, see oneCrop.
+func oneFraming(pieces []*object, spans []Rotation) []*object {
+	first := map[int]*object{}
+	var out []*object
+	for _, seg := range pieces {
+		turn := rotationOf(seg, spans)
+		like, ok := first[turn]
+		if !ok {
+			first[turn] = seg
+		} else if !sameFraming(seg, like) {
+			seg = copyObject(seg)
+			for _, key := range []string{keyCropX, keyCropXAuto, keyCropXTurned} {
+				if v, ok := like.get(key); ok {
+					seg.set(key, v)
+				} else {
+					seg.remove(key)
+				}
+			}
+		}
+		out = meet(out, []*object{seg})
+	}
+	return out
+}
+
 // piecesOnFrames is a clip's pieces with their edges on the episode's
 // frames, see PieceOnFrames. A piece that moves is a copy, because the
 // one it was made from can still be the clip's own. A cut narrower than a
-// frame would close, and two pieces that meet are a camera switch, not a
-// cut, so that is refused. Without a frame rate the pieces are left as
+// frame would close, and two pieces that meet are the edge of a rotated
+// part, not a cut, so that is refused. Without a frame rate the pieces are left as
 // they are.
 func piecesOnFrames(pieces []*object, frames SourceInfo) ([]*object, error) {
 	if frames.FPSNum <= 0 || frames.FPSDen <= 0 {
@@ -880,14 +858,15 @@ func applyCut(pieces []*object, from, to float64) []*object {
 	return out
 }
 
-// SetCrop places the crop of the shot at a moment of a clip by hand, as the
-// left edge in source pixels. Every piece of the clip that the analysis
-// framed the same way, which is the same camera angle, moves with it. The
+// SetCrop places the crop of a clip by hand, as the left edge in source
+// pixels, at a moment of it. Every piece of the clip turned the way the
+// piece at that moment is moves with it, so a clip has one crop for the
+// picture as filmed, and one for each way a part of it is turned. The
 // automatic placement is kept, so ResetCrop can bring it back. Framing is
 // not a judgement of the clip, so nothing is recorded for training.
 //
 // With keyframes, see CropMark, a crop placed on the frame of a mark moves
-// that mark alone. Placed anywhere else, every mark of the angle moves by
+// that mark alone. Placed anywhere else, every mark of the turn moves by
 // as far as the crop shown there did, so a glide keeps its shape. frames
 // is the video, for the frame a moment means, and cropW how wide the crop
 // is on the picture as the piece at the moment stands, for where a crop
@@ -908,9 +887,9 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			return renderErr("clip %s has no pieces", clipID)
 		}
 		spans := rotationsOf(c)
-		angle := angleOf(pieces[target], spans)
+		turn := rotationOf(pieces[target], spans)
 		marks := cropMarksOf(c)
-		ofAngle := marksOfAngle(marks, pieces, spans, angle)
+		ofTurn := marksTurned(marks, turn)
 		// The keyframe on the frame takes the crop, also one that waits,
 		// placed on the picture turned another way: it is the diamond
 		// under the playhead, and from now on it is on the picture as it
@@ -923,8 +902,8 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 				return nil
 			}
 		}
-		if len(ofAngle) > 0 {
-			width := frames.Rotated(rotationOf(pieces[target], spans)).Width
+		if len(ofTurn) > 0 {
+			width := frames.Rotated(turn).Width
 			shown := (width - cropW) / 2
 			if x := cropShown(c, pieces, target, at, frames, cropW, width); x != nil {
 				shown = *x
@@ -933,7 +912,7 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			// render would hold it at the edge while the others move on,
 			// and the next drag would move it from a place nobody sees.
 			for i := range marks {
-				if ofAngle[i] {
+				if ofTurn[i] {
 					x := max(0, marks[i].X+left-shown)
 					if width > cropW {
 						x = min(x, width-cropW)
@@ -944,12 +923,12 @@ func SetCrop(fsys afero.Fs, planPath, clipID string, at float64, left int, frame
 			setCropMarks(c, marks)
 		}
 		for _, seg := range pieces {
-			if angleOf(seg, spans) != angle {
+			if rotationOf(seg, spans) != turn {
 				continue
 			}
 			// A rotated piece's crop is on the picture rotated, kept
 			// apart from the one it has as filmed, see keyCropXTurned.
-			if rotationOf(seg, spans) != 0 {
+			if turn != 0 {
 				seg.set(keyCropXTurned, left)
 				continue
 			}
@@ -1395,9 +1374,10 @@ func ClearCaptionY(fsys afero.Fs, planPath string) (int, error) {
 	return changed, nil
 }
 
-// ResetCrop brings back the automatic crop for the shot at a moment of a
-// clip, for every piece with that camera angle, and removes every keyframe
-// of the angle.
+// ResetCrop brings back the automatic crop of a clip, for every piece
+// turned the way the piece at a moment is, and removes every keyframe of
+// that turn. A clip framed before #396 can have pieces with different
+// automatic crops, one for each camera, and they all take the first.
 func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
 	return editPlan(fsys, planPath, func(_ *object, clips []*object) error {
 		c, err := findClip(clips, clipID)
@@ -1410,29 +1390,36 @@ func ResetCrop(fsys afero.Fs, planPath, clipID string, at float64) error {
 			return renderErr("clip %s has no pieces", clipID)
 		}
 		spans := rotationsOf(c)
-		angle := angleOf(pieces[target], spans)
+		turn := rotationOf(pieces[target], spans)
 		marks := cropMarksOf(c)
-		if ofAngle := marksOfAngle(marks, pieces, spans, angle); len(ofAngle) > 0 {
+		if ofTurn := marksTurned(marks, turn); len(ofTurn) > 0 {
 			var kept []CropMark
 			for i, m := range marks {
-				if !ofAngle[i] {
+				if !ofTurn[i] {
 					kept = append(kept, m)
 				}
 			}
 			setCropMarks(c, kept)
 		}
+		var auto any
+		found := false
 		for _, seg := range pieces {
-			if angleOf(seg, spans) != angle {
+			if rotationOf(seg, spans) != turn {
 				continue
 			}
-			if rotationOf(seg, spans) != 0 {
+			if turn != 0 {
 				seg.remove(keyCropXTurned)
 				continue
 			}
-			if auto, moved := seg.get(keyCropXAuto); moved {
-				seg.set(keyCropX, auto)
-				seg.remove(keyCropXAuto)
+			if !found {
+				auto, found = autoCrop(seg), true
 			}
+			if auto == nil {
+				seg.remove(keyCropX)
+			} else {
+				seg.set(keyCropX, auto)
+			}
+			seg.remove(keyCropXAuto)
 		}
 		return nil
 	})

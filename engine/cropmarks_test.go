@@ -208,25 +208,25 @@ func TestTheRenderGlidesOverAsManyMarksAsAClipMayHave(t *testing.T) {
 	}
 }
 
-// A mark steers the pieces of its own camera angle across the whole clip,
-// cuts and all, never another shot's framing. Across a cut the glide goes
-// on by the clip's clock, the time the short plays, so a piece is steered
-// by the marks of its angle placed where they fall on its own stretch of
-// the video as if the cuts were not there. A mark in a cut steers nothing,
+// A mark steers every piece of the clip turned alike, cuts and all. Across
+// a cut the glide goes on by the clip's clock, the time the short plays, so
+// a piece is steered by the marks placed where they fall on its own
+// stretch of the video as if the cuts were not there. A mark in a cut steers nothing,
 // and comes back with its piece. Found by Tim: a keyframe before a cut and
 // one after it did not glide at all, plan row 2.238.
-func TestACropMarkSteersItsAngleAcrossTheClip(t *testing.T) {
+func TestACropMarkSteersTheWholeClip(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200}, CropMark{At: 11.6, X: 500}, CropMark{At: 13.6, X: 50})
 	c := loadedClip(t, fsys, path)
-	// The pieces run 10 to 11.1 and 13 to 14 in one angle, with 11.1 to 12
-	// in another and the cut 12 to 13 between. 13.6 is 2.6 s into the clip,
-	// which is 12.6 on the first piece's stretch, and 10.2 is 0.2 s into it,
-	// which is 11.2 on the last piece's.
+	// The pieces run 10 to 11.1, 11.1 to 12 and 13 to 14, with the cut 12
+	// to 13 between. 13.6 is 2.6 s into the clip, which is 12.6 on the
+	// first part's stretch, and 10.2 is 0.2 s into it, which is 11.2 on the
+	// last piece's.
+	before := []CropMark{{At: 10.2, X: 100}, {At: 10.8, X: 200}, {At: 11.6, X: 500}, {At: 12.6, X: 50}}
 	want := [][]CropMark{
-		{{At: 10.2, X: 100}, {At: 10.8, X: 200}, {At: 12.6, X: 50}},
-		{{At: 11.6, X: 500}},
-		{{At: 11.2, X: 100}, {At: 11.8, X: 200}, {At: 13.6, X: 50}},
+		before,
+		before,
+		{{At: 11.2, X: 100}, {At: 11.8, X: 200}, {At: 12.6, X: 500}, {At: 13.6, X: 50}},
 	}
 	steered := func(c Clip) {
 		t.Helper()
@@ -251,21 +251,21 @@ func TestACropMarkSteersItsAngleAcrossTheClip(t *testing.T) {
 	// stretch, not where it would be a second later in the video, which is
 	// how long the cut is.
 	first, last := c.Segments[0], c.Segments[2]
-	before := at25.CropAt(first, first.End-0.04, 152, 480)
+	left := at25.CropAt(first, first.End-0.04, 152, 480)
 	after := at25.CropAt(last, last.Start, 152, 480)
-	if before == 200 || after == 50 {
-		t.Errorf("the crop stands still either side of the cut, at %.1f and %.1f", before, after)
+	if left == 200 || after == 50 {
+		t.Errorf("the crop stands still either side of the cut, at %.1f and %.1f", left, after)
 	}
 	if want := at25.CropAt(first, 12.0, 152, 480); math.Abs(after-want) > 1e-9 {
 		t.Errorf("after the cut the crop stands at %.3f, the glide from before it is at %.3f", after, want)
 	}
 
-	// The cut taken out of the clip's middle: the pieces of the first
-	// angle now meet across it, and the marks are where they are.
+	// The cut taken out of the clip's middle: the pieces now meet across
+	// it, and the marks are where they are.
 	reshape(t, fsys, path, Gesture{Kind: "join", From: 12.5})
 	c = loadedClip(t, fsys, path)
 	for _, seg := range c.Segments {
-		if seg.CropX != nil && *seg.CropX == 120 && len(seg.Marks) != 3 {
+		if len(seg.Marks) != 4 {
 			t.Errorf("with the cut put back, the piece at %.2f s is steered by %v", seg.Start, seg.Marks)
 		}
 	}
@@ -335,9 +335,8 @@ func TestACropMarkIsPutMovedAndRemovedLikeAThumbnail(t *testing.T) {
 }
 
 // Dragging the crop frame on a mark moves that mark. Anywhere else it
-// moves the crop of the angle, and every mark of the angle by as far as
-// the crop there moved, so the glide keeps its shape. Automatic crop
-// removes the angle's marks, and only those.
+// moves the crop of the clip, and every mark by as far as the crop there
+// moved, so the glide keeps its shape. Automatic crop removes the marks.
 func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	cropMarks(t, fsys, path, CropMark{At: 10.2, X: 100}, CropMark{At: 10.8, X: 200}, CropMark{At: 11.6, X: 500}, CropMark{At: 13.6, X: 60})
@@ -349,37 +348,36 @@ func TestDraggingTheCropMovesTheMarkUnderThePlayheadOrTheWholeGlide(t *testing.T
 		t.Fatalf("the crop placed on the mark at 10.8 s left the marks %v", got)
 	}
 
-	// At 10.5 s, in the frame from 10.48 s, the crop of the first angle
-	// has glided 45 % of the way from 100 to 300, to 190. Placed at 230
-	// there, it moves 40, and so does every mark of the angle, the one in
-	// the other part too.
+	// At 10.5 s, in the frame from 10.48 s, the crop has glided 45 % of
+	// the way from 100 to 300, to 190. Placed at 230 there, it moves 40,
+	// and so does every mark, the one after the cut too.
 	if err := SetCrop(fsys, path, "01", 10.5, 230, at25, 152); err != nil {
 		t.Fatal(err)
 	}
 	got := loadedClip(t, fsys, path).CropMarks
-	want := []CropMark{{At: 10.2, X: 140}, {At: 10.8, X: 340}, {At: 11.6, X: 500}, {At: 13.6, X: 100}}
+	want := []CropMark{{At: 10.2, X: 140}, {At: 10.8, X: 340}, {At: 11.6, X: 540}, {At: 13.6, X: 100}}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("the glide moved by 40 left the marks %v, not %v", got, want)
 		}
 	}
 	if seg := pieceAt(t, fsys, path, 13.2); seg.CropX == nil || *seg.CropX != 230 {
-		t.Errorf("the crop of the angle is %v, not 230", seg.CropX)
+		t.Errorf("the crop of the clip is %v, not 230", seg.CropX)
 	}
 
 	if err := ResetCrop(fsys, path, "01", 10.5); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 1 || got[0] != (CropMark{At: 11.6, X: 500}) {
-		t.Errorf("automatic crop left the marks %v, not the other angle's alone", got)
+	if got := loadedClip(t, fsys, path).CropMarks; len(got) != 0 {
+		t.Errorf("automatic crop left the marks %v", got)
 	}
 }
 
-// Marks moved with the rest of their angle stay in the picture. A mark
+// Marks moved with the rest of the clip's stay in the picture. A mark
 // pushed past the edge would be held there by the render while the
 // others moved on, and the next drag would move it from a place nobody
 // sees: dragged back, the part would no longer stand where it was put.
-func TestACropMarkMovedWithItsAngleStaysInThePicture(t *testing.T) {
+func TestACropMarkMovedWithTheRestStaysInThePicture(t *testing.T) {
 	src := SourceInfo{Width: 1920, Height: 1080, FPSNum: 25, FPSDen: 1}
 	const cropW, most = 608, 1312
 	fsys, path := rotatablePlanPath(t)
@@ -429,8 +427,8 @@ func TestACropMarkIsFoundOnItsOwnFrameWhereverInItItIs(t *testing.T) {
 	}
 }
 
-// A trim that hides a keyframe does not take it out of its angle.
-// Automatic crop removes it with the rest, so taking the trim back brings
+// A trim that hides a keyframe keeps it in the clip's plan. Automatic
+// crop removes it with the rest, so taking the trim back brings
 // back no mark the person had already let go of.
 func TestAutomaticCropRemovesTheMarksATrimHides(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)

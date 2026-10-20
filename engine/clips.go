@@ -26,8 +26,8 @@ type Segment struct {
 	// 90, 180 or 270, by the stretch of the clip's rotations it lies in.
 	// The crop is placed on the picture rotated.
 	Rotate int
-	// Marks is the keyframes that steer the piece's crop, those of its
-	// camera angle in the whole clip, in time order, each at the moment of
+	// Marks is the keyframes that steer the piece's crop, those of the
+	// pieces turned the way it is in the whole clip, in time order, each at the moment of
 	// the video it would be at on the piece's stretch were nothing cut
 	// out, see markedPieces. With any, the crop glides over them and CropX
 	// is not used, see CropMark.
@@ -337,7 +337,7 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 			return Plan{}, nil, renderErr("clip %d: %s", index, rerr.Error())
 		}
 		var segments []Segment
-		var angles []string
+		var turns []int
 		for _, segAny := range rawSegments {
 			seg, ok := segAny.(map[string]any)
 			if !ok {
@@ -405,18 +405,19 @@ func LoadClips(fsys afero.Fs, path string) (Plan, []Clip, error) {
 				}
 			}
 			segments = append(segments, Segment{Start: start, End: end, CropX: cropX, Moved: moved, Rotate: rotate})
-			angles = append(angles, angleKey(seg, rotate))
+			turns = append(turns, rotate)
 		}
 		if len(segments) == 0 {
 			continue
 		}
+		oneCrop(segments)
 		var marks []CropMark
 		for _, m := range readCropMarks(entry[keyCropMarks], spans) {
 			if insidePieces(segments, m.At) {
 				marks = append(marks, m)
 			}
 		}
-		markedPieces(segments, angles, marks)
+		markedPieces(segments, turns, marks)
 		fallback := fmt.Sprintf("%02d", index)
 		idValue, present := entry[keyID]
 		idText := fallback
@@ -639,4 +640,20 @@ func insidePieces(segments []Segment, at float64) bool {
 		}
 	}
 	return false
+}
+
+// oneCrop gives every piece of a clip turned one way the crop of the first
+// piece turned that way. A clip has one crop, and one for each way a part
+// of it is turned, #396. One framed before that has a crop for each
+// camera it shows, and plays with the first.
+func oneCrop(segments []Segment) {
+	first := map[int]int{}
+	for i, s := range segments {
+		f, ok := first[s.Rotate]
+		if !ok {
+			first[s.Rotate] = i
+			continue
+		}
+		segments[i].CropX, segments[i].Moved = segments[f].CropX, segments[f].Moved
+	}
 }
