@@ -55,6 +55,8 @@ type desk struct {
 	reportMade, reportFronted atomic.Int32
 	pictureMu                 sync.Mutex
 	pictures                  []string
+	// clipboard is what the app last put on the clipboard.
+	clipboard atomic.Pointer[string]
 }
 
 // open starts the app over a new, empty library. Adding a video asks the
@@ -98,6 +100,11 @@ func (d *desk) start(st *store) {
 	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.quiet = d.quiet
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
+	// The clipboard is the desk's, so a walk can read what was copied.
+	d.svc.clipboard = func(text string) bool {
+		d.clipboard.Store(&text)
+		return true
+	}
 	d.svc.report.stop = d.svc.CancelListening
 	d.svc.report.told = func(open bool) { d.bus.send("report-window", open) }
 	d.svc.report.said = func(r ReportDraft) { d.bus.send("report-draft", r) }
@@ -289,6 +296,14 @@ func (d *desk) close() {
 	if !d.svc.jobs.shutDown() {
 		d.t.Fatal("the app did not stop its work in time")
 	}
+}
+
+// copied is what the app last put on the clipboard, nothing before.
+func (d *desk) copied() string {
+	if p := d.clipboard.Load(); p != nil {
+		return *p
+	}
+	return ""
 }
 
 // reopen starts the app again over the same library, the way main does.

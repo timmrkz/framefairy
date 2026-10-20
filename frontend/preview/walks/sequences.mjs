@@ -562,7 +562,9 @@
 //                      the Mac without it, with how.stored picked by a
 //                      build before it, and the channels how.list on the
 //                      list, each with a newer build, and those in
-//                      how.conflict said to no longer merge into main
+//                      how.conflict said to no longer merge into main,
+//                      or with how.offline the list read from a port
+//                      nothing listens on
 //   ["follow", name]   picks the channel of this name in the Updates
 //                      page's list, and reads the page in the next frame
 //   ["words again"]    the speech stand-in says its sentences again from
@@ -924,6 +926,11 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["update detail", starts]
+//                      under the line under the build, what the system
+//                      said starts with these words, on one line at the
+//                      height of a control however long it is, and its
+//                      button puts it on the clipboard and says Copied
 //   ["rail mark", what]
 //                      Updates at the foot of the sidebar wears this mark
 //                      now, in the frame the line under the build is read
@@ -3635,6 +3642,17 @@ export const sequences = [
       ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
+    ],
+  },
+  {
+    // Tim checked with Wi-Fi off and the line under the build gave the Go
+    // error as the reason, an address and a port over three lines (#417).
+    name: "a check that cannot reach GitHub says so in words, and what the system said copies",
+    steps: [
+      ["updates", { from: "main", list: "main", offline: true }],
+      ["status", "The check did not get through", "Could not reach GitHub, where the builds come from. Check the internet connection, then try again."],
+      ["rail mark", "dot, failure"],
+      ["update detail", "The channel list could not be fetched"],
     ],
   },
   {
@@ -9789,6 +9807,7 @@ for (const seq of toWalk) {
           stored: arg.stored ?? "",
           list: arg.list ?? "",
           conflict: arg.conflict ?? "",
+          offline: arg.offline ? "1" : "",
         });
         await control(url, `/updates?${q}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Updates", { exact: true }).first().click());
@@ -9841,6 +9860,42 @@ for (const seq of toWalk) {
       case "build mark": {
         const now = await updatesComeTo(page, (u) => u.mark === arg);
         if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "update detail": {
+        const detail = page.locator(".card.asks .detail");
+        await detail.waitFor();
+        const seen = await detail.evaluate((d) => {
+          const code = d.querySelector("code");
+          return {
+            text: (code?.textContent ?? "").trim(),
+            height: d.getBoundingClientRect().height,
+            control: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")),
+          };
+        });
+        if (!seen.text.startsWith(arg)) {
+          wrong = `what the system said is ${JSON.stringify(seen.text)}`;
+          break;
+        }
+        if (seen.height !== seen.control) {
+          wrong = `what the system said is ${seen.height} px high, not one line of ${seen.control} px`;
+          break;
+        }
+        // The answer to the copy is the signal the clipboard was written.
+        const copiedOnGo = page.waitForResponse((r) => {
+          if (!r.url().includes("/call")) return false;
+          try {
+            return JSON.parse(r.request().postData() ?? "{}").name?.split(".").pop() === "Copy";
+          } catch {
+            return false;
+          }
+        });
+        await detail.locator("button.copy").click();
+        const label = await detail.locator("button.copy").getAttribute("aria-label");
+        await copiedOnGo;
+        const onClipboard = await control(url, "/clipboard");
+        if (label !== "Copied") wrong = `the copy button says ${label} after the click, not Copied`;
+        else if (onClipboard !== seen.text) wrong = `the clipboard holds ${JSON.stringify(onClipboard)}, not what the system said`;
         break;
       }
       case "rail mark": {

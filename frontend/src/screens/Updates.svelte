@@ -55,6 +55,26 @@
     }
   }
 
+  // What the system said copies with one click, so it can go into a
+  // report or a message. The button says it copied in the same frame as
+  // the click, and goes back a moment later, the way the key ID in the
+  // settings does. Issue #417.
+  let copied = $state(false);
+  let copyRefused = $state("");
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copyDetail(text: string) {
+    copied = true;
+    copyRefused = "";
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 1500);
+    try {
+      await api.copy(text);
+    } catch (e) {
+      copied = false;
+      copyRefused = errorText(e);
+    }
+  }
+
   async function install() {
     problem = "";
     restarting = true;
@@ -211,6 +231,23 @@
         <div class="words">
           <span class="head">{standing.head}</span>
           <span class="muted small selectable">{standing.more}</span>
+          <!-- What the system said, apart from the words above it, on one
+               line that scrolls sideways, so a long address never wraps
+               the row into a wall of text. Tim saw it as the reason
+               itself, over three lines, issue #417. -->
+          {#if update.phase === "failed" && update.detail}
+            <div class="detail">
+              <code class="selectable" title="What the system said">{update.detail}</code>
+              <button
+                class="quiet copy"
+                class:copied
+                title={copied ? "Copied" : "Copy what the system said, for a report"}
+                aria-label={copied ? "Copied" : "Copy what the system said"}
+                onclick={() => copyDetail(update.detail)}><Icon name={copied ? "check" : "copy"} size={14} /></button
+              >
+            </div>
+            {#if copyRefused}<span class="small error">{copyRefused}</span>{/if}
+          {/if}
         </div>
         {#if update.phase === "ready"}
           <button
@@ -282,5 +319,48 @@
 
   .act {
     flex: none;
+  }
+
+  /* What the system said: a field at the height of every control, its
+     words at one width the way code is, on one line that scrolls, and
+     the button that copies them at its end. */
+  .detail {
+    display: flex;
+    align-items: center;
+    height: var(--control-h);
+    margin-top: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-2);
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .detail code {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: pre;
+    padding: 0 var(--control-pad);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--size-s);
+    line-height: calc(var(--control-h) - 2px);
+    color: var(--muted);
+  }
+
+  /* Square, the way the trash can is, inside the field's own line. */
+  .detail .copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: calc(var(--control-h) - 2px);
+    height: calc(var(--control-h) - 2px);
+    padding: 0;
+    color: var(--muted);
+  }
+
+  .detail .copy.copied {
+    color: var(--ok);
   }
 </style>
