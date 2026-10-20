@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/afero"
+
+	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
 )
 
@@ -90,5 +93,41 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	}
 	if len(added) != 1 || added[0] != good {
 		t.Fatalf("added %v, want %s", added, filepath.Base(good))
+	}
+}
+
+// A label given in the sidebar comes back with the library, and the video
+// keeps its name and its bytes. A label inside a video's own work folder
+// is no video of the library, so it is refused.
+func TestALabelComesBackWithTheLibrary(t *testing.T) {
+	files := afero.NewMemMapFs()
+	video := "/home/tim/podcast/015 Ben/youtube.mp4"
+	if err := afero.WriteFile(files, video, []byte("not really a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := openStoreIn(files, "/home/tim/config/FrameFairy")
+	if _, err := st.AddEpisodes([]string{video}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &FrameFairy{store: st}
+	l, err := svc.SetLabel(video, "Ben", "#0a64d6")
+	if err != nil || l == nil || l.Text != "Ben" {
+		t.Fatalf("SetLabel gave %+v, %v", l, err)
+	}
+	lib := svc.Library()
+	if len(lib) != 1 || lib[0].Label == nil || *lib[0].Label != *l || lib[0].Name != "youtube.mp4" {
+		t.Fatalf("the library says %+v", lib)
+	}
+	if _, err := svc.SetLabel(filepath.Join(engine.WorkDir(video), "added.json"), "x", "#0a64d6"); err == nil {
+		t.Error("a file in the work folder took a label")
+	}
+	if l, err := svc.SetLabel(video, "", "#0a64d6"); err != nil || l != nil {
+		t.Fatalf("taking the label away gave %+v, %v", l, err)
+	}
+	if lib := svc.Library(); len(lib) != 1 || lib[0].Label != nil {
+		t.Fatalf("the label taken away is still there: %+v", lib)
+	}
+	if body, _ := afero.ReadFile(files, video); string(body) != "not really a video" {
+		t.Fatalf("the video became %q", body)
 	}
 }

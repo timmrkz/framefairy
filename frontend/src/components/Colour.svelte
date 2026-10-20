@@ -30,10 +30,12 @@
     presets = [],
     oninput = undefined,
     onchange,
+    onnone = undefined,
     onsample = undefined,
     face = "field",
     on = false,
     disabled = false,
+    hang = "start",
   }: {
     // The colour in use, as #rrggbb. Like Pick's value it goes one way
     // only: what the trigger shows is what the caller says is true.
@@ -50,6 +52,10 @@
     oninput?: (hex: string | null) => void;
     // A colour picked, to be saved.
     onchange: (hex: string) => void;
+    // Escape put back no colour at all: the caller had none when the
+    // pop-up opened, a label not yet made above all, and what was picked
+    // since is to be taken back.
+    onnone?: () => void;
     // Where there is a video preview to take a colour from, the way to
     // ask it for one: over is told the colour under the pointer as it
     // moves, or nothing when it is off the picture, and done the colour
@@ -63,6 +69,10 @@
     // round colours before it.
     on?: boolean;
     disabled?: boolean;
+    // Which edge of the trigger the pop-up hangs on. A well at the end of
+    // a row in the sidebar hangs it on its right edge, so it grows into the
+    // sidebar and not out over the workspace.
+    hang?: "start" | "end";
   } = $props();
 
   let open = $state(false);
@@ -95,6 +105,14 @@
   // Escape lets go too, the way it does on every list and field, so no
   // ring is left on the trigger, issue #370.
   let byPointer = false;
+
+  // The colour as it was when the pop-up opened, or nothing when the
+  // caller had none. Return keeps the colour the pop-up holds and closes
+  // it, Escape puts this one back and closes it, the way Return and Escape
+  // answer a pop-up everywhere on the Mac. It is what the caller gave and
+  // not the white the square shows for no colour, or Escape on a label
+  // not yet made picked white and made one.
+  let before: string | null = null;
 
   function draw(next: HSV) {
     hsv = next;
@@ -213,14 +231,30 @@
   // pop-up's own layer, which closes it.
   function keepKeys(event: KeyboardEvent) {
     if (event.key !== "Escape") event.stopPropagation();
+    // Return on a round colour picks it, and in the hex field takes what
+    // was typed, and then closes the pop-up like Return anywhere else in it.
+    if (event.key === "Enter" && !event.defaultPrevented && !(event.target instanceof HTMLButtonElement)) {
+      event.preventDefault();
+      open = false;
+    }
+  }
+
+  function putBack() {
+    byPointer = true;
+    typed = null;
+    const now = readHex(value);
+    if (before && now !== before) pick(before);
+    else if (!before && now) onnone?.();
   }
 </script>
 
 <Popover.Root
   bind:open
   onOpenChange={(now) => {
-    if (now) byPointer = false;
-    else leaveHex();
+    if (now) {
+      byPointer = false;
+      before = readHex(value);
+    } else leaveHex();
   }}
 >
   <Popover.Trigger {disabled}>
@@ -242,9 +276,9 @@
   <Popover.Portal>
     <Popover.Content
       sideOffset={4}
-      align="start"
+      align={hang}
       onInteractOutside={() => (byPointer = true)}
-      onEscapeKeydown={() => (byPointer = true)}
+      onEscapeKeydown={putBack}
       onCloseAutoFocus={(e) => {
         if (!byPointer) return;
         e.preventDefault();
@@ -255,7 +289,7 @@
         {#if shown}
           <div {...wrapperProps}>
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div {...props} class="colour-pop" aria-label={label} onkeydown={keepKeys}>
+            <div {...props} class="colour-pop panel" aria-label={label} onkeydown={keepKeys}>
               {#if presets.length}
                 <div class="presets" role="radiogroup" aria-label="Colours">
                   {#each presets as p, i (p.hex)}
@@ -341,6 +375,7 @@
                       if (e.key === "Enter") {
                         e.preventDefault();
                         leaveHex();
+                        open = false;
                       }
                     }}
                     onblur={leaveHex}
@@ -419,21 +454,17 @@
     outline-offset: 3px;
   }
 
-  /* The pop-up lies over the workspace, so it wears the panel colour the
-     lists wear, with their border, corners and shadow. */
+  /* The pop-up lies over the workspace, so it is the panel the lists are,
+     .panel in app.css, with the larger corners of a pop-up that holds
+     controls rather than rows. */
   .colour-pop {
-    z-index: 60;
     display: flex;
     flex-direction: column;
     gap: 12px;
     width: 232px;
     box-sizing: border-box;
     padding: 12px;
-    color: var(--text);
-    background: var(--ink-1);
-    border: 1px solid var(--line);
     border-radius: var(--radius-m);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   }
 
   /* The colours offered first, round, the way the Mac shows a row of

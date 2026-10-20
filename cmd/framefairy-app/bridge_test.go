@@ -124,10 +124,10 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //
 // svc is the service now: a restart of the app is a new one. own are the
 // calls the bridge answers itself, a box from the system among them. held
-// says how long a call of a name waits before it reaches the service, see
-// /hold.
+// says how long a call of a name waits before it reaches the service, and
+// the reason it fails with instead of reaching it, if it does, see /hold.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) time.Duration) http.Handler {
+	held func(name string) (time.Duration, string)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,8 +140,13 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		if wait := held(name); wait > 0 {
+		wait, fails := held(name)
+		if wait > 0 {
 			time.Sleep(wait)
+		}
+		if fails != "" {
+			http.Error(w, fails, http.StatusInternalServerError)
+			return
 		}
 		if answerOwn, ok := own[name]; ok {
 			answer, err := answerOwn()
@@ -407,6 +412,9 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.mu.Lock()
 		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
+		if reason := q.Get("fail"); reason != "" {
+			b.fails[q.Get("call")] = reason
+		}
 		b.mu.Unlock()
 		answer(w, nil, nil)
 	})
@@ -566,6 +574,9 @@ type bridge struct {
 	// holds is how long the next call of a name waits before it reaches
 	// the service, the way a busy machine delivers it late, see /hold.
 	holds map[string]time.Duration
+	// fails is the reason the next call of a name fails with instead of
+	// reaching the service, the way a full disk answers a save, see /hold.
+	fails map[string]string
 	// channels serves the channel list and the builds the Updates page is
 	// walked with, see /updates.
 	channels *channelServer
@@ -607,7 +618,7 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 	cs.publish(b.t, builds...)
 	c := &updating{
 		own:  from,
-		busy: b.d.svc.jobs.busy,
+		idle: b.d.svc.jobs.closeIfIdle,
 		emit: func(s UpdateState) { b.d.bus.send("updates", s) },
 		load: func() string { return stored },
 		save: func(string) error { return nil },
@@ -629,13 +640,15 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 }
 
 // held is how long a call of this name waits before it reaches the
-// service. A hold is for the next call of the name only.
-func (b *bridge) held(name string) time.Duration {
+// service, and the reason it fails with instead, if it does. A hold is for
+// the next call of the name only.
+func (b *bridge) held(name string) (time.Duration, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	wait := b.holds[name]
+	wait, fails := b.holds[name], b.fails[name]
 	delete(b.holds, name)
-	return wait
+	delete(b.fails, name)
+	return wait, fails
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
@@ -720,7 +733,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}}
+		holds: map[string]time.Duration{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1157,6 +1170,7 @@ func (b *bridge) reset() error {
 	b.mu.Lock()
 	b.picks = nil
 	clear(b.holds)
+	clear(b.fails)
 	b.mu.Unlock()
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil

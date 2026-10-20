@@ -14,6 +14,7 @@
     type UpdateState,
     onQuit,
     type EpisodeStatus,
+    type Label,
     type Added,
     errorText,
   } from "./lib/api";
@@ -28,6 +29,7 @@
   import { toasts } from "./lib/toast.svelte";
   import Busy from "./components/Busy.svelte";
   import Pick from "./components/Pick.svelte";
+  import VideoMenu from "./components/VideoMenu.svelte";
   import { installFonts } from "./lib/fonts";
   import { wearColour } from "./lib/colour";
   import Episode from "./screens/Episode.svelte";
@@ -42,11 +44,17 @@
   // it is pinned. Open, it lies over the workspace rather than pushing it,
   // so the video preview never changes size while you reach for an episode.
   let near = $state(false);
-  // The sort list lies over the app, outside the sidebar, so moving onto it
-  // is leaving the sidebar as far as the pointer can tell, and so is the
-  // keyboard going into it. The sidebar stays open while its list is.
-  let sorting = $state(false);
-  const open = $derived(shell.pinned || near || sorting);
+  // The sort list and a video's menu lie over the app, outside the
+  // sidebar, so moving onto one is leaving the sidebar as far as the
+  // pointer can tell, and so is the keyboard going into it. The sidebar
+  // stays open while one of its own is. They are counted, not a yes or
+  // no: a video's menu opened while another's is open may hear itself open
+  // before the other hears itself close, and a yes and no let the second
+  // close the sidebar under the menu that was opening, which Tim saw as
+  // the menu squeezed into the rail.
+  let holding = $state(false);
+  let holds = 0;
+  const open = $derived(shell.pinned || near || holding);
   let aside = $state<HTMLElement>();
 
   // What the sidebar knew of the pointer is out of date once its list
@@ -56,9 +64,10 @@
   // the pointer where it really is, and only a move outside closes it.
   let asking = false;
 
-  function sortList(isOpen: boolean) {
-    sorting = isOpen;
-    if (!isOpen) {
+  function hold(isOpen: boolean) {
+    holds = Math.max(0, holds + (isOpen ? 1 : -1));
+    holding = holds > 0;
+    if (!holding) {
       near = true;
       asking = true;
     }
@@ -71,7 +80,7 @@
   // focus, and the next move of the pointer, once it is back, says where
   // the pointer is.
   function away() {
-    if (sorting) return;
+    if (holding) return;
     near = false;
     asking = true;
   }
@@ -84,7 +93,7 @@
   }
 
   function pointerMoved(e: PointerEvent) {
-    if (!asking || sorting) return;
+    if (!asking || holding) return;
     asking = false;
     near = !!aside?.contains(e.target as Node);
   }
@@ -95,7 +104,7 @@
   // also the press that closes the sidebar. A field being typed in is a
   // layer too: the press lets go of it, see escapeLetsGo.
   function escape(e: KeyboardEvent) {
-    if (e.key !== "Escape" || sorting || shell.pinned || !near || removing || typing()) return;
+    if (e.key !== "Escape" || holding || shell.pinned || !near || removing || typing()) return;
     near = false;
     asking = false;
   }
@@ -109,6 +118,62 @@
   }
 
   let episodes = $state<EpisodeStatus[]>([]);
+  // A label being made in a video's menu, drawn in its row and the title
+  // bar while it is typed, before it is saved. Null is a label being taken
+  // away. A read of the library while the words are typed does not put
+  // the old label back, because what is drawn is the draft until the
+  // answer to saving it is in.
+  let drafts = $state<Record<string, Label | null>>({});
+  // Which draft of a video is the latest, by number. A save lets go of the
+  // draft it drew only if no newer one came since. The draft itself cannot
+  // tell: a label put into the state comes back as a proxy of itself, so
+  // it is never the label it was, and the row kept drawing a label the Go
+  // side did not have, after a save that failed above all.
+  const made: Record<string, number> = {};
+  function draft(source: string, label: Label | null): number {
+    drafts[source] = label;
+    made[source] = (made[source] ?? 0) + 1;
+    return made[source];
+  }
+  const labelOf = (ep: EpisodeStatus): Label | null =>
+    ep.source in drafts ? drafts[ep.source] : (ep.label ?? null);
+  // The rows of the sidebar, which a video's menu hangs under.
+  const rows = $state<Record<string, HTMLElement>>({});
+
+  // How many labels of a video are on their way to the Go side, and the
+  // last of them. They go one after another, in the order they were made,
+  // so the label the Go side keeps is the last one made: a colour clicked
+  // as the field is left is two saves, and two calls at once may land in
+  // either order.
+  const saving: Record<string, number> = {};
+  const queued: Record<string, Promise<void>> = {};
+
+  function saveLabel(ep: EpisodeStatus, label: Label | null) {
+    const mine = draft(ep.source, label);
+    saving[ep.source] = (saving[ep.source] ?? 0) + 1;
+    const save = async () => {
+      try {
+        const kept = await api.setLabel(ep.source, label?.text ?? "", label?.colour ?? "");
+        episodes = episodes.map((e) => (e.source === ep.source ? { ...e, label: kept ?? undefined } : e));
+      } catch (err) {
+        oops(errorText(err));
+      }
+      if (--saving[ep.source] === 0) {
+        delete saving[ep.source];
+        delete queued[ep.source];
+      }
+      // Kept or not, the row now draws what the Go side keeps, unless a
+      // newer draft is on screen.
+      if (made[ep.source] === mine) delete drafts[ep.source];
+    };
+    queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
+  }
+
+  // A menu closed: what it drew and did not save is let go, unless a save
+  // is still on its way, whose answer lets go of it.
+  function settle(source: string) {
+    if (!(source in saving)) delete drafts[source];
+  }
   // Whether the library has been read once.
   let libraryRead = $state(false);
   // The list as the sidebar shows it. The trigger is the sort mark Apple's
@@ -256,6 +321,14 @@
     if (nav.view.name === "updates") return "Updates";
     if (nav.view.name === "acknowledgements") return "Acknowledgements";
     return "Frame Fairy";
+  });
+
+  // The label of the video on screen, beside its name in the bar.
+  const titleLabel = $derived.by(() => {
+    if (nav.view.name !== "episode") return null;
+    const path = nav.view.path;
+    const ep = episodes.find((e) => e.source === path);
+    return ep ? labelOf(ep) : null;
   });
 
   // Whether a newer build of the app is ready, which the rail marks on
@@ -578,7 +651,7 @@
 <svelte:window onpointermove={pointerMoved} onkeydowncapture={escape} onblur={away} />
 
 <div class="shell" style={titleBar.style}>
-  <Bar {title} />
+  <Bar {title} label={titleLabel} />
 
   <div class="body" class:alone={settingUp !== false}>
   {#if settingUp === null}
@@ -622,7 +695,7 @@
             align="right"
             face="icon"
             icon="sort"
-            onopenchange={sortList}
+            onopenchange={hold}
             onpick={(v) => shell.sortBy(v as EpisodeOrder)}
           />
         </span>
@@ -630,34 +703,35 @@
     </div>
     <ul class="scroll" bind:this={list}>
       {#each listed as ep (ep.source)}
-        <li>
+        {@const label = labelOf(ep)}
+        <li bind:this={rows[ep.source]}>
           <button
             class="episode"
             class:current={selected(ep.source)}
             onclick={() => nav.go({ name: "episode", path: ep.source })}
           >
             <span class="dot {dotFor(ep)}"></span>
-            <span class="name" title={summary(ep)}>{ep.name}</span>
+            <span class="line" title={label ? `${label.text}. ${summary(ep)}` : summary(ep)}>
+              <span class="name">{ep.name}</span>
+              {#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}
+            </span>
           </button>
           <span class="tools">
-            <button
-              class="glyph small"
-              title="Show in folder"
-              aria-label="Show {ep.name} in folder"
-              disabled={ep.missing}
-              onclick={() => api.reveal(ep.source)}
-            >
-              <Icon name="folder" />
-            </button>
-            <button
-              class="glyph small quiet danger"
-              title="Remove"
-              aria-label="Remove {ep.name}"
-              aria-haspopup="dialog"
-              onclick={() => (removing = ep)}
-            >
-              <Icon name="trash" />
-            </button>
+            <VideoMenu
+              {ep}
+              shown={open}
+              anchor={rows[ep.source]}
+              worn={episodes.filter((e) => e.source !== ep.source).map((e) => labelOf(e)?.colour ?? "")}
+              onopenchange={(isOpen) => {
+                hold(isOpen);
+                if (!isOpen) settle(ep.source);
+              }}
+              drawn={label}
+              ondraft={(l) => draft(ep.source, l)}
+              onsave={(l) => saveLabel(ep, l)}
+              onreveal={() => api.reveal(ep.source)}
+              onremove={() => (removing = ep)}
+            />
           </span>
         </li>
       {/each}
@@ -918,6 +992,11 @@
     box-shadow:
       inset -1px 0 var(--line),
       8px 0 24px rgba(0, 0, 0, 0.45);
+    /* The shadow falls on the workspace to the right and nowhere else. Its
+       blur reached up over the title bar too, which Tim saw as a shadow
+       cast on the bar the sidebar hangs from. Only the right side is let
+       out, as far as the blur goes. */
+    clip-path: inset(0 -40px 0 0);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -942,7 +1021,7 @@
      a pointer on the row anyway. The row keeps its height, so the lamp is
      in the same place shut and open and nothing moves as the sidebar
      goes over. */
-  aside:not(.open) .episode .name,
+  aside:not(.open) .episode .line,
   aside:not(.open) .tools {
     display: none;
   }
@@ -1015,8 +1094,19 @@
     min-height: 0;
   }
 
+  /* The 2 between one row and the next belongs to the row above, so the
+     pointer is always on a row on its way down the list, and no row goes
+     dark for the moment it crosses the gap. */
   li {
     position: relative;
+    padding-bottom: 2px;
+  }
+
+  /* The row is lit while the pointer is anywhere on it, the three dots
+     included: they lie over the row, and lighting the button alone made
+     the row go dark each time the pointer reached them. */
+  li:hover .episode {
+    background: var(--ink-3);
   }
 
   /* A whole number of pixels high, and the same number whether the sidebar
@@ -1045,7 +1135,6 @@
     text-align: left;
     border-color: transparent;
     background: transparent;
-    margin-bottom: 2px;
   }
 
   /* An icon's box around a lamp, so it is centred on the icons' column. */
@@ -1065,19 +1154,39 @@
     background: var(--ink-3);
   }
 
-  /* Room for the two marks, so a long name never runs under them. */
+  /* The name and the label after it, on one line. The label sits right
+     after the name rather than at the far edge, so the two read as one
+     thing, and the label keeps its words while a long name gives way.
+     Room is kept for the three dots, so neither ever runs under them: the
+     mark is 36 wide and 8 from the row's edge, the row's own padding is 8,
+     and 6 more is the gap between them. */
+  .episode .line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    padding-right: 42px;
+  }
+
   .episode .name {
     min-width: 0;
-    padding-right: 48px;
   }
 
   /* What you do with an episode itself waits until the pointer is on its
      row, the way the trash can does on a clip. */
   .tools {
     position: absolute;
-    /* Centred on the row: a 24 tall mark in a 36 tall row. */
-    top: 6px;
-    right: 6px;
+    /* The three dots stand under the sort mark at the head of the list,
+       one column of marks of one size: the head keeps 12 at its right and
+       the list 4, so 8 more here. They take the pointer over the whole
+       height of the row, gap included, so a pointer going down the
+       column of dots goes from one to the next and never off them, and
+       they are drawn a control's height in the middle of the 36, see
+       VideoMenu.svelte. */
+    top: 0;
+    bottom: 0;
+    right: 8px;
     display: flex;
     gap: 2px;
     opacity: 0;
@@ -1085,19 +1194,10 @@
   }
 
   li:hover .tools,
-  .tools:focus-within {
+  .tools:focus-within,
+  .tools:has(:global([aria-expanded="true"])) {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .glyph.small {
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-s);
-  }
-
-  .glyph.small:hover:not(:disabled) {
-    background: var(--ink-3);
   }
 
   .name {
