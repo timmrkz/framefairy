@@ -117,7 +117,8 @@ func (e *Engine) BuildFilterGraph(ctx context.Context, clip Clip, source SourceI
 		parts = append(parts, fmt.Sprintf("[%d:v]%s[v%d];", 2*i, strings.Join(chain, ","), i))
 
 		// A piece that runs straight on from the one before, the way a
-		// search parts a clip at a camera switch, is heard straight on.
+		// clip is parted where a part of it is rotated, is heard straight
+		// on.
 		// Nothing is cut there, and a fade out and in would be a dip in
 		// the sound of 30 ms.
 		fadeOutAt := math.Max(0, seg.Duration()-Fade)

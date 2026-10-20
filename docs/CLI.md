@@ -37,7 +37,7 @@ What happens, in order:
    loudness
 4. the language model picks the moments and answers with the runs of lines
    to keep
-5. each clip is scanned for camera switches, and each angle gets one crop
+5. each clip gets one crop, placed where the faces are
 6. captions are built from the same words and burned in
 7. one ffmpeg pass per clip produces the finished file
 
