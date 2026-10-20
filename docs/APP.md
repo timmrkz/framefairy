@@ -690,7 +690,11 @@ the frame queue is closed, with its decoder on the Go side, the frames it
 kept and its sound card, and only what it played and the frame on the
 canvas stay. Waking, a new queue starts from what it played, in the task
 after the frame that shows the workspace again, so starting a sound card
-and a decoder does not hold that frame back. What it plays is the frames
+and a decoder does not hold that frame back. The new queue leaves the
+frame on the canvas alone until its own first frame replaces it: it does
+not set the canvas to the size it already has, which clears it, and it
+draws nothing again for the captions before it has a frame of its own.
+Each of those showed black for a frame or more. What it plays is the frames
 the engine names for the episode and its sound, from the source, see
 `lib/frames/movie.ts`, and nothing of the file is read by the interface.
 Nothing of the file is taken from the webview's cache, which took a file

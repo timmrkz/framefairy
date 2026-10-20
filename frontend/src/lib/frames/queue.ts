@@ -1062,7 +1062,10 @@ export class FrameQueue {
     const first = !this.sized;
     this.sized = true;
     this.sizeKnown();
-    if (!first && this.canvas.width === w && this.canvas.height === h) return;
+    // Setting the canvas's size clears it, even to the size it has. A
+    // workspace woken again keeps its own frame at the size it had, see
+    // known.
+    if (this.canvas.width === w && this.canvas.height === h && (!first || this.known)) return;
     this.canvas.width = w;
     this.canvas.height = h;
     this.paint();
@@ -1201,8 +1204,13 @@ export class FrameQueue {
   }
 
   // The frame on screen drawn again, for what lies over it has changed.
+  // Before this queue has a frame on screen there is nothing to draw it
+  // over: the canvas holds black from open, or the frame of a workspace
+  // woken again, which stays until this queue's first frame replaces it.
+  // Drawn then, it went black for as long as the first frame took, each
+  // time a video whose frame had captions was gone back to.
   repaint() {
-    if (!this.closed) this.paint();
+    if (!this.closed && this.shown) this.paint();
   }
 
   // Whether what lies over the frame of rank is here, asked for at once

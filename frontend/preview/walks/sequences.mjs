@@ -194,6 +194,12 @@
 //                      frame and the canvas: the picture, the crop frame and
 //                      the captions over it change once, together, issue
 //                      #383
+//   ["wake on a caption"]
+//                      puts the playhead on a clip that starts on a
+//                      caption, adds another video and goes back to the
+//                      first from the sidebar, its frames slow to open:
+//                      the video preview keeps its frame and never goes
+//                      black on the way
 //   ["pick rested cards", n]
 //                      the same clips, then clicks the cards in turn n
 //                      times, each after the hand rested, and checks each
@@ -1553,6 +1559,19 @@ export const sequences = [
       ["add cameras", 120, 60, "hevc"],
       ["wait for", "Search"],
       ["pick rested cards", 6],
+    ],
+  },
+  {
+    // Found by Tim testing #385: going back to a video from the sidebar,
+    // the video preview went black for a frame before its picture came
+    // back, on the video whose frame had captions. What lies over the
+    // frame was drawn again before the woken video preview had a frame of
+    // its own, and drawn over nothing.
+    name: "a video gone back to from the sidebar keeps its frame until it is drawn again",
+    steps: [
+      ["add cameras", 120, 60, "hevc"],
+      ["wait for", "Search"],
+      ["wake on a caption"],
     ],
   },
   {
@@ -8641,6 +8660,11 @@ for (const seq of toWalk) {
         await watch.step("put back", s);
         break;
       }
+      case "wake on a caption": {
+        wrong = await wakeOnCaption(page);
+        await watch.step("press", s);
+        break;
+      }
       case "pick rested cards": {
         wrong = await pickRested(page, arg);
         await watch.step("press", s);
@@ -10739,6 +10763,87 @@ async function pickRested(page, n) {
     page.off("requestfailed", over);
   }
   return problems.length ? problems.join("\n") : null;
+}
+
+// Puts the playhead on a clip that starts on a caption, adds another
+// video, and goes back to the first from the sidebar with its frames slow
+// to open, the way a video of hours opens them, and on every animation
+// frame reads the video preview in front. The workspace woken keeps the
+// frame and the captions it had until its own frame is drawn again, and
+// never shows a black canvas between them. Tim saw it go black for a
+// frame on the video whose frame had captions, in #385.
+async function wakeOnCaption(page) {
+  const clips = await shotClips(page);
+  if (typeof clips === "string") return clips;
+  const clip = clips.find((c) => Math.abs(c.start - 8) < 2) ?? clips[0];
+  await page.locator(`aside ol li[data-key="${clip.key}"] button.pick`).click();
+  await page.waitForFunction(() => document.querySelector(".screen .captions"), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const first = await episodeOn(page);
+  await control(url, "/pick?seconds=20");
+  await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
+  for (let t = 0; t < 30000 && (await episodeOn(page)) === first; t += 250) await page.waitForTimeout(250);
+  if ((await episodeOn(page)) === first) return "the video added did not come in front";
+  await page.locator(".listhead button.search").first().waitFor();
+  await settle(page);
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => {
+    for (const [i, w] of [...document.querySelectorAll(".workspace")].entries()) w.dataset.walk = String(i);
+    window.__looks = [];
+    window.__looking = true;
+    const step = () => {
+      if (!window.__looking) return;
+      const w = document.querySelector(".workspace.front");
+      const c = w?.querySelector(".screen canvas");
+      const look = { at: performance.now(), front: w?.dataset.walk ?? "", canvas: 0, light: 0, captions: !!w?.querySelector(".screen .captions") };
+      if (c?.width && c.height) {
+        const s = (window.__lookCanvas ??= document.createElement("canvas"));
+        s.width = c.width;
+        s.height = c.height;
+        const t = s.getContext("2d", { willReadFrequently: true });
+        t.drawImage(c, 0, 0);
+        const d = t.getImageData(0, 0, c.width, c.height).data;
+        let h = 2166136261;
+        for (let i = 0; i < d.length; i += 4) {
+          h = Math.imul(h ^ (d[i] | (d[i + 1] << 8) | (d[i + 2] << 16)), 16777619) >>> 0;
+          look.light = Math.max(look.light, d[i], d[i + 1], d[i + 2]);
+        }
+        look.canvas = h;
+      }
+      window.__looks.push(look);
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+  const slow = async (route) => {
+    await new Promise((done) => setTimeout(done, 400));
+    await route.continue().catch(() => {});
+  };
+  await page.route(/\/frames\/open\?/, slow);
+  try {
+    await fromSidebar(page, () => page.locator("aside li", { hasText: basename(first) }).first().click());
+    await page.waitForTimeout(1500);
+  } finally {
+    await page.unroute(/\/frames\/open\?/, slow);
+  }
+  const looks = await page.evaluate(() => {
+    window.__looking = false;
+    return window.__looks;
+  });
+  const was = looks[0]?.front;
+  const i = looks.findIndex((l) => l.front !== was && l.canvas);
+  if (i < 0) return `the video preview of ${basename(first)} never came in front`;
+  const woken = looks.slice(i).filter((l) => l.front === looks[i].front);
+  const t0 = woken[0].at;
+  const say = (l) => `${Math.round(l.at - t0)} ms`;
+  if (woken[0].light < 32) return `${basename(first)} came back with a black canvas`;
+  if (!woken.at(-1).captions) return `${basename(first)} came back on a frame with no caption, so a redraw for its captions cannot be seen`;
+  const dark = woken.filter((l) => l.light < 32);
+  if (dark.length) return `the video preview went black for ${dark.length} animation frames, from ${say(dark[0])} after ${basename(first)} came back`;
+  const changes = woken.filter((l, j) => j > 0 && l.canvas !== woken[j - 1].canvas);
+  if (changes.length > 1) return `the video preview changed ${changes.length} times after ${basename(first)} came back: ${changes.map(say).join(", ")}`;
+  console.log(`        ${basename(first)} came back on its own frame, ${woken.length} animation frames read, ${changes.length} changes`);
+  return null;
 }
 
 async function frameWhole(page, turned) {
