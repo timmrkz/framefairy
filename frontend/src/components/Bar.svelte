@@ -23,9 +23,9 @@
      What was really wrong was asking for a toolbar, which makes the bar
      taller and makes macOS inset the buttons to centre them in it. See
      the WebviewWindowOptions in main.go.
-     Then the buttons are centred in the bar, under the edge of the
-     window macOS draws over its top, and the name is centred in the
-     same place, see .name below. Where the system draws its own title
+     Then macOS centres the buttons in the bar, and the name is centred
+     between the edge of the window macOS draws over its top and the
+     line at its foot, see .name below. Where the system draws its own title
      bar there is nothing to agree with and the stylesheet keeps its
      own numbers. -->
 <header class="bar">
@@ -113,16 +113,19 @@
   }
 
   /* Where macOS puts its buttons in the bar, it draws the edge of the
-     window over the top 2 points of the page and centres the buttons in
-     what is left under it, not in the whole bar. Read off two pictures
-     of Tim's Mac, at 2 pixels a point: a bar 32 high, the edge over its
-     first 2, the circles centred 17 down, the name and its label 16
-     down, #399. AppKit's own frame for the close button says 16, so it
-     is no measure of where the circles are drawn, and the box starts
-     under the edge instead. */
+     window over the top 2 points of the page, and the line at the foot
+     takes the last point. What a person sees as the bar is what lies
+     between the two, and the name and its label are centred in that.
+     Read off Tim's pictures, at 2 pixels a point: a bar 32 high, the
+     edge over its first 2, the line on its last 1. Centred under the
+     edge alone, the label stood 5 points under the edge and 4 over the
+     line, half a point low, #399. Between the two it stands 4.5 from
+     each. The circles are macOS's own, centred 17 down, half a point
+     under the middle of what is seen. AppKit's frame for the close
+     button says 16, so it is no measure of where they are drawn. */
   :global(.shell[style*="--lights-r"]) .bar .name {
     top: 2px;
-    height: calc(var(--bar-h) - 2px);
+    height: calc(var(--bar-h) - 3px);
   }
 
   /* Where the system draws its own title bar the name keeps the left of

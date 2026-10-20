@@ -198,10 +198,10 @@
 //   ["title bar"]      lays the app's window out the way macOS does on
 //                      Tim's Mac, a title bar 30 points high with its
 //                      buttons from 12 to 72 points in. macOS draws the
-//                      window's edge over the top 2 points and centres
-//                      the buttons in the bar under it, so the name of
-//                      the video and its label have to be centred there
-//                      too, and start one space after the buttons
+//                      window's edge over the top 2 points and the line
+//                      at the foot takes the last, so the name of the
+//                      video and its label have to be centred between
+//                      the two, and start one space after the buttons
 //   ["two menus"]      opens the three dots of the lowest video in the
 //                      sidebar, then those of the highest while that menu
 //                      is open. The sidebar has to stay open with only the
@@ -2397,9 +2397,9 @@ export const sequences = [
   },
   {
     // Tim saw the label pill in the title bar a point higher than the
-    // buttons, #399, twice. The name and the pill were centred in the
-    // whole bar, and macOS centres the buttons in the bar under the edge
-    // of the window it draws over the bar's top.
+    // buttons, #399, twice, and then half a point low once it was
+    // centred under the edge of the window alone. What he sees as the
+    // bar runs from that edge to the line at its foot.
     name: "the name of a video and its label are centred in the title bar",
     steps: [
       // A second video, so the sidebar has the sort mark the label step
@@ -6450,16 +6450,18 @@ for (const seq of toWalk) {
           const pill = box(document.querySelector("header.bar .tag"));
           return { gap, bar: [bar.top, bar.height], name: name && [name.left, name.top, name.height], pill: pill && [pill.top, pill.height] };
         });
-        // Where macOS draws the circles, read off Tim's pictures: in the
-        // middle of the bar less the window's edge over its top 2 points.
-        const centre = seen.bar[0] + (2 + seen.bar[1]) / 2;
+        // The middle of the bar Tim sees, read off his pictures: under
+        // the window's edge over its top 2 points and over the line on
+        // its last. A quarter of a point is the most the letters may be
+        // off, because half a point is what Tim saw.
+        const centre = seen.bar[0] + 2 + (seen.bar[1] - 3) / 2;
         const off = (top, height) => top + height / 2 - centre;
         if (seen.bar[1] !== 30) wrong = `the title bar is ${seen.bar[1]} px high, macOS laid it out 30 high`;
         else if (!seen.name || !seen.pill) wrong = `the title bar shows ${seen.name ? "no label" : "no name"}`;
-        else if (Math.abs(off(seen.name[1], seen.name[2])) > 0.5)
-          wrong = `the name's capitals stand ${Math.abs(off(seen.name[1], seen.name[2])).toFixed(1)} px ${off(seen.name[1], seen.name[2]) < 0 ? "above" : "below"} the middle of the buttons`;
-        else if (Math.abs(off(...seen.pill)) > 0.5)
-          wrong = `the label stands ${Math.abs(off(...seen.pill)).toFixed(1)} px ${off(...seen.pill) < 0 ? "above" : "below"} the middle of the buttons`;
+        else if (Math.abs(off(seen.name[1], seen.name[2])) > 0.25)
+          wrong = `the name's capitals stand ${Math.abs(off(seen.name[1], seen.name[2])).toFixed(2)} px ${off(seen.name[1], seen.name[2]) < 0 ? "above" : "below"} the middle of the bar`;
+        else if (Math.abs(off(...seen.pill)) > 0.25)
+          wrong = `the label stands ${Math.abs(off(...seen.pill)).toFixed(2)} px ${off(...seen.pill) < 0 ? "above" : "below"} the middle of the bar`;
         else if (Math.abs(seen.name[0] - (72 + seen.gap)) > 0.5)
           wrong = `the name starts at ${seen.name[0].toFixed(1)} px, one space after the buttons is ${72 + seen.gap}`;
         await watch.step("title bar", s);
