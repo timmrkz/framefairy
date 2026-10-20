@@ -719,6 +719,19 @@ ones that play wait in real time: playing a clip to its end once took
 most of the playback walk, so it now starts a moment before the clip's
 last cut.
 
+Time the app lets run out, the ten seconds of a toast or of a removed
+picture or clip, is not waited for. A walk holds the app's clock before
+that time starts, with Playwright's own fake clock, `holdClock` in
+`walks/bridge.mjs`, and turns it on by hand, `runClock`: the toast is
+still there after nine seconds and gone after ten and a half, in a
+fraction of a second of the walk's own. On the real clock a busy machine
+spent part of the ten seconds on the steps before, and the toast went
+before the walk had looked, #341. Every timer, frame and
+`performance.now` of the app stands still while the clock is held, so a
+step that needs the app's own frames comes before `["hold the clock"]` or
+after `letClockGo`. The walk's own waits, `settle` among them, keep the
+real time and frames, kept on `window.__real`.
+
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
 runs it in the job `walks`, the only one that installs Chromium, on the
