@@ -7,7 +7,7 @@
 //  1. audio      transcribe on the machine, time every word, measure loudness
 //  2. lines      group words into the numbered lines the model reads
 //  3. selection  the model chooses the moments and condenses them
-//  4. analysis   camera switches and framing, derived from the footage
+//  4. analysis   framing, derived from the footage
 //  5. captions   captions made of the same words, written as srt and ass
 //  6. render     build the ffmpeg filter graph and run it
 package engine
@@ -44,9 +44,9 @@ type Log struct {
 	stageMu sync.Mutex
 	stages  []string
 	// held is set while one piece of work owns the progress line, a search
-	// above all: what its steps report along the way, ffmpeg finding camera
-	// switches for one clip, would otherwise take the line from it every
-	// half second, and a person would read neither.
+	// above all: what its steps report along the way, ffmpeg reading the
+	// frames of one clip for its crop, would otherwise take the line from
+	// it every half second, and a person would read neither.
 	held atomic.Bool
 }
 
@@ -224,8 +224,8 @@ func (l *Log) Underway(list []Underway, written int, whole bool) {
 }
 
 // that nothing is in progress any more. While the line is held, it is not
-// this work's to clear: ffmpeg finding the camera switches of one clip
-// cleared a search's line every time it finished, and the search's fill
+// this work's to clear: ffmpeg reading the frames of one clip cleared a
+// search's line every time it finished, and the search's fill
 // went and came back half a second later, over and over.
 func (l *Log) ClearProgress() {
 	if l.held.Load() {

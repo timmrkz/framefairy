@@ -73,7 +73,6 @@ type planBuilder struct {
 	units []([2]int)
 	opts  PlanOptions
 	cropW int
-	cache *cropCache
 	// prefix and base make the ids: the n-th clip queued is prefix and
 	// base+n, see queueLocked.
 	prefix string
@@ -139,7 +138,7 @@ func (e *Engine) newPlanBuilder(ctx context.Context, sourcePath string, source S
 	ctx, cancel := context.WithCancel(ctx)
 	cropW, _ := CropWindow(source, opts.OutW, opts.OutH)
 	b := &planBuilder{e: e, ctx: ctx, cancel: cancel, sourcePath: sourcePath, source: source,
-		lines: lines, units: units, opts: opts, cropW: cropW, cache: newCropCache(),
+		lines: lines, units: units, opts: opts, cropW: cropW,
 		seen: map[string]bool{}, planID: planID, firstOut: make(chan struct{}),
 		// Never more clips than were asked for are taken, so the queue
 		// never makes the reading of the answer wait.
@@ -729,7 +728,7 @@ func (b *planBuilder) firstFramed(job planJob) {
 }
 
 // frame turns an entry of the answer into a clip: filler trimmed off its
-// ends, its words, its pieces and the framing of every shot in it.
+// ends, its words, its pieces and its framing.
 func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	e, lines, opts, index := b.e, b.lines, b.opts, job.index
 	// Drop a leading or trailing line that carries nothing. Whole lines,
@@ -770,22 +769,9 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 	}
 	b.cutDown(job.card, tightSpans)
 
-	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.cache,
-		b.placing)
+	segments, err := e.ClipSegments(b.ctx, b.sourcePath, tightSpans, b.source, b.cropW, b.placing)
 	if err != nil {
 		return PlanClip{}, false, err
-	}
-	angles := map[string]bool{}
-	for _, s := range segments {
-		key := "none"
-		if s.CropX != nil {
-			key = itoa(*s.CropX)
-		}
-		angles[key] = true
-	}
-	if len(angles) > 1 {
-		e.Log.Detail("clip %d: %d camera angle(s) across %d segment(s)",
-			index, len(angles), len(segments))
 	}
 	if len(segments) == 0 {
 		return PlanClip{}, false, nil
@@ -804,11 +790,11 @@ func (b *planBuilder) frame(job planJob) (PlanClip, bool, error) {
 		Keep:   ranges,
 	}
 	// Each piece on the episode's frames, the way every piece enters a
-	// plan, see PieceOnFrames: where a camera switch parts a span too. A
-	// search finds its edges on the words' clock, between frames, and
-	// this is where they are put on them, before the clip is proposed, so
-	// the proposal training data compares an edit with is on frames too,
-	// and a clip left alone reads as left alone.
+	// plan, see PieceOnFrames. A search finds its edges on the words'
+	// clock, between frames, and this is where they are put on them,
+	// before the clip is proposed, so the proposal training data compares
+	// an edit with is on frames too, and a clip left alone reads as left
+	// alone.
 	lengths := make([]float64, len(segments))
 	for k, s := range segments {
 		start, end := b.source.PieceOnFrames(s.Start, s.End)

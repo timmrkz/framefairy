@@ -157,11 +157,12 @@
 
   // Going back to the automatic crop is one click, so taking that back has
   // to be one click too. What a reset threw away, the crop and the crop
-  // marks of the angle, is kept until the clip changes or it is placed by
-  // hand again.
+  // marks of the clip, is kept until the clip changes or it is placed by
+  // hand again. A part rotated on its own has a crop of its own, so the
+  // undo is for the pieces turned the way the reset one was, see #396.
   let undoCrop = $state<{
     key: string;
-    piece: number;
+    turn: number;
     at: number;
     left: number | null;
     marks: CropMark[];
@@ -352,7 +353,7 @@
   // there is to offer.
   $effect(() => {
     offers = {
-      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.piece === piece ? "back" : "",
+      crop: !clip ? "" : crop?.moved ? "auto" : undoCrop?.key === clip.key && undoCrop.turn === (clip.segments[piece]?.rotate ?? 0) ? "back" : "",
       savingCrop,
       hint: dragCaptions !== null ? `Captions ${Math.round(captionY)} from the bottom` : "",
     };
@@ -1443,6 +1444,7 @@
     if (!clip || !onresetcrop) return;
     const at = cropMoment();
     const was = piece;
+    const turn = clip.segments[was]?.rotate ?? 0;
     const had = clip.cropLefts[was] ?? null;
     const marked = clip.cropMarks ?? [];
     savingCrop = true;
@@ -1450,7 +1452,7 @@
       await onresetcrop(at);
       const still = clip?.cropMarks ?? [];
       const marks = marked.filter((m) => !still.some((k) => k.at === m.at));
-      if (had !== null || marks.length) undoCrop = { key: clip!.key, piece: was, at, left: had, marks };
+      if (had !== null || marks.length) undoCrop = { key: clip!.key, turn, at, left: had, marks };
     } finally {
       savingCrop = false;
     }

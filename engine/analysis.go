@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -146,23 +144,14 @@ func decoderIn(stderr string) string {
 // an honest decode takes, of any file. Tests make it shorter.
 var frameLimit = 15 * time.Second
 
-// shotLimit is how long finding the camera switches of a span of so many
-// seconds may take before it is ended: a minute, and four times the span on
-// top, where an honest run takes a few seconds. Tests make it shorter.
-var shotLimit = func(span float64) time.Duration {
+// spanLimit is how long reading the frames of a span of so many seconds
+// may take before it is ended: a minute, and four times the span on top,
+// where an honest run takes a few seconds. Tests make it shorter.
+var spanLimit = func(span float64) time.Duration {
 	return time.Minute + time.Duration(4*span*float64(time.Second))
 }
 
-// DetectShots finds camera switches inside one span, as absolute times.
-//
-// Only the spans a clip keeps get scanned. The switches are hard cuts
-// between locked-off cameras, so detection is close to exact.
-func (e *Engine) DetectShots(ctx context.Context, path string, start, end float64) ([]float64, error) {
-	read, err := e.readSpan(ctx, path, start, end, false)
-	return read.cuts, err
-}
-
-// frameStep is how far apart the frames framing measures a shot on are.
+// frameStep is how far apart the frames the crop is measured on are.
 const frameStep = 0.4
 
 // grayFrame is a small grey frame of the episode at a moment of it.
@@ -171,132 +160,85 @@ type grayFrame struct {
 	pix []byte
 }
 
-// spanRead is what one read of a span a clip keeps gives its framing: the
-// camera switches inside it, and, when asked for, grey frames of
-// FaceWidth by FaceHeight, one every frameStep from its start and the one
-// a tenth of a second before its end, each with its moment.
-//
-// It is one decode. The switches, the frames the faces are looked for on
-// and the frames either side of a gap, to tell whether a clip comes back to
-// the camera it left, were three reads of the same seconds, eleven ffmpeg
-// runs for a clip in three pieces that decoded every kept second twice:
-// 18.1 s for a clip of 24 s on the cloud machine, 8.7 s as one read.
-type spanRead struct {
-	cuts   []float64
-	frames []grayFrame
-}
-
-// readSpan reads one span, see spanRead.
-func (e *Engine) readSpan(ctx context.Context, path string, start, end float64, frames bool) (spanRead, error) {
-	const threshold = 0.30
+// readSpan reads the grey frames of one span a clip keeps, FaceWidth by
+// FaceHeight, one every frameStep from its start and the one a tenth of a
+// second before its end, each with its moment. It is one decode of the
+// span.
+func (e *Engine) readSpan(ctx context.Context, path string, start, end float64) ([]grayFrame, error) {
 	from := math.Max(0, start-0.5)
-	scene := fmt.Sprintf("scale=256:-2,select='gt(scene,%s)',showinfo", pyFloatRepr(threshold))
-	// The frames are cut to the span, one every frameStep from its
-	// start, and the first at a tenth of a second before its end, the
-	// frame the clip leaves the camera on.
 	last := math.Max(end-0.1, start) - from
 	grey := fmt.Sprintf("trim=start=%s:end=%s,"+
 		"select='isnan(prev_selected_t)+gte(t-prev_selected_t,%s)+gte(t,%s)*lt(prev_t,%s)',"+
 		"scale=%d:%d,format=gray,showinfo@frames",
 		fixed(start-from, 6), fixed(end-from, 6), fixed(frameStep-0.001, 3),
 		fixed(last, 6), fixed(last, 6), FaceWidth, FaceHeight)
-	// A scan that runs out of time is ended. ffmpeg has hung here once,
+	// A read that runs out of time is ended. ffmpeg has hung here once,
 	// decoding through the system's decoder, and a search waited on it for
 	// good. It takes seconds, so the limit is far past any honest run.
-	limit := shotLimit(end - start)
+	limit := spanLimit(end - start)
 	timedOut := false
 	var raw bytes.Buffer
-	scan := func(flags []string) (int, string) {
+	read := func(flags []string) (int, string) {
 		raw.Reset()
 		args := append([]string{"-hide_banner"}, flags...)
-		args = append(args, "-ss", fixed(from, 3), "-to", fixed(end+0.5, 3), "-i", path, "-an")
-		var out io.Writer
-		if frames {
-			// The switches go out with the first frame read as well,
-			// which lies before the span and is never taken for one. An
-			// output that gets nothing fails the whole run from ffmpeg 9
-			// on, and a span with no switch gave this one nothing.
-			cuts := fmt.Sprintf("scale=256:-2,select='gt(scene,%s)+eq(n,0)',showinfo", pyFloatRepr(threshold))
-			args = append(args,
-				"-filter_complex", "[0:v]split=2[s][f];[s]"+cuts+"[cuts];[f]"+grey+"[frames]",
-				"-map", "[cuts]", "-fps_mode", "passthrough", "-f", "null", "-",
-				"-map", "[frames]", "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
-			out = &raw
-		} else {
-			args = append(args, "-vf", scene, "-fps_mode", "passthrough", "-f", "null", "-")
-		}
-		scanCtx, cancel := context.WithTimeout(ctx, limit)
+		args = append(args, "-ss", fixed(from, 3), "-to", fixed(end+0.5, 3), "-i", path, "-an",
+			"-vf", grey, "-fps_mode", "passthrough", "-f", "rawvideo", "pipe:1")
+		readCtx, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
-		code, stderr := e.runFFmpegTo(scanCtx, args, "finding camera switches", end-start+1.0, "", out)
-		timedOut = ctx.Err() == nil && scanCtx.Err() != nil
+		code, stderr := e.runFFmpegTo(readCtx, args, "reading frames for the crop", end-start+1.0, "", &raw)
+		timedOut = ctx.Err() == nil && readCtx.Err() != nil
 		return code, stderr
 	}
 	flags := e.decodeFlags()
-	code, stderr := scan(flags)
+	code, stderr := read(flags)
 	// A system decoder that fails, or that says it worked and gave no
 	// frames, is gone round: the same read on the processor, and every
 	// read after it.
-	if flags != nil && ctx.Err() == nil && (code != 0 || frames && raw.Len() < FaceWidth*FaceHeight) {
+	if flags != nil && ctx.Err() == nil && (code != 0 || raw.Len() < FaceWidth*FaceHeight) {
 		e.softDecode.Store(true)
 		if timedOut {
-			e.Log.Warn("finding camera switches stopped moving with the system's video decoder, decoding on the processor from now on")
+			e.Log.Warn("reading frames for the crop stopped moving with the system's video decoder, decoding on the processor from now on")
 		} else {
 			e.Log.Detail("the system's video decoder did not take this file, decoding on the processor")
 		}
-		code, stderr = scan(nil)
+		code, stderr = read(nil)
 	}
 	if ctx.Err() != nil {
-		return spanRead{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if code != 0 && timedOut {
-		// No switches found is a crop that does not follow a camera change.
-		// No clip at all is far worse.
-		e.Log.Warn("finding camera switches between %s and %s took longer than %s and was ended, so none are used there",
+		// The span is then measured a frame at a time, see
+		// samplePositions. No clip at all is far worse.
+		e.Log.Warn("reading frames for the crop between %s and %s took longer than %s and was ended",
 			HMS(start), HMS(end), limit)
-		return spanRead{}, nil
+		return nil, nil
 	}
 	if code != 0 {
-		return spanRead{}, renderErr("shot detection failed:\n%s", tailRunes(strip(stderr), 400))
+		return nil, renderErr("reading frames for the crop failed:\n%s", tailRunes(strip(stderr), 400))
 	}
-	var read spanRead
-	seen := map[float64]bool{}
 	var times []float64
 	for _, line := range strings.Split(stderr, "\n") {
-		if !strings.Contains(line, "pts_time:") {
+		if !strings.Contains(line, "showinfo@frames") || !strings.Contains(line, "pts_time:") {
 			continue
 		}
-		after := strings.SplitN(line, "pts_time:", 2)[1]
-		words := fields(after)
+		words := fields(strings.SplitN(line, "pts_time:", 2)[1])
 		if len(words) == 0 {
 			continue
 		}
-		value, ok := parsePyFloat(words[0])
-		if !ok {
-			continue
-		}
-		absolute := from + value
-		if strings.Contains(line, "showinfo@frames") {
-			times = append(times, absolute)
-			continue
-		}
-		if start < absolute && absolute < end {
-			key := roundTo(absolute, 3)
-			if !seen[key] {
-				seen[key] = true
-				read.cuts = append(read.cuts, key)
-			}
+		if value, ok := parsePyFloat(words[0]); ok {
+			times = append(times, from+value)
 		}
 	}
-	sort.Float64s(read.cuts)
 	size := FaceWidth * FaceHeight
 	pix := raw.Bytes()
+	var frames []grayFrame
 	for i, at := range times {
 		if (i+1)*size > len(pix) {
 			break
 		}
-		read.frames = append(read.frames, grayFrame{at: at, pix: pix[i*size : (i+1)*size]})
+		frames = append(frames, grayFrame{at: at, pix: pix[i*size : (i+1)*size]})
 	}
-	return read, nil
+	return frames, nil
 }
 
 // sampleGray pulls a handful of small greyscale frames from one part.
@@ -327,85 +269,6 @@ func (e *Engine) sampleGray(ctx context.Context, path string, start, duration fl
 	var out [][]byte
 	for i := 0; i+size <= len(raw); i += size {
 		out = append(out, raw[i:i+size])
-	}
-	return out
-}
-
-// shotChange is how different two frames have to be to be two cameras: a
-// mean difference of 30 in 255. It is the same measure and the same line
-// as the 0.30 the scene filter is given in DetectShots.
-const shotChange = 30.0
-
-// frameDifference is the mean absolute difference of two grey frames of the
-// same size, from 0 to 255.
-func frameDifference(a, b []byte) float64 {
-	n := min(len(a), len(b))
-	if n == 0 {
-		return 255
-	}
-	total := 0
-	for i := range n {
-		d := int(a[i]) - int(b[i])
-		if d < 0 {
-			d = -d
-		}
-		total += d
-	}
-	return float64(total) / float64(n)
-}
-
-// sameShot says whether a clip that leaves the episode at one moment and
-// comes back at another comes back to the same camera. What was cut out in
-// between does not matter to the clip, only the frame it leaves on and the
-// frame it comes back to. Two frames it cannot read are taken as two shots:
-// a shot measured on its own is never framed for the wrong camera.
-func (e *Engine) sameShot(ctx context.Context, path string, leave, back float64) bool {
-	const w, h = 128, 72
-	before := e.sampleGray(ctx, path, math.Max(leave-0.1, 0), 0.1, w, h, 1)
-	after := e.sampleGray(ctx, path, back, 0.1, w, h, 1)
-	if len(before) == 0 || len(after) == 0 {
-		return false
-	}
-	return frameDifference(before[0], after[0]) < shotChange
-}
-
-// comesBack is sameShot for two spans already read: the frame the first
-// leaves on, a tenth of a second before its end, against the first frame
-// of the second, each made smaller by four the way sameShot compares them.
-// Spans read without those frames are asked of sameShot.
-func (e *Engine) comesBack(ctx context.Context, path string, left, came spanRead, leave, back float64) bool {
-	var before, after []byte
-	for _, f := range left.frames {
-		if f.at >= leave-0.1-0.001 {
-			before = f.pix
-			break
-		}
-	}
-	if len(came.frames) > 0 && came.frames[0].at < back+frameStep {
-		after = came.frames[0].pix
-	}
-	if before == nil || after == nil {
-		return e.sameShot(ctx, path, leave, back)
-	}
-	return frameDifference(quarter(before), quarter(after)) < shotChange
-}
-
-// quarter is a grey frame of FaceWidth by FaceHeight made four times
-// smaller each way, each pixel the mean of the sixteen it covers.
-func quarter(pix []byte) []byte {
-	w, h := FaceWidth/4, FaceHeight/4
-	out := make([]byte, w*h)
-	for y := range h {
-		for x := range w {
-			sum := 0
-			for dy := range 4 {
-				row := (y*4 + dy) * FaceWidth
-				for dx := range 4 {
-					sum += int(pix[row+x*4+dx])
-				}
-			}
-			out[y*w+x] = byte(sum / 16)
-		}
 	}
 	return out
 }
@@ -538,13 +401,13 @@ type timed struct {
 	value float64
 }
 
-// samplePositions measures where the window should sit across a shot.
+// samplePositions measures where the window should sit across a clip.
 //
 // A face is the answer when one can be found, because in an interview the
 // subject is a person and their face is the thing a viewer looks at. Detail
 // is the fallback for frames where no face is detected, which keeps the tool
 // working on footage of something that is not a person.
-func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span, reads []spanRead,
+func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span, read []grayFrame,
 	source SourceInfo, cropW int) []timed {
 	whole := 0.0
 	for _, p := range parts {
@@ -555,19 +418,17 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 	}
 	start := parts[0].Start
 	count := max(2, min(int(whole/frameStep)+1, 200))
-	// The frames of every part of the shot the clip keeps, read with its
-	// span, and nothing from what it leaves out. A part too short to hold
-	// one of them is read on its own.
+	// The frames of every part the clip keeps, read with its span, and
+	// nothing from what it leaves out. A part too short to hold one of
+	// them is read on its own.
 	var frames [][]byte
 	var times []float64
 	for _, p := range parts {
 		got := 0
-		for _, r := range reads {
-			for _, f := range r.frames {
-				if f.at >= p.Start-0.001 && f.at < p.End {
-					frames, times = append(frames, f.pix), append(times, f.at)
-					got++
-				}
+		for _, f := range read {
+			if f.at >= p.Start-0.001 && f.at < p.End {
+				frames, times = append(frames, f.pix), append(times, f.at)
+				got++
 			}
 		}
 		if got == 0 {
@@ -577,7 +438,7 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 			}
 		}
 	}
-	// A long shot is measured on as many frames as before, spread over it.
+	// A long clip is measured on as many frames as before, spread over it.
 	if len(frames) > count {
 		keptFrames, keptTimes := make([][]byte, 0, count), make([]float64, 0, count)
 		for i := range count {
@@ -622,22 +483,22 @@ func (e *Engine) samplePositions(ctx context.Context, path string, parts []Span,
 
 	// The two estimators do not agree on where a person is, and they should
 	// not, since one points at a face and the other at whatever is in focus.
-	// Mixing them in one shot produced a framing that slid across as face
-	// detections took over. Whichever answered for most of the shot is used,
+	// Mixing them in one clip produced a framing that slid across as face
+	// detections took over. Whichever answered for most of the clip is used,
 	// and the other is discarded rather than averaged in.
 	if len(faces) >= max(2, len(frames)/5) {
-		e.Log.Detail("shot at %ss: framed on a face (%d/%d frames)",
+		e.Log.Detail("clip at %ss: framed on a face (%d/%d frames)",
 			fixed(start, 1), len(faces), len(frames))
 		return faces
 	}
 	if len(faces) > 0 {
-		e.Log.Detail("shot at %ss: only %d face detections, falling back to "+
-			"detail for the whole shot", fixed(start, 1), len(faces))
+		e.Log.Detail("clip at %ss: only %d face detections, falling back to "+
+			"detail for the whole clip", fixed(start, 1), len(faces))
 	}
 	return details
 }
 
-// settledCrop is one crop for the shot, the middle of where the subject was.
+// settledCrop is one crop for the clip, the middle of where the subject was.
 // A still frame with the subject slightly off centre beats a frame that
 // slides around behind them. The median keeps a handful of bad measurements
 // from pulling the result.
@@ -653,49 +514,19 @@ func settledCrop(samples []timed) (float64, bool) {
 	return values[len(values)/2], true
 }
 
-// cropCache is the framing of each shot, measured once and shared by every
-// clip that shows it. Clips are framed side by side while the model is still
-// writing, so it is locked. Two clips that reach the same shot at the same
-// moment both measure it and get the same answer, which costs a little and
-// is never wrong.
-type cropCache struct {
-	mu    sync.Mutex
-	crops map[float64]*int
-}
-
-func newCropCache() *cropCache { return &cropCache{crops: map[float64]*int{}} }
-
-func (c *cropCache) get(key float64) (*int, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	crop, known := c.crops[key]
-	return crop, known
-}
-
-func (c *cropCache) put(key float64, crop *int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.crops[key] = crop
-}
-
-// ClipSegments turns a clip's spans into segments, with one crop per camera
-// angle.
+// ClipSegments turns a clip's spans into segments, all with one crop.
 //
-// The crop belongs to the shot, not to the segment. Removing a pause splits a
-// span into pieces that are still the same locked-off camera, and measuring
-// each piece separately made the framing jump on every internal cut even
-// though nothing in the picture had changed. So every piece of the same shot
-// gets the same crop, measured once over all of them.
+// The crop belongs to the clip, not to the segment. Removing a pause splits a
+// span into pieces of the same picture, and measuring each piece separately
+// made the framing jump on every internal cut even though nothing in the
+// picture had changed. So every piece gets the same crop, measured once over
+// all of them, and only the keyframes a person sets move it. A clip used to
+// be parted at every camera switch, with a crop for each camera, which Tim
+// found never showed, #396.
 //
-// Only what the clip keeps is decoded. Each kept span is searched for camera
-// switches on its own, and where the clip leaves the episode and comes back,
-// the frame it leaves on is compared with the frame it comes back to. The
-// material cut out in between was decoded twice over before, once to find
-// the switches in it and once for the framing, for a question it cannot
-// answer better than those two frames: whether the clip comes back to the
-// camera it left.
+// Only what the clip keeps is decoded, each kept span once.
 func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
-	source SourceInfo, cropW int, cache *cropCache, work *cropWork) ([]Segment, error) {
+	source SourceInfo, cropW int, work *cropWork) ([]Segment, error) {
 	if len(spans) == 0 {
 		return nil, nil
 	}
@@ -704,69 +535,41 @@ func (e *Engine) ClipSegments(ctx context.Context, path string, spans []Span,
 	work.start(ordered)
 	e.decoderUsed(ctx, path, ordered[0].Start)
 
-	type shot struct {
-		key   float64
-		parts []Span
-	}
-	var shots []*shot
-	reads := make([]spanRead, len(ordered))
-	for i, span := range ordered {
+	var kept []Span
+	var read []grayFrame
+	for _, span := range ordered {
+		if span.End-span.Start < 0.25 {
+			continue
+		}
 		work.part(span.End - span.Start)
-		read, err := e.readSpan(ctx, path, span.Start, span.End, true)
+		frames, err := e.readSpan(ctx, path, span.Start, span.End)
 		if err != nil {
 			return nil, err
 		}
-		reads[i] = read
-		cuts := read.cuts
-		// Coming back from what was cut out, to the camera it left or to
-		// another one.
-		back := i > 0 && len(shots) > 0 &&
-			e.comesBack(ctx, path, reads[i-1], read, ordered[i-1].End, span.Start)
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
 		work.partDone()
-		bounds := append(append([]float64{span.Start}, cuts...), span.End)
-		for j := 0; j+1 < len(bounds); j++ {
-			part := Span{bounds[j], bounds[j+1]}
-			if part.End-part.Start < 0.25 {
-				continue
-			}
-			if j == 0 && back {
-				last := shots[len(shots)-1]
-				last.parts = append(last.parts, part)
-				continue
-			}
-			shots = append(shots, &shot{key: roundTo(part.Start, 1), parts: []Span{part}})
-		}
+		kept = append(kept, span)
+		read = append(read, frames...)
 	}
-
-	var segments []Segment
-	for _, s := range shots {
-		kept := 0.0
-		for _, part := range s.parts {
-			kept += part.End - part.Start
-		}
-		work.part(kept)
-		crop, known := cache.get(s.key)
-		if !known {
-			// Measured once per shot, not per piece, so removing a pause
-			// never changes the framing.
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			samples := e.samplePositions(ctx, path, s.parts, reads, source, cropW)
-			if settled, ok := settledCrop(samples); ok {
-				x := int(settled)
-				crop = intPtr(ClampCropX(&x, cropW, source.Width))
-			}
-			cache.put(s.key, crop)
-		}
-		work.partDone()
-		for _, part := range s.parts {
-			segments = append(segments, Segment{Start: part.Start, End: part.End, CropX: crop})
-		}
+	if len(kept) == 0 {
+		return nil, nil
 	}
-	sort.SliceStable(segments, func(i, j int) bool { return segments[i].Start < segments[j].Start })
+	whole := 0.0
+	for _, span := range kept {
+		whole += span.End - span.Start
+	}
+	work.part(whole)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	var crop *int
+	if settled, ok := settledCrop(e.samplePositions(ctx, path, kept, read, source, cropW)); ok {
+		x := int(settled)
+		crop = intPtr(ClampCropX(&x, cropW, source.Width))
+	}
+	work.partDone()
+	segments := make([]Segment, len(kept))
+	for i, span := range kept {
+		segments[i] = Segment{Start: span.Start, End: span.End, CropX: crop}
+	}
 	return segments, nil
 }

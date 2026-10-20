@@ -322,7 +322,7 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 	tr := &Transcript{Words: words}
 	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
-		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 300}]}]}`
+		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 120}]}]}`
 	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestTrimClipSnapsToWords(t *testing.T) {
 		t.Fatal(err)
 	}
 	segs := clips[0].Segments
-	if len(segs) != 2 || segs[0].Start != 9.9 || segs[1].End != 13.6 || *segs[0].CropX != 120 || *segs[1].CropX != 300 {
+	if len(segs) != 2 || segs[0].Start != 9.9 || segs[1].End != 13.6 || *segs[0].CropX != 120 || *segs[1].CropX != 120 {
 		t.Errorf("segments %+v", segs)
 	}
 	if said := Said(clips[0], words); len(said) != 4 {
@@ -364,7 +364,7 @@ func TestTrimClipToFramesStaysWhereItWasPut(t *testing.T) {
 	tr := &Transcript{Words: words}
 	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"source": "ep.mp4", "clips": [{"id": "01", "slug": "x", "segments": [` +
-		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 300}]}]}`
+		`{"start": 10.5, "end": 11.1, "crop_x": 120}, {"start": 11.9, "end": 12.5, "crop_x": 120}]}]}`
 	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -841,18 +841,15 @@ func TestCropByHand(t *testing.T) {
 	fsys := afero.NewMemMapFs()
 	path := filepath.Join(memDir(t, fsys), "clips.json")
 	plan := `{"clips": [{"id": "01", "segments": [` +
-		`{"start": 0, "end": 5, "crop_x": 400}, {"start": 5, "end": 9, "crop_x": 1200}, ` +
-		`{"start": 10, "end": 14, "crop_x": 400}, {"start": 14, "end": 18}]}]}`
+		`{"start": 0, "end": 5, "crop_x": 400}, {"start": 5, "end": 9, "crop_x": 400}, ` +
+		`{"start": 10, "end": 14, "crop_x": 400}]}, ` +
+		`{"id": "02", "segments": [{"start": 20, "end": 25}]}]}`
 	if err := afero.WriteFile(fsys, path, []byte(plan), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	crops := func() string {
-		_, clips, err := LoadClips(fsys, path)
-		if err != nil {
-			t.Fatal(err)
-		}
+	crops := func(id string) string {
 		out := ""
-		for _, s := range clips[0].Segments {
+		for _, s := range clipByID(t, fsys, path, id).Segments {
 			x := "centre"
 			if s.CropX != nil {
 				x = fmt.Sprint(*s.CropX)
@@ -864,31 +861,31 @@ func TestCropByHand(t *testing.T) {
 		}
 		return out
 	}
-	// Moving the first angle moves both of its pieces, not the others.
+	// A crop placed by hand is the crop of the whole clip, cuts and all.
 	if err := SetCrop(fsys, path, "01", 2, 501, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := crops(); got != "500* 1200 500* centre " {
+	if got := crops("01"); got != "500* 500* 500* " {
 		t.Errorf("after moving %q", got)
 	}
 	// Moving it again keeps the automatic placement from the first time.
 	if err := SetCrop(fsys, path, "01", 11, 600, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
-	// A centred piece can be moved and reset too.
-	if err := SetCrop(fsys, path, "01", 16, 100, SourceInfo{}, 0); err != nil {
+	// A centred clip can be moved and reset too.
+	if err := SetCrop(fsys, path, "02", 21, 100, SourceInfo{}, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := crops(); got != "600* 1200 600* 100* " {
+	if got := crops("01") + "| " + crops("02"); got != "600* 600* 600* | 100* " {
 		t.Errorf("after moving again %q", got)
 	}
 	if err := ResetCrop(fsys, path, "01", 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := ResetCrop(fsys, path, "01", 15); err != nil {
+	if err := ResetCrop(fsys, path, "02", 21); err != nil {
 		t.Fatal(err)
 	}
-	if got := crops(); got != "400 1200 400 centre " {
+	if got := crops("01") + "| " + crops("02"); got != "400 400 400 | centre " {
 		t.Errorf("after resetting %q", got)
 	}
 	body, _ := afero.ReadFile(fsys, path)
