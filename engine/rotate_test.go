@@ -158,8 +158,10 @@ func TestACropOnARotatedPieceMovesThePiecesTurnedAlike(t *testing.T) {
 
 // A part turned the way another part already is takes the crop placed on
 // that one, since the pieces turned alike share one crop. It stood in the
-// middle of the picture instead, the clip then had two crops turned 90,
-// and the fuzzing found it on main, #402.
+// middle of the picture instead, and the clip had two crops turned 90 in
+// its file, which the fuzzing found on main, #402. The app played both
+// with the one placed by hand, so it showed only once the part with the
+// crop was turned on: the other part then jumped to the middle.
 func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
 	fsys, path := rotatablePlanPath(t)
 	rotate(t, fsys, path, 13.5)
@@ -168,14 +170,18 @@ func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
 	}
 	rotate(t, fsys, path, 10.5)
 	if err := cropsAlike(fsys, path); err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
+	rotate(t, fsys, path, 13.5) // the part with the crop turns on, to 180
 	turns, crops := rotations(t, fsys, path)
 	for i, c := range crops {
-		if turns[i] != 90 || c == nil || *c != 400 {
-			t.Errorf("piece %d is turned %d and plays with %v, not 90 with the crop placed on the other part",
-				i, turns[i], fmtCrop(c))
+		if turns[i] == 90 && (c == nil || *c != 400) {
+			t.Errorf("piece %d, turned 90, plays with %v, not the crop placed on the other part",
+				i, fmtCrop(c))
 		}
+	}
+	if turns[0] != 90 || turns[1] != 90 || turns[2] != 180 {
+		t.Errorf("the pieces are turned %v, not 90, 90 and 180", turns)
 	}
 }
 

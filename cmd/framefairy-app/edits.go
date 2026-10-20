@@ -68,19 +68,23 @@ func (s *FrameFairy) RotatePart(ctx context.Context, path, plan, clipID string, 
 	}
 	began := time.Now()
 	err = s.edit(path, func() error { return engine.RotatePart(s.store.files, plan, clipID, at, info) })
-	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err).Float64("at", at)
-	if err != nil {
-		line.Msg("rotate a part")
-		return ClipEntry{}, err
+	var entry ClipEntry
+	if err == nil {
+		entry, err = s.clipEntry(ctx, path, plan, clipID)
 	}
-	entry, err := s.clipEntry(ctx, path, plan, clipID)
 	// The turn the part has now and the crop it plays with, so a report
-	// shows whether it took the crop of a part turned alike, #402.
+	// shows whether it took the crop of a part turned alike, #402. The
+	// line is written once both calls are made, so a clip that could not
+	// be read back is no rotate that went well.
+	line := editLine(editLevel(err), path, clipID, time.Since(began)).Err(err).Float64("at", at)
 	if i := pieceAt(entry.Segments, at); err == nil && i >= 0 {
 		line = line.Int("turn", entry.Segments[i].Rotate).Bool("crop_placed", entry.Segments[i].Moved)
 	}
 	line.Msg("rotate a part")
-	return entry, err
+	if err != nil {
+		return ClipEntry{}, err
+	}
+	return entry, nil
 }
 
 // pieceAt is the piece of a clip that holds a moment, or the nearest, the
