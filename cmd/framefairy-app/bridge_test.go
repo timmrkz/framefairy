@@ -618,7 +618,7 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 	cs.publish(b.t, builds...)
 	c := &updating{
 		own:  from,
-		busy: b.d.svc.jobs.busy,
+		idle: b.d.svc.jobs.closeIfIdle,
 		emit: func(s UpdateState) { b.d.bus.send("updates", s) },
 		load: func() string { return stored },
 		save: func(string) error { return nil },

@@ -872,6 +872,31 @@
 //                      inside the folder the settings name for shorts, the
 //                      file is there and the app serves it, Render says
 //                      Render again and Show in folder is there
+//   ["short removed"]  the chosen clip's short and its pictures are
+//                      deleted from the disk, the way a person cleans up
+//                      after uploading them
+//   ["rendered, short gone"]
+//                      the clip still says it was rendered, its card's
+//                      green dot and its green mark on the range picker
+//                      among it, Render says Render again and Show in
+//                      folder is not there
+//   ["licence row whole"]
+//                      at several widths of the app the licence row's
+//                      field, Unlock and bin stand on whole pixels, with
+//                      "refused" a key that is none is typed and Unlock
+//                      refuses it, and the line that says why wraps to
+//                      more lines at one width than at another
+//   ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
+//                      the head of the clip list, so the clip made by hand
+//                      says Stopped with Continue in its card
+//   ["remove stopped", how]
+//                      the bin on that card is clicked, and it says
+//                      Removed with Put it back, and its mark leaves the
+//                      range picker at once. With "put back" that is
+//                      clicked, and the card says Stopped again and the
+//                      work stays. With "for good" the time runs down, the
+//                      card goes and the Go side calls the work off
+//   ["no hand card"]   no card of a clip made by hand is in the list
 //   ["channel", name]  the Updates page's list says this, in ten seconds
 //                      at most
 //   ["choices", names, picked]
@@ -881,6 +906,10 @@
 //                      the line under the build comes to say this head, in
 //                      ten seconds at most, and more somewhere after it
 //   ["no check"]       the line under the build offers no button
+//   ["relaunch", how]  the line under the build offers Relaunch, "waits"
+//                      greyed out with its title saying it waits for the
+//                      search, and "ready" usable again, within a minute,
+//                      and the line wears the card's own background
 //   ["build mark", what]
 //                      the line under the build starts with this mark,
 //                      "check", "triangle" or "dot", and ", warning" when
@@ -1994,6 +2023,17 @@ export const sequences = [
     ],
   },
   {
+    // Issue #339: the licence key field and Unlock stood half a pixel
+    // down, their top at 699.5, because the words beside them were an odd
+    // height, and so they would step as they faded or moved.
+    name: "the licence row stands on whole pixels, on one line and on two",
+    steps: [
+      ["settings"],
+      ["licence row whole"],
+      ["licence row whole", "refused"],
+    ],
+  },
+  {
     // Plan row 2.245. Settings, Advanced shows the app's log, and its bin
     // removes every file of it, the older one too, after asking. Cancel
     // leaves it as it was, and the log that follows is the one new file.
@@ -3053,6 +3093,28 @@ export const sequences = [
     steps: [["render"], ["rendered"], ["by its words"], ["restart"], ["rendered"]],
   },
   {
+    // Issue #257: a clip made by hand whose work stopped could only be
+    // carried on, never removed, since Cancel on the Activity page went.
+    name: "a clip made by hand that stopped can be removed, and put back first",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["hand stopped"],
+      ["remove stopped", "put back"],
+      ["remove stopped", "for good"],
+      ["speech", 0],
+      ["restart"],
+      ["no hand card"],
+    ],
+  },
+  {
+    // Issue #384: Tim rendered a clip, uploaded the short and removed it
+    // and its pictures from the folder. The clip lost its green dot and its
+    // green mark, as if it had never been rendered.
+    name: "a clip stays rendered after its short is removed from its folder",
+    steps: [["thumbnail"], ["render"], ["rendered"], ["short removed"], ["restart"], ["rendered, short gone"]],
+  },
+  {
     // Plan row 2.133, found while 2.127 was fixed: a short is named after
     // its clip, and two episodes render into the one folder for shorts the
     // bridge names, so the clip of a second episode with the same name
@@ -3572,6 +3634,28 @@ export const sequences = [
       ["channel", "PR #20, conflicts"],
       ["build mark", "dot, warning"],
       ["warned"],
+    ],
+  },
+  {
+    // Tim could relaunch into another build while a clip search ran, which
+    // stops the search half way (#382). Relaunch waits for it, following
+    // another channel meanwhile stops nothing, and once the search ends
+    // Relaunch can be pressed again by itself.
+    name: "Relaunch waits while a search runs, and the search goes on",
+    steps: [
+      ["speech", 3000],
+      ["add", 120],
+      ["wait for", "Cancel"],
+      ["updates", { from: "main", list: "main,pr-20" }],
+      ["status", "A newer build is ready", "Relaunch once the search is done"],
+      ["relaunch", "waits"],
+      ["follow", "PR #20"],
+      ["status", "A newer build is ready", "Relaunch once the search is done"],
+      ["relaunch", "waits"],
+      ["hearing"],
+      ["speech", 0],
+      ["relaunch", "ready"],
+      ["status", "A newer build is ready", "Relaunch to finish updating"],
     ],
   },
 ];
@@ -4118,7 +4202,7 @@ function picturesOf(short) {
 // Where the clip's short is, as the clip says, or empty when it has none.
 async function shortOf(page, at) {
   const clip = (await ask(page, "Clips", at.path)).find((c) => c.plan === at.plan && c.id === at.clip);
-  return clip?.rendered ?? "";
+  return clip?.short ?? "";
 }
 
 // What is wrong with the short Render wrote for a clip, read back from
@@ -4295,6 +4379,11 @@ for (const seq of toWalk) {
   let wrong = null;
   // The video and the other file dropped last.
   let droppedVideo = "";
+  // How long a removed thing can be put back, in seconds, secondThoughts
+  // in lib/removed.ts.
+  const removeTime = 10;
+  // The job of the clip made by hand that "hand stopped" stopped.
+  let handJob = "";
   // The video whose folder a walk deleted from outside the app.
   let folderGone = "";
   // Whether the walk deleted that video too.
@@ -7818,6 +7907,60 @@ for (const seq of toWalk) {
         if (!wrong && /decod/i.test(trouble)) wrong = `the video preview says "${trouble}"`;
         break;
       }
+      case "licence row whole": {
+        const was = page.viewportSize();
+        const lines = new Set();
+        const problems = [];
+        if (arg === "refused") {
+          await page.locator("input.licence-key").fill("FF1-not-a-key");
+          await page.locator("input.licence-key").press("Enter");
+          const said = await page
+            .waitForFunction(() => document.querySelector(".licence-line.error")?.textContent.trim(), null, { timeout: 10000 })
+            .then(() => true, () => false);
+          if (!said) problems.push("the licence row's line says no key was refused");
+          // The refusal is the call failing, which is what was asked for.
+          await page.evaluate(() => {
+            for (const c of window.__calls) if (c.name === "SaveLicence" && c.failed) c.failed = null;
+          });
+        }
+        // Below the app's least width, 960, too: the line a link leaves
+        // with its key IDs is long enough to wrap at any width, and the
+        // refusal the bridge can give wraps only there.
+        // The page has its new width, and two frames have been drawn
+        // since, so what is measured is laid out at it.
+        const resized = async (width) => {
+          await page.waitForFunction((w) => window.innerWidth === w, width);
+          await nextPaint(page, 2);
+        };
+        for (const width of [1728, 1200, 960, 800, 700, 600]) {
+          await page.setViewportSize({ width, height: was.height });
+          await resized(width);
+          const m = await page.evaluate(() => {
+            const line = document.querySelector(".licence-line");
+            const field = line?.closest(".item");
+            const controls = [...(field?.querySelectorAll("input, button.unlock, button.bin") ?? [])];
+            return {
+              lines: line ? Math.round(line.getBoundingClientRect().height / parseFloat(getComputedStyle(line).lineHeight)) : 0,
+              row: field?.getBoundingClientRect().top ?? 0,
+              tops: controls.map((c) => [c.matches("input") ? "field" : c.matches(".unlock") ? "Unlock" : "bin", c.getBoundingClientRect().top]),
+            };
+          });
+          lines.add(m.lines);
+          if (!m.tops.length) problems.push(`at ${width} px the licence row has no field, Unlock or bin`);
+          for (const [name, top] of m.tops) {
+            // Narrower than the app gets, what stands above the row can
+            // wrap onto half a pixel of its own on CI's fonts, so there
+            // only the row's own half pixel is looked for.
+            const at = width >= 960 ? top : top - m.row;
+            if (at !== Math.round(at)) problems.push(`at ${width} px, with the line on ${m.lines} lines, the ${name} stands between two pixels, its top at ${top}, ${top - m.row} into its row`);
+          }
+        }
+        await page.setViewportSize(was);
+        await resized(was.width);
+        if (arg === "refused" && lines.size < 2) problems.push(`the refusal stood on ${[...lines].join(", ")} lines at every width, so a wrapped line was never measured`);
+        if (problems.length) wrong = problems.join("\n");
+        break;
+      }
       case "app size":
         await page.setViewportSize({ width: arg[0], height: arg[1] });
         await page.waitForTimeout(600);
@@ -10497,6 +10640,142 @@ for (const seq of toWalk) {
         else if (basename(short) !== `${entry?.slug}.mp4`) wrong = `the short is called ${basename(short)}, not ${entry?.slug}.mp4`;
         break;
       }
+      case "hand stopped": {
+        const path = await episodeOn(page);
+        const before = await page.evaluate(() => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key));
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        // The card the clip made by hand comes in, and the job it is on
+        // the way from, read off its key.
+        const key = await page
+          .waitForFunction(
+            (was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)),
+            before,
+            { timeout: 10000 },
+          )
+          .then((h) => h.jsonValue(), () => null);
+        const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
+        if (!job || job.kind !== "clip" || job.episode !== path) {
+          wrong = key ? `the card that came, ${key}, is not of a clip made by hand` : "I made no clip on a part not heard yet";
+          break;
+        }
+        handJob = job.id;
+        const card = page.locator(`li[data-key^="${handJob}/"]`);
+        const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
+        const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
+        if (!busy) {
+          wrong = `the head of the clip list says ${(await clipList(page))?.head}, not Cancel`;
+          break;
+        }
+        await cancel.click();
+        const said = await page
+          .waitForFunction((k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob, {
+            timeout: 20000,
+          })
+          .then(() => true, () => false);
+        if (!said) wrong = `the clip made by hand says "${(await card.first().textContent())?.replace(/\s+/g, " ").trim()}", not Stopped. Click Continue`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "remove stopped": {
+        const card = page.locator(`li[data-key^="${handJob}/"]`).first();
+        const key = await card.getAttribute("data-key");
+        const stateOf = async () => (await ask(page, "Jobs")).find((j) => j.id === handJob)?.state;
+        await card.hover();
+        if (!(await card.locator("button.drop").count())) {
+          wrong = "the card that stopped has no bin to remove it with";
+          break;
+        }
+        // The time a remove runs is run on by hand, so nothing waits on
+        // the clock: everything else goes on in step with it.
+        if (!page.__clock) {
+          await page.clock.install();
+          page.__clock = true;
+        }
+        // The marks of clips on their way on the range picker, the card's
+        // among them.
+        const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
+        const marked = await waiting();
+        await card.locator("button.drop").click();
+        const removed = await card
+          .locator(".gone", { hasText: "Removed" })
+          .waitFor({ timeout: 2000 })
+          .then(() => true, () => false);
+        if (!removed) {
+          wrong = "the bin on the card that stopped did not say Removed in its place";
+          break;
+        }
+        // The range picker says what the card says, in the same frame.
+        const left = await waiting();
+        if (left !== marked - 1) {
+          wrong = `the card says Removed and the range picker still has ${left} marks of clips on their way, of ${marked}`;
+          break;
+        }
+        if (arg === "put back") {
+          await card.getByRole("button", { name: "Put it back" }).click();
+          await page.mouse.move(5, 5);
+          const back = await page
+            .waitForFunction((k) => document.querySelector(`li[data-key="${k}"] .title`)?.textContent.trim() === "Stopped. Click Continue", key, {
+              timeout: 2000,
+            })
+            .then(() => true, () => false);
+          // Past the time a remove runs, so a put back that only hid it
+          // would have called the work off by now, and what that set
+          // going has come back.
+          await page.clock.runFor((removeTime + 1) * 1000);
+          await settle(page);
+          const state = await stateOf();
+          if (!back) wrong = "Put it back did not bring back the card that said Stopped";
+          else if ((await waiting()) !== marked) wrong = `put back, the range picker has ${await waiting()} marks of clips on their way, not ${marked}`;
+          else if (state !== "interrupted") wrong = `put back, the work of the clip is ${state}, not interrupted`;
+        } else {
+          // The time stands still under the hand, see Busy, so the hand
+          // goes off the list, and then it runs out.
+          await page.mouse.move(5, 5);
+          await page.clock.runFor((removeTime + 1) * 1000);
+          const gone = await page
+            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 10000 })
+            .then(() => true, () => false);
+          const state = await stateOf();
+          if (!gone) wrong = "the card that stopped is still in the list after its time ran down";
+          else if (state !== "cancelled") wrong = `removed, the work of the clip is ${state}, not cancelled`;
+        }
+        await watch.step("wait", s);
+        break;
+      }
+      case "no hand card": {
+        const path = await episodeOn(page);
+        const hand = (await ask(page, "Jobs")).filter((j) => j.kind === "clip" && j.episode === path).map((j) => j.id);
+        const left = await page.evaluate((ids) => [...document.querySelectorAll("li[data-key]")].filter((li) => ids.includes(li.dataset.key.split("/")[0])).length, hand);
+        if (left) wrong = `${left} cards of clips made by hand are in the list`;
+        break;
+      }
+      case "short removed": {
+        const short = await shortOf(page, await chosen(page));
+        if (!short || !existsSync(short)) {
+          wrong = "the clip has no short to remove";
+          break;
+        }
+        for (const file of [short, ...picturesOf(short)]) rmSync(file);
+        break;
+      }
+      case "rendered, short gone": {
+        const on = await chosen(page);
+        const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
+        const seen = await page.evaluate(() => ({
+          dot: !!document.querySelector("button.pick.current .dot.ok"),
+          mark: !!document.querySelector(".clipmark.selected.rendered"),
+          render: document.querySelector("button.primary.render")?.textContent.trim(),
+          folder: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Show in folder"),
+        }));
+        if (!entry?.rendered) wrong = "the clip says it was never rendered";
+        else if (entry.short) wrong = `the clip says its short is at ${entry.short}, which was removed`;
+        else if (!seen.dot) wrong = "the clip's card has no green dot";
+        else if (!seen.mark) wrong = "the clip's mark on the range picker is not green";
+        else if (seen.render !== "Render again") wrong = `the Render button says ${seen.render}, not Render again`;
+        else if (seen.folder) wrong = "Show in folder is there, with no short to show";
+        break;
+      }
       case "pictured": {
         const on = await chosen(page);
         const entry = (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip);
@@ -10672,6 +10951,32 @@ for (const seq of toWalk) {
       case "fits": {
         const now = await updatesPage(page);
         if (now.slack < 0 || now.slack > 60) wrong = `the list's trigger keeps ${Math.round(now.slack)} px beside ${now.channel}, room for a longer name`;
+        break;
+      }
+      case "relaunch": {
+        const waits = arg === "waits";
+        const read = () =>
+          page.evaluate(() => {
+            const line = document.querySelectorAll(".card.asks > .item")[1];
+            const button = line?.querySelector("button");
+            const card = line?.closest(".card");
+            return {
+              words: (button?.textContent ?? "").trim(),
+              off: !!button?.disabled,
+              title: button?.title ?? "",
+              // A row with nothing chosen in it lets the card show through.
+              lit: !!line && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)" && getComputedStyle(line).backgroundColor !== getComputedStyle(card).backgroundColor,
+            };
+          });
+        let now = await read();
+        for (const until = Date.now() + 60000; (now.words !== "Relaunch" || now.off !== waits) && Date.now() < until; ) {
+          await page.waitForTimeout(100);
+          now = await read();
+        }
+        if (now.words !== "Relaunch") wrong = `the line under the build offers ${now.words || "nothing"}, not Relaunch`;
+        else if (now.off !== waits) wrong = waits ? "Relaunch can be pressed while a search runs" : "Relaunch stayed greyed out after the search ended";
+        else if (waits && now.title !== "Waits until the search is done") wrong = `Relaunch's title says ${JSON.stringify(now.title)}`;
+        else if (now.lit) wrong = "the line under the build wears a grey of its own, which reads as greyed out";
         break;
       }
       case "no check": {

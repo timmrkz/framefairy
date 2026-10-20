@@ -856,7 +856,7 @@ button:has(> .beam):disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
   background: var(--ink-1);
-  /* So a chosen row's background keeps the card's corners. */
+  /* So nothing in a row spills over the card's corners. */
   overflow: hidden;
   /* Whole lines. The app's own 1.45 of 13 is 18.85, and a stack of those
      leaves every row below a fraction off a whole pixel. */
@@ -879,11 +879,6 @@ button:has(> .beam):disabled {
 .card .item + .item {
   border-top: 1px solid var(--line);
   min-height: 65px;
-}
-
-/* The same background a chosen row wears everywhere else in the app. */
-.card .item.on {
-  background: var(--ink-3);
 }
 
 /* The mark before the words, as wide as the biggest icon a row carries,
