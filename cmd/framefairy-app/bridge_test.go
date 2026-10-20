@@ -382,6 +382,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	// What the last report on the bridge's Desktop holds, by name.
 	mux.HandleFunc("/report-made", func(w http.ResponseWriter, r *http.Request) {
+		if file := r.URL.Query().Get("file"); file != "" {
+			text, err := lastReportFile(filepath.Join(b.d.home, "Desktop"), file)
+			answer(w, text, err)
+			return
+		}
 		names, err := lastReport(filepath.Join(b.d.home, "Desktop"))
 		answer(w, names, err)
 	})
@@ -1108,18 +1113,9 @@ func (b *bridge) pickPicture(name, w, h, kind string, box bool) (string, error) 
 //
 // On the real disk: a report is a zip on the Desktop.
 func lastReport(dir string) ([]string, error) {
-	zips, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
-	if len(zips) == 0 {
-		return []string{}, nil
-	}
-	sort.Slice(zips, func(i, j int) bool {
-		a, _ := os.Stat(zips[i])
-		c, _ := os.Stat(zips[j])
-		return a.ModTime().Before(c.ModTime())
-	})
-	z, err := zip.OpenReader(zips[len(zips)-1])
-	if err != nil {
-		return nil, err
+	z, err := newestReport(dir)
+	if z == nil || err != nil {
+		return []string{}, err
 	}
 	defer z.Close()
 	names := []string{}
@@ -1127,6 +1123,43 @@ func lastReport(dir string) ([]string, error) {
 		names = append(names, f.Name)
 	}
 	return names, nil
+}
+
+// lastReportFile is what the file whose name ends in name holds in the
+// newest report, so a walk can read what the report says was written.
+func lastReportFile(dir, name string) (string, error) {
+	z, err := newestReport(dir)
+	if z == nil || err != nil {
+		return "", err
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		if !strings.HasSuffix(f.Name, name) {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			return "", err
+		}
+		defer r.Close()
+		b, err := io.ReadAll(r)
+		return string(b), err
+	}
+	return "", fmt.Errorf("the report holds no %s", name)
+}
+
+// newestReport opens the zip last made in dir, or none when there is none.
+func newestReport(dir string) (*zip.ReadCloser, error) {
+	zips, _ := filepath.Glob(filepath.Join(dir, "*.zip"))
+	if len(zips) == 0 {
+		return nil, nil
+	}
+	sort.Slice(zips, func(i, j int) bool {
+		a, _ := os.Stat(zips[i])
+		c, _ := os.Stat(zips[j])
+		return a.ModTime().Before(c.ModTime())
+	})
+	return zip.OpenReader(zips[len(zips)-1])
 }
 
 // pickSound makes a file of sound with no picture, named like a video,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
@@ -7,6 +7,8 @@
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import { toasts } from "../lib/toast.svelte";
+  // A line in the app's log. said is the words being dictated here.
+  import { said as log } from "../lib/said";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -37,8 +39,13 @@
   // and keeps what was said. The Go side records and writes down, see
   // listen.go.
   let field: HTMLDivElement;
+  let report: HTMLButtonElement;
   let listening = $state(false);
   let hearing = $state(false);
+  // The last words of a dictation being written down, which Report
+  // waits for, so Tab and Enter right after Enter make a report with
+  // them in it, issue #404.
+  let writing: Promise<void> = Promise.resolve();
   // The recording in hand, how many of its pieces are in the field, and
   // how many times words being heard were settled here by a click.
   let recording = 0;
@@ -634,6 +641,8 @@
     chime("off");
     loud = 0;
     hearing = true;
+    let written = () => {};
+    writing = new Promise((done) => (written = done));
     try {
       // It may have stopped by itself just before, and then says why.
       const d = await api.stopListening();
@@ -646,6 +655,7 @@
     } finally {
       finish(true);
       hearing = false;
+      written();
     }
   }
 
@@ -653,6 +663,7 @@
   // Removing it is Cmd+Z after, one step, and Cmd+Shift+Z brings it back,
   // so no key throws a report away for good.
   function key(e: KeyboardEvent) {
+    if (e.key === "Tab" && !e.isComposing && !e.altKey && !e.metaKey && !e.ctrlKey) return void tab(e);
     if (!listening) return;
     if (e.key === "Enter" && !e.isComposing && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -662,6 +673,31 @@
       e.stopPropagation();
       keep();
     }
+  }
+
+  // Tab goes from the field to Report, then through the pictures and
+  // back to the field, and Shift+Tab the other way, issue #404. Tim ends
+  // a dictation with Enter and makes the report with Tab and Enter. macOS
+  // only tabs between buttons when full keyboard access is on, so WebKit
+  // passed over Report to the first picture, or with none to nothing on
+  // the page. The page moves the focus itself, as Confirm.svelte does.
+  // Tab while dictating keeps what was said, as Enter does, and goes on.
+  const stops = () => [field, report, ...document.querySelectorAll<HTMLElement>(".pictures figure, .pictures button.back")];
+  const named = (e: Element | null) => (e === field ? "the field" : e === report ? "Report" : (e?.getAttribute("aria-label") ?? e?.textContent?.trim() ?? "nothing"));
+  async function tab(e: KeyboardEvent) {
+    const here = document.activeElement as HTMLElement | null;
+    if (!here || !stops().includes(here)) return;
+    e.preventDefault();
+    if (listening && here === field) {
+      log("report: Tab keeps what was said", { level: "info" });
+      keep();
+      // Report takes the focus once it is no longer off while listening.
+      await tick();
+    }
+    const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled);
+    const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length];
+    next.focus();
+    log(`report: ${e.shiftKey ? "Shift+Tab" : "Tab"} moved the focus from ${named(here)} to ${named(next)}`);
   }
 
   // A recording is not left running behind another page.
@@ -702,6 +738,11 @@
     if (making) return;
     making = true;
     note = "";
+    // Pressed while the last words of a dictation are written down, it
+    // shows it is making the report at once and waits for them, so they
+    // are in it, issue #404.
+    if (hearing) log("report: Report waits for the last words of the dictation", { level: "info" });
+    await writing;
     // Nothing is kept from here: the Go side lets go of the draft and
     // closes the window, which would otherwise keep the text again as it
     // went.
@@ -816,7 +857,7 @@
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
-      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
+      <button bind:this={report} class="act primary report" onclick={make} disabled={making || listening || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
       </button>
