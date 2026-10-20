@@ -24,12 +24,29 @@ import (
 )
 
 // RenderError is a failure the operator can act on, as opposed to a bug.
-type RenderError struct{ Msg string }
+// Said is one already in the words a person reads, with what to do, and a
+// search says it as it is, see planFailed.
+type RenderError struct {
+	Msg  string
+	Said bool
+}
 
 func (e *RenderError) Error() string { return e.Msg }
 
 func renderErr(format string, a ...any) error {
 	return &RenderError{Msg: sprintf(format, a...)}
+}
+
+// saidErr is a failure said in a person's words, from its first sentence,
+// which is what the row of a search shows. Issue #311.
+func saidErr(format string, a ...any) error {
+	return &RenderError{Msg: sprintf(format, a...), Said: true}
+}
+
+// inWords says whether err is a failure already said in a person's words.
+func inWords(err error) bool {
+	var r *RenderError
+	return errors.As(err, &r) && r.Said
 }
 
 // APICalls counts what a run asked of the API. A retry is a request you are

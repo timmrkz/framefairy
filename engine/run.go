@@ -972,9 +972,10 @@ func (e *Engine) planFailed(ctx context.Context, err error) error {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return e.fail(ctx, err)
 	}
-	// A model that does not fit says so as it is: its first sentence is
-	// what the row of the search shows, see ErrNoRoom.
-	if errors.Is(err, ErrNoRoom) {
+	// A model that does not fit, and anything else already said in a
+	// person's words, says so as it is: its first sentence is what the
+	// row of the search shows, see ErrNoRoom and saidErr.
+	if errors.Is(err, ErrNoRoom) || inWords(err) {
 		return err
 	}
 	return fmt.Errorf("planning failed: %w", err)

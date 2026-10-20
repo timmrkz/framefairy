@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -540,5 +541,74 @@ func TestAnAnswerPastTheLimitIsRefused(t *testing.T) {
 	_, err := e.RepairJSON(context.Background(), `{"clips": [`, "gpt-6-sol", "")
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("an answer past the limit: %v", err)
+	}
+}
+
+// A call that fails says why in words a person reads, with the company's
+// own message and not the JSON around it, and what to do. A search says
+// it as it is, without "planning failed" in front, since its first
+// sentence is what the row of the search shows. Issue #311.
+func TestAFailedCallSaysWhyInWords(t *testing.T) {
+	busy := func(w http.ResponseWriter) {
+		w.Header().Set("retry-after", "0")
+		w.WriteHeader(529)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)
+	}
+	credit := func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}`)
+	}
+	refused := func(w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`)
+	}
+	for _, c := range []struct {
+		name    string
+		answers []func(w http.ResponseWriter)
+		says    string
+	}{
+		{"busy", []func(w http.ResponseWriter){busy, busy, busy, busy},
+			"Anthropic is busy and did not answer after 4 tries. Try again in a few minutes. Anthropic said: Overloaded."},
+		{"out of credit", []func(w http.ResponseWriter){credit},
+			"Anthropic refused the request: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits. Asking again will not change that."},
+		{"key refused", []func(w http.ResponseWriter){refused},
+			"Anthropic did not accept the API key in ANTHROPIC_API_KEY. Check it at platform.claude.com."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, e := cloud(t, afero.NewMemMapFs(), c.answers...)
+			_, err := e.CallAPI(context.Background(), "p", "claude-opus-5-5", 100, "", "plan", "", nil)
+			if err == nil {
+				t.Fatal("the call did not fail")
+			}
+			if got := e.planFailed(context.Background(), err).Error(); got != c.says {
+				t.Errorf("the search says\n%q\nnot\n%q", got, c.says)
+			}
+		})
+	}
+}
+
+// What a company said is its message, from the JSON either company sends,
+// and nothing when the body is not that.
+func TestProviderMessage(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"type":"error","error":{"type":"rate_limit_error","message":"Number of requests has exceeded your rate limit"}}`: "Number of requests has exceeded your rate limit.",
+		`{"error":{"message":"You exceeded your current quota.","type":"insufficient_quota"}}`:                             "You exceeded your current quota.",
+		`<html><body>Bad gateway</body></html>`: "",
+		`{"error":{"message":""}}`:              "",
+		``:                                      "",
+	} {
+		if got := providerMessage(body); got != want {
+			t.Errorf("%s: %q, not %q", body, got, want)
+		}
+	}
+}
+
+// A company that cannot be reached is named, with what to check.
+func TestUnreachableSaysWhatToCheck(t *testing.T) {
+	anthropic, _ := ProviderNamed("anthropic")
+	err := unreachable(anthropic, errors.New(`Post "https://api.anthropic.com/v1/messages": dial tcp: lookup api.anthropic.com: no such host`))
+	want := `Could not reach Anthropic. Check the internet connection, then try again. The system said: Post "https://api.anthropic.com/v1/messages": dial tcp: lookup api.anthropic.com: no such host`
+	if got := (&Engine{}).planFailed(context.Background(), err).Error(); got != want {
+		t.Errorf("%q", got)
 	}
 }
