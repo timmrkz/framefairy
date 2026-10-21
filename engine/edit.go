@@ -540,9 +540,10 @@ func autoCrop(seg *object) any {
 // on the start of a frame, the only place a video is cut. Four turns bring
 // it back.
 //
-// The crop of a rotated piece stands in the middle of the picture rotated
-// until it is placed, and the crop it has unrotated is kept as it was, so
-// a part rotated back has it again. So are the keyframes of the stretch:
+// The crop of a rotated piece is the one the pieces turned the same way
+// already have, or stands in the middle of the picture rotated until it is
+// placed, and the crop it has unrotated is kept as it was, so a part
+// rotated back has it again. So are the keyframes of the stretch:
 // each was placed on the picture turned one way and waits while it is
 // turned another, see CropMark, so four turns bring the glide back. Tim
 // found the diamonds removed with the turn, issue #348. Framing is not a
@@ -576,10 +577,19 @@ func RotatePart(fsys afero.Fs, planPath, clipID string, at float64, frames Sourc
 		if len(marks) > 0 {
 			setCropMarks(c, marks)
 		}
+		var stretch []*object
 		for _, seg := range pieces {
 			if number(seg.values[keyEnd]) > from && number(seg.values[keyStart]) < to {
 				seg.remove(keyCropXTurned)
+				stretch = append(stretch, seg)
 			}
+		}
+		// The pieces turned alike share one crop, so a part turned the
+		// way another already is takes the crop placed there. Left in
+		// the middle, the clip had two crops turned one way, #402.
+		_, like := framingOf(pieces, spans)
+		for _, seg := range stretch {
+			copyFraming(seg, like[turned], keyCropXTurned)
 		}
 		return nil
 	})

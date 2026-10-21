@@ -10,8 +10,6 @@
     onUndo,
     onShowUpdates,
     onLicenceLink,
-    onUpdates,
-    type UpdateState,
     onQuit,
     type EpisodeStatus,
     type Label,
@@ -19,6 +17,7 @@
     errorText,
   } from "./lib/api";
   import { jobs, nav, shell } from "./lib/state.svelte";
+  import { railDot, standing, updates } from "./lib/updates.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
   import Icon from "./components/Icon.svelte";
   import Bar from "./components/Bar.svelte";
@@ -331,9 +330,12 @@
     return ep ? labelOf(ep) : null;
   });
 
-  // Whether a newer build of the app is ready, which the rail marks on
-  // Settings, where the restart is. See docs/UPDATES.md.
-  let update = $state<UpdateState | null>(null);
+  // Where the app's updates stand, which the rail marks on Updates with
+  // the dot the Updates page's own mark makes, issue #406. See
+  // docs/UPDATES.md.
+  const update = $derived(updates.shown);
+  const updateDot = $derived(railDot(update));
+  const updateStanding = $derived(standing(update));
   // Whether the report window is open, which lights Bugs.
   let reporting = $state(false);
   const updateReady = $derived(update?.phase === "ready");
@@ -596,17 +598,9 @@
       .reportWindowOpen()
       .then((open) => (reporting = open))
       .catch(() => {});
-    // An event can arrive before the answer to the asking, and is then
-    // the newer of the two, see the Updates page.
-    let told = false;
-    const noUpdates = onUpdates((u) => {
-      told = true;
-      update = u;
-    });
-    api
-      .updates()
-      .then((u) => told || (update = u))
-      .catch(() => {});
+    // Where updates stand, heard from the start for the dot on Updates and
+    // kept for the Updates page, see lib/updates.svelte.ts.
+    const noUpdates = updates.listen();
     // Check for Updates in the app menu shows the answer where it is kept.
     const noShowUpdates = onShowUpdates(() => nav.go({ name: "updates" }));
     // A framefairy://unlock link, from the mail a licence came in, opens
@@ -770,14 +764,19 @@
         onclick={() => nav.go({ name: "updates" })}
         title={updateReady
           ? `Updates. ${update?.nextName || update?.next} is ready, relaunch to finish updating`
-          : `Updates. This is ${update?.version ?? "the app"}`}
+          : updateDot
+            ? `Updates. This is ${update?.version ?? "the app"}. ${updateStanding.head}. ${updateStanding.more}`.trim()
+            : `Updates. This is ${update?.version ?? "the app"}`}
       >
         <span class="mark">
           <Icon name="update" />
-          <!-- A new build ready is a dot that stands still, in the same
-               place as the dot for work in hand. It is not work running,
-               so it does not pulse. -->
-          {#if updateReady}<span class="dot ready"></span>{/if}
+          <!-- Whatever the Updates page marks, the rail marks too, with a
+               dot in the place of the dot for work in hand, in the colour
+               the page wears it in: work on a newer build pulses, a build
+               ready stands still in the accent, and a pull request closed
+               or in conflict, or a check that did not get through, stands
+               still in the colour of its triangle. Up to date is no dot. -->
+          {#if updateDot}<span class="dot {updateDot}"></span>{/if}
         </span>
         <span class="label">Updates</span>
         <span class="label muted small num build">{update?.version ?? ""}</span>
@@ -1243,7 +1242,8 @@
     flex: none;
   }
 
-  .mark .ready {
+  /* The dot on Updates, in the corner of its icon, whatever its colour. */
+  .mark .dot {
     position: absolute;
     top: -2px;
     right: -3px;

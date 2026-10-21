@@ -1093,7 +1093,9 @@ edge of a stretch: a gesture that would make one parts it there,
 `partedAtTurns`. The render rotates a piece before it crops it, so the crop
 is the shape of the short in the picture rotated. A rotated piece keeps
 its crop on the rotated picture as `crop_x_turned`, apart from the one it
-has as filmed, which stays as it was. Absent, it stands in the middle. A
+has as filmed, which stays as it was. A part turned the way another
+part already is takes the crop of that one, since the pieces turned alike
+share one. Absent, it stands in the middle. A
 crop placed by hand on a rotated part moves every piece of the clip
 rotated alike, `rotationOf`, and one placed on the picture as filmed
 moves every piece of the clip.

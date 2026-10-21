@@ -325,11 +325,16 @@
 //                      toast is there. Nothing under it moved since the
 //                      step before it, and the line beside the report's
 //                      buttons says nothing (#327)
-//   ["toast goes"]     with the pointer away, the toast is still there
-//                      after nine seconds and gone by itself within fourteen
-//   ["toast held"]     the pointer stays on the toast longer than its time
-//                      and it stays, then the pointer goes and so does the
-//                      toast, within fourteen seconds
+//   ["hold the clock"] holds the app's time where it is, see holdClock in
+//                      bridge.mjs, so a step after it runs the time of a
+//                      toast or a removed row on by hand
+//   ["toast goes"]     on a held clock, with the pointer away, the toast is
+//                      still there after nine seconds and gone by itself
+//                      after ten and a half, then the clock goes on
+//   ["toast held"]     on a held clock, the pointer stays on the toast
+//                      longer than its time and it stays, then the pointer
+//                      goes and so does the toast, after ten and a half
+//                      seconds, then the clock goes on
 //   ["toast closed"]   presses the cross on the top toast, and it goes
 //   ["remove picture", i]
 //                      points at picture i, from 1, sees its bin and no
@@ -345,8 +350,10 @@
 //   ["put back picture", i]
 //                      presses Put it back on picture i, which is back in
 //                      the same frame
-//   ["removed goes"]   the pointer leaves, and the time to put the picture
-//                      back runs out and the grid closes over it
+//   ["removed goes"]   on a held clock, the pointer leaves, the picture is
+//                      still there half a second before the time to put it
+//                      back runs out, and the grid closes over it after,
+//                      then the clock goes on
 //   ["report", n]      presses Report, which closes the report window and
 //                      says nothing beside the buttons, and reads the zip
 //                      it made: what was written and n pictures, or with
@@ -934,6 +941,12 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["rail mark", what]
+//                      Updates at the foot of the sidebar wears this mark
+//                      now, in the frame the line under the build is read
+//                      in, since both are drawn from the one state: "none",
+//                      or a "dot" and its colour, ", accent", ", warning"
+//                      or ", failure", read from what is painted
 //   ["turned", quarters]
 //                      the engine has the clip's pieces rotated so many
 //                      degrees each, in order, and with the playhead put in
@@ -1090,6 +1103,7 @@ import { open, chosen, shown, engineState, handles, timeline, inside, middle, hi
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -2369,6 +2383,7 @@ export const sequences = [
       ["put back picture", 2],
       ["pictures", 3],
       ["remove picture", [2, "key"]],
+      ["hold the clock"],
       ["removed goes"],
       ["pictures", 2],
     ],
@@ -3259,9 +3274,11 @@ export const sequences = [
     // and goes at once by its cross.
     name: "a file that is not a video is said in a toast that moves nothing and goes by itself unless held",
     steps: [
+      ["hold the clock"],
       ["drop not a video", "workspace"],
       ["not a video"],
       ["toast goes"],
+      ["hold the clock"],
       ["drop not a video", "workspace"],
       ["not a video"],
       ["toast held"],
@@ -3627,6 +3644,7 @@ export const sequences = [
       ["channel", "Choose a channel"],
       ["choices", ["Branch main", "PR #143"], ""],
       ["status", "Built on this Mac", "It stays as it is until you choose a channel to follow."],
+      ["rail mark", "none"],
       ["no check"],
       ["follow", "Branch main"],
       ["at once", "Looking for a newer build"],
@@ -3640,6 +3658,7 @@ export const sequences = [
     steps: [
       ["updates", { from: "main", list: "main,pr-20" }],
       ["status", "A newer build is ready"],
+      ["rail mark", "dot, accent"],
       ["choices", ["Branch main", "PR #20"], "Branch main"],
     ],
   },
@@ -3649,6 +3668,7 @@ export const sequences = [
       ["updates", { from: "main", stored: "pr-143", list: "main" }],
       ["status", "PR #143 is closed", "Nothing downloads until you choose what to follow next."],
       ["build mark", "triangle, warning"],
+      ["rail mark", "dot, warning"],
       ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
@@ -3667,6 +3687,7 @@ export const sequences = [
       ["status", "A newer build is ready", "Relaunch to finish updating"],
       ["channel", "PR #20, conflicts"],
       ["build mark", "dot, warning"],
+      ["rail mark", "dot, warning"],
       ["warned"],
     ],
   },
@@ -3829,6 +3850,29 @@ async function shownOnPlayhead(page) {
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
 // and hands back what it said last.
+// The mark on Updates in the sidebar, by the colour its dot is painted
+// in, "none" without one. Tim followed a pull request that closed and the
+// Updates page wore a warning while the sidebar wore nothing, #406.
+function railMark() {
+  const button = [...document.querySelectorAll("aside button.nav")].find((b) =>
+    (b.textContent ?? "").includes("Updates"),
+  );
+  const dot = button?.querySelector(".mark .dot");
+  if (!dot || getComputedStyle(dot).display === "none") return "none";
+  const paint = (v) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${v})`;
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  };
+  const colour = getComputedStyle(dot).backgroundColor;
+  const named = { "--accent": "accent", "--warn": "warning", "--err": "failure" };
+  for (const [v, name] of Object.entries(named)) if (colour === paint(v)) return `dot, ${name}`;
+  return `dot, ${colour}`;
+}
+
 async function updatesComeTo(page, ok) {
   let now = await updatesPage(page);
   for (let i = 0; i < 100 && !ok(now); i++) {
@@ -7071,30 +7115,40 @@ for (const seq of toWalk) {
         else wrong = await stillStands(page, standing);
         break;
       }
+      case "hold the clock": {
+        await holdClock(page);
+        break;
+      }
       case "toast goes": {
         // Its time runs from the moment it comes, with no hand on it. Tim
         // found a toast that waited for the pointer before its time began.
         // Its time is the ten seconds a removed row has, so it is still
-        // there after nine. It once ran eight of its own.
+        // there after nine. It once ran eight of its own. The clock was
+        // held before the toast came, so the nine seconds are the page's
+        // own and not what a busy machine spent on the steps before.
         await page.mouse.move(2, 400);
-        await page.waitForTimeout(9000);
+        await runClock(page, 9000);
         if (!(await toastSays(page))) {
           wrong = "the toast went within nine seconds, sooner than the ten a removed row has";
           break;
         }
-        if (!(await gone(page, ".toast", 5000))) wrong = "the toast was still there fourteen seconds after it came, with the pointer away";
+        await runClock(page, 1500);
+        if (await toastSays(page)) wrong = "the toast was still there ten and a half seconds after it came, with the pointer away";
+        await letClockGo(page);
         break;
       }
       case "toast held": {
         const box = await page.locator(".toast .text").first().boundingBox();
         await page.mouse.move(box.x + 4, box.y + box.height / 2);
-        await page.waitForTimeout(11500);
+        await runClock(page, 11500);
         if (!(await toastSays(page))) {
           wrong = "the toast went while the pointer was on it";
           break;
         }
         await page.mouse.move(2, 400);
-        if (!(await gone(page, ".toast", 14000))) wrong = "the toast was still there fourteen seconds after the pointer left it";
+        await runClock(page, 10500);
+        if (await toastSays(page)) wrong = "the toast was still there ten and a half seconds after the pointer left it";
+        await letClockGo(page);
         break;
       }
       case "toast closed": {
@@ -7206,12 +7260,21 @@ for (const seq of toWalk) {
         break;
       }
       case "removed goes": {
+        // Its time starts once the hand leaves it, and the clock was held
+        // before, so its ten seconds are the page's own, run on here.
         await page.mouse.move(5, 5);
+        await runClock(page, (removeTime - 0.5) * 1000);
+        if (!(await page.locator("li.tile .gone").count())) {
+          wrong = "a removed picture went before its time to put it back ran out";
+          break;
+        }
+        await runClock(page, 1000);
         const went = await page
-          .waitForFunction(() => !document.querySelector("li.tile .gone"), null, { timeout: 15000 })
+          .waitForFunction(() => !document.querySelector("li.tile .gone"), null, { timeout: 5000 })
           .then(() => true)
           .catch(() => false);
         if (!went) wrong = "a removed picture still stands in its place after its time";
+        await letClockGo(page);
         break;
       }
       case "report": {
@@ -9609,10 +9672,7 @@ for (const seq of toWalk) {
         }
         // The time a remove runs is run on by hand, so nothing waits on
         // the clock: everything else goes on in step with it.
-        if (!page.__clock) {
-          await page.clock.install();
-          page.__clock = true;
-        }
+        await fakeClock(page);
         // The marks of clips on their way on the range picker, the card's
         // among them.
         const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
@@ -9643,7 +9703,7 @@ for (const seq of toWalk) {
           // Past the time a remove runs, so a put back that only hid it
           // would have called the work off by now, and what that set
           // going has come back.
-          await page.clock.runFor((removeTime + 1) * 1000);
+          await runClock(page, (removeTime + 1) * 1000);
           await settle(page);
           const state = await stateOf();
           if (!back) wrong = "Put it back did not bring back the card that said Stopped";
@@ -9653,7 +9713,7 @@ for (const seq of toWalk) {
           // The time stands still under the hand, see Busy, so the hand
           // goes off the list, and then it runs out.
           await page.mouse.move(5, 5);
-          await page.clock.runFor((removeTime + 1) * 1000);
+          await runClock(page, (removeTime + 1) * 1000);
           const gone = await page
             .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 10000 })
             .then(() => true, () => false);
@@ -9917,6 +9977,11 @@ for (const seq of toWalk) {
       case "build mark": {
         const now = await updatesComeTo(page, (u) => u.mark === arg);
         if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "rail mark": {
+        const now = await page.evaluate(railMark);
+        if (now !== arg) wrong = `Updates in the sidebar wears ${now}, not ${arg}`;
         break;
       }
       case "warned": {
@@ -11377,8 +11442,11 @@ function glideOf(marks, src) {
 // wrong, or null: the app has to wear its frame while the files are held
 // over it, take the drop, and wear no frame after it.
 // What the toasts over the window say, one after the other.
+// What the toasts over the app say. One that is fading out has gone,
+// though it is still in the page for its fade: Svelte marks it inert the
+// moment it starts to leave.
 async function toastSays(page) {
-  return page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()).join(" "));
+  return page.evaluate(() => [...document.querySelectorAll(".toast:not([inert]) .text")].map((t) => t.textContent.trim()).join(" "));
 }
 
 // Where what a toast must not move stands: the workspace in front, the
@@ -11393,13 +11461,6 @@ async function standsAt(page) {
 }
 
 // Whether nothing matches selector within ms.
-async function gone(page, selector, ms) {
-  for (const end = Date.now() + ms; Date.now() < end; await page.waitForTimeout(100)) {
-    if ((await page.locator(selector).count()) === 0) return true;
-  }
-  return (await page.locator(selector).count()) === 0;
-}
-
 // Says what moved since standsAt was read, or null.
 async function stillStands(page, before) {
   if (!before) return null;
