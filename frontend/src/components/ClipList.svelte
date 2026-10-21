@@ -1,7 +1,7 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
   import { clock, type ClipEntry } from "../lib/api";
-  import { Carrier, type OnTheWayCard } from "../lib/arriving";
+  import { Carrier, type Away, type OnTheWayCard } from "../lib/arriving";
   import { hoverClip } from "../lib/hover";
   import { secondThoughts } from "../lib/removed";
   import Removed from "./Removed.svelte";
@@ -85,7 +85,17 @@
     // while it runs, so the end of the story is where the story was told.
     // It stays until a search starts: after a restart too, because the
     // engine keeps it with the episode.
-    stopped?: { what: string; left: string; full: string } | null;
+    // It can be removed, so the search is not carried on, and then says
+    // Removed and offers itself back while away runs down. Failed is said
+    // in red, cut off or called off in the colour of a warning.
+    stopped?: {
+      what: string;
+      left: string;
+      full: string;
+      failed?: boolean;
+      onremove?: () => void;
+      away?: Away;
+    } | null;
     // The clips just taken out. Each keeps its place in the list for a
     // moment, showing what happened to it and offering it back, so the rows
     // do not jump out from under the pointer.
@@ -325,9 +335,10 @@
       class:current={!!a && a.key === selected}
       class:clip-edge={!!a && a.key === selected}
       class:stopped={!!a?.stopped || (lead && !next && !!stopped)}
+      class:failed={!!a?.failed || (lead && !next && !!stopped?.failed)}
       class:told={lead && !next && !stopped && !!emptied?.fades}
       class:lit={!!clip && clip.key === hovered}
-      title={lead && !next ? (stopped?.full ?? emptied?.full) : undefined}
+      title={lead && !next && !stopped?.away ? (stopped?.full ?? emptied?.full) : undefined}
       aria-live={a || (lead && next) ? "polite" : undefined}
       {@attach clip ? hoverClip(clip.key, onhover) : undefined}
     >
@@ -346,9 +357,26 @@
           <Busy fraction={carrying ? -1 : next.fraction} still={next.still} />
           <span class="title">{next.what}</span>
           <span class="meta muted num">{next.left}</span>
+        {:else if g === 0 && stopped?.away}
+          <Removed
+            spent={stopped.away.spent}
+            onputback={stopped.away.onputback}
+            onend={stopped.away.onend}
+            onresume={stopped.away.onresume}
+          />
         {:else if g === 0 && stopped}
           <span class="title">{stopped.what}</span>
           <span class="meta muted num">{stopped.left}</span>
+          {#if stopped.onremove}
+            <button
+              class="drop quiet danger"
+              title="Remove this search, so it is not carried on"
+              aria-label="Remove the search that stopped"
+              onclick={() => stopped.onremove?.()}
+            >
+              <Icon name="trash" />
+            </button>
+          {/if}
         {:else if g === 0 && emptied}
           {#if emptied.fades}
             <Busy
@@ -375,7 +403,7 @@
           {#if a.onremove}
             <button
               class="drop quiet danger"
-              title="Remove this clip, so it is not made"
+              title={a.byHand ? "Remove this clip, so it is not made" : "Remove this search and the clips it had on the way, so it is not carried on"}
               aria-label="Remove the clip that stopped at {clock(a.start)}"
               onclick={() => a.onremove?.()}
             >
@@ -599,6 +627,13 @@
      nothing was lost: Search looks again. */
   .stopped .title {
     color: var(--warn);
+  }
+
+  /* One that failed in the red of an error, the way the video's dot in
+     the sidebar and the toast that says why are, so the app says one
+     thing about it, issue #431. */
+  .failed .title {
+    color: var(--err);
   }
 
   /* A clip on the way that stopped is carried on with a click, the one

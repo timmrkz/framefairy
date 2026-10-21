@@ -1388,13 +1388,14 @@ bubble scrolled by those eight pixels.
       again with nothing said. It is not kept across a restart, since
       there is nothing to carry on.
     - **A search that stopped before it was done says so** in the row its
-      next clip would have appeared in, in the colour of a warning, and
-      **Search** becomes **Continue**. *Interrupted. Click Continue* is a
+      next clip would have appeared in, in the colour of a warning, or in
+      the red of an error when it failed, and **Search** becomes
+      **Continue**. *Interrupted. Click Continue* is a
       search the app was closed or fell over in, with the window it was
       about under it, or with how far the transcript came when it still
       waited for the transcript, which is the first half of every search on
-      an episode read only part way. *Failed. Click Continue* has its
-      reason under it. A search the app would not start, while it closes
+      an episode read only part way. *Failed. Click Continue* has the
+      window under it and why in a toast. A search the app would not start, while it closes
       or while the episode is being removed, is a search that failed
       too, with the window it was asked for. The whole of it is in the
       row's title. **Continue**
@@ -1418,7 +1419,13 @@ bubble scrolled by those eight pixels.
       after a restart. Tim cancelled a search to look somewhere else and
       could not, because the window stood locked until it was carried on. The episode's dot in the sidebar says it too: the colour
       of a warning for a search stopped or cut off, of an error for one
-      that failed.
+      that failed, the red of its row and of its toast. **Its trash can**,
+      there while the pointer is on the row, removes the search when it
+      is no longer wanted: the row says Removed with Put it back for ten
+      seconds, the way a removed clip's row does, and the search's cards
+      say it with it. Then the search and its record are forgotten, so the
+      row, the cards and the dot go, also after a restart, and **Search**
+      is back. The clips it wrote stay. Issue #431.
     - **Search**, above the list, finds clips in the window, as long as the
       episode's windows are, and says so while it looks. The clips it
       finds join the ones already there. After a search the window walks
@@ -2361,8 +2368,9 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     clip's are: they run on while another video is open, and work whose
     time ran out while it was away is called off on coming back. If the
     work cannot be called off, the card says Stopped again and says why.
-    Issue #257. A search's cards have no trash can, because a new search
-    takes their place.
+    Issue #257. A search's cards have a trash can too, which removes the
+    search they came from, its row and every card of it at once, see
+    above. Issue #431.
 - **The thumbnail button**, in the row under the clip timeline, makes the
   frame under the playhead a thumbnail. **T** does the same. It is not a
   mode, so it never looks pressed. Its icon says what a click does: a

@@ -976,6 +976,19 @@
 //                      work stays. With "for good" the time runs down, the
 //                      card goes and the Go side calls the work off
 //   ["no hand card"]   no card of a clip made by hand is in the list
+//   ["failed red"]     the row of the search that failed, the video's dot
+//                      in the sidebar and the toast are all in the red of
+//                      an error
+//   ["remove search", how]
+//                      the bin on the row of the search that stopped is
+//                      clicked, and it says Removed with Put it back. With
+//                      "put back" that is clicked, the row says how the
+//                      search stopped again and the search stays. With "for
+//                      good" the time runs down, the row goes, the Go side
+//                      forgets the search, and the video's dot in the
+//                      sidebar says nothing is wrong
+//   ["dot", kind]      the video's dot in the sidebar is this kind, "err",
+//                      "warn" or "" for none of the two
 //   ["channel", name]  the Updates page's list says this, in ten seconds
 //                      at most
 //   ["choices", names, picked]
@@ -2974,6 +2987,48 @@ export const sequences = [
       ["model", "answers"],
       ["head"],
       ["wait for", "Search"],
+    ],
+  },
+  {
+    // Issue #431: Tim saw a failed search red in the sidebar and in its
+    // toast but yellow in its row, and could not put the row or the red
+    // dot away without searching again.
+    name: "a search that failed is red everywhere, and its row can be removed, put back first",
+    steps: [
+      ["model", "fails"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Failed. Click Continue"],
+      ["failed red"],
+      ["remove search", "put back"],
+      ["dot", "err"],
+      ["remove search", "for good"],
+      ["wait for", "Search"],
+      ["dot", ""],
+      ["restart"],
+      ["wait for", "Search"],
+      ["no row", "Failed. Click Continue"],
+      ["dot", ""],
+    ],
+  },
+  {
+    // Issue #431: the same for a search called off with Cancel.
+    name: "a search stopped with Cancel can be removed, and stays removed",
+    steps: [
+      ["model", "holds"],
+      ["head"],
+      ["wait for", "Cancel"],
+      ["head"],
+      ["wait for", "Continue"],
+      ["row", "Stopped. Click Continue"],
+      ["dot", "warn"],
+      ["remove search", "for good"],
+      ["wait for", "Search"],
+      ["dot", ""],
+      ["restart"],
+      ["wait for", "Search"],
+      ["no row", "Stopped. Click Continue"],
+      ["model", "answers"],
     ],
   },
   {
@@ -11900,6 +11955,82 @@ for (const seq of toWalk) {
           const state = await stateOf();
           if (!gone) wrong = "the card that stopped is still in the list after its time ran down";
           else if (state !== "cancelled") wrong = `removed, the work of the clip is ${state}, not cancelled`;
+        }
+        await watch.step("wait", s);
+        break;
+      }
+      case "failed red": {
+        const colours = await page.evaluate(() => {
+          const colour = (el, what) => (el ? getComputedStyle(el)[what] : "");
+          return {
+            row: colour(document.querySelector("li.next.stopped .title"), "color"),
+            dot: colour(document.querySelector("aside button.episode.current .dot"), "backgroundColor"),
+            toast: colour(document.querySelector(".toast .mark"), "color"),
+          };
+        });
+        if (!colours.row || !colours.dot || !colours.toast) wrong = `the row, the dot and the toast are not all there: ${JSON.stringify(colours)}`;
+        else if (colours.row !== colours.dot || colours.row !== colours.toast) {
+          wrong = `the failure is said in more than one colour: ${JSON.stringify(colours)}`;
+        }
+        break;
+      }
+      case "dot": {
+        const kind = await page.evaluate(() => {
+          const dot = document.querySelector("aside button.episode.current .dot");
+          return dot ? (["err", "warn"].find((k) => dot.classList.contains(k)) ?? "") : null;
+        });
+        if (kind !== arg) wrong = `the video's dot in the sidebar is "${kind}", not "${arg}"`;
+        break;
+      }
+      case "remove search": {
+        const row = page.locator("li.next.stopped").first();
+        const path = await episodeOn(page);
+        const search = async () => (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
+        const job = (await search())?.id;
+        const was = (await row.locator(".title").textContent())?.trim();
+        await row.hover();
+        if (!(await row.locator("button.drop").count())) {
+          wrong = `the row "${was}" has no bin to remove the search with`;
+          break;
+        }
+        // The time a remove runs is run on by hand, so nothing waits on
+        // the clock.
+        await fakeClock(page);
+        await row.locator("button.drop").click();
+        const removed = await page
+          .locator("li.next .gone", { hasText: "Removed" })
+          .first()
+          .waitFor({ timeout: 2000 })
+          .then(() => true, () => false);
+        if (!removed) {
+          wrong = `the bin on the row "${was}" did not say Removed in its place`;
+          break;
+        }
+        if (arg === "put back") {
+          await page.locator("li.next .gone").getByRole("button", { name: "Put it back" }).click();
+          await page.mouse.move(5, 5);
+          const back = await page
+            .waitForFunction((w) => document.querySelector("li.next.stopped .title")?.textContent.trim() === w, was, { timeout: 2000 })
+            .then(() => true, () => false);
+          // Past the time a remove runs, so a put back that only hid it
+          // would have forgotten the search by now.
+          await runClock(page, (removeTime + 1) * 1000);
+          await settle(page);
+          const now = await search();
+          if (!back) wrong = `Put it back did not bring back the row "${was}"`;
+          else if (now?.id !== job || now.state === "cancelled") wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
+        } else {
+          // The time stands still under the hand, see Busy, so the hand
+          // goes off the list, and then it runs out.
+          await page.mouse.move(5, 5);
+          await runClock(page, (removeTime + 1) * 1000);
+          const gone = await page
+            .waitForFunction(() => !document.querySelector("li.next.stopped, li.next .gone"), null, { timeout: 10000 })
+            .then(() => true, () => false);
+          await settle(page);
+          const now = await search();
+          if (!gone) wrong = `the row "${was}" is still in the list after its time ran down`;
+          else if (now?.state !== "cancelled") wrong = `removed, the search is ${now?.state}, not cancelled`;
         }
         await watch.step("wait", s);
         break;

@@ -36,10 +36,18 @@ export type Arriving = {
   // would have appeared and says so there, and a click on it, or Continue
   // at the head of the list, carries it on.
   stopped?: boolean;
+  // Stopped because it failed, which is said in the red of an error, the
+  // way the sidebar and the toast say it. Called off or cut off is said in
+  // the colour of a warning, because nothing went wrong.
+  failed?: boolean;
+  // Made by hand with I and O, rather than on the way from a search.
+  byHand?: boolean;
   full?: string;
   oncontinue?: () => void;
-  // Removes a clip made by hand that stopped, so it is not made, issue
-  // #257. A search's clips have none: a new search takes their place.
+  // Removes the work that stopped, so it is not carried on: a clip made by
+  // hand, issue #257, or the search the clip was on the way from, with
+  // every clip it had on the way and the row that says how it ended,
+  // issue #431.
   onremove?: () => void;
   // The removal under way: the card says Removed and offers the clip back
   // while its time runs down, see Removed.
@@ -51,9 +59,9 @@ export type Arriving = {
 // again after a pause do.
 export type Away = { spent: number; onputback: () => void; onend: () => void; onresume: (left: number) => void };
 
-// What the episode does with a clip made by hand that stopped: remove it,
-// say how its removal stands, and why the work could not be called off,
-// said on the card, which is Stopped again.
+// What the episode does with work that stopped, a search or a clip made
+// by hand: remove it, say how its removal stands, and why the work could
+// not be called off, said on the card, which is Stopped again.
 export type Hand = {
   remove: (job: Job) => void;
   away: (job: Job) => Away | undefined;
@@ -63,8 +71,7 @@ export type Hand = {
 // arriving is every clip the jobs of an episode have on the way. A job
 // that runs shows its clips at work. One that was cut off or failed shows
 // the clip it was making where it would have appeared, until it is
-// carried on or a new search takes its place, or, made by hand, removed,
-// see Hand. stopping is the jobs told to stop that have not said so yet,
+// carried on, a new search takes its place, or it is removed, see Hand. stopping is the jobs told to stop that have not said so yet,
 // which keep their fill and stop moving.
 export function arriving(
   jobs: Job[],
@@ -81,8 +88,7 @@ export function arriving(
       const key = `${job.id}/${clip.n}`;
       if (stopped) {
         const failed = job.state === "failed";
-        const byHand = job.kind === "clip" && hand ? hand : undefined;
-        const refused = byHand?.refused(job);
+        const refused = hand?.refused(job);
         out.push({
           key,
           job: job.id,
@@ -99,10 +105,12 @@ export function arriving(
           left: refused ?? (failed && job.error ? job.error : clock(clip.start)),
           fraction: -1,
           stopped: true,
+          failed: failed && !refused,
+          byHand: job.kind === "clip",
           full: refused ?? (failed ? job.error : undefined),
           oncontinue: () => carryOn(job),
-          onremove: byHand ? () => byHand.remove(job) : undefined,
-          away: byHand?.away(job),
+          onremove: hand ? () => hand.remove(job) : undefined,
+          away: hand?.away(job),
         });
         continue;
       }
