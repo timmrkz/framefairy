@@ -5845,11 +5845,33 @@ for (const seq of toWalk) {
           await page.mouse.move(x + (px * i) / 10, y);
           await nextPaint(page);
         }
-        // Every place so far answered, and the last one, ten pixels on,
-        // which is more than a frame at this zoom, held on its way.
+        // Every place so far answered and drawn: the edge stands under the
+        // hand before it lets go, the way a person sees it. On a busy
+        // machine the answers came late, and the hand let go and pressed
+        // again beside an edge still on its way, on the caption under it,
+        // issue #427. No call on its way was no sign of it: the app asks
+        // for the next place the moment an answer comes, so for a moment
+        // none is. With late, the last place, ten pixels on, which is more
+        // than a frame at this zoom, is then held on its way.
         const took = late ? x + px + Math.sign(px) * 10 : x + px;
+        await page.evaluate(
+          ([label, x, y]) =>
+            new Promise((done) => {
+              const under = () => {
+                const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+                return !!edge && document.elementsFromPoint(x, y).includes(edge);
+              };
+              if (under()) return done();
+              const moved = new MutationObserver(() => {
+                if (!under()) return;
+                moved.disconnect();
+                done();
+              });
+              moved.observe(document.querySelector(".clip-timeline"), { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+            }),
+          [edgeLabel[which], x + px, y],
+        );
         if (late) {
-          await page.waitForFunction(() => window.__pending === 0, null, { polling: "raf" });
           await control(url, `/hold?call=Shape&ms=${late}`);
           await page.mouse.move(took, y);
         }
