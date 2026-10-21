@@ -6692,12 +6692,40 @@ for (const seq of toWalk) {
           // A shade clicked in the colour picker at the end of the
           // colours, or none, and the picker left with Return or Escape,
           // then the menu with Escape.
+          // The picker lies over the menu from the moment it is there. For
+          // a frame it lay under it, so a click on its shade made that soon
+          // pressed Remove, which CI's quick machines did now and then,
+          // issue #401: its box is read the moment it is put in the page.
+          await page.evaluate(() => {
+            window.__pickerOver = new Promise((said) => {
+              const seen = new MutationObserver(() => {
+                const pop = document.querySelector(".colour-pop");
+                if (!pop) return;
+                seen.disconnect();
+                const box = pop.closest("[data-bits-floating-content-wrapper]");
+                const menu = document.querySelector(".video-menu")?.closest("[data-bits-floating-content-wrapper]");
+                if (!box || !menu) return said(`the colour picker or the menu has no box of its own to lie in`);
+                const z = [getComputedStyle(box).zIndex, getComputedStyle(menu).zIndex];
+                // Equal z-indexes put the one later in the page on top.
+                if (Number(z[0]) > Number(z[1]) || (z[0] === z[1] && menu.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING)) return said(null);
+                said(`the colour picker opened at z-index ${z[0]}, under the menu at ${z[1]}, so a click on it lands on the menu`);
+              });
+              seen.observe(document.body, { childList: true, subtree: true });
+            });
+          });
           await menu.locator('button[aria-label="Another colour"]').click();
-          const shade = await page.locator('.colour-pop [aria-label="Shade"]').boundingBox();
-          if (how.startsWith("a colour of its own")) await page.mouse.click(shade.x + shade.width * 0.8, shade.y + shade.height * 0.3);
+          await page.locator(".colour-pop").waitFor();
+          const under = await page.evaluate(() => window.__pickerOver);
+          if (under) wrong ||= under;
+          // A click Playwright makes on the shade itself, so it says so if
+          // anything else would take it.
+          const shade = page.locator('.colour-pop [aria-label="Shade"]');
+          const box = await shade.boundingBox();
+          if (!box) wrong ||= "the colour picker opened with no shade to click";
+          else if (how.startsWith("a colour of its own")) await shade.click({ position: { x: box.width * 0.8, y: box.height * 0.3 } });
           await page.keyboard.press(how.endsWith("Return") ? "Enter" : "Escape");
           await page.locator(".colour-pop").waitFor({ state: "detached" });
-          if (!(await menu.isVisible())) wrong = `${how.split(", ").pop()} in the colour picker closed the menu too`;
+          if (!(await menu.isVisible())) wrong ||= `${how.split(", ").pop()} in the colour picker closed the menu too`;
           // Escape put back what was there before the picker opened: the
           // words in the field and the colour chosen. Tim's review found a
           // video with no label given its folder's name in white.
@@ -7886,11 +7914,24 @@ for (const seq of toWalk) {
         // whole pixels and shook on Tim's Mac. It falls back no faster
         // than a level meter's needle, a third of a second for the whole
         // way: jumping to every reading shook too.
-        const track = await page.evaluate(
+        const { xs: track, writes } = await page.evaluate(
           () =>
             new Promise((done) => {
               const b = document.querySelector("button.dictate");
               const xs = [];
+              // Every size the app writes, at the time of the frame it
+              // wrote it in, so each step is matched with the time it
+              // went by. Read on the walk's own frames, a step showed one
+              // frame late once the walk's frame came before the app's,
+              // and was set against the gap after it: a step of 100 ms
+              // after a long frame, seen across a short one, read six
+              // times too fast on a busy machine, issue #354.
+              const writes = [];
+              const wrote = new MutationObserver(() => {
+                const icon = b.querySelector("svg");
+                writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
+              });
+              wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
               const start = performance.now();
               const step = (now) => {
                 const icon = b.querySelector("svg");
@@ -7905,7 +7946,10 @@ for (const seq of toWalk) {
                   size: Number(icon.getAttribute("width")),
                 });
                 if (now - start < 3000) requestAnimationFrame(step);
-                else done(xs);
+                else {
+                  wrote.disconnect();
+                  done({ xs, writes });
+                }
               };
               requestAnimationFrame(step);
             }),
@@ -7914,10 +7958,18 @@ for (const seq of toWalk) {
         const loudest = Math.max(...track.map((f) => f.loud));
         const boxes = [...new Set(track.map((f) => f.box))];
         const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
+        // The sizes the app wrote are the sizes drawn, or the fall is
+        // timed from nothing and passes whatever it does.
+        const written = writes.map((f) => f.w);
+        const narrowest = Math.min(...track.map((f) => f.w));
+        if (writes.length < 2 || Math.abs(Math.max(...written) - widest) > 0.5 || Math.abs(Math.min(...written) - narrowest) > 0.5) {
+          wrong = `the walk saw ${writes.length} sizes written for a microphone drawn from ${narrowest.toFixed(1)} to ${widest.toFixed(1)} px, so it cannot time its fall`;
+          break;
+        }
         let fastest = 0;
-        for (let k = 1; k < track.length; k++) {
-          const dt = track[k].t - track[k - 1].t;
-          if (dt > 0) fastest = Math.max(fastest, (track[k - 1].w - track[k].w) / track[0].size / dt);
+        for (let k = 1; k < writes.length; k++) {
+          const dt = writes[k].t - writes[k - 1].t;
+          if (dt > 0) fastest = Math.max(fastest, (writes[k - 1].w - writes[k].w) / track[0].size / dt);
         }
         if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
           wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
@@ -13646,21 +13698,34 @@ async function dropOn(page, files) {
       const frame = document.querySelector(".landing");
       return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
     });
-  // Within 300 ms each way, and on as soon as the frame stands or has gone.
-  const comes = (want) =>
-    page
-      .waitForFunction((want) => getComputedStyle(document.querySelector(".landing") ?? document.body).opacity === want && !!document.querySelector(".landing"), want, { polling: "raf", timeout: 300 })
-      .catch(() => {});
+  // On once the frame's fade has ended, which its animation says, not a
+  // deadline: a busy machine read the frame at 0.94 when 300 ms of
+  // waiting ran out with the fade not yet drawn to its end, issue #386.
+  // A fade cancelled ends the wait too, and the opacity read then says so.
+  // An animation that never ends is said, not waited on for good.
+  const comes = () =>
+    page.evaluate(() => {
+      const frame = document.querySelector(".landing");
+      if (!frame) return null;
+      // Reading the style starts the fade, so getAnimations() has it.
+      getComputedStyle(frame).opacity;
+      const all = frame.getAnimations();
+      const endless = all.find((a) => a.playState === "paused" || a.effect?.getComputedTiming().endTime === Infinity);
+      if (endless) return `the frame wears an animation that never ends, ${endless.animationName ?? endless.transitionProperty}`;
+      return Promise.all(all.map((a) => a.finished.catch(() => {}))).then(() => null);
+    });
   await page.evaluate(([x, y]) => {
     window._wails.handleDragEnter();
     window._wails.handleDragOver(x, y);
   }, [x, y]);
-  await comes("1");
+  const endless = await comes();
+  if (endless) return endless;
   const held = await landing();
   if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
   const took = await page.evaluate(([f, x, y]) => window._wails.handlePlatformFileDrop(f, x, y), [files, x, y]);
   if (!took) return `the drop at ${x}, ${y} landed on no drop target`;
-  await comes("0");
+  const ends = await comes();
+  if (ends) return ends;
   const after = await landing();
   if (after !== "0") return `the app still wore its frame after the drop, its opacity was ${after}`;
   return null;
