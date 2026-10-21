@@ -5,8 +5,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-
-	"github.com/spf13/afero"
 )
 
 // SentenceView is one card of what an episode says, for reading the
@@ -99,22 +97,20 @@ type ClipSaid struct {
 	Captions []CaptionView
 }
 
-// PlanSaid is every clip of the plan at planPath that is not rejected,
-// with the captions it shows in look, for SaidCards. The key of each is
-// its ID.
-func PlanSaid(fsys afero.Fs, planPath string, t *Transcript, look *Look) ([]ClipSaid, error) {
-	plan, clips, err := LoadClips(fsys, planPath)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ClipSaid, 0, len(clips))
-	for _, c := range clips {
+// Said is every clip of the summary's plan that is not rejected, with the
+// captions it shows in look, for SaidCards, from the plan the summary read
+// already. The key of each is its ID. The plan was read a second time for
+// the cards, every time they were read, and a clip set removed between the
+// two reads failed the whole list, found in the review of the search.
+func (s PlanSummary) Said(t *Transcript, look *Look) []ClipSaid {
+	out := make([]ClipSaid, 0, len(s.clips))
+	for _, c := range s.clips {
 		if c.Rejected || len(c.Segments) == 0 {
 			continue
 		}
-		out = append(out, ClipSaid{Key: c.ID, Clip: c, Captions: captionsView(plan, c, t, look).Captions})
+		out = append(out, ClipSaid{Key: c.ID, Clip: c, Captions: captionsView(s.plan, c, t, look).Captions})
 	}
-	return out, nil
+	return out
 }
 
 // SaidCards is the transcript as cards to read and search, see Sentences,

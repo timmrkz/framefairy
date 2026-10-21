@@ -116,12 +116,12 @@ func TestTheCardsOfAClipAreItsCaptions(t *testing.T) {
 	if err := SetWordText(fsys, path, "01", 12, "Dreimal", tr); err != nil {
 		t.Fatal(err)
 	}
-	clips, err := PlanSaid(fsys, path, tr, nil)
+	summary, err := summaryOf(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, c := range SaidCards(tr, clips) {
+	for _, c := range SaidCards(tr, summary.Said(tr, nil)) {
 		got = append(got, fmt.Sprintf("%.1f-%.1f %s %s", c.Start, c.End, c.Clip, c.Text))
 	}
 	want := []string{"10.0-11.0 01 eins zwei", "12.0-13.1 01 Dreimal vier", "20.1-21.5 02 fünf sechs", "30.0-30.9  Und dann."}
@@ -137,12 +137,12 @@ func TestWordsCutOutOfAClipAreACardOfTheirOwn(t *testing.T) {
 	words := append(editableTranscript().Words, Cue{Start: 11.3, End: 11.6, Text: "ähm"})
 	slices.SortFunc(words, func(a, b Cue) int { return cmp.Compare(a.Start, b.Start) })
 	tr := fromStored(words, nil, 0, 0, nil)
-	clips, err := PlanSaid(fsys, path, tr, nil)
+	summary, err := summaryOf(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, c := range SaidCards(tr, clips) {
+	for _, c := range SaidCards(tr, summary.Said(tr, nil)) {
 		got = append(got, fmt.Sprintf("%s %s", c.Clip, c.Text))
 	}
 	want := "01 eins zwei |  ähm | 01 drei vier | 02 fünf sechs"
@@ -163,12 +163,12 @@ func TestTwoClipsOverTheSameWordsEachHaveTheirCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr := editableTranscript()
-	clips, err := PlanSaid(fsys, path, tr, nil)
+	summary, err := summaryOf(fsys, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, c := range SaidCards(tr, clips) {
+	for _, c := range SaidCards(tr, summary.Said(tr, nil)) {
 		got = append(got, fmt.Sprintf("%.1f %s %s", c.Start, c.Clip, c.Text))
 	}
 	for _, want := range []string{"10.0 01 eins zwei", "12.0 02 drei vier", "20.1  fünf sechs"} {

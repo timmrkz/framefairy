@@ -11,7 +11,7 @@
   import { clock, type ClipEntry, type Sentence } from "../lib/api";
   import { found } from "../lib/match";
   import { hoverClip } from "../lib/hover";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
 
   let {
     sentences,
@@ -258,6 +258,18 @@
     aimed = row.key;
     if ("hole" in row) onseek(row.hole[0], null, { end: row.hole[1] });
     else onseek(row.sentence.start, row.clip?.key ?? null, { end: row.sentence.end });
+    // Two cards can begin at the same moment, two clips over the same
+    // words, and a step from one to the other leaves the playhead where it
+    // is, so nothing follows it. The card walked to is then marked here,
+    // once the playhead has had its say, and the step is not left for the
+    // next time the playhead moves. The walk stuck on the first of the two
+    // cards, found in the review of this search.
+    void tick().then(() => {
+      if (walking !== step || aimed !== row.key) return;
+      walking = 0;
+      followed = row.key;
+      pageTo(row.key, step);
+    });
   }
 
   // Whether the card of a row is in view, inside the veil the list fades

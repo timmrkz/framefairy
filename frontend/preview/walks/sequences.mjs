@@ -1537,6 +1537,14 @@ export const sequences = [
     steps: [["edges alike"]],
   },
   {
+    // Found in the second review of the search on 21 October: two clips
+    // over the same words have a card each that begin at the same moment,
+    // and Shift and the down arrow stuck on the first, because the step to
+    // the second left the playhead where it was.
+    name: "Shift and the arrows walk past two cards that begin at the same moment",
+    steps: [["walk two at once"]],
+  },
+  {
     // Found by Tim on 20 October: a card under the hand was lit a step
     // less than the card the keys were on, and a part not transcribed yet
     // walked to with the keys lit nothing on the range picker, where the
@@ -8977,6 +8985,52 @@ for (const seq of toWalk) {
         else if (up.chosen !== keys[1]) wrong = `Shift and the up arrow chose ${up.chosen}, not ${keys[1]}`;
         else if (Math.abs(up.foot) > 1)
           wrong = `the clip walked up to above the top of the clip list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+        break;
+      }
+      case "walk two at once": {
+        // Two clips made by hand at the same moment, past the clips there
+        // are, so each has a card of the same words, beginning together.
+        // Shift and the down arrow from the card before them goes onto
+        // each and then past them, and Shift and the up arrow back.
+        const path = await episodeOn(page);
+        const have = (await ask(page, "Clips", path)) ?? [];
+        const at = Math.max(0, ...have.map((c) => c.end)) + 30;
+        await ask(page, "MakeClip", path, at, false);
+        await ask(page, "MakeClip", path, at, false);
+        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have.length + 2, { timeout: 0 });
+        await settle(page);
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li[data-clip]");
+        const pair = await page.evaluate(() => {
+          const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+          const i = cards.findIndex(
+            (li, i) => i > 0 && cards[i + 1] && li.dataset.clip && cards[i + 1].dataset.clip && li.dataset.clip !== cards[i + 1].dataset.clip && li.dataset.at === cards[i + 1].dataset.at,
+          );
+          return i < 0 ? null : [cards[i - 1], cards[i], cards[i + 1], cards[i + 2]].map((li) => li?.dataset.row ?? null);
+        });
+        if (!pair) {
+          wrong = "no two cards of two clips that begin at the same moment";
+          break;
+        }
+        // A step is done once the list has had a frame to follow.
+        const followed = () =>
+          page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(document.querySelector("ol.said").dataset.followed)))));
+        await page.locator(`ol.said li[data-row="${pair[0]}"] button.pick`).click();
+        await watch.step("click", s);
+        const went = [await followed()];
+        await page.mouse.move(1, 1);
+        for (const key of ["Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowUp", "Shift+ArrowUp"]) {
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+          await settle(page);
+          went.push(await followed());
+        }
+        const want = [pair[0], pair[1], pair[2], pair[3], pair[2], pair[1]];
+        console.log(JSON.stringify({ pair, went }));
+        if (went.join(" ") !== want.join(" ")) wrong = `Shift and the arrows over two cards that begin together went ${went.join(", ")}, not ${want.join(", ")}`;
         break;
       }
       case "one light": {
