@@ -152,9 +152,20 @@ export async function fakeClock(page) {
 // removed row has run only as far as runClock turns them on, and a busy
 // machine cannot spend them on the steps before, #341. letClockGo lets it
 // run as it does without a walk, from where it was held.
+//
+// Playwright holds the clock only at a moment it is told, and the app's
+// time runs on between reading the moment and holding it there, so now
+// and then the moment read is already past and Playwright says so. It is
+// read again then: the next reading is not behind.
 export async function holdClock(page) {
   await fakeClock(page);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+  for (;;) {
+    try {
+      return await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+    } catch (e) {
+      if (!String(e?.message).includes("fast-forward to the past")) throw e;
+    }
+  }
 }
 
 // Runs the app's held time on by ms, every timer and frame on the way
@@ -165,6 +176,42 @@ export async function runClock(page, ms) {
 
 export async function letClockGo(page) {
   await page.clock.resume();
+}
+
+// Waits for n of the browser's own frames, which go on while the app's
+// time is held.
+export async function realFrames(page, n = 2) {
+  await page.evaluate((n) => {
+    const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
+    return new Promise((done) => {
+      const next = (left) => (left ? frame(() => next(left - 1)) : done());
+      next(n);
+    });
+  }, n);
+}
+
+// Waits until every row of the clip list on its way out has folded and
+// left the page. Svelte marks a leaving row inert the moment it starts to
+// go and takes it out when its fold ends, so the page changing is the
+// signal. Its animations are no signal: Svelte starts the fold from the
+// end of a first animation of no length. Two frames more let the rows
+// under it settle.
+export async function foldsDone(page) {
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const gone = () => !document.querySelector("aside ol li[inert]");
+        if (gone()) return done();
+        const watch = new MutationObserver(() => {
+          if (gone()) {
+            watch.disconnect();
+            done();
+          }
+        });
+        watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["inert"] });
+      }),
+  );
+  await realFrames(page);
 }
 
 // Waits until the sidebar has stopped sliding, so what a walk reads or
@@ -493,7 +540,7 @@ export async function clipList(page) {
       count: Number(text(pane.querySelector(".listhead .num")) || 0),
       cards: [...pane.querySelectorAll("ol li[data-key]")].map((li) => li.dataset.key),
       rows: [...pane.querySelectorAll("ol li.ghost")]
-        .map((li) => ({ what: text(li.querySelector(".title")), meta: text(li.querySelector(".meta")) }))
+        .map((li) => ({ what: text(li.querySelector(".title")), meta: text(li.querySelector(".meta")), leaving: li.inert }))
         .filter((r) => r.what),
     };
   });

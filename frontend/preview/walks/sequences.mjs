@@ -1097,7 +1097,7 @@ import { open, chosen, shown, engineState, handles, timeline, inside, middle, hi
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -8355,7 +8355,9 @@ for (const seq of toWalk) {
       }
       case "row closes": {
         const [words, after] = arg;
-        const says = async () => !!(await clipList(page))?.rows.some((r) => r.what === words);
+        // A row on its way out has gone, though it is still in the list
+        // for its fold: Svelte marks it inert the moment it starts to go.
+        const says = async () => !!(await clipList(page))?.rows.some((r) => r.what === words && !r.leaving);
         if (!(await says())) {
           wrong = `no row says "${words}": ${JSON.stringify((await clipList(page))?.rows)}`;
           break;
@@ -8370,31 +8372,35 @@ for (const seq of toWalk) {
           break;
         }
         // Its time started when the search ended, on the fake clock the
-        // sequence began with, see fakeClock. The clock is held now, and what is left of the time is read from the
-        // row's fill, which started with it and runs on the browser's own
-        // clock. Then the time is run on by hand, so nothing waits on it.
+        // sequence began with, see fakeClock. The clock is held now, and
+        // what is left of the time is read from the row's fill, which
+        // started with it and runs on the browser's own clock. Then the
+        // time is run on by hand, so nothing waits on it.
         await holdClock(page);
-        const time = await page.evaluate(() => {
-          const t = document.querySelector("aside ol li.told .fill .run")?.getAnimations()[0]?.effect.getComputedTiming();
-          return t ? { whole: t.duration, left: t.duration - t.localTime } : null;
-        });
-        if (!time) {
-          wrong = `the row that says "${words}" does not run down`;
+        try {
+          const time = await page.evaluate(() => {
+            const t = document.querySelector("aside ol li.told .fill .run")?.getAnimations()[0]?.effect.getComputedTiming();
+            return t ? { whole: t.duration, left: t.duration - t.localTime } : null;
+          });
+          if (!time) {
+            wrong = `the row that says "${words}" does not run down`;
+            break;
+          }
+          if (Math.abs(time.whole - after * 1000) > 50) {
+            wrong = `the row that says "${words}" runs down in ${(time.whole / 1000).toFixed(1)} s, not ${after}`;
+            break;
+          }
+          await runClock(page, Math.max(0, time.left - 500));
+          if (!(await says())) {
+            wrong = `the row that says "${words}" closed half a second before its ${after} s ran out`;
+            break;
+          }
+          await runClock(page, 1000);
+          if (await says()) wrong = `the row that says "${words}" is still there half a second after its ${after} s`;
+          else await foldsDone(page);
+        } finally {
           await letClockGo(page);
-          break;
         }
-        if (Math.abs(time.whole - after * 1000) > 50) {
-          wrong = `the row that says "${words}" runs down in ${(time.whole / 1000).toFixed(1)} s, not ${after}`;
-          await letClockGo(page);
-          break;
-        }
-        await runClock(page, Math.max(0, time.left - 500));
-        const early = !(await says());
-        await runClock(page, 1000);
-        await page.waitForFunction((w) => ![...document.querySelectorAll("aside ol li.told")].some((r) => r.textContent.includes(w)), words, { timeout: 5000 }).catch(() => {});
-        if (early) wrong = `the row that says "${words}" closed half a second before its ${after} s ran out`;
-        else if (await says()) wrong = `the row that says "${words}" is still there half a second after its ${after} s`;
-        await letClockGo(page);
         break;
       }
       case "cards": {
@@ -9470,70 +9476,85 @@ for (const seq of toWalk) {
         // ten seconds on the clock, see holdClock. Its time only starts
         // once the hand leaves the row, so the clock is held before.
         await holdClock(page);
-        await press(bins.nth(0));
-        await page.waitForSelector("aside ol .gone");
-        // The second bin is where it was: the first clip's row stays open
-        // while it can be put back.
-        await press(bins.nth(0));
-        const rows = () =>
-          page.evaluate(() =>
-            [...document.querySelectorAll("aside ol .gone")].map((g) => {
-              const run = g.querySelector(".fill .run");
-              return { top: Math.round(g.getBoundingClientRect().top), running: run.getAnimations().length > 0, at: getComputedStyle(run).transform };
-            }),
-          );
-        await page.waitForFunction(() => document.querySelectorAll("aside ol .gone").length >= 2, null, { timeout: 3000 }).catch(() => {});
-        let now = await rows();
-        if (now.length < 2) {
-          wrong = `${now.length} rows can be put back after two clips were removed`;
-          break;
+        try {
+          await press(bins.nth(0));
+          await page.waitForSelector("aside ol .gone");
+          // The second bin is where it was: the first clip's row stays open
+          // while it can be put back.
+          await press(bins.nth(0));
+          const rows = () =>
+            page.evaluate(() =>
+              [...document.querySelectorAll("aside ol .gone")].map((g) => {
+                const run = g.querySelector(".fill .run");
+                return { top: Math.round(g.getBoundingClientRect().top), running: run.getAnimations().length > 0, at: getComputedStyle(run).transform };
+              }),
+            );
+          await page.locator("aside ol .gone").nth(1).waitFor();
+          let now = await rows();
+          if (now.length < 2) {
+            wrong = `${now.length} rows can be put back after two clips were removed`;
+            break;
+          }
+          if (now[1].running) {
+            wrong = "the second row's time runs down under the hand that removed it";
+            break;
+          }
+          const second = now[1].top;
+          // What WebKit says while the hand stands still: nothing.
+          await page.evaluate(() => {
+            const names = ["pointerover", "pointerout", "pointerenter", "pointerleave", "pointermove"];
+            const still = (e) => e.stopImmediatePropagation();
+            window.__stillHand = () => names.forEach((n) => window.removeEventListener(n, still, true));
+            names.forEach((n) => window.addEventListener(n, still, true));
+          });
+          // The first row's time runs out with the hand still where it was,
+          // and it closes on the browser's own frames.
+          await runClock(page, (removeTime + 0.5) * 1000);
+          if ((await page.locator("aside ol li:not([inert]) .gone").count()) !== 1) {
+            wrong = `the first row did not close after its time: ${JSON.stringify(await rows())}`;
+            break;
+          }
+          await foldsDone(page);
+          now = await rows();
+          if (now.length !== 1 || now[0].top >= second) {
+            wrong = `the first row did not close and move the second up: ${JSON.stringify(now)}`;
+            break;
+          }
+          await runClock(page, 400);
+          await page.evaluate(() => window.__stillHand());
+          const line = await page.locator(".clip-timeline").boundingBox();
+          await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
+          // Its fill moves on the browser's own frames, held clock or not,
+          // so two of them show it moving. It runs the whole ten seconds the
+          // row has, since the hand held it full until now.
+          const a = await rows();
+          await realFrames(page);
+          const b = await rows();
+          if (!a[0]?.running || a[0].at === b[0]?.at) {
+            wrong = `the row left to put back stands still with the hand on the clip timeline: ${JSON.stringify(b)}`;
+            break;
+          }
+          const whole = await page.evaluate(() => document.querySelector("aside ol .gone .fill .run").getAnimations()[0]?.effect.getComputedTiming().duration);
+          if (Math.abs(whole - removeTime * 1000) > 50) {
+            wrong = `the row left to put back runs down in ${(whole / 1000).toFixed(1)} s, not ${removeTime}`;
+            break;
+          }
+          await runClock(page, (removeTime - 0.5) * 1000);
+          // A row that is closing has gone, though it is still in the list
+          // for its fold: Svelte marks it inert the moment it starts to leave.
+          if (!(await page.locator("aside ol li:not([inert]) .gone").count())) {
+            wrong = "the row left to put back went before its time ran out";
+            break;
+          }
+          await runClock(page, 1000);
+          if (await page.locator("aside ol li:not([inert]) .gone").count()) {
+            wrong = "the row left to put back is still there after its time";
+            break;
+          }
+          await foldsDone(page);
+        } finally {
+          await letClockGo(page);
         }
-        if (now[1].running) {
-          wrong = "the second row's time runs down under the hand that removed it";
-          break;
-        }
-        const second = now[1].top;
-        // What WebKit says while the hand stands still: nothing.
-        await page.evaluate(() => {
-          const names = ["pointerover", "pointerout", "pointerenter", "pointerleave", "pointermove"];
-          const still = (e) => e.stopImmediatePropagation();
-          window.__stillHand = () => names.forEach((n) => window.removeEventListener(n, still, true));
-          names.forEach((n) => window.addEventListener(n, still, true));
-        });
-        // The first row's time runs out with the hand still where it was,
-        // and it closes on the browser's own frames.
-        await runClock(page, (removeTime + 0.5) * 1000);
-        await page.waitForFunction(() => document.querySelectorAll("aside ol .gone").length <= 1, null, { timeout: 5000 }).catch(() => {});
-        now = await rows();
-        if (now.length !== 1 || now[0].top >= second) {
-          wrong = `the first row did not close and move the second up: ${JSON.stringify(now)}`;
-          break;
-        }
-        await runClock(page, 400);
-        await page.evaluate(() => window.__stillHand());
-        const line = await page.locator(".clip-timeline").boundingBox();
-        await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
-        // Its fill moves on the browser's own frames, held clock or not,
-        // so it is seen moving as soon as it does.
-        const a = await rows();
-        const moved = await page
-          .waitForFunction((at) => getComputedStyle(document.querySelector("aside ol .gone .fill .run")).transform !== at, a[0]?.at, { timeout: 2000 })
-          .then(() => true, () => false);
-        if (!a[0]?.running || !moved) {
-          wrong = `the row left to put back stands still with the hand on the clip timeline: ${JSON.stringify(await rows())}`;
-          break;
-        }
-        await runClock(page, (removeTime - 0.5) * 1000);
-        // A row that is closing has gone, though it is still in the list
-        // for its fold: Svelte marks it inert the moment it starts to leave.
-        if (!(await page.locator("aside ol li:not([inert]) .gone").count())) {
-          wrong = "the row left to put back went before its time ran out";
-          break;
-        }
-        await runClock(page, 1000);
-        await page.waitForFunction(() => !document.querySelector("aside ol .gone"), null, { timeout: 5000 }).catch(() => {});
-        if ((await rows()).length) wrong = "the row left to put back is still there after its time";
-        await letClockGo(page);
         await watch.step("remove two, hand still", s);
         break;
       }
@@ -9561,24 +9582,28 @@ for (const seq of toWalk) {
           const under = row.nextElementSibling;
           const gap = parseFloat(getComputedStyle(row.parentElement).rowGap);
           const seen = [];
-          window.__fold = { seen, height: row.getBoundingClientRect().height, gap };
+          let ended;
+          window.__fold = { seen, height: row.getBoundingClientRect().height, gap, row, ended: new Promise((r) => (ended = r)) };
           const look = () => {
             seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top });
             if (row.isConnected || seen.filter((f) => !f.there).length < 30) frame(look);
-            else window.__fold.done = true;
+            else ended();
           };
           frame(look);
         });
         const line = await page.locator(".clip-timeline").boundingBox();
         await page.mouse.move(line.x + line.width / 2, line.y + line.height / 2, { steps: 8 });
         await runClock(page, (removeTime + 0.5) * 1000);
-        await page.waitForFunction(() => window.__fold.done, null, { timeout: 5000 }).catch(() => {});
+        // Its time has run out, so it is on its way out, or out already,
+        // and the watch ends thirty frames after it left.
+        const going = await page.evaluate(() => !window.__fold.row.isConnected || window.__fold.row.inert);
+        if (going) await page.evaluate(() => window.__fold.ended);
         await letClockGo(page);
-        const { seen, height, gap, done } = await page.evaluate(() => window.__fold);
-        if (!done) {
+        if (!going) {
           wrong = "the removed row was still in the list after its time";
           break;
         }
+        const { seen, height, gap } = await page.evaluate(() => ({ seen: window.__fold.seen, height: window.__fold.height, gap: window.__fold.gap }));
         const tops = seen.map((f) => f.top);
         const left = seen.findIndex((f) => !f.there);
         const rose = tops[0] - tops[tops.length - 1];
