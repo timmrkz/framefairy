@@ -4120,6 +4120,25 @@ function readUpdates() {
 }
 const updatesPage = (page) => page.evaluate(readUpdates);
 
+// What is wrong when a row that says Removed leaves a strip of its card
+// on either side of it, or null. Removed fills its card from edge to edge,
+// issue #431. The row is the Removed's offset parent, see li in
+// ClipList.svelte.
+async function removedStrip(page, row) {
+  const boxes = await page.evaluate((sel) => {
+    const li = document.querySelector(sel);
+    const gone = li?.querySelector(".gone");
+    if (!li || !gone) return null;
+    // Where it is laid out, not where its slide in has it now.
+    return { left: gone.offsetLeft, right: li.clientWidth - gone.offsetLeft - gone.offsetWidth };
+  }, row);
+  if (!boxes) return `no row ${row} says Removed`;
+  if (Math.abs(boxes.left) > 0.5 || Math.abs(boxes.right) > 0.5) {
+    return `Removed leaves ${boxes.left.toFixed(1)} px of its card on the left and ${boxes.right.toFixed(1)} px on the right`;
+  }
+  return null;
+}
+
 // How long the page took from a key going down to the first animation
 // frame on which shows holds, in the page's own time. Timed from Node, a
 // press and the polling that waits for its answer are calls to the
@@ -11921,6 +11940,11 @@ for (const seq of toWalk) {
           wrong = "the bin on the card that stopped did not say Removed in its place";
           break;
         }
+        const strip = await removedStrip(page, `li[data-key="${key}"]`);
+        if (strip) {
+          wrong = strip;
+          break;
+        }
         // The range picker says what the card says, in the same frame.
         const left = await waiting();
         if (left !== marked - 1) {
@@ -12004,6 +12028,11 @@ for (const seq of toWalk) {
           .then(() => true, () => false);
         if (!removed) {
           wrong = `the bin on the row "${was}" did not say Removed in its place`;
+          break;
+        }
+        const strip = await removedStrip(page, "li.next:has(.gone)");
+        if (strip) {
+          wrong = strip;
           break;
         }
         if (arg === "put back") {

@@ -612,6 +612,13 @@
     scroll-margin-bottom: var(--veil, 16px);
   }
 
+  /* Removed fills the card from edge to edge, the way it fills a clip's
+     row, not the card less the room its words keep from the edge. Tim saw
+     a strip of the card on either side of a removed search, issue #431. */
+  .next:has(> :global(.gone)) {
+    padding: 0;
+  }
+
 
   /* A search that found nothing new: news that runs down and closes, the
      way a removed clip's row does, but in grey, because nothing was taken
