@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/afero"
 
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/standin"
 )
 
 // twoCameras is an episode shot on two cameras: the first for ten seconds,
@@ -95,7 +96,7 @@ func TestFramingDecodesOnTheProcessorWhenTheSystemWillNot(t *testing.T) {
 	real, _ := exec.LookPath("ffmpeg")
 	refusing := filepath.Join(t.TempDir(), "ffmpeg")
 	script := "#!/bin/sh\ncase \"$*\" in *-hwaccel*) echo refused >&2; exit 1;; esac\nexec \"" + real + "\" \"$@\"\n"
-	if err := os.WriteFile(refusing, []byte(script), 0o755); err != nil {
+	if err := standin.Write(refusing, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	e := framingEngine()
@@ -157,7 +158,7 @@ func stuckFFmpeg(t *testing.T, always bool) string {
 	path := filepath.Join(t.TempDir(), "ffmpeg")
 	script := "#!/bin/sh\n" + hang + "\n" +
 		"echo '[Parsed_showinfo_2 @ 0x0] n:   0 pts:  125 pts_time:5      duration:1' >&2\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

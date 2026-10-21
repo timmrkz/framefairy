@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/standin"
 )
 
 // A bundled app carries its own ffmpeg, built without libx264 so the build
@@ -32,7 +34,7 @@ func TestAToolBesideTheProgramWinsOverTheSearchPath(t *testing.T) {
 	}
 	put := func(dir, name string, mode os.FileMode) string {
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), mode); err != nil {
+		if err := standin.Write(path, []byte("#!/bin/sh\n"), mode); err != nil {
 			t.Fatal(err)
 		}
 		return path
@@ -209,7 +211,7 @@ func TestFFprobeIsFoundBesideTheFFmpegChosen(t *testing.T) {
 	} {
 		dir := t.TempDir()
 		for _, name := range []string{c.ffmpeg, c.ffprobe} {
-			if err := os.WriteFile(filepath.Join(dir, name), nil, 0o755); err != nil {
+			if err := standin.Write(filepath.Join(dir, name), nil, 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -242,7 +244,7 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 	t.Setenv("FRAMEFAIRY_FFMPEG", "")
 	dir := t.TempDir()
 	ffmpeg := filepath.Join(dir, "ffmpeg")
-	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\necho the real one\n"), 0o755); err != nil {
+	if err := standin.Write(ffmpeg, []byte("#!/bin/sh\necho the real one\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("#!/bin/sh\necho the real one\n"))
@@ -263,7 +265,7 @@ func TestAToolBesideTheProgramIsCheckedBeforeItRuns(t *testing.T) {
 	// The same name, other bytes, a moment later: what somebody who put
 	// their own file there would leave.
 	later := time.Now().Add(2 * time.Second)
-	if err := os.WriteFile(ffmpeg, []byte("#!/bin/sh\necho somebody else\n"), 0o755); err != nil {
+	if err := standin.Write(ffmpeg, []byte("#!/bin/sh\necho somebody else\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.Chtimes(ffmpeg, later, later)
@@ -306,7 +308,7 @@ func TestInspectingAToolReadsItAgain(t *testing.T) {
 	dir := t.TempDir()
 	ffmpeg := filepath.Join(dir, "ffmpeg")
 	body := []byte("#!/bin/sh\necho 'ffmpeg version n8.1.3 Copyright'\n")
-	if err := os.WriteFile(ffmpeg, body, 0o755); err != nil {
+	if err := standin.Write(ffmpeg, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(body)
@@ -322,7 +324,7 @@ func TestInspectingAToolReadsItAgain(t *testing.T) {
 	// would not see. The look reads it again.
 	info, _ := os.Stat(ffmpeg)
 	other := []byte("#!/bin/sh\necho 'ffmpeg version n6.6.6 Copyright'\n")
-	if err := os.WriteFile(ffmpeg, other, 0o755); err != nil {
+	if err := standin.Write(ffmpeg, other, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.Chtimes(ffmpeg, info.ModTime(), info.ModTime())

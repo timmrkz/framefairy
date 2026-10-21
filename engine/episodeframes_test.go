@@ -22,6 +22,7 @@ import (
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
+	"framefairy/internal/standin"
 )
 
 // The episode's decoder hands over the frames the ffmpeg program hands
@@ -1043,7 +1044,7 @@ func colours(frame []byte) []int {
 func TestADecoderThatStopsAtOnceSaysWhyToAStreamThatAskedMeanwhile(t *testing.T) {
 	program := filepath.Join(t.TempDir(), "frames")
 	script := "#!/bin/sh\necho 'the file has no picture' >&2\nexit 1\n"
-	if err := os.WriteFile(program, []byte(script), 0o755); err != nil {
+	if err := standin.Write(program, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	dec := NewEpisodeFrames(program, "nur-ton.mp4")
