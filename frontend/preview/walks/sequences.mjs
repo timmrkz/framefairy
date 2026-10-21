@@ -9872,10 +9872,21 @@ for (const seq of toWalk) {
           const row = d.closest(".item");
           const box = (el) => el?.getBoundingClientRect() ?? null;
           const act = box(row?.querySelector("button.act"));
+          const line = parseFloat(getComputedStyle(code).lineHeight);
           return {
             text: (code?.textContent ?? "").trim(),
             height: d.getBoundingClientRect().height,
             control: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")),
+            // The field has the height of a control whatever is in it, so
+            // the words are measured: one line high, wider than they are
+            // shown and so scrolling, inside the field.
+            code: box(code),
+            lines: code ? Math.round(code.getBoundingClientRect().height / line) : 0,
+            scrolls: !!code && code.scrollWidth > code.clientWidth,
+            // Playwright's Chromium hides scroll bars, so one that a Mac
+            // set to show them always would draw is not there to measure.
+            // What keeps it away is read instead.
+            bar: code ? getComputedStyle(code).scrollbarWidth : "",
             field: box(d),
             act,
             words: box(row?.querySelector(".words")),
@@ -9888,6 +9899,18 @@ for (const seq of toWalk) {
         }
         if (seen.height !== seen.control) {
           wrong = `what the system said is ${seen.height} px high, not one line of ${seen.control} px`;
+          break;
+        }
+        if (seen.lines !== 1 || !seen.scrolls) {
+          wrong = `what the system said is ${seen.lines} lines, ${seen.scrolls ? "scrolling" : "not scrolling"}, not one line that scrolls`;
+          break;
+        }
+        if (seen.code.top < seen.field.top || seen.code.bottom > seen.field.bottom || seen.code.left < seen.field.left || seen.code.right > seen.field.right) {
+          wrong = `what the system said spills out of its field`;
+          break;
+        }
+        if (seen.bar !== "none") {
+          wrong = `the field may draw a scroll bar inside its line, its scrollbar-width is ${seen.bar}`;
           break;
         }
         // Tim saw the field under the words and Try again beside them both,
@@ -9924,8 +9947,14 @@ for (const seq of toWalk) {
             return false;
           }
         });
-        await detail.locator("button.copy").click();
-        const label = await detail.locator("button.copy").getAttribute("aria-label");
+        // The button says Copied in the frame of the click, and goes back
+        // a moment later, so it is read in the same call as the click, on
+        // the frame after it, never in a later call that may come too late.
+        const label = await detail.locator("button.copy").evaluate(async (b) => {
+          b.click();
+          await new Promise((r) => requestAnimationFrame(() => r()));
+          return b.getAttribute("aria-label");
+        });
         await copiedOnGo;
         const onClipboard = await control(url, "/clipboard");
         if (label !== "Copied") wrong = `the copy button says ${label} after the click, not Copied`;

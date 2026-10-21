@@ -913,10 +913,22 @@ func updateProblem(err error, downloading bool) string {
 		return "GitHub is busy. Try again in a few minutes."
 	case has("answered "):
 		return "GitHub turned the request down. Try again later."
-	case has("signed", "signature", "claim", "checksum", "did not arrive as the channel list says"):
+	// A certificate that does not hold is the network's, before the
+	// build's signature: Go says "x509: certificate signed by unknown
+	// authority" when a hotel's Wi-Fi, a captive portal or a company's
+	// proxy stands between the Mac and GitHub, and signed is a word the
+	// signature's errors use too.
+	case has("x509:", "certificate", "tls:"):
+		if downloading {
+			return "The download broke off. Check your internet connection."
+		}
+		return "Could not reach GitHub. Check your internet connection."
+	case has("signed with", "not signed", "signature", "claim", "checksum", "digest mismatch", "did not arrive as the channel list says"):
 		return "The new build could not be verified, so it was not used."
-	case has("cache"):
+	case has("no space left", "disk full", "disk quota"):
 		return "The new build could not be saved. Check that the disk has room."
+	case has("written to the cache", "kept in the cache"):
+		return "The new build could not be saved."
 	case errors.As(err, &netErr), errors.Is(err, context.DeadlineExceeded), has(
 		"dial tcp", "read tcp", "write tcp", "no such host", "connection refused", "connection reset",
 		"network is unreachable", "can't assign requested address", "i/o timeout", "tls handshake",
@@ -925,7 +937,7 @@ func updateProblem(err error, downloading bool) string {
 			return "The download broke off. Check your internet connection."
 		}
 		return "Could not reach GitHub. Check your internet connection."
-	case has("not readable", "too large", "could not be read", "has no"):
+	case !downloading && has("not readable", "too large", "could not be read", "has no"):
 		return "The list of builds could not be read. Try again later."
 	}
 	if downloading {

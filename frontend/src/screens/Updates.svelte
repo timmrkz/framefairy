@@ -10,7 +10,7 @@
   // the mark on Updates says it is here, and one click relaunches into it.
   // Reached from Updates at the foot of the sidebar and from Check for
   // Updates in the app menu. See docs/UPDATES.md.
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
@@ -62,6 +62,7 @@
   let copied = $state(false);
   let copyRefused = $state("");
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(copiedTimer));
   async function copyDetail(text: string) {
     copied = true;
     copyRefused = "";
@@ -337,10 +338,11 @@
   /* A row that says what the system said wraps: the mark and the words
      on its first line, as in every other row, and under them the field
      and Try again on a line of their own, starting where the words start,
-     past the mark's 24 px and the row's gap, see .card .mark in app.css. */
+     past the mark's 24 px and the row's 12 px gap, both from .card in
+     app.css, which the walk holds them to. */
   .item.told {
     flex-wrap: wrap;
-    row-gap: 10px;
+    row-gap: var(--gap);
   }
 
   .told > .said,
@@ -352,7 +354,7 @@
   .said {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--gap);
     min-width: 0;
   }
 
@@ -381,6 +383,15 @@
     font-size: var(--size-s);
     line-height: calc(var(--control-h) - 2px);
     color: var(--muted);
+    /* No scroll bar: with macOS set to show them always, or a mouse
+       plugged in, WebKit draws one about 15 px high inside the line and
+       pushes the words up. It scrolls with the trackpad, the wheel with
+       Shift and a drag across it, and Copy takes the whole of it. */
+    scrollbar-width: none;
+  }
+
+  .detail code::-webkit-scrollbar {
+    display: none;
   }
 
   /* Square, the way the trash can is, inside the field's own line. */
