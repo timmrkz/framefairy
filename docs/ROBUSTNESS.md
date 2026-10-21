@@ -100,6 +100,15 @@ what became of it.
    that appears between the two pictures of an edit is left out of it.
    `engine/undo.go` `LeaveOutNewClips`, used by the history in
    `cmd/framefairy-app/history.go`.
+   The same for the other two things a search does to a plan, issue #309.
+   Over a window searched before it writes its plan anew, and undoing an
+   edit made at that moment put the clips of the search before back into
+   the new plan, with its id. And it takes out a removed clip it has made
+   again, which the undo brought back. An edit never takes a clip out
+   and never writes a plan anew, so a clip that goes and a plan with
+   another id are left out of the edit too. Tested with a search landing
+   clips and taking one out while edits, removals, undos and redos come
+   from six goroutines at once, `TestASearchLandsWhileItsPlanIsEditedUndoneAndRemoved`.
 10. **Two settings changes at once lose one.** Settings are read, changed and
     written back outside the store's lock. Fixed: every change is one step
     under the lock, `UpdateSettings`. The test lost the number of clips in

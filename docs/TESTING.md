@@ -132,6 +132,7 @@ each with a POST:
 | `/pick-sound` | makes a new file of twelve seconds of a tone and no picture, for the Add button's box to hand over next, so a walk sees Add leave it out with the reason |
 | `/model?hang=1&fail=0` | the language model holds its answers until the search is stopped, or fails, or with both off answers. Told to answer again, it answers what it held too, the way a slow model answers in the end, so a search that was asked while it held does not find for good and keep every video added after it from being transcribed |
 | `/speech?ms=N` | the speech model takes N milliseconds over each piece of audio, so a transcript grows slowly enough to be seen and cancelled. With `&from=0` it says its sentences again from the first word, so a video added next is heard with the words of the bridge's episode and its clip has the same name |
+| `/chrome?bar=30&left=12&right=72` | the app's window as macOS lays it out, in points: the title bar's height and where its buttons start and end. It goes through what the Go side does with an answer from macOS and is told to the page the way a resize is. Until it is asked, and again after `/reset`, the title bar is the one every other system draws |
 | `/hold?call=Search&ms=N&times=K&fail=why` | the next call of that name, or the next K, waits N milliseconds before it reaches the Go side, the way a busy machine delivers it late, so a walk can press something while the Go side has not heard of the call yet. With `fail` it fails with that reason instead of reaching the Go side, the way a full disk refuses a save |
 | `/updates?from=main&stored=pr-143&list=main,pr-143` | gives the app's Updates page the app's own updating and Wails' updater, reading a channel list the bridge serves on this machine: a build from the channel `from`, or made on the Mac without it, with `stored` picked by a build before it, and the channels of `list`, each with a newer build that downloads in a moment. Until it is asked, and again after `/reset`, the Updates page's calls are answered with nothing like the rest. Relaunch always is |
 | `/reopen` | closes the app and opens it again, the way quitting and starting it does: the work stops and how it ended is read back. It answers with the jobs as the app left them, once nothing ran any more |
@@ -717,6 +718,19 @@ the browser takes a second or two. The rest is the gestures, and the
 ones that play wait in real time: playing a clip to its end once took
 most of the playback walk, so it now starts a moment before the clip's
 last cut.
+
+Time the app lets run out, the ten seconds of a toast or of a removed
+picture or clip, is not waited for. A walk holds the app's clock before
+that time starts, with Playwright's own fake clock, `holdClock` in
+`walks/bridge.mjs`, and turns it on by hand, `runClock`: the toast is
+still there after nine seconds and gone after ten and a half, in a
+fraction of a second of the walk's own. On the real clock a busy machine
+spent part of the ten seconds on the steps before, and the toast went
+before the walk had looked, #341. Every timer, frame and
+`performance.now` of the app stands still while the clock is held, so a
+step that needs the app's own frames comes before `["hold the clock"]` or
+after `letClockGo`. The walk's own waits, `settle` among them, keep the
+real time and frames, kept on `window.__real`.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI

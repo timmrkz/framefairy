@@ -33,6 +33,15 @@ type Listener struct {
 	// Part is the call moving on to the next part of its work: loading the
 	// model, then reading the prompt. Writing begins with the first text.
 	Part func(name string)
+	// Prompt is the whole request written to the search's log, at path,
+	// before it is sent.
+	Prompt func(path string)
+}
+
+func (l *Listener) prompt(path string) {
+	if l != nil && l.Prompt != nil {
+		l.Prompt(path)
+	}
 }
 
 func (l *Listener) part(name string) {

@@ -122,6 +122,10 @@ type Options struct {
 	HighlightColour string
 	NoHighlight     bool
 	DryRun          bool
+
+	// wrote hears from the search what it wrote, for a comparison, see
+	// searchWrote.
+	wrote *searchWrote
 }
 
 // DefaultOptions are the defaults the command line documents.
@@ -559,6 +563,7 @@ func (r *runner) plan(ctx context.Context) error {
 			Recipe:   opts.Recipe,
 			Switches: opts.Switches,
 			PlanPath: planPath,
+			wrote:    opts.wrote,
 		})
 	if err != nil {
 		return e.planFailed(ctx, err)

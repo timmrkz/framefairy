@@ -12,9 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
-
-	"github.com/spf13/afero"
 )
 
 // The default recipe is middle with the pauses marked, Tim's choice of
@@ -257,80 +254,87 @@ func TestAComparisonReportsEveryRecipe(t *testing.T) {
 	}
 }
 
-// A file a search writes the moment it begins is the search's own. A
-// file's time comes from the system's coarse clock, a few milliseconds
-// behind time.Now, so judged by the clock such a file read as written
-// before the search began, and the comparison kept no prompt for it,
-// #365. A file the search did not write is not its own.
+// A side of a comparison keeps the prompt its search wrote, though the file
+// looks as it did before. Two sides that differ only in thinking send the
+// same request, so the second writes a prompt exactly as long as the
+// first, and a disk's coarse clock can stamp both with the same time. A
+// comparison that judged by a file's time and length then kept no prompt
+// for the second side, #395. The stand-in model sets the time back by
+// hand, so no clock decides what this test sees.
 //
-// On the real disk: the coarse clock the disk stamps a file with is what
-// this is about, and memory stamps with time.Now.
-func TestAFileWrittenAsTheSearchBeginsIsItsOwn(t *testing.T) {
+// On the real disk: ffmpeg reads the episode the searches hear.
+func TestASideKeepsThePromptItWroteThoughItLooksUnchanged(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	prompt := filepath.Join(dir, "plan-prompt.txt")
-	kept := filepath.Join(dir, "reply-before.json")
-	for _, path := range []string{prompt, kept} {
-		if err := afero.WriteFile(disk, path, []byte("the search before"), 0o644); err != nil {
-			t.Fatal(err)
+	source := testEpisode(t, "20")
+	prompt := filepath.Join(WorkDir(source), "logs", "plan-prompt.txt")
+	var heard int32
+	var mu sync.Mutex
+	var asks int
+	var first os.FileInfo
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Messages       []chatMessage
+			ResponseFormat json.RawMessage `json:"response_format"`
 		}
-	}
-	for round := range 200 {
-		before := writtenIn(disk, filepath.Join(dir, "*"))
-		// The prompts of two recipes are not the same length.
-		body := strings.Repeat("prompt ", 1+round%2)
-		if err := afero.WriteFile(disk, prompt, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		mu.Lock()
+		defer mu.Unlock()
+		// Only the first ask of a side writes the plan's prompt. An ask
+		// about the clips off the length writes a prompt of its own.
+		if len(request.Messages) <= 2 {
+			asks++
+			info, err := os.Stat(prompt)
+			switch {
+			case err != nil:
+				t.Errorf("ask %d: no prompt was written before it: %v", asks, err)
+			case asks == 1:
+				first = info
+			case info.Size() != first.Size():
+				t.Errorf("the two sides wrote prompts of %d and %d bytes, so this is not the case it is about",
+					first.Size(), info.Size())
+			default:
+				if err := os.Chtimes(prompt, first.ModTime(), first.ModTime()); err != nil {
+					t.Error(err)
+				}
+			}
 		}
-		reply := filepath.Join(dir, fmt.Sprintf("reply-%d.json", round))
-		if err := afero.WriteFile(disk, reply, []byte("{}"), 0o644); err != nil {
-			t.Fatal(err)
+		answer := "1 1 1\n"
+		if len(request.ResponseFormat) > 0 {
+			answer = `{"clips": [{"slug": "erste", "title": "Erste", "reason": "Test", "keep": [[1, 1]]}]}`
 		}
-		if !before.changed(disk, prompt) {
-			t.Fatalf("round %d: the prompt written as the search began reads as written before it", round)
-		}
-		if !before.changed(disk, reply) {
-			t.Fatalf("round %d: the answer the search saved reads as written before it", round)
-		}
-		if before.changed(disk, kept) {
-			t.Fatalf("round %d: an answer of the search before reads as this one's", round)
-		}
-		if before.changed(disk, filepath.Join(dir, "missing.json")) {
-			t.Fatalf("round %d: a file that is not there reads as written", round)
-		}
-	}
+		writeLocalStream(w, answer, 7)
+	}))
+	defer server.Close()
+	e := NewEngine(NewLog(&bytes.Buffer{}, false, false), disk)
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&heard}, nil }
 
-	// A prompt written again at the same length is told by its time. The
-	// times are set by hand, so no clock decides what this test sees.
-	then := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
-	if err := afero.WriteFile(disk, prompt, []byte("the same prompt"), 0o644); err != nil {
+	opts := DefaultOptions()
+	opts.Source = source
+	opts.LLMURL = server.URL
+	opts.ASRModel = t.TempDir()
+	opts.Count = 1
+	opts.Replan = true
+	runs, _, err := e.Compare(context.Background(), opts, []string{"lines@1024", "lines@2048"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := disk.Chtimes(prompt, then, then); err != nil {
-		t.Fatal(err)
+	mu.Lock()
+	asked := asks
+	mu.Unlock()
+	if len(runs) != 2 || asked != 2 {
+		t.Fatalf("%d runs, the model asked %d times", len(runs), asked)
 	}
-	before := writtenIn(disk, filepath.Join(dir, "*"))
-	if err := afero.WriteFile(disk, prompt, []byte("the next prompt"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.Chtimes(prompt, then.Add(time.Millisecond), then.Add(time.Millisecond)); err != nil {
-		t.Fatal(err)
-	}
-	if !before.changed(disk, prompt) {
-		t.Fatal("a prompt written again at the same length and a later time reads as written before")
-	}
-	// Written again at the same length within one tick of the clock, a
-	// file looks the same as before and reads as not written. That is the
-	// gap left in Compare until the search says what it wrote, #395.
-	before = writtenIn(disk, filepath.Join(dir, "*"))
-	if err := afero.WriteFile(disk, prompt, []byte("the last prompt"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.Chtimes(prompt, then.Add(time.Millisecond), then.Add(time.Millisecond)); err != nil {
-		t.Fatal(err)
-	}
-	if before.changed(disk, prompt) {
-		t.Fatal("a file with the same time and length reads as written, so the gap is closed and the comment above is out of date")
+	for _, run := range runs {
+		if run.PromptChars == 0 {
+			t.Errorf("%s kept no prompt, though its search wrote one", run.Recipe)
+		}
+		kept, err := os.ReadFile(filepath.Join(WorkDir(source), "experiments", run.Recipe, "prompt.txt"))
+		if err != nil || runeLen(string(kept)) != run.PromptChars {
+			t.Errorf("%s kept no copy of its prompt: %v", run.Recipe, err)
+		}
+		if run.Plan == "" {
+			t.Errorf("%s has no plan, though its search wrote one", run.Recipe)
+		}
 	}
 }
 

@@ -486,6 +486,10 @@ func FuzzPlanEdits(f *testing.F) {
 	// after the cut, which left the turned part its old crop as filmed,
 	// found by the review of #398.
 	f.Add([]byte{4, 104, 3, 2, 124, 100})
+	// Rotate the first part of clip 01 and place its crop, then rotate
+	// the part after the cut the same way, which left that part in the
+	// middle of the picture, so the clip had two crops turned 90, #402.
+	f.Add([]byte{4, 104, 3, 2, 104, 4, 4, 124, 3})
 	f.Fuzz(func(t *testing.T, script []byte) {
 		fsys, path := editablePlanPath(t)
 		// Clip 02 is two pieces that meet at 21, the way a search parted a

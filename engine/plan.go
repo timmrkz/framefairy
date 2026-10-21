@@ -101,6 +101,8 @@ type PlanOptions struct {
 	// any clip of it in the list is its clip, and it is made again once
 	// that was removed, see wholeClip.
 	Listed []Window
+	// wrote hears what the search wrote, see searchWrote.
+	wrote *searchWrote
 }
 
 // ByHand is the clip set made with I and O, see PlanOptions.By.
@@ -301,6 +303,11 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			build.take(raw)
 		}
 	}}
+	// The prompt of the first ask is the search's own. The asks about
+	// the clips off the length have listeners of their own, see fitAsk.
+	listen.Prompt = func(path string) {
+		opts.wrote.note(func(w *wroteFiles) { w.prompt = path })
+	}
 	if haveReply {
 		listen.text(reply)
 	} else {
@@ -340,7 +347,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 		}
 		build.answered()
 		how.Content = ""
-		saveReply(e.Files, cachePath, reply, how)
+		if saveReply(e.Files, cachePath, reply, how) {
+			opts.wrote.note(func(w *wroteFiles) { w.answer = cachePath })
+		}
 		haveReply, fresh = true, true
 	}
 
@@ -399,7 +408,9 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 			return nil, build.failed(err)
 		}
 		build.answered()
-		saveReply(e.Files, cachePath, reply, nil)
+		if saveReply(e.Files, cachePath, reply, nil) {
+			opts.wrote.note(func(w *wroteFiles) { w.answer = cachePath })
+		}
 		fresh = true
 	}
 
@@ -573,10 +584,10 @@ func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source Source
 
 // saveReply keeps an answer so the same transcript is never planned twice.
 // It is stored parsed when it parses, so the file is readable rather than one
-// long escaped line.
-func saveReply(fsys afero.Fs, cachePath, reply string, how *localAnswer) {
+// long escaped line. It says whether the answer was written.
+func saveReply(fsys afero.Fs, cachePath, reply string, how *localAnswer) bool {
 	if cachePath == "" {
-		return
+		return false
 	}
 	// How the model got to its answer goes beside it, where there is
 	// anything to say: the tokens it read, thought and wrote, and how fast.
@@ -602,7 +613,7 @@ func saveReply(fsys afero.Fs, cachePath, reply string, how *localAnswer) {
 		}
 		body, _ = MarshalPlan(saved)
 	}
-	_ = afero.WriteFile(fsys, cachePath, body, 0o644)
+	return afero.WriteFile(fsys, cachePath, body, 0o644) == nil
 }
 
 // saveFit adds the answer about the clips that did not fit to the saved

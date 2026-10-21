@@ -954,8 +954,6 @@ export interface Chrome {
   // last, so the name of what is on screen starts after them.
   left: number;
   right: number;
-  // The middle of those buttons, from the top of the page.
-  middle: number;
 }
 
 // The windows with a title bar of their own, each measured on its own:

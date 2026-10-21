@@ -33,17 +33,17 @@ func TestAMeasurementIsAlwaysAWholePixel(t *testing.T) {
 // or the whole workspace under it jumps twice per trip.
 func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 	c := &chromeWatch{}
-	normal := chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
+	normal := chromeRaw{bar: 52, left: 20, right: 92}
 
 	got := c.settle(normal)
-	if (got != Chrome{Bar: 52, Left: 20, Right: 92, Middle: 26}) {
+	if (got != Chrome{Bar: 52, Left: 20, Right: 92}) {
 		t.Fatalf("outside fullscreen gave %+v", got)
 	}
 
 	// The event says so before the animation starts, so no frame of it
 	// leaks a bar that is shrinking away.
 	c.set(true)
-	if got := c.settle(chromeRaw{bar: 30, left: 20, right: 92, middle: 15}); got != (Chrome{Bar: 52}) {
+	if got := c.settle(chromeRaw{bar: 30, left: 20, right: 92}); got != (Chrome{Bar: 52}) {
 		t.Errorf("halfway into fullscreen gave %+v, wanted the bar it had and no buttons", got)
 	}
 	if got := c.settle(chromeRaw{fullscreen: true}); got != (Chrome{Bar: 52}) {
@@ -51,18 +51,18 @@ func TestFullscreenKeepsTheBarAndLosesTheButtons(t *testing.T) {
 	}
 	// On the way out the flag is still set, so the bar holds until the
 	// macOS says it is out.
-	if got := c.settle(chromeRaw{bar: 12, left: 20, right: 92, middle: 6}); got != (Chrome{Bar: 52}) {
+	if got := c.settle(chromeRaw{bar: 12, left: 20, right: 92}); got != (Chrome{Bar: 52}) {
 		t.Errorf("halfway out gave %+v, wanted the bar it had", got)
 	}
 	c.set(false)
-	after := chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
-	if got := c.settle(after); got != (Chrome{Bar: 52, Left: 20, Right: 92, Middle: 26}) {
+	after := chromeRaw{bar: 52, left: 20, right: 92}
+	if got := c.settle(after); got != (Chrome{Bar: 52, Left: 20, Right: 92}) {
 		t.Errorf("out again gave %+v", got)
 	}
 
 	// A bar that comes back a different size is remembered at the new
 	// one, so the next trip holds the right height.
-	bigger := chromeRaw{bar: 60, left: 24, right: 100, middle: 30}
+	bigger := chromeRaw{bar: 60, left: 24, right: 100}
 	c.settle(bigger)
 	c.set(true)
 	if got := c.settle(chromeRaw{fullscreen: true}); got != (Chrome{Bar: 60}) {
@@ -78,7 +78,7 @@ func TestAWindowThatCannotAnswerLeavesTheBarAlone(t *testing.T) {
 	if got := c.settle(chromeRaw{}); got != (Chrome{}) {
 		t.Errorf("a measurement with nothing to say gave %+v", got)
 	}
-	c.settle(chromeRaw{bar: 52, left: 20, right: 92, middle: 26})
+	c.settle(chromeRaw{bar: 52, left: 20, right: 92})
 	c.set(true)
 	if got := c.settle(chromeRaw{fullscreen: true}); got != (Chrome{Bar: 52}) {
 		t.Errorf("a bar of zero was remembered, gave %+v", got)
@@ -88,7 +88,7 @@ func TestAWindowThatCannotAnswerLeavesTheBarAlone(t *testing.T) {
 // Dragging the app by its corner raises one of these a frame and almost
 // none of them change anything, so the interface is told only what is new.
 func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
-	answer := chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
+	answer := chromeRaw{bar: 52, left: 20, right: 92}
 	was := measureChrome
 	measureChrome = func(*application.WebviewWindow) chromeRaw { return answer }
 	defer func() { measureChrome = was }()
@@ -126,7 +126,7 @@ func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 	was := measureChrome
 	measureChrome = func(*application.WebviewWindow) chromeRaw {
-		return chromeRaw{bar: 52, left: 20, right: 92, middle: 26}
+		return chromeRaw{bar: 52, left: 20, right: 92}
 	}
 	defer func() { measureChrome = was }()
 	s := &FrameFairy{chrome: &chromeWatch{event: chromeEvent("app")}}
@@ -135,10 +135,42 @@ func TestEachWindowHasATitleBarOfItsOwn(t *testing.T) {
 	if got := s.Chrome("app"); got.Right != 0 {
 		t.Fatalf("the app's window in fullscreen gave %+v, want no buttons", got)
 	}
-	if got := s.Chrome("report"); got != (Chrome{Bar: 52, Left: 20, Right: 92, Middle: 26}) {
+	if got := s.Chrome("report"); got != (Chrome{Bar: 52, Left: 20, Right: 92}) {
 		t.Fatalf("the report window beside it gave %+v, want its own buttons", got)
 	}
 	if a, r := chromeEvent("app"), chromeEvent("report"); a != "chrome" || r != "chrome-report" {
 		t.Fatalf("the windows are told on %q and %q", a, r)
 	}
+}
+
+// A report says what macOS answered about the title bar, in points with
+// their fractions and with the close button's frame, and what the
+// interface was told, once for each change. The frame is what #399 was
+// read from. It changes measureChrome, a package variable, so it runs
+// alone.
+func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
+	_, read := testLog(t)
+	answer := chromeRaw{bar: 29.5, left: 12, right: 72, closeTop: 6, closeBottom: 22}
+	was := measureChrome
+	measureChrome = func(*application.WebviewWindow) chromeRaw { return answer }
+	defer func() { measureChrome = was }()
+
+	c := &chromeWatch{event: chromeEvent("app")}
+	c.publish()
+	c.publish()
+	lines := read()
+	said := 0
+	for _, l := range lines {
+		if l["msg"] == "the title bar was measured" {
+			said++
+		}
+	}
+	if said != 1 {
+		t.Errorf("two measurements of an unmoved app logged %d lines, want 1", said)
+	}
+	has(t, find(lines, "the title bar was measured"), map[string]any{
+		"level": "debug", "from": "window", "event": "chrome",
+		"bar": 29.5, "left": 12, "right": 72, "close_top": 6, "close_bottom": 22, "fullscreen": false,
+		"told": map[string]any{"bar": 30, "left": 12, "right": 72},
+	})
 }

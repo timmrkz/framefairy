@@ -316,6 +316,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			}
 			return b.d.svc.takeFiles("add", picked), nil
 		},
+		// The title bar, as macOS answered it if a walk said so, see
+		// /chrome, or nothing, the way every other system answers.
+		"Chrome": func() (any, error) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			return b.chrome, nil
+		},
 	}
 	mux.Handle("/call", callHandler(svc, own, b.held))
 	mux.Handle("/events", b.d.bus)
@@ -412,6 +419,19 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			b.words.from(from)
 		}
 		answer(w, nil, nil)
+	})
+	// The app's window as macOS lays it out, in points: the title bar's
+	// height and where its buttons start and end. It goes through what
+	// the Go side does with the answer and is told the way a resize is.
+	mux.HandleFunc("/chrome", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		num := func(k string) float64 { v, _ := strconv.ParseFloat(q.Get(k), 64); return v }
+		now := (&chromeWatch{}).settle(chromeRaw{bar: num("bar"), left: num("left"), right: num("right")})
+		b.mu.Lock()
+		b.chrome = now
+		b.mu.Unlock()
+		b.d.bus.send(chromeEvent("app"), now)
+		answer(w, now, nil)
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -634,6 +654,9 @@ type bridge struct {
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
+	// chrome is the app's title bar as macOS answers it, once a walk
+	// asked for one, see /chrome.
+	chrome Chrome
 	// channels serves the channel list and the builds the Updates page is
 	// walked with, see /updates.
 	channels *channelServer
@@ -1232,6 +1255,7 @@ func (b *bridge) reset() error {
 	b.picks = nil
 	clear(b.holds)
 	clear(b.fails)
+	b.chrome = Chrome{}
 	b.mu.Unlock()
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil

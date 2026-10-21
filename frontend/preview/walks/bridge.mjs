@@ -107,24 +107,64 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
 // Waits until no call has been on its way for a while and the page has
 // drawn what came back. It looks on every frame, and a call that went and
 // came back between two looks starts the while again, see
-// wails-bridge.ts.
+// wails-bridge.ts. It keeps the page's real time, so it still tells quiet
+// from busy while the app's time is held, see holdClock.
 export async function settle(page) {
   await page.waitForFunction(
     () => {
       const w = window;
+      const now = w.__real?.now ?? (() => performance.now());
       if (w.__pending > 0 || w.__answered !== w.__answeredSeen) {
         w.__answeredSeen = w.__answered;
         w.__quietSince = 0;
         return false;
       }
-      w.__quietSince ||= performance.now();
-      return performance.now() - w.__quietSince > 250;
+      w.__quietSince ||= now();
+      return now() - w.__quietSince > 250;
     },
     null,
     { polling: "raf", timeout: 15000 },
   );
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.evaluate(() => {
+    const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
+    return new Promise((r) => frame(() => frame(r)));
+  });
   await page.evaluate(() => (window.__quietSince = 0));
+}
+
+// Gives a page Playwright's own fake clock, once, in place of the app's
+// timers, frames and performance.now. The walk's own waits keep the real
+// time and frames, kept on window.__real before the fake clock comes, and
+// again on every load, so settle still tells quiet from busy. The clock
+// runs as the real one does until holdClock stops it.
+export async function fakeClock(page) {
+  if (page.__clock) return;
+  const keep = () => {
+    window.__real = { now: performance.now.bind(performance), frame: requestAnimationFrame.bind(window) };
+  };
+  await page.addInitScript(keep);
+  await page.evaluate(keep);
+  await page.clock.install();
+  page.__clock = true;
+}
+
+// Holds the app's time where it is, so the ten seconds a toast or a
+// removed row has run only as far as runClock turns them on, and a busy
+// machine cannot spend them on the steps before, #341. letClockGo lets it
+// run as it does without a walk, from where it was held.
+export async function holdClock(page) {
+  await fakeClock(page);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+}
+
+// Runs the app's held time on by ms, every timer and frame on the way
+// firing in turn, and holds it again there.
+export async function runClock(page, ms) {
+  await page.clock.runFor(ms);
+}
+
+export async function letClockGo(page) {
+  await page.clock.resume();
 }
 
 // Waits until the sidebar has stopped sliding, so what a walk reads or

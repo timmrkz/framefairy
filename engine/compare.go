@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -165,13 +166,13 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 		if o.Seed == 0 {
 			o.Seed = compareSeed
 		}
-		// What the search writes is told from what was there before by
-		// what was on disk before it, not by the clock: a file's time is
-		// the system's coarse clock, a few milliseconds behind time.Now,
-		// so a prompt written straight after the search began read as
-		// written before it, and the comparison kept none.
+		// The search says what it wrote as it writes it. Judged from the
+		// files instead, by their times and lengths, a prompt written again
+		// at the same length within one tick of the disk's coarse clock
+		// read as the side before's, and the comparison kept none, #395.
 		dir := filepath.Join(work, "experiments", name)
-		before := writtenIn(e.Files, filepath.Join(logs, "*"), filepath.Join(dir, "*"))
+		wrote := &searchWrote{}
+		o.wrote = wrote
 		began := time.Now()
 		err := e.execute(ctx, o)
 		run := RecipeRun{Recipe: name, Seconds: time.Since(began).Seconds()}
@@ -181,19 +182,20 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 			}
 			run.Failed = err.Error()
 		}
+		files := wrote.files()
+		e.Log.Detail("the %s search wrote the prompt %q, the answer %q and the plan %q",
+			name, files.prompt, files.answer, files.plan)
 		// What was asked and what came back are kept beside the plan, where
 		// the next recipe's search does not write over them.
-		if body, err := afero.ReadFile(e.Files, filepath.Join(logs, "plan-prompt.txt")); err == nil &&
-			before.changed(e.Files, filepath.Join(logs, "plan-prompt.txt")) {
+		if body, err := afero.ReadFile(e.Files, files.prompt); files.prompt != "" && err == nil {
 			run.PromptChars = runeLen(string(body))
 			keepCopy(e.Files, dir, "prompt.txt", body)
 		}
-		var reply string
-		reply, run.Use = lastLocalAnswer(e.Files, logs, before)
-		if body, err := afero.ReadFile(e.Files, reply); reply != "" && err == nil {
+		if body, err := afero.ReadFile(e.Files, files.answer); files.answer != "" && err == nil {
+			run.Use = localUse(body)
 			keepCopy(e.Files, dir, "reply.json", body)
 		}
-		run.Plan = newestPlan(e.Files, dir, before)
+		run.Plan = files.plan
 		if run.Plan != "" {
 			heard, err := SavedTranscript(e.Files, opts.Source, logs, opts.ASRModel, opts.SilenceDB)
 			if err != nil {
@@ -220,39 +222,35 @@ func (e *Engine) Compare(ctx context.Context, opts Options, names []string) ([]R
 	return runs, report, nil
 }
 
-// written is what was on disk before a search: when each file was last
-// written and how long it was. The length is there for a file written
-// again within one tick of the coarse clock, which keeps its time.
-type written map[string]writtenFile
-
-type writtenFile struct {
-	at   time.Time
-	size int64
+// searchWrote is what one search wrote, said by the search the moment it
+// writes it: the prompt of its first ask, the answer it saved and the plan.
+// A file left by a search before is none of these, and a file the search
+// read but did not write, a saved answer it reused, is not either. Clips
+// are framed and written on goroutines of their own, so it is locked.
+type searchWrote struct {
+	mu    sync.Mutex
+	wrote wroteFiles
 }
 
-// writtenIn notes every file that matches the patterns.
-func writtenIn(fsys afero.Fs, patterns ...string) written {
-	w := written{}
-	for _, pattern := range patterns {
-		matches, _ := afero.Glob(fsys, pattern)
-		for _, m := range matches {
-			if info, err := fsys.Stat(m); err == nil && !info.IsDir() {
-				w[m] = writtenFile{info.ModTime(), info.Size()}
-			}
-		}
-	}
-	return w
+type wroteFiles struct {
+	prompt, answer, plan string
 }
 
-// changed is true for a file that is there now and was not before, or
-// was written since.
-func (w written) changed(fsys afero.Fs, path string) bool {
-	info, err := fsys.Stat(path)
-	if err != nil {
-		return false
+// note keeps what set says was written. A search that is not asked what it
+// wrote has no searchWrote, and noting costs it nothing.
+func (w *searchWrote) note(set func(*wroteFiles)) {
+	if w == nil {
+		return
 	}
-	was, ok := w[path]
-	return !ok || !info.ModTime().Equal(was.at) || info.Size() != was.size
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	set(&w.wrote)
+}
+
+func (w *searchWrote) files() wroteFiles {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.wrote
 }
 
 // keepCopy writes a copy into dir. A copy that cannot be written costs the
@@ -276,27 +274,9 @@ type modelUse struct {
 	Reading, Seconds                                     float64
 }
 
-// lastLocalAnswer finds the answer saved since before and reads what the
-// local model said about it. It is all zero for the API, and the path empty
-// for an answer reused.
-func lastLocalAnswer(fsys afero.Fs, logs string, before written) (path string, use modelUse) {
-	matches, _ := afero.Glob(fsys, filepath.Join(logs, "reply-*.json"))
-	var newest string
-	var at time.Time
-	for _, m := range matches {
-		info, err := fsys.Stat(m)
-		if err != nil || !before.changed(fsys, m) || info.ModTime().Before(at) {
-			continue
-		}
-		newest, at = m, info.ModTime()
-	}
-	if newest == "" {
-		return "", use
-	}
-	body, err := afero.ReadFile(fsys, newest)
-	if err != nil {
-		return "", use
-	}
+// localUse reads what the local model said about the answer saved in
+// body. It is all zero for the API.
+func localUse(body []byte) (use modelUse) {
 	var saved struct {
 		How      *localAnswer `json:"how"`
 		Fit      *string      `json:"fit"`
@@ -305,7 +285,7 @@ func lastLocalAnswer(fsys afero.Fs, logs string, before written) (path string, u
 		RefitHow *localAnswer `json:"refit_how"`
 	}
 	if json.Unmarshal(body, &saved) != nil || saved.How == nil {
-		return newest, use
+		return use
 	}
 	first := saved.How
 	use = modelUse{Asks: 1, Read: first.PromptTokens, ReadAnew: first.PromptTokens,
@@ -327,23 +307,7 @@ func lastLocalAnswer(fsys afero.Fs, logs string, before written) (path string, u
 			use.Asks++
 		}
 	}
-	return newest, use
-}
-
-// newestPlan is the plan written in dir since before.
-func newestPlan(fsys afero.Fs, dir string, before written) string {
-	matches, _ := afero.Glob(fsys, filepath.Join(dir, "clips*.json"))
-	sort.Slice(matches, func(a, b int) bool {
-		ia, _ := fsys.Stat(matches[a])
-		ib, _ := fsys.Stat(matches[b])
-		return ia != nil && ib != nil && ia.ModTime().After(ib.ModTime())
-	})
-	for _, m := range matches {
-		if before.changed(fsys, m) {
-			return m
-		}
-	}
-	return ""
+	return use
 }
 
 // foundClips reads a plan the way the engine does, and writes each clip
