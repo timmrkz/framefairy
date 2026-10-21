@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Samples } from "./movie";
-import { AudioPlan, fade, FADE, heardAt, Keeper, Program, stillFeed, VideoPlan } from "./plan";
+import { AudioPlan, fade, FADE, heard, Keeper, Program, stillFeed, VideoPlan } from "./plan";
 
 // A track the way a file holds one, without the file: n samples of `step`
 // ticks, key frames every `gop`, and, for a picture with B-frames, the
@@ -418,17 +418,19 @@ describe("fade", () => {
   });
 });
 
-describe("heardAt", () => {
+describe("heard", () => {
   test("follows the output timestamp, and the clock less its latency without one", () => {
-    expect(heardAt({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1016)).toBeCloseTo(10.016);
-    expect(heardAt(null, 10.05, 0.03, 1016)).toBeCloseTo(10.02);
-    expect(heardAt({ contextTime: 0, performanceTime: 0 }, 0.5, 0.1, 5)).toBeCloseTo(0.4);
+    expect(heard({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1016).at).toBeCloseTo(10.016);
+    expect(heard(null, 10.05, 0.03, 1016).at).toBeCloseTo(10.02);
+    expect(heard({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1016).source).toBe("stamp");
+    expect(heard(null, 10.05, 0.03, 1016).source).toBe("plain");
+    expect(heard({ contextTime: 0, performanceTime: 0 }, 0.5, 0.1, 5).at).toBeCloseTo(0.4);
   });
   test("is never ahead of the clock, so a stamp from before a pause cannot carry play on", () => {
     // Held at 10.05 for 700 ms: the stamp would say 10.716.
-    expect(heardAt({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1716)).toBe(10.05);
+    expect(heard({ contextTime: 10, performanceTime: 1000 }, 10.05, 0.03, 1716)).toEqual({ at: 10.05, source: "held" });
   });
   test("leaves a stamp on another clock for the clock less its latency", () => {
-    expect(heardAt({ contextTime: 9.17, performanceTime: 21540 }, 9.186, 0.003, 8000)).toBeCloseTo(9.183);
+    expect(heard({ contextTime: 9.17, performanceTime: 21540 }, 9.186, 0.003, 8000).at).toBeCloseTo(9.183);
   });
 });

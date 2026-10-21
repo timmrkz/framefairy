@@ -28,6 +28,7 @@
 //   key frame on. A piece that starts after the last one ends, inside what
 //   has already been decoded, carries the run on. Any other piece starts a
 //   new run, from the key frame before it.
+import type { Source } from "./even";
 import { rankAt, type Samples } from "./movie";
 
 export type Piece = { start: number; end: number };
@@ -611,17 +612,22 @@ export function fade(m: number, pieceOut: number, pieceEnd: number, rate: number
 // and the picture stood still on its first frame waiting for them, then
 // jumped. A stamp taken more than a second ago, or in the future, or more
 // than a quarter of a second from what the clock says, is not taken.
-export function heardAt(
+//
+// It says where the moment came from too, for the log: the output
+// timestamp, the timestamp held back to the clock, or the clock less its
+// latency, see even.ts.
+export function heard(
   stamp: { contextTime: number; performanceTime: number } | null,
   currentTime: number,
   latency: number,
   now: number,
-): number {
+): { at: number; source: Source } {
   const plain = Math.max(0, currentTime - latency);
   const age = stamp ? now - stamp.performanceTime : -1;
   if (stamp && stamp.performanceTime > 0 && stamp.contextTime > 0 && age >= -20 && age <= 1000) {
-    const heard = Math.min(stamp.contextTime + (now - stamp.performanceTime) / 1000, currentTime);
-    if (Math.abs(heard - plain) <= 0.25) return heard;
+    const said = stamp.contextTime + (now - stamp.performanceTime) / 1000;
+    const at = Math.min(said, currentTime);
+    if (Math.abs(at - plain) <= 0.25) return { at, source: said > currentTime ? "held" : "stamp" };
   }
-  return plain;
+  return { at: plain, source: "plain" };
 }

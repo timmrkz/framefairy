@@ -35,12 +35,13 @@ import type { Picture } from "./picture";
 import type { Over } from "./captions";
 import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
+import { describeEvenness, Even, type Source } from "./even";
 import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
   fade,
   FADE,
-  heardAt,
+  heard,
   Keeper,
   Program,
   stillFeed,
@@ -549,8 +550,9 @@ export class FrameQueue {
   // said in the log yet.
   private firstTold = false;
   private playTold = false;
-  // The counts as the play under way began, so its end says how it went.
-  private began: { at: number; drawn: number; late: number; lateSound: number; when: number } | null = null;
+  // The counts as the play under way began, so its end says how it went,
+  // and how even it was, see even.ts.
+  private began: { at: number; drawn: number; late: number; lateSound: number; when: number; even: Even } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
   // episode straight on, and whether it loops. The program is made from
@@ -985,7 +987,7 @@ export class FrameQueue {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
-      this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
+      this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
       this.ramp(1);
       this.report();
       this.loop();
@@ -1513,7 +1515,7 @@ export class FrameQueue {
     this.c0 = Math.ceil((this.audio.currentTime + START_LEAD) * rate) / rate;
     this.state = "playing";
     this.trace(`playing from ${this.startFrom.toFixed(3)} s`);
-    this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
+    this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
     if (this.pending) {
       this.unscheduled.push(this.pending);
       this.pending = null;
@@ -1529,7 +1531,7 @@ export class FrameQueue {
     const b = this.began;
     if (!b) return "no play under way";
     const ran = (performance.now() - b.when) / 1000;
-    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s`;
+    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s, ${describeEvenness(b.even.evenness)}`;
   }
 
   // What a play that has not started waits for, for the log.
@@ -1552,10 +1554,15 @@ export class FrameQueue {
   // Where the program is now, from the sound being heard, at the moment a
   // frame drawn now is on screen, a display frame from now.
   private position(now: number): number {
-    if (this.c0 === null || !this.vplan) return this.vplan?.p0 ?? 0;
+    return this.heardOn(now).pos;
+  }
+
+  // The same, with where the moment heard came from, for the log.
+  private heardOn(now: number): { pos: number; source: Source } {
+    if (this.c0 === null || !this.vplan) return { pos: this.vplan?.p0 ?? 0, source: "plain" };
     const stampNow = this.audio.getOutputTimestamp ? this.audio.getOutputTimestamp() : null;
     const latency = (this.audio.outputLatency || 0) + (this.audio.baseLatency || 0);
-    const heard = heardAt(
+    const h = heard(
       stampNow && stampNow.contextTime !== undefined && stampNow.performanceTime !== undefined
         ? { contextTime: stampNow.contextTime, performanceTime: stampNow.performanceTime }
         : null,
@@ -1563,7 +1570,7 @@ export class FrameQueue {
       latency,
       now + 1000 / 60,
     );
-    return this.m0 / this.sampleRate + (heard - this.c0);
+    return { pos: this.m0 / this.sampleRate + (h.at - this.c0), source: h.source };
   }
 
   // How far on the program the sound card has played, heard or about to
@@ -1629,8 +1636,11 @@ export class FrameQueue {
     const plan = this.vplan;
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
-    const pos = Math.max(this.position(now), this.reached);
+    const h = this.heardOn(now);
+    const pos = Math.max(h.pos, this.reached);
     this.reached = pos;
+    if (this.behind) this.began?.even.behind();
+    else this.began?.even.tick(now, pos, h.source);
     plan.extend(pos + READ_AHEAD);
     this.aplan?.extend(pos + READ_AHEAD);
     // The frame due, but never past a piece's first or last frame without
@@ -1658,6 +1668,7 @@ export class FrameQueue {
             this.put(h.frame, need.run, h.rank);
             this.drawnFor = plan.moment(k) ?? this.drawnFor;
             drew = true;
+            this.began?.even.put(now, plan.at(k));
           } else {
             this.stats.late++;
           }

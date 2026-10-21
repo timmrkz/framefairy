@@ -309,6 +309,26 @@ The numbers are a proposal for Tim to change. Main is measured the same
 way first, so each step is judged against today as well as against the
 marks.
 
+**How even a play was is in the log.** Each play ends with a line, at a
+pause or at the end, that says how many frames were late, which is a
+frame not decoded in time, and how even the play was, `lib/frames/even.ts`.
+Nearly every play on Tim's Mac said 0 frames late while he still saw it
+not quite even, issue #251, so the line also says:
+
+- the screen's refresh, from the time between two animation frames
+- the animation frames the page missed, and the longest gap
+- how many frames stood on the screen for how many refreshes, and how
+  many stood a whole refresh longer or shorter than they last. A frame of
+  25 a second on a screen of 60 Hz lasts 2.4 refreshes, so 2 and 3 are
+  as even as the screen allows
+- how far the clock, the sound heard as worked out on each animation
+  frame, strayed from a straight line through the play, and where it
+  came from: the output timestamp, the output timestamp held back to the
+  sound card's own time, or that time less its latency. A frame goes up
+  when the clock reaches it, so a clock that moves in steps puts frames
+  up a refresh early or late, which the tests show for a clock that
+  steps by 1024 samples
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
