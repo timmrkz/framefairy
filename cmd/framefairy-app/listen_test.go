@@ -20,10 +20,13 @@ import (
 // samples a tenth of a second at a time, from a goroutine of its own the
 // way the system's does. Live, it hands them over as fast as they would
 // be said, until it is stopped. Otherwise it hands over all of them at
-// once, before it can be stopped.
+// once, before it can be stopped. Live and with more, what is said after
+// samples is asked of it once they are handed over, and again after that,
+// until it gives nothing: a person who talks on.
 type playingMicrophone struct {
 	samples []float32
 	live    bool
+	more    func() []float32
 	stopped chan struct{}
 	done    chan struct{}
 }
@@ -32,19 +35,31 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 	m.stopped, m.done = make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(m.done)
-		for at := 0; at < len(m.samples); at += engine.SampleRate / 10 {
-			if m.live {
-				select {
-				case <-m.stopped:
-					return
-				case <-time.After(100 * time.Millisecond):
+		for samples := m.samples; len(samples) > 0; samples = m.next() {
+			for at := 0; at < len(samples); at += engine.SampleRate / 10 {
+				if m.live {
+					select {
+					case <-m.stopped:
+						return
+					case <-time.After(100 * time.Millisecond):
+					}
 				}
+				heard(samples[at:min(at+engine.SampleRate/10, len(samples))])
 			}
-			heard(m.samples[at:min(at+engine.SampleRate/10, len(m.samples))])
 		}
 		<-m.stopped
 	}()
 	return nil
+}
+
+// next is what is said after what was handed over, nothing without more
+// or when the microphone is not live, which would hand it all over at once
+// and never be stopped.
+func (m *playingMicrophone) next() []float32 {
+	if m.more == nil || !m.live {
+		return nil
+	}
+	return m.more()
 }
 
 func (m *playingMicrophone) stop() {

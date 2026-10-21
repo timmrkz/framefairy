@@ -425,7 +425,7 @@
 //                      open, and two going down when it stops, however
 //                      it stops.
 //                      "start" only starts it, "hearing" waits for more
-//                      to be heard, "settled" waits for words
+//                      to be said and settled, "settled" waits for words
 //                      before a pause to be settled, and a recording
 //                      already running is only ended
 //   ["click heard"]    clicks into the first word still being heard and
@@ -4912,6 +4912,28 @@ for (const seq of toWalk) {
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     }
   };
+  // Until the frame on screen is drawn with its own captions over it, so
+  // what libass drew is there to be read, see data-captioned in
+  // Player.svelte, true then, and false if a layer is given up on first,
+  // data-captions-lost. Nothing waiting for a layer was no sign of it: the
+  // walk of a word opened in the caption box read a picture with none of
+  // its letters on CI, issue #389.
+  const captioned = () =>
+    page.locator(".screen").evaluate(
+      (screen) =>
+        new Promise((done) => {
+          const lost = screen.dataset.captionsLost;
+          const own = () => screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === Number(screen.dataset.shown);
+          if (own()) return done(true);
+          const seen = new MutationObserver(() => {
+            const gone = screen.dataset.captionsLost !== lost;
+            if (!gone && !own()) return;
+            seen.disconnect();
+            done(!gone);
+          });
+          seen.observe(screen, { attributes: true, attributeFilter: ["data-captioned", "data-shown", "data-captions-lost"] });
+        }),
+    );
 
   for (const [what, ...args] of seq.steps) {
     const arg = args.length > 1 ? args : args[0];
@@ -5326,6 +5348,10 @@ for (const seq of toWalk) {
               popped: window.__captionLayers?.stats.popped ?? 0,
             };
           }, arg);
+        if (!(await captioned())) {
+          wrong = `the captions over the frame of "${arg}" did not come`;
+          break;
+        }
         await settled();
         const shut = await look();
         if (!shut) {
@@ -5942,11 +5968,40 @@ for (const seq of toWalk) {
           await page.mouse.move(x + (px * i) / 10, y);
           await nextPaint(page);
         }
-        // Every place so far answered, and the last one, ten pixels on,
-        // which is more than a frame at this zoom, held on its way.
+        // Every place so far answered and drawn, which the clip timeline
+        // says by dropping data-shaping, and then the edge stands under the
+        // hand before it lets go, the way a person sees it. On a busy
+        // machine the answers came late, and the hand let go and pressed
+        // again beside an edge still on its way, on the caption under it,
+        // issue #427. No call on its way was no sign of it: the app asks
+        // for the next place the moment an answer comes, so for a moment
+        // none is. With late, the last place, ten pixels on, which is more
+        // than a frame at this zoom, is then held on its way.
         const took = late ? x + px + Math.sign(px) * 10 : x + px;
+        const standing = await page.evaluate(
+          ([label, x, y]) =>
+            new Promise((done) => {
+              const timeline = document.querySelector(".clip-timeline");
+              const under = () => {
+                const edge = timeline.querySelector(`[aria-label="${label}"]`);
+                return !!edge && document.elementsFromPoint(x, y).includes(edge);
+              };
+              if (!timeline.hasAttribute("data-shaping")) return done(under());
+              const answered = new MutationObserver(() => {
+                if (timeline.hasAttribute("data-shaping")) return;
+                answered.disconnect();
+                done(under());
+              });
+              answered.observe(timeline, { attributes: true, attributeFilter: ["data-shaping"] });
+            }),
+          [edgeLabel[which], x + px, y],
+        );
+        if (!standing) {
+          await page.mouse.up();
+          wrong = `the ${which} edge was not under the hand once every place it was dragged to was answered`;
+          break;
+        }
         if (late) {
-          await page.waitForFunction(() => window.__pending === 0, null, { polling: "raf" });
           await control(url, `/hold?call=Shape&ms=${late}`);
           await page.mouse.move(took, y);
         }
@@ -7961,12 +8016,35 @@ for (const seq of toWalk) {
       case "dictate": {
         const button = page.locator("button.dictate");
         if (arg === "hearing") {
-          // More is heard after what was there.
-          const more = await page
-            .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
-            .then(() => true)
-            .catch(() => false);
-          if (!more) wrong = "nothing more was heard";
+          // More is said after what was there, and settled. The stand-in
+          // speech model hears new words each time it is asked, so the
+          // words shown as being heard when the recording stops can be
+          // written down as none, and the walk of Shift+Enter then found
+          // nothing said after the new line on a busy machine, issue #424.
+          // What is settled is kept however the recording ends.
+          const more = await page.locator(".telling").evaluate(
+            (f) =>
+              new Promise((done) => {
+                const button = document.querySelector("button.dictate");
+                const settled = () => {
+                  const copy = f.cloneNode(true);
+                  copy.querySelector(".hearing")?.remove();
+                  return copy.textContent;
+                };
+                const was = settled();
+                const look = () => {
+                  const ended = button.getAttribute("aria-label") === "Dictate";
+                  if (settled() === was && !ended) return;
+                  seen.disconnect();
+                  done(!ended);
+                };
+                const seen = new MutationObserver(look);
+                seen.observe(f, { subtree: true, childList: true, characterData: true });
+                seen.observe(button, { attributes: true, attributeFilter: ["aria-label"] });
+                look();
+              }),
+          );
+          if (!more) wrong = "the recording stopped before anything more was said and settled";
           break;
         }
         if (arg === "settled") {
@@ -8136,7 +8214,9 @@ for (const seq of toWalk) {
         }
         if (arg === "button") await button.click();
         else if (arg === "ends") {
-          // Nobody presses anything: it stops by itself and says why.
+          // Nobody presses anything, and nobody talks any more: it stops
+          // by itself and says why.
+          await control(url, "/microphone?silent=1");
           const why = await page
             .waitForFunction(() => /without a word/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 30000 })
             .then(() => true)
