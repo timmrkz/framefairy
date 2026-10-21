@@ -419,8 +419,10 @@ input[type="password"] {
    the video preview, the window on the range picker and the clip on the
    clip timeline are the same thing in three places, so they are drawn by
    this one rule, in the app's colour, with the same line and the same
-   corners, and lit the same way while the hand is on them. Each place
-   keeps only where it sits and what it takes hold of. Three copies of
+   corners, and lit the same way while the hand is on them. The clip
+   chosen on the clip timeline is lit whether the hand is on it or not,
+   because a clip is lit one way however it was reached. Each place keeps
+   only where it sits and what it takes hold of. Three copies of
    this were three frames that no longer matched: one with square corners,
    one with a corner of 4 pixels, one of 3. */
 .frame {
