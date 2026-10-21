@@ -13347,21 +13347,27 @@ async function dropOn(page, files) {
       const frame = document.querySelector(".landing");
       return frame ? getComputedStyle(frame).opacity : "nothing, there is no frame";
     });
-  // Within 300 ms each way, and on as soon as the frame stands or has gone.
-  const comes = (want) =>
-    page
-      .waitForFunction((want) => getComputedStyle(document.querySelector(".landing") ?? document.body).opacity === want && !!document.querySelector(".landing"), want, { polling: "raf", timeout: 300 })
-      .catch(() => {});
+  // On once the frame's fade has ended, which its animation says, not a
+  // deadline: a busy machine read the frame at 0.94 when 300 ms of
+  // waiting ran out with the fade not yet drawn to its end, issue #386.
+  // A fade cancelled ends the wait too, and the opacity read then says so.
+  const comes = () =>
+    page.evaluate(() => {
+      const frame = document.querySelector(".landing");
+      if (!frame) return;
+      getComputedStyle(frame).opacity;
+      return Promise.all(frame.getAnimations().map((a) => a.finished.catch(() => {})));
+    });
   await page.evaluate(([x, y]) => {
     window._wails.handleDragEnter();
     window._wails.handleDragOver(x, y);
   }, [x, y]);
-  await comes("1");
+  await comes();
   const held = await landing();
   if (held !== "1") return `the app wore no frame while a file was held over it, its opacity was ${held}`;
   const took = await page.evaluate(([f, x, y]) => window._wails.handlePlatformFileDrop(f, x, y), [files, x, y]);
   if (!took) return `the drop at ${x}, ${y} landed on no drop target`;
-  await comes("0");
+  await comes();
   const after = await landing();
   if (after !== "0") return `the app still wore its frame after the drop, its opacity was ${after}`;
   return null;
