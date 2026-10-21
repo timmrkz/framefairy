@@ -45,7 +45,9 @@ env:
 
 jobs:
   # Which jobs a pull request needs, see .github/ci-filters.yml. A push to
-  # main needs them all.
+  # main needs them all. The action asks GitHub for the files the pull
+  # request changed, which takes reading pull requests, and the checkout
+  # brings the filters and nothing else.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
