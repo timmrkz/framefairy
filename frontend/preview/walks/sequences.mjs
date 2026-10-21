@@ -9377,6 +9377,12 @@ for (const seq of toWalk) {
         const path = await episodeOn(page);
         const least = arg ?? 1;
         for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
+        // And the app has read how far the saved transcript reaches since,
+        // which it reads again on its own while the work hears, so the
+        // cards it reads are those sentences too.
+        const asked = await page.evaluate(() => window.__calls.filter((c) => c.name === "Episode").length);
+        await page.waitForFunction((n) => window.__calls.filter((c) => c.name === "Episode").length > n, asked, { polling: "raf", timeout: 30000 });
+        await settle(page);
         await settled();
         break;
       }
