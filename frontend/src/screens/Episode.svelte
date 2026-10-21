@@ -2445,7 +2445,7 @@
   const lit = $derived.by(() => {
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
-    const frames = captions.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
+    const frames = framedTrack ? (wordFrames?.frames ?? null) : null;
     const out: Word[] = [];
     for (const [i, cue] of captions.captions.entries()) {
       let k = 0;
@@ -2494,6 +2494,11 @@
       .catch(() => {});
     return () => off.abort();
   });
+  // The track of the captions on hand once the engine has said where the
+  // picture lights their words, and until then nothing.
+  const framedTrack = $derived(
+    captions?.track && wordFrames?.frames && wordFrames.key === `${path}\n${captions.track}` ? captions.track : undefined,
+  );
   let fonts = $state<CaptionFont[]>([]);
   // The fonts as Pages offers them, a list of families and a list of the
   // styles of the one picked, and the face the captions are in now.
@@ -3767,7 +3772,11 @@
       </aside>
     </div>
 
-    <div class="detail">
+    <!-- data-framed names the track of captions whose words the clip
+         timeline puts the playhead into by the frames the picture lights
+         them on, see lit, so a walk clicks a caption block once a click
+         goes by them, issue #290. Nothing on screen reads it. -->
+    <div class="detail" data-framed={framedTrack}>
       <ClipTimeline
         bind:this={timeline}
         {path}
