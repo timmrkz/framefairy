@@ -2386,11 +2386,13 @@ export const sequences = [
   },
   {
     // Issue #404. Tab while dictating stopped it, and Tim wants only Enter,
-    // Escape and the button to end a dictation. Tab does nothing then.
+    // Escape and the button to end a dictation. Tab does nothing then. A
+    // picture is attached so Tab has somewhere else it could go.
     name: "Tab while dictating does nothing",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
+      ["attach", 1],
       ["dictate", "start"],
       ["tab", "the field"],
       ["dictating"],
@@ -2451,15 +2453,34 @@ export const sequences = [
     ],
   },
   {
+    // Issue #415. Clear's undo lasts only until something else is typed,
+    // attached or removed. Typing after Clear starts a new report, and
+    // Cmd+Z then takes back the typing, never the pictures Clear removed.
+    name: "Typing after Clear ends what Cmd+Z brings back",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 2],
+      ["clear", "clear"],
+      ["write", "x", "end"],
+      ["undo"],
+      ["pictures", 0],
+      ["report reads", ""],
+    ],
+  },
+  {
     // Issue #404. Tab and Enter straight after Enter, while the last words
     // are still written down, make the report with every word said in it.
+    // The speech model is slow, so the last words only come with the stop.
     name: "Tab and Enter right after a dictation make the report with every word said",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
       ["attach", 1],
+      ["speech", 1500],
       ["dictate", "enter, then tab and enter"],
       ["report made", 1, "It froze. *"],
+      ["speech", 0],
     ],
   },
   {

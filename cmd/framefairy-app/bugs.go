@@ -418,7 +418,7 @@ func (s *FrameFairy) ClearReport() ReportDraft {
 	for i := range r.draft.Pictures {
 		r.draft.Pictures[i].Removed = true
 	}
-	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(r.draft.Text)).Int("pictures", n).Msg("the report was cleared")
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", utf8.RuneCountInString(r.draft.Text)).Int("pictures", n).Msg("the report was cleared")
 	r.draft.Text = ""
 	if err := r.keep(); err != nil {
 		return r.shown(sentence(err.Error()))
@@ -727,7 +727,7 @@ func (r *reporting) load() {
 	d.Pictures = kept
 	r.draft = d
 	if d.Text != "" || len(kept) > 0 {
-		theLog.line(zerolog.InfoLevel, "report").Int("characters", len(d.Text)).Int("pictures", len(kept)).Msg("a draft of a report was kept from before")
+		theLog.line(zerolog.InfoLevel, "report").Int("characters", utf8.RuneCountInString(d.Text)).Int("pictures", len(kept)).Msg("a draft of a report was kept from before")
 	}
 }
 

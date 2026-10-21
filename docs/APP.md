@@ -3142,7 +3142,7 @@ what was written and every picture and recording. It asks first in the
 box over the page, "Everything you wrote and attached will be deleted.
 You can undo it with Cmd+Z." Cmd+Z then brings it all back and Cmd+Y
 clears it again, as Tim asked, until something else is typed, attached
-or removed. The words go as one step of the field's own undo and the
+or removed, or the window is closed. The words go as one step of the field's own undo and the
 pictures follow it, removed on the Go side the way the bin removes one,
 so the app's copies go at the next start or the next report. Report and
 Clear are off while there is nothing to report, no words and no
