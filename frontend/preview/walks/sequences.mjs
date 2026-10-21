@@ -4130,17 +4130,20 @@ function watchEdge(page, label) {
 // by where the app says the frame shown begins, and with captions for
 // that frame to be drawn with its own captions over it, see data-captioned
 // in Player.svelte. It says true then, and false when a layer of captions
-// is given up on first, data-captions-lost. T and C put a mark on the
-// frame shown, the frame a person sees, and the caption box shows what
-// was drawn on it, and on a busy machine both come a moment after the
-// playhead. It waits on the page changing, never on the clock, so a frame
-// that never comes is ended by go test's own -timeout, issue #359.
-async function shownOnPlayhead(page, { captions = false } = {}) {
+// is given up on first, data-captions-lost, counted from lost, the count
+// read before the gesture, since a layer can be given up on while the
+// walk settles after it. T and C put a mark on the frame shown, the frame
+// a person sees, and the caption box shows what was drawn on it, and on a
+// busy machine both come a moment after the playhead. It waits on the
+// page changing, never on the clock, so a frame that never comes is ended
+// by the -timeout of make walks.
+async function shownOnPlayhead(page, { captions = false, lost } = {}) {
   const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
   return page.locator(".screen").evaluate(
-    (screen, [fps, start, captions]) =>
+    (screen, [fps, start, captions, lost]) =>
       new Promise((done) => {
-        const lost = screen.dataset.captionsLost;
+        const since = lost ?? screen.dataset.captionsLost ?? "";
+        const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
         const up = () => {
           const at = Number(screen.dataset.playhead);
           const shown = Number(screen.dataset.shown);
@@ -4152,19 +4155,26 @@ async function shownOnPlayhead(page, { captions = false } = {}) {
           return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
         };
         if (up()) return done(true);
+        if (gone()) return done(false);
         const seen = new MutationObserver(() => {
-          const gone = captions && screen.dataset.captionsLost !== lost;
-          if (!gone && !up()) return;
+          const came = up();
+          if (!came && !gone()) return;
           seen.disconnect();
-          done(!gone);
+          done(came);
         });
         seen.observe(screen, {
           attributes: true,
           attributeFilter: ["data-playhead", "data-shown", "data-captioned", "data-captions-lost"],
         });
       }),
-    [fps, videoStart, captions],
+    [fps, videoStart, captions, lost],
   );
+}
+
+// How many layers of captions the video preview has given up on, as
+// data-captions-lost says, read before a gesture for shownOnPlayhead.
+function captionsLost(page) {
+  return page.locator(".screen").evaluate((screen) => screen.dataset.captionsLost ?? "");
 }
 
 // Waits up to ten seconds for the Updates page to come to what ok says,
@@ -4899,27 +4909,29 @@ for (const seq of toWalk) {
         const to = now.segments[0].start + w.end - arg;
         await drag(page, middle(g.start), high(g.track), (await xOf(page, to)) - (await xOf(page, t.start)), false);
         await watch.step("trim", s);
-        // Until the engine has said on which frames the picture lights the
-        // words of the captions the trim saved, as it has long before a
+        // Until the engine has answered on which frames the picture lights
+        // the words of the captions the trim saved, as it has long before a
         // hand gets to a block. Until then a click goes by the words' own
-        // times, as it did before. Counted by the asks for them and a
-        // moment's quiet after the last, a busy runner now and then went
-        // on before the saved captions' answer was in, and a click landed
-        // on a frame lighting no word, issue #290.
+        // times, as it did before. The walk used to tell by the asks for
+        // them and a moment's quiet after the last, and a busy runner now
+        // and then went on before the saved captions' answer was in, so a
+        // click landed on a frame lighting no word, issue #290.
         const { track } = await engineState(page, watch.at);
-        await page.locator(".detail").evaluate(
+        const framed = await page.locator(".detail").evaluate(
           (detail, track) =>
             new Promise((done) => {
-              if (detail.dataset.framed === track) return done();
+              const answered = () => detail.dataset.answered === track;
+              if (answered()) return done(detail.dataset.framed === track);
               const seen = new MutationObserver(() => {
-                if (detail.dataset.framed !== track) return;
+                if (!answered()) return;
                 seen.disconnect();
-                done();
+                done(detail.dataset.framed === track);
               });
-              seen.observe(detail, { attributes: true, attributeFilter: ["data-framed"] });
+              seen.observe(detail, { attributes: true, attributeFilter: ["data-answered"] });
             }),
           track,
         );
+        if (!framed) wrong = "the engine did not say on which frames the words of the trimmed captions are lit";
         break;
       }
       case "every block": {
@@ -4930,13 +4942,14 @@ for (const seq of toWalk) {
         for (const first of firsts) {
           const cue = now.captions.find((c) => String(c.first) === first);
           const words = cue?.lines.flatMap((l) => l.words) ?? [];
+          const lost = await captionsLost(page);
           await page.locator(`.clip-timeline .caption[data-first="${first}"]`).first().click();
           // Once the frame the click put the playhead on is up with its
           // captions, since the word the last click lit stays until the
           // frame of this one is drawn, and the caption box lights the word
           // drawn on it.
           await settle(page);
-          if (!(await shownOnPlayhead(page, { captions: true }))) {
+          if (!(await shownOnPlayhead(page, { captions: true, lost }))) {
             wrong = `after a click on the caption block of "${words.map((w) => w.text).join(" ")}", a layer of captions was given up on`;
             break;
           }
@@ -13004,23 +13017,23 @@ for (const seq of toWalk) {
         // each caption is read once its frame is up with its captions. Read
         // when the calls had settled, the caption on the mark was now and
         // then the caption still up from the click before, issue #359.
-        const up = async () => {
+        const clickUp = async (x, y, where) => {
+          const lost = await captionsLost(page);
+          await page.mouse.click(x, y);
           await settle(page);
-          if (!(await shownOnPlayhead(page, { captions: true }))) {
-            wrong = "a layer of captions was given up on";
+          if (!(await shownOnPlayhead(page, { captions: true, lost }))) {
+            wrong = `after the click on ${where}, a layer of captions was given up on`;
             return false;
           }
           return true;
         };
-        await page.mouse.click(mx, my);
-        if (!(await up())) break;
+        if (!(await clickUp(mx, my, `the ${arg} mark`))) break;
         const onMark = await playhead();
         const there = await words();
         const g = await handles(page);
         const from = g.start.x + g.start.w;
         const other = mx < (from + g.end.x) / 2 ? 0.75 : 0.25;
-        await page.mouse.click(from + other * (g.end.x - from), high(g.track));
-        if (!(await up())) break;
+        if (!(await clickUp(from + other * (g.end.x - from), high(g.track), "the clip away from the mark"))) break;
         const first = page.locator(".captions .word.correctable").first();
         if (!(await first.count())) {
           wrong = "no word in the caption box to open";
@@ -13037,8 +13050,7 @@ for (const seq of toWalk) {
           wrong = "the caption on the mark is the caption elsewhere too, so this proves nothing";
           break;
         }
-        await page.mouse.click(mx, my);
-        if (!(await up())) break;
+        if (!(await clickUp(mx, my, `the ${arg} mark with the word open`))) break;
         // The caption box follows the frame on screen, the way it does
         // after a click on the clip timeline, so with the mark's frame up
         // with its captions it shows the caption on the mark.

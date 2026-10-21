@@ -146,8 +146,7 @@ does not replace the check.
 
 `scripts/changed-test.sh` checks the rules without running anything, and
 `make changed` runs it whenever the rules change. CI runs it in the `build`
-job when the rules changed, or anything `scripts/ci-needs.sh` does not
-recognise.
+job whenever that job builds, and when only the rules changed.
 
 ## Tests
 
@@ -331,9 +330,11 @@ anything for it to do, so a typo in a README does not fuzz two platforms:
 
 Anything else means the `Makefile`, the workflow, the other `scripts/` and
 whatever is added next: they decide how the project is built, so none of
-them counts as harmless. The scripts that check a rule, and the rules no job
-runs but that check, are the exception: no job but `build` has anything to
-do for them, and a pull request that changed only them ran every job, #322. A file the rules do not recognise runs everything too. The rules
+them counts as harmless. The scripts that check a rule, and the rules only
+those checks run, are the exception: no job but `build` has anything to do
+for them, and a pull request that changed only them ran every job, #322.
+The Go test that reads every script for the endings of a video then runs
+on main only, as it does for the docs. A file the rules do not recognise runs everything too. The rules
 err towards running, because a test that runs when it need not costs a
 minute and one that does not run when it should have costs a broken main.
 

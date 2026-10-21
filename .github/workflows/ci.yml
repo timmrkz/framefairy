@@ -113,10 +113,11 @@ jobs:
           cache: true
       # And what make changed runs for a change, which is as silent when it
       # is wrong: the check before a push goes green having run less than
-      # the change needed. It reads the packages with Go and takes half a
-      # minute, so it runs when its rules or something unknown changed.
+      # the change needed. It reads the packages with Go, so it runs
+      # whenever Go is set up, which a change to its rules alone does too.
+      # It took 7 s here, in one run.
       - name: Check what make changed runs
-        if: steps.changed.outputs.run == 'true'
+        if: steps.needs.outputs.run == 'true' || steps.changed.outputs.run == 'true'
         run: sh scripts/changed-test.sh
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -64,9 +64,11 @@ fi
 # Except the scripts that check a rule and the rules they check, when no
 # job runs them but their own check: the build job checks those whatever
 # changed, so they give no other job anything to do. A pull request that
-# changed only them ran every job, issue #322. The rules for make changed
-# are checked by the build job only when they or something unknown
-# changed, since the check takes Go and half a minute, see changed below.
+# changed only them ran every job, issue #322. The one Go test that reads
+# every script, for the endings of a video, then runs on main only, as it
+# does for the docs. The rules for make changed are checked in the build
+# job whenever it sets up Go, and a change to them alone sets it up, see
+# changed below.
 docs=0
 frontend=0
 go=0
@@ -118,8 +120,9 @@ if [ "$kind" = workflows ]; then
 	answer false "no workflow changed"
 fi
 
-# The check of what make changed runs, which reads the packages with Go, so
-# it also runs when anything unknown changed, the way everything does.
+# The check of what make changed runs, which reads the packages with Go.
+# The build job runs it whenever it builds, and this says when it runs it
+# without building: when its rules changed, or anything unknown.
 if [ "$kind" = changed ]; then
 	if [ "$changed_rules" -gt 0 ]; then
 		answer true "the rules of make changed changed"
