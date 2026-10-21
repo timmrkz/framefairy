@@ -432,3 +432,78 @@ func waitFor(t *testing.T, ok func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// The model the app keeps stays loaded after every search and warm-up
+// that holds it, so the next search loads nothing. Given up, or another
+// model kept in its place, it goes at once.
+func TestAKeptModelStaysBetweenSearches(t *testing.T) {
+	s := useStandIn(t, time.Millisecond)
+	e := quietEngine()
+	ctx := context.Background()
+	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		_, release, err := e.holdModel(ctx, gemma, 32768, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		release(0)
+		_, release, err = e.warmModel(ctx, gemma, 32768, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		release(warmKeep)
+	}
+	if s.started.Load() != 1 || s.running.Load() != 1 {
+		t.Errorf("%d loads and %d running after three searches of a kept model, want 1 and 1",
+			s.started.Load(), s.running.Load())
+	}
+	// Keeping it again loads nothing.
+	if loaded, err := e.keep(ctx, gemma, 0, ""); err != nil || loaded || s.started.Load() != 1 {
+		t.Errorf("keeping the kept model again loaded it again: %d loads, %v", s.started.Load(), err)
+	}
+
+	// Another model kept in its place: the first goes before the second
+	// loads, so they are never in memory together.
+	if _, err := e.keep(ctx, LocalModel{Model: "other"}, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.started.Load() != 2 || s.running.Load() != 1 || s.peak.Load() != 1 {
+		t.Errorf("after keeping another model: %d loads, %d running, at most %d at once",
+			s.started.Load(), s.running.Load(), s.peak.Load())
+	}
+	// None kept, the API chosen in the settings: it goes at once.
+	if _, err := e.KeepModel(ctx, Options{Planner: "api"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.running.Load() != 0 {
+		t.Error("the model stayed loaded after it was given up")
+	}
+}
+
+// A model kept is held by nobody, so the transcript can be read into it
+// ahead of a search, and a search of another size replaces it with one
+// that is kept in turn.
+func TestAKeptModelIsFreeToReadInto(t *testing.T) {
+	s := useStandIn(t, time.Millisecond)
+	e := quietEngine()
+	ctx := context.Background()
+	if _, err := e.keep(ctx, gemma, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	size := warmSize("gemma", 0, 0)
+	_, release, ok := holdIdle("gemma", size, func(error) {})
+	if !ok {
+		t.Fatal("the kept model cannot be read into")
+	}
+	release(warmKeep)
+	_, release, err := e.holdModel(ctx, gemma, size*2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release(0)
+	if s.started.Load() != 2 || s.running.Load() != 1 || !modelReady("gemma", size*2) {
+		t.Errorf("after a bigger search: %d loads, %d running", s.started.Load(), s.running.Load())
+	}
+}

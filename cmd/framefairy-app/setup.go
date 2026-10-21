@@ -238,6 +238,8 @@ func (s *FrameFairy) InstallLanguageModel(name string) Job {
 			if err := engine.InstallLanguageModel(ctx, p.Log(), model, engine.ModelsDir()); err != nil {
 				return "", err
 			}
+			// The only model there is may be the one in use now.
+			defer s.keeping.ask()
 			return "", s.keepInUse(before)
 		})
 }

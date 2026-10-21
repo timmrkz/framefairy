@@ -467,17 +467,19 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// it took before.
 		if healthy(ctx, url) {
 			took := time.Since(started).Seconds()
+			// What loading costs is worth knowing in its parts, to know
+			// which of them to make shorter.
+			var parts []string
 			if logFile != nil {
-				if before, ok := setupTime(logFile.Name()); ok {
-					// What loading costs is worth knowing in two parts:
-					// llama-server setting itself and the graphics up,
-					// and reading the model into memory.
-					e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
-						fixed(took, 1), fixed(before, 1))
-					return url, stop, nil
+				for _, p := range loadPhases(logFile.Name(), took) {
+					parts = append(parts, fixed(p.seconds, 1)+"s "+p.name)
 				}
 			}
-			e.Log.Info("model loaded in %ss", fixed(took, 1))
+			if len(parts) > 0 {
+				e.Log.Info("model loaded in %ss: %s", fixed(took, 1), strings.Join(parts, ", "))
+			} else {
+				e.Log.Info("model loaded in %ss", fixed(took, 1))
+			}
 			return url, stop, nil
 		}
 		if time.Since(started) > 10*time.Minute {
@@ -511,21 +513,54 @@ func healthy(ctx context.Context, url string) bool {
 	return response.StatusCode == http.StatusOK
 }
 
-// setupTime reads from llama-server's log how long it took before it began
-// reading the model file. Each line starts with the time since it started,
-// minutes, seconds, milliseconds and microseconds, as in 0.19.335.706.
-func setupTime(logPath string) (float64, bool) {
+// loadPhase is a part of loading a model and how long it took.
+type loadPhase struct {
+	name    string
+	seconds float64
+}
+
+// loadMarks are the lines llama-server b11430 writes as it begins each
+// part of loading a model, at -lv 4, and what the part is called.
+var loadMarks = []struct{ mark, name string }{
+	{"loading model tensors", "reading the model"},
+	{"constructing llama_context", "making room for the context"},
+	{"warming up the model", "warming up"},
+	{"model loaded", "getting ready to answer"},
+}
+
+// loadPhases reads from llama-server's log how long each part of loading
+// took, the last ending when took seconds had gone by. Each line starts
+// with the time since it started, minutes, seconds, milliseconds and
+// microseconds, as in 0.19.335.706. A part whose line is not there is
+// left out, and its time goes to the part before it.
+func loadPhases(logPath string, took float64) []loadPhase {
 	data, err := os.ReadFile(logPath)
 	if err != nil {
-		return 0, false
+		return nil
 	}
+	phases := []loadPhase{{"starting", 0}}
+	began := 0.0
+	next := 0
 	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.Contains(line, "load_model: loading model") {
-			continue
+		for i := next; i < len(loadMarks); i++ {
+			if !strings.Contains(line, loadMarks[i].mark) {
+				continue
+			}
+			at, ok := serverStamp(line)
+			if !ok || at < began {
+				break
+			}
+			phases[len(phases)-1].seconds = at - began
+			phases = append(phases, loadPhase{loadMarks[i].name, 0})
+			began, next = at, i+1
+			break
 		}
-		return serverStamp(line)
 	}
-	return 0, false
+	if len(phases) == 1 {
+		return nil
+	}
+	phases[len(phases)-1].seconds = max(took-began, 0)
+	return phases
 }
 
 func serverStamp(line string) (float64, bool) {

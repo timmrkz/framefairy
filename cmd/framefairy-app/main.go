@@ -82,7 +82,12 @@ func main() {
 		}
 	}
 	theLog.started()
-	svc := &FrameFairy{store: st}
+	svc := &FrameFairy{store: st, keeping: newKeeping()}
+	// The model is loaded as the app opens and kept while it is open,
+	// and kept again when the settings change it, see keep.go.
+	st.changed = svc.keeping.ask
+	go svc.keeping.run(st)
+	svc.keeping.ask()
 	svc.jobs = newQueue(st, emit, notify)
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
@@ -345,7 +350,9 @@ type FrameFairy struct {
 	listening listening
 	// The report window and the draft of a report, see bugs.go.
 	report *reporting
-	mu     sync.Mutex
+	// The local model kept loaded while the app is open, see keep.go.
+	keeping *keeping
+	mu      sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]

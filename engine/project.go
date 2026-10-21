@@ -199,6 +199,18 @@ func (p *Project) planOptions(req PlanRequest, window *Window) (Options, string)
 // with room to spare, see SpokenChars.
 const warmChars = SpokenChars
 
+// warmSize is the context a model is loaded with ahead of a search of a
+// window seconds long. The whole episode, or no window, is taken as an
+// hour, which only sizes the model's memory, and the search starts it
+// again if it needs more.
+func warmSize(model string, seconds float64, maxTokens int) int {
+	if seconds <= 0 {
+		seconds = 3600
+	}
+	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
+	return localContextFor(model, chars, maxTokens)
+}
+
 // WarmModel loads the local model for a search of req that has not
 // started yet, so the search finds it loaded, and has it read the
 // transcript of the window as it is heard, so the search finds most of
@@ -224,14 +236,7 @@ func (p *Project) WarmModel(ctx context.Context, req PlanRequest) (ReadAhead, er
 
 // warm is WarmModel with the model found.
 func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (ReadAhead, error) {
-	// A search of the whole episode is taken as an hour, which only sizes
-	// the model's memory, and the search starts it again if it needs more.
-	seconds := 3600.0
-	if req.To > req.From {
-		seconds = req.To - req.From
-	}
-	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	size := localContextFor(local.Model, chars, p.Base.MaxTokens)
+	size := warmSize(local.Model, req.To-req.From, p.Base.MaxTokens)
 	_, release, err := p.engine.warmModel(ctx, local, size, p.LogsDir())
 	if errors.Is(err, errModelBusy) {
 		return ReadAhead{}, nil

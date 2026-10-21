@@ -1412,13 +1412,25 @@ is replaced.
 llama-server about 24 seconds. The running server belongs to the
 program rather than to one search, in `engine/modelhost.go`: a search
 that finds the model loaded uses it, and one that finds it loading waits
-for it. The app loads it for the first search of a new episode while the
-transcript is still on its way to the end of the window, and a search
-that is waiting for the transcript loads it while it waits. A model
-loaded ahead waits five minutes for its search. A search lets go of it
-the moment it is done and it stops, because a model left in memory
-between searches that are days apart is memory taken from everything
-else. One model is in memory at a time, never two, because two do not
+for it. **The app keeps it loaded while it is open**, `KeepModel`, and
+`cmd/framefairy-app/keep.go`: it loads it as it opens, if the memory free
+then holds it, and again when the settings or an install change the
+model, sized for a window of an hour. A search of a bigger window loads
+it again with more, and that is kept. So even the first search of a new
+video finds it loaded, and its transcript is read into it while it is
+heard, see below. Loaded only when a video was added, it took about 24
+seconds and a half hour window was heard in about 22 on an M2 Max, so the
+transcript was whole before the model could read any of it. Kept idle it
+costs less than its size: llama.cpp maps the weights from the file and
+holds them wired for the graphics chip only for three minutes after the
+last use, `keep_alive_s` in `ggml-metal-device.m`, so the system can take
+the memory back for another program, and the weights are read from the
+disk again at the next ask, not loaded anew. Without the app, a model
+loaded ahead waits five minutes for its search, and a search lets go of
+it the moment it is done and it stops. The time a load takes is said in
+its parts, from the lines llama-server writes as it begins each:
+starting, reading the model, making room for the context, warming up and
+getting ready to answer, `loadPhases`. One model is in memory at a time, never two, because two do not
 fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model

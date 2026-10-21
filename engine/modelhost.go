@@ -20,10 +20,18 @@ import (
 // makes an engine per job, and a model loaded by one has to be there for
 // the next. One model runs at a time, because two of them do not fit in
 // the memory of the machines this is for. Whoever holds it says how long
-// it may stay when they are done: a search lets go of it at once, because
-// a model that sits in memory for days between two searches is memory
-// taken from everything else, and a warm-up keeps it a few minutes for the
-// search it was loaded for.
+// it may stay when they are done: a search lets go of it at once, and a
+// warm-up keeps it a few minutes for the search it was loaded for.
+//
+// The app keeps its model loaded for as long as it is open, see KeepModel,
+// so even the first search of a new video finds it loaded, and the
+// transcript is read into it while it is heard, see readahead.go. Loaded
+// ahead only when a video was added, it was still loading when a half hour
+// had been heard. A model kept idle costs less than its size: llama.cpp
+// maps the weights from the file and holds them wired for the graphics
+// chip only for three minutes after they were last used, so the system can
+// take the memory back for another program, and the model reads the
+// weights from the disk again when it is next asked.
 // ---------------------------------------------------------------------------
 
 // warmKeep is how long a model loaded ahead of a search waits for it.
@@ -70,6 +78,9 @@ var host struct {
 	stopAll context.CancelFunc
 	// closed is set when the app quits. No model is loaded after it.
 	closed bool
+	// kept is the model that stays loaded when nobody holds it, see
+	// KeepModel, empty for none.
+	kept string
 	// waiting is how many asks wait for the model in use to be let go
 	// of, which a test waits for instead of guessing how long it takes.
 	waiting int
@@ -273,6 +284,9 @@ func (h *hostedModel) release(keep time.Duration) {
 		// It was replaced or stopped. Nothing of it is running.
 		return
 	}
+	if host.kept == h.model {
+		return
+	}
 	if keep <= 0 {
 		h.shutLocked()
 		host.model = nil
@@ -281,7 +295,7 @@ func (h *hostedModel) release(keep time.Duration) {
 	h.idle = time.AfterFunc(keep, func() {
 		host.mu.Lock()
 		defer host.mu.Unlock()
-		if host.model == h && h.users == 0 {
+		if host.model == h && h.users == 0 && host.kept != h.model {
 			h.shutLocked()
 			host.model = nil
 			changedLocked()
@@ -301,6 +315,67 @@ func (h *hostedModel) shutLocked() {
 	}
 }
 
+// keepOnly makes model the one kept loaded when nobody holds it, none for
+// empty. A model kept before that nobody holds now goes at once, so a
+// model given up in the settings does not hold the memory for the new one.
+func keepOnly(model string) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	was := host.kept
+	host.kept = model
+	h := host.model
+	if was == "" || was == model || h == nil || h.model != was || h.users > 0 || !loaded(h) {
+		return
+	}
+	h.shutLocked()
+	host.model = nil
+	changedLocked()
+}
+
+// KeepModel loads the local model opts ask for, if it is not loaded, and
+// keeps it loaded when nobody holds it, until it is called again for
+// another model or none, or the models are stopped. It says whether it
+// loaded the model now. The model is loaded for a window of an hour,
+// which only sizes its memory: a search that needs more loads it again
+// with more, and that is kept. With the API, or a server that runs
+// already, nothing is kept, and a model kept before goes. A model that
+// does not fit in the memory free now is not loaded, the error says why,
+// and the first search loads it when it fits.
+func (e *Engine) KeepModel(ctx context.Context, opts Options, logDir string) (bool, error) {
+	if opts.Planner != "local" || opts.LLMURL != "" {
+		keepOnly("")
+		return false, nil
+	}
+	local, err := resolveLocal(opts)
+	if err != nil {
+		keepOnly("")
+		return false, err
+	}
+	return e.keep(ctx, *local, opts.MaxTokens, logDir)
+}
+
+// keep is KeepModel with the model found.
+func (e *Engine) keep(ctx context.Context, local LocalModel, maxTokens int, logDir string) (bool, error) {
+	keepOnly(local.Model)
+	size := warmSize(local.Model, 0, maxTokens)
+	if modelReady(local.Model, size) {
+		return false, nil
+	}
+	if err := roomForModel(local.Model, size); err != nil {
+		return false, err
+	}
+	_, release, err := e.warmModel(ctx, local, size, logDir)
+	if errors.Is(err, errModelBusy) {
+		// Another model in use, which the first search after it replaces.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	release(0)
+	return true, nil
+}
+
 // StopModels stops the local model, loaded or still loading, and returns
 // once it is stopped. The app calls it on the way out, so no server is
 // left holding the memory after it. A model still loading used to be left
@@ -308,6 +383,7 @@ func (h *hostedModel) shutLocked() {
 // llama-server held its memory until the machine was restarted.
 func StopModels() {
 	host.mu.Lock()
+	host.kept = ""
 	host.stopAll()
 	h := host.model
 	host.model = nil
