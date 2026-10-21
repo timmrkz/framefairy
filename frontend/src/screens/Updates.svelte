@@ -141,6 +141,9 @@
   // the mark the sidebar's dot is made from.
   const standing = $derived(standingOf(update, { working, now }));
 
+  // What the system said when a check did not get through.
+  const detail = $derived(update?.phase === "failed" ? update.detail : "");
+
   const looking = $derived(update?.phase === "checking");
   const downloading = $derived(update?.phase === "downloading");
 
@@ -208,47 +211,7 @@
       </div>
 
       <!-- Where things stand, and the one thing to do about it. -->
-      <div class="item">
-        <!-- A dot is work, running or waiting to be picked up. Something
-             that needs a look is the triangle, the way the settings mark a
-             missing key, in the colour of a warning or of a failure. Work
-             on a pull request in conflict keeps its dot, in the colour of
-             a warning. -->
-        <span class="mark {standing.mark}" aria-hidden="true">
-          {#if standing.mark === "ok"}
-            <Icon name="check" />
-          {:else if standing.mark === "warn" || standing.mark === "err"}
-            <Icon name="warn" />
-          {:else}
-            <span
-              class="dot"
-              class:busy={standing.mark === "look"}
-              class:ready={standing.mark === "new"}
-              class:warn={conflicted && (standing.mark === "look" || standing.mark === "new")}
-            ></span>
-          {/if}
-        </span>
-        <div class="words">
-          <span class="head">{standing.head}</span>
-          <span class="muted small selectable">{standing.more}</span>
-          <!-- What the system said, apart from the words above it, on one
-               line that scrolls sideways, so a long address never wraps
-               the row into a wall of text. Tim saw it as the reason
-               itself, over three lines, issue #417. -->
-          {#if update.phase === "failed" && update.detail}
-            <div class="detail">
-              <code class="selectable" title="What the system said">{update.detail}</code>
-              <button
-                class="quiet copy"
-                class:copied
-                title={copied ? "Copied" : "Copy what the system said, for a report"}
-                aria-label={copied ? "Copied" : "Copy what the system said"}
-                onclick={() => copyDetail(update.detail)}><Icon name={copied ? "check" : "copy"} size={14} /></button
-              >
-            </div>
-            {#if copyRefused}<span class="small error">{copyRefused}</span>{/if}
-          {/if}
-        </div>
+      {#snippet act()}
         {#if update.phase === "ready"}
           <button
             class="act primary"
@@ -271,6 +234,56 @@
             {/if}
             {downloading ? "Downloading" : looking ? "Checking" : update.phase === "failed" ? "Try again" : "Check"}
           </button>
+        {/if}
+      {/snippet}
+      <div class="item" class:told={!!detail}>
+        <!-- A dot is work, running or waiting to be picked up. Something
+             that needs a look is the triangle, the way the settings mark a
+             missing key, in the colour of a warning or of a failure. Work
+             on a pull request in conflict keeps its dot, in the colour of
+             a warning. -->
+        <span class="mark {standing.mark}" aria-hidden="true">
+          {#if standing.mark === "ok"}
+            <Icon name="check" />
+          {:else if standing.mark === "warn" || standing.mark === "err"}
+            <Icon name="warn" />
+          {:else}
+            <span
+              class="dot"
+              class:busy={standing.mark === "look"}
+              class:ready={standing.mark === "new"}
+              class:warn={conflicted && (standing.mark === "look" || standing.mark === "new")}
+            ></span>
+          {/if}
+        </span>
+        <div class="words">
+          <span class="head">{standing.head}</span>
+          <span class="muted small selectable">{standing.more}</span>
+        </div>
+        {#if detail}
+          <!-- What the system said, apart from the words above it, on one
+               line that scrolls sideways, so a long address never wraps
+               the row into a wall of text, and Try again on the same row
+               as it, the way a field and its button sit in the settings.
+               Tim saw it as the reason itself, over three lines, and then
+               the field under the words with Try again beside them both,
+               lined up with neither, issue #417. -->
+          <div class="said">
+            <div class="detail">
+              <code class="selectable" title="What the system said">{detail}</code>
+              <button
+                class="quiet copy"
+                class:copied
+                title={copied ? "Copied" : "Copy what the system said, for a report"}
+                aria-label={copied ? "Copied" : "Copy what the system said"}
+                onclick={() => copyDetail(detail)}><Icon name={copied ? "check" : "copy"} size={14} /></button
+              >
+            </div>
+            {@render act()}
+          </div>
+          {#if copyRefused}<span class="small error refused">{copyRefused}</span>{/if}
+        {:else}
+          {@render act()}
         {/if}
       </div>
     </div>
@@ -321,14 +334,36 @@
     flex: none;
   }
 
+  /* A row that says what the system said wraps: the mark and the words
+     on its first line, as in every other row, and under them the field
+     and Try again on a line of their own, starting where the words start,
+     past the mark's 24 px and the row's gap, see .card .mark in app.css. */
+  .item.told {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .told > .said,
+  .told > .refused {
+    flex-basis: calc(100% - 24px - 12px);
+    margin-left: calc(24px + 12px);
+  }
+
+  .said {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
   /* What the system said: a field at the height of every control, its
      words at one width the way code is, on one line that scrolls, and
      the button that copies them at its end. */
   .detail {
     display: flex;
     align-items: center;
+    flex: 1;
     height: var(--control-h);
-    margin-top: 6px;
     border: 1px solid var(--line);
     border-radius: var(--radius-s);
     background: var(--ink-2);

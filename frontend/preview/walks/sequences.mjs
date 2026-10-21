@@ -929,7 +929,9 @@
 //   ["update detail", starts]
 //                      under the line under the build, what the system
 //                      said starts with these words, on one line at the
-//                      height of a control however long it is, and its
+//                      height of a control however long it is, on one row
+//                      with Try again, starting where the words start and
+//                      Try again ending under the list of channels, and its
 //                      button puts it on the clipboard and says Copied
 //   ["rail mark", what]
 //                      Updates at the foot of the sidebar wears this mark
@@ -3650,7 +3652,7 @@ export const sequences = [
     name: "a check that cannot reach GitHub says so in words, and what the system said copies",
     steps: [
       ["updates", { from: "main", list: "main", offline: true }],
-      ["status", "The check did not get through", "Could not reach GitHub, where the builds come from. Check the internet connection, then try again."],
+      ["status", "The check did not get through", "Could not reach GitHub. Check your internet connection."],
       ["rail mark", "dot, failure"],
       ["update detail", "The channel list could not be fetched"],
     ],
@@ -9867,10 +9869,17 @@ for (const seq of toWalk) {
         await detail.waitFor();
         const seen = await detail.evaluate((d) => {
           const code = d.querySelector("code");
+          const row = d.closest(".item");
+          const box = (el) => el?.getBoundingClientRect() ?? null;
+          const act = box(row?.querySelector("button.act"));
           return {
             text: (code?.textContent ?? "").trim(),
             height: d.getBoundingClientRect().height,
             control: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")),
+            field: box(d),
+            act,
+            words: box(row?.querySelector(".words")),
+            pick: box(d.closest(".card")?.querySelector("button.pick")),
           };
         });
         if (!seen.text.startsWith(arg)) {
@@ -9879,6 +9888,31 @@ for (const seq of toWalk) {
         }
         if (seen.height !== seen.control) {
           wrong = `what the system said is ${seen.height} px high, not one line of ${seen.control} px`;
+          break;
+        }
+        // Tim saw the field under the words and Try again beside them both,
+        // lined up with neither (#417): the two share a row, the field
+        // starting where the words start, Try again ending where the list
+        // of channels above it ends.
+        const { field, act, words, pick } = seen;
+        if (!act) {
+          wrong = "there is no Try again in the row of what the system said";
+          break;
+        }
+        if (act.top !== field.top || act.bottom !== field.bottom) {
+          wrong = `Try again spans ${act.top} to ${act.bottom} px, the field ${field.top} to ${field.bottom} px, not one row`;
+          break;
+        }
+        if (act.left <= field.right) {
+          wrong = `Try again starts at ${act.left} px, inside the field that ends at ${field.right} px`;
+          break;
+        }
+        if (field.left !== words.left) {
+          wrong = `the field starts at ${field.left} px, the words above it at ${words.left} px`;
+          break;
+        }
+        if (pick && act.right !== pick.right) {
+          wrong = `Try again ends at ${act.right} px, the list of channels above it at ${pick.right} px`;
           break;
         }
         // The answer to the copy is the signal the clipboard was written.

@@ -910,26 +910,26 @@ func updateProblem(err error, downloading bool) string {
 		}
 		return "The list of builds was not found. Try again in a few minutes."
 	case has("answered 429", "answered 5"):
-		return "GitHub is busy and did not answer. Try again in a few minutes."
+		return "GitHub is busy. Try again in a few minutes."
 	case has("answered "):
-		return "GitHub refused to hand over the builds. Try again later."
+		return "GitHub turned the request down. Try again later."
 	case has("signed", "signature", "claim", "checksum", "did not arrive as the channel list says"):
-		return "The new build could not be verified, so it was not used. Try again later."
+		return "The new build could not be verified, so it was not used."
 	case has("cache"):
-		return "The new build could not be saved on this Mac. Check that the disk has room, then try again."
+		return "The new build could not be saved. Check that the disk has room."
 	case errors.As(err, &netErr), errors.Is(err, context.DeadlineExceeded), has(
 		"dial tcp", "read tcp", "write tcp", "no such host", "connection refused", "connection reset",
 		"network is unreachable", "can't assign requested address", "i/o timeout", "tls handshake",
 		"deadline exceeded", "could not be fetched", "could not be downloaded", "download stopped"):
 		if downloading {
-			return "The download broke off. Check the internet connection, then try again."
+			return "The download broke off. Check your internet connection."
 		}
-		return "Could not reach GitHub, where the builds come from. Check the internet connection, then try again."
+		return "Could not reach GitHub. Check your internet connection."
 	case has("not readable", "too large", "could not be read", "has no"):
 		return "The list of builds could not be read. Try again later."
 	}
 	if downloading {
-		return "The download did not arrive whole. Try again."
+		return "The new build could not be downloaded."
 	}
-	return "Something went wrong while looking for a newer build. Try again."
+	return "Could not look for a newer build."
 }
