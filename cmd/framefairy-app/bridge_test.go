@@ -459,7 +459,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		if c := q.Get("conflict"); c != "" {
 			conflict = strings.Split(c, ",")
 		}
-		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list, conflict))
+		answer(w, nil, b.updatesAs(q.Get("from"), q.Get("stored"), list, conflict, q.Get("offline") != ""))
+	})
+	// What the app last put on the clipboard, which the bridge stands in
+	// for, see desk.start.
+	mux.HandleFunc("/clipboard", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, b.d.copied(), nil)
 	})
 	// The app's log, which the bridge keeps none of until a walk asks:
 	// with ?open=1 it starts one in the bridge's home with a few lines and
@@ -670,10 +675,11 @@ type bridge struct {
 // channel list served on this machine, the one the Go tests of updates
 // use, so nothing reaches the network. Every channel has a build newer
 // than the one running, which downloads in a moment. The app opened again
-// has none, the way the bridge started.
+// has none, the way the bridge started. Offline, the list is read from a
+// port nothing listens on, the way a Mac without a network answers.
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
-func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
+func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline bool) error {
 	for _, ch := range append(append([]string{from, stored}, list...), conflict...) {
 		if ch != "" && !updates.ValidChannel(ch) {
 			return fmt.Errorf("%q is not a channel", ch)
@@ -704,6 +710,14 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string) error {
 		save: func(string) error { return nil },
 	}
 	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: cs.srv.Client(), Cache: b.t.TempDir()}
+	if offline {
+		gone, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return err
+		}
+		src.URL = "https://" + gone.Addr().String() + "/channels.json"
+		_ = gone.Close()
+	}
 	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
 	if c.state.Off != "" {
 		return errors.New(c.state.Off)

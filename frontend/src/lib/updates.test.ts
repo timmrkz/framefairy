@@ -21,6 +21,7 @@ const at = (u: Partial<UpdateState>): UpdateState => ({
   written: 0,
   total: 0,
   problem: "",
+  detail: "",
   ...u,
 });
 

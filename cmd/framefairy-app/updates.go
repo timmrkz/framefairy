@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,7 +97,10 @@ type UpdateState struct {
 	Checked time.Time `json:"checked"`
 	Written int64     `json:"written"`
 	Total   int64     `json:"total"`
-	Problem string    `json:"problem"`
+	// Problem is what went wrong in a person's words, with what to do.
+	// Detail is what the system said, as it said it, for a report.
+	Problem string `json:"problem"`
+	Detail  string `json:"detail"`
 }
 
 // settle keeps the state saying one thing. A channel followed that has
@@ -483,7 +487,7 @@ func (c *updating) Follow(channel string) error {
 	c.mu.Unlock()
 	c.change(func(s *UpdateState) {
 		s.Picked = channel
-		s.Phase, s.Problem = "checking", ""
+		s.Phase, s.Problem, s.Detail = "checking", "", ""
 		s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
 		s.Follows, s.Gone = "", ""
 		for _, ch := range s.Channels {
@@ -603,7 +607,7 @@ func (c *updating) checkOnce() {
 		if s.Phase != "ready" {
 			s.Phase = "checking"
 		}
-		s.Problem = ""
+		s.Problem, s.Detail = "", ""
 	})
 	rel, err := c.u.Check(ctx)
 	if err != nil {
@@ -615,7 +619,7 @@ func (c *updating) checkOnce() {
 			if s.Phase != "ready" {
 				s.Phase = "failed"
 			}
-			s.Problem = plainUpdateError(err)
+			s.Problem, s.Detail = updateProblem(err, false), plainUpdateError(err)
 			s.Checked = time.Now()
 		})
 		return
@@ -666,7 +670,7 @@ func (c *updating) checkOnce() {
 		c.drop(round)
 		mine(func(s *UpdateState) {
 			s.Phase = "failed"
-			s.Problem = "The download did not arrive whole. " + plainUpdateError(err)
+			s.Problem, s.Detail = updateProblem(err, true), plainUpdateError(err)
 		})
 		return
 	}
@@ -864,7 +868,9 @@ func (c *updating) installOnQuit() {
 }
 
 // plainUpdateError takes the updater's prefixes off an error, which say
-// where in the updater it happened and nothing a person can act on.
+// where in the updater it happened and nothing a person can act on. What
+// is left is what the system said, shown apart from the words a person
+// reads, for a report, see updateProblem.
 func plainUpdateError(err error) string {
 	msg := err.Error()
 	for _, p := range []string{"updater: all providers failed: ", "updater: ", "channels: "} {
@@ -875,4 +881,67 @@ func plainUpdateError(err error) string {
 		return ""
 	}
 	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+}
+
+// updateProblem says in a person's words what kept a check or a download
+// from getting through, and what to do. Tim saw the Go error itself on
+// the Updates page, an address and a port and a socket, wrapped over three
+// lines, issue #417. What the system said is still shown, apart, see
+// plainUpdateError.
+//
+// It reads the error's words as well as its kind: the updater joins the
+// errors of its providers into one text, which keeps their words and
+// loses what they were.
+func updateProblem(err error, downloading bool) string {
+	msg := strings.ToLower(err.Error())
+	has := func(words ...string) bool {
+		for _, w := range words {
+			if strings.Contains(msg, w) {
+				return true
+			}
+		}
+		return false
+	}
+	var netErr net.Error
+	switch {
+	case has("answered 404"):
+		if downloading {
+			return "The new build was not found. Try again in a few minutes."
+		}
+		return "The list of builds was not found. Try again in a few minutes."
+	case has("answered 429", "answered 5"):
+		return "GitHub is busy. Try again in a few minutes."
+	case has("answered "):
+		return "GitHub turned the request down. Try again later."
+	// A certificate that does not hold is the network's, before the
+	// build's signature: Go says "x509: certificate signed by unknown
+	// authority" when a hotel's Wi-Fi, a captive portal or a company's
+	// proxy stands between the Mac and GitHub, and signed is a word the
+	// signature's errors use too.
+	case has("x509:", "certificate", "tls:"):
+		if downloading {
+			return "The download broke off. Check your internet connection."
+		}
+		return "Could not reach GitHub. Check your internet connection."
+	case has("signed with", "not signed", "signature", "claim", "checksum", "digest mismatch", "did not arrive as the channel list says"):
+		return "The new build could not be verified, so it was not used."
+	case has("no space left", "disk full", "disk quota"):
+		return "The new build could not be saved. Check that the disk has room."
+	case has("written to the cache", "kept in the cache"):
+		return "The new build could not be saved."
+	case errors.As(err, &netErr), errors.Is(err, context.DeadlineExceeded), has(
+		"dial tcp", "read tcp", "write tcp", "no such host", "connection refused", "connection reset",
+		"network is unreachable", "can't assign requested address", "i/o timeout", "tls handshake",
+		"deadline exceeded", "could not be fetched", "could not be downloaded", "download stopped"):
+		if downloading {
+			return "The download broke off. Check your internet connection."
+		}
+		return "Could not reach GitHub. Check your internet connection."
+	case !downloading && has("not readable", "too large", "could not be read", "has no"):
+		return "The list of builds could not be read. Try again later."
+	}
+	if downloading {
+		return "The new build could not be downloaded."
+	}
+	return "Could not look for a newer build."
 }

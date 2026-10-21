@@ -579,7 +579,9 @@
 //                      the Mac without it, with how.stored picked by a
 //                      build before it, and the channels how.list on the
 //                      list, each with a newer build, and those in
-//                      how.conflict said to no longer merge into main
+//                      how.conflict said to no longer merge into main,
+//                      or with how.offline the list read from a port
+//                      nothing listens on
 //   ["follow", name]   picks the channel of this name in the Updates
 //                      page's list, and reads the page in the next frame
 //   ["words again"]    the speech stand-in says its sentences again from
@@ -971,6 +973,13 @@
 //                      "check", "triangle" or "dot", and ", warning" when
 //                      it wears the colour of a warning
 //   ["warned"]         the list wears the colour of a warning
+//   ["update detail", starts]
+//                      under the line under the build, what the system
+//                      said starts with these words, on one line at the
+//                      height of a control however long it is, on one row
+//                      with Try again, starting where the words start and
+//                      Try again ending under the list of channels, and its
+//                      button puts it on the clipboard and says Copied
 //   ["rail mark", what]
 //                      Updates at the foot of the sidebar wears this mark
 //                      now, in the frame the line under the build is read
@@ -3809,6 +3818,17 @@ export const sequences = [
       ["warned"],
       ["channel", "PR #143, closed"],
       ["choices", ["Branch main", "PR #143, closed"], "PR #143, closed"],
+    ],
+  },
+  {
+    // Tim checked with Wi-Fi off and the line under the build gave the Go
+    // error as the reason, an address and a port over three lines (#417).
+    name: "a check that cannot reach GitHub says so in words, and what the system said copies",
+    steps: [
+      ["updates", { from: "main", list: "main", offline: true }],
+      ["status", "The check did not get through", "Could not reach GitHub. Check your internet connection."],
+      ["rail mark", "dot, failure"],
+      ["update detail", "The channel list could not be fetched"],
     ],
   },
   {
@@ -11733,6 +11753,7 @@ for (const seq of toWalk) {
           stored: arg.stored ?? "",
           list: arg.list ?? "",
           conflict: arg.conflict ?? "",
+          offline: arg.offline ? "1" : "",
         });
         await control(url, `/updates?${q}`);
         await fromSidebar(page, () => page.locator("aside").getByText("Updates", { exact: true }).first().click());
@@ -11785,6 +11806,103 @@ for (const seq of toWalk) {
       case "build mark": {
         const now = await updatesComeTo(page, (u) => u.mark === arg);
         if (now.mark !== arg) wrong = `the line under the build starts with ${now.mark || "no mark"}, not ${arg}`;
+        break;
+      }
+      case "update detail": {
+        const detail = page.locator(".card.asks .detail");
+        await detail.waitFor();
+        const seen = await detail.evaluate((d) => {
+          const code = d.querySelector("code");
+          const row = d.closest(".item");
+          const box = (el) => el?.getBoundingClientRect() ?? null;
+          const act = box(row?.querySelector("button.act"));
+          const line = parseFloat(getComputedStyle(code).lineHeight);
+          return {
+            text: (code?.textContent ?? "").trim(),
+            height: d.getBoundingClientRect().height,
+            control: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")),
+            // The field has the height of a control whatever is in it, so
+            // the words are measured: one line high, wider than they are
+            // shown and so scrolling, inside the field.
+            code: box(code),
+            lines: code ? Math.round(code.getBoundingClientRect().height / line) : 0,
+            scrolls: !!code && code.scrollWidth > code.clientWidth,
+            // Playwright's Chromium hides scroll bars, so one that a Mac
+            // set to show them always would draw is not there to measure.
+            // What keeps it away is read instead.
+            bar: code ? getComputedStyle(code).scrollbarWidth : "",
+            field: box(d),
+            act,
+            words: box(row?.querySelector(".words")),
+            pick: box(d.closest(".card")?.querySelector("button.pick")),
+          };
+        });
+        if (!seen.text.startsWith(arg)) {
+          wrong = `what the system said is ${JSON.stringify(seen.text)}`;
+          break;
+        }
+        if (seen.height !== seen.control) {
+          wrong = `what the system said is ${seen.height} px high, not one line of ${seen.control} px`;
+          break;
+        }
+        if (seen.lines !== 1 || !seen.scrolls) {
+          wrong = `what the system said is ${seen.lines} lines, ${seen.scrolls ? "scrolling" : "not scrolling"}, not one line that scrolls`;
+          break;
+        }
+        if (seen.code.top < seen.field.top || seen.code.bottom > seen.field.bottom || seen.code.left < seen.field.left || seen.code.right > seen.field.right) {
+          wrong = `what the system said spills out of its field`;
+          break;
+        }
+        if (seen.bar !== "none") {
+          wrong = `the field may draw a scroll bar inside its line, its scrollbar-width is ${seen.bar}`;
+          break;
+        }
+        // Tim saw the field under the words and Try again beside them both,
+        // lined up with neither (#417): the two share a row, the field
+        // starting where the words start, Try again ending where the list
+        // of channels above it ends.
+        const { field, act, words, pick } = seen;
+        if (!act) {
+          wrong = "there is no Try again in the row of what the system said";
+          break;
+        }
+        if (act.top !== field.top || act.bottom !== field.bottom) {
+          wrong = `Try again spans ${act.top} to ${act.bottom} px, the field ${field.top} to ${field.bottom} px, not one row`;
+          break;
+        }
+        if (act.left <= field.right) {
+          wrong = `Try again starts at ${act.left} px, inside the field that ends at ${field.right} px`;
+          break;
+        }
+        if (field.left !== words.left) {
+          wrong = `the field starts at ${field.left} px, the words above it at ${words.left} px`;
+          break;
+        }
+        if (pick && act.right !== pick.right) {
+          wrong = `Try again ends at ${act.right} px, the list of channels above it at ${pick.right} px`;
+          break;
+        }
+        // The answer to the copy is the signal the clipboard was written.
+        const copiedOnGo = page.waitForResponse((r) => {
+          if (!r.url().includes("/call")) return false;
+          try {
+            return JSON.parse(r.request().postData() ?? "{}").name?.split(".").pop() === "Copy";
+          } catch {
+            return false;
+          }
+        });
+        // The button says Copied in the frame of the click, and goes back
+        // a moment later, so it is read in the same call as the click, on
+        // the frame after it, never in a later call that may come too late.
+        const label = await detail.locator("button.copy").evaluate(async (b) => {
+          b.click();
+          await new Promise((r) => requestAnimationFrame(() => r()));
+          return b.getAttribute("aria-label");
+        });
+        await copiedOnGo;
+        const onClipboard = await control(url, "/clipboard");
+        if (label !== "Copied") wrong = `the copy button says ${label} after the click, not Copied`;
+        else if (onClipboard !== seen.text) wrong = `the clipboard holds ${JSON.stringify(onClipboard)}, not what the system said`;
         break;
       }
       case "rail mark": {

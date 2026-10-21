@@ -52,6 +52,11 @@ type channelServer struct {
 	newest map[string]string
 	// conflict is a pull request the list says no longer merges into main.
 	conflict map[string]bool
+	// status is what the list answers with instead of itself, when set.
+	status int
+	// client is what the app reaches the server with, when it is not the
+	// server's own, which trusts its certificate.
+	client *http.Client
 }
 
 func newChannelServer(t *testing.T) *channelServer {
@@ -63,7 +68,7 @@ func newChannelServer(t *testing.T) *channelServer {
 	cs := &channelServer{key: key, zips: map[string][]byte{}, fetched: map[string]int{}}
 	cs.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cs.mu.Lock()
-		list, data, ok := cs.list, cs.zips[r.URL.Path], false
+		list, data, ok, status := cs.list, cs.zips[r.URL.Path], false, cs.status
 		_, ok = cs.zips[r.URL.Path]
 		if ok {
 			cs.fetched[r.URL.Path]++
@@ -76,6 +81,10 @@ func newChannelServer(t *testing.T) *channelServer {
 		switch {
 		case r.URL.Path == "/channels.json":
 			cs.hits.Add(1)
+			if status != 0 {
+				http.Error(w, http.StatusText(status), status)
+				return
+			}
 			_, _ = w.Write(list)
 		case ok:
 			if slow != nil {
@@ -170,7 +179,11 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 			return nil
 		},
 	}
-	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: cs.srv.Client()}
+	client := cs.srv.Client()
+	if cs.client != nil {
+		client = cs.client
+	}
+	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: client}
 	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
 	if c.state.Off != "" {
 		t.Fatalf("off: %s", c.state.Off)
@@ -388,11 +401,139 @@ func TestAFailedCheckSaysWhy(t *testing.T) {
 	c.mu.Unlock()
 	c.check()
 	s := c.State()
-	if s.Phase != "failed" || !strings.HasPrefix(s.Problem, "The channel list is not readable") || s.Checked.IsZero() {
+	if s.Phase != "failed" || s.Problem != "The list of builds could not be read. Try again later." || s.Checked.IsZero() {
 		t.Errorf("%+v", s)
 	}
-	if strings.Contains(s.Problem, "updater:") {
-		t.Errorf("the problem reads %q", s.Problem)
+	if !strings.HasPrefix(s.Detail, "The channel list is not readable") || strings.Contains(s.Detail, "updater:") {
+		t.Errorf("what the system said reads %q", s.Detail)
+	}
+}
+
+// Tim checked with Wi-Fi off and the page showed the Go error, an address
+// and a port, as the reason. A list that cannot be reached says so in
+// words, and what the system said is kept apart. Issue #417. A server
+// that has closed is what a Mac without a network answers with.
+func TestACheckWithNoNetworkSaysSoInWords(t *testing.T) {
+	cs := newChannelServer(t)
+	c, _ := newTestUpdating(t, cs, false)
+	cs.srv.Close()
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
+	c.check()
+	s := c.State()
+	if s.Phase != "failed" || s.Problem != "Could not reach GitHub. Check your internet connection." {
+		t.Errorf("%+v", s)
+	}
+	if !strings.HasPrefix(s.Detail, "The channel list could not be fetched") || strings.Contains(s.Problem, "tcp") {
+		t.Errorf("the problem reads %q, what the system said %q", s.Problem, s.Detail)
+	}
+}
+
+// What a failed check says, from the error the updater really hands back
+// for what the server did, so words reworded where an error is made fail
+// here and not on Tim's Mac. A certificate the Mac does not trust is what
+// a hotel's Wi-Fi or a company's proxy shows it, and is the network's.
+func TestAFailedCheckSaysInWordsWhatTheServerDid(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  func(*channelServer)
+		says string
+	}{
+		{"not found", func(cs *channelServer) { cs.status = http.StatusNotFound }, "The list of builds was not found. Try again in a few minutes."},
+		{"busy", func(cs *channelServer) { cs.status = http.StatusServiceUnavailable }, "GitHub is busy. Try again in a few minutes."},
+		{"too many", func(cs *channelServer) { cs.status = http.StatusTooManyRequests }, "GitHub is busy. Try again in a few minutes."},
+		{"refused", func(cs *channelServer) { cs.status = http.StatusForbidden }, "GitHub turned the request down. Try again later."},
+		{"not a list", func(cs *channelServer) { cs.list = []byte("<html>Sign in to the Wi-Fi</html>") }, "The list of builds could not be read. Try again later."},
+		{"untrusted", func(cs *channelServer) { cs.client = &http.Client{Transport: &http.Transport{}} }, "Could not reach GitHub. Check your internet connection."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			cs := newChannelServer(t)
+			cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"})
+			c.set(cs)
+			u, _ := newTestUpdating(t, cs, false)
+			u.mu.Lock()
+			u.state.Picked = "main"
+			u.mu.Unlock()
+			u.check()
+			if s := u.State(); s.Phase != "failed" || s.Problem != c.says || s.Detail == "" {
+				t.Errorf("says %q, not %q, with %q apart", s.Problem, c.says, s.Detail)
+			}
+		})
+	}
+}
+
+// What a failed download says, from the error the updater really hands
+// back for the build the server sent.
+//
+// On the real disk: a build is downloaded into the cache and unpacked.
+func TestAFailedDownloadSaysInWordsWhatTheServerDid(t *testing.T) {
+	path := "/main-0.3.0-main.4.zip"
+	for _, c := range []struct {
+		name string
+		set  func(*channelServer)
+		says string
+	}{
+		{"not found", func(cs *channelServer) { delete(cs.zips, path) }, "The new build was not found. Try again in a few minutes."},
+		{"changed on the way", func(cs *channelServer) {
+			b := bytes.Clone(cs.zips[path])
+			b[len(b)/2] ^= 0xff
+			cs.zips[path] = b
+		}, "The new build could not be verified, so it was not used."},
+		{"cut short", func(cs *channelServer) { cs.zips[path] = cs.zips[path][:10] }, "The download broke off. Check your internet connection."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			cs := newChannelServer(t)
+			cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"})
+			cs.mu.Lock()
+			c.set(cs)
+			cs.mu.Unlock()
+			u, _ := newTestUpdating(t, cs, false)
+			cleanStaged(t, u)
+			u.mu.Lock()
+			u.state.Picked = "main"
+			u.mu.Unlock()
+			u.check()
+			if s := u.State(); s.Phase != "failed" || s.Problem != c.says || s.Detail == "" {
+				t.Errorf("says %q, not %q, with %q apart", s.Problem, c.says, s.Detail)
+			}
+		})
+	}
+}
+
+// What a check or a download says in words, for the errors no test server
+// can make: what Tim's Mac said, a disk that is full, a build removed from
+// the cache while it came. What the server can do is said in the two tests
+// above, from the errors the updater really makes.
+func TestUpdateProblemInWords(t *testing.T) {
+	offline := "Could not reach GitHub. Check your internet connection."
+	for _, c := range []struct {
+		err         string
+		downloading bool
+		says        string
+	}{
+		// What Tim's Mac said with Wi-Fi off, on 2026-10-20.
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/timmrkz/framefairy/releases/download/dev/channels.json": read tcp 192.168.178.31:54974->20.250.119.67:443: read: can't assign requested address`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": dial tcp: lookup github.com: no such host`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`, false, offline},
+		{`the build could not be downloaded: Get "https://github.com/x": tls: failed to verify certificate: x509: certificate signed by unknown authority`, true, "The download broke off. Check your internet connection."},
+		{"the build of main is not signed with this key", true, "The new build could not be verified, so it was not used."},
+		{"the download stopped: read tcp 10.0.0.2:5000->1.2.3.4:443: connection reset by peer", true, "The download broke off. Check your internet connection."},
+		// Wails' updater, when the disk is full.
+		{"updater: fsync: write /Users/tim/Library/Caches/framefairy/updates/main.zip: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
+		{"the build could not be written to the cache: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
+		{"the build could not be kept in the cache: rename: permission denied", true, "The new build could not be saved."},
+		// The channel was removed while its build came, the disk is fine.
+		{"the build went from the cache as it arrived", true, "The new build could not be downloaded."},
+		{"the build has no address", true, "The new build could not be downloaded."},
+		{"something nobody foresaw", false, "Could not look for a newer build."},
+		{"something nobody foresaw", true, "The new build could not be downloaded."},
+	} {
+		if got := updateProblem(errors.New(c.err), c.downloading); got != c.says {
+			t.Errorf("%s\nsays %q\nnot  %q", c.err, got, c.says)
+		}
 	}
 }
 

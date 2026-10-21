@@ -1326,7 +1326,10 @@ export interface UpdateState {
   checked: string;
   written: number;
   total: number;
+  // What went wrong in a person's words, with what to do, and what the
+  // system said, as it said it, for a report. Issue #417.
   problem: string;
+  detail: string;
 }
 
 export function onUpdates(fn: (u: UpdateState) => void): () => void {

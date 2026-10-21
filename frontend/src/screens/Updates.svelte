@@ -10,7 +10,7 @@
   // the mark on Updates says it is here, and one click relaunches into it.
   // Reached from Updates at the foot of the sidebar and from Check for
   // Updates in the app menu. See docs/UPDATES.md.
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
@@ -52,6 +52,27 @@
     } catch (e) {
       problem = errorText(e);
       updates.ask();
+    }
+  }
+
+  // What the system said copies with one click, so it can go into a
+  // report or a message. The button says it copied in the same frame as
+  // the click, and goes back a moment later, the way the key ID in the
+  // settings does. Issue #417.
+  let copied = $state(false);
+  let copyRefused = $state("");
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(copiedTimer));
+  async function copyDetail(text: string) {
+    copied = true;
+    copyRefused = "";
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 1500);
+    try {
+      await api.copy(text);
+    } catch (e) {
+      copied = false;
+      copyRefused = errorText(e);
     }
   }
 
@@ -121,6 +142,9 @@
   // the mark the sidebar's dot is made from.
   const standing = $derived(standingOf(update, { working, now }));
 
+  // What the system said when a check did not get through.
+  const detail = $derived(update?.phase === "failed" ? update.detail : "");
+
   const looking = $derived(update?.phase === "checking");
   const downloading = $derived(update?.phase === "downloading");
 
@@ -188,7 +212,32 @@
       </div>
 
       <!-- Where things stand, and the one thing to do about it. -->
-      <div class="item">
+      {#snippet act()}
+        {#if update.phase === "ready"}
+          <button
+            class="act primary"
+            onclick={install}
+            disabled={restarting || !!working}
+            title={working ? `Waits until ${working} is done` : "Quits and comes back as the new build"}
+            >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
+          >
+        {:else if !update.off && following}
+          <button
+            class="act"
+            onclick={check}
+            disabled={looking || downloading}
+            title="Look for a newer build of the channel now"
+          >
+            {#if downloading}
+              <Busy fraction={update.total > 0 ? update.written / update.total : -1} />
+            {:else if looking}
+              <Busy />
+            {/if}
+            {downloading ? "Downloading" : looking ? "Checking" : update.phase === "failed" ? "Try again" : "Check"}
+          </button>
+        {/if}
+      {/snippet}
+      <div class="item" class:told={!!detail}>
         <!-- A dot is work, running or waiting to be picked up. Something
              that needs a look is the triangle, the way the settings mark a
              missing key, in the colour of a warning or of a failure. Work
@@ -212,28 +261,30 @@
           <span class="head">{standing.head}</span>
           <span class="muted small selectable">{standing.more}</span>
         </div>
-        {#if update.phase === "ready"}
-          <button
-            class="act primary"
-            onclick={install}
-            disabled={restarting || !!working}
-            title={working ? `Waits until ${working} is done` : "Quits and comes back as the new build"}
-            >{#if restarting}<Busy />{/if}{restarting ? "Relaunching" : "Relaunch"}</button
-          >
-        {:else if !update.off && following}
-          <button
-            class="act"
-            onclick={check}
-            disabled={looking || downloading}
-            title="Look for a newer build of the channel now"
-          >
-            {#if downloading}
-              <Busy fraction={update.total > 0 ? update.written / update.total : -1} />
-            {:else if looking}
-              <Busy />
-            {/if}
-            {downloading ? "Downloading" : looking ? "Checking" : update.phase === "failed" ? "Try again" : "Check"}
-          </button>
+        {#if detail}
+          <!-- What the system said, apart from the words above it, on one
+               line that scrolls sideways, so a long address never wraps
+               the row into a wall of text, and Try again on the same row
+               as it, the way a field and its button sit in the settings.
+               Tim saw it as the reason itself, over three lines, and then
+               the field under the words with Try again beside them both,
+               lined up with neither, issue #417. -->
+          <div class="said">
+            <div class="detail">
+              <code class="selectable" title="What the system said">{detail}</code>
+              <button
+                class="quiet copy"
+                class:copied
+                title={copied ? "Copied" : "Copy what the system said, for a report"}
+                aria-label={copied ? "Copied" : "Copy what the system said"}
+                onclick={() => copyDetail(detail)}><Icon name={copied ? "check" : "copy"} size={14} /></button
+              >
+            </div>
+            {@render act()}
+          </div>
+          {#if copyRefused}<span class="small error refused">{copyRefused}</span>{/if}
+        {:else}
+          {@render act()}
         {/if}
       </div>
     </div>
@@ -282,5 +333,80 @@
 
   .act {
     flex: none;
+  }
+
+  /* A row that says what the system said wraps: the mark and the words
+     on its first line, as in every other row, and under them the field
+     and Try again on a line of their own, starting where the words start,
+     past the mark's 24 px and the row's 12 px gap, both from .card in
+     app.css, which the walk holds them to. */
+  .item.told {
+    flex-wrap: wrap;
+    row-gap: var(--gap);
+  }
+
+  .told > .said,
+  .told > .refused {
+    flex-basis: calc(100% - 24px - 12px);
+    margin-left: calc(24px + 12px);
+  }
+
+  .said {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+    min-width: 0;
+  }
+
+  /* What the system said: a field at the height of every control, its
+     words at one width the way code is, on one line that scrolls, and
+     the button that copies them at its end. */
+  .detail {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    height: var(--control-h);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: var(--ink-2);
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .detail code {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: pre;
+    padding: 0 var(--control-pad);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--size-s);
+    line-height: calc(var(--control-h) - 2px);
+    color: var(--muted);
+    /* No scroll bar: with macOS set to show them always, or a mouse
+       plugged in, WebKit draws one about 15 px high inside the line and
+       pushes the words up. It scrolls with the trackpad, the wheel with
+       Shift and a drag across it, and Copy takes the whole of it. */
+    scrollbar-width: none;
+  }
+
+  .detail code::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Square, the way the trash can is, inside the field's own line. */
+  .detail .copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: calc(var(--control-h) - 2px);
+    height: calc(var(--control-h) - 2px);
+    padding: 0;
+    color: var(--muted);
+  }
+
+  .detail .copy.copied {
+    color: var(--ok);
   }
 </style>
