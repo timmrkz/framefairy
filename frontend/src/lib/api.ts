@@ -670,6 +670,10 @@ export const api = {
   // What the person did, said at once so the Go side's lines for it carry
   // its id, see lib/said.ts.
   acted: (act: { id: string; at: number; what: string; video?: string }) => call<void>("Acted", act),
+  // Runs the screen at a rate that shows a video of fps frames a second
+  // evenly while it plays, and gives the screen back with 0, see
+  // cmd/framefairy-app/match.go.
+  matchScreen: (fps: number) => call<void>("MatchScreen", fps),
   // Writes a report of a problem to the Desktop and shows it in Finder,
   // and gives its path, see screens/Report.svelte. Without a video it
   // names the one last worked on in the app.

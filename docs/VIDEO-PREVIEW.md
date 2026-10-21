@@ -335,8 +335,8 @@ strayed 1.5 ms typically. But the screen was at 60 Hz, so each frame
 of 25 a second stood 2 and 3 refreshes by turns, 33 and 50 ms, and that
 is what Tim saw. His Mac's own screen refreshes 120 times a second.
 WebKit holds a page to about 60 updates a second, to save power on
-websites, where QuickTime uses the whole 120 and stands each frame 40 ms
-give or take 4. So the app lifts that hold for its window as the page
+websites, where QuickTime uses the whole 120. So the app lifts that hold
+for its window as the page
 comes up, `freeRefresh` in `cmd/framefairy-app/refresh.go`, and the log
 says whether it took and what the screen can do. A page asks for an
 update only while something moves, so a still app costs nothing more.
@@ -361,6 +361,31 @@ the page cleaning up memory for about 1.3 s of every 12 s: every frame
 came in a new buffer of 7 MB, 170 MB a second. So the buffers are now
 kept and handed back to the next pull once no frame holds them,
 `lib/frames/pool.ts`, and a play makes no new memory for its frames.
+The third report, with the buffers kept, said the page missed 9.1
+refreshes a minute where it had missed 25.6.
+
+At 120 Hz a frame of 25 a second still stands 4 and 5 refreshes by
+turns, 33 and 42 ms, and so it does in QuickTime and Final Cut on the
+same screen: macOS never changes a screen's rate for a video by itself.
+Apple's advice is to set the screen to a rate that divides evenly by the
+video's, and the screen of a MacBook Pro offers 47.95, 48, 50, 59.94 and
+60 Hz besides its own 120. So while a video plays, the app runs the
+screen at the highest rate it offers that shows the video evenly, 50 Hz
+for 25 or 50 frames a second, where every frame of 25 stands exactly 40
+ms, and gives the screen back when the play stops. A video of 24, 30 or
+60 frames a second is even at 120 already and changes nothing.
+`MatchScreen` in `cmd/framefairy-app/match.go` picks the rate and says in
+the log what the screen offered and what came of it. It asks with
+`kCGConfigureForAppOnly`, so macOS gives the screen back by itself when
+the app quits, crashed or not. Windows and Linux are not matched yet.
+
+The line of a play judges each time between animation frames by the
+refresh on either side of it, so a play that began at 120 Hz and went
+on at 50 counts no refresh as missed, and says both rates. It also says
+how long the picture waited for the sound to start, about 45 ms, which
+every play does on purpose, see `START_LEAD` in `lib/frames/queue.ts`.
+That wait once read as the clock off its line by 23 to 47 ms each play,
+so the line is now fitted from the moment the sound starts.
 
 ## Colour
 

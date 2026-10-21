@@ -45,8 +45,11 @@ export type Spent = Record<Part, { typical: number; most: number; beforeMissed: 
 
 export type Evenness = {
   // The screen's refresh, milliseconds, from the time between two
-  // animation frames, see refreshOf.
+  // animation frames, see refreshOf, as the play ended, and as it began,
+  // which differs when the screen changed its rate for the video, see
+  // MatchScreen in cmd/framefairy-app/match.go.
   refresh: number;
+  firstRefresh: number;
   ticks: number;
   // Animation frames that came a refresh or more late, the refreshes they
   // missed together, and the longest time between two, milliseconds.
@@ -79,7 +82,9 @@ export class Even {
   // before, without a timer's tick between, see behind, each with the
   // place of the later one among the ticks.
   private gaps: { gap: number; i: number }[] = [];
-  private puts: { at: number; due: number }[] = [];
+  // Each frame put up, with the place among the ticks of the animation
+  // frame it went up on.
+  private puts: { at: number; due: number; i: number }[] = [];
   private sources: Record<Source, number> = { stamp: 0, held: 0, plain: 0 };
   private broken = true;
   // The latest times between animation frames, for the refresh now.
@@ -121,7 +126,7 @@ export class Even {
   // A frame put up on the animation frame at, which lasts from due on the
   // program, seconds.
   put(at: number, due: number) {
-    this.puts.push({ at, due });
+    this.puts.push({ at, due, i: this.ticks.length - 1 });
   }
 
   // A tick that was not an animation frame: the app was behind another
@@ -129,7 +134,7 @@ export class Even {
   // since nothing could be seen.
   behind() {
     this.broken = true;
-    this.puts.push({ at: NaN, due: NaN });
+    this.puts.push({ at: NaN, due: NaN, i: this.ticks.length - 1 });
   }
 
   // The screen's refresh as the play goes, milliseconds, from the latest
@@ -142,8 +147,13 @@ export class Even {
     return this.recent.length >= 4 ? refreshOf(this.recent) : 1000 / 60;
   }
 
+  private near(): (i: number) => [number, number] {
+    return nearOf(this.gaps, refreshOf(this.gaps.map((g) => g.gap)));
+  }
+
   get evenness(): Evenness {
-    const refresh = refreshOf(this.gaps.map((g) => g.gap));
+    const near = this.near();
+    const refresh = this.ticks.length ? near(this.ticks.length)[0] : 0;
     let missed = 0;
     let missedRefreshes = 0;
     let longest = 0;
@@ -153,8 +163,9 @@ export class Even {
     const lateOnes: number[] = [];
     for (const { gap, i } of this.gaps) {
       longest = Math.max(longest, gap);
-      const over = Math.round(gap / refresh) - 1;
-      if (refresh > 0 && over >= 1) {
+      const [was, then] = near(i);
+      const over = Math.min(Math.round(gap / was), Math.round(gap / then)) - 1;
+      if (was > 0 && then > 0 && over >= 1) {
         missed++;
         missedRefreshes += over;
         before.push(i - 1);
@@ -167,18 +178,29 @@ export class Even {
     for (let i = 0; i + 1 < this.puts.length; i++) {
       const a = this.puts[i];
       const b = this.puts[i + 1];
-      if (!(refresh > 0) || Number.isNaN(a.at) || Number.isNaN(b.at)) continue;
-      const stood = Math.round((b.at - a.at) / refresh);
-      const lasts = ((b.due - a.due) * 1000) / refresh;
+      if (Number.isNaN(a.at) || Number.isNaN(b.at)) continue;
+      // Each side's refresh, and the one the frame reads as evener by,
+      // since a frame that stood across a change of rate stood some of
+      // each.
+      let stood = 0;
+      let off = Infinity;
+      for (const r of near(b.i)) {
+        if (!(r > 0)) continue;
+        const n = Math.round((b.at - a.at) / r);
+        const d = Math.abs(n - ((b.due - a.due) * 1000) / r);
+        if (d < off) [stood, off] = [n, d];
+      }
+      if (off === Infinity) continue;
       held.set(stood, (held.get(stood) ?? 0) + 1);
       frames++;
-      if (Math.abs(stood - lasts) >= 1 - 1e-6) uneven++;
+      if (off >= 1 - 1e-6) uneven++;
     }
     const first = this.ticks[0]?.pos;
     const moved = Math.max(0, this.ticks.findIndex((k) => k.pos > first));
     const line = straight(this.ticks.slice(moved));
     return {
       refresh,
+      firstRefresh: this.ticks.length ? near(0)[1] : 0,
       ticks: this.ticks.length,
       missed,
       missedRefreshes,
@@ -194,6 +216,34 @@ export class Even {
       spent: spentOf(this.works, before, lateOnes),
     };
   }
+}
+
+// The screen's refresh just before and just after a place among the ticks,
+// from the RECENT times between animation frames on either side of it,
+// each side standing in for the other where it has none. The app may
+// change the screen's rate as a play starts, see MatchScreen in
+// cmd/framefairy-app/match.go, and a gap is a missed refresh only when it
+// is long against both sides: one that is long only against the rate
+// before is the screen's new rate.
+function nearOf(gaps: { gap: number; i: number }[], all: number): (i: number) => [number, number] {
+  const at = (i: number) => {
+    let lo = 0;
+    let hi = gaps.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (gaps[m].i < i) lo = m + 1;
+      else hi = m;
+    }
+    return lo;
+  };
+  return (i) => {
+    const k = at(i);
+    const left = gaps.slice(Math.max(0, k - RECENT), k).map((g) => g.gap);
+    const right = gaps.slice(k + 1, k + 1 + RECENT).map((g) => g.gap);
+    const l = left.length >= 4 ? refreshOf(left) : 0;
+    const r = right.length >= 4 ? refreshOf(right) : 0;
+    return [l || r || all, r || l || all];
+  };
 }
 
 function spentOf(works: (Work | null)[], before: number[], lateOnes: number[]): Spent {
@@ -227,7 +277,7 @@ export function describeEvenness(e: Evenness): string {
     .join(", ");
   const s = e.sources;
   return [
-    `the screen at ${hz} Hz, ${e.refresh.toFixed(1)} ms a refresh`,
+    `the screen at ${hz} Hz, ${e.refresh.toFixed(1)} ms a refresh${Math.abs(e.firstRefresh - e.refresh) > 0.5 ? `, ${Math.round(1000 / e.firstRefresh)} Hz as the play began` : ""}`,
     `${e.missed} animation frames late by ${e.missedRefreshes} refreshes in all, the longest gap ${e.longest.toFixed(1)} ms`,
     `${e.frames} frames stood for so many refreshes: ${held || "none"}`,
     `${e.uneven} frames a refresh longer or shorter than they last`,
