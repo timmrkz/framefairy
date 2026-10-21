@@ -191,7 +191,10 @@ jobs:
   # its test cache on them, so a package a change does not reach says
   # (cached) whatever tests were added elsewhere. Every test runs once,
   # since -skip takes exactly what the two -run leave, fuzz seeds among
-  # it. On one machine the tests took six minutes, and no job takes over
+  # it. The engine's tests whose names start with A are a third of all
+  # the time, so they are split by their second letter. tests names the
+  # patterns, and the cache with them, since a cache made with other
+  # patterns holds no result for these. On one machine the tests took six minutes, and no job takes over
   # five. Split by package, the app with the small packages took 208 s
   # on one machine, in one run, because the app's tests run one after
   # another.
@@ -216,12 +219,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - tests: A-O
-            flags: -run=^Test[A-O]
-          - tests: P-S
-            flags: -run=^Test[P-S]
+          - tests: A-AR+B-O
+            flags: -run=^Test(A[^S-Z]|[B-O])
+          - tests: AS-AZ+P-S
+            flags: -run=^Test(A[S-Z]|[P-S])
           - tests: rest
-            flags: -skip=^Test[A-S]
+            flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
