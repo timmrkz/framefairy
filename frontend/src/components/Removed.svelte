@@ -9,7 +9,8 @@
   // row in the clip list and a picture's tile in a report wear it, so the
   // two look the same. spent is how many seconds of the time had run when
   // it was drawn, and onresume says how many are left when it starts
-  // again.
+  // again. Given together, every Removed of that name tells one time, see
+  // Busy: a search's row and its cards are removed as one.
   //
   // It takes the place of what was removed in one frame and stands still:
   // the fill running down is its one movement. It slid in from the side
@@ -20,12 +21,14 @@
   let {
     spent = 0,
     tile = false,
+    together = "",
     onputback,
     onend,
     onresume,
   }: {
     spent?: number;
     tile?: boolean;
+    together?: string;
     onputback?: () => void;
     onend?: () => void;
     onresume?: (left: number) => void;
@@ -37,7 +40,7 @@
   <span class="what">Removed</span>
   {#if !tile}<span class="grow"></span>{/if}
   <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
-  <Busy drain={secondThoughts} {spent} {onend} {onresume} />
+  <Busy drain={secondThoughts} {spent} {together} {onend} {onresume} />
 </div>
 
 <style>

@@ -84,7 +84,6 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     const rows = arriving([hand, search], never, nothing, {
       remove: (j) => removed.push(j.id),
       away: () => undefined,
-      refused: () => undefined,
     });
     expect(rows.map((r) => [r.key, !!r.onremove])).toEqual([
       ["h/1", true],
@@ -106,22 +105,14 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     ]);
   });
 
-  test("a clip made by hand being removed says so, and one whose work could not be called off says why", () => {
+  test("a clip made by hand being removed says so, and is Stopped as it was once it is not", () => {
     const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
-    const away = { spent: 3, onputback: nothing, onend: nothing, onresume: nothing };
-    const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away, refused: () => undefined });
+    const away = { spent: 3, together: "away h", onputback: nothing, onend: nothing, onresume: nothing };
+    const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away });
     expect(row.away).toBe(away);
-    const [said] = arriving([hand], never, nothing, {
-      remove: nothing,
-      away: () => undefined,
-      refused: () => "Could not remove it: the app did not answer",
-    });
-    expect([said.away, said.what, said.left, said.full]).toEqual([
-      undefined,
-      "Stopped. Click Continue",
-      "Could not remove it: the app did not answer",
-      "Could not remove it: the app did not answer",
-    ]);
+    // Why its work could not be called off is a toast, never its line.
+    const [back] = arriving([hand], never, nothing, { remove: nothing, away: () => undefined });
+    expect([back.away, back.what, back.left]).toEqual([undefined, "Stopped. Click Continue", "15:00"]);
   });
 
   test("done, called off and job without clips on the way have none", () => {

@@ -921,12 +921,9 @@
   const stoppedRow = $derived.by(() => {
     if (!stopped || !search) return null;
     const job = search.id;
-    const why = refused[job];
     return {
       ...stopped,
-      left: why ?? stopped.left,
-      full: why ?? stopped.full,
-      failed: search.state === "failed" && !why,
+      failed: search.state === "failed",
       onremove: () => putAside(job),
       away: awayOf(job),
     };
@@ -959,27 +956,22 @@
       {
         remove: (job) => putAside(job.id),
         away: (job) => awayOf(job.id),
-        refused: (job) => refused[job.id],
       },
     ),
   );
 
   // A clip made by hand that stopped can be removed, so it is not made,
-  // issue #257. Its card says Removed and offers it back for as long as a
-  // removed clip's row does, and only then is the work called off, and
-  // the Go side forgets its record, see cancelSteps. The time is the
+  // issue #257, and so can a search that stopped, issue #431. Its card
+  // says Removed and offers it back for as long as a removed clip's row
+  // does, and only then is the work called off, and the Go side forgets
+  // its record, see cancelSteps. The time is the
   // episode's, kept by the job the way a search's row that found nothing
   // is, see lib/removed.ts: it runs on while another video is open, and
   // work whose time ran out while it was away is called off on coming
   // back. By the job: the moment its time runs out, and 0 once it has.
   let putAway = $state<Told>(untrack(() => takeUpTold(path, Date.now(), "put away")));
-  // Why the work of a card could not be called off, by the job. The card
-  // is Stopped again and says it there, the one place it belongs to.
-  let refused = $state<Record<string, string>>({});
 
   function putAside(job: string) {
-    const { [job]: _, ...rest } = refused;
-    refused = rest;
     putAway = { ...putAway, [job]: Date.now() + secondThoughts * 1000 };
     said(`clip list: the work of ${job} that stopped removed, ${secondThoughts} s to put it back`, { level: "info", video: path });
   }
@@ -991,6 +983,9 @@
       // Once called off, the row has no time left, and stays until the
       // job says it is gone.
       spent: until === 0 ? secondThoughts : toldSpent(until),
+      // A search is removed in its row and in each of its cards on the
+      // way at once, and the hand on any of them holds them all.
+      together: `away ${job}`,
       onputback: () => {
         if (putAway[job] === 0) return;
         const { [job]: _, ...rest } = putAway;
@@ -1011,13 +1006,16 @@
     send(job);
   }
 
+  // Work that could not be called off is as it was, Stopped with
+  // Continue, and why is said whole in a toast, never pressed into its
+  // row or card, where it is cut to a line, issue #431.
   function send(job: string) {
     api.cancelJob(job).catch((err) => {
       const { [job]: _, ...rest } = putAway;
       putAway = rest;
       const why = `Could not remove it: ${errorText(err)}`;
-      refused = { ...refused, [job]: why };
       said(`clip list: the work of ${job} that stopped could not be removed, ${why}`, { level: "warn", video: path });
+      toasts.say(where(), why, { video: path, report: true });
     });
   }
 
@@ -1025,9 +1023,8 @@
   for (const [job, until] of Object.entries(untrack(() => putAway))) if (until === 0) send(job);
 
   // A card whose work was called off goes when its job says so, and what
-  // was kept of its time, or why it could not go, goes with it. So does
-  // one whose job runs again. A job not heard of yet, as the video opens,
-  // keeps its time.
+  // was kept of its time goes with it. So does one whose job runs again.
+  // A job not heard of yet, as the video opens, keeps its time.
   $effect(() => {
     const here = new Set(arrivingNow.filter((a) => a.stopped).map((a) => a.job));
     // The search's own row, which stands while it has no clip on the way.
@@ -1036,8 +1033,6 @@
     untrack(() => {
       const kept = Object.entries(putAway).filter(([job, until]) => here.has(job) || (until !== 0 && !known.has(job)));
       if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
-      const still = Object.entries(refused).filter(([job]) => here.has(job));
-      if (still.length < Object.keys(refused).length) refused = Object.fromEntries(still);
     });
   });
   // Everything that puts the clip list on screen takes a ticket: a read of

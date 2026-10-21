@@ -12103,7 +12103,10 @@ for (const seq of toWalk) {
         break;
       }
       case "remove search": {
-        const row = page.locator("li.next.stopped").first();
+        // The search's own row, the first row still to come. A card on the
+        // way has a key of its own.
+        const lead = "li.next:not([data-key])";
+        const row = page.locator(`${lead}.stopped`).first();
         const path = await episodeOn(page);
         const search = async () => (await ask(page, "Jobs")).filter((j) => j.episode === path && j.kind === "search").pop();
         const job = (await search())?.id;
@@ -12117,16 +12120,9 @@ for (const seq of toWalk) {
         // the clock.
         await fakeClock(page);
         await row.locator("button.drop").click();
-        const removed = await page
-          .locator("li.next .gone", { hasText: "Removed" })
-          .first()
-          .waitFor({ timeout: 2000 })
-          .then(() => true, () => false);
-        if (!removed) {
-          wrong = `the bin on the row "${was}" did not say Removed in its place`;
-          break;
-        }
-        const strip = await removedStrip(page, "li.next:has(.gone)");
+        // Removed takes its place in the frame of the click.
+        await realFrames(page);
+        const strip = await removedStrip(page, `${lead}:has(.gone)`);
         if (strip) {
           wrong = strip;
           break;
@@ -12138,18 +12134,17 @@ for (const seq of toWalk) {
           await settle(page);
           await fromSidebar(page, () => buttons.nth(mine).click());
           await settle(page);
-          const again = await removedStrip(page, "li.next:has(.gone)");
+          const again = await removedStrip(page, `${lead}:has(.gone)`);
           if (again) {
             wrong = `back on the video, ${again}`;
             break;
           }
         }
         if (arg === "put back") {
-          await page.locator("li.next .gone").getByRole("button", { name: "Put it back" }).click();
+          await page.locator(`${lead} .gone`).getByRole("button", { name: "Put it back" }).click();
           await page.mouse.move(5, 5);
-          const back = await page
-            .waitForFunction((w) => document.querySelector("li.next.stopped .title")?.textContent.trim() === w, was, { timeout: 2000 })
-            .then(() => true, () => false);
+          await realFrames(page);
+          const back = (await page.evaluate((lead) => document.querySelector(`${lead}.stopped .title`)?.textContent.trim(), lead)) === was;
           // Past the time a remove runs, so a put back that only hid it
           // would have forgotten the search by now.
           await runClock(page, (removeTime + 1) * 1000);
@@ -12159,15 +12154,14 @@ for (const seq of toWalk) {
           else if (now?.id !== job || now.state === "cancelled") wrong = `put back, the search is ${now?.id} ${now?.state}, not ${job} as it stopped`;
         } else {
           // The time stands still under the hand, see Busy, so the hand
-          // goes off the list, and then it runs out.
+          // goes off the list, and then it runs out. The Go side is asked
+          // to forget the search, and settle waits for its answer.
           await page.mouse.move(5, 5);
           await runClock(page, (removeTime + 1) * 1000);
-          const gone = await page
-            .waitForFunction(() => !document.querySelector("li.next.stopped, li.next .gone"), null, { timeout: 10000 })
-            .then(() => true, () => false);
           await settle(page);
+          const left = await page.evaluate(() => document.querySelectorAll("li.next.stopped, li.next .gone").length);
           const now = await search();
-          if (!gone) wrong = `the row "${was}" is still in the list after its time ran down`;
+          if (left) wrong = `${left} rows or cards of the search are still in the list after its time ran down`;
           else if (now?.state !== "cancelled") wrong = `removed, the search is ${now?.state}, not cancelled`;
         }
         await watch.step("wait", s);

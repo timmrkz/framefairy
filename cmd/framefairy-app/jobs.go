@@ -692,6 +692,7 @@ func (q *queue) settle(episode, kind, record string) {
 	}
 	q.mu.Unlock()
 	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that stopped is settled, nothing says it stopped any more")
 		q.emit(JobUpdate{Job: j})
 	}
 }
@@ -710,6 +711,7 @@ func (q *queue) settleRefused(id string) {
 	}
 	q.mu.Unlock()
 	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that was refused is settled, its row removed")
 		q.emit(JobUpdate{Job: j})
 	}
 }

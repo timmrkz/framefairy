@@ -2367,7 +2367,8 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     range picker at once. The ten seconds are the video's, as a removed
     clip's are: they run on while another video is open, and work whose
     time ran out while it was away is called off on coming back. If the
-    work cannot be called off, the card says Stopped again and says why.
+    work cannot be called off, the card says Stopped again and why is
+    said in a toast, with Report.
     Issue #257. A search's cards have a trash can too, which removes the
     search they came from, its row and every card of it at once, see
     above. Issue #431.

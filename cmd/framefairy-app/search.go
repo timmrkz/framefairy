@@ -6,6 +6,8 @@ import (
 	"math"
 	"path/filepath"
 
+	"github.com/rs/zerolog"
+
 	"framefairy/engine"
 )
 
@@ -262,6 +264,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			continue
 		}
 		if j.State == JobInterrupted || j.State == JobFailed {
+			theLog.jobLine(zerolog.InfoLevel, &j).Str("state", j.State).Msg("the work that stopped is removed, its record forgotten")
 			s.forgetRecord(j.Episode, j.Record)
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true

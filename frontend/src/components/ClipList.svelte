@@ -360,6 +360,7 @@
         {:else if g === 0 && stopped?.away}
           <Removed
             spent={stopped.away.spent}
+            together={stopped.away.together}
             onputback={stopped.away.onputback}
             onend={stopped.away.onend}
             onresume={stopped.away.onresume}
@@ -394,7 +395,13 @@
           <!-- A clip made by hand that stopped, being removed. Its time
                is the episode's, see Episode, so the range picker drops its
                mark at once and leaving the video takes nothing with it. -->
-          <Removed spent={a.away.spent} onputback={a.away.onputback} onend={a.away.onend} onresume={a.away.onresume} />
+          <Removed
+            spent={a.away.spent}
+            together={a.away.together}
+            onputback={a.away.onputback}
+            onend={a.away.onend}
+            onresume={a.away.onresume}
+          />
         {:else if a.stopped}
           <button class="pick carry" title={a.full} onclick={() => a.oncontinue?.()}>
             <span class="title">{a.what}</span>
@@ -404,7 +411,7 @@
             <button
               class="drop quiet danger"
               title={a.byHand ? "Remove this clip, so it is not made" : "Remove this search and the clips it had on the way, so it is not carried on"}
-              aria-label="Remove the clip that stopped at {clock(a.start)}"
+              aria-label={a.byHand ? `Remove the clip that stopped at ${clock(a.start)}` : "Remove the search that stopped"}
               onclick={() => a.onremove?.()}
             >
               <Icon name="trash" />
@@ -547,10 +554,6 @@
     background: var(--ink-3);
   }
 
-  /* What is left of a clip that was taken out: the same row, in its place,
-     saying what happened and offering it back. It slides in from the right
-     the way the clip went, so the eye sees it leave rather than find a gap
-     later. */
   .title {
     font-weight: 600;
     width: 100%;

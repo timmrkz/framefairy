@@ -56,16 +56,22 @@ export type Arriving = {
 
 // A card being removed: how much of its time it has used, in seconds, and
 // what putting it back, its time running out and its time running on
-// again after a pause do.
-export type Away = { spent: number; onputback: () => void; onend: () => void; onresume: (left: number) => void };
+// again after a pause do. together names the work it is removed with, so
+// every card of it and its row hold and run down as one, see Busy.
+export type Away = {
+  spent: number;
+  together?: string;
+  onputback: () => void;
+  onend: () => void;
+  onresume: (left: number) => void;
+};
 
 // What the episode does with work that stopped, a search or a clip made
-// by hand: remove it, say how its removal stands, and why the work could
-// not be called off, said on the card, which is Stopped again.
+// by hand: remove it, and say how its removal stands. Work that could not
+// be called off is Stopped again, and why is a toast.
 export type Hand = {
   remove: (job: Job) => void;
   away: (job: Job) => Away | undefined;
-  refused: (job: Job) => string | undefined;
 };
 
 // arriving is every clip the jobs of an episode have on the way. A job
@@ -88,7 +94,6 @@ export function arriving(
       const key = `${job.id}/${clip.n}`;
       if (stopped) {
         const failed = job.state === "failed";
-        const refused = hand?.refused(job);
         out.push({
           key,
           job: job.id,
@@ -102,12 +107,12 @@ export function arriving(
             : job.step === "stopped"
               ? "Stopped. Click Continue"
               : "Interrupted. Click Continue",
-          left: refused ?? (failed && job.error ? job.error : clock(clip.start)),
+          left: failed && job.error ? job.error : clock(clip.start),
           fraction: -1,
           stopped: true,
-          failed: failed && !refused,
+          failed,
           byHand: job.kind === "clip",
-          full: refused ?? (failed ? job.error : undefined),
+          full: failed ? job.error : undefined,
           oncontinue: () => carryOn(job),
           onremove: hand ? () => hand.remove(job) : undefined,
           away: hand?.away(job),
