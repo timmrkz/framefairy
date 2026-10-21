@@ -359,6 +359,21 @@
 //                      it made: what was written and n pictures, or with
 //                      [n, m] n pictures and m recordings, and the field
 //                      empty after
+//   ["report made", n] the report was made without a press on Report here,
+//                      and is checked the way "report" checks it. With
+//                      [n, text] what it holds as written reads text,
+//                      where * is whatever the speech model heard
+//   ["tab", to]        presses Tab, and the focus is on to, with its ring
+//                      drawn: "Report", "the field" or "picture i", from 1
+//   ["shift tab", to]  the same with Shift+Tab
+//   ["dictating"]      the microphone still listens, its button says Stop
+//   ["report on", on]  Report and Clear can be pressed, or with false are
+//                      off, as they are with nothing to report
+//   ["clear", how]     presses Clear, and the box over the page asks
+//                      first, with the keyboard on Cancel and saying
+//                      that everything goes and Cmd+Z undoes it. "cancel"
+//                      presses Escape, "clear" presses Clear in the box.
+//                      The box is gone after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -395,7 +410,9 @@
 //                      says: "button" presses Stop, "enter" presses Enter
 //                      and "escape" Escape, "escape, then enter" presses
 //                      Escape and Enter right after it, while what was
-//                      said is still being written down, "escape, the
+//                      said is still being written down, "enter, then
+//                      tab and enter" presses Enter, Tab and Enter, the
+//                      two after it while it is written down, "escape, the
 //                      cursor stays" sees the cursor still drawn after the
 //                      words while they are written down, and "ends"
 //                      presses nothing
@@ -2355,6 +2372,127 @@ export const sequences = [
     ],
   },
   {
+    // Issue #404. Tim ends a dictation with Enter and makes the report
+    // with Tab and Enter. Tab from the field went to the first picture,
+    // since macOS tabs past buttons, or with none to nothing he could
+    // see. It goes to Report, then through the pictures and back.
+    name: "Tab from the report's field goes to Report, with pictures and without",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["tab", "Report"],
+      ["tab", "the field"],
+      ["shift tab", "Report"],
+      ["shift tab", "the field"],
+      ["attach", 2],
+      ["write", " Again.", "end"],
+      ["tab", "Report"],
+      ["tab", "picture 1"],
+      ["tab", "picture 2"],
+      ["tab", "the field"],
+      ["shift tab", "picture 2"],
+    ],
+  },
+  {
+    // Issue #404. Tab while dictating stopped it, and Tim wants only Enter,
+    // Escape and the button to end a dictation. Tab does nothing then. A
+    // picture is attached so Tab has somewhere else it could go.
+    name: "Tab while dictating does nothing",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 1],
+      ["dictate", "start"],
+      ["tab", "the field"],
+      ["dictating"],
+      ["dictate", "enter"],
+      ["report reads", "It froze. *"],
+    ],
+  },
+  {
+    // Issue #415. On an empty report Tab still went to Report, lit, with
+    // nothing to send. Report and Clear are off until there is something.
+    name: "Report and Clear are off with nothing to report",
+    steps: [
+      ["bugs"],
+      ["report on", false],
+      ["tab", "the field"],
+      ["write", "x", "end"],
+      ["report on", true],
+      ["press", "ControlOrMeta+A"],
+      ["press", "Backspace"],
+      ["report on", false],
+      ["attach", 1],
+      ["report on", true],
+    ],
+  },
+  {
+    // Issue #415. Tim asked for one button that empties a report that
+    // turned out to be for nothing, after asking, rather than removing
+    // the text and every picture by hand. Then that Cmd+Z brings it all
+    // back and Cmd+Y clears it again.
+    name: "Clear asks first, empties the words and the pictures, and undo brings them back",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 2],
+      ["clear", "cancel"],
+      ["pictures", 2],
+      ["report reads", "It froze."],
+      ["clear", "clear"],
+      ["pictures", 0],
+      ["report on", false],
+      ["undo"],
+      ["report reads", "It froze."],
+      ["pictures", 2],
+      ["redo"],
+      ["report reads", ""],
+      ["pictures", 0],
+      ["undo"],
+      ["pictures", 2],
+      ["close report"],
+      ["bugs"],
+      ["report reads", "It froze."],
+      ["pictures", 2],
+      ["clear", "clear"],
+      ["close report"],
+      ["bugs"],
+      ["report reads", ""],
+      ["pictures", 0],
+    ],
+  },
+  {
+    // Issue #415. Clear's undo lasts only until something else is typed,
+    // attached or removed. Typing after Clear starts a new report, and
+    // Cmd+Z then takes back the typing, never the pictures Clear removed.
+    name: "Typing after Clear ends what Cmd+Z brings back",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 2],
+      ["clear", "clear"],
+      ["write", "x", "end"],
+      ["undo"],
+      ["pictures", 0],
+      ["report reads", ""],
+    ],
+  },
+  {
+    // Issue #404. Tab and Enter straight after Enter, while the last words
+    // are still written down, make the report with every word said in it.
+    // The speech model is slow, so the last words only come with the stop.
+    name: "Tab and Enter right after a dictation make the report with every word said",
+    steps: [
+      ["bugs"],
+      ["write", "It froze.", "end"],
+      ["attach", 1],
+      ["speech", 1500],
+      ["dictate", "enter, then tab and enter"],
+      ["report made", 1, "It froze. *"],
+      ["speech", 0],
+    ],
+  },
+  {
     // Plan row 2.244. Tim asked for one report window at a time: Bugs
     // opens it, Bugs again brings it forward, and once it is closed Bugs
     // opens a new one. Bugs is lit while it is open.
@@ -2418,7 +2556,7 @@ export const sequences = [
       ["status", "A newer build is ready"],
       ["buttons fit", ["Relaunch"]],
       ["bugs"],
-      ["buttons fit", ["Report"]],
+      ["buttons fit", ["Clear", "Report"]],
     ],
   },
   {
@@ -7211,8 +7349,15 @@ for (const seq of toWalk) {
       case "pictures": {
         const n = await page.evaluate(() => document.querySelectorAll("li.tile figure img").length);
         if (n !== arg) wrong = `the report window shows ${n} pictures, not ${arg}`;
-        // Each one is the picture the Go side kept, loaded and shown.
-        const unseen = await page.evaluate(() => [...document.querySelectorAll("li.tile figure img")].filter((i) => !i.complete || i.naturalWidth === 0).length);
+        // Each one is the picture the Go side kept, loaded and shown. One
+        // just put back is told when it has loaded, or failed to.
+        const unseen = await page.evaluate(async () => {
+          const all = [...document.querySelectorAll("li.tile figure img")];
+          await Promise.all(
+            all.filter((i) => !i.complete).map((i) => new Promise((done) => (i.addEventListener("load", done, { once: true }), i.addEventListener("error", done, { once: true })))),
+          );
+          return all.filter((i) => i.naturalWidth === 0).length;
+        });
         if (!wrong && unseen) wrong = `${unseen} of the pictures did not load`;
         break;
       }
@@ -7433,9 +7578,67 @@ for (const seq of toWalk) {
         await letClockGo(page);
         break;
       }
-      case "report": {
+      case "dictating": {
+        const now = await page.locator("button.dictate").getAttribute("aria-label");
+        if (now !== "Stop") wrong = `the microphone button says ${now}, so the dictation stopped`;
+        break;
+      }
+      case "report on": {
+        const off = await page.evaluate(() => [document.querySelector("button.report").disabled, document.querySelector("button.clear").disabled]);
+        if (off[0] === arg) wrong = `Report is ${arg ? "off" : "on"} with ${arg ? "something" : "nothing"} to report`;
+        else if (off[1] === arg) wrong = `Clear is ${arg ? "off" : "on"} with ${arg ? "something" : "nothing"} to report`;
+        break;
+      }
+      case "clear": {
+        await page.locator("button.clear").click();
+        await page.locator("dialog[open]").waitFor();
+        const box = await page.evaluate(() => ({
+          title: document.querySelector("dialog[open] h2")?.textContent.trim(),
+          says: document.querySelector("dialog[open] .body")?.textContent.trim(),
+          focused: document.activeElement?.textContent.trim(),
+        }));
+        if (box.title !== "Clear the report?") wrong = `Clear asked ${JSON.stringify(box.title)}`;
+        else if (box.focused !== "Cancel") wrong = `the box opened with the keyboard on ${box.focused}, not Cancel`;
+        else if (box.says !== "Everything you wrote and attached will be deleted. You can undo it with Cmd+Z.") wrong = `the box says ${JSON.stringify(box.says)}`;
+        if (wrong) break;
+        if (arg === "cancel") await page.keyboard.press("Escape");
+        else await page.locator("dialog[open] button.danger").click();
+        await page.locator("dialog[open]").waitFor({ state: "detached" });
+        if (arg === "clear") {
+          // The pictures go at once, without the moment a removed one stays.
+          const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
+          if (left[0] || left[1]) wrong = `after Clear the field holds "${left[0]}" and ${left[1]} pictures`;
+        }
+        break;
+      }
+      case "tab":
+      case "shift tab": {
+        await page.keyboard.press(what === "tab" ? "Tab" : "Shift+Tab");
+        const on = await page.evaluate(() => {
+          const e = document.activeElement;
+          const tiles = [...document.querySelectorAll("li.tile")];
+          const box = e?.getBoundingClientRect();
+          return {
+            name: e?.classList.contains("telling")
+              ? "the field"
+              : e?.classList.contains("report")
+                ? "Report"
+                : tiles.some((t) => t.contains(e))
+                  ? `picture ${tiles.findIndex((t) => t.contains(e)) + 1}`
+                  : (e?.outerHTML.slice(0, 80) ?? "nothing"),
+            ring: !!e?.matches(":focus-visible"),
+            seen: !!box && box.width > 0 && box.height > 0,
+          };
+        });
+        if (on.name !== arg) wrong = `${what === "tab" ? "Tab" : "Shift+Tab"} put the focus on ${on.name}, not ${arg}`;
+        else if (!on.ring || !on.seen) wrong = `the focus is on ${arg} with no ring to see it by`;
+        break;
+      }
+      case "report":
+      case "report made": {
+        const [want, also] = what === "report" ? [arg] : [arg].flat();
         const written = await page.evaluate(() => document.querySelector(".telling").innerText.trim());
-        await page.locator("button.report").click();
+        if (what === "report") await page.locator("button.report").click();
         // Report closes the window once Finder has the zip, and says
         // nothing beside the buttons on the way. Tim had a line there.
         const closed = await (async () => {
@@ -7455,12 +7658,22 @@ for (const seq of toWalk) {
           break;
         }
         const names = await (await fetch(new URL("/report-made", url))).json();
-        const [want, films = 0] = [arg].flat();
+        const [pics, films = 0] = [want].flat();
         const pictures = names.filter((n) => /\/pictures\/\d+\.png$/.test(n)).length;
         const recordings = names.filter((n) => /\/recordings\/\d+\.(mov|mp4|m4v|webm|mkv)$/.test(n)).length;
-        if (pictures !== want) wrong = `the report holds ${pictures} pictures, not ${want}: ${names.join(", ")}`;
+        if (pictures !== pics) wrong = `the report holds ${pictures} pictures, not ${pics}: ${names.join(", ")}`;
         else if (recordings !== films) wrong = `the report holds ${recordings} recordings, not ${films}: ${names.join(", ")}`;
         else if (written && !names.some((n) => n.endsWith("what-happened.txt"))) wrong = "the report holds nothing of what was written";
+        if (!wrong && typeof also === "string") {
+          const have = (await (await fetch(new URL("/report-made?file=what-happened.txt", url))).json()).trim();
+          const like = new RegExp(
+            `^${also
+              .split("*")
+              .map((p) => p.replace(/[.?+^$()[\]{}|\\]/g, "\\$&"))
+              .join("\\S.*\\S")}$`,
+          );
+          if (!like.test(have)) wrong = `the report holds ${JSON.stringify(have)} as written, not ${JSON.stringify(also)}`;
+        }
         // The window closes while the call is still on its way back, and the
         // page empties the field once it is, so a busy runner can read the
         // field a moment before. Given a second for that.
@@ -7783,6 +7996,12 @@ for (const seq of toWalk) {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
+          if (arg === "enter, then tab and enter") {
+            const writing = await button.getAttribute("aria-label");
+            await page.keyboard.press("Tab");
+            await page.keyboard.press("Enter");
+            if (writing !== "Writing") wrong = `the button says ${writing} right after Enter, not Writing, so Tab and Enter came after the words were written`;
+          }
           // While the last words are written down, the cursor is still
           // drawn after them, where they end.
           if (arg === "escape, the cursor stays") {

@@ -1,7 +1,7 @@
 <script lang="ts">
   // Asks before something that cannot be taken back. A real modal, because
   // a click that throws work away has to be a click you meant.
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import { shell } from "../lib/state.svelte";
 
   let {
@@ -21,10 +21,11 @@
   let panel: HTMLDialogElement;
 
   // While the box is open, nothing dropped on the app is added, see
-  // App.svelte.
+  // App.svelte. Untracked, since an effect that reads what it writes runs
+  // again on its own write, a thousand times, until Svelte throws.
   $effect(() => {
-    shell.asking++;
-    return () => shell.asking--;
+    untrack(() => shell.asking++);
+    return () => untrack(() => shell.asking--);
   });
 
   $effect(() => {

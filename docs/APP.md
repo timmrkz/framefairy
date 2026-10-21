@@ -3136,6 +3136,28 @@ beside **Report** says how the page works and what goes in a report.
 Tim found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
+**Clear**, then **Report**, the buttons of words on the right as the
+buttons of icons are on the left, issue #415. Clear empties the report,
+what was written and every picture and recording. It asks first in the
+box over the page, "Everything you wrote and attached will be deleted.
+You can undo it with Cmd+Z." Cmd+Z then brings it all back and Cmd+Y
+clears it again, as Tim asked, until something else is typed, attached
+or removed, or the window is closed. The words go as one step of the field's own undo and the
+pictures follow it, removed on the Go side the way the bin removes one,
+so the app's copies go at the next start or the next report. Report and
+Clear are off while there is nothing to report, no words and no
+pictures.
+
+Tab goes from the field to Report, then through the pictures and back
+to the field, and Shift+Tab the other way, issue #404, so Enter, Tab and
+Enter end a dictation and make the report. The page moves the focus
+itself: macOS tabs past buttons unless full keyboard access is on, so
+Tab went from the field to the first picture, or with none to nothing
+Tim could see. Report pressed while the last words of a dictation are
+still written down says Making at once and waits for them, so they are
+in the report. While dictating Tab does nothing: only Enter, Escape and
+the microphone end a dictation, as Tim asked.
+
 The pictures are for screenshots and screen recordings. They come from
 the paperclip's open box, from a drop anywhere on the window, or from a
 paste into the field. Ten at most and 10 MB each. A picture is PNG or

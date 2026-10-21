@@ -4,8 +4,7 @@
   import Landing from "../components/Landing.svelte";
   import Report from "./Report.svelte";
   import Toasts from "../components/Toasts.svelte";
-  import { api, onUndo } from "../lib/api";
-  import { typing } from "../lib/keys";
+  import { api } from "../lib/api";
   import { titleBar } from "../lib/chrome.svelte";
   import { wearColour } from "../lib/colour";
 
@@ -19,14 +18,10 @@
       .then((s) => wearColour(s.appColour))
       .catch(() => {});
     document.documentElement.toggleAttribute("data-file-drop-target", true);
-    // Undo and Redo in the Edit menu go to the field being typed in, as
-    // on every page with no workspace, or Cmd+Z in it would do nothing.
-    const noUndo = onUndo((what) => {
-      if (typing()) document.execCommand(what);
-    });
+    // Undo and Redo in the Edit menu are the page's, see Report.svelte,
+    // since they also bring back what Clear took.
     const noChrome = titleBar.follow("report");
     return () => {
-      noUndo();
       noChrome();
     };
   });

@@ -689,6 +689,7 @@ export const api = {
   attachPasted: (name: string, data: string) => call<ReportDraft>("AttachPasted", name, data),
   removePicture: (id: string) => call<ReportDraft>("RemovePicture", id),
   putBackPicture: (id: string) => call<ReportDraft>("PutBackPicture", id),
+  clearReport: () => call<ReportDraft>("ClearReport"),
   // Starts recording what the person says for a report and gives the
   // recording's number. What is said is written down while it is said,
   // see onDictation, and stopping gives every piece of it. Cancelling

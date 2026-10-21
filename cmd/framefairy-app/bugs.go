@@ -401,6 +401,31 @@ func (s *FrameFairy) PutBackPicture(id string) ReportDraft {
 	return s.markPicture(id, false)
 }
 
+// ClearReport empties the draft, what was written and every picture and
+// recording, once Clear has asked first. The pictures are removed the way
+// the bin removes one, so Cmd+Z in the window puts them back with
+// PutBackPicture, and the app's copies go at the next start or the next
+// report. Never the files they were handed over from. Issue #415.
+func (s *FrameFairy) ClearReport() ReportDraft {
+	if s.report == nil {
+		return ReportDraft{Pictures: []ReportPicture{}}
+	}
+	r := s.report
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.load()
+	n := r.count()
+	for i := range r.draft.Pictures {
+		r.draft.Pictures[i].Removed = true
+	}
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", utf8.RuneCountInString(r.draft.Text)).Int("pictures", n).Msg("the report was cleared")
+	r.draft.Text = ""
+	if err := r.keep(); err != nil {
+		return r.shown(sentence(err.Error()))
+	}
+	return r.shown("")
+}
+
 func (s *FrameFairy) markPicture(id string, removed bool) ReportDraft {
 	if s.report == nil {
 		return ReportDraft{Pictures: []ReportPicture{}}
@@ -702,7 +727,7 @@ func (r *reporting) load() {
 	d.Pictures = kept
 	r.draft = d
 	if d.Text != "" || len(kept) > 0 {
-		theLog.line(zerolog.InfoLevel, "report").Int("characters", len(d.Text)).Int("pictures", len(kept)).Msg("a draft of a report was kept from before")
+		theLog.line(zerolog.InfoLevel, "report").Int("characters", utf8.RuneCountInString(d.Text)).Int("pictures", len(kept)).Msg("a draft of a report was kept from before")
 	}
 }
 

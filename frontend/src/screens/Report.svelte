@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import {
     api,
     clock,
@@ -7,15 +7,20 @@
     onLoudness,
     onReportAbout,
     onReportDraft,
+    onUndo,
     type ReportDraft,
     type ReportPicture,
   } from "../lib/api";
+  import { asking, typing } from "../lib/keys";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
+  import Confirm from "../components/Confirm.svelte";
   import { toasts } from "../lib/toast.svelte";
+  // A line in the app's log. said is the words being dictated here.
+  import { said as log } from "../lib/said";
 
   // Report a Problem, in the window Bugs in the sidebar opens: what the
   // person says happened, the pictures they attach, and one button that
@@ -46,8 +51,13 @@
   // and keeps what was said. The Go side records and writes down, see
   // listen.go.
   let field: HTMLDivElement;
+  let report: HTMLButtonElement;
   let listening = $state(false);
   let hearing = $state(false);
+  // The last words of a dictation being written down, which Report
+  // waits for, so Tab and Enter right after Enter make a report with
+  // them in it, issue #404.
+  let writing: Promise<void> = Promise.resolve();
   // The recording in hand, how many of its pieces are in the field, and
   // how many times words being heard were settled here by a click.
   let recording = 0;
@@ -120,6 +130,101 @@
   });
   const order = (id: string) => Number(id.slice(1)) || 0;
 
+  // Whether there is nothing to report: no words and no pictures. Report
+  // and Clear are off then, issue #415. Words still being written down
+  // after a dictation may be on their way, so Report waits for them
+  // rather than being off.
+  const nothing = $derived(!what.trim() && pictures.length === 0 && !hearing);
+
+  // Clear empties the report, the words and every picture, once the box
+  // over the page has asked, issue #415. A report that turned out to be
+  // for nothing had to be emptied by hand, a picture at a time.
+  let clearing = $state(false);
+  // What the last Clear took, while Cmd+Z can still bring it back and
+  // Cmd+Y take it again, as Tim asked: whether it took words, the
+  // pictures, and whether it is undone now. The words go as one step of
+  // the field's own undo, so the field's Cmd+Z brings them back, and the
+  // pictures follow that step. Anything done after it, a letter typed or
+  // a picture added or removed, ends it, as in any editor.
+  let cleared: { text: boolean; pics: ReportPicture[]; undone: boolean } | null = null;
+  // An edit of the field that Clear or its undo makes, which ends nothing.
+  let quiet = false;
+  const unclear = () => (cleared = null);
+
+  async function clearAll() {
+    clearing = false;
+    log("report: cleared", { level: "info" });
+    // The box lets go of the focus as it closes, and the field can only
+    // take it, and its undo the words, once it has.
+    await tick();
+    const pics = [...pictures];
+    removed = {};
+    pictures = [];
+    field.focus({ preventScroll: true });
+    let text = false;
+    if (field.textContent) {
+      getSelection()?.selectAllChildren(field);
+      quiet = true;
+      text = document.execCommand("delete");
+      quiet = false;
+      // Where the field's own undo is not to be had, the words go anyway.
+      if (field.textContent) field.textContent = "";
+    }
+    what = "";
+    // A save still to come would bring the words back.
+    if (saving) clearTimeout(saving);
+    saving = null;
+    cleared = { text, pics, undone: false };
+    try {
+      took(await api.clearReport());
+    } catch (e) {
+      oops(sentence(e));
+    }
+  }
+
+  // Undo and Redo in the Edit menu. After Clear they bring everything
+  // back and clear it again. Otherwise they go to the field, as on every
+  // page with no workspace, or Cmd+Z in it would do nothing.
+  async function undo(how: "undo" | "redo") {
+    if (asking()) return;
+    const c = cleared;
+    if (!c || c.undone !== (how === "redo")) {
+      if (typing()) document.execCommand(how);
+      return;
+    }
+    c.undone = how === "undo";
+    log(`report: ${how === "undo" ? "Undo brings back" : "Redo clears again"} the words and ${c.pics.length} pictures`, { level: "info" });
+    field.focus({ preventScroll: true });
+    if (c.text) {
+      quiet = true;
+      document.execCommand(how);
+      quiet = false;
+    }
+    read();
+    if (how === "redo") {
+      if (saving) clearTimeout(saving);
+      saving = null;
+      pictures = pictures.filter((p) => !c.pics.some((q) => q.id === p.id));
+      try {
+        took(await api.clearReport());
+      } catch (e) {
+        oops(sentence(e));
+      }
+      return;
+    }
+    pictures = [...pictures, ...c.pics].sort((a, b) => order(a.id) - order(b.id));
+    let last: ReportDraft | null = null;
+    for (const p of c.pics) {
+      try {
+        last = await api.putBackPicture(p.id);
+      } catch (e) {
+        oops(sentence(e));
+      }
+    }
+    if (last) took(last);
+  }
+  onMount(() => onUndo(undo));
+
   // took shows what the Go side says the draft holds now, with why a
   // picture was left out.
   function took(d: ReportDraft) {
@@ -130,11 +235,13 @@
 
   // A drop says what came of it on its own.
   function dropped(d: ReportDraft) {
+    unclear();
     took(d);
   }
 
   async function attach() {
     if (attaching) return;
+    unclear();
     attaching = true;
     try {
       took(await api.attachPictures());
@@ -146,6 +253,7 @@
   }
 
   function removePicture(p: ReportPicture) {
+    unclear();
     removed[p.id] = { picture: p };
     pictures = pictures.filter((q) => q.id !== p.id);
     api.removePicture(p.id).then(took, (e) => oops(sentence(e)));
@@ -157,6 +265,7 @@
   function putBack(id: string) {
     const r = removed[id];
     if (!r) return;
+    unclear();
     pictures = [...pictures, r.picture];
     delete removed[id];
     const again = () => {
@@ -181,6 +290,7 @@
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (files.length === 0) return;
     e.preventDefault();
+    unclear();
     for (const f of files) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -421,6 +531,7 @@
   // after it, at once rather than when something more is heard, which
   // may be never once the person stops talking.
   function typed() {
+    if (!quiet) unclear();
     if (listening && said && mark && field.contains(said)) space(mark.textContent!.trim());
     read();
   }
@@ -616,6 +727,7 @@
   async function dictate() {
     if (hearing) return;
     if (listening) return keep();
+    unclear();
     note = "";
     unheard = "";
     listening = true;
@@ -643,6 +755,8 @@
     chime("off");
     loud = 0;
     hearing = true;
+    let written = () => {};
+    writing = new Promise((done) => (written = done));
     try {
       // It may have stopped by itself just before, and then says why.
       const d = await api.stopListening();
@@ -655,6 +769,7 @@
     } finally {
       finish(true);
       hearing = false;
+      written();
     }
   }
 
@@ -662,6 +777,7 @@
   // Removing it is Cmd+Z after, one step, and Cmd+Shift+Z brings it back,
   // so no key throws a report away for good.
   function key(e: KeyboardEvent) {
+    if (e.key === "Tab" && !e.isComposing && !e.altKey && !e.metaKey && !e.ctrlKey) return void tab(e);
     if (!listening) return;
     if (e.key === "Enter" && !e.isComposing && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
@@ -671,6 +787,30 @@
       e.stopPropagation();
       keep();
     }
+  }
+
+  // Tab goes from the field to Report, then through the pictures and
+  // back to the field, and Shift+Tab the other way, issue #404. Tim ends
+  // a dictation with Enter and makes the report with Tab and Enter. macOS
+  // only tabs between buttons when full keyboard access is on, so WebKit
+  // passed over Report to the first picture, or with none to nothing on
+  // the page. The page moves the focus itself, as Confirm.svelte does.
+  // While dictating Tab does nothing: only Enter, Escape and the button
+  // end a dictation, as Tim asked.
+  const stops = () => [field, report, ...document.querySelectorAll<HTMLElement>(".pictures figure, .pictures button.back")];
+  const named = (e: Element | null) => (e === field ? "the field" : e === report ? "Report" : (e?.getAttribute("aria-label") ?? e?.textContent?.trim() ?? "nothing"));
+  function tab(e: KeyboardEvent) {
+    const here = document.activeElement as HTMLElement | null;
+    if (listening) {
+      e.preventDefault();
+      return;
+    }
+    if (!here || !stops().includes(here)) return;
+    e.preventDefault();
+    const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled);
+    const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length];
+    next.focus();
+    if (next !== here) log(`report: ${e.shiftKey ? "Shift+Tab" : "Tab"} moved the focus from ${named(here)} to ${named(next)}`);
   }
 
   // A recording is not left running behind another page.
@@ -702,6 +842,8 @@
     // after what is written, a line apart, and are kept like typing.
     const noAbout = onReportAbout((text) => {
       if (!text) return;
+      // Words written in end what Cmd+Z could bring back after Clear.
+      unclear();
       const was = what.replace(/\s+$/, "");
       field.innerText = was ? `${was}\n\n${text}` : text;
       read();
@@ -720,6 +862,16 @@
     if (making) return;
     making = true;
     note = "";
+    // Pressed while the last words of a dictation are written down, it
+    // shows it is making the report at once and waits for them, so they
+    // are in it, issue #404.
+    if (hearing) log("report: Report waits for the last words of the dictation", { level: "info" });
+    await writing;
+    // Nothing was said after all, so there is nothing to report.
+    if (!what.trim() && pictures.length === 0) {
+      making = false;
+      return;
+    }
     // Nothing is kept from here: the Go side lets go of the draft and
     // closes the window, which would otherwise keep the text again as it
     // went.
@@ -789,7 +941,7 @@
         data-loud={loud}
         aria-label={listening ? "Stop" : hearing ? "Writing" : "Dictate"}
         title={listening
-          ? "Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z takes it back"
+          ? "Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z undoes it"
           : hearing
             ? "Writing down what you said"
             : "Dictate. Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
@@ -825,16 +977,27 @@
            before it is made. -->
       <span class="ask always">
         <Info label="How a report works" side="right">
-          Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z takes it back. Attach
+          Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach
           screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
           to ten of 10 MB each.
-          What you write and attach stays here when you close the window. Report saves one zip file on the Desktop,
+          What you write and attach stays here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the Desktop,
           shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what
           else their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
-      <button class="act primary report" onclick={make} disabled={making || listening || hearing || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
+      <!-- Clear and then Report, the buttons of words on the right as the
+           buttons of icons are on the left, as Tim asked. Clear asks
+           first and Cmd+Z undoes it, so a slip of the hand costs nothing. -->
+      <button
+        class="act danger clear"
+        onclick={() => (clearing = true)}
+        disabled={nothing || making || listening || hearing || attaching}
+        title="Empties this report, what you wrote and everything attached, after asking"
+      >
+        Clear
+      </button>
+      <button bind:this={report} class="act primary report" onclick={make} disabled={nothing || making || listening || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
       </button>
@@ -877,6 +1040,15 @@
       {/each}
     </ul>
     </div>
+  {/if}
+  {#if clearing}
+    <Confirm title="Clear the report?" oncancel={() => (clearing = false)}>
+      <p>Everything you wrote and attached will be deleted. You can undo it with Cmd+Z.</p>
+      {#snippet actions()}
+        <button onclick={() => (clearing = false)}>Cancel</button>
+        <button class="danger" onclick={clearAll}>Clear</button>
+      {/snippet}
+    </Confirm>
   {/if}
 </section>
 

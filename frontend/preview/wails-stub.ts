@@ -946,6 +946,11 @@ const Answers = {
         reportDraft.pictures = reportDraft.pictures.filter((p) => p.id !== args[0]);
         reportGone.add(String(args[0]));
         return Promise.resolve(draftStub());
+      case "ClearReport":
+        reportDraft.text = "";
+        reportDraft.pictures = [];
+        reportGone.clear();
+        return Promise.resolve(draftStub());
       case "PutBackPicture":
         reportGone.delete(String(args[0]));
         reportDraft.pictures.push({ id: String(args[0]), name: `${args[0]}.png`, width: 1728, height: 1117 });
