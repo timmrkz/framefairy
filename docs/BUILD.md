@@ -83,7 +83,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface`, `walks` and `lint` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITPACKAGES` names the packages instead and `UNITFLAGS` adds flags for go test, like `-run`, which is how CI spreads the tests over machines |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds flags for go test, like `-run`, which is how CI spreads the tests over machines |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
@@ -307,7 +307,7 @@ them a pull request needs, see [What runs for a change](#what-runs-for-a-change)
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
-| `linux (engine A to S)`, `linux (engine, the rest)`, `linux (all but the engine)` | Linux | `make unit` under the race detector, by package: the engine's tests on two machines, `-run '^Test[A-S]'` on one and `-skip '^Test[A-S]'` on the other, and every other package on the third. On one machine they took six minutes |
+| `linux (A-O)`, `linux (P-S)`, `linux (rest)` | Linux | `make unit` under the race detector, with `UNITFLAGS` of `-run=^Test[A-O]`, `-run=^Test[P-S]` and `-skip=^Test[A-S]`, every package on each. On one machine they took six minutes |
 | `walks (1/4)` to `walks (4/4)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/4` to `4/4`, a quarter of the runs each by how long they took last. On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
@@ -342,14 +342,15 @@ Run together the answer comes when the slowest one does, and no job may
 take over five minutes, see Keeping the tests quick in CLAUDE.md. A job
 that grows past it is split over machines, the way `linux` is.
 
-The Go tests are split by package, never by a list of test names, because
-Go keys its test cache on `-run`: with one list for the whole module, a
-test added anywhere made every package miss the cache on every machine.
-Now a package says `(cached)` unless the change reaches it. The engine
-alone is too long for one machine, so it is split by the first letter of
-its test names, a pattern that does not change when a test is added.
-`-skip` with the same pattern takes exactly what `-run` leaves, so every
-test runs once.
+The Go tests are split by patterns that never change, never by a list of
+test names, because Go keys its test cache on `-run`: with one list for
+the whole module, a test added anywhere made every package miss the cache
+on every machine. Now a package says `(cached)` unless the change reaches
+it. `-skip` takes exactly what the two `-run` leave, so every test runs
+once, the fuzz seeds among them. Split by package instead, the app's
+tests with the small packages took 208 s on one machine, in one run,
+because the app's tests run one after another, while the engine's run
+side by side.
 
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a

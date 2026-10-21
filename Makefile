@@ -425,9 +425,8 @@ test: unit fuzz interface walks lint
 #
 # UNITSKIP names packages to leave out. The Mac leaves out the licence
 # server's, which runs on a Linux server and never on a customer's Mac.
-# UNITPACKAGES names the packages instead, and UNITFLAGS adds to what go
-# test is given, like -run or -skip. CI spreads the tests over machines
-# with them, see the job linux in ci.yml.
+# UNITFLAGS adds to what go test is given, like -run or -skip, which is
+# how CI spreads the tests over machines, see the job linux in ci.yml.
 RACE ?= -race
 UNITSKIP ?=
 UNITFLAGS ?=

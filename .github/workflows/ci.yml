@@ -186,12 +186,15 @@ jobs:
   # of every fuzz target. ffmpeg is here because the tests that render skip
   # without it, and they are worth having.
   #
-  # On three machines, by package, so Go's test cache keeps the result of
-  # every package a change does not reach: the engine's tests on two, by
-  # the first letter of their names, and every other package on the third.
-  # Every test runs once, because -skip takes exactly what -run leaves.
-  # The patterns never change, since Go keys the cache on them. On one
-  # machine the tests took six minutes, and no job takes over five.
+  # On three machines, each with the tests of every package whose names
+  # start with some letters. The patterns never change, because Go keys
+  # its test cache on them, so a package a change does not reach says
+  # (cached) whatever tests were added elsewhere. Every test runs once,
+  # since -skip takes exactly what the two -run leave, fuzz seeds among
+  # it. On one machine the tests took six minutes, and no job takes over
+  # five. Split by package, the app with the small packages took 208 s
+  # on one machine, in one run, because the app's tests run one after
+  # another.
   #
   # Go's build cache: setup-go keeps it by go.sum alone and saves it only
   # when go.sum changes, so a job started from one that was weeks old and
@@ -199,7 +202,8 @@ jobs:
   # Mac. The jobs that compile most, linux, walks and macos, take theirs
   # from the cache main saved last, one for each job, because each
   # compiles with other flags, and one for each machine of linux, since
-  # each tests other packages. Main saves it after every push. A pull
+  # each keeps the results of other tests. Main saves it after every
+  # push. A pull
   # request saves one only when it found none, before main has saved one
   # or after GitHub dropped it, so its next push starts warm. Otherwise it
   # saves nothing: a cache a pull request writes is its own, and the
@@ -207,17 +211,17 @@ jobs:
   linux:
     needs: changes
     if: needs.changes.outputs.go == 'true'
-    name: linux (${{ matrix.shard }})
+    name: linux (${{ matrix.tests }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: engine A to S
-            unit: UNITPACKAGES=./engine UNITFLAGS='-run=^Test[A-S]'
-          - shard: engine, the rest
-            unit: UNITPACKAGES=./engine UNITFLAGS='-skip=^Test[A-S]'
-          - shard: all but the engine
-            unit: UNITSKIP=framefairy/engine
+          - tests: A-O
+            flags: -run=^Test[A-O]
+          - tests: P-S
+            flags: -run=^Test[P-S]
+          - tests: rest
+            flags: -skip=^Test[A-S]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -235,8 +239,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ strategy.job-index }}-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ strategy.job-index }}-${{ runner.os }}-
+          key: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -275,7 +279,7 @@ jobs:
       - name: Go tests
         timeout-minutes: 15
         run: |
-          make unit ${{ matrix.unit }} 2>&1 | tee unit.log
+          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -290,7 +294,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ strategy.job-index }}-${{ runner.os }}-${{ github.sha }}
+          key: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
