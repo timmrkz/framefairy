@@ -9,32 +9,43 @@
 # some-with-excludes: a file counts when it matches '**' and no pattern
 # after a '!'.
 #
-# scripts/ci-filters-test.sh checks it with the action itself.
+# scripts/ci-filters-test.sh checks it, and reads it line by line: a
+# name and a colon, then one quoted pattern to a line.
 
 # The jobs build, walks and outside: the app as a whole. Never a reason
-# to start a job: the docs, and the rules that no job runs but their own
-# check, which the job build runs whatever changed.
+# to start a job, in every filter below: the docs, and the rules that no
+# job runs but their own check, which the job build runs whatever
+# changed.
 app:
   - '**'
-  - &docs
-    - '!docs/**'
-    - '!**/*.md'
-    - '!LICENSE'
-    - '!.vscode/**'
-    - '!.claude/**'
-    - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!docs/**'
+  - '!**/*.md'
+  - '!LICENSE'
+  - '!.vscode/**'
+  - '!.claude/**'
+  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
 
 # The jobs linux, fuzz and macos: the Go tests. No Go test builds the
 # interface, so only the files of it a Go test reads count, like api.ts.
 go:
   - '**'
-  - *docs
+  - '!docs/**'
+  - '!**/*.md'
+  - '!LICENSE'
+  - '!.vscode/**'
+  - '!.claude/**'
+  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
   - '!frontend/**/!(api.ts|*.cases.json)'
 
 # The job interface, which needs Node and nothing of Go.
 interface:
   - '**'
-  - *docs
+  - '!docs/**'
+  - '!**/*.md'
+  - '!LICENSE'
+  - '!.vscode/**'
+  - '!.claude/**'
+  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
   - '!**/*.go'
   - '!go.{mod,sum}'
 

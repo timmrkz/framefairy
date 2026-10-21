@@ -5,50 +5,49 @@
 #
 #   sh scripts/ci-filters-test.sh
 #
-# It runs dorny/paths-filter itself, the commit ci.yml pins, with the
-# quantifier ci.yml gives it, on the changes staged in a repository of its
-# own. The action is fetched into .build/ the first time, so that run
-# needs the network.
+# It matches the way dorny/paths-filter v4.0.3 does, with picomatch from
+# the interface's packages, so it needs no network. The lines mirrored
+# from the action's src/filter.ts: 15 (picomatch with dot), 133 to 148
+# (some-with-excludes: a negated pattern that excludes the file ends it,
+# else any other pattern that matches takes it) and 199 to 212 (each
+# pattern its own matcher, negated when picomatch says so). The filters
+# are listed in the order of the file, as the action's changes output is.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-ci=$root/.github/workflows/ci.yml
-pin=$(sed -n 's/.*dorny\/paths-filter@\([0-9a-f]*\).*/\1/p' "$ci" | head -n 1)
-quantifier=$(sed -n 's/.*predicate-quantifier: *//p' "$ci" | head -n 1)
-action=$root/.build/paths-filter/$pin
-if [ ! -f "$action/dist/index.js" ]; then
-	rm -rf "$action" && mkdir -p "$action"
-	git -C "$action" init -q
-	git -C "$action" fetch -q --depth 1 https://github.com/dorny/paths-filter "$pin"
-	git -C "$action" checkout -q FETCH_HEAD
-fi
-
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-work=$tmp/repo
-git init -q "$work"
-git -C "$work" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
+[ -f "$root/frontend/node_modules/picomatch/package.json" ] ||
+	make -s --no-print-directory -C "$root" frontend/node_modules/.package-lock.json >&2
 fail=0
 
 # check FILES WANT: changing FILES starts the filters in WANT and no other.
 check() {
-	git -C "$work" reset -q --hard
-	for f in $1; do
-		mkdir -p "$work/$(dirname "$f")"
-		echo changed >"$work/$f"
-	done
-	git -C "$work" add -A
-	: >"$tmp/out"
-	env GITHUB_OUTPUT="$tmp/out" INPUT_FILTERS="$root/.github/ci-filters.yml" \
-		INPUT_BASE=HEAD INPUT_TOKEN= INPUT_WORKING-DIRECTORY="$work" \
-		"INPUT_PREDICATE-QUANTIFIER=$quantifier" INPUT_LIST-FILES=none \
-		node "$action/dist/index.js" >"$tmp/log" || true
-	got=$(sed -n '/^changes<</{n;p;}' "$tmp/out" | tr -d '[]"' | tr ',' ' ')
+	got=$(node -e '
+		const fs = require("fs")
+		const pm = require(process.argv[1] + "/frontend/node_modules/picomatch")
+		const filters = {}
+		let name
+		for (const line of fs.readFileSync(process.argv[1] + "/.github/ci-filters.yml", "utf8").split("\n")) {
+			let m
+			if (/^\s*(#.*)?$/.test(line)) continue
+			else if ((m = line.match(/^(\w+):$/))) filters[name = m[1]] = []
+			else if ((m = line.match(/^  - \x27([^\x27]+)\x27$/))) filters[name].push(pm(m[1], {dot: true}, true))
+			else throw new Error("ci-filters.yml: cannot read " + line)
+		}
+		const matches = (rules, file) => {
+			let included = false
+			for (const rule of rules) {
+				if (rule.state.negated) { if (!rule(file)) return false }
+				else if (rule(file)) included = true
+			}
+			return included
+		}
+		const files = process.argv.slice(2)
+		console.log(Object.keys(filters).filter(k => files.some(f => matches(filters[k], f))).join(" "))
+	' "$root" $1)
 	if [ "$got" = "$2" ]; then
 		printf 'ok  \t%-52s %s\n' "$1" "${2:-nothing}"
 	else
 		printf 'FAIL\t%-52s %s, wanted %s\n' "$1" "${got:-nothing}" "${2:-nothing}"
-		cat "$tmp/log"
 		fail=1
 	fi
 }

@@ -389,12 +389,12 @@ filters err towards running, because a test that runs when it need not
 costs a minute and one that does not run when it should have costs a
 broken main.
 
-`scripts/ci-filters-test.sh` checks the filters with the action itself,
-the commit `ci.yml` pins, on the files a pull request really arrives
-with, and runs in the `build` job whatever changed, because a mistake in
-them is silent: CI would go green having run less than it should. Run it
-by hand with `sh scripts/ci-filters-test.sh`. The first run fetches the
-action into `.build/`.
+`scripts/ci-filters-test.sh` checks the filters on the files a pull
+request really arrives with, matched the way the action matches them,
+with picomatch from the interface's packages, so it needs no network. It
+runs in the `build` job whatever changed, because a mistake in the
+filters is silent: CI would go green having run less than it should. Run
+it by hand with `sh scripts/ci-filters-test.sh`.
 
 A push to main narrows nothing. Whatever it touched, everything is built and
 tested, so main is always known to be sound and a mistake in the rules can

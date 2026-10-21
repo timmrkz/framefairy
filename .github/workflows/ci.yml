@@ -101,9 +101,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # Node for the check of the CI rules, which matches with the
+      # interface's picomatch, and for the build.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       # Always, whatever changed. A mistake in the rules that decide what
       # runs is silent: CI goes green having run less than it should. This
-      # takes a second and it is the one thing nothing else would catch.
+      # takes seconds and it is the one thing nothing else would catch.
       - name: Check the CI rules
         run: sh scripts/ci-filters-test.sh
       # And the rule that decides whether a push gets a build to update to,
@@ -140,12 +147,6 @@ jobs:
       - name: Check what make changed runs
         if: needs.changes.outputs.app == 'true' || needs.changes.outputs.changed == 'true'
         run: sh scripts/changed-test.sh
-      - if: needs.changes.outputs.app == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
