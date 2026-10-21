@@ -8,6 +8,7 @@ package main
 // on purpose: a search called off says so, the way one cut off does.
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,6 +36,37 @@ func TestPathAVideoAddedGetsItsFirstClips(t *testing.T) {
 	}
 	if o := d.outcome(ep); o != (outcome{}) {
 		t.Errorf("a search that found its clips says %+v", o)
+	}
+}
+
+// Tim moved a video's file away in Finder and opened the video again. Its
+// picture said the file was gone, and a toast said it a second time,
+// because the clip list asked for the file it no longer had. Issue #311.
+//
+// On the real disk: the file is moved the way Finder moves it, and ffprobe
+// is what would have failed on it.
+func TestPathAVideoMovedAwayKeepsItsClips(t *testing.T) {
+	d := open(t)
+	ep := d.add("ep", minutes5)
+	d.idle(ep)
+	before := d.clips(ep)
+	if len(before) == 0 {
+		t.Fatal("no clips in the list")
+	}
+	if err := os.Rename(ep, ep+".away"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := d.svc.Clips(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("the clips of a video whose file is gone: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("%d clips before the file was moved away, %d after", len(before), len(after))
+	}
+	for i := range min(len(before), len(after)) {
+		if !slices.Equal(after[i].CropLefts, before[i].CropLefts) {
+			t.Errorf("clip %s: crops %v before, %v after", before[i].Key, before[i].CropLefts, after[i].CropLefts)
+		}
 	}
 }
 

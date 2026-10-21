@@ -677,6 +677,7 @@ export const api = {
   // Opens the report window, or brings it forward when it is open, see
   // bugs.go. how is what was clicked, for the log.
   openReport: (how: string) => call<void>("OpenReport", how),
+  reportAbout: (text: string) => call<void>("ReportAbout", text),
   reportWindowOpen: () => call<boolean>("ReportWindowOpen"),
   // The draft of a report, what is written and the pictures attached,
   // kept until a report is made from it.
@@ -1061,6 +1062,12 @@ export function onReportWindow(fn: (open: boolean) => void): () => void {
 // What became of files dropped on the report window.
 export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
   return Events.On("report-draft", (ev) => fn(ev.data as ReportDraft));
+}
+
+// Words a toast's Report button hands the report window, already open,
+// to write in its field, see ReportAbout in bugs.go.
+export function onReportAbout(fn: (text: string) => void): () => void {
+  return Events.On("report-about", (ev) => fn(String(ev.data ?? "")));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

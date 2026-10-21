@@ -57,6 +57,17 @@ var sources = &probed{}
 type probed struct {
 	mu   sync.Mutex
 	info map[string]engine.SourceInfo
+	// last is what each episode was probed as last, by path alone, for a
+	// video whose file has gone since.
+	last map[string]engine.SourceInfo
+}
+
+// lastOf is what the episode at path was probed as last, if it ever was
+// while the app ran.
+func (p *probed) lastOf(path string) engine.SourceInfo {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.last[path]
 }
 
 func (s *FrameFairy) probe(ctx context.Context, path string) (engine.SourceInfo, error) {
@@ -82,8 +93,10 @@ func (p *probed) probe(ctx context.Context, path string) (engine.SourceInfo, err
 		p.mu.Lock()
 		if p.info == nil {
 			p.info = map[string]engine.SourceInfo{}
+			p.last = map[string]engine.SourceInfo{}
 		}
 		p.info[stamp] = info
+		p.last[path] = info
 		p.mu.Unlock()
 	}
 	return info, err

@@ -70,6 +70,7 @@
     pictured = $bindable(false),
     frameStart = $bindable(NaN),
     sleeping = false,
+    missing = false,
   }: {
     path: string;
     source: SourceView;
@@ -147,6 +148,10 @@
     // but the frame on its canvas and what it plays: no decoder on the
     // Go side, no frames kept, no sound card.
     sleeping?: boolean;
+    // The video's file is gone. The video preview then reads nothing and
+    // shows nothing of what it showed, and a toast says why, see
+    // Episode.svelte.
+    missing?: boolean;
   } = $props();
 
   let screen: HTMLDivElement;
@@ -203,7 +208,7 @@
   let slept = false;
   $effect(() => {
     const video = path;
-    if (sleeping) return;
+    if (sleeping || missing) return;
     let q: FrameQueue | null = null;
     const stop = slept ? afterPaint(() => (q = open(video))) : null;
     if (!stop) q = untrack(() => open(video));
@@ -211,7 +216,7 @@
       stop?.();
       if (!q) return;
       const going: FrameQueue = q;
-      said(`video preview: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : "the workspace went"}`, { video: path });
+      said(`video preview: closed, ${untrack(() => sleeping) ? "the workspace sleeps" : untrack(() => missing) ? "the file is gone" : "the workspace went"}`, { video: path });
       slept = true;
       if (!untrack(() => paused)) going.pause();
       paused = true;
@@ -1714,7 +1719,7 @@
        Everything drawn over the picture stands in .screen, the picture's
        own box, so the crop and the captions are in shares of the picture
        and not of the viewer. -->
-  <div class="stack">
+  <div class="stack" class:missing>
   <div class="viewer">
   <div
     class="screen asks"
@@ -1742,7 +1747,7 @@
     <!-- The picture. The queue draws every frame onto it, the size the
          stylesheet makes it, in the episode's own shape. -->
     <canvas bind:this={canvas} use:watchSize onclick={toggle}></canvas>
-    {#if failed}
+    {#if failed && !missing}
       <p class="failed selectable">{failed}</p>
     {:else if trouble}
       <p class="trouble selectable">{trouble}</p>
@@ -1993,6 +1998,13 @@
     .lid {
       margin-left: round(down, calc((var(--mid-w) - var(--pic-w)) / 2), 1px);
     }
+  }
+
+  /* A video whose file is gone shows nothing of what it showed last, the
+     crop and the captions with it. */
+  .missing .screen > *,
+  .missing .atop {
+    visibility: hidden;
   }
 
   canvas {

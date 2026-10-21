@@ -102,6 +102,7 @@
     onchange,
     onready,
     away = false,
+    inLibrary,
   }: {
     path: string;
     onchange: () => void;
@@ -110,6 +111,9 @@
     // Another episode has been picked, and this workspace only stays on
     // screen until that one is ready, see App.svelte.
     away?: boolean;
+    // The video as the library read it last, which it does each time the
+    // app comes to the front, see App.svelte.
+    inLibrary?: EpisodeStatus;
   } = $props();
 
   // The workspace's own element. Another episode's workspace can stand in
@@ -200,12 +204,36 @@
   // The workspace measures itself: how much height the app leaves it,
   // and how wide it is. From those two the video preview gets the biggest
   // size it can have, and the columns beside it take everything else.
-  // What sits above the workspace when anything does: the line that says
-  // the file is missing. What else goes wrong is a toast. It is
-  // nothing at all most of the time, and it never changes because the
-  // app was resized, so reading it costs nothing while the app is being
-  // resized.
-  let aboveH = $state(0);
+  // A video whose file is gone says so in a toast, once each time it goes,
+  // and its video preview shows nothing of what it showed. It stood in a
+  // line over the workspace, which pushed everything down, and Tim saw a
+  // toast say it a second time. Issue #311.
+  const gone = $derived(
+    `The video file is no longer at ${path}. Put it back there, or remove the video from the list.`,
+  );
+  // When the library says otherwise than the workspace, the workspace reads
+  // the video again. Tim put a file back in Finder, the sidebar saw it
+  // as the app came to the front, and the video preview went on showing
+  // nothing: one part of the app knew and the other did not.
+  // Once for each read of the library, so two answers that disagree for a
+  // moment do not ask each other again and again.
+  $effect(() => {
+    if (!inLibrary || away) return;
+    const gone = inLibrary.missing;
+    const now = untrack(() => status);
+    if (!now || gone === now.missing) return;
+    untrack(() => {
+      tell(`the library says the file is ${gone ? "gone" : "back"}, read again`);
+      void load();
+    });
+  });
+  let saidGone = false;
+  $effect(() => {
+    const now = !!status?.missing;
+    if (now === saidGone) return;
+    saidGone = now;
+    if (now) untrack(() => toasts.say(where(), gone, { video: path }));
+  });
   let paused = $state(true);
   let looping = $state(false);
   // Whether the playhead is on the chosen clip or on the video, which the
@@ -240,6 +268,25 @@
   // clips comes from it, and the workspace decides nothing about when a
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
+  // A search that fails while the app is open says why in a toast, with
+  // Report for what the person cannot put right alone. Its row goes on
+  // saying Failed with Continue, after a restart too. One seen failed
+  // only as the app opened has said why already, the time it failed.
+  // Only its state and id are read, see the rule on watching jobs.
+  let failedSeenRunning = "";
+  $effect(() => {
+    const id = search?.id ?? "";
+    const state = search?.state;
+    if (state === "running" || state === "queued") {
+      failedSeenRunning = id;
+      return;
+    }
+    if (state !== "failed" || !id || failedSeenRunning !== id) return;
+    failedSeenRunning = "";
+    const why = untrack(() => reasonOf(search?.error));
+    tell(`search failed: ${why}`);
+    toasts.say(where(), why, { video: path, report: true });
+  });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
   // The search while it hears the episode. Its progress says how far the
@@ -770,10 +817,9 @@
     return `${first} Clips are found by themselves once the window is transcribed.`;
   });
   // The whole layout is worked out by the browser, in the stylesheet at
-  // the foot of this file, from the size of the app and two numbers that
-  // have nothing to do with it: the shape of the episode and how tall
-  // anything above the workspace is. Neither changes while the app is
-  // being resized, so resizing it costs no JavaScript at all and the
+  // the foot of this file, from the size of the app and one number that
+  // has nothing to do with it: the shape of the episode. It does not
+  // change while the app is being resized, so resizing it costs no JavaScript at all and the
   // workspace keeps up with the edge of the app the way a native app
   // does. Measuring a height, working out another height from it and
   // writing that back is a round trip per frame, and the parts that
@@ -804,6 +850,12 @@
   // over in the middle, or failed with a reason. It is said in the first
   // row still to come and points to Continue, and nothing starts by
   // itself. A search called off by hand leaves nothing to say.
+  // Why a search failed, as a sentence. The engine's reasons begin in
+  // lower case, the way an error does in the log.
+  function reasonOf(error?: string): string {
+    const said = error?.trim() ?? "";
+    return said ? said[0].toUpperCase() + said.slice(1) : "The search failed, and no reason was given.";
+  }
   const halted = $derived.by(() => {
     if (!search || busy) return null;
     if (search.state !== "interrupted" && search.state !== "failed") return null;
@@ -812,11 +864,10 @@
     const window = `Window ${clock(start)} to ${clock(end)}`;
     const span = { from: start, to: end, window };
     if (search.state === "failed") {
-      // The engine's reasons begin in lower case, the way an error does
-      // in the log. In a row of the list it is a sentence.
-      const said = search.error?.trim() ?? "";
-      const why = said ? said[0].toUpperCase() + said.slice(1) : "No reason was given";
-      return { ...span, what: "Failed. Click Continue", left: why, full: `${window}. ${why}` };
+      // Why is said in a toast as it fails, see failedNow. A card is no
+      // place to carry a reason, and cut to one line it lost the part
+      // that said what to do, issue #311.
+      return { ...span, what: "Failed. Click Continue", left: window, full: `${window}. ${reasonOf(search.error)}` };
     }
     // Called off with Cancel, or cut off by the app closing: the same row
     // either way, because either way what it did stays and Continue
@@ -3179,25 +3230,10 @@
 
 
 
-<!-- Two numbers the stylesheet needs and cannot know: the shape of this
-     episode, and how tall whatever is above the workspace came out. Both
-     stay put while the app is resized, so the whole layout below is the
-     browser's own work from there on. -->
-<section
-  bind:this={root}
-  style="--ar: {ratio}; --above: {aboveH > 0 ? `calc(${Math.ceil(aboveH)}px + var(--gap))` : '0px'}"
->
-  <!-- Everything that stands above the workspace, together, so its height
-       is one number the layout can take off the app. It is not there at
-       all most of the time, and an empty row would still cost a space. -->
-  {#if status?.missing}
-    <div class="above" bind:clientHeight={aboveH}>
-      <p class="error">
-        The file is no longer at {path}. Move it back, or remove it from the list.
-      </p>
-    </div>
-  {/if}
-
+<!-- The one number the stylesheet needs and cannot know: the shape of
+     this episode. It stays put while the app is resized, so the whole
+     layout below is the browser's own work from there on. -->
+<section bind:this={root} style="--ar: {ratio}">
   {#if source}
     <div class="stage">
       <div class="settings">
@@ -3553,6 +3589,7 @@
           bind:offers
           {path}
           {source}
+          missing={!!status?.missing}
           clip={shownClip}
           making={making?.key}
           opening={!opened}
@@ -3971,14 +4008,13 @@
      pass as the resize, so dragging the edge of the app moves the
      workspace with it instead of a frame or two behind it.
 
-     Two numbers come from outside: --ar, the shape of the episode, and
-     --above, the height of anything standing over the workspace. Neither
-     changes because the app was resized. The rest is the size of the app
+     One number comes from outside: --ar, the shape of the episode. It
+     does not change because the app was resized. The rest is the size of the app
      itself and the tokens from app.css. */
   section {
     /* The height left in the app: everything but the bar at the top, the
        space above the workspace and the edge at the foot. */
-    --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge) - var(--above));
+    --space: calc(100dvh - var(--bar-h) - var(--gap) - var(--edge));
     /* The middle column, the rest of the app's width once the two sides,
        --spans from app.css, have theirs, with a space either side of it. */
     --mid-w: calc(100dvw - var(--spans) - 2 * var(--gap));

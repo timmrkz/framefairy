@@ -24,12 +24,35 @@ import (
 )
 
 // RenderError is a failure the operator can act on, as opposed to a bug.
-type RenderError struct{ Msg string }
+// Said is one already in the words a person reads, with what to do, and a
+// search says it as it is, see planFailed.
+type RenderError struct {
+	Msg  string
+	Said bool
+}
 
 func (e *RenderError) Error() string { return e.Msg }
 
 func renderErr(format string, a ...any) error {
 	return &RenderError{Msg: sprintf(format, a...)}
+}
+
+// saidErr is a failure said in a person's words, from its first sentence,
+// which is what the row of a search shows. Issue #311.
+func saidErr(format string, a ...any) error {
+	return &RenderError{Msg: sprintf(format, a...), Said: true}
+}
+
+// videoGone is a video whose file is no longer where it was added from:
+// moved, renamed, or on a drive that is not there now.
+func videoGone(path string) error {
+	return saidErr("The video file is no longer at %s. Put it back there, then try again.", path)
+}
+
+// inWords says whether err is a failure already said in a person's words.
+func inWords(err error) bool {
+	var r *RenderError
+	return errors.As(err, &r) && r.Said
 }
 
 // APICalls counts what a run asked of the API. A retry is a request you are
@@ -798,6 +821,9 @@ func (e *Engine) probe(ctx context.Context, path string) (SourceInfo, error) {
 		"-show_entries", "format=duration,start_time,format_name",
 		"-of", "json", path)
 	if res.Code != 0 {
+		if !exists(e.Files, path) {
+			return SourceInfo{}, videoGone(path)
+		}
 		return SourceInfo{}, renderErr("ffprobe failed on %s:\n%s", path, strip(res.Stderr))
 	}
 	var data struct {

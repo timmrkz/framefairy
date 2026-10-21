@@ -490,6 +490,16 @@
 //                      sidebar and the library, its workspace is closed,
 //                      nothing writes its folder back and the video file
 //                      itself is still there, unless it was deleted too
+//   ["file moved away"]
+//                      moves the file of the video on screen away from
+//                      outside the app, the way Finder does, while
+//                      another video is on screen, and opens it again
+//                      from the sidebar: one toast says the file is no
+//                      longer there and nothing else does, the video
+//                      preview shows nothing and has not moved, and the
+//                      clip list is as it was. Then it puts the file back
+//                      and brings the app to the front, and the video
+//                      preview shows the video again
 //   ["add namesake", seconds]
 //                      adds a new video of so many seconds with the file
 //                      name of the bridge's episode, from another folder
@@ -1116,7 +1126,7 @@
 // stand-in says: "Ich war vielleicht sechs Jahre alt, als mich auf dem
 // Schulhof irgendein Typ geschubst hat."
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
@@ -2806,6 +2816,7 @@ export const sequences = [
       ["head"],
       ["wait for", "Continue"],
       ["row", "Failed. Click Continue"],
+      ["failure toast"],
       ["model", "answers"],
       ["head"],
       ["wait for", "Search"],
@@ -3450,6 +3461,21 @@ export const sequences = [
       ["wait for", "Search"],
       ["folder removed", "written back"],
       ["let go"],
+    ],
+  },
+  {
+    // Issue #311. Tim moved a video's file away in Finder and opened the
+    // video again. A red line over the workspace said the file was gone
+    // and pushed everything down, and a toast said it a second time. Put
+    // back, the sidebar saw it and the video preview went on showing
+    // nothing.
+    name: "a video whose file is moved away says so once, in a toast, and shows again once it is back",
+    steps: [
+      ["add", 20],
+      ["wait for", "Search"],
+      ["add", 20],
+      ["wait for", "Search"],
+      ["file moved away"],
     ],
   },
   {
@@ -8421,6 +8447,34 @@ for (const seq of toWalk) {
         else await watch.step("wait", s);
         break;
       }
+      case "failure toast": {
+        // Issue #311: Tim read "Anthropic is busy and did not a…" in the
+        // row, cut where it said what to do. Why is said in a toast,
+        // whole, with Report, and the row says only that it failed.
+        const said = await page.evaluate(() => {
+          const t = document.querySelector(".toast");
+          const li = document.querySelector("li.next.stopped");
+          return {
+            text: t?.querySelector(".text")?.textContent.trim() ?? "",
+            report: !!t?.querySelector("button.report"),
+            row: li?.querySelector(".meta")?.textContent.trim() ?? "",
+          };
+        });
+        if (!said.text.includes("local model")) wrong = `the toast says "${said.text}", not why the search failed`;
+        else if (!said.report) wrong = "the toast offers no Report";
+        else if (said.row.includes("local model")) wrong = `the row carries the reason as well: "${said.row}"`;
+        if (wrong) break;
+        const before = (await control(url, "/report-window")).made;
+        await page.locator(".toast button.report").click();
+        await settle(page);
+        const draft = await ask(page, "ReportDraft");
+        const after = (await control(url, "/report-window")).made;
+        if (!draft.text?.includes(said.text)) wrong = `Report wrote "${draft.text}" in the report, not the toast's words`;
+        else if (after !== before + 1) wrong = `Report opened ${after - before} report windows`;
+        else if (await toastSays(page)) wrong = "the toast stayed after Report";
+        await control(url, "/report-window?close=1");
+        break;
+      }
       case "row": {
         const list = await clipList(page);
         if (!list?.rows.some((r) => r.what === arg)) wrong = `no row says "${arg}": ${JSON.stringify(list?.rows)}`;
@@ -11608,6 +11662,61 @@ for (const seq of toWalk) {
           wrong = `a workspace is still open with no video picked in the sidebar`;
         }
         await settle(page);
+        break;
+      }
+      case "file moved away": {
+        const source = await episodeOn(page);
+        const front = ".workspace.front";
+        const picture = () =>
+          page.evaluate((f) => {
+            const r = document.querySelector(`${f} .screen`)?.getBoundingClientRect();
+            return r ? { top: r.top, left: r.left, width: r.width, height: r.height } : null;
+          }, front);
+        const was = await picture();
+        const listed = (await clipList(page))?.cards ?? [];
+        const buttons = page.locator("aside button.episode");
+        const mine = await buttons.evaluateAll((all) => all.findIndex((b) => b.classList.contains("current")));
+        await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
+        await settle(page);
+        renameSync(source, `${source}.away`);
+        await fromSidebar(page, () => buttons.nth(mine).click());
+        // The video preview lets go of the picture it showed. Then every
+        // call the workspace made on waking has been answered, so any
+        // toast one of them would bring is there by now.
+        await page.locator(`${front} .stack.missing`).waitFor();
+        await settle(page);
+        const want = `The video file is no longer at ${source}. Put it back there, or remove the video from the list.`;
+        const toasts = await page.evaluate(() => [...document.querySelectorAll(".toast .text")].map((t) => t.textContent.trim()));
+        const inside = await page.evaluate((f) => {
+          const at = (q) => document.querySelector(`${f} ${q}`)?.textContent.trim() ?? "";
+          return at(".screen .failed") || at(".error");
+        }, front);
+        const now = await picture();
+        const cards = (await clipList(page))?.cards ?? [];
+        const moved = (a, b) => !a || !b || ["top", "left", "width", "height"].some((k) => Math.abs(a[k] - b[k]) > 0.5);
+        if (toasts.length !== 1 || toasts[0] !== want) wrong = `the toasts say ${JSON.stringify(toasts)}, not once "${want}"`;
+        else if (inside) wrong = `the workspace says it as well: "${inside}"`;
+        else if (moved(was, now)) wrong = `the video preview moved from ${JSON.stringify(was)} to ${JSON.stringify(now)}`;
+        else if (JSON.stringify(cards) !== JSON.stringify(listed)) {
+          wrong = `the clip list held ${listed.join(", ") || "nothing"} and holds ${cards.join(", ") || "nothing"}`;
+        }
+        renameSync(`${source}.away`, source);
+        if (wrong) break;
+        // Put back in Finder, and the app comes to the front: the sidebar
+        // sees it, and so does the video preview, which shows its picture
+        // again. Tim saw the sidebar know and the video preview not.
+        await page.evaluate(() => {
+          window.dispatchEvent(new FocusEvent("blur"));
+          window.dispatchEvent(new FocusEvent("focus"));
+        });
+        const back = await page
+          .locator(`${front} .stack:not(.missing)`)
+          .waitFor({ timeout: 5000 })
+          .then(() => true, () => false);
+        if (!back) wrong = "the file is back and the sidebar says so, but the video preview still shows nothing";
+        else if (await page.evaluate((f) => !!document.querySelector(`${f} .screen .failed`), front)) {
+          wrong = "the file is back, and the video preview says it could not be shown";
+        }
         break;
       }
       case "add namesake":

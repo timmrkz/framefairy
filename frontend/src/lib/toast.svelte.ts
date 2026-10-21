@@ -26,6 +26,9 @@ export type Toast = {
   text: string;
   // The video it is about, if it is about one.
   video?: string;
+  // Whether it offers to be reported: a failure the person cannot put
+  // right by themselves, issue #311.
+  report?: boolean;
 };
 
 let next = 1;
@@ -37,7 +40,7 @@ class Toasts {
   // Says text from a place, on top of what is there. It reads and writes
   // the list untracked, since a place may say something from inside an
   // effect, which would otherwise run again on every toast.
-  say(from: string, text: string, how: { video?: string } = {}) {
+  say(from: string, text: string, how: { video?: string; report?: boolean } = {}) {
     const words = text.trim();
     if (!words) return;
     untrack(() => {

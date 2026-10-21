@@ -889,10 +889,9 @@ dashed frame with the shade round it, which laid a short over a part of
 the episode that is in none.
 
 All of that is one expression in the stylesheet, worked out from the size
-of the app itself and the tokens in `app.css`. Two things it cannot know
-come in as custom properties, the shape of the episode and the height of
-the line above the workspace that says its file is missing, and neither
-changes because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
+of the app itself and the tokens in `app.css`. The one thing it cannot
+know comes in as a custom property, the shape of the episode, and it does
+not change because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
 workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
 nothing is laid out from the answer.
@@ -2219,8 +2218,23 @@ else reads as a mistake. Every toast and how it went is in the log,
 went.
 
 What has a place of its own keeps it: a clip that failed says so on its
-card, a search that stopped in its row, a missing file in the line over
-the workspace, and what dictation did not hear beside the microphone.
+card, a search that stopped in its row, and what dictation did not hear
+beside the microphone. Why is said in a toast, whole, issue #311. A
+search that failed says Failed with Continue in its row and why in a
+toast, which offers Report: Report a Problem opens with the toast's
+words written in its field, after what was there, and a report window
+already open is handed them to write in, see `ReportAbout` in
+`bugs.go`. Cut to one line in the row, the reason lost the part that
+said what to do, and Tim read "Anthropic is busy and did not a…".
+
+A video whose file is gone says so in a toast as the workspace finds it
+gone, and its video preview shows nothing of what it showed. A gone file
+was once a red line over the workspace, which pushed everything down,
+and a toast said it again because the clip list asked for the file. The
+clip list of such a video stays as it was. The workspace reads the video
+again whenever the library, read as the app comes to the front, says
+otherwise than it does about the file, so a file put back in Finder
+shows again in the video preview as the sidebar sees it.
 
 ### The colour picker
 
