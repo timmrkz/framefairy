@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/rs/zerolog"
 
@@ -61,8 +63,13 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		// the search finds most of its prompt read.
 		if unheard {
 			go func() {
-				defer func() { _ = recover() }()
 				video := filepath.Base(path)
+				defer func() {
+					if v := recover(); v != nil {
+						theLog.line(zerolog.ErrorLevel, "jobs").Str("video", video).Str("panic", fmt.Sprint(v)).
+							Str("stack", string(debug.Stack())).Msg("reading ahead of the search stopped unexpectedly")
+					}
+				}()
 				ahead, err := p.WarmModel(ctx, req)
 				switch {
 				case err != nil && ctx.Err() == nil:
@@ -70,7 +77,7 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 						Msg("the model could not be loaded ahead of the search")
 				case ahead.Reads > 0:
 					theLog.line(zerolog.InfoLevel, "jobs").Str("video", video).Int("reads", ahead.Reads).
-						Int("tokens", ahead.Tokens).Int("read", ahead.Read).
+						Int("tokens", ahead.Tokens).Int("read", ahead.Read).Int("rewritten", ahead.Rewritten).
 						Int("ms", int(ahead.Seconds*1000)).
 						Msg("the model read the transcript ahead of the search")
 				}

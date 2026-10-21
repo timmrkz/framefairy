@@ -202,19 +202,28 @@ const warmChars = SpokenChars
 // WarmModel loads the local model for a search of req that has not
 // started yet, so the search finds it loaded, and has it read the
 // transcript of the window as it is heard, so the search finds most of
-// its prompt read, see readahead.go. It returns once all of the window is
-// heard, the search asks or ctx ends, with what was read, and the model
-// waits a few minutes for the search. With the API there is nothing to
-// load or read, and a server that is already running is only read into.
+// its prompt read, see readahead.go. It blocks while the window is heard,
+// and returns with what was read once all of it is heard, ctx ends, a
+// read fails, or the search this project runs next asks or ends, which
+// is how it is told: it is for the search Search runs on the same
+// project. The model then waits a few minutes for the search. With the
+// API, or a server that is already running, there is nothing to load and
+// nothing is read ahead, and with another model in use it waits for
+// nothing: the search loads its own when it gets its turn.
 func (p *Project) WarmModel(ctx context.Context, req PlanRequest) (ReadAhead, error) {
 	opts := p.Base
-	if opts.Planner != "local" {
+	if opts.Planner != "local" || opts.LLMURL != "" {
 		return ReadAhead{}, nil
 	}
 	local, err := resolveLocal(opts)
 	if err != nil {
 		return ReadAhead{}, err
 	}
+	return p.warm(ctx, req, *local)
+}
+
+// warm is WarmModel with the model found.
+func (p *Project) warm(ctx context.Context, req PlanRequest, local LocalModel) (ReadAhead, error) {
 	// A search of the whole episode is taken as an hour, which only sizes
 	// the model's memory, and the search starts it again if it needs more.
 	seconds := 3600.0
@@ -222,21 +231,16 @@ func (p *Project) WarmModel(ctx context.Context, req PlanRequest) (ReadAhead, er
 		seconds = req.To - req.From
 	}
 	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	size := localContextFor(local.Model, chars, opts.MaxTokens)
-	if local.URL == "" {
-		_, release, err := p.engine.warmModel(ctx, *local, size, p.LogsDir())
-		if errors.Is(err, errModelBusy) {
-			// Another model is in use, a search of another episode. The
-			// search this was for loads the model itself when it gets its
-			// turn.
-			return ReadAhead{}, nil
-		}
-		if err != nil {
-			return ReadAhead{}, err
-		}
-		release(warmKeep)
+	size := localContextFor(local.Model, chars, p.Base.MaxTokens)
+	_, release, err := p.engine.warmModel(ctx, local, size, p.LogsDir())
+	if errors.Is(err, errModelBusy) {
+		return ReadAhead{}, nil
 	}
-	return p.readAhead(ctx, req, size), nil
+	if err != nil {
+		return ReadAhead{}, err
+	}
+	release(warmKeep)
+	return p.readAhead(ctx, req, local, size), nil
 }
 
 // PlanName is the plan file for a window, or for the whole episode when

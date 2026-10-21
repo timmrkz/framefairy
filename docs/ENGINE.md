@@ -1456,6 +1456,15 @@ Reading ahead stops once the window is heard, and when the search asks,
 a read still under way is called off and what it read is kept: a read
 after the ask would take the server back to the start of the search's
 prompt, and the question that follows the answer would be read again.
+Only the model this program loaded ahead of the search is read into,
+only while nobody else holds it, and never one it would have to load:
+a search of any video that wants the model while it reads calls the
+read off and has it at once, and a server that runs already,
+`--llm-url`, is left alone. Only a request that starts with the
+transcript is read ahead of, which of the recipes is `middle`. A line
+read can still be written out differently once more is heard, because
+the loudness a pause is told from is the mean of all that is heard, and
+then it is read again, issue #437.
 The search's line in the log says how much of its prompt was new. Each
 read leaves two checkpoints, and llama-server keeps 32 by itself, about
 200 MiB each for Gemma 4, so it is told to keep three, the three the

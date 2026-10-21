@@ -49,6 +49,9 @@ type hostedModel struct {
 	ready chan struct{}
 	users int
 	idle  *time.Timer
+	// giveWay calls off the transcript being read ahead of a search, see
+	// holdIdle, nil when none is.
+	giveWay context.CancelCauseFunc
 }
 
 // One model at a time, never two. Two of them do not fit in the memory of
@@ -112,6 +115,35 @@ func (e *Engine) holdModel(ctx context.Context, m LocalModel, size int,
 	return e.hold(ctx, m, size, logDir, false)
 }
 
+// holdIdle is holdModel for the transcript read ahead of a search, see
+// readahead.go: the address of llama-server with this model, and the
+// release, only while it is loaded, big enough and held by nobody. It
+// never loads a model, waits for one or puts one aside, so a search
+// never waits for a load a read started. Any search that holds the model
+// while the read is under way, of this video or another, calls it off
+// with giveWay first, so it never waits behind a read either.
+func holdIdle(model string, size int, giveWay context.CancelCauseFunc) (string, func(keep time.Duration), bool) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	h := host.model
+	if host.closed || h == nil || h.model != model || h.size < size || !loaded(h) || h.err != nil ||
+		h.users > 0 {
+		return "", nil, false
+	}
+	h.users++
+	h.giveWay = giveWay
+	if h.idle != nil {
+		h.idle.Stop()
+		h.idle = nil
+	}
+	return h.url, func(keep time.Duration) {
+		host.mu.Lock()
+		h.giveWay = nil
+		host.mu.Unlock()
+		h.release(keep)
+	}, true
+}
+
 // warmModel is holdModel for a warm-up. It never waits for another model
 // in use and never puts one aside: it gives up with errModelBusy.
 func (e *Engine) warmModel(ctx context.Context, m LocalModel, size int,
@@ -131,6 +163,12 @@ func (e *Engine) hold(ctx context.Context, m LocalModel, size int, logDir string
 		case h == nil:
 			return e.load(ctx, m, size, logDir)
 		case h.model == m.Model && h.size >= size:
+			if !warmUp && h.giveWay != nil {
+				// A search wants the model the transcript is being read
+				// into, and has it now.
+				h.giveWay(errModelBusy)
+				h.giveWay = nil
+			}
 			h.users++
 			if h.idle != nil {
 				h.idle.Stop()

@@ -555,6 +555,15 @@ type chatError struct {
 	} `json:"error"`
 }
 
+// refusal is what llama-server said when it answered status with raw.
+func refusal(status int, raw []byte) string {
+	var refused chatError
+	if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
+		return refused.Error.Message
+	}
+	return fmt.Sprintf("status %d", status)
+}
+
 // CallLocal asks the model on this machine for a plan. The answer is read
 // as it is written, and listen hears it arrive. What comes back is the
 // answer with how the model got to it: how long it read and thought and
@@ -692,11 +701,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if logDir != "" {
 			writeJSONText(e.Files, filepath.Join(logDir, "plan-error.json"), raw)
 		}
-		message := fmt.Sprintf("status %d", response.StatusCode)
-		var refused chatError
-		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
-			message = refused.Error.Message
-		}
+		message := refusal(response.StatusCode, raw)
 		// llama.cpp says only this when the graphics memory runs out partway,
 		// and the usual reason is another program holding some of it.
 		if strings.Contains(message, "Compute error") {

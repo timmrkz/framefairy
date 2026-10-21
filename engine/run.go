@@ -492,11 +492,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 // transcript is the transcript of the run's window, heard where it was not.
 func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
 	e, opts, source, span, logsDir := r.e, r.opts, r.source, r.span, r.logsDir
-	modelDir := opts.ASRModel
-	if modelDir == "" {
-		modelDir = DefaultModelDir()
-	}
-	transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, modelDir,
+	transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, speechModel(opts),
 		opts.SilenceDB)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -505,6 +501,21 @@ func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
 		return nil, fmt.Errorf("transcription failed: %w", err)
 	}
 	return transcript, nil
+}
+
+// speechModel is the folder of the speech model a run hears with.
+func speechModel(opts Options) string {
+	if opts.ASRModel == "" {
+		return DefaultModelDir()
+	}
+	return opts.ASRModel
+}
+
+// searchLines are the lines a search asks about, from the transcript of
+// its window. The transcript read ahead of a search is made of the same,
+// see readahead.go.
+func searchLines(t *Transcript, opts Options) []Line {
+	return BuildLines(t.Words, t.Levels(), opts.MaxPause)
 }
 
 // hear makes the transcript of the window and writes it out to be read.
@@ -565,7 +576,7 @@ func (r *runner) plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lines := BuildLines(transcript.Words, transcript.Levels(), opts.MaxPause)
+	lines := searchLines(transcript, opts)
 	if len(lines) == 0 {
 		return errors.New("no speech was found in the audio")
 	}

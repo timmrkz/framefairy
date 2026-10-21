@@ -60,6 +60,11 @@ type ReadAhead struct {
 	// read, and Read how many it read in all, more than Tokens when what
 	// was heard later wrote an earlier line out differently.
 	Tokens, Read int
+	// Rewritten is how many reads found a line read before written out
+	// differently. The loudness a pause is told from is the mean of all
+	// that is heard, so a part heard later can move where an earlier word
+	// starts or ends, and with it a pause the request marks, issue #437.
+	Rewritten int
 	// Seconds is how long the reading took, in all.
 	Seconds float64
 }
@@ -130,15 +135,15 @@ func (g *aheadGate) close() {
 	}
 }
 
-// readAhead has the model read the transcript of the window of req as it
-// is heard, until all of the window is heard, the search asks or ends, or
-// ctx ends. size is the context the model was loaded with ahead of the
-// search, and a model this program loads is held only while it reads,
-// so a search of another video can have it in between.
-func (p *Project) readAhead(ctx context.Context, req PlanRequest, size int) ReadAhead {
+// readAhead has local, loaded with size, read the transcript of the
+// window of req as it is heard, until all of the window is heard, the
+// search asks or ends, or ctx ends. The model is held only while it
+// reads, and only when nobody else holds it, so a search of another video
+// has it whenever it asks.
+func (p *Project) readAhead(ctx context.Context, req PlanRequest, local LocalModel, size int) ReadAhead {
 	var did ReadAhead
 	path := filepath.Join(p.LogsDir(), TranscriptName(nil))
-	var held []int
+	var last aheadRead
 	over := p.engine.ahead.ended()
 	for {
 		grew := transcriptGrows(path)
@@ -150,7 +155,7 @@ func (p *Project) readAhead(ctx context.Context, req PlanRequest, size int) Read
 		// The last line may still grow, so it is not read. Two lines are
 		// the least that leave something.
 		if ok && len(heard.lines) >= 2 {
-			now, err := p.readHeard(ctx, heard, size, held)
+			now, err := p.readHeard(ctx, heard, local, size, last)
 			switch {
 			case errors.Is(err, errAheadDone):
 				return did
@@ -159,11 +164,17 @@ func (p *Project) readAhead(ctx context.Context, req PlanRequest, size int) Read
 					p.engine.Log.Detail("the transcript is no longer read ahead of the search: %s", err)
 				}
 				return did
+			case now.lost:
+				// Someone else had the server, which holds their prompt now.
+				last = aheadRead{}
 			case now.tokens != nil:
 				did.Reads++
 				did.Tokens, did.Read = len(now.tokens), did.Read+now.read
 				did.Seconds += now.took.Seconds()
-				held = now.tokens
+				if now.rewritten {
+					did.Rewritten++
+				}
+				last = now
 			}
 		}
 		select {
@@ -177,13 +188,12 @@ func (p *Project) readAhead(ctx context.Context, req PlanRequest, size int) Read
 }
 
 // errAheadDone ends reading ahead without anything having gone wrong: the
-// search asked, or the model is in use by a search of another video.
+// search asked, or what it asks cannot be read ahead.
 var errAheadDone = errors.New("reading ahead is over")
 
 // heardWindow is what of a search's window is heard so far.
 type heardWindow struct {
-	opts  Options
-	local LocalModel
+	opts Options
 	// lines are the lines heard without a gap from the start of the
 	// window, and whole says whether that is all of it.
 	lines []Line
@@ -207,77 +217,80 @@ func (p *Project) heardSoFar(req PlanRequest) (heardWindow, bool) {
 	}
 	opts, _ := p.planOptions(req, window)
 	opts = opts.forSpan(span)
-	local, err := resolveLocal(opts)
-	if err != nil {
-		return heardWindow{}, false
-	}
-	parts := file.heard()
-	reach := span.Start
-	for _, part := range parts {
-		if part[0] <= reach+0.005 && part[1] > reach {
-			reach = part[1]
-		}
-	}
-	heard := heardWindow{opts: opts, local: *local, whole: len(gapsIn(parts, span)) == 0}
-	if heard.whole || reach <= span.Start {
+	// Heard up to the first gap, by the same rule the search hears its
+	// window by, which leaves gaps under a tenth of a second alone.
+	gaps := gapsIn(file.heard(), span)
+	heard := heardWindow{opts: opts, whole: len(gaps) == 0}
+	if heard.whole || gaps[0].Start <= span.Start {
 		return heard, true
 	}
 	stamp, err := stampOf(p.Files, p.Source)
 	if err != nil {
 		return heardWindow{}, false
 	}
-	asr := opts.ASRModel
-	if asr == "" {
-		asr = DefaultModelDir()
-	}
 	t, ok := sliceTranscript(p.Files, filepath.Join(p.LogsDir(), TranscriptName(nil)), stamp,
-		filepath.Base(filepath.Clean(asr)), Window{span.Start, min(reach, span.End)}, opts.SilenceDB)
+		filepath.Base(filepath.Clean(speechModel(opts))), Window{span.Start, gaps[0].Start}, opts.SilenceDB)
 	if !ok {
 		return heardWindow{}, false
 	}
-	heard.lines = BuildLines(t.Words, t.Levels(), opts.MaxPause)
+	heard.lines = searchLines(t, opts)
 	return heard, true
 }
 
-// aheadRead is one read: the tokens the server holds after it, how many
-// of them it read, and how long that took. No tokens is a read that had
-// nothing new.
+// aheadRead is one read: the server it was read into, the tokens it
+// holds after it, how many of them it read, and how long that took. No
+// tokens is a read that had nothing new, or none at all, because the
+// model was not there to read or someone else took it, which lost says.
+// rewritten says that a line read before was written out differently.
 type aheadRead struct {
-	tokens []int
-	read   int
-	took   time.Duration
+	url       string
+	tokens    []int
+	read      int
+	took      time.Duration
+	lost      bool
+	rewritten bool
 }
 
 // readHeard has the model read what of heard is settled, unless it holds
-// that already. held is what it holds from the read before.
-func (p *Project) readHeard(ctx context.Context, heard heardWindow, size int, held []int) (
-	did aheadRead, err error) {
+// that already. last is the read before. It reads only into the model
+// loaded ahead of the search, while nobody holds it, and gives way to any
+// search that asks for it while it reads, see holdIdle.
+func (p *Project) readHeard(ctx context.Context, heard heardWindow, local LocalModel, size int,
+	last aheadRead) (did aheadRead, err error) {
+	asked := askedWith(heard.opts)
+	if !readsAhead(heard.lines, asked) {
+		p.engine.Log.Detail("the %s recipe asks something before the transcript, so the transcript is "+
+			"not read ahead of the search", asked.recipe().Name)
+		return aheadRead{}, errAheadDone
+	}
 	reading, end, ok := p.engine.ahead.start(ctx)
 	if !ok {
 		return aheadRead{}, errAheadDone
 	}
 	defer end()
-	// Called off because the search asked is no fault.
+	// The model given way to is a read lost, not a fault.
+	reading, giveWay := context.WithCancelCause(reading)
+	defer giveWay(nil)
 	defer func() {
-		if err != nil && reading.Err() != nil && ctx.Err() == nil {
+		switch {
+		case err == nil || ctx.Err() != nil:
+		case errors.Is(context.Cause(reading), errModelBusy):
+			did, err = aheadRead{lost: true}, nil
+		case reading.Err() != nil:
+			// Called off because the search asked.
 			err = errAheadDone
 		}
 	}()
-	m := heard.local
-	url := strings.TrimRight(m.URL, "/")
-	if url == "" {
-		loaded, release, err := p.engine.warmModel(reading, m, size, p.LogsDir())
-		if errors.Is(err, errModelBusy) {
-			return aheadRead{}, errAheadDone
-		}
-		if err != nil {
-			return aheadRead{}, err
-		}
-		defer release(warmKeep)
-		url = loaded
+	url, release, ok := holdIdle(local.Model, size, giveWay)
+	if !ok {
+		return aheadRead{lost: true}, nil
 	}
-	asked := askedWith(heard.opts)
-	settled, err := settledTokens(reading, url, m, asked, heard.lines)
+	defer release(warmKeep)
+	held := last.tokens
+	if last.url != url {
+		held = nil
+	}
+	settled, err := settledTokens(reading, url, local, asked, heard.lines)
 	if err != nil {
 		return aheadRead{}, err
 	}
@@ -285,19 +298,34 @@ func (p *Project) readHeard(ctx context.Context, heard heardWindow, size int, he
 	if same == len(settled) {
 		return aheadRead{}, nil
 	}
-	if same < len(held) {
+	rewritten := same < len(held)
+	if rewritten {
 		p.engine.Log.Detail("the transcript heard so far is written out differently from token %s of %s on, "+
-			"and is read again from there", commas(same), commas(len(held)))
+			"so the model reads it again from there, or from the start where it kept no copy of what it "+
+			"read before that token", commas(same), commas(len(held)))
 	}
 	started := time.Now()
-	read, err := readTokens(reading, url, settled, len(settled)-same)
+	read, err := readTokens(reading, url, settled)
 	if err != nil {
 		return aheadRead{}, err
 	}
 	took := time.Since(started)
 	p.engine.Log.Detail("the model read %s tokens of the transcript ahead of the search in %ss, and holds %s",
 		commas(read), fixed(took.Seconds(), 1), commas(len(settled)))
-	return aheadRead{tokens: settled, read: read, took: took}, nil
+	return aheadRead{url: url, tokens: settled, read: read, took: took, rewritten: rewritten}, nil
+}
+
+// readsAhead says whether a search asked with opts starts its request with
+// the transcript, so what is read ahead is the start of what it asks. A
+// recipe that says first how many lines there are, or that writes a line
+// out by how it compares with all the others, changes its request from
+// the start with every line heard.
+func readsAhead(lines []Line, opts PlanOptions) bool {
+	recipe, _, prompt := searchRequest(lines, opts)
+	if recipe.Transcript == nil {
+		return false
+	}
+	return strings.HasPrefix(prompt, recipe.Transcript(lines, opts))
 }
 
 // settledTokens are the tokens of the search's prompt for lines that stay
@@ -336,15 +364,15 @@ func settledTokens(ctx context.Context, url string, m LocalModel, asked PlanOpti
 }
 
 // readTokens has the server read tokens and keep them, writing nothing,
-// and says how many it read rather than found kept. fresh is how many it
-// is expected to read, which sets how long it may take.
-func readTokens(ctx context.Context, url string, tokens []int, fresh int) (int, error) {
+// and says how many it read rather than found kept.
+func readTokens(ctx context.Context, url string, tokens []int) (int, error) {
 	var answer struct {
 		Timings *localTimings `json:"timings"`
 	}
 	// A slow machine reads a few tokens a second, see slowestReading, and
-	// says nothing while it does: the answer comes when it is done.
-	limit := localStall + time.Duration(float64(fresh)/slowestReading*float64(time.Second))
+	// says nothing while it does: the answer comes when it is done. What
+	// the server kept is its own to know, so the time is for all of them.
+	limit := localStall + time.Duration(float64(len(tokens))/slowestReading*float64(time.Second))
 	err := serverCall(ctx, url, "/completion", map[string]any{
 		"prompt": tokens, "n_predict": 0, "cache_prompt": true,
 		// Only what it cost, not the prompt back.
@@ -354,13 +382,15 @@ func readTokens(ctx context.Context, url string, tokens []int, fresh int) (int, 
 		return 0, err
 	}
 	if answer.Timings == nil {
-		return fresh, nil
+		return len(tokens), nil
 	}
 	return answer.Timings.PromptN, nil
 }
 
 // serverCall posts ask to llama-server at url and reads what it answers
-// into answer, giving up after limit.
+// into answer, giving up after limit. It is for the calls answered in one
+// piece. A search's ask is answered as it is written, and askLocal reads
+// it so, with its own watch on a server that falls silent.
 func serverCall(ctx context.Context, url, path string, ask, answer any, limit time.Duration) error {
 	body, err := json.Marshal(ask)
 	if err != nil {
@@ -384,12 +414,7 @@ func serverCall(ctx context.Context, url, path string, ask, answer any, limit ti
 		return err
 	}
 	if response.StatusCode != http.StatusOK {
-		message := fmt.Sprintf("status %d", response.StatusCode)
-		var refused chatError
-		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
-			message = refused.Error.Message
-		}
-		return fmt.Errorf("%s answered %s", path, Scrub(message, 200))
+		return fmt.Errorf("%s answered %s", path, Scrub(refusal(response.StatusCode, raw), 200))
 	}
 	return json.Unmarshal(raw, answer)
 }
