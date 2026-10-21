@@ -1289,6 +1289,7 @@
     () => queue?.repaint(),
     { paused: () => paused },
     (text, video) => said(text, { level: "warn", video }),
+    () => captionsLost++,
   );
   // For the walks, which wait until the captions over the frame are drawn.
   (window as unknown as { __captionLayers?: CaptionLayers }).__captionLayers = layers;
@@ -1396,6 +1397,11 @@
   // The light of the frame on screen. The colours the browser draws over
   // it, the box a word is typed in, are shown in its look, see shownColour.
   let shownLight = $state<Light>("");
+  // The frame drawn with its own captions over it, and how many times a
+  // layer was given up on, for the probes: a walk that reads what libass
+  // drew waits for the one and fails on the other, issue #389.
+  let captioned = $state<number | null>(null);
+  let captionsLost = $state(0);
   // The colours of the captions as the frame on screen shows them.
   const shownCaptions = $derived(
     captions
@@ -1424,6 +1430,8 @@
     const layer = ask && size ? layers.at(frame, size) : null;
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
     drawnOver = f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    const own = drawnOver && layers.own ? frame : null;
+    if (own !== captioned) captioned = own;
     return drawnOver;
   }
 
@@ -1728,6 +1736,8 @@
     bind:this={screen}
     data-playhead={time}
     data-shown={frameStart}
+    data-captioned={captioned}
+    data-captions-lost={captionsLost || undefined}
     data-turn={shownTurn}
     data-crop={held ? held.left : crop?.inside ? (dragLeft ?? cropLeft) : null}
     style="--turn: {-shownTurn}deg"
