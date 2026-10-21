@@ -467,10 +467,13 @@ export class CaptionLayers {
   private soon: Wanted[] = [];
   private cards = new Set<string>();
 
+  // Lost is told every time a layer, or a part of it, is given up on, the
+  // same failure again too, for the walks, see gaveUp.
   constructor(
     private came: () => void,
     private still?: Still,
     private tell?: Tell,
+    private lost?: () => void,
   ) {}
 
   // What was said of layers given up on, so each failure is said once for
@@ -482,6 +485,7 @@ export class CaptionLayers {
   // nothing, so a frame without its captions left no trace, found by the
   // second review.
   private gaveUp(ask: CaptionAsk, what: string, why: string) {
+    this.lost?.();
     const key = `${ask.path}\n${what}\n${why}`;
     if (!this.tell || this.told.has(key)) return;
     if (this.told.size > 64) this.told.clear();
@@ -623,7 +627,13 @@ export class CaptionLayers {
 
   // The layer of the frame that starts at frame, or while it is on its way
   // the one given last. Null with no captions to draw.
+  // Whether the layer at gave last is the frame's own, rather than the
+  // layer of the frame before shown while its own is on its way, for the
+  // walks, which read what libass drew over the frame.
+  own = false;
+
   at(frame: number, size: [number, number]): Layer | null {
+    this.own = false;
     const want = this.wanted(frame, size);
     const lift = this.lift;
     // The word stays lifted only over the frame it was lifted from,
@@ -657,7 +667,15 @@ export class CaptionLayers {
       if (have.showing && have.showing.word >= 0 && this.still?.paused())
         this.raise(want, have.scale === 1 ? have : before, !calm());
     } else if (this.lift && this.lift.key !== want.key) this.raise(want, this.lifted(this.lift), false);
-    return this.lift ? (this.lifted(this.lift) ?? have) : have;
+    if (!this.lift) {
+      this.own = true;
+      return have;
+    }
+    // A lift shows the layer it was lifted over until both its parts are
+    // here, which is the frame's own only when it is the one kept for it.
+    const shown = this.lifted(this.lift) ?? have;
+    this.own = shown === have || (this.lift.key === want.key && !!this.lift.rest && !!this.lift.word);
+    return shown;
   }
 
   // What the screen lays over the frame of a lift: the rest with the word
