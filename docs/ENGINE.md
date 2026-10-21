@@ -1418,8 +1418,12 @@ that finds the model loaded uses it, and one that finds it loading waits
 for it. **The app keeps it loaded while it is open**, `KeepModel`, and
 `cmd/framefairy-app/keep.go`: it loads it as it opens, if the memory free
 then holds it, and again when the settings or an install change the
-model, sized for a window of an hour. A search of a bigger window loads
-it again with more, and that is kept. So even the first search of a new
+model, and after every search, which may have put it aside for another,
+sized for a window of an hour. A model loaded or loading already is left
+at its size. A search of a bigger window loads it again with more, and
+that is kept. It is first loaded once a llama-server a crashed run left
+behind is stopped, so the two are never in memory together, and it is
+given up before its file is removed. So even the first search of a new
 video finds it loaded, and its transcript is read into it while it is
 heard, see below. Loaded only when a video was added, the model was
 still loading for much of the time a window was heard, a half hour in
@@ -1474,8 +1478,12 @@ after the ask would take the server back to the start of the search's
 prompt, and the question that follows the answer would be read again.
 Only the model this program loaded ahead of the search is read into,
 only while nobody else holds it, and never one it would have to load:
-a search of any video that wants the model while it reads calls the
-read off and has it at once, and a server that runs already,
+a search of any video that wants the model while it reads, or another
+model, or more room, calls the read off, and has the model as soon as
+the read lets go of it. Between a search's answer and its question about
+the clips that did not fit, the model is still the search's, so no read
+puts its own prompt where the search's was, `saved` on the model held.
+A server that runs already,
 `--llm-url`, is left alone. Only a request that starts with the
 transcript is read ahead of, which of the recipes is `middle`. A line
 read can still be written out differently once more is heard, because
@@ -1539,8 +1547,12 @@ llama-server -m ~/.framefairy/models/gemma-4-26B_q4_0-it.gguf -c 65536 -ngl 999 
 framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 ```
 
-The server's output is kept in `logs/llm-server.log`, at log level 4,
-which is the first level where llama.cpp says what it took from memory.
+The server's output is kept in `logs/llm-server.log` of the video it
+was loaded for, at log level 4, which is the first level where llama.cpp
+says what it took from memory. The model the app keeps is loaded for no
+video, so its server writes `llm-server.log` in the app's own log folder,
+`~/Library/Logs/Frame Fairy/` on a Mac, for as long as it runs, and a
+search that uses it leaves none in its `logs/`.
 
 **A server the engine starts answers only to the engine.** Left to
 itself, llama-server answers anybody: every program on the machine, and

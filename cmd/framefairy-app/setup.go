@@ -453,7 +453,12 @@ func (s *FrameFairy) RemoveLanguageModel(name string) error {
 	if err := s.languageLocked(); err != nil {
 		return err
 	}
+	// The model kept loaded maps its file, which Windows would then not
+	// let go of. It is given up first, and the settings changed below
+	// have the model that is left kept again.
+	engine.KeepNone()
 	if err := engine.RemoveLanguageModel(model, engine.ModelsDir()); err != nil {
+		s.keeping.ask()
 		return err
 	}
 	return s.store.UpdateSettings(func(set *Settings) {
