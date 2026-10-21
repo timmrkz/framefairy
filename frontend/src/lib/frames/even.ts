@@ -56,13 +56,19 @@ export class Even {
   private puts: { at: number; due: number }[] = [];
   private sources: Record<Source, number> = { stamp: 0, held: 0, plain: 0 };
   private broken = true;
+  // The latest times between animation frames, for the refresh now.
+  private recent: number[] = [];
 
   // An animation frame of the play: when it came on the page's clock,
   // milliseconds, the place on the program it showed, seconds, and where
   // that place came from.
   tick(at: number, pos: number, source: Source) {
     const last = this.ticks[this.ticks.length - 1];
-    if (last && !this.broken) this.gaps.push(at - last.at);
+    if (last && !this.broken) {
+      this.gaps.push(at - last.at);
+      this.recent.push(at - last.at);
+      if (this.recent.length > RECENT) this.recent.shift();
+    }
     this.ticks.push({ at, pos });
     this.sources[source]++;
     this.broken = false;
@@ -80,6 +86,16 @@ export class Even {
   behind() {
     this.broken = true;
     this.puts.push({ at: NaN, due: NaN });
+  }
+
+  // The screen's refresh as the play goes, milliseconds, from the latest
+  // animation frames, and a refresh at 60 Hz until there are a few. A
+  // frame drawn on an animation frame is on screen a refresh later, so
+  // the frame queue picks the frame for that moment, see heardOn in
+  // queue.ts. It took a refresh at 60 Hz for granted, and at 120 Hz put
+  // each frame up 8 ms ahead of its sound.
+  get refreshNow(): number {
+    return this.recent.length >= 4 ? refreshOf(this.recent) : 1000 / 60;
   }
 
   get evenness(): Evenness {
@@ -125,6 +141,10 @@ export class Even {
     };
   }
 }
+
+// How many of the latest times between animation frames the refresh now
+// is taken from, about half a second at 60 Hz.
+const RECENT = 32;
 
 // How an evenness reads in the log, in one line.
 export function describeEvenness(e: Evenness): string {

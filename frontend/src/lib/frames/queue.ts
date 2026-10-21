@@ -1552,7 +1552,8 @@ export class FrameQueue {
   }
 
   // Where the program is now, from the sound being heard, at the moment a
-  // frame drawn now is on screen, a display frame from now.
+  // frame drawn now is on screen, a refresh of the screen from now, see
+  // refreshNow in even.ts.
   private position(now: number): number {
     return this.heardOn(now).pos;
   }
@@ -1568,7 +1569,7 @@ export class FrameQueue {
         : null,
       this.audio.currentTime,
       latency,
-      now + 1000 / 60,
+      now + (this.began?.even.refreshNow ?? 1000 / 60),
     );
     return { pos: this.m0 / this.sampleRate + (h.at - this.c0), source: h.source };
   }

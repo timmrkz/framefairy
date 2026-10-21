@@ -59,6 +59,16 @@ describe("Even", () => {
     expect(e.missed).toBe(0);
   });
 
+  test("the refresh as the play goes follows the screen, from 60 Hz until it is measured", () => {
+    const e = new Even();
+    expect(e.refreshNow).toBeCloseTo(1000 / 60);
+    for (let i = 0; i < 40; i++) e.tick(Math.round((i * 1000) / 120), i / 120, "held");
+    expect(1000 / e.refreshNow).toBeCloseTo(120, 0);
+    // A refresh missed now and then does not move it.
+    e.tick(Math.round((41 * 1000) / 120), 41 / 120, "held");
+    expect(1000 / e.refreshNow).toBeCloseTo(120, 0);
+  });
+
   test("a refresh the page missed is counted, and the frame due on it stood a refresh too short", () => {
     // Frame 15 is due on refresh 30, missed, so it goes up a refresh late:
     // frame 14 stands 3 refreshes and frame 15 one.
