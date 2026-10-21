@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,30 @@ var files = map[string]bool{
 //
 // On the real disk: what this reads is the module's own source.
 func TestTestsStayOffTheDisk(t *testing.T) {
+	for _, f := range everyTestFile(t, withoutAReason) {
+		t.Errorf("%s. Give it an afero.MemMapFs, or say why it cannot have one in a comment that starts with %q", f, reason)
+	}
+}
+
+// Every program a test writes and runs is written through standin.Write,
+// see internal/standin. Written another way, it can be refused as busy
+// while another test starts a program, #410. A file written or made with
+// a mode that lets it run, or with a mode the check cannot read, is named
+// here.
+//
+// On the real disk: what this reads is the module's own source.
+func TestEveryProgramATestWritesIsWrittenThroughStandin(t *testing.T) {
+	for _, f := range everyTestFile(t, programsWritten) {
+		t.Errorf("%s with a mode that lets it run. Write it with standin.Write, or it can be refused as busy", f)
+	}
+}
+
+// everyTestFile reads every test file of the module with rule, and gives
+// what the rule found in them.
+//
+// On the real disk: what this reads is the module's own source.
+func everyTestFile(t *testing.T, rule func(name string, src []byte) ([]string, error)) []string {
+	t.Helper()
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -66,11 +91,11 @@ func TestTestsStayOffTheDisk(t *testing.T) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
-		unsaid, err := withoutAReason(rel, src)
+		lines, err := rule(rel, src)
 		if err != nil {
 			return err
 		}
-		found = append(found, unsaid...)
+		found = append(found, lines...)
 		return nil
 	})
 	if err != nil {
@@ -79,9 +104,80 @@ func TestTestsStayOffTheDisk(t *testing.T) {
 	if read < 50 {
 		t.Fatalf("read %d test files under %s, too few to be the module", read, root)
 	}
-	for _, f := range found {
-		t.Errorf("%s. Give it an afero.MemMapFs, or say why it cannot have one in a comment that starts with %q", f, reason)
+	return found
+}
+
+// The check finds a program written or made with os, and lets a file that
+// is not one be.
+func TestTheCheckFindsAProgram(t *testing.T) {
+	src := `package x
+
+func TestA(t *testing.T) {
+	os.WriteFile(script, body, 0o755)
+	os.WriteFile(script, body, 0755)
+	os.WriteFile(script, body, mode)
+	os.OpenFile(script, os.O_CREATE|os.O_WRONLY, 0o700)
+	os.Chmod(script, 0o755)
+	os.WriteFile(video, body, 0o644)
+	os.WriteFile(video, body, 0600)
+	os.OpenFile(video, os.O_CREATE|os.O_WRONLY, 0o644)
+	os.Chmod(video, 0o600)
+	standin.Write(script, body, 0o755)
+}
+`
+	found, err := programsWritten("x_test.go", []byte(src))
+	if err != nil {
+		t.Fatal(err)
 	}
+	want := []string{
+		"x_test.go:4 writes a file with os.WriteFile",
+		"x_test.go:5 writes a file with os.WriteFile",
+		"x_test.go:6 writes a file with os.WriteFile",
+		"x_test.go:7 writes a file with os.OpenFile",
+		"x_test.go:8 writes a file with os.Chmod",
+	}
+	if fmt.Sprint(found) != fmt.Sprint(want) {
+		t.Errorf("found\n%s\nwant\n%s", strings.Join(found, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// modeAt is where the mode is among the arguments of each function of os
+// that writes or makes a file with one.
+var modeAt = map[string]int{"WriteFile": 2, "OpenFile": 2, "Chmod": 1}
+
+// programsWritten is where a file calls a function of os that writes or
+// makes a file with a mode that is not a number without a bit that lets
+// the file run.
+func programsWritten(name string, src []byte) ([]string, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, name, src, 0)
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		at, ok := modeAt[sel.Sel.Name]
+		if pkg, isPkg := sel.X.(*ast.Ident); !ok || !isPkg || pkg.Name != "os" || len(call.Args) <= at {
+			return true
+		}
+		if lit, ok := call.Args[at].(*ast.BasicLit); ok && lit.Kind == token.INT {
+			if mode, err := strconv.ParseUint(lit.Value, 0, 32); err == nil && mode&0o111 == 0 {
+				return true
+			}
+		}
+		found = append(found, fmt.Sprintf("%s:%d writes a file with os.%s", name,
+			fset.Position(call.Pos()).Line, sel.Sel.Name))
+		return true
+	})
+	return found, nil
 }
 
 // The check finds the tests it is there for and lets the others be.

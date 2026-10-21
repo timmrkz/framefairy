@@ -383,13 +383,16 @@ script was being written kept it open in the child until that child had
 started its own program. So now and then a stand-in was refused the first
 time it ran, which is how a stand-in ffmpeg was once asked one question
 in place of two, #410. `standin.Write` in `internal/standin` holds
-`syscall.ForkLock` while the file is open, which every fork holds until
-its child has started, so no child holds the file. 133 of 3200 scripts
-written and run at once from 16 goroutines were refused with
-`os.WriteFile` in a cloud session, and none with `standin.Write`.
-`TestEveryProgramATestWritesIsWrittenHere` reads every test file and fails
-on an `os.WriteFile` whose mode lets the file run, and `make changed` runs
-it whenever a test file changed.
+`syscall.ForkLock` for reading while the file is open. Every fork in Go
+creates its child while it holds the lock for writing, so no child is
+created while the file is open, and none can hold it.
+`TestAProgramWrittenWhileOthersStartRunsAtOnce` writes and runs 800
+scripts from 16 goroutines at once, and with `os.WriteFile` 130 to 146
+of them were refused in each of three runs in a cloud session.
+`TestEveryProgramATestWritesIsWrittenThroughStandin` in `internal/offdisk`
+reads every test file in the same walk as the check above, and fails on
+an `os.WriteFile`, `os.OpenFile` or `os.Chmod` whose mode lets the file
+run, so `make changed` runs it whenever a test file changed.
 
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a

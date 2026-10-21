@@ -103,11 +103,9 @@ has "engine/testdata/fuzz/FuzzValidatePlan/seed" "go framefairy/engine"
 is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app walks"
 
 # A changed test reaches the check that tests stay off the disk, which
-# reads every test file and imports none of them, and the check that a
-# test writes a program it runs through standin.Write. Code alone does not.
-has "train/export_test.go" "go framefairy/train" "go framefairy/internal/offdisk" \
-	"go framefairy/internal/standin"
-lacks "train/export.go" "go framefairy/internal/offdisk" "go framefairy/internal/standin"
+# reads every test file and imports none of them. Code alone does not.
+has "train/export_test.go" "go framefairy/train" "go framefairy/internal/offdisk"
+lacks "train/export.go" "go framefairy/internal/offdisk"
 
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
