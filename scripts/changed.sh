@@ -17,8 +17,11 @@
 #                   those that go through a changed file, see
 #                   fuzz_what_changed. go.mod or go.sum is every package
 #                   and every target. A changed test also runs
-#                   internal/offdisk, which reads every test file.
+#                   internal/offdisk, which reads every test file, and
+#                   make lint, which reads them for waits on the clock.
 #   frontend/       make interface
+#   the linters' settings and scripts/lint-test.sh
+#                   that test, which proves them
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
 #                   tests for the rules, a read by its own shell for a
@@ -112,6 +115,8 @@ build_rules=0
 moved_rules=0
 shard_rules=0
 plan_rules=0
+lint=0
+lint_rules=0
 workflows=""
 shells=""
 
@@ -120,7 +125,23 @@ for file in $changed; do
 	# The plan is history, and the check that keeps it so runs on it.
 	docs/GUI-PLAN.md) plan_rules=1 ;;
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
-	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts | frontend/package.json | frontend/package-lock.json)
+	# The linters that keep tests off the clock, and the test that proves
+	# them. make interface runs ESLint, and the packages are ESLint's too.
+	.golangci.yml | scripts/lint-test.sh | scripts/testdata/lint/*)
+		lint=1
+		lint_rules=1
+		;;
+	frontend/eslint.config.js | frontend/eslint-suppressions.json)
+		interface=1
+		lint_rules=1
+		;;
+	frontend/package.json | frontend/package-lock.json)
+		interface=1
+		walks=1
+		lint_rules=1
+		read_by_tests "$file"
+		;;
+	frontend/preview/walks/* | frontend/preview/wails-bridge.ts | frontend/preview/bridge.config.ts | frontend/preview/vite.config.ts)
 		interface=1
 		walks=1
 		read_by_tests "$file"
@@ -185,8 +206,12 @@ for file in $changed; do
 			gopkgs="$gopkgs $pkg"
 			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
 			# internal/offdisk reads every test file and imports none, so
-			# a changed test is what reaches it.
-			case $file in *_test.go) gopkgs="$gopkgs $module/internal/offdisk" ;; esac
+			# a changed test is what reaches it, and make lint too.
+			case $file in *_test.go)
+				gopkgs="$gopkgs $module/internal/offdisk"
+				lint=1
+				;;
+			esac
 		else
 			build=1
 		fi
@@ -242,9 +267,11 @@ fi
 [ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
 [ "$shard_rules" = 1 ] && say "rules:     scripts/go-shard-test.sh"
 [ "$plan_rules" = 1 ] && say "rules:     scripts/plan-frozen-test.sh, scripts/plan-frozen.sh"
+[ "$lint" = 1 ] && say "lint:      make lint"
+[ "$lint_rules" = 1 ] && say "rules:     scripts/lint-test.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules$plan_rules" = 000000000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules$plan_rules$lint$lint_rules" = 00000000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -260,6 +287,8 @@ if [ "$plan_only" = 1 ]; then
 	[ "$moved_rules" = 1 ] && echo moved-rules
 	[ "$shard_rules" = 1 ] && echo shard-rules
 	[ "$plan_rules" = 1 ] && echo plan-rules
+	[ "$lint" = 1 ] && echo lint
+	[ "$lint_rules" = 1 ] && echo lint-rules
 	for s in $shells; do echo "script $s"; done
 	for w in $workflows; do echo "workflow $w"; done
 	exit 0
@@ -361,6 +390,7 @@ if [ -n "$affected" ]; then
 fi
 
 [ "$interface" = 1 ] && $MAKE -s --no-print-directory interface
+[ "$lint" = 1 ] && $MAKE -s --no-print-directory lint
 [ "$walks" = 1 ] && $MAKE -s --no-print-directory walks
 
 # A script is read by the shell its first line names, so a bash script is not
@@ -388,6 +418,10 @@ done
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
 [ "$shard_rules" = 1 ] && sh scripts/go-shard-test.sh
+if [ "$lint_rules" = 1 ]; then
+	$MAKE -s --no-print-directory golangci-lint frontend/node_modules/.package-lock.json
+	sh scripts/lint-test.sh
+fi
 if [ "$plan_rules" = 1 ]; then
 	sh scripts/plan-frozen-test.sh
 	sh scripts/plan-frozen.sh ${base:-}

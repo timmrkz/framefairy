@@ -107,6 +107,14 @@ is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app walks"
 has "train/export_test.go" "go framefairy/train" "go framefairy/internal/offdisk"
 lacks "train/export.go" "go framefairy/internal/offdisk"
 
+# A changed test is linted for waits on the clock, and code is not. The
+# linters' settings and their proof run the proof.
+has "train/export_test.go" "lint"
+lacks "train/export.go" "lint"
+is ".golangci.yml" "lint lint-rules"
+is "scripts/testdata/lint/walks/waits.mjs" "lint lint-rules"
+is "frontend/eslint-suppressions.json" "interface lint-rules"
+
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 

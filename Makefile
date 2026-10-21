@@ -34,10 +34,12 @@
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
 #                   the build, before every push
-#   make test       all tests: unit, fuzz, interface and walks
+#   make test       all tests: unit, fuzz, interface, walks and lint
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
-#   make interface  the interface type check and its own tests
+#   make interface  the interface type check, its own tests, and that no
+#                   walk or interface test waits on the clock
+#   make lint       that no new Go test waits on the clock, by golangci-lint
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once
@@ -137,7 +139,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint golangci-lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -407,7 +409,7 @@ motion: frontend/node_modules/.package-lock.json
 changed: $(FRESH_FRAMES)
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
-test: unit fuzz interface walks
+test: unit fuzz interface walks lint
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -496,7 +498,36 @@ interface:
 		printf 'ok  \tinterface types\n'; \
 		out=$$(cd frontend && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface rules\n'; \
+		out=$$(cd frontend && $(NPM) run --silent lint 2>&1) || { echo "$$out"; exit 1; }; \
+		printf 'ok  \tinterface waits on no clock\n'; \
 	fi
+
+# No Go test waits on the clock, see .golangci.yml. Only the lines that
+# are new against main fail: HEAD^1 in CI, whose pull request is a merge
+# commit on main, and where the branch left origin/main here.
+GOLANGCI_LINT_VERSION := 2.14.0
+GOLANGCI_LINT := $(STAMPS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
+LINTBASE ?= $(if $(GITHUB_ACTIONS),HEAD^1,$(shell git merge-base HEAD origin/main 2>/dev/null || echo HEAD))
+lint: toolchain modules golangci-lint
+	@out=$$($(GOLANGCI_LINT) run --new-from-rev=$(LINTBASE) ./... 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tGo tests wait on no clock\n'
+
+# The release golangci-lint builds and checks against its own checksums,
+# as its install.sh does. Not install.sh itself, which asks github.com's
+# release page for the tag, a page a cloud session cannot reach.
+golangci-lint: $(GOLANGCI_LINT)
+$(GOLANGCI_LINT):
+ifneq ($(INSTALL),1)
+	@echo "golangci-lint $(GOLANGCI_LINT_VERSION) is missing, and make installs nothing here: make golangci-lint INSTALL=1"; exit 1
+endif
+	@echo "Fetching golangci-lint $(GOLANGCI_LINT_VERSION)"
+	@name=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$(uname -s | tr A-Z a-z)-$$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/'); \
+		url=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \
+		tmp=$$(mktemp -d); \
+		(cd $$tmp && curl -sSfLO $$url/$$name.tar.gz && curl -sSfLO $$url/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt && \
+			grep " $$name.tar.gz$$" golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt | shasum -a 256 -c - >/dev/null && \
+			tar -xzf $$name.tar.gz) && mkdir -p $(@D) && mv $$tmp/$$name/golangci-lint $@; \
+		status=$$?; rm -rf $$tmp; exit $$status
 
 check:
 	@sh scripts/check.sh || true
