@@ -2445,7 +2445,7 @@
   const lit = $derived.by(() => {
     const pieces = current?.segments ?? [];
     if (!pieces.length || !captions?.captions?.length) return [];
-    const frames = captions.track && wordFrames?.key === `${path}\n${captions.track}` ? wordFrames.frames : null;
+    const frames = framedTrack ? (wordFrames?.frames ?? null) : null;
     const out: Word[] = [];
     for (const [i, cue] of captions.captions.entries()) {
       let k = 0;
@@ -2491,9 +2491,23 @@
       .then((frames) => {
         if (!off.signal.aborted) wordFrames = { key, frames };
       })
-      .catch(() => {});
+      // An ask that broke off is an answer with no frames too, so the words
+      // are walked by their own times and a clip walked to lands on its
+      // word, rather than waiting on an answer that is not coming.
+      .catch((e) => {
+        if (off.signal.aborted) return;
+        said(`captions: where the words stand did not come, ${errorText(e)}`, { level: "warn", video: path });
+        wordFrames = { key, frames: null };
+      });
     return () => off.abort();
   });
+  // The track of the captions on hand once the engine has answered where
+  // the picture lights their words, whether it said or not, and the same
+  // once it said, and until then nothing.
+  const answeredTrack = $derived(
+    captions?.track && wordFrames?.key === `${path}\n${captions.track}` ? captions.track : undefined,
+  );
+  const framedTrack = $derived(answeredTrack && wordFrames?.frames ? answeredTrack : undefined);
   let fonts = $state<CaptionFont[]>([]);
   // The fonts as Pages offers them, a list of families and a list of the
   // styles of the one picked, and the face the captions are in now.
@@ -3104,7 +3118,7 @@
     const want = landOn;
     if (!want || current?.key !== want.key || !lit.length) return;
     // Where the picture lights the words, once the engine has said.
-    if (captions?.track && wordFrames?.key !== `${path}\n${captions.track}`) return;
+    if (captions?.track && !answeredTrack) return;
     landOn = null;
     const word = want.last ? lit[lit.length - 1] : lit[0];
     const at = intoWord(word, source && source.fps > 0 ? 1 / source.fps : 1 / 30);
@@ -3767,7 +3781,13 @@
       </aside>
     </div>
 
-    <div class="detail">
+    <!-- data-framed names the track of captions whose words the clip
+         timeline puts the playhead into by the frames the picture lights
+         them on, see lit, and data-answered the track the engine has
+         answered for, with frames or none. A walk clicks a caption block
+         once a click goes by the frames, issue #290. Nothing on screen
+         reads them. -->
+    <div class="detail" data-framed={framedTrack} data-answered={answeredTrack}>
       <ClipTimeline
         bind:this={timeline}
         {path}

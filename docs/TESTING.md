@@ -623,7 +623,18 @@ fewer frames each step, issues #328 and #329.
 How many frames the screen draws, and how soon the video preview comes
 to a frame, is the machine's. So a step that works on the frame shown,
 C, R and a play from the playhead, waits for that frame first,
-`shownOnPlayhead`, issue #320. And a check counts what the app drew
+`shownOnPlayhead`, issue #320. It waits on the page, never on the clock:
+a `MutationObserver` on the video preview hears `data-playhead` and
+`data-shown` change. With captions it also waits for the frame to be
+drawn with its own captions over it, `data-captioned`, and says so when
+a layer of captions is given up on, `data-captions-lost`, counted from
+before the click. A step that reads the caption box waits for that, since
+the box shows what was drawn on the frame on screen, issue #359. A click
+on a caption block after a trim waits until `data-answered` on the clip
+timeline's box names the track the trim saved, and fails when
+`data-framed` does not, since until then a click goes by the words' own
+times, issue #290. A frame that never comes is ended by the `-timeout`
+of `make walks`. And a check counts what the app drew
 against the frames the screen drew, not against a number: a bounce is
 drawn on every frame the screen drew while it lasted, and the crop frame
 of a glide stands in a place of its own on every frame the play showed.

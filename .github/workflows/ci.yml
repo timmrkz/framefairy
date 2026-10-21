@@ -104,11 +104,21 @@ jobs:
         run: sh scripts/pins.sh
       - id: needs
         run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
+      - id: changed
+        run: sh scripts/ci-needs.sh changed >> "$GITHUB_OUTPUT"
+      - if: steps.needs.outputs.run == 'true' || steps.changed.outputs.run == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+      # And what make changed runs for a change, which is as silent when it
+      # is wrong: the check before a push goes green having run less than
+      # the change needed. It reads the packages with Go, so it runs
+      # whenever Go is set up, which a change to its rules alone does too.
+      # It took 7 s here, in one run.
+      - name: Check what make changed runs
+        if: steps.needs.outputs.run == 'true' || steps.changed.outputs.run == 'true'
+        run: sh scripts/changed-test.sh
       - if: steps.needs.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
