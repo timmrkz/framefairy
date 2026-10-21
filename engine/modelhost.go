@@ -10,7 +10,7 @@ import (
 // ---------------------------------------------------------------------------
 // The local model, kept running between the asks that want it
 //
-// Loading the model takes llama-server about 24 seconds on an M2 Max. A
+// Loading the model takes llama-server 9 to 24 seconds on an M2 Max. A
 // search used to start it, ask it and stop it, so every search began with
 // those seconds, after the transcript had reached the end of the window.
 // The app now asks for the model while the transcript is still on its way,

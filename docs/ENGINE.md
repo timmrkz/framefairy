@@ -1408,8 +1408,11 @@ which halved the record on every such search. A record from before the
 fitting and the framing were timed per clip measured something else, and
 is replaced.
 
-**The model is loaded before the search needs it.** Loading takes
-llama-server about 24 seconds. The running server belongs to the
+**The model is loaded before the search needs it.** Loading took
+llama-server about 24 seconds when it was first measured, and 9.0 on
+Tim's M2 Max on 21 October 2026, 7.4 of them reading the model file,
+which is likely the difference between a file the system has to read
+from the disk and one it still holds. The running server belongs to the
 program rather than to one search, in `engine/modelhost.go`: a search
 that finds the model loaded uses it, and one that finds it loading waits
 for it. **The app keeps it loaded while it is open**, `KeepModel`, and
@@ -1418,9 +1421,10 @@ then holds it, and again when the settings or an install change the
 model, sized for a window of an hour. A search of a bigger window loads
 it again with more, and that is kept. So even the first search of a new
 video finds it loaded, and its transcript is read into it while it is
-heard, see below. Loaded only when a video was added, it took about 24
-seconds and a half hour window was heard in about 22 on an M2 Max, so the
-transcript was whole before the model could read any of it. Kept idle it
+heard, see below. Loaded only when a video was added, the model was
+still loading for much of the time a window was heard, a half hour in
+about 22 seconds on an M2 Max, so little of the transcript could be read
+ahead. Kept idle it
 costs less than its size: llama.cpp maps the weights from the file and
 holds them wired for the graphics chip only for three minutes after the
 last use, `keep_alive_s` in `ggml-metal-device.m`, so the system can take
