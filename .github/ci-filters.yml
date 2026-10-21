@@ -1,0 +1,48 @@
+# Which jobs of .github/workflows/ci.yml a pull request starts, read by
+# dorny/paths-filter in the job changes. A push to main starts every job
+# whatever this says.
+#
+# Each filter but the last two is every file, '**', less the files that
+# cannot change what its jobs do. So a file nobody thought of starts them
+# all, which is what the Makefile, a workflow, a script and go.mod need:
+# they decide how the project is built. The quantifier is
+# some-with-excludes: a file counts when it matches '**' and no pattern
+# after a '!'.
+#
+# scripts/ci-filters-test.sh checks it with the action itself.
+
+# The jobs build, walks and outside: the app as a whole. Never a reason
+# to start a job: the docs, and the rules that no job runs but their own
+# check, which the job build runs whatever changed.
+app:
+  - '**'
+  - &docs
+    - '!docs/**'
+    - '!**/*.md'
+    - '!LICENSE'
+    - '!.vscode/**'
+    - '!.claude/**'
+    - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+
+# The jobs linux, fuzz and macos: the Go tests. No Go test builds the
+# interface, so only the files of it a Go test reads count, like api.ts.
+go:
+  - '**'
+  - *docs
+  - '!frontend/**/!(api.ts|*.cases.json)'
+
+# The job interface, which needs Node and nothing of Go.
+interface:
+  - '**'
+  - *docs
+  - '!**/*.go'
+  - '!go.{mod,sum}'
+
+# The check of the action pins, in the job build.
+workflows:
+  - '.github/workflows/**'
+
+# The check of what make changed runs, in the job build, which also runs
+# it whenever it builds.
+changed:
+  - 'scripts/changed{,-test}.sh'
