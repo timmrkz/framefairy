@@ -20,9 +20,9 @@ import (
 // samples a tenth of a second at a time, from a goroutine of its own the
 // way the system's does. Live, it hands them over as fast as they would
 // be said, until it is stopped. Otherwise it hands over all of them at
-// once, before it can be stopped. With more, what is said after samples
-// is asked of it once they are handed over, and again after that, until
-// it gives nothing: a person who talks on.
+// once, before it can be stopped. Live and with more, what is said after
+// samples is asked of it once they are handed over, and again after that,
+// until it gives nothing: a person who talks on.
 type playingMicrophone struct {
 	samples []float32
 	live    bool
@@ -52,9 +52,11 @@ func (m *playingMicrophone) start(heard func([]float32)) error {
 	return nil
 }
 
-// next is what is said after what was handed over, nothing without more.
+// next is what is said after what was handed over, nothing without more
+// or when the microphone is not live, which would hand it all over at once
+// and never be stopped.
 func (m *playingMicrophone) next() []float32 {
-	if m.more == nil {
+	if m.more == nil || !m.live {
 		return nil
 	}
 	return m.more()

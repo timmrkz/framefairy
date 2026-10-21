@@ -430,6 +430,16 @@
   }>(null);
   let nextGesture: Gesture | null = null;
   let asking = false;
+  // Whether a place the hand took the edge to is still to be answered and
+  // drawn: a gesture asked or waiting to be, or a press waiting for the
+  // drag before it. It is on the page as data-shaping, for the walks, which
+  // let go only once the edge stands where the hand is, see busy.
+  let shaping = $state(false);
+  let starting = 0;
+  function busy() {
+    const now = asking || nextGesture !== null || starting > 0;
+    if (now !== shaping) shaping = now;
+  }
   let shapeFor = 0;
   // Who the playhead belongs to: every press on the clip timeline takes it,
   // and an answer that comes back for an earlier press puts the playhead
@@ -454,6 +464,7 @@
     hand = g;
     nextGesture = g;
     void ask();
+    busy();
   }
 
   // Who waits for the last answer: letting go saves the gesture once the
@@ -468,6 +479,7 @@
     if (asking) return;
     if (!nextGesture || !clip) {
       nextGesture = null;
+      busy();
       const done = waiters;
       waiters = [];
       for (const w of done) w();
@@ -513,6 +525,7 @@
     hand = null;
     if (!save || !g || !onreshape) {
       nextGesture = null;
+      busy();
       shapeFor++;
       shaped = null;
       return;
@@ -652,16 +665,22 @@
     const go = (delta: number, shift: boolean) => {
       if (begun) shape(begun.make(delta, shift));
     };
+    if (!begun) {
+      starting++;
+      busy();
+    }
     const started = begun
       ? Promise.resolve()
       : (settled ? idle() : saved).then(() => {
+          starting--;
           begun = begin();
-          if (!begun) return;
+          if (!begun) return busy();
           if (begun.at !== pressed.at && press === owner && !playing) {
             pressedTo = begun.at;
             seekSoon(begun.at, "clip");
           }
           if (last) go(...last);
+          busy();
         });
     return {
       at: playing ? null : pressed.at,
@@ -1870,7 +1889,7 @@
 
 </script>
 
-<div class="clip-timeline">
+<div class="clip-timeline" data-shaping={shaping || undefined}>
   <!-- Nothing above the waveform: the range picker sits right over it, and
        what the clip is and what to do with it are in the row below. The
        playhead is drawn over the track rather than in it: the track clips

@@ -842,6 +842,10 @@ func openBridge(t *testing.T) *bridge {
 	// A recording nobody talks into stops by itself after 8 s rather than
 	// 2 minutes, long after every sequence that stops it by hand.
 	d.quiet = 8 * time.Second
+	// The bridge's microphone talks for as long as a recording runs, so
+	// one also stops after a minute, long after every sequence has heard
+	// what it waits for, and a walk waiting for more words ends there.
+	d.most = 60 * engine.SampleRate
 	d.start(d.svc.store)
 	// A report goes on the bridge's own Desktop and is shown nowhere.
 	reportFolder = func() string {
@@ -1299,6 +1303,7 @@ func (b *bridge) reopen() ([]Job, error) {
 	}
 	closed := b.d.svc.jobs.list()
 	b.d.svc.levels.shutDown()
+	b.d.svc.CancelListening()
 	b.d.reopen()
 	return closed, nil
 }
@@ -1314,8 +1319,10 @@ func (b *bridge) reopen() ([]Job, error) {
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
-	// A recording the walk before left running talks on, and the next
-	// walk's Dictate would be given it.
+	// A recording the walk before left running talks on, and tells the
+	// bus every desk shares what it hears. The app opened again numbers
+	// its recordings from 1, so the next walk's Dictate would take those
+	// words for its own.
 	b.d.svc.CancelListening()
 	b.silent.Store(false)
 	b.words.release()

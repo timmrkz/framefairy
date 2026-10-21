@@ -46,9 +46,11 @@ type desk struct {
 	// bus carries what the Go side tells the interface, when a browser
 	// is listening, see bridge_test.go.
 	bus *bus
-	// quiet is how long a recording nobody talks into goes on, in every
-	// opening of the app, 0 for as long as in the app.
+	// quiet is how long a recording nobody talks into goes on, and most
+	// the longest a recording is, in samples, in every opening of the
+	// app, 0 for as long as in the app.
 	quiet time.Duration
+	most  int
 	// The report windows Bugs made and brought forward, the window the
 	// app would have made, and the pictures its open box hands over
 	// next, see bugs.go.
@@ -99,6 +101,7 @@ func (d *desk) start(st *store) {
 	d.svc.listening.say = func(x Dictation) { d.bus.send("dictation", x) }
 	d.svc.listening.loud = func(n Loudness) { d.bus.send("loudness", n) }
 	d.svc.listening.quiet = d.quiet
+	d.svc.listening.most = d.most
 	d.svc.report = newReporting(st.files, filepath.Join(st.dir, "report"))
 	// The clipboard is the desk's, so a walk can read what was copied.
 	d.svc.clipboard = func(text string) bool {

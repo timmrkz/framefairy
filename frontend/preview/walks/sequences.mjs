@@ -4817,21 +4817,24 @@ for (const seq of toWalk) {
   };
   // Until the frame on screen is drawn with its own captions over it, so
   // what libass drew is there to be read, see data-captioned in
-  // Player.svelte. Nothing waiting for a layer was no sign of it: the walk
-  // of a word opened in the caption box read a picture with none of its
-  // letters on CI, issue #389.
+  // Player.svelte, true then, and false if a layer is given up on first,
+  // data-captions-lost. Nothing waiting for a layer was no sign of it: the
+  // walk of a word opened in the caption box read a picture with none of
+  // its letters on CI, issue #389.
   const captioned = () =>
     page.locator(".screen").evaluate(
       (screen) =>
         new Promise((done) => {
+          const lost = screen.dataset.captionsLost;
           const own = () => screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === Number(screen.dataset.shown);
-          if (own()) return done();
+          if (own()) return done(true);
           const seen = new MutationObserver(() => {
-            if (!own()) return;
+            const gone = screen.dataset.captionsLost !== lost;
+            if (!gone && !own()) return;
             seen.disconnect();
-            done();
+            done(!gone);
           });
-          seen.observe(screen, { attributes: true, attributeFilter: ["data-captioned", "data-shown"] });
+          seen.observe(screen, { attributes: true, attributeFilter: ["data-captioned", "data-shown", "data-captions-lost"] });
         }),
     );
 
@@ -5248,7 +5251,10 @@ for (const seq of toWalk) {
               popped: window.__captionLayers?.stats.popped ?? 0,
             };
           }, arg);
-        await captioned();
+        if (!(await captioned())) {
+          wrong = `the captions over the frame of "${arg}" did not come`;
+          break;
+        }
         await settled();
         const shut = await look();
         if (!shut) {
@@ -5865,7 +5871,8 @@ for (const seq of toWalk) {
           await page.mouse.move(x + (px * i) / 10, y);
           await nextPaint(page);
         }
-        // Every place so far answered and drawn: the edge stands under the
+        // Every place so far answered and drawn, which the clip timeline
+        // says by dropping data-shaping, and then the edge stands under the
         // hand before it lets go, the way a person sees it. On a busy
         // machine the answers came late, and the hand let go and pressed
         // again beside an edge still on its way, on the caption under it,
@@ -5874,23 +5881,29 @@ for (const seq of toWalk) {
         // none is. With late, the last place, ten pixels on, which is more
         // than a frame at this zoom, is then held on its way.
         const took = late ? x + px + Math.sign(px) * 10 : x + px;
-        await page.evaluate(
+        const standing = await page.evaluate(
           ([label, x, y]) =>
             new Promise((done) => {
+              const timeline = document.querySelector(".clip-timeline");
               const under = () => {
-                const edge = document.querySelector(`.clip-timeline [aria-label="${label}"]`);
+                const edge = timeline.querySelector(`[aria-label="${label}"]`);
                 return !!edge && document.elementsFromPoint(x, y).includes(edge);
               };
-              if (under()) return done();
-              const moved = new MutationObserver(() => {
-                if (!under()) return;
-                moved.disconnect();
-                done();
+              if (!timeline.hasAttribute("data-shaping")) return done(under());
+              const answered = new MutationObserver(() => {
+                if (timeline.hasAttribute("data-shaping")) return;
+                answered.disconnect();
+                done(under());
               });
-              moved.observe(document.querySelector(".clip-timeline"), { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+              answered.observe(timeline, { attributes: true, attributeFilter: ["data-shaping"] });
             }),
           [edgeLabel[which], x + px, y],
         );
+        if (!standing) {
+          await page.mouse.up();
+          wrong = `the ${which} edge was not under the hand once every place it was dragged to was answered`;
+          break;
+        }
         if (late) {
           await control(url, `/hold?call=Shape&ms=${late}`);
           await page.mouse.move(took, y);

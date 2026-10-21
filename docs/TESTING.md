@@ -446,27 +446,29 @@ it, or sees none with "", and sees that nothing under it moved,
 away, since it has the ten a removed row has, and then go by itself, `toast held` keeps the pointer on it past its time, sees it
 stay and then go once the pointer leaves, `stacked` sees a toast for
 each of two files dropped one after the other, the newer on top, and
-`toast closed` presses the cross of the top one. `write` types into its field and
-puts the cursor so many characters in, `dictate` presses Dictate, sees
-it say Stop in the same frame, the words appear grey while it
-listens and the microphone move with the hum, then ends it with Stop,
+`toast closed` presses the cross of the top one. `write` types into its
+field and puts the cursor so many characters in, `dictate` presses
+Dictate, sees it say Stop in the same frame, the words appear grey while
+it listens and the microphone move with the hum, then ends it with Stop,
 Enter or Escape, or with `ends` lets it stop by itself and say why, or
 with `start` only starts it, with `hearing` waits for more to be said
-and settled, so it is kept however the recording ends, and with `settled` waits for the words before the pause, `click heard`
-clicks into the first word still being heard and sees it settled with
-the cursor in it, with what the Go side tells the window held back from
+and settled, so it is kept however the recording ends, and with
+`settled` waits for the words before the pause, `click heard` clicks
+into the first word still being heard and sees it settled with the
+cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
 `wails-bridge.ts`, since the stand-in hears new words each time and the
-click would land in other words than the ones it read,
-`report reads`, the field reads so, with `*` for whatever the speech
-model heard, and `report as before`, it reads what it did then. The
-bridge's microphone plays two seconds of a hum, then a pause and a
-second and a half more, over and over, as fast as they would be said,
-so pieces are settled while it listens and there is more to hear until
-it stops. With `ends` the person falls silent once the phrase they are
-on is said, through `/microphone?silent=1`, and a recording there stops
-by itself after 8 s without a word. `field` clicks a field by its selector and
-types, and `field reads` says what it holds. `escape lets go` clicks a
+click would land in other words than the ones it read, `report reads`,
+the field reads so, with `*` for whatever the speech model heard, and
+`report as before`, it reads what it did then. The bridge's microphone
+plays two seconds of a hum, then a pause and a second and a half more,
+over and over, as fast as they would be said, so pieces are settled
+while it listens and there is more to hear until it stops. With `ends`
+the person falls silent once the phrase they are on is said, through
+`/microphone?silent=1`. A recording there stops by itself after 8 s
+without a word and after a minute at most, so a walk that waits for
+words fails rather than hangs. `field` clicks a field by its selector
+and types, and `field reads` says what it holds. `escape lets go` clicks a
 control or field, presses Escape and sees nothing left open, nothing
 holding the keyboard and no ring. For a clip of two cameras: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click on the switch, `trim past` the switch,
