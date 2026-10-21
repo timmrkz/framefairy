@@ -17,7 +17,9 @@
 // - The clock moved unevenly: the sound heard, worked out on each
 //   animation frame, strayed from a straight line through the play. A
 //   frame goes up when the clock reaches it, so a clock that steps puts
-//   frames up a refresh early or late.
+//   frames up a refresh early or late. The line starts once the sound
+//   does: before it, the play stands on its first frame on purpose, see
+//   startWait.
 
 // Where the moment heard on an animation frame came from, see heard in
 // plan.ts: the output timestamp, the output timestamp held back to the
@@ -62,6 +64,11 @@ export type Evenness = {
   stray: number;
   mostStray: number;
   rate: number;
+  // How long the play stood on its first frame while the sound card
+  // reached the moment the sound starts, milliseconds, see START_LEAD in
+  // queue.ts. It read as the clock off its line by 23 to 47 ms once every
+  // play, on Tim's Mac and in the cloud, until it was said apart.
+  startWait: number;
   sources: Record<Source, number>;
   spent: Spent;
 };
@@ -167,7 +174,9 @@ export class Even {
       frames++;
       if (Math.abs(stood - lasts) >= 1 - 1e-6) uneven++;
     }
-    const line = straight(this.ticks);
+    const first = this.ticks[0]?.pos;
+    const moved = Math.max(0, this.ticks.findIndex((k) => k.pos > first));
+    const line = straight(this.ticks.slice(moved));
     return {
       refresh,
       ticks: this.ticks.length,
@@ -180,6 +189,7 @@ export class Even {
       stray: line.stray,
       mostStray: line.most,
       rate: line.rate,
+      startWait: moved ? Math.max(0, line.reaches(first) - this.ticks[0].at) : 0,
       sources: { ...this.sources },
       spent: spentOf(this.works, before, lateOnes),
     };
@@ -221,7 +231,8 @@ export function describeEvenness(e: Evenness): string {
     `${e.missed} animation frames late by ${e.missedRefreshes} refreshes in all, the longest gap ${e.longest.toFixed(1)} ms`,
     `${e.frames} frames stood for so many refreshes: ${held || "none"}`,
     `${e.uneven} frames a refresh longer or shorter than they last`,
-    `the clock off a straight line by ${e.stray.toFixed(1)} ms typically and ${e.mostStray.toFixed(1)} ms at most, running at ${e.rate.toFixed(4)} of the page's clock`,
+    `the picture waited ${e.startWait.toFixed(1)} ms for the sound to start`,
+    `then the clock off a straight line by ${e.stray.toFixed(1)} ms typically and ${e.mostStray.toFixed(1)} ms at most, running at ${e.rate.toFixed(4)} of the page's clock`,
     `the moment heard from the output timestamp ${s.stamp} times, held to the sound card's time ${s.held}, the sound card's time less its latency ${s.plain}`,
     `an animation frame's work in ms, typical, most and before a missed refresh: ${describeSpent(e.spent)}`,
   ].join(", ");
@@ -266,10 +277,16 @@ function median(xs: number[]): number {
 // The straight line through the places the clock gave, by least squares,
 // and how far the places strayed from it: the root of the mean square and
 // the most, milliseconds. Its slope is how fast the clock ran against the
-// page's.
-function straight(ticks: { at: number; pos: number }[]): { stray: number; most: number; rate: number } {
+// page's, and reaches gives when on the page's clock the line stood at a
+// place.
+function straight(ticks: { at: number; pos: number }[]): {
+  stray: number;
+  most: number;
+  rate: number;
+  reaches: (pos: number) => number;
+} {
   const n = ticks.length;
-  if (n < 3) return { stray: 0, most: 0, rate: 1 };
+  if (n < 3) return { stray: 0, most: 0, rate: 1, reaches: () => ticks[0]?.at ?? 0 };
   const t0 = ticks[0].at;
   const p0 = ticks[0].pos;
   let st = 0;
@@ -295,5 +312,6 @@ function straight(ticks: { at: number; pos: number }[]): { stray: number; most: 
     sum += off * off;
     most = Math.max(most, Math.abs(off));
   }
-  return { stray: Math.sqrt(sum / n), most, rate };
+  const reaches = (pos: number) => (rate > 0 ? t0 + (mt + (pos - p0 - mp) / rate) * 1000 : t0);
+  return { stray: Math.sqrt(sum / n), most, rate, reaches };
 }

@@ -43,6 +43,20 @@ describe("Even", () => {
     expect(e.rate).toBeCloseTo(1);
   });
 
+  test("the wait for the sound to start is said apart and does not count as the clock straying", () => {
+    // A play stands on its first frame until the sound card reaches the
+    // moment the sound starts, START_LEAD and a refresh or two in queue.ts,
+    // 45 ms in the cloud. That stand read as the clock 23 to 47 ms off its
+    // line once every play, on Tim's Mac and in the cloud.
+    const wait = 0.045;
+    const e = play(25, 60, 4, (p) => Math.max(0, p - wait)).evenness;
+    expect(e.startWait).toBeCloseTo(45, 0);
+    expect(e.stray).toBeLessThan(0.01);
+    expect(e.mostStray).toBeLessThan(0.01);
+    expect(e.rate).toBeCloseTo(1);
+    expect(play(25, 60, 4).evenness.startWait).toBe(0);
+  });
+
   test("a frame of 30 a second stands 2 refreshes at 60 Hz and 4 at 120 Hz", () => {
     expect([...play(30, 60, 2).evenness.held.keys()]).toEqual([2]);
     expect([...play(30, 120, 2).evenness.held.keys()]).toEqual([4]);
