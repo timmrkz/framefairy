@@ -19,6 +19,7 @@
 import { rankOf, type VideoTrack } from "./movie";
 import type { Picture } from "./picture";
 import { pictures, pull, type Pulled } from "./pull";
+import { frames as framePool } from "./pool";
 
 // A pull with its frames as Pictures.
 type Got = Omit<Pulled, "frames"> & { frames: { at: number; frame: Picture }[] };
@@ -702,7 +703,7 @@ class Puller {
       this.trace(`the frames' worker stopped: ${e.message}, the page reads them now`);
       this.worker = null;
       this.where = "page";
-      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] });
+      for (const done of this.waiting.values()) done({ status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [], spare: [] });
       this.waiting.clear();
     };
     this.worker = w;
@@ -711,17 +712,22 @@ class Puller {
 
   async pull(url: string, width: number, height: number): Promise<Got> {
     const got = await this.pulled(url, width, height);
+    for (const b of got.spare ?? []) framePool.give(b);
     return { ...got, frames: pictures(got, width, height) };
   }
 
+  // A pull is handed as many kept buffers as frames it asks for, see
+  // pool.ts.
   private async pulled(url: string, width: number, height: number): Promise<Pulled> {
     await this.ready;
+    const asked = Number(new URL(url, location.href).searchParams.get("n") ?? 1) || 1;
+    const spare = framePool.takeUpTo(width * height * 4, asked);
     const w = this.worker;
-    if (!w) return pull(url, width, height);
+    if (!w) return pull(url, width, height, spare);
     const n = this.count++;
     return new Promise((done) => {
       this.waiting.set(n, done);
-      w.postMessage({ n, url: new URL(url, location.href).href, width, height });
+      w.postMessage({ n, url: new URL(url, location.href).href, width, height, spare }, spare);
     });
   }
 

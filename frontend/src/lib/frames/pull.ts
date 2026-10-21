@@ -28,6 +28,9 @@ export type Pulled = {
   // Each frame's pixels, see Picture. They are bytes rather than a
   // Picture so they can come from a Worker, see pictures.
   frames: { at: number; data: ArrayBuffer }[];
+  // The buffers handed to the pull that it had no frame for, to be kept
+  // for the next, see pool.ts.
+  spare: ArrayBuffer[];
 };
 
 // The frames of a pull as Pictures of width by height.
@@ -36,10 +39,11 @@ export function pictures(got: Pulled, width: number, height: number): { at: numb
 }
 
 // The frames are colours ready to draw, see engine.PreviewFrames. Nothing
-// here decides colour.
-export async function pull(url: string, width: number, height: number): Promise<Pulled> {
+// here decides colour. Each frame is read into one of the spare buffers
+// while there are any of its size, and into a new one after.
+export async function pull(url: string, width: number, height: number, spare: ArrayBuffer[] = []): Promise<Pulled> {
   const res = await fetch(url).catch(() => null);
-  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [] };
+  if (!res) return { status: 0, end: false, error: "", closed: false, times: "", light: "", frames: [], spare };
   const out: Pulled = {
     status: res.status,
     end: !!res.headers.get("X-Frames-End"),
@@ -48,9 +52,12 @@ export async function pull(url: string, width: number, height: number): Promise<
     times: res.headers.get("X-Frames-Times") ?? "",
     light: lightOf(res.headers.get("X-Frames-Light")),
     frames: [],
+    spare: [],
   };
-  if (!res.ok || !res.body) return out;
   const size = width * height * 4;
+  const fits = spare.filter((b) => b.byteLength === size);
+  out.spare = fits;
+  if (!res.ok || !res.body) return out;
   const head = new Uint8Array(8);
   let headHas = 0;
   let body: ArrayBuffer | null = null;
@@ -67,7 +74,7 @@ export async function pull(url: string, width: number, height: number): Promise<
         headHas += n;
         at += n;
         if (headHas === 8) {
-          body = new ArrayBuffer(size);
+          body = fits.pop() ?? new ArrayBuffer(size);
           bodyHas = 0;
         }
         continue;
@@ -84,5 +91,7 @@ export async function pull(url: string, width: number, height: number): Promise<
       }
     }
   }
+  // A frame cut short leaves its buffer for the next pull.
+  if (body && size) out.spare.push(body);
   return out;
 }

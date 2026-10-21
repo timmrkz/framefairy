@@ -250,6 +250,7 @@ func main() {
 		go func() { app.Event.Emit("dropped", svc.dropFiles(files)) }()
 	})
 	svc.chrome = watchChrome(app, svc.window, "app")
+	freeRefresh(svc.window)
 	// Only in the build the checks from outside the app use, see
 	// probe_outside.go.
 	startProbe(svc)

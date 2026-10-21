@@ -8,40 +8,59 @@
 // system, see screen.ts, and VideoFrame holds nothing brighter than white.
 
 import { toSDR, type Light } from "./light";
+import { frames, type Pool } from "./pool";
+
+// The bytes of a frame and how many Pictures hold them. The last to let go
+// gives a buffer of its own back to the pool it came from, see pool.ts.
+type Held = { bytes: Uint8Array; holders: number; pool: Pool | null };
 
 export class Picture {
-  private bytes: Uint8Array | null;
+  private held: Held | null;
 
   constructor(
-    data: ArrayBuffer | Uint8Array,
+    data: ArrayBuffer | Uint8Array | Held,
     readonly width: number,
     readonly height: number,
     // When the frame starts, in microseconds, as a VideoFrame's timestamp.
     readonly timestamp: number,
     readonly light: Light = "",
   ) {
-    this.bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-    if (this.bytes.length !== width * height * 4) throw new Error(`a frame of ${width} by ${height} needs ${width * height * 4} bytes, not ${this.bytes.length}`);
+    // A buffer of its own goes back to the pool once nothing holds it. A
+    // view on bytes someone else has is never given back.
+    if (data instanceof ArrayBuffer) this.held = { bytes: new Uint8Array(data), holders: 1, pool: frames };
+    else if (data instanceof Uint8Array) this.held = { bytes: data, holders: 1, pool: null };
+    else {
+      data.holders++;
+      this.held = data;
+    }
+    const n = this.held.bytes.length;
+    if (n !== width * height * 4) throw new Error(`a frame of ${width} by ${height} needs ${width * height * 4} bytes, not ${n}`);
   }
 
-  // The pixels, 4 bytes each, row after row, or null once closed.
+  // The pixels, 4 bytes each, row after row, or null once closed. They are
+  // read at once and never kept, since they go to another frame once
+  // every holder has let go.
   get data(): Uint8Array | null {
-    return this.bytes;
+    return this.held?.bytes ?? null;
   }
 
   get closed(): boolean {
-    return this.bytes === null;
+    return this.held === null;
   }
 
   // The same frame for another holder, under another time if need be.
   clone(timestamp = this.timestamp): Picture {
-    if (!this.bytes) throw new Error("the frame is closed");
-    return new Picture(this.bytes, this.width, this.height, timestamp, this.light);
+    if (!this.held) throw new Error("the frame is closed");
+    return new Picture(this.held, this.width, this.height, timestamp, this.light);
   }
 
-  // Lets go of the pixels. The other holders of the same frame keep them.
+  // Lets go of the pixels. The other holders of the same frame keep them,
+  // and the last gives them back.
   close() {
-    this.bytes = null;
+    const h = this.held;
+    if (!h) return;
+    this.held = null;
+    if (--h.holders === 0) h.pool?.give(h.bytes.buffer as ArrayBuffer);
   }
 
   // The pixels of a piece of the frame, as a 2D canvas takes them, with
@@ -49,7 +68,7 @@ export class Picture {
   // frame is left clear.
   imageData(x: number, y: number, w: number, h: number): ImageData {
     const out = new ImageData(w, h);
-    const src = this.bytes;
+    const src = this.data;
     if (!src) return out;
     for (let row = 0; row < h; row++) {
       const sy = y + row;

@@ -35,12 +35,14 @@ import type { Picture } from "./picture";
 import type { Over } from "./captions";
 import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
+import { describeEvenness, Even, type Source } from "./even";
+import { frames as framePool } from "./pool";
 import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
   fade,
   FADE,
-  heardAt,
+  heard,
   Keeper,
   Program,
   stillFeed,
@@ -549,8 +551,9 @@ export class FrameQueue {
   // said in the log yet.
   private firstTold = false;
   private playTold = false;
-  // The counts as the play under way began, so its end says how it went.
-  private began: { at: number; drawn: number; late: number; lateSound: number; when: number } | null = null;
+  // The counts as the play under way began, so its end says how it went,
+  // and how even it was, see even.ts.
+  private began: { at: number; drawn: number; late: number; lateSound: number; when: number; even: Even } | null = null;
 
   // What play plays, as it was asked for: pieces, or null for the whole
   // episode straight on, and whether it loops. The program is made from
@@ -985,7 +988,7 @@ export class FrameQueue {
       clearTimeout(this.suspendTimer);
       this.state = "playing";
       this.trace(`playing on from ${this.at.toFixed(3)} s`);
-      this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
+      this.began = { at: this.at, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
       this.ramp(1);
       this.report();
       this.loop();
@@ -1048,6 +1051,7 @@ export class FrameQueue {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.idler?.port1.close();
     // A queue closed before its canvas had a size stops waiting for one.
     this.sizeKnown();
     this.stopPlay();
@@ -1061,6 +1065,9 @@ export class FrameQueue {
     this.soundDecoder?.close();
     if (this.audio && this.audio.state !== "closed") void this.audio.close();
     this.listeners.clear();
+    // The buffers kept for the next play are let go of with the video
+    // preview, see pool.ts.
+    framePool.clear();
   }
 
   // The canvas has this many device pixels, as the stylesheet laid it out.
@@ -1513,7 +1520,7 @@ export class FrameQueue {
     this.c0 = Math.ceil((this.audio.currentTime + START_LEAD) * rate) / rate;
     this.state = "playing";
     this.trace(`playing from ${this.startFrom.toFixed(3)} s`);
-    this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now() };
+    this.began = { at: this.startFrom, drawn: this.stats.drawn, late: this.stats.late, lateSound: this.stats.lateSound, when: performance.now(), even: new Even() };
     if (this.pending) {
       this.unscheduled.push(this.pending);
       this.pending = null;
@@ -1529,7 +1536,15 @@ export class FrameQueue {
     const b = this.began;
     if (!b) return "no play under way";
     const ran = (performance.now() - b.when) / 1000;
-    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s`;
+    // The log never stands in the way of a pause or an end: what it could
+    // not work out, it says instead.
+    let even: string;
+    try {
+      even = describeEvenness(b.even.evenness);
+    } catch (e) {
+      even = `how even it was could not be worked out: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s, ${even}`;
   }
 
   // What a play that has not started waits for, for the log.
@@ -1550,20 +1565,26 @@ export class FrameQueue {
   }
 
   // Where the program is now, from the sound being heard, at the moment a
-  // frame drawn now is on screen, a display frame from now.
+  // frame drawn now is on screen, a refresh of the screen from now, see
+  // refreshNow in even.ts.
   private position(now: number): number {
-    if (this.c0 === null || !this.vplan) return this.vplan?.p0 ?? 0;
+    return this.heardOn(now).pos;
+  }
+
+  // The same, with where the moment heard came from, for the log.
+  private heardOn(now: number): { pos: number; source: Source } {
+    if (this.c0 === null || !this.vplan) return { pos: this.vplan?.p0 ?? 0, source: "plain" };
     const stampNow = this.audio.getOutputTimestamp ? this.audio.getOutputTimestamp() : null;
     const latency = (this.audio.outputLatency || 0) + (this.audio.baseLatency || 0);
-    const heard = heardAt(
+    const h = heard(
       stampNow && stampNow.contextTime !== undefined && stampNow.performanceTime !== undefined
         ? { contextTime: stampNow.contextTime, performanceTime: stampNow.performanceTime }
         : null,
       this.audio.currentTime,
       latency,
-      now + 1000 / 60,
+      now + (this.began?.even.refreshNow ?? 1000 / 60),
     );
-    return this.m0 / this.sampleRate + (heard - this.c0);
+    return { pos: this.m0 / this.sampleRate + (h.at - this.c0), source: h.source };
   }
 
   // How far on the program the sound card has played, heard or about to
@@ -1626,11 +1647,15 @@ export class FrameQueue {
 
   private tick(now: number) {
     if (this.state !== "playing" || !this.vplan) return;
+    const begun = performance.now();
     const plan = this.vplan;
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
-    const pos = Math.max(this.position(now), this.reached);
+    const h = this.heardOn(now);
+    const pos = Math.max(h.pos, this.reached);
     this.reached = pos;
+    if (this.behind) this.began?.even.behind();
+    else this.began?.even.tick(now, pos, h.source);
     plan.extend(pos + READ_AHEAD);
     this.aplan?.extend(pos + READ_AHEAD);
     // The frame due, but never past a piece's first or last frame without
@@ -1644,6 +1669,7 @@ export class FrameQueue {
     }
     this.k = k;
     let drew = false;
+    let put: number | undefined;
     const need = plan.need(k);
     if (need) {
       const slot = this.slotOf(need.run);
@@ -1655,9 +1681,12 @@ export class FrameQueue {
           }
           if (slot.ready[0]?.rank === need.rank) {
             const h = slot.ready.shift()!;
+            const putting = performance.now();
             this.put(h.frame, need.run, h.rank);
+            put = performance.now() - putting;
             this.drawnFor = plan.moment(k) ?? this.drawnFor;
             drew = true;
+            this.began?.even.put(now, plan.at(k));
           } else {
             this.stats.late++;
           }
@@ -1668,6 +1697,7 @@ export class FrameQueue {
     }
     const there = this.program.locate(pos);
     if (there) this.at = there.at;
+    const telling = performance.now();
     this.emit({
       at: this.at,
       frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
@@ -1677,13 +1707,37 @@ export class FrameQueue {
       drawnAt: now,
       trouble: this.trouble,
     });
+    const feeding = performance.now();
     // A run whose frames are all behind the playhead is done with.
     for (const s of this.slots) if (s.run && s.run.id >= 0 && s.run.kLast < k) this.release(s);
     plan.forget(k);
     this.aplan?.forget(Math.round(pos * this.sampleRate));
     this.pump();
     this.pumpSound();
+    const done = performance.now();
+    if (!this.behind && this.began) {
+      const i = this.began.even.work({ late: begun - now, put, tell: feeding - telling, feed: done - feeding, all: done - begun });
+      this.idle(this.began.even, i, done);
+    }
     this.loop();
+  }
+
+  // When the page next has nothing to do after an animation frame: a
+  // message posted to itself is taken only once the page has drawn what
+  // the frame changed and done whatever else was waiting, see Work in
+  // even.ts.
+  private idler: MessageChannel | null = null;
+  private idling: { even: Even; i: number; from: number }[] = [];
+  private idle(even: Even, i: number, from: number) {
+    if (!this.idler) {
+      this.idler = new MessageChannel();
+      this.idler.port1.onmessage = () => {
+        const w = this.idling.shift();
+        w?.even.drawn(w.i, performance.now(), w.from);
+      };
+    }
+    this.idling.push({ even, i, from });
+    this.idler.port2.postMessage(0);
   }
 
   private end() {

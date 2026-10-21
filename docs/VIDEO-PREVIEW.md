@@ -309,6 +309,99 @@ The numbers are a proposal for Tim to change. Main is measured the same
 way first, so each step is judged against today as well as against the
 marks.
 
+**How even a play was is in the log.** Each play ends with a line, at a
+pause or at the end, that says how many frames were late, which is a
+frame not decoded in time, and how even the play was, `lib/frames/even.ts`.
+Nearly every play on Tim's Mac said 0 frames late while he still saw it
+not quite even, issue #251, so the line also says:
+
+- the screen's refresh, from the time between two animation frames
+- the animation frames the page missed, and the longest gap
+- how many frames stood on the screen for how many refreshes, and how
+  many stood a whole refresh longer or shorter than they last. A frame of
+  25 a second on a screen of 60 Hz lasts 2.4 refreshes, so 2 and 3 are
+  as even as the screen allows
+- how far the clock, the sound heard as worked out on each animation
+  frame, strayed from a straight line through the play, and where it
+  came from: the output timestamp, the output timestamp held back to the
+  sound card's own time, or that time less its latency. A frame goes up
+  when the clock reaches it, so a clock that moves in steps puts frames
+  up a refresh early or late, which the tests show for a clock that
+  steps by 1024 samples
+
+The first report with the line, three plays of start.mp4 on Tim's Mac,
+said every frame was on time, no refresh was missed and the clock
+strayed 1.5 ms typically. But the screen was at 60 Hz, so each frame
+of 25 a second stood 2 and 3 refreshes by turns, 33 and 50 ms, and that
+is what Tim saw. His Mac's own screen refreshes 120 times a second.
+WebKit holds a page to about 60 updates a second, to save power on
+websites, where QuickTime uses the whole 120. So the app lifts that hold
+for its window as the page
+comes up, `freeRefresh` in `cmd/framefairy-app/refresh.go`, and the log
+says whether it took and what the screen can do. A page asks for an
+update only while something moves, so a still app costs nothing more.
+The beam, the motes, the shimmer and the pulse of work in hand move
+only transform and opacity, which WebKit hands to Core Animation to run
+at the screen's own rate with or without the hold, so a search costs no
+more either. That is how WebKit draws them, not a measurement.
+
+The second report, three plays with the hold lifted, said the screen can
+show 120 frames a second and the page updated that often. Of 1576
+frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, and Tim found
+it smoother. How long a frame stood, from the two reports, three plays
+of start.mp4 each:
+
+| Frame stood           | Before (ms) | After (ms) | Change      |
+| --------------------- | ----------: | ---------: | ----------- |
+| Shortest              |          33 |         33 | no change   |
+| Longest, all but 5    |          50 |         42 | 17 % less   |
+
+The 5 that stood 6 refreshes each stood over a refresh the page missed,
+27 in about 63 s of play. WebKit
+gives the page its times to the whole millisecond, so the refresh is
+the mean of the times between animation frames, not the most common
+one, which read 8 ms and a screen of 125 Hz.
+
+To find what the page was doing when it missed a refresh, the line also
+says where each animation frame's time went: how late its callback
+began, putting the frame up, telling the app, feeding the decoders, all
+of the callback, and the page's own work after it, typical, most and
+just before a missed refresh. `frontend/preview/walks/smooth.mjs` plays
+a clip of a 1080p video against the real Go side and prints the line,
+see [TESTING.md](TESTING.md). A trace of such a play in Chromium showed
+the page cleaning up memory for about 1.3 s of every 12 s: every frame
+came in a new buffer of 7 MB, 170 MB a second. So the buffers are now
+kept and handed back to the next pull once no frame holds them,
+`lib/frames/pool.ts`, and a play makes no new memory for its frames.
+Refreshes the page missed on Tim's Mac, from the second and the third
+report, three plays each:
+
+| Refreshes missed         | Before | After | Change     |
+| ------------------------ | -----: | ----: | ---------- |
+| A minute, buffers kept   |   25.6 |   9.1 | 64 % fewer |
+
+At 120 Hz a frame of 25 a second still stands 4 and 5 refreshes by
+turns, 33 and 42 ms, and so it does in QuickTime and Final Cut on the
+same screen: macOS never changes a screen's rate for a video by itself.
+Apple's advice is to set the screen by hand to a rate that divides evenly
+by the video's, and the screen of a MacBook Pro offers 47.95, 48, 50,
+59.94 and 60 Hz besides its own 120. At 50 Hz every frame of 25 a second
+stands exactly 40 ms. The app could switch the screen to 50 Hz while a
+video plays, and Tim chose on 21 October 2026 to leave the rhythm as
+QuickTime has it. A video of 24, 30 or 60 frames a second is even at 120.
+
+The line of a play is counted as the play goes, in sums and in samples
+of a fixed size, so it costs the same and keeps the same memory however
+long the play. Kept per animation frame, it took 90 ms at the pause of a
+play of 10 minutes, and threw on one of half an hour, so the space bar
+could not pause it.
+
+The line of a play also says how long the picture waited for the sound
+to start, about 45 ms, which every play does on purpose, see
+`START_LEAD` in `lib/frames/queue.ts`. That wait once read as the clock
+off its line by 23 to 47 ms each play, so the line is now fitted from the
+moment the sound starts.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
