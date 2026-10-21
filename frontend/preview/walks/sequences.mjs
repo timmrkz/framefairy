@@ -986,7 +986,10 @@
 //                      search stopped again and the search stays. With "for
 //                      good" the time runs down, the row goes, the Go side
 //                      forgets the search, and the video's dot in the
-//                      sidebar says nothing is wrong
+//                      sidebar says nothing is wrong. With "away and back"
+//                      another video is opened and this one again while it
+//                      runs down, and Removed is there as it was, standing
+//                      still, and then it is for good
 //   ["dot", kind]      the video's dot in the sidebar is this kind, "err",
 //                      "warn" or "" for none of the two
 //   ["channel", name]  the Updates page's list says this, in ten seconds
@@ -3012,17 +3015,20 @@ export const sequences = [
     ],
   },
   {
-    // Issue #431: the same for a search called off with Cancel.
+    // Issue #431: the same for a search called off with Cancel. Tim saw
+    // Removed slide in again each time he came back to the video while it
+    // ran down. A video added first gives it another video to go to, and
+    // its first search is the one Cancel stops.
     name: "a search stopped with Cancel can be removed, and stays removed",
     steps: [
       ["model", "holds"],
-      ["head"],
+      ["add", 60],
       ["wait for", "Cancel"],
       ["head"],
       ["wait for", "Continue"],
       ["row", "Stopped. Click Continue"],
       ["dot", "warn"],
-      ["remove search", "for good"],
+      ["remove search", "away and back"],
       ["wait for", "Search"],
       ["dot", ""],
       ["restart"],
@@ -4121,20 +4127,30 @@ function readUpdates() {
 const updatesPage = (page) => page.evaluate(readUpdates);
 
 // What is wrong when a row that says Removed leaves a strip of its card
-// on either side of it, or null. Removed fills its card from edge to edge,
-// issue #431. The row is the Removed's offset parent, see li in
-// ClipList.svelte.
+// on either side of it, or stands anywhere but where it is laid out, or
+// null. Removed fills its card from edge to edge and does not move, issue
+// #431. The row is the Removed's offset parent, see li in ClipList.svelte.
+// The app's clock is held while a remove runs, see fakeClock, so a slide
+// in would stand at its start and be read here.
 async function removedStrip(page, row) {
   const boxes = await page.evaluate((sel) => {
     const li = document.querySelector(sel);
     const gone = li?.querySelector(".gone");
     if (!li || !gone) return null;
-    // Where it is laid out, not where its slide in has it now.
-    return { left: gone.offsetLeft, right: li.clientWidth - gone.offsetLeft - gone.offsetWidth };
+    const [a, b] = [li.getBoundingClientRect(), gone.getBoundingClientRect()];
+    return {
+      left: gone.offsetLeft,
+      right: li.clientWidth - gone.offsetLeft - gone.offsetWidth,
+      moved: b.left - a.left - gone.offsetLeft,
+      opacity: Number(getComputedStyle(gone).opacity),
+    };
   }, row);
   if (!boxes) return `no row ${row} says Removed`;
   if (Math.abs(boxes.left) > 0.5 || Math.abs(boxes.right) > 0.5) {
     return `Removed leaves ${boxes.left.toFixed(1)} px of its card on the left and ${boxes.right.toFixed(1)} px on the right`;
+  }
+  if (Math.abs(boxes.moved) > 0.5 || boxes.opacity !== 1) {
+    return `Removed stands ${boxes.moved.toFixed(1)} px from where it is laid out, at opacity ${boxes.opacity}`;
   }
   return null;
 }
@@ -12034,6 +12050,19 @@ for (const seq of toWalk) {
         if (strip) {
           wrong = strip;
           break;
+        }
+        if (arg === "away and back") {
+          const buttons = page.locator("aside button.episode");
+          const mine = await buttons.evaluateAll((all) => all.findIndex((b) => b.classList.contains("current")));
+          await fromSidebar(page, () => buttons.nth(mine === 0 ? 1 : 0).click());
+          await settle(page);
+          await fromSidebar(page, () => buttons.nth(mine).click());
+          await settle(page);
+          const again = await removedStrip(page, "li.next:has(.gone)");
+          if (again) {
+            wrong = `back on the video, ${again}`;
+            break;
+          }
         }
         if (arg === "put back") {
           await page.locator("li.next .gone").getByRole("button", { name: "Put it back" }).click();
