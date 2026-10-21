@@ -244,9 +244,21 @@ func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) 
 // and it can be carried on. A render called off keeps the shorts it
 // finished and goes, because its Render button is where it is carried on.
 // It says whether the job was one of those.
+//
+// The note of a search or a clip made by hand that stopped is taken away
+// when its row in the clip list is removed, issue #431. A search the queue
+// refused wrote no record, so there is nothing to forget and it is only
+// settled.
 func (s *FrameFairy) cancelSteps(id string) bool {
 	for _, j := range s.jobs.list() {
-		if j.ID != id || j.Record == "" {
+		if j.ID != id {
+			continue
+		}
+		if j.Record == "" {
+			if j.State == JobFailed && makesClips(j.Kind) {
+				s.jobs.settleRefused(id)
+				return true
+			}
 			continue
 		}
 		if j.State == JobInterrupted || j.State == JobFailed {

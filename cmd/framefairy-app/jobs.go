@@ -696,6 +696,24 @@ func (q *queue) settle(episode, kind, record string) {
 	}
 }
 
+// settleRefused settles a job the queue refused, which failed before it
+// wrote anything, so its row goes like one whose record was forgotten.
+func (q *queue) settleRefused(id string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.ID == id && j.State == JobFailed && j.Record == "" {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
 // waitJob waits, at most stopWait, until a job is no longer running.
 func (q *queue) waitJob(id string) {
 	deadline := time.Now().Add(stopWait)
