@@ -34,10 +34,12 @@
 #   make changed    what this branch changed against main, and only that:
 #                   the tests of the Go packages it reaches, the interface,
 #                   the build, before every push
-#   make test       all tests: unit, fuzz, interface and walks
+#   make test       all tests: unit, fuzz, interface, walks and lint
 #   make unit       the Go tests, under the race detector
 #   make fuzz       the fuzz targets, FUZZTIME executions each
-#   make interface  the interface type check and its own tests
+#   make interface  the interface type check, its own tests, and that no
+#                   walk or interface test waits on the clock
+#   make lint       that no Go test waits on the clock, by golangci-lint
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
 #                   its own length unless STEPS says, WALKERS at once
@@ -137,7 +139,7 @@ APP_LDFLAGS := $(LDFLAGS) -X main.buildVersion=$(BUILD_VERSION) -X main.buildCha
 
 PROGRAMS := $(BIN)/framefairy$(EXE) $(BIN)/framefairy-app$(EXE) $(BIN)/framefairy-train$(EXE)
 
-.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
+.PHONY: frames all run app install update-key dispenser changed icon motion ffmpeg llama tools-archive notices hyphenation deps tools-beside test unit fuzz interface walks lint outside outside-allowed check tools models speechbench clean help toolchain modules $(PROGRAMS)
 
 all: deps toolchain frames $(PROGRAMS) tools-beside
 	@echo "Ready: $(PROGRAMS)"
@@ -407,7 +409,7 @@ motion: frontend/node_modules/.package-lock.json
 changed: $(FRESH_FRAMES)
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
-test: unit fuzz interface walks
+test: unit fuzz interface walks lint
 
 # The tests run with the race detector, because the app is a queue of jobs
 # on their own goroutines and a window asking them things from another, and
@@ -496,7 +498,24 @@ interface:
 		printf 'ok  \tinterface types\n'; \
 		out=$$(cd frontend && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }; \
 		printf 'ok  \tinterface rules\n'; \
+		out=$$(cd frontend && $(NPM) run --silent lint 2>&1) || { echo "$$out"; exit 1; }; \
+		printf 'ok  \tinterface waits on no clock\n'; \
 	fi
+
+# A test waits on a signal, never on the clock, see CLAUDE.md, and
+# golangci-lint says so for every Go test: forbidigo, and nothing else,
+# refuses time.Sleep, time.After and the rest of the clock in a test file,
+# see .golangci.yml, which also lists the ones there were before. The
+# walks and the interface's tests are held to it by ESLint, in make
+# interface. The linter is the release scripts/golangci-lint.sh pins,
+# fetched once into .build/ unless INSTALL is 0, as it is in CI, whose
+# workflow fetches it. Every package, always: a run that was done before
+# is answered from the linter's cache in a second or two.
+lint: toolchain modules
+	@bin=$$(INSTALL='$(INSTALL)' sh scripts/golangci-lint.sh) && \
+		out=$$("$$bin" run ./... 2>&1) || { echo "$$out"; exit 1; }; \
+		echo "$$out" | grep 'Skipped 0 issues' | sed 's/^/a known use that is gone, take its rule out of .golangci.yml: /' || true
+	@printf 'ok  \tGo tests wait on no clock\n'
 
 check:
 	@sh scripts/check.sh || true

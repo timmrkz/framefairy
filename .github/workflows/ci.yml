@@ -62,6 +62,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # And ESLint, which refuses a new walk or interface test that waits
+      # on the clock, see frontend/eslint.config.js.
       - name: Type check and interface tests
         if: steps.needs.outputs.run == 'true'
         run: make interface
@@ -158,6 +160,21 @@ jobs:
       - name: Build
         if: steps.needs.outputs.run == 'true'
         run: make NOTOOLS=1
+      # No new Go test waits on the clock, see CLAUDE.md. make installs
+      # nothing here, so the workflow fetches the golangci-lint make lint
+      # takes, the release scripts/golangci-lint.sh pins. After the build,
+      # because the linter reads the packages through Go's build cache,
+      # which the build has just filled. The test of the linters' settings
+      # first, so settings that let everything through cannot pass. The
+      # walks and the interface's tests are linted in the job interface.
+      - name: golangci-lint
+        if: steps.needs.outputs.run == 'true'
+        run: sh scripts/golangci-lint.sh
+      - name: No new test waits on the clock
+        if: steps.needs.outputs.run == 'true'
+        run: |
+          sh scripts/lint-test.sh
+          make lint
 
   # Every Go test under the race detector, which also runs the seed corpus
   # of every fuzz target. ffmpeg is here because the tests that render skip
