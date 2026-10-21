@@ -329,6 +329,18 @@ not quite even, issue #251, so the line also says:
   up a refresh early or late, which the tests show for a clock that
   steps by 1024 samples
 
+The first report with the line, three plays of start.mp4 on Tim's Mac,
+said every frame was on time, no refresh was missed and the clock
+strayed 1.5 ms typically. But the screen was at 60 Hz, so each frame
+of 25 a second stood 2 and 3 refreshes by turns, 33 and 50 ms, and that
+is what Tim saw. His Mac's own screen refreshes 120 times a second.
+WebKit holds a page to about 60 updates a second, to save power on
+websites, where QuickTime uses the whole 120 and stands each frame 40 ms
+give or take 4. So the app lifts that hold for its window as the page
+comes up, `freeRefresh` in `cmd/framefairy-app/refresh.go`, and the log
+says whether it took and what the screen can do. A page asks for an
+update only while something moves, so a still app costs nothing more.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
