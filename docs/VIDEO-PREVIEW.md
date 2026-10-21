@@ -350,6 +350,18 @@ gives the page its times to the whole millisecond, so the refresh is
 the mean of the times between animation frames, not the most common
 one, which read 8 ms and a screen of 125 Hz.
 
+To find what the page was doing when it missed a refresh, the line also
+says where each animation frame's time went: how late its callback
+began, putting the frame up, telling the app, feeding the decoders, all
+of the callback, and the page's own work after it, typical, most and
+just before a missed refresh. `frontend/preview/walks/smooth.mjs` plays
+a clip of a 1080p video against the real Go side and prints the line,
+see [TESTING.md](TESTING.md). A trace of such a play in Chromium showed
+the page cleaning up memory for about 1.3 s of every 12 s: every frame
+came in a new buffer of 7 MB, 170 MB a second. So the buffers are now
+kept and handed back to the next pull once no frame holds them,
+`lib/frames/pool.ts`, and a play makes no new memory for its frames.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17
