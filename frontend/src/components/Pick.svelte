@@ -26,6 +26,7 @@
   // wearing the progress track's rounded corners.
   import { Command, Popover, Select } from "bits-ui";
   import Icon from "./Icon.svelte";
+  import SearchField from "./SearchField.svelte";
   import { matches } from "../lib/match";
   import { said } from "../lib/said";
   import { tick } from "svelte";
@@ -245,6 +246,35 @@
     said(`pick: Escape closed ${label} and let go of it`);
   }
 
+  // A press anywhere else closes the list at once and leaves the keyboard
+  // to what was pressed, the way a menu or a popover on the Mac goes when
+  // the hand goes elsewhere. The list's own close waits a moment after the
+  // press, and when the press moves the workspace, the transcript button
+  // opening its search for one, the list is laid out anew in that moment
+  // and forgets the press: it stayed open with the keyboard in its field,
+  // found by Tim. Nor does the keyboard go back to the trigger after it.
+  let pressedAway = false;
+  $effect(() => {
+    if (!open) return;
+    const press = (e: PointerEvent) => {
+      const at = e.target as Element | null;
+      if (!at?.closest || at.closest(".pick-list") || button?.contains(at)) return;
+      // Only a list to search takes the keyboard, and would give it back.
+      pressedAway = search !== undefined;
+      open = false;
+      onopenchange?.(false);
+      said(`pick: a press elsewhere closed ${label}`);
+    };
+    document.addEventListener("pointerdown", press, true);
+    return () => document.removeEventListener("pointerdown", press, true);
+  });
+  function stayAway(e: Event) {
+    if (!pressedAway) return false;
+    pressedAway = false;
+    e.preventDefault();
+    return true;
+  }
+
   function choose(next: string) {
     open = false;
     onopenchange?.(false);
@@ -324,7 +354,7 @@
         align={edge}
         onEscapeKeydown={() => (escaped = true)}
         onCloseAutoFocus={(e) => {
-          if (!escaped) return;
+          if (stayAway(e) || !escaped) return;
           e.preventDefault();
           letGo();
         }}
@@ -338,10 +368,7 @@
                     <div {...root} class="pick-command">
                       <Command.Input bind:value={typed}>
                         {#snippet child({ props: field })}
-                          <label class="pick-search">
-                            <Icon name="search" size={12} />
-                            <input {...field} bind:value={typed} placeholder={search} />
-                          </label>
+                          <SearchField {...field} bind:value={typed} placeholder={search} />
                         {/snippet}
                       </Command.Input>
                       <Command.List>
@@ -774,32 +801,6 @@
      one edge from the field into the rows. It is a row tall above its
      line, and the line is under that, so it does not stand a pixel
      shorter than the rows it is over. */
-  .pick-search {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: calc(var(--control-h) + 1px);
-    padding: 0 8px;
-    border-bottom: 1px solid var(--line);
-    color: var(--muted);
-    cursor: text;
-  }
-
-  /* It asks nothing of the list's width, which is the rows' to set. */
-  .pick-search input {
-    flex: 1;
-    width: 0;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    color: var(--text);
-    font: inherit;
-    background: transparent;
-    border: none;
-    outline: none;
-  }
-
   .pick-rows {
     min-height: 0;
     overflow-y: auto;

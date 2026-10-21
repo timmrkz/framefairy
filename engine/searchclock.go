@@ -658,7 +658,8 @@ func (c *searchClock) listen(inner *Listener) *Listener {
 			c.now.ReadDone, c.now.ReadOf = done, total
 			c.mu.Unlock()
 		},
-		Part: c.enter,
+		Part:   c.enter,
+		Prompt: inner.prompt,
 	}
 }
 

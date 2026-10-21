@@ -2118,9 +2118,11 @@
            border with a grey line showing past them. See .frames. -->
       <div class="frames">
         <div class="chosen" class:dim={dimmed} class:lit={!!clip && clip.key === hovered}>
+          <!-- Lit, the chosen clip, the way the hand on it lights it
+               anywhere else, see .clipmark.selected in app.css. -->
           <div
             class="span frame"
-            class:lit={!!clip && clip.key === hovered}
+            class:lit={!!clip}
             style="left: calc(1px + (100% - 2px) * {x(wholeClip.start) / 100}); width: calc((100% - 2px) * {(x(wholeClip.end) - x(wholeClip.start)) / 100})"
           ></div>
         </div>

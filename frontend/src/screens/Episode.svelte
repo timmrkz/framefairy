@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
+  import { fade } from "svelte/transition";
   import {
     api,
     captionFontDefault,
@@ -29,6 +30,7 @@
     type EpisodeStatus,
     type SourceView,
     type Word,
+    type Sentence,
     onUndo,
     onLevels,
   } from "../lib/api";
@@ -81,13 +83,15 @@
   import Player, { type PlayerOffers } from "../components/Player.svelte";
   import Busy from "../components/Busy.svelte";
   import ClipList from "../components/ClipList.svelte";
+  import SaidList from "../components/SaidList.svelte";
+  import SearchField from "../components/SearchField.svelte";
   import ClipTimeline, { type ClipNumbers } from "../components/ClipTimeline.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Confirm from "../components/Confirm.svelte";
   import Pick from "../components/Pick.svelte";
   import Colour from "../components/Colour.svelte";
-  import { said } from "../lib/said";
+  import { act, said } from "../lib/said";
   import { pieceHolding, rotated, rotationAt } from "../lib/rotate";
   import { markOn } from "../lib/glide";
   import { unchanged } from "../lib/unchanged";
@@ -158,6 +162,9 @@
   // so whatever they ask for fits wherever the window is.
   let roomView = $state<RoomView | null>(null);
   let selected = $state("");
+  // How many times a clip was chosen, so choosing the clip that already
+  // was chosen still takes the sentences of what was said to it.
+  let chosenTimes = $state(0);
   // The clip under the hand, on its card, on the range picker or on the
   // clip timeline. All three light it, so the same clip is found in the
   // other two at a glance. Going off one thing and onto the next can come
@@ -388,6 +395,182 @@
   }
   // What the transcript on disk has heard.
   const saved = $derived<Parts>(status?.transcribed ? [[0, duration]] : (status?.heard ?? []));
+
+  // The search through what was said, in the clip column, #366: whether
+  // it is open, what is typed in it, and the sentences it reads, read
+  // again whenever the transcript on disk hears more.
+  let saying = $state(false);
+  let sayTyped = $state("");
+  let sayMatches = $state(0);
+  let sentences = $state<Sentence[] | null>(null);
+  // Why the cards could not be read the last time they were asked for,
+  // said in the list until the next read works.
+  let sentencesFailed = $state<string | null>(null);
+  let sayField = $state<HTMLInputElement>();
+  let saidList = $state<{ walk: (step: 1 | -1) => void }>();
+  const savedKey = $derived(saved.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}`).join(","));
+  // The parts every clip keeps, whose captions are cards of their own, so
+  // the cards are read again when a clip changes, see engine.SaidCards.
+  const cutsKey = $derived(
+    clips
+      .filter((c) => !c.rejected)
+      .map((c) => `${c.key}:${(c.segments.length ? c.segments : [c]).map((p) => `${p.start.toFixed(2)}-${p.end.toFixed(2)}`).join(" ")}`)
+      .join(","),
+  );
+  // How many times the captions of a clip changed while it stayed the
+  // clip they are of: a word corrected or removed, a caption moved, the
+  // look of every caption changed. The cards of what was said are those
+  // captions, so they are read again. A clip chosen anew is not a change.
+  let captionsChanged = $state(0);
+  const captionsRead = new Map<string, string>();
+  $effect(() => {
+    const view = captions;
+    const key = captionsOf;
+    if (!view || !key) return;
+    const words = (view.captions ?? []).map((c) => `${c.start.toFixed(2)} ${c.lines.map((l) => l.words.map((w) => w.text).join(" ")).join(" ")}`).join("|");
+    const was = captionsRead.get(key);
+    captionsRead.set(key, words);
+    if (was !== undefined && was !== words) untrack(() => captionsChanged++);
+  });
+  // They are read as soon as the video opens and kept, so the transcript
+  // button shows them in the frame it is pressed, and read again whenever
+  // the transcript hears more. A column left empty until the answer came was
+  // seen as a blink by Tim.
+  let sentencesAsked = 0;
+  let sentencesOf = "";
+  $effect(() => {
+    const of = path;
+    const key = `${savedKey}|${cutsKey}|${captionsChanged}`;
+    if (!saved.length) return;
+    // While the search is closed, what was read stays until it opens.
+    if (!saying && sentencesOf.startsWith(`${of}|`)) return;
+    if (sentencesOf === `${of}|${key}`) return;
+    const ticket = ++sentencesAsked;
+    untrack(() => {
+      api
+        .sentences(of)
+        .then((list) => {
+          if (ticket !== sentencesAsked || of !== path) return;
+          sentences = list ?? [];
+          sentencesOf = `${of}|${key}`;
+          sentencesFailed = null;
+        })
+        .catch((err) => {
+          said(`the sentences of the video could not be read: ${errorText(err)}`, { level: "warn" });
+          // An old failure never covers a newer answer.
+          if (ticket !== sentencesAsked || of !== path) return;
+          sentencesFailed = errorText(err);
+        });
+    });
+  });
+  // The part not transcribed yet under the hand, in the list, lit on the
+  // range picker too.
+  let unheardLit = $state(-1);
+  // The one whose card the playhead is in, lit on the range picker the
+  // same way: a part is lit one way, by the hand or by the keys, found by
+  // Tim.
+  let unheardOn = $state(-1);
+  // The parts of the video the transcript has not heard yet, which the
+  // search cannot look in. A gap under a second is between two words.
+  // They give way as the work hears, not as it saves, the way the edge of
+  // what is heard moves on the range picker: saving comes minutes of
+  // audio at a time, and the parts went in thirds of a window, found by
+  // Tim. See heard below.
+  const unheard = $derived.by(() => {
+    if (!(duration > 0)) return [] as [number, number][];
+    const out: [number, number][] = [];
+    let at = 0;
+    for (const [a, b] of [...shownHeard].sort((x, y) => x[0] - y[0])) {
+      if (a - at >= 1) out.push([at, a]);
+      at = Math.max(at, b);
+    }
+    if (duration - at >= 1) out.push([at, duration]);
+    return out;
+  });
+  // The clip list and the cards of what was said take turns in one
+  // scrolled column, so each keeps its own place: the clip list comes back
+  // where it was, the chosen clip in view, and the cards open at the
+  // playhead, see SaidList. The clip list came back where the cards had
+  // been scrolled to, and the cards opened where the clip list had been.
+  let clipListTop = 0;
+  function openSaying() {
+    act("search what was said");
+    clipListTop = root?.querySelector<HTMLElement>(".pane .list")?.scrollTop ?? 0;
+    saying = true;
+    void tick().then(() => sayField?.focus());
+  }
+  function closeSaying() {
+    saying = false;
+    sayTyped = "";
+    unheardLit = -1;
+    void tick().then(() => {
+      const list = root?.querySelector<HTMLElement>(".pane .list");
+      if (list) list.scrollTop = clipListTop;
+      showChosen();
+    });
+  }
+  // Where the playhead and the chosen clip stood when Shift and an arrow
+  // first walked the answers to what is typed, and the card it was walked
+  // to last. A search let go of, by Escape, by erasing what was typed or
+  // by its cross, goes back there, the way a search through a document
+  // goes back to where it began, found by Tim. Unless the playhead left
+  // the card it was walked to, or a card was clicked, or Enter pressed:
+  // then the person went where they meant to go, and stays.
+  let sayFrom: { at: number; clip: string } | null = null;
+  let sayOn: [number, number] | null = null;
+  function walkSaid(step: 1 | -1) {
+    saidList?.walk(step);
+  }
+  let typedBefore = "";
+  $effect(() => {
+    const now = sayTyped.trim();
+    const was = typedBefore;
+    typedBefore = now;
+    if (now || !was) return;
+    untrack(() => {
+      const from = sayFrom;
+      const on = sayOn;
+      sayFrom = null;
+      sayOn = null;
+      if (!from || !on || time < on[0] - 0.05 || time >= on[1]) return;
+      said(`search what was said: let go of, back to ${from.at.toFixed(2)}${from.clip ? ` in ${from.clip}` : ""}`);
+      if (from.clip !== selected) {
+        if (from.clip) void select(from.clip, false, false);
+        else selected = "";
+      }
+      seekTo(from.at);
+    });
+  });
+
+  // The space bar in the field with nothing typed plays, and the field
+  // lets go of the keyboard for it. Stopping again gives the field the
+  // keyboard back, so what is typed next is a search, found by Tim. Not
+  // once the keyboard or the hand went somewhere else in between.
+  let sayRefocus = false;
+  $effect(() => {
+    if (!paused || !sayRefocus) return;
+    sayRefocus = false;
+    if (saying && !typing()) untrack(() => sayField?.focus());
+  });
+  function sayElsewhere(event: Event) {
+    if (event.target !== sayField) sayRefocus = false;
+  }
+
+  // Escape takes back one step at a time: what was typed first, so the
+  // whole of what was said is there again, and then the search itself.
+  function escapeSaying() {
+    if (sayTyped) sayTyped = "";
+    else closeSaying();
+  }
+  // Escape steps back out of the search wherever the keyboard is, unless
+  // it is in a field of its own: the hand scrolled the sentences and
+  // Escape did nothing, because the field had lost the keyboard.
+  function sayKey(event: KeyboardEvent) {
+    if (event.key !== "Escape" || !saying) return;
+    if (event.defaultPrevented || keysElsewhere() || asleep(root)) return;
+    event.preventDefault();
+    escapeSaying();
+  }
 
   // How far the loudness is measured, which is the waveform. It is measured
   // on its own from the moment the episode is added, ahead of the
@@ -1215,8 +1398,12 @@
   // The chosen card, brought far enough into the list to be read. Walking
   // the list with the arrows otherwise chooses cards that are not on
   // screen, and the veil over each end means a card only just inside the
-  // list is a card half faded away.
-  function showChosen() {
+  // list is a card half faded away. A card walked to out of view turns
+  // the page, the way the transcript does as the video plays: walked
+  // down, it comes to the top, and walked up, to the foot. Brought just
+  // into view, it went on standing at the foot as the walk went down,
+  // found by Tim.
+  function showChosen(step: 0 | 1 | -1 = 0) {
     const list = root?.querySelector<HTMLElement>(".pane .list");
     const card = list?.querySelector<HTMLElement>(".pick.current, li.next.current")?.closest("li");
     if (!list || !card) return;
@@ -1224,14 +1411,21 @@
     const veil = 16;
     const box = card.getBoundingClientRect();
     const view = list.getBoundingClientRect();
-    if (box.top < view.top + veil) list.scrollTop -= view.top + veil - box.top;
-    else if (box.bottom > view.bottom - veil) list.scrollTop += box.bottom - view.bottom + veil;
+    const above = view.top + veil - box.top;
+    const below = box.bottom - (view.bottom - veil);
+    if (above <= 0.5 && below <= 0.5) return;
+    if (step > 0 || (!step && above > 0)) list.scrollTop -= above;
+    else list.scrollTop += below;
   }
 
   // seek is off for a clip chosen while the video plays, which carries on
   // where it is.
-  async function select(key: string, seek = true) {
+  // jump is off for a clip chosen by clicking one of its sentences, so the
+  // sentences stay where they are rather than go to the clip's first.
+  // step is the way the clip list was walked to it, see showChosen.
+  async function select(key: string, seek = true, jump = true, step: 0 | 1 | -1 = 0) {
     selected = key;
+    if (jump) chosenTimes++;
     // The episode remembers what is being worked on, so opening it again
     // opens on the same clip. Forgetting it is no reason to say anything.
     api.chooseClip(path, key).catch(() => {});
@@ -1242,7 +1436,7 @@
     // crosshair in the row below, even when it is the clip that was already
     // selected and the timeline was moved by hand since.
     await tick();
-    showChosen();
+    showChosen(step);
     timeline?.fit();
   }
 
@@ -2808,6 +3002,12 @@
     // for themselves.
     if (keysElsewhere() || asleep(root)) return;
     if (document.activeElement?.getAttribute("role") === "slider") return;
+    // While the transcript is shown in the column, its cards are walked.
+    if (saying) {
+      event.preventDefault();
+      walkSaid(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     const list = shown.filter((c) => !(c.key in removed));
     if (!list.length) return;
     event.preventDefault();
@@ -2819,7 +3019,7 @@
     const next = here < 0 ? (step > 0 ? 0 : list.length - 1) : here + step;
     const clip = list[(next + list.length) % list.length];
     if (!clip) return;
-    select(clip.key);
+    select(clip.key, true, true, step);
     seekTo(clip.start, "clip");
   }
 
@@ -2869,8 +3069,14 @@
     window.addEventListener("keydown", rotateKey);
     window.addEventListener("keydown", loopKey);
     window.addEventListener("keydown", inOutKey);
+    window.addEventListener("keydown", sayKey);
+    window.addEventListener("focusin", sayElsewhere);
+    window.addEventListener("pointerdown", sayElsewhere, true);
     return () => {
+      window.removeEventListener("focusin", sayElsewhere);
+      window.removeEventListener("pointerdown", sayElsewhere, true);
       window.removeEventListener("keydown", walkClips);
+      window.removeEventListener("keydown", sayKey);
       window.removeEventListener("keydown", thumbnailKey);
       window.removeEventListener("keydown", cropMarkKey);
       window.removeEventListener("keydown", rotateKey);
@@ -2952,6 +3158,11 @@
     onhold={(held) => player?.hold(held)}
     dimmed={!onClip}
     locked={busy}
+    unheard={saying ? unheard : []}
+    {unheardLit}
+    unheardOn={saying ? unheardOn : -1}
+    giving={live && !stoppedAt ? live[1] : -1}
+    onhoverunheard={(i) => (unheardLit = i)}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid
@@ -3371,6 +3582,59 @@
       <aside>
         <div class="pane asks">
           <div class="row listhead">
+            {#if saying}
+              <!-- The search through what was said takes the place of the
+                   head, the way the field over the font list does, and
+                   Escape or the cross gives the head back. -->
+              <SearchField
+                framed
+                bind:field={sayField}
+                bind:value={sayTyped}
+                placeholder="Search transcript"
+                aria-label="Search transcript"
+                onkeydown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    escapeSaying();
+                  }
+                  // A space at the start of nothing is no search, so with
+                  // nothing typed the space bar plays and stops, and the
+                  // field lets go of the keyboard, found by Tim. The
+                  // player hears the same key on the window after this,
+                  // with the keyboard back in the workspace.
+                  if (e.code === "Space" && !e.shiftKey && !sayTyped.trim()) {
+                    e.preventDefault();
+                    sayField?.blur();
+                    sayRefocus = paused;
+                  }
+                  // Shift and the arrows up and down walk the cards from
+                  // the field too, where they would select its text.
+                  if ((e.key === "ArrowDown" || e.key === "ArrowUp") && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    walkSaid(e.key === "ArrowDown" ? 1 : -1);
+                  }
+                  // Enter stays at the card walked to.
+                  if (e.key === "Enter" && sayFrom) {
+                    e.preventDefault();
+                    said("search what was said: Enter stays at the card walked to");
+                    sayFrom = null;
+                  }
+                }}
+              >
+                {#if sayTyped.trim()}
+                  <!-- How many cards match, the number fading in anew
+                       as it changes, the way a toast comes. -->
+                  <span class="saycount muted num" title="Cards that match">
+                    {#key sayMatches}<span in:fade={{ duration: 150 }}>{sayMatches}</span>{/key}
+                  </span>
+                {/if}
+                <button class="glyph quiet" title="Close the search, Escape does the same" aria-label="Close the search" onclick={closeSaying}>
+                  <Icon name="close" size={12} />
+                </button>
+              </SearchField>
+            {:else}
             <h2>{lane.word}</h2>
             {#if lane.count}
               <span class="muted num">{shown.length}</span>
@@ -3391,6 +3655,9 @@
               </Info>
             </span>
             <span class="grow"></span>
+            <button class="glyph" title="Search the transcript" aria-label="Search the transcript" onclick={openSaying}>
+              <Icon name="transcript" />
+            </button>
             <button
               class="search"
               class:primary={action.primary}
@@ -3403,8 +3670,38 @@
                    well, so the button only offers to stop it. -->
               {action.label}
             </button>
+            {/if}
           </div>
           <div class="scroll list">
+            {#if saying}
+              <SaidList
+                bind:this={saidList}
+                sentences={saved.length ? sentences : []}
+                typed={sayTyped}
+                {unheard}
+                {unheardLit}
+                clips={shown}
+                {selected}
+                chosen={chosenTimes}
+                bind:matches={sayMatches}
+                bind:holeOn={unheardOn}
+                onhover={hoverClip}
+                onhoverhole={(i) => (unheardLit = i)}
+                playhead={time}
+                playing={!paused}
+                failed={sentencesFailed}
+                onseek={(at, clip, walked) => {
+                  if (walked && sayTyped.trim()) {
+                    sayFrom ??= { at: time, clip: selected };
+                    sayOn = [at, walked.end];
+                  } else if (!walked) sayFrom = null;
+                  // A sentence of a clip makes that clip the one worked on,
+                  // the way its mark does, found by Tim.
+                  if (clip && clip !== selected) void select(clip, false, false);
+                  seekTo(intoWord({ start: at, end: at + 0.2 }, source && source.fps > 0 ? 1 / source.fps : 1 / 30));
+                }}
+              />
+            {:else}
             <ClipList
               clips={shown}
               live={current ? numbers : null}
@@ -3427,6 +3724,7 @@
               onremove={removeClip}
               onputback={putClipBack}
             />
+            {/if}
           </div>
         </div>
       </aside>
@@ -4132,6 +4430,11 @@
 
   .listhead .grow {
     flex: 1;
+  }
+
+  .saycount {
+    flex: none;
+    line-height: 16px;
   }
 
   label {

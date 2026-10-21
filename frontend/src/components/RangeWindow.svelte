@@ -49,6 +49,11 @@
     most = Infinity,
     reachSays = "",
     resumes = false,
+    unheard = [],
+    unheardLit = -1,
+    unheardOn = -1,
+    giving = -1,
+    onhoverunheard,
   }: {
     duration: number;
     // The window of the search in hand, drawn while shown.
@@ -101,6 +106,20 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
+    // The parts of the video not heard yet, drawn while what was said is
+    // searched, because that search cannot look there.
+    unheard?: [number, number][];
+    // The one of them whose card is under the hand, lit a step.
+    unheardLit?: number;
+    // The one whose card the playhead is in, lit the same way.
+    unheardOn?: number;
+    // Where the work is hearing now, or -1. The part that starts there
+    // gives way as the work hears, so its dots stand still while its edge
+    // passes over them.
+    giving?: number;
+    // The one of them under the hand here, by its place among them, or -1,
+    // so its card is lit too.
+    onhoverunheard?: (index: number) => void;
   } = $props();
 
   // What the mark is, in its titles.
@@ -306,6 +325,20 @@
     onreset?.();
   }
 
+  // The part not transcribed yet under the hand lights its card in the
+  // list, the way a clip's mark lights its card, found by Tim. The parts
+  // take no pointer, so a press on one is a press on the track, and which
+  // is under the hand is read from where it is. A mark over a part is the
+  // mark's.
+  let unheardHere = -1;
+  function hoverUnheard(event: PointerEvent) {
+    const over = event.type === "pointerleave" || !track || (event.target as Element | null)?.closest?.(".clipmark") ? -1 : timeAt(event.clientX);
+    const i = over < 0 ? -1 : unheard.findIndex(([a, b]) => a <= over && over < b);
+    if (i === unheardHere) return;
+    unheardHere = i;
+    onhoverunheard?.(i);
+  }
+
   function timeAt(clientX: number): number {
     const box = track.getBoundingClientRect();
     const share = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
@@ -335,7 +368,8 @@
      past them: it runs on past the track's top and bottom border, and at
      the very start or the very end it would otherwise be cut off by the
      corner. -->
-<div class="over">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="over" onpointermove={unheard.length ? hoverUnheard : undefined} onpointerleave={unheard.length ? hoverUnheard : undefined}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"
@@ -345,6 +379,11 @@
   onpointerdown={scrub}
   aria-label="The range picker"
 >
+  <!-- What has not been heard yet, dots under the minutes so their lines
+       still show through. -->
+  {#each unheard as [a, b], i (i)}
+    <div class="unheard" class:lit={i === unheardLit || i === unheardOn} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
+  {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
     <button
@@ -727,6 +766,66 @@
 
   .tip.bottom.to::after {
     clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
+
+  /* A part not transcribed yet, dots over the track and under the
+     minutes and the clips, and nothing else, as Tim picked them. */
+  .unheard {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--at);
+    width: calc(var(--to) - var(--at));
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* Under the hand or the keys on its card, the grey of a lit card, with
+     the range picker's own border over it, which is the range picker's
+     and not the part's. With the border gone the range picker looked
+     broken, found by Tim. */
+  .unheard.lit {
+    background: var(--ink-3);
+  }
+
+  /* Its dots, the card's, rising from the foot, so the minutes stand
+     clear above them, and with no dashed edge, which Tim found the dots
+     did without. They fill the part as whole columns, centred, so the
+     space from the last dot to the edge is the same on both sides and
+     about half the space between two dots: a pattern that started
+     wherever its grid fell looked off, and a row and a column left clear
+     round it looked cut off, both found by Tim. The space left over is
+     shared out exactly, so a side can take half a pixel, which is a
+     whole pixel on a Retina screen. The foot row stands a pixel up from
+     the range picker's foot, where it looked clutched to it, found by
+     Tim. Lit, the part takes the grey of a card under the hand and keeps
+     its fade, found by Tim. */
+  .unheard::before {
+    --width: calc(var(--to) - var(--at));
+    --side: calc((var(--width) - round(down, var(--width), var(--dot-pitch))) / 2);
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--side);
+    right: var(--side);
+    background: var(--halftone) right 0 bottom 1px / var(--dot-pitch) var(--dot-pitch);
+    mask-image: var(--halftone-fade);
+  }
+
+  /* While the work hears into a part, its dots stand still and the edge
+     wipes over them, a dot at a time and smoothly. Centred, they moved
+     half a pixel with every pixel of the edge and stepped back half a dot
+     each time a column went, so the pattern walked back and forth, found
+     by Tim. The right edge is where something heard begins or the video
+     ends, so it never moves, and the dots are laid from it. Once the work
+     stops, the part holds still and its dots are centred again. */
+  .unheard.giving::before {
+    --side: 0px;
+  }
+
+  .unheard.lit::before {
+    background-image: var(--halftone-lit);
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

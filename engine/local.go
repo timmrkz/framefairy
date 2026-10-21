@@ -679,7 +679,10 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		for i, message := range messages {
 			turns[i] = "=== " + message.Role + " ===\n" + message.Content
 		}
-		_ = afero.WriteFile(e.Files, filepath.Join(logDir, promptFile), []byte(strings.Join(turns, "\n\n")), 0o644)
+		path := filepath.Join(logDir, promptFile)
+		if afero.WriteFile(e.Files, path, []byte(strings.Join(turns, "\n\n")), 0o644) == nil {
+			listen.prompt(path)
+		}
 	}
 
 	// The ask ends when the search does, and when the server has sent

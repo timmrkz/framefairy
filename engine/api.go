@@ -646,8 +646,11 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		}
 		// The whole request, not half of it, so the log shows what the model
 		// was actually asked.
-		_ = afero.WriteFile(e.Files, filepath.Join(logDir, tag+"-prompt.txt"),
-			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644)
+		path := filepath.Join(logDir, tag+"-prompt.txt")
+		if afero.WriteFile(e.Files, path,
+			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644) == nil {
+			listen.prompt(path)
+		}
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
 		maxTokens, commas(runeLen(prompt)))

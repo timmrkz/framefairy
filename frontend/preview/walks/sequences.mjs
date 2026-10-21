@@ -708,6 +708,36 @@
 //                      types the letters in the Font list's search field,
 //                      finds the family first, picks it with Enter and
 //                      waits for the captions drawn in it
+//   ["search said", word]
+//   ["search said", [word, n]]
+//                      presses the transcript button in the head of the clip column
+//                      and types the word, and sees the field take the
+//                      head's place at its height with the keyboard in it,
+//                      a card for every sentence the engine has that holds
+//                      the word and for no sentence it does not have, the
+//                      word bold in each, the clip a sentence is in named
+//                      on its card, a dashed card and a dashed part of the
+//                      range picker for every part not transcribed yet, at
+//                      least n of them, sentences in the first frame after
+//                      the press, a card's edge and its clip's mark lit
+//                      under the hand, a part not transcribed lit on the
+//                      range picker under the hand, a clip chosen there
+//                      bringing its sentence into view, a click on a card
+//                      putting the playhead on its sentence, and Escape,
+//                      with the keyboard on that card, giving the head and
+//                      the clips back. A word of "*" is the longest word
+//                      of the first sentence
+//   ["said fails", "on"|"check"]
+//   ["font then transcript"]
+//                      "on" makes every read of the cards of what was said
+//                      fail. "check" opens the search and sees the list say
+//                      the transcript could not be read, with the reason
+//                      under the pointer, then lets the reads work, opens it
+//                      again and sees the cards with nothing said of it
+//   ["heard some"]     waits until the engine has a sentence of the video
+//                      on screen, or n with ["heard some", n], asking again each time the work says how
+//                      far it heard. ["speech", "hold"] after it lets the
+//                      piece of audio being heard then land
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1096,7 +1126,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews } from "./bridge.mjs";
 import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
@@ -1462,6 +1492,113 @@ export const sequences = [
     // fonts.
     name: "a search of the fonts keeps the order and the heads of the list",
     steps: [["search order", "b"]],
+  },
+  {
+    // Tim asked for a search through what was said, in the clip column
+    // (#366): a card for each sentence, the clip it is in named on it,
+    // and the parts not heard yet drawn where the search cannot look.
+    name: "a search of what was said finds the sentences, names their clips and puts the playhead on one",
+    // A second clip, made with I, so choosing one on the range picker has
+    // somewhere to take the list.
+    steps: [["trim", "start", 300], ["make while paused", "i"], ["search said", "Jahre"]],
+  },
+  {
+    // Found by Tim: a word corrected in the caption box read corrected in
+    // the video preview and as it was heard in the search of what was
+    // said. A clip's cards are its captions, so they read what it shows.
+    name: "a word corrected in a clip reads corrected in the search of what was said",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["search said", "Schulhoff"],
+    ],
+  },
+  {
+    // Tim, 19 October: the font list open and the transcript button
+    // pressed left both open, the keyboard in the font list's field, and
+    // Escape closed the font list first, though it was opened first.
+    name: "the transcript button pressed with the font list open closes the list and takes the keyboard",
+    steps: [["font then transcript"]],
+  },
+  {
+    // Found in the review of #367: the cards that could not be read left
+    // the column empty, with nothing said. A clip trimmed so they are read
+    // again as the search opens.
+    name: "cards of what was said that cannot be read say so in the list",
+    steps: [["said fails", "on"], ["trim", "start", 300], ["said fails", "check"]],
+  },
+  {
+    // The same on a video heard only as far as its first search reached,
+    // so part of it is not heard yet and says so, in the list and on the
+    // range picker.
+    name: "a search of what was said shows the parts not transcribed yet",
+    steps: [
+      // Heard slowly, and held once some of it is, so part of it is still
+      // to come while the search looks.
+      ["speech", 1500],
+      ["add", 600],
+      ["heard some"],
+      ["speech", "hold"],
+      ["search said", ["*", 1]],
+      ["speech", 0],
+    ],
+  },
+  {
+    // Found by Tim on 20 October: Shift and the down arrow stopped at the
+    // card before a part not transcribed yet, and the up arrow went past
+    // it. Then a click on that card lit the part. The speech model is
+    // held, so the part stays where it is.
+    name: "Shift and the arrows walk onto a part not transcribed yet and off it",
+    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["walk over a part"], ["speech", 0]],
+  },
+  {
+    // Found by Tim on 20 October: the edge of a clip's card in the
+    // transcript curved round its corners, where the clip list's is a
+    // straight bar the corners cut off. Both are one bar, a pixel wider.
+    name: "the edge of a clip's card is the same in the transcript and the clip list",
+    steps: [["edges alike"]],
+  },
+  {
+    // Found in the second review of the search on 21 October: two clips
+    // over the same words have a card each that begin at the same moment,
+    // and Shift and the down arrow stuck on the first, because the step to
+    // the second left the playhead where it was.
+    name: "Shift and the arrows walk past two cards that begin at the same moment",
+    steps: [["walk two at once"]],
+  },
+  {
+    // Found by Tim on 20 October: a card under the hand was lit a step
+    // less than the card the keys were on, and a part not transcribed yet
+    // walked to with the keys lit nothing on the range picker, where the
+    // hand on its card lit it there. Whatever is lit is lit one way.
+    name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
+    steps: [["speech", 1500], ["add", 600], ["heard some", 3], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+  },
+  {
+    // Found by Tim on 20 October: the clip chosen with the keys had its
+    // mark on the range picker and its frame on the clip timeline a step
+    // darker than the hand on its card made them, and a clip's card under
+    // the hand was a step darker than the chosen one.
+    name: "the hand and the keys light a clip the same",
+    steps: [["one light", "clips"]],
+  },
+  {
+    // Found by Tim on 20 October: Shift and the arrows brought a clip
+    // walked to just into view, so the walk went on at the foot of the
+    // list. They turn the page, the way the transcript does as it plays.
+    name: "Shift and the arrows turn the page of the clip list",
+    steps: [["walk the clip list"]],
+  },
+  {
+    // Found by Tim on 19 October: while the work heard a window, the parts
+    // not transcribed yet gave way in thirds of it, each time the
+    // transcript was saved. They give way as the work hears.
+    name: "the parts not transcribed yet give way as the work hears",
+    steps: [["speech", 1500], ["add", 600], ["heard some"], ["parts give way"], ["speech", 0]],
   },
   {
     // Found by Tim on #349: the Style list of one style lay over the Size
@@ -3964,7 +4101,6 @@ const clockOf = (t) => {
 
 // Frames a second of the episode on screen.
 const rate = async (page) => (await ask(page, "Source", await episodeOn(page))).fps;
-
 // How far the captions in the crop of the video preview are from a frame
 // of the short at the same size, in brightness, on average over every
 // pixel and at most, in steps of 8 bits. The captions are the rows of the
@@ -8818,6 +8954,1678 @@ for (const seq of toWalk) {
         await settled();
         break;
       }
+      case "parts give way": {
+        // With the transcript open while the work hears, where the first
+        // part not transcribed yet begins, against how far the saved
+        // transcript reaches, over nine of the job's news.
+        const path = await episodeOn(page);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        // Where its dots end on the right, too, which must not move while
+        // its left edge does: centred, the pattern walked back and forth
+        // as the edge passed over it, found by Tim. Read in every frame
+        // until the work has told the app how far it heard nine times,
+        // with what the saved transcript holds asked after each.
+        const from = await news(page);
+        const times = 9;
+        const sampled = page.evaluate(
+          ([from, times]) =>
+            new Promise((done) => {
+              const seen = [];
+              const tick = () => {
+                const u = document.querySelector(".track .unheard");
+                let now = null;
+                if (u) {
+                  const box = u.getBoundingClientRect();
+                  const cs = getComputedStyle(u, "::before");
+                  now = {
+                    left: Math.round(box.left * 10) / 10,
+                    end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
+                    side: parseFloat(cs.left),
+                  };
+                }
+                if (!seen.length || JSON.stringify(seen.at(-1)) !== JSON.stringify(now)) seen.push(now);
+                if ((window.__news.job ?? 0) >= from + times) done(seen);
+                else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            }),
+          [from, times],
+        );
+        const saves = new Set();
+        for (let seen = from; seen < from + times; ) {
+          seen = await nextNews(page, seen);
+          const status = await ask(page, "Episode", path).catch(() => null);
+          saves.add(JSON.stringify(status?.heard ?? null));
+        }
+        const samples = await sampled;
+        const edges = samples.map((d) => d?.left ?? null);
+        const dots = samples.filter(Boolean);
+        await page.keyboard.press("Escape");
+        const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
+        if (edges.every((v) => v === null)) wrong = "no part was not transcribed yet while the work heard";
+        else if (moves < Math.max(4, 2 * saves.size))
+          wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the job's news while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+        else {
+          // The samples taken while the edge moved, from the first move
+          // to the last, the dots' right end in each.
+          const moving = dots.filter((d, i) => i && d.left !== dots[i - 1].left || dots[i + 1] && dots[i + 1].left !== d.left);
+          const ends = [...new Set(moving.map((d) => d.end))];
+          console.log(JSON.stringify({ moves, ends: ends.slice(0, 8), sides: [...new Set(moving.map((d) => d.side))].slice(0, 8) }));
+          if (ends.length > 1)
+            wrong = `the dots of the part giving way moved while its edge did, their right end at ${ends.slice(0, 6).join(", ")} px`;
+          else if (moving.some((d) => d.side !== 0))
+            wrong = `the dots of the part giving way stop short of its edge, ${moving.find((d) => d.side !== 0).side} px in, so the edge does not wipe them`;
+        }
+        break;
+      }
+      case "edges alike": {
+        // The edge of a card of the chosen clip looks the same in the
+        // transcript and in the clip list: a bar down the left 4 px wide,
+        // cut off straight by the card's rounded corners. In the
+        // transcript it curved round them and was a pixel narrower, found
+        // by Tim. Read off a screenshot, row by row, as how many pixels of
+        // the app's colour each row holds at the card's left.
+        const edgeOf = async (selector) => {
+          const box = await page.evaluate((selector) => {
+            const r = document.querySelector(selector)?.getBoundingClientRect();
+            return r ? { x: r.left, y: r.top, height: r.height } : null;
+          }, selector);
+          if (!box) return null;
+          const clip = { x: Math.floor(box.x), y: Math.floor(box.y), width: 12, height: Math.floor(box.height) };
+          const shot = (await page.screenshot({ clip })).toString("base64");
+          return page.evaluate(async (data) => {
+            const img = new Image();
+            img.src = `data:image/png;base64,${data}`;
+            await img.decode();
+            const c = document.createElement("canvas");
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data;
+            const rows = [];
+            for (let y = 0; y < c.height; y++) {
+              let n = 0;
+              for (let x = 0; x < c.width; x++) {
+                const i = (y * c.width + x) * 4;
+                if (d[i] - d[i + 1] > 40 && d[i + 2] - d[i + 1] > 40) n++;
+              }
+              rows.push(n);
+            }
+            return { rows, scale: img.width / 12 };
+          }, shot);
+        };
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li[data-clip] button.pick");
+        // A card of a clip wholly in view, so nothing of the veil lies
+        // over it.
+        const card = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list").getBoundingClientRect();
+          const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+          const li = [...document.querySelectorAll("ol.said li[data-clip]")].find((li) => {
+            const r = li.getBoundingClientRect();
+            return r.top >= list.top + pad && r.bottom <= list.bottom - pad;
+          });
+          return li?.dataset.row ?? null;
+        });
+        if (!card) {
+          wrong = "no card of a clip wholly in view in the transcript";
+          break;
+        }
+        const said = await edgeOf(`ol.said li[data-row="${card}"] button.pick`);
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        await page.waitForSelector("aside ol li .pick.current");
+        await page.mouse.move(1, 1);
+        const listed = await edgeOf("aside ol li .pick.current");
+        const ends = (e) => [...e.rows.slice(0, 10), ...e.rows.slice(-10)].join(",");
+        const middle = (e) => e.rows[Math.floor(e.rows.length / 2)];
+        console.log(JSON.stringify({ said: { ends: ends(said), middle: middle(said) }, listed: { ends: ends(listed), middle: middle(listed) } }));
+        if (middle(listed) !== 4 * listed.scale) wrong = `the edge of the chosen clip in the clip list is ${middle(listed) / listed.scale} px wide, not 4`;
+        else if (middle(said) !== 4 * said.scale) wrong = `the edge of a clip's card in the transcript is ${middle(said) / said.scale} px wide, not 4`;
+        else if (ends(said) !== ends(listed))
+          wrong = `the edge of a clip's card in the transcript ends at its corners in rows of ${ends(said)} pixels, and in the clip list in rows of ${ends(listed)}`;
+        break;
+      }
+      case "walk the clip list": {
+        // Shift and the arrows walk the clip list the way they walk the
+        // transcript, turning the page: a clip walked down to below the
+        // foot of the list comes to the top, and one walked up to above
+        // its top comes to the foot. It was brought just into view, and
+        // went on standing at the foot as the walk went down, found by
+        // Tim. Three clips are made by hand after the one there is, so the
+        // list has pages, and the list is made two cards high.
+        const path = await episodeOn(page);
+        const have = (await ask(page, "Clips", path)) ?? [];
+        const after = Math.max(0, ...have.map((c) => c.end));
+        for (let k = 1; k <= 3; k++) await ask(page, "MakeClip", path, after + 30 * k, false);
+        const cards = "aside ol li[data-key]:not(.next)";
+        await page.waitForFunction(({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 3 }, { timeout: 0 });
+        await settle(page);
+        const keys = await page.evaluate((cards) => [...document.querySelectorAll(cards)].map((li) => li.dataset.key), cards);
+        await page.locator(`aside ol li[data-key="${keys[0]}"] button.pick`).first().click();
+        await watch.step("click", s);
+        await settle(page);
+        // The same veil the list fades its ends with, see showChosen.
+        const veil = 16;
+        await page.evaluate(
+          ({ cards, veil }) => {
+            const list = document.querySelector(".pane .list");
+            const [one, two] = document.querySelectorAll(cards);
+            list.scrollTop += one.getBoundingClientRect().top - list.getBoundingClientRect().top - veil;
+            const high = two.getBoundingClientRect().bottom - one.getBoundingClientRect().top;
+            list.style.flex = "none";
+            list.style.height = `${Math.ceil(high + 2 * veil)}px`;
+            list.scrollTop += one.getBoundingClientRect().top - list.getBoundingClientRect().top - veil;
+          },
+          { cards, veil },
+        );
+        await page.evaluate(() => document.activeElement?.blur());
+        // Where a card stands in the list once the list has had a frame
+        // to follow the clip chosen, from its top and from its foot.
+        const stood = (key) =>
+          page.evaluate(
+            ({ key, veil }) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const list = document.querySelector(".pane .list");
+                    const box = list.getBoundingClientRect();
+                    const r = document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"]`).getBoundingClientRect();
+                    const chosen = document.querySelector("aside ol li .pick.current")?.closest("li")?.dataset.key ?? null;
+                    done({ top: r.top - (box.top + veil), foot: box.bottom - veil - r.bottom, scroll: list.scrollTop, chosen });
+                  }),
+                ),
+              ),
+            { key, veil },
+          );
+        const press = async (key) => {
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+          await settle(page);
+        };
+        const before = await stood(keys[0]);
+        await press("Shift+ArrowDown");
+        const second = await stood(keys[1]);
+        await press("Shift+ArrowDown");
+        const down = await stood(keys[2]);
+        await press("Shift+ArrowUp");
+        const up = await stood(keys[1]);
+        await page.evaluate(() => {
+          const list = document.querySelector(".pane .list");
+          list.style.flex = "";
+          list.style.height = "";
+        });
+        console.log(JSON.stringify({ keys, before, second, down, up }));
+        if (second.chosen !== keys[1]) wrong = `Shift and the down arrow chose ${second.chosen}, not ${keys[1]}`;
+        else if (Math.abs(second.scroll - before.scroll) > 0.5) wrong = `the clip walked to in view moved the clip list ${(second.scroll - before.scroll).toFixed(0)} px`;
+        else if (down.chosen !== keys[2]) wrong = `Shift and the down arrow twice chose ${down.chosen}, not ${keys[2]}`;
+        else if (Math.abs(down.top) > 1)
+          wrong = `the clip walked down to below the foot of the clip list stands ${down.top.toFixed(0)} px below the top, not turned to the top`;
+        else if (up.chosen !== keys[1]) wrong = `Shift and the up arrow chose ${up.chosen}, not ${keys[1]}`;
+        else if (Math.abs(up.foot) > 1)
+          wrong = `the clip walked up to above the top of the clip list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+        break;
+      }
+      case "walk two at once": {
+        // Two clips made by hand at the same moment, past the clips there
+        // are, so each has a card of the same words, beginning together.
+        // Shift and the down arrow from the card before them goes onto
+        // each and then past them, and Shift and the up arrow back.
+        const path = await episodeOn(page);
+        const have = (await ask(page, "Clips", path)) ?? [];
+        const at = Math.max(0, ...have.map((c) => c.end)) + 30;
+        await ask(page, "MakeClip", path, at, false);
+        await ask(page, "MakeClip", path, at, false);
+        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have.length + 2, { timeout: 0 });
+        await settle(page);
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li[data-clip]");
+        const pair = await page.evaluate(() => {
+          const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+          const i = cards.findIndex(
+            (li, i) => i > 0 && cards[i + 1] && li.dataset.clip && cards[i + 1].dataset.clip && li.dataset.clip !== cards[i + 1].dataset.clip && li.dataset.at === cards[i + 1].dataset.at,
+          );
+          return i < 0 ? null : [cards[i - 1], cards[i], cards[i + 1], cards[i + 2]].map((li) => li?.dataset.row ?? null);
+        });
+        if (!pair) {
+          wrong = "no two cards of two clips that begin at the same moment";
+          break;
+        }
+        // A step is done once the list has had a frame to follow.
+        const followed = () =>
+          page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(document.querySelector("ol.said").dataset.followed)))));
+        await page.locator(`ol.said li[data-row="${pair[0]}"] button.pick`).click();
+        await watch.step("click", s);
+        const went = [await followed()];
+        await page.mouse.move(1, 1);
+        for (const key of ["Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowUp", "Shift+ArrowUp"]) {
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+          await settle(page);
+          went.push(await followed());
+        }
+        const want = [pair[0], pair[1], pair[2], pair[3], pair[2], pair[1]];
+        console.log(JSON.stringify({ pair, went }));
+        if (went.join(" ") !== want.join(" ")) wrong = `Shift and the arrows over two cards that begin together went ${went.join(", ")}, not ${want.join(", ")}`;
+        break;
+      }
+      case "one light": {
+        // What is lit is lit one way, whether the hand is on it or the
+        // keys brought it there, found by Tim: a card under the hand was a
+        // step darker than the card the keys were on, the clip chosen was
+        // a step darker on the range picker and the clip timeline than the
+        // hand on its card made it, and a part not transcribed yet walked
+        // to lit nothing on the range picker.
+        const look = (selector, prop) =>
+          page.evaluate(
+            ({ selector, prop }) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const el = document.querySelector(selector);
+                    done(el ? getComputedStyle(el)[prop] : null);
+                  }),
+                ),
+              ),
+            { selector, prop },
+          );
+        if (arg === "said") {
+          await page.mouse.move(1, 1);
+          await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+          await watch.step("click", s);
+          await page.waitForSelector("ol.said li.hole");
+          const around = await page.evaluate(() => {
+            const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+            const i = cards.findIndex((li, i) => i > 1 && li.classList.contains("hole") && !cards[i - 1].classList.contains("hole") && !cards[i - 2].classList.contains("hole"));
+            return i < 0 ? null : [cards[i - 2], cards[i - 1], cards[i]].map((li) => li.dataset.row);
+          });
+          if (!around) {
+            wrong = "no part not transcribed yet with two cards before it";
+            break;
+          }
+          const [other, before, hole] = around.map((key) => `ol.said li[data-row="${key}"]`);
+          await page.locator(`${before} button.pick`).click();
+          await watch.step("click", s);
+          await page.mouse.move(1, 1);
+          const keyed = await look(`${before} button.pick`, "backgroundColor");
+          await page.locator(`${other} button.pick`).hover();
+          await watch.step("hover", s);
+          const handed = await look(`${other} button.pick`, "backgroundColor");
+          // The keys onto the part, with the hand away.
+          await page.mouse.move(1, 1);
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press("Shift+ArrowDown");
+          await watch.step("press", s);
+          const part = await page.evaluate(
+            (hole) =>
+              new Promise((done) =>
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    const li = document.querySelector(hole);
+                    const parts = [...document.querySelectorAll(".track .unheard")];
+                    const lit = parts.filter((u) => u.classList.contains("lit"));
+                    done({
+                      current: li.classList.contains("current"),
+                      card: getComputedStyle(li).backgroundColor,
+                      // The part lit is the one the card stands for, the
+                      // parts and their cards in the same order.
+                      lit: lit.map((u) => parts.indexOf(u)),
+                      mine: [...document.querySelectorAll("ol.said li.hole")].indexOf(li),
+                      fill: lit.length ? getComputedStyle(lit[0]).backgroundColor : null,
+                    });
+                  }),
+                ),
+              ),
+            hole,
+          );
+          console.log(JSON.stringify({ keyed, handed, part }));
+          if (keyed !== handed) wrong = `the card under the hand is ${handed} and the card the keys are on is ${keyed}`;
+          else if (!part.current) wrong = "Shift and the down arrow did not go onto the part not transcribed yet";
+          else if (part.card !== keyed) wrong = `the part not transcribed yet the keys are on is ${part.card} in the list, not the grey of every lit card, ${keyed}`;
+          else if (part.lit.join() !== String(part.mine))
+            wrong = `the part not transcribed yet the keys are on lit parts ${JSON.stringify(part.lit)} on the range picker, not its own, ${part.mine}`;
+          else if (part.fill !== keyed) wrong = `the part not transcribed yet lit on the range picker is ${part.fill}, not the grey of its card, ${keyed}`;
+          break;
+        }
+        // A clip's card under the hand and the chosen clip's card, and the
+        // chosen clip on the range picker and the clip timeline, with the
+        // hand away and with the hand on its card.
+        const path = await episodeOn(page);
+        let have = (await ask(page, "Clips", path)) ?? [];
+        if (have.length < 2) {
+          await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
+          await page.waitForFunction(() => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= 2, null, { timeout: 0 });
+        }
+        await settle(page);
+        const keys = await page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]:not(.next)")].map((li) => li.dataset.key));
+        const card = (key) => `aside ol li[data-key="${key}"] button.pick`;
+        await page.locator(card(keys[0])).click();
+        await watch.step("click", s);
+        await settle(page);
+        await page.mouse.move(1, 1);
+        const away = {
+          card: await look(card(keys[0]), "backgroundColor"),
+          mark: await look(".track .clipmark.selected", "borderTopColor"),
+          frame: await look(".clip-timeline .span.frame", "borderTopColor"),
+        };
+        await page.locator(card(keys[0])).hover();
+        await watch.step("hover", s);
+        const on = {
+          mark: await look(".track .clipmark.selected", "borderTopColor"),
+          frame: await look(".clip-timeline .span.frame", "borderTopColor"),
+        };
+        await page.locator(card(keys[1])).hover();
+        await watch.step("hover", s);
+        const other = await look(card(keys[1]), "backgroundColor");
+        await page.mouse.move(1, 1);
+        console.log(JSON.stringify({ away, on, other }));
+        if (other !== away.card) wrong = `a clip's card under the hand is ${other} and the chosen clip's card is ${away.card}`;
+        else if (away.mark !== on.mark) wrong = `the chosen clip's mark on the range picker is ${away.mark}, and ${on.mark} with the hand on its card`;
+        else if (away.frame !== on.frame) wrong = `the chosen clip's frame on the clip timeline is ${away.frame}, and ${on.frame} with the hand on its card`;
+        break;
+      }
+      case "walk over a part": {
+        // Shift and the arrows walk onto a part not transcribed yet and off
+        // it again, one card at a step both ways. Down stopped at the card
+        // before it, and up went past it, found by Tim: that card ran on a
+        // little past where the hearing reached, as a word heard at the
+        // edge can, since the engine keeps a word by where it starts. So
+        // here the card before the part runs half a second on into it, and
+        // begins just before it. The speech model is held, so the edge
+        // stays where it is, and the app is opened again so it reads the
+        // cards that way from the start.
+        const path = await episodeOn(page);
+        const call = async (route, name, args) => (await route.fetch({ postData: JSON.stringify({ name, args }) })).json();
+        const later = async (route) => {
+          const body = route.request().postDataJSON?.() ?? {};
+          if (!String(body.name ?? "").endsWith("Sentences")) return route.fallback();
+          const answer = await route.fetch();
+          const cards = await answer.json();
+          // Where the hearing has got to, saved or not, which is where the
+          // part begins.
+          const jobs = (await call(route, "Jobs", [])) ?? [];
+          const saved = (await call(route, "Episode", [path]))?.heard ?? [];
+          const edge = Math.max(
+            ...jobs.filter((j) => j.episode === path && j.progress?.covered).map((j) => j.progress.covered),
+            ...saved.filter(([a]) => a < 1).map(([, b]) => b),
+          );
+          const last = cards.filter((c) => c.start < edge).at(-1);
+          if (last && Number.isFinite(edge)) {
+            last.end = edge + 0.5;
+            // And it starts just before the edge, the way a card of one
+            // word heard at the edge does, so the playhead put on the card
+            // by a click lands in the part after it as well. The part lit
+            // then, not the card clicked, found by Tim.
+            last.start = edge - 0.02;
+          }
+          return route.fulfill({ response: answer, json: cards });
+        };
+        await page.route("**/call", later);
+        await page.reload();
+        await page.locator("aside li", { hasText: path.split("/").pop() }).first().waitFor();
+        await fromSidebar(page, () => page.locator("aside li", { hasText: path.split("/").pop() }).first().click());
+        await settle(page);
+        await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
+        await watch.step("click", s);
+        await page.waitForSelector("ol.said li.hole");
+        const around = await page.evaluate(() => {
+          const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+          const i = cards.findIndex((li, i) => i && li.classList.contains("hole") && !cards[i - 1].classList.contains("hole"));
+          if (i < 0) return null;
+          return [cards[i - 1], cards[i], cards[(i + 1) % cards.length]].map((li) => li.dataset.row);
+        });
+        if (!around) {
+          wrong = "no part not transcribed yet with a card before it";
+          break;
+        }
+        // A step is done once the list has had a frame to follow the
+        // playhead: the key moves it at once, and the list follows in the
+        // same frame.
+        const stepped = async (press) => {
+          await press();
+          return page.evaluate(
+            () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(document.querySelector("ol.said").dataset.followed)))),
+          );
+        };
+        const keys = async (key) => {
+          await page.evaluate(() => document.activeElement?.blur());
+          await page.keyboard.press(key);
+          await watch.step("press", s);
+        };
+        const went = [
+          await stepped(async () => {
+            await page.locator(`ol.said li[data-row="${around[0]}"] button.pick`).click();
+            await watch.step("click", s);
+          }),
+        ];
+        for (const key of ["Shift+ArrowDown", "Shift+ArrowDown", "Shift+ArrowUp", "Shift+ArrowUp"]) went.push(await stepped(() => keys(key)));
+        await page.unroute("**/call", later);
+        const want = [around[0], around[1], around[2], around[1], around[0]];
+        console.log(JSON.stringify({ around, went }));
+        if (went.join(" ") !== want.join(" "))
+          wrong = `Shift and the arrows from the card before a part not transcribed yet went ${went.join(", ")}, not ${want.join(", ")}`;
+        break;
+      }
+      case "heard some": {
+        // Asked again each time the work says how far it heard, until the
+        // saved transcript holds a sentence, or as many as asked for.
+        const path = await episodeOn(page);
+        const least = arg ?? 1;
+        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
+        // And the app has read how far the saved transcript reaches since,
+        // which it reads again on its own while the work hears, so the
+        // cards it reads are those sentences too.
+        const asked = await page.evaluate(() => window.__calls.filter((c) => c.name === "Episode").length);
+        await page.waitForFunction((n) => window.__calls.filter((c) => c.name === "Episode").length > n, asked, { polling: "raf", timeout: 30000 });
+        await settle(page);
+        await settled();
+        break;
+      }
+      // The cards of what was said cannot be read while "on", and are
+      // read again after. With "check", the search opens on cards that
+      // cannot be read, says so in the list, and says nothing of it once
+      // they can be read again.
+      case "font then transcript": {
+        // The font list open, then the transcript button pressed, found
+        // by Tim: the list stayed open over the workspace with the
+        // keyboard still in its field, and Escape closed the list first.
+        await page.locator('button.pick[aria-label="Font"]').click();
+        await watch.step("click", s);
+        await page.waitForSelector(".pick-list .pick-row");
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        await watch.step("click", s);
+        const seen = await page.evaluate(() => ({
+          list: !!document.querySelector(".pick-list"),
+          focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.placeholder ?? document.activeElement?.tagName ?? null,
+          field: !!document.querySelector(".listhead .search input"),
+        }));
+        console.log(JSON.stringify(seen));
+        if (seen.list) wrong = "the font list stayed open after the transcript button was pressed";
+        else if (!seen.field) wrong = "the transcript button opened no search";
+        else if (seen.focused !== "Search transcript") wrong = `the keyboard is in ${seen.focused}, not the transcript's field`;
+        if (!wrong) {
+          await page.keyboard.press("Escape");
+          await watch.step("press", s);
+          const after = await page.evaluate(() => !!document.querySelector(".listhead .search input"));
+          if (after) wrong = "Escape did not close the transcript search";
+        }
+        break;
+      }
+      case "said fails": {
+        if (arg === "on") {
+          await page.route("**/call", (route) => {
+            const body = route.request().postDataJSON?.() ?? {};
+            if (String(body.name ?? "").endsWith("Sentences")) return route.fulfill({ status: 500, body: "the disk went away" });
+            return route.fallback();
+          });
+          break;
+        }
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        // Once the read of the cards has failed and the list has had its
+        // frames to say so.
+        await page.waitForFunction(() => window.__calls.some((c) => c.name === "Sentences" && String(c.failed).includes("the disk went away")));
+        await settle(page);
+        const failing = await page.evaluate(() => {
+          // The failure is the answer here, so it is taken off the calls
+          // that failed before the rules read them.
+          for (const c of window.__calls) if (c.name === "Sentences" && String(c.failed).includes("the disk went away")) c.failed = null;
+          const li = document.querySelector("ol.said li.failed");
+          return li ? { says: li.textContent.trim(), why: li.title } : null;
+        });
+        await watch.step("click", s);
+        await page.unroute("**/call");
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        await page.locator('.listhead button[aria-label="Search the transcript"]').click();
+        await watch.step("click", s);
+        const again = await page.evaluate(() => ({
+          failed: !!document.querySelector("ol.said li.failed"),
+          cards: document.querySelectorAll("ol.said li[data-at]").length,
+        }));
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        if (!failing) wrong = "the cards could not be read and the list said nothing of it";
+        else if (failing.says !== "The transcript could not be read" || !failing.why.includes("the disk went away"))
+          wrong = `the list said "${failing.says}", with "${failing.why}" under the pointer`;
+        else if (again.failed || !again.cards) wrong = `read again, the list still says it could not be read, over ${again.cards} cards`;
+        break;
+      }
+      case "search said": {
+        const path = await episodeOn(page);
+        const headHigh = () => page.evaluate(() => document.querySelector(".listhead").getBoundingClientRect().height);
+        // The clips are on their cards first, so a sentence can be told
+        // which clip it is in.
+        const listed = (await ask(page, "Clips", path)).filter((c) => !c.rejected).length;
+        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed, { timeout: 10000 });
+        await settled();
+        let [word, unheardLeast = 0] = [arg].flat();
+        if (word === "*") {
+          const first = (await ask(page, "Sentences", path))[0]?.text ?? "";
+          word = first.split(/[^\p{L}]+/u).sort((a, b) => b.length - a.length)[0] ?? "";
+        }
+        const was = await headHigh();
+        // The playhead far into the video, so the cards opening at it can
+        // be told from the cards opening at their top.
+        const track = await page.evaluate(() => {
+          const r = document.querySelector(".track").getBoundingClientRect();
+          return { x: r.left + r.width * 0.85, y: r.top + r.height / 2 };
+        });
+        await page.mouse.click(track.x, track.y);
+        await watch.step("click", s);
+        await page.mouse.move(0, 0);
+        const icon = await page.evaluate(
+          () => document.querySelector('.listhead button[aria-label="Search the transcript"] svg')?.getAttribute("class") ?? "",
+        );
+        // The sentences are on screen from the frame the transcript button is
+        // pressed in, never an empty column first, found by Tim.
+        const blank = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              document.querySelector('.listhead button[aria-label="Search the transcript"]').click();
+              let n = 0;
+              let empty = 0;
+              const tick = () => {
+                if (!document.querySelector("ol.said li")) empty++;
+                if (++n < 20) requestAnimationFrame(tick);
+                else done(empty);
+              };
+              requestAnimationFrame(tick);
+            }),
+        );
+        await watch.step("click", s);
+        if (blank) {
+          wrong = `the column stood empty for ${blank} of 20 frames after the transcript button`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // The cards open at the playhead, not where the clip list was
+        // scrolled to, found in the review of #367. Once the cards read
+        // as it opens have come.
+        await settle(page);
+        const opened = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          const ol = document.querySelector("ol.said");
+          const card = [...ol.querySelectorAll("li[data-row]")].find((li) => li.dataset.row === ol.dataset.followed);
+          if (!card) return null;
+          const box = list.getBoundingClientRect();
+          const end = list.scrollTop >= list.scrollHeight - list.clientHeight - 1;
+          const r = card.getBoundingClientRect();
+          return { top: r.top - box.top, should: parseFloat(getComputedStyle(ol).paddingTop), end, seen: r.top >= box.top && r.bottom <= box.bottom };
+        });
+        if (!opened) {
+          wrong = `the cards opened at no card of the playhead, ${await page.evaluate(() => JSON.stringify({ f: document.querySelector("ol.said").dataset.followed ?? null, at: document.querySelector(".screen")?.dataset.playhead, n: document.querySelectorAll("ol.said li").length }))}`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // In view, the way the clip timeline shows the playhead's page.
+        if (!opened.seen) {
+          wrong = `the cards opened with the card of the playhead ${opened.top.toFixed(0)} px down, out of view`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // What is typed is read from the top of the list, though the hand
+        // scrolled the sentences before typing, found by Tim.
+        await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          list.scrollTop = list.scrollHeight;
+        });
+        const scrolledTo = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
+        // A letter most sentences hold, so the answers are still more than
+        // the list shows and the list could have stayed where it was.
+        await page.keyboard.type("e");
+        await watch.step("type", s);
+        const typedTop = await page.evaluate(() => {
+          const list = document.querySelector(".scroll.list");
+          return { top: list.scrollTop, more: list.scrollHeight - list.clientHeight };
+        });
+        await page.keyboard.press("Backspace");
+        await page.keyboard.type(word);
+        await watch.step("type", s);
+        if (scrolledTo > 0 && typedTop.more > 0 && typedTop.top !== 0) {
+          wrong = `typing in the search left the list ${typedTop.top} px down, where the hand had scrolled it to ${scrolledTo} px`;
+          await page.keyboard.press("Escape");
+          await page.keyboard.press("Escape");
+          break;
+        }
+        const [sentences, clips, library] = await Promise.all([
+          ask(page, "Sentences", path),
+          ask(page, "Clips", path),
+          ask(page, "Library"),
+        ]);
+        const heard = library.find((e) => e.source === path)?.heard ?? [];
+        // The parts not heard yet, the way the workspace works them out
+        // from what the transcript on disk has heard.
+        const status = library.find((e) => e.source === path);
+        const end = (await ask(page, "Source", path))?.duration;
+        await page.waitForFunction(
+          (n) => document.querySelectorAll("ol.said li:not(.hole):not(.none)").length >= n,
+          sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase())).length,
+          { timeout: 10000 },
+        ).catch(() => {});
+        const seen = await page.evaluate(() => ({
+          focused: document.activeElement?.getAttribute("aria-label"),
+          head: document.querySelector(".listhead").getBoundingClientRect().height,
+          cards: [...document.querySelectorAll("ol.said li:not(.hole):not(.none)")].map((li) => ({
+            at: Number(li.dataset.at),
+            text: li.querySelector(".text").textContent.trim(),
+            bold: [...li.querySelectorAll(".text b")].map((b) => b.textContent),
+            clip: li.querySelector(".clipname")?.textContent.trim() ?? "",
+          })),
+          holes: document.querySelectorAll("ol.said li.hole").length,
+          edges: document.querySelectorAll(".track .unheard").length,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
+          // The greys, as the browser has them: what no clip keeps, a
+          // clip's words, a word that answers, the field's placeholder,
+          // and a label's grey to measure them by.
+          grey: (() => {
+            const of = (sel, pseudo) => {
+              const el = document.querySelector(sel);
+              return el ? getComputedStyle(el, pseudo).color : null;
+            };
+            const probe = document.createElement("span");
+            probe.style.color = "var(--muted)";
+            document.body.append(probe);
+            const muted = getComputedStyle(probe).color;
+            probe.style.color = "var(--text)";
+            const white = getComputedStyle(probe).color;
+            // The grey the app gives what a field is for, which the browser
+            // has a grey of its own for that, a lighter one in WebKit.
+            probe.style.color = "color-mix(in srgb, var(--muted) 45%, var(--faint))";
+            const unwritten = getComputedStyle(probe).color;
+            probe.remove();
+            return {
+              out: of("ol.said li:not([data-clip]):not(.hole):not(.none) .text"),
+              clip: of("ol.said li[data-clip] .text"),
+              bold: of("ol.said li .text b"),
+              placeholder: of('input[aria-label="Search transcript"]', "::placeholder"),
+              muted,
+              white,
+              unwritten,
+            };
+          })(),
+          says: document.querySelector('input[aria-label="Search transcript"]')?.placeholder ?? null,
+        }));
+        // How bright a colour of the browser's is, 0 to 255.
+        const bright = (c) => {
+          // A colour mixed in the stylesheet comes back as color(srgb ...),
+          // from 0 to 1.
+          const scale = c?.startsWith("color(") ? 255 : 1;
+          const [r, g, b] = (c?.replace(/^color\(srgb/, "").match(/[\d.]+/g) ?? []).map((v) => Number(v) * scale);
+          return c ? 0.2126 * r + 0.7152 * g + 0.0722 * b : NaN;
+        };
+        const holds = sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase()));
+        const texts = new Set(sentences.map((x) => x.text));
+        const gaps = (() => {
+          if (status?.transcribed) return 0;
+          let at = 0;
+          let n = 0;
+          for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
+            if (a - at >= 1) n++;
+            at = Math.max(at, b);
+          }
+          if (Number.isFinite(end) && end - at >= 1) n++;
+          return n;
+        })();
+        // The clips the engine has showing a card at a moment, two where
+        // clips are over each other.
+        const namesAt = (c) =>
+          sentences
+            .filter((y) => Math.abs(y.start - c.at) < 0.0005)
+            .map((y) => {
+              const k = y.clip ? clips.find((q) => q.key === y.clip) : null;
+              return k ? k.title || k.slug : "";
+            });
+        // A card named for a clip holds only what the clip keeps, to
+        // within the word an edge falls in, found by Tim.
+        const spills = (c) => {
+          const x = sentences.find((y) => Math.abs(y.start - c.at) < 0.0005);
+          const k = c.clip && clips.find((q) => !q.rejected && (q.title || q.slug) === c.clip);
+          if (!x || !k) return false;
+          const parts = k.segments.length ? k.segments : [k];
+          const kept = (t) => parts.some((p) => t >= p.start - 0.5 && t <= p.end + 0.5);
+          return !kept(x.start) || !kept(x.end);
+        };
+        const misnamed = (c) => !namesAt(c).includes(c.clip);
+        // A clip's cards are its captions, one card a caption, reading
+        // what the caption shows, found by Tim, a clip over another too.
+        const flat = (t) => t.replace(/[\s\u00ad-]/g, "");
+        let held = 0;
+        const unlike = (
+          await Promise.all(
+            clips.filter((k) => !k.rejected).map(async (k) => {
+              const view = await ask(page, "Captions", path, k.plan, k.id);
+              const blocks = (view?.captions ?? []).map((c) => c.lines.flatMap((l) => l.words.map((w) => w.text)).join(" ")).filter((t) => t).map(flat);
+              const cards = sentences.filter((x) => x.clip === k.key).map((x) => x.text);
+              held += cards.length;
+              if (cards.length === blocks.length && cards.every((t, i) => flat(t) === blocks[i])) return null;
+              return `${k.title || k.slug} shows ${blocks.length} captions and has ${cards.length} cards, ${JSON.stringify(blocks.slice(0, 2))} against ${JSON.stringify(cards.slice(0, 2).map(flat))}`;
+            }),
+          )
+        ).find(Boolean);
+        if (seen.focused !== "Search transcript") wrong = `the keyboard is in ${seen.focused ?? "nothing"}, not the search field`;
+        else if (seen.head !== was) wrong = `the head is ${seen.head} px high with the field, ${was} px without it`;
+        else if (!holds.length) wrong = `the engine has no sentence with ${word}, so the step proves nothing`;
+        else if (holds.some((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)))
+          wrong = `no card for "${holds.find((x) => !seen.cards.some((c) => Math.abs(c.at - x.start) < 0.0005)).text}"`;
+        // Only the cards that hold the word, where any does: three letters
+        // answer a lot of words the way a font answers its name, found in
+        // the review of #367.
+        else if (seen.cards.length !== holds.length) wrong = `${seen.cards.length} cards answer ${word}, and ${holds.length} hold it`;
+        else if (seen.cards.some((c) => !texts.has(c.text))) wrong = `a card reads "${seen.cards.find((c) => !texts.has(c.text)).text}", which the engine never said`;
+        else if (seen.cards.some((c) => !c.bold.length)) wrong = `"${seen.cards.find((c) => !c.bold.length).text}" has no word in bold`;
+        else if (seen.cards.some((c) => c.text.toLowerCase().includes(word.toLowerCase()) && !c.bold.some((b) => b.toLowerCase().includes(word.toLowerCase()))))
+          wrong = `${word} is not bold in a card that holds it`;
+        else if (seen.cards.some((c) => !sentences.some((y) => Math.abs(y.start - c.at) < 0.0005 && y.text === c.text)))
+          wrong = `the card at ${seen.cards.find((c) => !sentences.some((y) => Math.abs(y.start - c.at) < 0.0005)).at} is of no sentence the engine has there`;
+        else if (sentences.some((x) => x.end - x.start > 12))
+          wrong = `a card of what was said runs ${(() => { const x = sentences.find((y) => y.end - y.start > 12); return `${(x.end - x.start).toFixed(1)} s from ${x.start.toFixed(1)}`; })()}, more than the 12 s a card may, found by Tim`;
+        else if (seen.cards.some(spills))
+          wrong = `the card at ${seen.cards.find(spills).at.toFixed(2)} is named for its clip and holds what the clip leaves out`;
+        else if (seen.cards.some(misnamed)) {
+          const c = seen.cards.find(misnamed);
+          wrong = `the card at ${c.at.toFixed(2)} names ${c.clip || "no clip"}, and the engine has it in ${namesAt(c).join(", ") || "no clip"}`;
+        }
+        else if (unlike) wrong = unlike;
+        // What no clip keeps reads in a label's grey, a clip's words a step
+        // above it and below white, and a word that answers in white, so it
+        // stands out, found by Tim.
+        else if (seen.grey.out && seen.grey.out !== seen.grey.muted) wrong = `what no clip keeps reads in ${seen.grey.out}, not the grey of a label, ${seen.grey.muted}`;
+        else if (seen.grey.clip && !(bright(seen.grey.clip) > bright(seen.grey.muted) && bright(seen.grey.clip) < bright(seen.grey.white)))
+          wrong = `a clip's words read in ${seen.grey.clip}, not between ${seen.grey.muted} and ${seen.grey.white}`;
+        else if (seen.grey.bold !== seen.grey.white) wrong = `a word that answers reads in ${seen.grey.bold}, not ${seen.grey.white}`;
+        // The field says what it is in two words, darker than what is typed
+        // and than a label, so it does not read as typed, and the button
+        // that opens it wears the transcript, found by Tim.
+        else if (seen.says !== "Search transcript") wrong = `the field says "${seen.says}"`;
+        else if (seen.grey.placeholder !== seen.grey.unwritten || !(bright(seen.grey.placeholder) < bright(seen.grey.muted)))
+          wrong = `the field's placeholder is ${seen.grey.placeholder}, not ${seen.grey.unwritten}, darker than ${seen.grey.muted}`;
+        else if (!icon.includes("lucide-message-square-quote")) wrong = `the button that opens the search wears ${icon || "nothing"}`;
+        else if (!held && clips.some((k) => !k.rejected)) wrong = "no clip has a card, so a clip's cards could not be held to its captions";
+        else if (gaps < unheardLeast)
+          wrong = `${gaps} parts are not transcribed yet, fewer than the ${unheardLeast} this step is about: heard ${JSON.stringify(heard)} of ${end}, transcribed ${status?.transcribed}`;
+        // A search answers with sentences only. The parts not transcribed
+        // yet stay on the range picker, found by Tim.
+        else if (seen.holes || seen.edges !== gaps)
+          wrong = `${gaps} parts are not transcribed yet, and with ${word} typed the list shows ${seen.holes} of them and the range picker ${seen.edges}`;
+        else if (seen.count !== String(seen.cards.length)) wrong = `the field says ${seen.count ?? "nothing"} match, over ${seen.cards.length} cards`;
+        else if (!scrolledTo || typedTop.more <= 0)
+          wrong = `the sentences with an e scroll ${typedTop.more} px and the hand scrolled to ${scrolledTo} px, so typing could not be seen to go back to the top`;
+        if (wrong) {
+          await page.keyboard.press("Escape");
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // What nothing said matches says so in two words, with no parts
+        // not transcribed yet around them, found by Tim.
+        const field = page.locator('input[aria-label="Search transcript"]');
+        await field.fill("qxzvqxzv");
+        await watch.step("type", s);
+        const none = await page.evaluate(() => ({
+          says: document.querySelector("ol.said li.none")?.textContent.trim() ?? null,
+          rows: document.querySelectorAll("ol.said li:not(.none)").length,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
+        }));
+        if (none.says !== "No matches" || none.rows || none.count !== "0")
+          wrong = `nonsense typed shows ${none.rows} cards over "${none.says}", and the field says ${none.count}`;
+        // Three letters a few words hold, and more words have in that order
+        // the way a font has its name, sechs and verstaucht for sch: only
+        // the cards that hold them, found in the review of #367.
+        await field.fill("sch");
+        await watch.step("type", s);
+        const short = await page.evaluate(() => document.querySelectorAll("ol.said li[data-at]").length);
+        const holdShort = sentences.filter((x) => x.text.toLowerCase().includes("sch")).length;
+        if (!wrong && holdShort && short !== holdShort) wrong = `${short} cards answer sch, and ${holdShort} hold it`;
+        // The word typed with a letter twice, the way Tim typed arrm for
+        // arm, still finds every card that holds the word.
+        const slip = word.slice(0, 2) + word.slice(1);
+        await field.fill(slip);
+        await watch.step("type", s);
+        const slipped = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-at]")].map((li) => Number(li.dataset.at)));
+        const missed = holds.find((x) => !slipped.some((at) => Math.abs(at - x.start) < 0.0005));
+        if (!wrong && missed) wrong = `${slip} typed for ${word} finds ${slipped.length} cards and not "${missed.text}"`;
+        // With nothing typed, the whole of what was said, and a dashed card
+        // for every part not transcribed yet.
+        await field.fill("");
+        await watch.step("type", s);
+        const whole = await page.evaluate(() => ({
+          holes: document.querySelectorAll("ol.said li.hole").length,
+          count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
+        }));
+        if (!wrong && whole.holes !== gaps) wrong = `${gaps} parts are not transcribed yet, and with nothing typed the list shows ${whole.holes}`;
+        else if (!wrong && whole.count !== null) wrong = `with nothing typed the field still says ${whole.count} match`;
+        if (wrong) {
+          await page.keyboard.press("Escape");
+          break;
+        }
+        // The edge of a sentence a clip keeps stays under the hand, and the
+        // hand on it lights the clip's mark on the range picker, found by
+        // Tim.
+        const inClip = seen.cards.find((c) => c.clip);
+        if (inClip) {
+          const card = page.locator(`ol.said li[data-at="${inClip.at}"]`);
+          await card.hover();
+          await watch.step("hover", s);
+          const lit = await page.evaluate((at) => {
+            const li = document.querySelector(`ol.said li[data-at="${at}"]`);
+            const key = li.dataset.clip;
+            const grey = getComputedStyle(li.querySelector("button.pick")).backgroundColor;
+            // Only the card under the hand is lit, not every sentence of
+            // its clip with it, found by Tim.
+            const others = [...document.querySelectorAll(`ol.said li[data-clip="${key}"]`)].filter((x) => x !== li);
+            return {
+              edge: getComputedStyle(li.querySelector("button.pick"), "::before").width,
+              mark: !!document.querySelector(".track .clipmark.lit"),
+              others: others.length,
+              alsoLit: others.filter((x) => getComputedStyle(x.querySelector("button.pick")).backgroundColor === grey).length,
+              key,
+            };
+          }, inClip.at);
+          if (lit.edge !== "4px") wrong = `the edge of the card at ${inClip.at.toFixed(2)} is gone under the hand: ${lit.edge}`;
+          else if (!lit.mark) wrong = `the hand on a sentence of ${inClip.clip} lit no mark on the range picker`;
+          else if (lit.alsoLit) wrong = `the hand on one sentence of ${inClip.clip} lit ${lit.alsoLit} of its ${lit.others} other sentences too`;
+        }
+        // The hand going from one card of a clip to the next is on a card
+        // all the way, so the clip stays lit everywhere else and does not
+        // flicker, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await field.fill("");
+          await watch.step("type", s);
+          const pair = await page.evaluate(() => {
+            const cards = [...document.querySelectorAll("ol.said li[data-clip]")];
+            const i = cards.findIndex((li, i) => li.nextElementSibling === cards[i + 1] && cards[i + 1]?.dataset.clip === li.dataset.clip);
+            if (i < 0) return null;
+            cards[i].scrollIntoView({ block: "center" });
+            const [a, b] = [cards[i].getBoundingClientRect(), cards[i + 1].getBoundingClientRect()];
+            return { x: a.left + a.width / 2, from: a.top + a.height / 2, to: b.top + b.height / 2 };
+          });
+          if (!pair) wrong = "no clip has two cards one after the other, so going from one to the next could not be seen";
+          else {
+            let off = 0;
+            let dark = 0;
+            for (let y = pair.from; y <= pair.to; y += 1) {
+              await page.mouse.move(pair.x, y);
+              const on = await page.evaluate(() => ({
+                card: !!document.querySelector("ol.said li:hover"),
+                mark: !!document.querySelector(".track .clipmark.lit"),
+              }));
+              if (!on.card) off++;
+              if (!on.mark) dark++;
+            }
+            await watch.step("hover", s);
+            if (off || dark)
+              wrong = `the hand going from one card of a clip to the next was on no card for ${off} px and the clip's mark went dark for ${dark} px`;
+          }
+        }
+        // The hand on a part not transcribed yet lights it on the range
+        // picker too.
+        if (!wrong && gaps) {
+          await page.locator("ol.said li.hole").first().hover();
+          await watch.step("hover", s);
+          // Lit the way every card is under the hand, the dashes gone into
+          // the grey they fill with, in the list and on the range picker,
+          // and dashed in the grey of a card's edge until then, found by
+          // Tim.
+          const look = await page.evaluate(() => {
+            const hole = getComputedStyle(document.querySelector("ol.said li.hole"));
+            const fill = document.querySelector(".track .unheard.lit");
+            const ring = getComputedStyle(document.querySelector("ol.said li:not(.hole):not(.none)")).boxShadow;
+            const dots = document.querySelector("ol.said li.hole .dots");
+            const dashes = document.querySelector("ol.said li.hole .ring");
+            return {
+              lit: !!fill,
+              dots: [dots && getComputedStyle(dots), fill && getComputedStyle(fill, "::before")].map((d) => (d ? [d.backgroundImage, d.maskImage, d.top] : null)),
+              card: [dashes ? getComputedStyle(dashes).borderTopColor : null, hole.backgroundColor],
+              // The range picker draws no edge round a part, only its dots,
+              // found by Tim, and its own border stays over the part lit.
+              picker: fill
+                ? [fill, ...[...fill.children]].flatMap((el) => [getComputedStyle(el), getComputedStyle(el, "::before"), getComputedStyle(el, "::after")]).map((st) => st.borderTopStyle).filter((b) => b !== "none")
+                : ["no part lit"],
+              border: getComputedStyle(document.querySelector(".track")).borderTopColor,
+              edges: document.querySelectorAll(".unheard-edge").length,
+              ring,
+            };
+          });
+          await page.mouse.move(0, 0);
+          // The other way round, the hand on the part on the range picker
+          // lights its card, the way a clip's mark lights its card, found
+          // by Tim.
+          const onPart = await page.evaluate(() => {
+            const parts = [...document.querySelectorAll(".track .unheard")];
+            const r = parts.at(-1).getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height * 0.75, index: parts.length - 1 };
+          });
+          await page.mouse.move(onPart.x, onPart.y);
+          await watch.step("hover", s);
+          const fromPart = await page.evaluate(() => ({
+            cards: [...document.querySelectorAll("ol.said li.hole")].map((li) => li.classList.contains("lit")),
+            part: [...document.querySelectorAll(".track .unheard")].map((u) => u.classList.contains("lit")),
+          }));
+          await page.mouse.move(0, 0);
+          const lightsCard = fromPart.cards[onPart.index] && fromPart.cards.filter(Boolean).length === 1 && fromPart.part[onPart.index];
+          const rest = await page.evaluate(() => {
+            const ring = document.querySelector("ol.said li.hole .ring");
+            return ring ? getComputedStyle(ring).borderTopColor : "no dashes";
+          });
+          // The dashes of a card stand over its columns of dots and beside
+          // its rows: the dots are whole columns and rows of one pitch,
+          // centred in the card with room on every side, and the dashes
+          // run at that pitch over exactly their span. The browser's own
+          // dashes went their own way, dots on to the edge sat too close to
+          // the dashes, and a row and a column left clear looked cut off,
+          // all found by Tim. On the range picker the dots are whole
+          // columns centred in the part.
+          const grid = await page.evaluate(() => {
+            const li = document.querySelector("ol.said li.hole");
+            const dots = li.querySelector(".dots");
+            const ring = li.querySelector(".ring");
+            const box = (el) => {
+              const r = el?.getBoundingClientRect();
+              return r ? [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 100) / 100).join(" ") : null;
+            };
+            const d = getComputedStyle(dots);
+            const r = ring ? getComputedStyle(ring) : null;
+            const round = (v) => Math.round(v * 100) / 100;
+            const c = li.getBoundingClientRect();
+            const o = dots.getBoundingClientRect();
+            // The room left round the dots, left, right, top and foot.
+            const room = [o.left - c.left, c.right - o.right, o.top - c.top, c.bottom - o.bottom].map(round);
+            const px = (t) => (t ?? "").match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
+            const pitch = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dot-pitch"));
+            const track = document.querySelector(".track");
+            const pad = parseFloat(getComputedStyle(track).borderLeftWidth);
+            const columns = [...track.querySelectorAll(".unheard")].map((u) => {
+              // A part the work is hearing into has its dots laid from its
+              // right edge, up to its left edge, see the walk of the parts
+              // giving way. What it is once the work stops is read with
+              // that taken off.
+              const giving = u.classList.contains("giving");
+              const g = getComputedStyle(u, "::before");
+              const laid = giving ? [parseFloat(g.left), parseFloat(g.right), g.backgroundPositionX] : null;
+              u.classList.remove("giving");
+              const b = getComputedStyle(u, "::before");
+              const part = u.getBoundingClientRect();
+              const left = parseFloat(b.left);
+              const width = parseFloat(b.width);
+              const at = {
+                // What is left either side of the columns of dots, and how
+                // many columns there are.
+                sides: [left, part.width - left - width].map((v) => Math.round(v * 100) / 100),
+                columns: width / pitch,
+                height: [parseFloat(b.top), parseFloat(b.height) - part.height],
+                foot: b.backgroundPositionY,
+                fade: b.maskImage,
+                laid,
+              };
+              if (giving) u.classList.add("giving");
+              return at;
+            });
+            return {
+              pitch,
+              boxes: [box(ring), box(li)],
+              room,
+              span: [round(o.width), round(o.height)],
+              dots: [d.backgroundSize, d.backgroundRepeat, d.maskImage],
+              dashes: r ? [r.maskSize, r.maskRepeat, r.borderTopStyle, r.maskPosition] : null,
+              laid: r ? [...px(r.maskSize), ...px(r.maskPosition)].map(round) : [],
+              columns,
+            };
+          });
+          const tile = `${grid.pitch}px ${grid.pitch}px`;
+          // Halftone dots fill both, on nothing else, rising from the foot
+          // with none in the top third, where the minutes stand, at rest and
+          // under the hand alike, and never brighter than the dashes or the
+          // minute lines, found by Tim.
+          const still = await page.evaluate(() =>
+            [
+              document.querySelector("ol.said li.hole:not(.current) .dots") ?? document.querySelector("ol.said li.hole .dots"),
+              document.querySelector(".track .unheard:not(.lit)") ?? document.querySelector(".track .unheard"),
+            ].map((d, i) => {
+              if (!d) return null;
+              // The card the playhead is in is marked as such, see below,
+              // and its part on the range picker is lit with it, so both
+              // at rest are read with the mark taken off.
+              const on = i ? d : d.closest("li");
+              const mark = i ? "lit" : "current";
+              const had = on.classList.contains(mark);
+              on.classList.remove(mark);
+              const st = i ? getComputedStyle(d, "::before") : getComputedStyle(d);
+              const look = [st.backgroundImage, st.maskImage, st.top];
+              const under = getComputedStyle(on).backgroundColor;
+              if (had) on.classList.add(mark);
+              return [...look, under];
+            }),
+          );
+          const lines = await page.evaluate(() => [getComputedStyle(document.querySelector(".track .tick")).borderLeftColor, getComputedStyle(document.querySelector("ol.said li.hole .ring") ?? document.querySelector("ol.said li.hole")).borderTopColor]);
+          const lum = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).reduce((a, v) => a + Number(v), 0);
+          // A dot's colour, the grey it is drawn in as rgb, and the share
+          // of its strength apart.
+          const dotColour = (d) => {
+            // The first colour of the gradient is the dot's, the second the
+            // clear round it.
+            const c = d[0].match(/rgba?\(([^)]*)\)|color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/);
+            if (!c) return ["", 1];
+            if (c[1] !== undefined) {
+              const [r, g, b, a = 1] = c[1].split(",").map(Number);
+              return [`rgb(${r}, ${g}, ${b})`, a];
+            }
+            const [r, g, b] = c.slice(2, 5).map((v) => Math.round(Number(v) * 255));
+            return [`rgb(${r}, ${g}, ${b})`, c[5] === undefined ? 1 : Number(c[5])];
+          };
+          const dotted = (d) => !!d && d[0].includes("radial-gradient");
+          const fade = (d) => d[1].startsWith("linear-gradient(rgba(0, 0, 0, 0) 30%");
+          if (!look.lit) wrong = "the hand on a part not transcribed yet lit nothing on the range picker";
+          else if (!lightsCard) wrong = `the hand on a part not transcribed yet on the range picker lit cards ${JSON.stringify(fromPart.cards)} and parts ${JSON.stringify(fromPart.part)}, not that part and its card`;
+          else if (!still.every(dotted) || !look.dots.every(dotted))
+            wrong = `a part not transcribed yet is not dotted: at rest ${JSON.stringify(still)}, under the hand ${JSON.stringify(look.dots)}`;
+          else if (!still.every(fade) || !look.dots.every(fade))
+            wrong = `the dots of a part not transcribed yet do not rise from the foot: at rest ${still.map((d) => d[1]).join(" and ")}, under the hand ${look.dots.map((d) => d[1]).join(" and ")}`;
+          else if (still.some((d) => d[3] !== "rgba(0, 0, 0, 0)")) wrong = `a part not transcribed yet at rest is on ${still.map((d) => d[3]).join(" and ")}, not on nothing but its dots`;
+          else if (lum(dotColour(still[1])[0]) > lum(lines[0]) || lum(dotColour(still[1])[0]) > lum(lines[1]))
+            wrong = `the dots, ${dotColour(still[1])[0]}, are brighter than the minute lines, ${lines[0]}, or the dashes round them, ${lines[1]}`;
+          // And a share of that grey's strength, so they are quieter than
+          // the dashes round them: at full strength Tim found them too
+          // strong.
+          else if ([...still, ...look.dots].some((d) => !(dotColour(d)[1] > 0 && dotColour(d)[1] < 1)))
+            wrong = `the dots are drawn at full strength, ${[...still, ...look.dots].map((d) => dotColour(d)[1]).join(", ")}, not quieter than the dashes`;
+          else if (look.card[0] !== look.card[1]) wrong = `the dashed card under the hand has its edge in ${look.card[0]} over ${look.card[1]}, not gone into it`;
+          else if (look.picker.length || look.edges || look.border === "rgba(0, 0, 0, 0)")
+            wrong = `a part on the range picker, lit, has an edge of its own, ${[...look.picker, ...(look.edges ? [`${look.edges} edges`] : [])].join(" and ")}, over a border in ${look.border}`;
+          else if (!look.ring.includes(rest)) wrong = `the dashes are ${rest} on the card, and a card's edge is ${look.ring}`;
+          else if (!grid.dashes || grid.dashes[2] !== "solid" || grid.boxes[0] !== grid.boxes[1])
+            wrong = `the dashes of a card are not on its edge: dashes ${JSON.stringify(grid.dashes)}, boxes of the dashes and the card ${JSON.stringify(grid.boxes)}`;
+          else if (grid.dots[0] !== tile || grid.dots[1] !== "repeat" || grid.span.some((v) => Math.abs(v / grid.pitch - Math.round(v / grid.pitch)) > 0.01))
+            wrong = `the dots of a card are not whole columns and rows: ${grid.span.join(" by ")} px in tiles of ${grid.dots[0]}, ${grid.dots[1]}`;
+          // Room on every side, the same either way, found by Tim.
+          else if (grid.room[0] !== grid.room[1] || grid.room[2] !== grid.room[3] || grid.room.some((v) => v < 2 || v >= 2 + grid.pitch / 2))
+            wrong = `the dots of a card are not centred in it with room round them: ${grid.room.join(", ")} px left, right, top and foot`;
+          // The dashes over exactly the dots' span, so each stands over a
+          // column or beside a row and none falls outside.
+          else if (
+            !grid.dashes[1].split(", ").every((r) => r === "no-repeat") ||
+            grid.laid.join(" ") !== [grid.span[0], grid.span[1], grid.room[0], 0, 0, grid.room[2]].join(" ")
+          )
+            wrong = `the dashes of a card do not stand on its dots: dots ${grid.span.join(" by ")} px at ${grid.room[0]} and ${grid.room[2]} px in, dashes laid ${grid.dashes[0]} at ${grid.dashes[3]}, ${grid.dashes[1]}`;
+          else if (grid.dots[2] !== grid.columns[0]?.fade)
+            wrong = `the dots of a card leave a row or a column clear round them: masked by ${grid.dots[2]}`;
+          else if (
+            grid.columns.some((c) => c.height.some(Boolean) || !c.fade.endsWith("rgb(0, 0, 0))") || !Number.isInteger(c.columns) || c.sides.some((v) => v < 0 || v >= grid.pitch / 2))
+          )
+            wrong = `the dots of a part on the range picker leave a row or a column clear round them: ${JSON.stringify(grid.columns)}`;
+          // Centred, the same either side, found by Tim, who measured it.
+          else if (grid.columns.some((c) => c.sides[0] !== c.sides[1]))
+            wrong = `the dots of a part on the range picker are not centred in it: ${JSON.stringify(grid.columns.map((c) => c.sides))} left and right`;
+          // And the foot row a pixel up from the range picker's foot,
+          // where it looked clutched to it, found by Tim.
+          else if (grid.columns.some((c) => c.laid && (c.laid[0] !== 0 || c.laid[1] !== 0 || !/^(right|100%)/.test(c.laid[2]))))
+            wrong = `the dots of a part the work hears into are not laid from its right edge to its left: ${JSON.stringify(grid.columns.map((c) => c.laid))}`;
+          else if (grid.columns.some((c) => c.foot !== "calc(100% - 1px)"))
+            wrong = `the foot row of dots on the range picker is not lifted a pixel: ${grid.columns.map((c) => c.foot).join(", ")}`;
+        }
+        // The playhead put in a part not transcribed yet, on the range
+        // picker, puts that part's card at the top of the list, not the
+        // next words heard after it, found by Tim.
+        if (!wrong && gaps) {
+          await page.evaluate(() => (document.querySelector(".scroll.list").style.overflowAnchor = "none"));
+          const part = await page.evaluate(() => {
+            const r = [...document.querySelectorAll(".track .unheard")].at(-1).getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+          });
+          await page.mouse.click(part.x, part.y);
+          await watch.step("click", s);
+          const there = await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            const box = list.getBoundingClientRect();
+            const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+            // At the top, or as near it as the end of the list lets it.
+            const end = list.scrollTop >= list.scrollHeight - list.clientHeight - 1;
+            const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => {
+              const r = li.getBoundingClientRect();
+              return end ? r.top >= box.top + pad - 1 && r.bottom <= box.bottom : Math.abs(r.top - box.top - pad) <= 1;
+            });
+            const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+            const r = hole?.getBoundingClientRect();
+            return {
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              hole:
+                !!hole?.classList.contains("hole") &&
+                !!r &&
+                r.top >= box.top &&
+                r.bottom <= box.bottom &&
+                hole.dataset.row === document.querySelector("ol.said").dataset.followed,
+              top: top ? top.querySelector(".meta").textContent.trim() : null,
+            };
+          });
+          const hole = (() => {
+            let at = 0;
+            for (const [a, b] of [...heard].sort((x, y) => x[0] - y[0])) {
+              if (a - at >= 1 && there.at >= at && there.at < a) return true;
+              at = Math.max(at, b);
+            }
+            return there.at >= at;
+          })();
+          if (!hole) wrong = `a press in the last part not transcribed yet put the playhead at ${there.at}, which is heard`;
+          else if (!there.hole) wrong = `the playhead in a part not transcribed yet, at ${there.at.toFixed(1)}, left that part's card out of view, ${there.top ?? "no card"} at the top of the list`;
+          if (!wrong) {
+            // The hand scrolls the card away and the playhead is put in the
+            // same part again: the card comes back into view, the way a clip
+            // chosen again does, though the playhead never left its card.
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+              const box = list.getBoundingClientRect();
+              list.scrollTop = hole.getBoundingClientRect().top - box.top > box.height / 2 ? 0 : list.scrollHeight;
+            });
+            await nextPaint(page, 2);
+            const again = await page.evaluate(() => {
+              const r = [...document.querySelectorAll(".track .unheard")].at(-1).getBoundingClientRect();
+              return { x: r.left + r.width / 4, y: r.top + r.height / 2 };
+            });
+            await page.mouse.click(again.x, again.y);
+            await watch.step("click", s);
+            const back = await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const hole = [...document.querySelectorAll("ol.said li.hole")].find((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+              const r = hole?.getBoundingClientRect();
+              return { at: Number(document.querySelector(".screen")?.dataset.playhead), shown: !!r && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5 };
+            });
+            if (!back.shown) wrong = `the playhead put again in the same part not transcribed yet, at ${back.at.toFixed(1)}, after the hand scrolled its card away, left the card out of view`;
+          }
+        }
+        // A clip chosen on the range picker brings its first sentence into
+        // view, found by Tim.
+        const others = clips.filter((c) => !c.rejected);
+        if (!wrong && others.length > 1) {
+          // With nothing typed, so every sentence of the clip has a card.
+          await page.locator('input[aria-label="Search transcript"]').fill("");
+          await watch.step("type", s);
+          await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            list.scrollTop = list.scrollHeight;
+          });
+          const mark = page.locator(".track .clipmark:not(.selected)").last();
+          const label = await mark.getAttribute("aria-label");
+          const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+          const target = others.find((c) => `Clip at ${clockOf(c.start)}` === label);
+          const parts = target ? (target.segments.length ? target.segments : [target]) : [];
+          const firstAt = sentences.find((x) => x.clip === target?.key)?.start;
+          // Where the card stands once the list stops moving, against where
+          // the first card of the list stands, which is the top.
+          const standing = () =>
+            page.evaluate(
+              ([at, key]) =>
+                new Promise((done) => {
+                  const list = document.querySelector(".scroll.list");
+                  let last = -1;
+                  let still = 0;
+                  const tick = () => {
+                    if (list.scrollTop === last) still++;
+                    else still = 0;
+                    last = list.scrollTop;
+                    if (still < 10) return requestAnimationFrame(tick);
+                    const card = document.querySelector(`ol.said li[data-at="${at}"][data-clip="${key}"]`);
+                    const head = document.querySelector("ol.said");
+                    const box = list.getBoundingClientRect();
+                    const r = card?.getBoundingClientRect();
+                    done(r ? { top: r.top - box.top, should: parseFloat(getComputedStyle(head).paddingTop), room: box.height, seen: r.top >= box.top && r.bottom <= box.bottom } : null);
+                  };
+                  requestAnimationFrame(tick);
+                }),
+              [firstAt, target?.key],
+            );
+          // WebKit, which the app is drawn by on the Mac, keeps no anchor
+          // when what is above the place in view changes size, and
+          // Chromium does, which hid cards laid out late moving the place
+          // a clip went to, found by Tim.
+          await page.evaluate(() => (document.querySelector(".scroll.list").style.overflowAnchor = "none"));
+          const chosen = [];
+          for (const again of [false, true]) {
+            // Chosen again after the hand scrolled away, it is gone to again.
+            if (again)
+              await page.evaluate(() => {
+                const list = document.querySelector(".scroll.list");
+                list.scrollTop = list.scrollHeight;
+              });
+            await (again ? page.locator(".track .clipmark.selected") : mark).click();
+            await watch.step("click", s);
+            chosen.push(await standing());
+          }
+          // In view where it was in view, and at the top where the page
+          // had to turn, after the hand scrolled away.
+          const off = chosen.find((v, i) => v && (i ? Math.abs(v.top - v.should) > 1 : !v.seen));
+          if (!target || chosen.some((v) => !v))
+            wrong = `the mark ${label} is of no clip with sentences on screen`;
+          else if (off)
+            wrong = `choosing ${target.title} on the range picker${off === chosen[1] ? " a second time" : ""} left its first sentence ${off.top.toFixed(1)} px down a list ${off.room.toFixed(0)} px high, ${off === chosen[1] ? `not at its top, ${off.should} px` : "out of view"}`;
+        }
+        // The playhead put on a caption on the clip timeline puts the card
+        // of that caption at the top of the list, the way a clip chosen
+        // does, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await field.fill("");
+          await watch.step("type", s);
+          // The chosen clip's mark, so the clip timeline is on the clip and
+          // not where the playhead was put before the search opened.
+          await page.evaluate(() => document.querySelector(".track .clipmark.selected").click());
+          await watch.step("click", s);
+          await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            list.style.overflowAnchor = "none";
+            list.scrollTop = list.scrollHeight;
+          });
+          const blocks = page.locator(".captions .caption");
+          const n = await blocks.count();
+          // The last block the clip timeline shows. It is zoomed in on the
+          // clip, so after a caption was corrected its last blocks can be
+          // past the edge of the app.
+          const shown = await page.evaluate(() =>
+            [...document.querySelectorAll(".captions .caption")].findLastIndex((el) => {
+              const box = el.getBoundingClientRect();
+              return box.width > 0 && box.left >= 0 && box.right <= innerWidth;
+            }),
+          );
+          if (n < 2 || shown < 1) wrong = `the chosen clip has ${n} captions on the clip timeline, ${shown + 1} of them in view, so going to one could not be seen}`;
+          else {
+            await blocks.nth(shown).click();
+            await watch.step("click", s);
+            const stood = await page.evaluate(
+              () =>
+                new Promise((done) => {
+                  const list = document.querySelector(".scroll.list");
+                  let last = -1;
+                  let still = 0;
+                  const tick = () => {
+                    if (list.scrollTop === last) still++;
+                    else still = 0;
+                    last = list.scrollTop;
+                    if (still < 10) return requestAnimationFrame(tick);
+                    const box = list.getBoundingClientRect();
+                    const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                    const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+                    done({ at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop });
+                  };
+                  requestAnimationFrame(tick);
+                }),
+            );
+            const card = sentences.find((x) => x.end > stood.at);
+            if (!card) wrong = `no card after the playhead at ${stood.at}`;
+            else if (stood.top === null || Math.abs(stood.top - card.start) > 0.0005)
+              wrong = `the playhead put on a caption at ${stood.at.toFixed(2)} left ${stood.top === null ? "no card" : `the card at ${stood.top.toFixed(2)}`} at the top of the list, not the card at ${card.start.toFixed(2)}, "${card.text}"`;
+            else if (!card.clip) wrong = `the caption at ${stood.at.toFixed(2)} on the clip timeline is in a card of no clip`;
+          }
+        }
+        // The clip played from its mark: its first caption stands at the
+        // top, and as the playhead comes into the next caption, that card
+        // stands at the top, found by Tim.
+        if (!wrong && clips.some((k) => !k.rejected)) {
+          await page.locator(".track .clipmark.selected").click();
+          await watch.step("click", s);
+          const chosenLabel = await page.locator(".track .clipmark.selected").getAttribute("aria-label");
+          const chosenKey = clips.find((k) => `Clip at ${Math.floor(k.start / 60)}:${String(Math.floor(k.start % 60)).padStart(2, "0")}` === chosenLabel)?.key;
+          const own = sentences.filter((x) => x.clip === chosenKey);
+          // The card at the top of the list, and the one the list follows.
+          const topRow = () =>
+            page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const top = [...document.querySelectorAll("ol.said li[data-row]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+              const followed = document.querySelector("ol.said").dataset.followed ?? null;
+              const li = followed && document.querySelector(`ol.said li[data-row="${CSS.escape(followed)}"]`);
+              const end = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+              const shown = li && li.getBoundingClientRect().top >= box.top && li.getBoundingClientRect().bottom <= box.bottom;
+              return { top: top?.dataset.row ?? null, followed, clip: li?.dataset.clip ?? null, standing: !!followed && !!shown, end };
+            });
+          // A search let go of without moving the playhead goes back to the
+          // card of the playhead, by Escape or by taking the words away,
+          // not to the top of the whole transcript, found by Tim.
+          if (own.length >= 2) {
+            for (const how of ["Escape", "erase"]) {
+              const before = await topRow();
+              await field.fill(word);
+              await watch.step("type", s);
+              if (how === "Escape") await field.press("Escape");
+              else await field.fill("");
+              await watch.step(how === "Escape" ? "press" : "type", s);
+              const after = await topRow();
+              if (!wrong && (!before.standing || before.clip !== chosenKey))
+                wrong = `the clip chosen on the range picker left ${before.top} at the top, not its card ${before.followed}`;
+              else if (!wrong && (!after.standing || after.followed !== before.followed))
+                wrong = `a search let go of by ${how} left ${after.top} at the top of the list, not ${before.followed}, the card of the playhead it stood at before`;
+            }
+          }
+          if (own.length < 2) wrong = `the chosen clip has ${own.length} cards, so playing into its next one could not be seen`;
+          else if (!wrong) {
+            // The hand scrolls away, and the space bar is pressed in the
+            // empty search field: it plays, the field lets go of the
+            // keyboard, and the card of the playhead comes to the top at
+            // once, not at the next caption, found by Tim.
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              list.scrollTop = list.scrollHeight;
+            });
+            await field.focus();
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            const started = await page.evaluate(() => ({
+              typed: document.querySelector(".listhead .search input")?.value ?? null,
+              focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
+              playing: document.querySelector('button[aria-label="Pause"]') !== null,
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+            }));
+            const first = await topRow();
+            if (started.typed !== "") wrong = `the space bar in the empty search field typed "${started.typed}"`;
+            else if (started.focused === "Search transcript") wrong = "the space bar in the empty search field left the keyboard in it";
+            else if (!started.playing) wrong = "the space bar in the empty search field did not play";
+            else if (started.at < own[1].start && !first.standing)
+              wrong = `playing from ${started.at.toFixed(2)} left ${first.top} at the top of a list scrolled away, not the card of the playhead ${first.followed}`;
+            // Read in the frame the playhead comes into the next caption,
+            // or stops before it.
+            const seen = await playedTo(page, own[1].start + 0.3, () => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const li = document.querySelector("ol.said .pick.current")?.closest("li");
+              const r = li?.getBoundingClientRect();
+              const inView = !!r && r.top >= box.top + pad - 1 && r.bottom <= box.bottom - pad + 1;
+              return { top: li && inView ? Number(li.dataset.at) : null, clip: li?.dataset.clip ?? null };
+            });
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            // Stopping gives the search field the keyboard back, the one
+            // the space bar took it from, found by Tim.
+            const stopped = await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null);
+            // The card the playhead is in, or the one before it in a pause.
+            const now = own.filter((x) => x.start <= seen.at).at(-1);
+            if (wrong);
+            else if (stopped !== "Search transcript") wrong = `stopping with the space bar left the keyboard on ${stopped}, not back in the search field`;
+            else if (!(seen.at >= own[1].start + 0.3)) wrong = `the clip played to ${seen.at.toFixed(2)} and never reached its second caption at ${own[1].start.toFixed(2)}`;
+            else if (seen.top === null || Math.abs(seen.top - now.start) > 0.0005 || seen.clip !== chosenKey)
+              wrong = `the clip played to ${seen.at.toFixed(2)} with ${seen.top === null ? "no card in view" : `the card at ${seen.top.toFixed(2)}`} marked as the playhead's, not its caption at ${now.start.toFixed(2)}, "${now.text}"`;
+          }
+          // The page turns the way the clip timeline's does: the list
+          // stands still while the card of the playhead is in view, and the
+          // card that comes in below the foot of the list as the video
+          // plays on is turned to the top, found by Tim. The list is made
+          // as high as the cards down to the playhead's, so the next is
+          // below it.
+          if (!wrong && own.length >= 2) {
+            // First with both cards in view: playing into the next card
+            // leaves the list where it is.
+            await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
+            await watch.step("click", s);
+            const both = await page.evaluate((rows) => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const inView = (row) => {
+                const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
+                return r.top >= box.top && r.bottom <= box.bottom;
+              };
+              return { scrolled: list.scrollTop, seen: rows.every(inView) };
+            }, [`s${own[0].start}|${chosenKey}`, `s${own[1].start}|${chosenKey}`]);
+            if (!both.seen) wrong = "the chosen clip's first two cards are not both in view, so the list standing still could not be seen";
+            else {
+              await page.evaluate(() => document.activeElement?.blur());
+              await page.keyboard.press("Space");
+              await watch.step("press", s);
+              const frames = await playedTo(page, own[1].start + 0.3, () => ({ scrolled: document.querySelector(".scroll.list").scrollTop }), true);
+              const moved = frames.find((now) => now.scrolled !== both.scrolled);
+              await page.keyboard.press("Space");
+              await watch.step("press", s);
+              if (moved) wrong = `playing on into the next card, in view, moved the list ${(moved.scrolled - both.scrolled).toFixed(0)} px at ${moved.at.toFixed(2)}`;
+            }
+          }
+          if (!wrong && own.length >= 2) {
+            await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
+            await watch.step("click", s);
+            await page.evaluate((row) => {
+              const list = document.querySelector(".scroll.list");
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const card = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`);
+              const box = list.getBoundingClientRect();
+              const r = card.getBoundingClientRect();
+              list.scrollTop += r.top - box.top - pad;
+              list.style.flex = "none";
+              list.style.height = `${Math.ceil(r.height + 2 * pad + 4)}px`;
+            }, `s${own[0].start}|${chosenKey}`);
+            await nextPaint(page, 2);
+            const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
+            await page.evaluate(() => document.activeElement?.blur());
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            const frames = await playedTo(
+              page,
+              own[1].start + 0.3,
+              () => {
+                const list = document.querySelector(".scroll.list");
+                const box = list.getBoundingClientRect();
+                const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
+                return { top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop };
+              },
+              true,
+            );
+            const turned = frames.at(-1);
+            const still = !frames.some((now) => now.at < own[1].start - 0.05 && now.scrolled !== from);
+            await page.keyboard.press("Space");
+            await watch.step("press", s);
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              list.style.flex = "";
+              list.style.height = "";
+            });
+            if (!still) wrong = `the list moved while the card of the playhead at ${own[0].start.toFixed(2)} was in view`;
+            else if (!(turned.at >= own[1].start + 0.3)) wrong = `the clip played to ${turned.at.toFixed(2)} and never reached its second caption`;
+            else if (turned.top === null || Math.abs(turned.top - own[1].start) > 0.0005)
+              wrong = `played on into the caption at ${own[1].start.toFixed(2)} below the foot of the list, the page turned to ${turned.top === null ? "no card" : `the card at ${turned.top.toFixed(2)}`} at the top`;
+          }
+        }
+        // A card puts the playhead on its sentence, and a sentence of a
+        // clip makes the clip the chosen one, found by Tim, with the list
+        // left where it is. With nothing typed, so the list can move, and
+        // a card of a clip not chosen yet that is not its first, so going
+        // to the clip's first card would move it.
+        await field.fill("");
+        await watch.step("type", s);
+        const clockAt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+        const pickAt = await page.evaluate(
+          (labels) => {
+            const chosen = document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label");
+            const byClip = Map.groupBy([...document.querySelectorAll("ol.said li[data-clip]")], (li) => li.dataset.clip);
+            const other = [...byClip].find(([key, list]) => labels[key] !== chosen && list.length > 1);
+            return other ? { at: Number(other[1][1].dataset.at), row: other[1][1].dataset.row } : null;
+          },
+          Object.fromEntries(clips.map((k) => [k.key, `Clip at ${clockAt(k.start)}`])),
+        );
+        const pick = pickAt && sentences.find((x) => Math.abs(x.start - pickAt.at) < 0.0005);
+        if (!pick && others.length > 1) wrong = "no clip but the chosen one has two cards, so choosing one by its sentence could not be seen";
+        if (pick) {
+          const row = `ol.said li[data-row="${pickAt.row}"]`;
+          const button = page.locator(`${row} button.pick`);
+          await button.scrollIntoViewIfNeeded();
+          const stood = await page.evaluate((row) => document.querySelector(row).getBoundingClientRect().top, row);
+          await button.click();
+          await watch.step("click", s);
+          const after = await page.evaluate((row) => {
+            const li = document.querySelector(row);
+            return {
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              top: li.getBoundingClientRect().top,
+              key: li.dataset.clip ?? null,
+              chosen: document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label") ?? null,
+            };
+          }, row);
+          const keyed = after.key ? clips.find((k) => k.key === after.key) : null;
+          if (!wrong && !(after.at >= pick.start - 0.001 && after.at <= Math.min(pick.end, pick.start + 0.2)))
+            wrong = `the card at ${pick.start.toFixed(3)} put the playhead at ${after.at}`;
+          else if (!wrong && keyed && after.chosen !== `Clip at ${clockAt(keyed.start)}`)
+            wrong = `a sentence of ${keyed.title || keyed.slug} clicked left ${after.chosen ?? "no clip"} chosen`;
+          else if (!wrong && Math.abs(after.top - stood) > 1)
+            wrong = `a sentence clicked moved the list ${(after.top - stood).toFixed(0)} px`;
+        }
+        // Shift and the arrows up and down walk the answers to a search,
+        // the playhead onto each and the list after it, and letting go of
+        // the search goes back to where the playhead and the chosen clip
+        // stood, unless Enter said to stay, found by Tim.
+        if (!wrong && holds.length >= 2) {
+          const where = () =>
+            page.evaluate(() => ({
+              at: Number(document.querySelector(".screen")?.dataset.playhead),
+              chosen: document.querySelector(".track .clipmark.selected")?.getAttribute("aria-label") ?? null,
+              followed: document.querySelector("ol.said")?.dataset.followed ?? null,
+              current: (() => {
+                const pick = document.querySelector("ol.said .pick.current");
+                const ink = document.createElement("i");
+                ink.style.background = "var(--ink-3)";
+                document.body.append(ink);
+                const want = getComputedStyle(ink).backgroundColor;
+                ink.remove();
+                return pick ? { row: pick.closest("li").dataset.row, grey: getComputedStyle(pick).backgroundColor === want } : null;
+              })(),
+              cards: [...document.querySelectorAll("ol.said li[data-row]")].map((li) => ({ row: li.dataset.row, at: Number(li.dataset.at) })),
+            }));
+          for (const stay of [false, true]) {
+            if (wrong) break;
+            await field.fill(word);
+            await watch.step("type", s);
+            const from = await where();
+            const went = [];
+            for (let i = 0; i < 2; i++) {
+              await field.press("Shift+ArrowDown");
+              await watch.step("press", s);
+              went.push(await where());
+            }
+            for (const [i, w] of went.entries()) {
+              const card = sentences.find((x) => Math.abs(x.start - from.cards[i].at) < 0.0005);
+              if (wrong) break;
+              if (!card || !(w.at >= card.start - 0.001 && w.at < card.end))
+                wrong = `Shift and the down arrow ${i + 1} times put the playhead at ${w.at.toFixed(2)}, not on answer ${i + 1} at ${from.cards[i].at.toFixed(2)}`;
+              else if (w.followed !== from.cards[i].row) wrong = `walked to ${from.cards[i].row}, the list follows ${w.followed}`;
+              // Marked where it is, the way the chosen clip is, found by Tim.
+              else if (w.current?.row !== from.cards[i].row || !w.current.grey)
+                wrong = `walked to ${from.cards[i].row}, the card marked as the playhead's is ${w.current?.row ?? "none"}${w.current && !w.current.grey ? ", not in the grey of a chosen clip" : ""}`;
+            }
+            if (wrong) break;
+            if (stay) {
+              await field.press("Enter");
+              await watch.step("press", s);
+            }
+            await field.press("Escape");
+            await watch.step("press", s);
+            const back = await where();
+            if (!stay && (Math.abs(back.at - from.at) > 0.05 || back.chosen !== from.chosen))
+              wrong = `a search walked and let go of by Escape left the playhead at ${back.at.toFixed(2)} in ${back.chosen}, not back at ${from.at.toFixed(2)} in ${from.chosen}`;
+            else if (stay && Math.abs(back.at - went[1].at) > 0.05)
+              wrong = `Enter at the answer walked to, then Escape, moved the playhead from ${went[1].at.toFixed(2)} to ${back.at.toFixed(2)}`;
+          }
+        }
+        // A card walked to out of view turns the page, the way playing
+        // does: walked down past the foot, it comes to the top, and walked
+        // up past the top, to the foot. It was brought just into view, and
+        // went on standing at the foot as the walk went down, found by
+        // Tim. The list is made two cards high.
+        if (!wrong) {
+          await field.fill("");
+          await watch.step("type", s);
+          const squeezed = await page.evaluate(() => {
+            const list = document.querySelector(".scroll.list");
+            const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+            const cards = [...document.querySelectorAll("ol.said li[data-row]")];
+            const i = cards.findIndex((li) => li.dataset.row === document.querySelector("ol.said").dataset.followed);
+            const card = cards[i];
+            if (!card || i + 3 >= cards.length) return null;
+            const box = list.getBoundingClientRect();
+            list.scrollTop += card.getBoundingClientRect().top - box.top - pad;
+            const two = cards[i + 1].getBoundingClientRect().bottom - card.getBoundingClientRect().top;
+            list.style.flex = "none";
+            list.style.height = `${Math.ceil(two + 2 * pad + 2)}px`;
+            return { rows: [cards[i + 1].dataset.row, cards[i + 2].dataset.row] };
+          });
+          if (!squeezed) wrong = "too few cards after the card of the playhead to walk a page";
+          else {
+            await page.evaluate(() => document.activeElement?.blur());
+            // Where a card stands in the list once the list has had a
+            // frame to follow the playhead, from its top and from its foot.
+            const stood = (row) =>
+              page.evaluate(
+                (row) =>
+                  new Promise((done) =>
+                    requestAnimationFrame(() =>
+                      requestAnimationFrame(() => {
+                        const list = document.querySelector(".scroll.list");
+                        const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+                        const box = list.getBoundingClientRect();
+                        const r = document.querySelector(`ol.said li[data-row="${CSS.escape(row)}"]`).getBoundingClientRect();
+                        done({ top: r.top - (box.top + pad), foot: (box.bottom - pad) - r.bottom, scroll: list.scrollTop, followed: document.querySelector("ol.said").dataset.followed });
+                      }),
+                    ),
+                  ),
+                row,
+              );
+            const press = async (key) => {
+              await page.keyboard.press(key);
+              await watch.step("press", s);
+            };
+            const before = await stood(squeezed.rows[0]);
+            await press("Shift+ArrowDown");
+            const second = await stood(squeezed.rows[0]);
+            await press("Shift+ArrowDown");
+            const down = await stood(squeezed.rows[1]);
+            await press("Shift+ArrowUp");
+            const up = await stood(squeezed.rows[0]);
+            await page.evaluate(() => {
+              const list = document.querySelector(".scroll.list");
+              list.style.flex = "";
+              list.style.height = "";
+            });
+            console.log(JSON.stringify({ page: squeezed.rows, second, down, up }));
+            if (second.followed !== squeezed.rows[0]) wrong = `Shift and the down arrow went to ${second.followed}, not ${squeezed.rows[0]}`;
+            else if (Math.abs(second.scroll - before.scroll) > 0.5) wrong = `the card walked to in view moved the list ${(second.scroll - before.scroll).toFixed(0)} px`;
+            else if (down.followed !== squeezed.rows[1]) wrong = `Shift and the down arrow twice went to ${down.followed}, not ${squeezed.rows[1]}`;
+            else if (Math.abs(down.top) > 1)
+              wrong = `the card walked down to below the foot of the list stands ${down.top.toFixed(0)} px below the top, not turned to the top`;
+            else if (up.followed !== squeezed.rows[0]) wrong = `Shift and the up arrow went to ${up.followed}, not ${squeezed.rows[0]}`;
+            else if (Math.abs(up.foot) > 1)
+              wrong = `the card walked up to above the top of the list stands ${up.foot.toFixed(0)} px above the foot, not turned to the foot`;
+          }
+        }
+        // The keyboard on a card of what was typed, for Escape.
+        await field.fill(word);
+        await watch.step("type", s);
+        await page.locator(`ol.said li[data-at="${holds[0].start}"] button.pick`).first().click();
+        await watch.step("click", s);
+        // Escape with the keyboard on the card just clicked, not in the
+        // field, which did nothing for Tim. The first takes back what was
+        // typed, so every sentence is there again, and the second the
+        // search, found by Tim.
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const cleared = await page.evaluate(() => ({
+          typed: document.querySelector('input[aria-label="Search transcript"]')?.value ?? null,
+          cards: document.querySelectorAll("ol.said li:not(.hole):not(.none)").length,
+        }));
+        if (!wrong && cleared.typed === null) wrong = "the first Escape after typing closed the search, not what was typed";
+        else if (!wrong && (cleared.typed !== "" || cleared.cards < sentences.length))
+          wrong = `after the first Escape the field holds "${cleared.typed}" over ${cleared.cards} of ${sentences.length} sentences`;
+        await page.keyboard.press("Escape");
+        await watch.step("press", s);
+        const back = await page.evaluate(() => ({
+          search: !!document.querySelector(".listhead button.search"),
+          said: !!document.querySelector("ol.said"),
+          edges: document.querySelectorAll(".track .unheard").length,
+        }));
+        if (!wrong && (!back.search || back.said || back.edges))
+          wrong = `Escape left ${back.said ? "the sentences" : back.edges ? "the dashed parts on the range picker" : "no Search button"}`;
+        if (!wrong && (await headHigh()) !== was) wrong = "the head changed height after the search";
+        break;
+      }
       case "font list": {
         await page.locator('button.pick[aria-label="Font"]').click();
         await watch.step("click", s);
@@ -8860,7 +10668,7 @@ for (const seq of toWalk) {
             const what = row.querySelector(".what.shown");
             if (what) centres.push([row.textContent.trim(), ...offCentre(what, row)]);
           }
-          const search = document.querySelector(".pick-list .pick-search");
+          const search = document.querySelector(".pick-list .search");
           const head = [...document.querySelectorAll(".pick-list .pick-group")].find((it) => it.textContent.trim() === "Installed");
           const ourLast = [...document.querySelectorAll(".pick-list .pick-row")]
             .filter((row) => row.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -11430,6 +13238,29 @@ async function standsAt(page) {
       return r ? [q, r.x, r.y, r.width, r.height] : [q];
     }),
   );
+}
+
+// What read says in every frame while the video plays, with the playhead
+// as at, until the playhead reaches to or the video stops: the last frame,
+// or with every set, each frame read.
+async function playedTo(page, to, read, every = false) {
+  const frames = await page.evaluate(
+    ([to, read]) =>
+      new Promise((done) => {
+        const look = new Function(`return (${read})()`);
+        const seen = [];
+        const tick = () => {
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          seen.push({ at, ...look() });
+          const playing = !!document.querySelector('button[aria-label="Pause"]');
+          if (at >= to || !playing) done(seen);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    [to, read.toString()],
+  );
+  return every ? frames : frames.at(-1);
 }
 
 // Whether nothing matches selector within ms.
