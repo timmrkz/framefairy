@@ -138,6 +138,9 @@ type store struct {
 	records  *engine.Records
 	settings Settings
 	episodes []string
+	// changed is told when the settings change. It is told under the
+	// store's lock, so it only takes note.
+	changed func()
 }
 
 func openStore() *store {
@@ -206,6 +209,9 @@ func (s *store) UpdateSettings(change func(*Settings)) error {
 	v.tidy()
 	s.settings = v
 	s.apply(v)
+	if s.changed != nil {
+		s.changed()
+	}
 	return s.save("settings.json", v)
 }
 

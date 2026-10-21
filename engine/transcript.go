@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -602,9 +603,52 @@ func addHeard(fsys afero.Fs, path string, stamp sourceStamp, model string, durat
 		stored[i] = [2]PyFloat{PyFloat(p[0]), PyFloat(p[1])}
 	}
 	end := PyFloat(roundTo(duration, 3))
-	return writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
+	err := writeTranscript(fsys, path, transcriptFile{Version: transcriptVersion, Source: stamp, Model: model,
 		To: end, Mean: PyFloat(roundTo(meanOfFrames(heard), 3)), Parts: stored, End: end,
 		Words: storedWords(words)}, all)
+	if err == nil {
+		transcriptGrew(path)
+	}
+	return err
+}
+
+// grows wakes whoever waits for an episode's transcript to grow, by the
+// path of its words. Every part heard is written by addHeard, whichever
+// job heard it, so that is where the news goes out. The local model reads
+// the transcript of a search's window as it grows, see readahead.go, and
+// waits on this rather than looking at the file now and then.
+var grows struct {
+	mu    sync.Mutex
+	waits map[string]chan struct{}
+}
+
+// transcriptGrows is closed the next time the transcript at path gains
+// what was heard. It is taken before the transcript is read, so a part
+// written in between is not missed.
+func transcriptGrows(path string) <-chan struct{} {
+	grows.mu.Lock()
+	defer grows.mu.Unlock()
+	path = filepath.Clean(path)
+	if grows.waits == nil {
+		grows.waits = map[string]chan struct{}{}
+	}
+	wait, ok := grows.waits[path]
+	if !ok {
+		wait = make(chan struct{})
+		grows.waits[path] = wait
+	}
+	return wait
+}
+
+// transcriptGrew wakes whoever waits on the transcript at path.
+func transcriptGrew(path string) {
+	grows.mu.Lock()
+	defer grows.mu.Unlock()
+	path = filepath.Clean(path)
+	if wait, ok := grows.waits[path]; ok {
+		close(wait)
+		delete(grows.waits, path)
+	}
 }
 
 // joinParts puts parts in order and makes one of any that touch or overlap.

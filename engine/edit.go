@@ -742,11 +742,7 @@ func oneFraming(pieces []*object, spans []Rotation) []*object {
 	upright, turned := framingOf(pieces, spans)
 	var out []*object
 	for _, seg := range pieces {
-		turn := rotationOf(seg, spans)
-		like := turned[turn]
-		if turn == 0 {
-			like = upright
-		}
+		like := turned[rotationOf(seg, spans)]
 		if !sameFraming(seg, upright, keyCropX, keyCropXAuto) || !sameFraming(seg, like, keyCropXTurned) {
 			seg = copyObject(seg)
 			copyFraming(seg, upright, keyCropX, keyCropXAuto)
@@ -765,15 +761,21 @@ func oneFraming(pieces []*object, spans []Rotation) []*object {
 // crop for each camera, the first piece placed by hand is taken, since a
 // crop a person placed is a decision and one the analysis chose a guess,
 // and the first piece where none was. A turn takes its first piece placed
-// on the picture turned, or its first piece.
+// on the picture turned, or its first piece. A piece standing as filmed
+// has no crop on the picture turned, so it takes one with none. Given the
+// crop of the first piece when that was turned, the pieces as filmed of a
+// clip whose first part was turned were written with it, #413.
 func framingOf(pieces []*object, spans []Rotation) (*object, map[int]*object) {
 	var upright *object
-	turned := map[int]*object{}
+	turned := map[int]*object{0: newObject()}
 	for _, seg := range pieces {
 		if upright == nil || (movedByHand(seg) && !movedByHand(upright)) {
 			upright = seg
 		}
 		turn := rotationOf(seg, spans)
+		if turn == 0 {
+			continue
+		}
 		_, placed := seg.get(keyCropXTurned)
 		if like, ok := turned[turn]; !ok {
 			turned[turn] = seg

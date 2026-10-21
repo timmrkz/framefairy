@@ -451,3 +451,41 @@ func TestALocalModelThatKeepsTalkingIsWaitedFor(t *testing.T) {
 		t.Errorf("answer %q", answer.Content)
 	}
 }
+
+// The time a model took to load is told in its parts, from the lines
+// llama-server writes as it begins each, so the part to make shorter is
+// known. A part whose line is missing goes to the part before it.
+func TestLoadingIsToldInItsParts(t *testing.T) {
+	t.Parallel()
+	// On the real disk: loadPhases reads the log llama-server writes
+	// itself, which is always on the disk, see startServer.
+	path := filepath.Join(t.TempDir(), "llm-server.log")
+	log := strings.Join([]string{
+		"0.00.012.000 I build: 11430",
+		"0.01.500.000 I srv    load_model: loading model '/models/gemma.gguf'",
+		"0.02.000.000 I load_tensors: loading model tensors, this can take a while... (load_mode = mmap)",
+		"0.17.000.000 I llama_context: constructing llama_context",
+		"0.18.000.000 I common_init_from_params: warming up the model with an empty run - please wait",
+		"0.23.500.000 I srv    main: model loaded",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := loadPhases(path, 24)
+	want := []loadPhase{{"starting", 2}, {"reading the model", 15}, {"making room for the context", 1},
+		{"warming up", 5.5}, {"getting ready to answer", 0.5}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("the parts are %v, want %v", got, want)
+	}
+	// No warm-up line: its time is the context's.
+	short := strings.Replace(log, "warming up the model", "something else", 1)
+	if err := os.WriteFile(path, []byte(short), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadPhases(path, 24); len(got) != 4 || got[2].seconds != 6.5 {
+		t.Errorf("without the warm-up's line the parts are %v", got)
+	}
+	if loadPhases(filepath.Join(t.TempDir(), "none.log"), 24) != nil {
+		t.Error("a log that is not there has parts")
+	}
+}

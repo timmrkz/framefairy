@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"path/filepath"
+	"runtime/debug"
+
+	"github.com/rs/zerolog"
+
+	"github.com/rs/zerolog"
 
 	"framefairy/engine"
 )
@@ -55,11 +61,27 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		default:
 			unheard = len(engine.Unheard(s.store.files, p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
 		}
+		// It also reads the transcript of the window as it is heard, so
+		// the search finds most of its prompt read.
 		if unheard {
 			go func() {
-				defer func() { _ = recover() }()
-				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
-					log.Printf("could not load the model ahead of the search: %v", err)
+				video := filepath.Base(path)
+				defer func() {
+					if v := recover(); v != nil {
+						theLog.line(zerolog.ErrorLevel, "jobs").Str("video", video).Str("panic", fmt.Sprint(v)).
+							Str("stack", string(debug.Stack())).Msg("reading ahead of the search stopped unexpectedly")
+					}
+				}()
+				ahead, err := p.WarmModel(ctx, req)
+				switch {
+				case err != nil && ctx.Err() == nil:
+					theLog.line(zerolog.WarnLevel, "jobs").Str("video", video).Err(err).
+						Msg("the model could not be loaded ahead of the search")
+				case ahead.Reads > 0:
+					theLog.line(zerolog.InfoLevel, "jobs").Str("video", video).Int("reads", ahead.Reads).
+						Int("tokens", ahead.Tokens).Int("read", ahead.Read).Int("rewritten", ahead.Rewritten).
+						Int("ms", int(ahead.Seconds*1000)).
+						Msg("the model read the transcript ahead of the search")
 				}
 			}()
 		}
@@ -244,12 +266,25 @@ func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) 
 // and it can be carried on. A render called off keeps the shorts it
 // finished and goes, because its Render button is where it is carried on.
 // It says whether the job was one of those.
+//
+// The note of a search or a clip made by hand that stopped is taken away
+// when its row in the clip list is removed, issue #431. A search the queue
+// refused wrote no record, so there is nothing to forget and it is only
+// settled.
 func (s *FrameFairy) cancelSteps(id string) bool {
 	for _, j := range s.jobs.list() {
-		if j.ID != id || j.Record == "" {
+		if j.ID != id {
+			continue
+		}
+		if j.Record == "" {
+			if j.State == JobFailed && makesClips(j.Kind) {
+				s.jobs.settleRefused(id)
+				return true
+			}
 			continue
 		}
 		if j.State == JobInterrupted || j.State == JobFailed {
+			theLog.jobLine(zerolog.InfoLevel, &j).Str("state", j.State).Msg("the work that stopped is removed, its record forgotten")
 			s.forgetRecord(j.Episode, j.Record)
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true

@@ -205,15 +205,23 @@ type savedReply struct {
 // holds the transcript.
 const fitKeep = 30 * time.Second
 
+// searchRequest is what a search asks the model about these lines: the
+// recipe it asks with, the units it numbers and the request. The
+// transcript read ahead of a search is written out the same way, see
+// readahead.go.
+func searchRequest(lines []Line, opts PlanOptions) (Recipe, [][2]int, string) {
+	recipe := opts.recipe()
+	units := recipe.units(lines)
+	return recipe, units, recipe.Request(lines, units, opts)
+}
+
 // BuildPlan turns the transcript into a complete plan in memory.
 func (e *Engine) BuildPlan(ctx context.Context, sourcePath string, source SourceInfo,
 	lines []Line, opts PlanOptions) (*PlanFile, error) {
 	if opts.Whole {
 		return e.wholeClip(ctx, sourcePath, source, lines, opts)
 	}
-	recipe := opts.recipe()
-	units := recipe.units(lines)
-	prompt := recipe.Request(lines, units, opts)
+	recipe, units, prompt := searchRequest(lines, opts)
 
 	// A reply that has been paid for is reused rather than bought again. If a
 	// later stage crashes, or you simply re-run with the same transcript, the

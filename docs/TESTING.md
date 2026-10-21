@@ -446,26 +446,29 @@ it, or sees none with "", and sees that nothing under it moved,
 away, since it has the ten a removed row has, and then go by itself, `toast held` keeps the pointer on it past its time, sees it
 stay and then go once the pointer leaves, `stacked` sees a toast for
 each of two files dropped one after the other, the newer on top, and
-`toast closed` presses the cross of the top one. `write` types into its field and
-puts the cursor so many characters in, `dictate` presses Dictate, sees
-it say Stop in the same frame, the words appear grey while it
-listens and the microphone move with the hum, then ends it with Stop,
+`toast closed` presses the cross of the top one. `write` types into its
+field and puts the cursor so many characters in, `dictate` presses
+Dictate, sees it say Stop in the same frame, the words appear grey while
+it listens and the microphone move with the hum, then ends it with Stop,
 Enter or Escape, or with `ends` lets it stop by itself and say why, or
-with `start` only starts it, with `hearing` waits for more to be heard
-and with `settled` waits for the words before the pause, `click heard`
-clicks into the first word still being heard and sees it settled with
-the cursor in it, with what the Go side tells the window held back from
+with `start` only starts it, with `hearing` waits for more to be said
+and settled, so it is kept however the recording ends, and with
+`settled` waits for the words before the pause, `click heard` clicks
+into the first word still being heard and sees it settled with the
+cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
 `wails-bridge.ts`, since the stand-in hears new words each time and the
-click would land in other words than the ones it read,
-`report reads`, the field reads so, with `*` for whatever the speech
-model heard, and `report as before`, it reads what it did then. The
-bridge's microphone plays two seconds of a hum, then a pause and a
-second and a half more, four times over, as fast as they would be said,
-so pieces are settled while it listens and there is more to hear for
-12 s, and then nothing, and a recording there stops by itself after 8 s
-without a word. `field` clicks a field by its selector and
-types, and `field reads` says what it holds. `escape lets go` clicks a
+click would land in other words than the ones it read, `report reads`,
+the field reads so, with `*` for whatever the speech model heard, and
+`report as before`, it reads what it did then. The bridge's microphone
+plays two seconds of a hum, then a pause and a second and a half more,
+over and over, as fast as they would be said, so pieces are settled
+while it listens and there is more to hear until it stops. With `ends`
+the person falls silent once the phrase they are on is said, through
+`/microphone?silent=1`. A recording there stops by itself after 8 s
+without a word and after a minute at most, so a walk that waits for
+words fails rather than hangs. `field` clicks a field by its selector
+and types, and `field reads` says what it holds. `escape lets go` clicks a
 control or field, presses Escape and sees nothing left open, nothing
 holding the keyboard and no ring. For a clip of two cameras: `add cameras`, a video filmed by two cameras,
 `cut switch`, a double-click on the switch, `trim past` the switch,
@@ -620,7 +623,18 @@ fewer frames each step, issues #328 and #329.
 How many frames the screen draws, and how soon the video preview comes
 to a frame, is the machine's. So a step that works on the frame shown,
 C, R and a play from the playhead, waits for that frame first,
-`shownOnPlayhead`, issue #320. And a check counts what the app drew
+`shownOnPlayhead`, issue #320. It waits on the page, never on the clock:
+a `MutationObserver` on the video preview hears `data-playhead` and
+`data-shown` change. With captions it also waits for the frame to be
+drawn with its own captions over it, `data-captioned`, and says so when
+a layer of captions is given up on, `data-captions-lost`, counted from
+before the click. A step that reads the caption box waits for that, since
+the box shows what was drawn on the frame on screen, issue #359. A click
+on a caption block after a trim waits until `data-answered` on the clip
+timeline's box names the track the trim saved, and fails when
+`data-framed` does not, since until then a click goes by the words' own
+times, issue #290. A frame that never comes is ended by the `-timeout`
+of `make walks`. And a check counts what the app drew
 against the frames the screen drew, not against a number: a bounce is
 drawn on every frame the screen drew while it lasted, and the crop frame
 of a glide stands in a place of its own on every frame the play showed.

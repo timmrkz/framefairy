@@ -185,6 +185,31 @@ func TestAPartTurnedLikeAnotherTakesItsCrop(t *testing.T) {
 	}
 }
 
+// A piece standing as filmed carries no crop on the picture turned. Every
+// reader passes over one, but it is stray data a later reader could
+// trust. The edit that makes a clip's pieces share one crop gave every
+// piece standing as filmed the turned crop of the first piece when that
+// was a turned one, so trimming a clip whose first part was turned wrote
+// the part as filmed with "crop_x_turned": 400. Found by the review of
+// #405, #413.
+func TestAPieceStandingAsFilmedCarriesNoTurnedCrop(t *testing.T) {
+	fsys, path := rotatablePlanPath(t)
+	rotate(t, fsys, path, 10.5)
+	if err := SetCrop(fsys, path, "01", 10.5, 400, SourceInfo{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	reshape(t, fsys, path, Gesture{Kind: "trim", Edge: "end", From: 13.8})
+	if err := cropsAlike(fsys, path); err != nil {
+		t.Error(err)
+	}
+	if got := pieceAt(t, fsys, path, 10.5); got.Rotate != 90 || got.CropX == nil || *got.CropX != 400 {
+		t.Errorf("the part turned reads as %+v, not turned 90 with its crop of 400", got)
+	}
+	if got := pieceAt(t, fsys, path, 13.5); got.Rotate != 0 || got.CropX == nil || *got.CropX != 120 {
+		t.Errorf("the part as filmed reads as %+v, not as filmed with its crop of 120", got)
+	}
+}
+
 // The crop as filmed is the whole clip's, so a part that is turned keeps
 // it for when it is turned back. Placed on the pieces standing as filmed
 // alone, a part turned by mistake and turned back again brought its old

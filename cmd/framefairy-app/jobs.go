@@ -161,6 +161,10 @@ type queue struct {
 	// calledOff is, per episode, the press of Search or Continue the last
 	// Cancel at the head of the clip list was about, see stopClips.
 	calledOff map[string]string
+	// searched is told when a job that makes clips has ended, so the app
+	// keeps its model loaded again, see keep.go: such a job may have put
+	// the kept model aside for another one, or for a bigger copy of it.
+	searched func()
 }
 
 // stampLocked marks a change to a job. q.mu is held.
@@ -692,6 +696,26 @@ func (q *queue) settle(episode, kind, record string) {
 	}
 	q.mu.Unlock()
 	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that stopped is settled, nothing says it stopped any more")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// settleRefused settles a job the queue refused, which failed before it
+// wrote anything, so its row goes like one whose record was forgotten.
+func (q *queue) settleRefused(id string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.ID == id && j.State == JobFailed && j.Record == "" {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that was refused is settled, its row removed")
 		q.emit(JobUpdate{Job: j})
 	}
 }
@@ -759,6 +783,9 @@ func quietly[T any](f func(T)) func(T) {
 }
 
 func (q *queue) runJob(job *Job) {
+	if makesClips(job.Kind) && q.searched != nil {
+		defer q.searched()
+	}
 	ctx := job.ctx
 	if job.ask != nil {
 		turnCtx, release, err := q.lanes.wait(job.ctx, job.ask)
@@ -926,16 +953,6 @@ func (q *queue) update(job *Job, change func(*Job)) {
 	snapshot := *job
 	q.mu.Unlock()
 	q.emit(JobUpdate{Job: snapshot})
-}
-
-// windowLength is how long the window of a search is, in seconds. A search
-// of the whole episode is taken as an hour, which only sizes the model's
-// memory, and the search starts it again if it needs more.
-func windowLength(req engine.PlanRequest) float64 {
-	if req.To > req.From {
-		return req.To - req.From
-	}
-	return 3600
 }
 
 // Render queues rendering clips of a plan. The render keeps a record of

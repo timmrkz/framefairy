@@ -82,8 +82,14 @@ func main() {
 		}
 	}
 	theLog.started()
-	svc := &FrameFairy{store: st}
+	svc := &FrameFairy{store: st, keeping: newKeeping()}
+	// The model is kept loaded while the app is open, and kept again
+	// when the settings change it or a search ends, see keep.go. It is
+	// first loaded once a server the last run left behind is stopped,
+	// below.
+	st.changed = svc.keeping.ask
 	svc.jobs = newQueue(st, emit, notify)
+	svc.jobs.searched = svc.keeping.ask
 	svc.listening.say = quietly(func(d Dictation) {
 		if app != nil {
 			app.Event.Emit("dictation", d)
@@ -263,6 +269,8 @@ func main() {
 	if engine.StopLeftoverServer() {
 		log.Printf("stopped a llama-server the last run of the app left behind")
 	}
+	go svc.keeping.run(st)
+	svc.keeping.ask()
 	svc.updates.start()
 	err := app.Run()
 	quit()
@@ -346,7 +354,9 @@ type FrameFairy struct {
 	listening listening
 	// The report window and the draft of a report, see bugs.go.
 	report *reporting
-	mu     sync.Mutex
+	// The local model kept loaded while the app is open, see keep.go.
+	keeping *keeping
+	mu      sync.Mutex
 	// The transcripts of the episodes worked on last, each kept while the
 	// files it was read from stay as they were, see transcript.
 	said keptReads[*engine.Transcript]
