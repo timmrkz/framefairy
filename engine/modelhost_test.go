@@ -637,7 +637,7 @@ func TestKeepingTheModelLoadedSmallerLoadsNothing(t *testing.T) {
 	s := useStandIn(t, time.Millisecond)
 	e := quietEngine()
 	ctx := context.Background()
-	_, release, err := e.warmModel(ctx, gemma, 32768, "")
+	_, release, err := e.warmModel(ctx, gemma, warmSize("gemma", 0, 0)/2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
