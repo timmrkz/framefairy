@@ -23,6 +23,7 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
+  import { together as joined, type Member } from "../lib/together";
 
   // Work running in the control it was started from. Everything in the app
   // that runs wears this, so running work looks the same wherever it is:
@@ -60,6 +61,13 @@
   // --wash-to. Given spent, it starts that many seconds in, for time that
   // ran on while it was not on screen.
   //
+  // Given together, a name, every run-down of that name is one time told
+  // in several places: the hand on any of them holds them all, so none
+  // runs out while another stands still. A search that stopped is removed
+  // in its row and in each of its cards on the way at once, and its time
+  // ran on in the cards while the hand rested on Put it back in the row,
+  // so the search went from under the hand, issue #431.
+  //
   // Given seldom, the beam is not work at all but a mark on something
   // special, the key ID that was bought: the comet alone comes round once,
   // springing away and easing in, only ever forward, and the rim is dark
@@ -73,6 +81,7 @@
     seldom = false,
     drain = 0,
     spent = 0,
+    together = "",
     onend,
     onresume,
   }: {
@@ -83,6 +92,7 @@
     seldom?: boolean;
     drain?: number;
     spent?: number;
+    together?: string;
     onend?: () => void;
     onresume?: (left: number) => void;
   } = $props();
@@ -158,8 +168,14 @@
       // a little short of full on Tim's Mac. So where the pointer was last
       // seen says it.
       let pointer = !!host?.matches(":hover") || under(host);
-      const keyboard = () => !!host?.contains(document.activeElement);
-      const settle = () => (pointer || keyboard() ? hold() : go());
+      let focused = !!host?.contains(document.activeElement);
+      // The run-downs this one is held and let go with, itself among them.
+      // When the hand comes onto this one or leaves it, every one of them
+      // looks again.
+      const self: Member = { holding: () => pointer || focused, settle: () => {} };
+      const group = joined(together, self);
+      const { holding, settleAll } = group;
+      self.settle = () => (holding() ? hold() : go());
       // A pointer that stands still while what is under it changes, as
       // the bin just pressed goes and the removed picture takes its place,
       // is told of it by events the browser makes up. They can name the
@@ -182,7 +198,7 @@
         }
         if (on === pointer || (!on && here)) return;
         pointer = on;
-        settle();
+        settleAll();
       };
       // Off the app altogether, which is the one place nothing is then
       // under the pointer to say so.
@@ -193,12 +209,17 @@
           outside = requestAnimationFrame(() => {
             outside = 0;
             pointer = false;
-            settle();
+            settleAll();
           });
         });
       };
+      const tookFocus = () => {
+        focused = true;
+        settleAll();
+      };
       const leftFocus = (e: FocusEvent) => {
-        if (!host?.contains(e.relatedTarget as Node | null) && !pointer) go();
+        focused = host?.contains(e.relatedTarget as Node | null) ?? false;
+        settleAll();
       };
       // A row that appears under the pointer, as a removed clip's row
       // does under the trash can just pressed, starts held, full, and its
@@ -206,7 +227,7 @@
       // starts, not stopped just after: finding the pointer lays the page
       // out, and on a busy machine that took long enough to come off the
       // time, so the fill stood a hair short of full under the hand.
-      if (pointer) {
+      if (pointer || focused || holding()) {
         held = true;
         stand();
       } else {
@@ -214,10 +235,12 @@
         run();
         timer = window.setTimeout(over, left);
       }
+      // Come up under the hand, it holds the others too.
+      if (pointer || focused) settleAll();
       document.addEventListener("pointerover", moved, true);
       document.addEventListener("pointermove", moved, { capture: true, passive: true });
       document.addEventListener("pointerout", gone, true);
-      host?.addEventListener("focusin", hold);
+      host?.addEventListener("focusin", tookFocus);
       host?.addEventListener("focusout", leftFocus);
       return () => {
         clearTimeout(timer);
@@ -226,8 +249,9 @@
         document.removeEventListener("pointerover", moved, true);
         document.removeEventListener("pointermove", moved, true);
         document.removeEventListener("pointerout", gone, true);
-        host?.removeEventListener("focusin", hold);
+        host?.removeEventListener("focusin", tookFocus);
         host?.removeEventListener("focusout", leftFocus);
+        group.leave();
       };
     });
   }

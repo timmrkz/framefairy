@@ -77,39 +77,42 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
     expect(carried).toBe("c");
   });
 
-  test("a clip made by hand that stopped can be removed, a search's cannot", () => {
-    let removed = "";
+  test("a clip made by hand that stopped can be removed, and so can a search's, which takes its search", () => {
+    const removed: string[] = [];
     const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
     const search = job({ id: "s", state: "failed", underway: [{ n: 2, start: 100, end: 120, step: "failed" }] });
     const rows = arriving([hand, search], never, nothing, {
-      remove: (j) => (removed = j.id),
+      remove: (j) => removed.push(j.id),
       away: () => undefined,
-      refused: () => undefined,
     });
     expect(rows.map((r) => [r.key, !!r.onremove])).toEqual([
       ["h/1", true],
-      ["s/2", false],
+      ["s/2", true],
     ]);
     rows[0].onremove?.();
-    expect(removed).toBe("h");
+    rows[1].onremove?.();
+    expect(removed).toEqual(["h", "s"]);
   });
 
-  test("a clip made by hand being removed says so, and one whose work could not be called off says why", () => {
-    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
-    const away = { spent: 3, onputback: nothing, onend: nothing, onresume: nothing };
-    const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away, refused: () => undefined });
-    expect(row.away).toBe(away);
-    const [said] = arriving([hand], never, nothing, {
-      remove: nothing,
-      away: () => undefined,
-      refused: () => "Could not remove it: the app did not answer",
-    });
-    expect([said.away, said.what, said.left, said.full]).toEqual([
-      undefined,
-      "Stopped. Click Continue",
-      "Could not remove it: the app did not answer",
-      "Could not remove it: the app did not answer",
+  test("only work that failed is marked failed, so it is said in red", () => {
+    const cut = job({ id: "c", state: "interrupted", underway: [{ n: 1, start: 600, end: 600, step: "finding" }] });
+    const called = job({ id: "s", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const failed = job({ id: "f", state: "failed", error: "could not reach Anthropic", underway: [{ n: 1, start: 30, end: 50, step: "failed" }] });
+    expect(arriving([cut, called, failed], never, nothing).map((r) => [r.key, !!r.failed])).toEqual([
+      ["c/1", false],
+      ["s/1", false],
+      ["f/1", true],
     ]);
+  });
+
+  test("a clip made by hand being removed says so, and is Stopped as it was once it is not", () => {
+    const hand = job({ id: "h", kind: "clip", state: "interrupted", step: "stopped", underway: [{ n: 1, start: 900, end: 900, step: "stopped" }] });
+    const away = { spent: 3, together: "away h", onputback: nothing, onend: nothing, onresume: nothing };
+    const [row] = arriving([hand], never, nothing, { remove: nothing, away: () => away });
+    expect(row.away).toBe(away);
+    // Why its work could not be called off is a toast, never its line.
+    const [back] = arriving([hand], never, nothing, { remove: nothing, away: () => undefined });
+    expect([back.away, back.what, back.left]).toEqual([undefined, "Stopped. Click Continue", "15:00"]);
   });
 
   test("done, called off and job without clips on the way have none", () => {

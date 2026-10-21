@@ -9,16 +9,26 @@
   // row in the clip list and a picture's tile in a report wear it, so the
   // two look the same. spent is how many seconds of the time had run when
   // it was drawn, and onresume says how many are left when it starts
-  // again.
+  // again. Given together, every Removed of that name tells one time, see
+  // Busy: a search's row and its cards are removed as one.
+  //
+  // It takes the place of what was removed in one frame and stands still:
+  // the fill running down is its one movement. It slid in from the side
+  // once, which across a tile read as a swipe to Tim, and in the clip list
+  // slid in again every time its video was opened while it ran down,
+  // because an animation starts over whenever its element is shown again,
+  // issue #431.
   let {
     spent = 0,
     tile = false,
+    together = "",
     onputback,
     onend,
     onresume,
   }: {
     spent?: number;
     tile?: boolean;
+    together?: string;
     onputback?: () => void;
     onend?: () => void;
     onresume?: (left: number) => void;
@@ -30,7 +40,7 @@
   <span class="what">Removed</span>
   {#if !tile}<span class="grow"></span>{/if}
   <button class="quiet back" onclick={() => onputback?.()}>Put it back</button>
-  <Busy drain={secondThoughts} {spent} {onend} {onresume} />
+  <Busy drain={secondThoughts} {spent} {together} {onend} {onresume} />
 </div>
 
 <style>
@@ -42,7 +52,6 @@
     padding: 0 8px;
     background: color-mix(in srgb, var(--err) 14%, transparent);
     color: var(--err);
-    animation: swept 0.18s ease-out;
   }
 
   /* In a tile it fills the tile, the words over each other in its
@@ -56,9 +65,6 @@
     gap: 6px;
     border-radius: var(--radius-s);
     overflow: hidden;
-    /* It takes the picture's place where it stands. A row of the clip
-       list slides in, which across a tile read as a swipe to Tim. */
-    animation: none;
   }
 
   /* The fill that runs down wears the colour of what was taken away,
@@ -81,20 +87,4 @@
     color: var(--text);
   }
 
-  @keyframes swept {
-    from {
-      transform: translateX(24px);
-      opacity: 0;
-    }
-    to {
-      transform: none;
-      opacity: 1;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .gone {
-      animation: none;
-    }
-  }
 </style>

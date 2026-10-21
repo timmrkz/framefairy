@@ -910,6 +910,24 @@
       (Math.abs(from - halted.from) > 0.5 || Math.abs(to - halted.to) > 0.5),
   );
   const stopped = $derived(aside ? null : halted);
+  // The row as the clip list shows it. It can be removed, issue #431: it
+  // says Removed and offers the search back while its time runs down, the
+  // way a removed clip's row does, and then the search is forgotten, its
+  // record and all, so the row, the window on the range picker and the
+  // video's dot in the sidebar go with it. Its clips on the way go with it
+  // too, and say Removed in the same moment, because their time is the
+  // search's. Failed is said in the red of an error, as the sidebar and
+  // the toast say it.
+  const stoppedRow = $derived.by(() => {
+    if (!stopped || !search) return null;
+    const job = search.id;
+    return {
+      ...stopped,
+      failed: search.state === "failed",
+      onremove: () => putAside(job),
+      away: awayOf(job),
+    };
+  });
   // Said in the app's log when the window leaves a stopped search or
   // comes back to it, see lib/said.ts.
   let wasAside = false;
@@ -938,28 +956,24 @@
       {
         remove: (job) => putAside(job.id),
         away: (job) => awayOf(job.id),
-        refused: (job) => refused[job.id],
       },
     ),
   );
 
   // A clip made by hand that stopped can be removed, so it is not made,
-  // issue #257. Its card says Removed and offers it back for as long as a
-  // removed clip's row does, and only then is the work called off, and
-  // the Go side forgets its record, see cancelSteps. The time is the
+  // issue #257, and so can a search that stopped, issue #431. Its card
+  // says Removed and offers it back for as long as a removed clip's row
+  // does, and only then is the work called off, and the Go side forgets
+  // its record, see cancelSteps. The time is the
   // episode's, kept by the job the way a search's row that found nothing
   // is, see lib/removed.ts: it runs on while another video is open, and
   // work whose time ran out while it was away is called off on coming
   // back. By the job: the moment its time runs out, and 0 once it has.
   let putAway = $state<Told>(untrack(() => takeUpTold(path, Date.now(), "put away")));
-  // Why the work of a card could not be called off, by the job. The card
-  // is Stopped again and says it there, the one place it belongs to.
-  let refused = $state<Record<string, string>>({});
 
   function putAside(job: string) {
-    const { [job]: _, ...rest } = refused;
-    refused = rest;
     putAway = { ...putAway, [job]: Date.now() + secondThoughts * 1000 };
+    said(`clip list: the work of ${job} that stopped removed, ${secondThoughts} s to put it back`, { level: "info", video: path });
   }
 
   function awayOf(job: string): Away | undefined {
@@ -969,10 +983,14 @@
       // Once called off, the row has no time left, and stays until the
       // job says it is gone.
       spent: until === 0 ? secondThoughts : toldSpent(until),
+      // A search is removed in its row and in each of its cards on the
+      // way at once, and the hand on any of them holds them all.
+      together: `away ${job}`,
       onputback: () => {
         if (putAway[job] === 0) return;
         const { [job]: _, ...rest } = putAway;
         putAway = rest;
+        said(`clip list: the work of ${job} that stopped put back`, { level: "info", video: path });
       },
       onend: () => callOff(job),
       onresume: (left) => {
@@ -984,16 +1002,20 @@
   function callOff(job: string) {
     if (putAway[job] === 0) return;
     putAway = { ...putAway, [job]: 0 };
+    said(`clip list: the work of ${job} that stopped is called off and forgotten`, { level: "info", video: path });
     send(job);
   }
 
+  // Work that could not be called off is as it was, Stopped with
+  // Continue, and why is said whole in a toast, never pressed into its
+  // row or card, where it is cut to a line, issue #431.
   function send(job: string) {
     api.cancelJob(job).catch((err) => {
       const { [job]: _, ...rest } = putAway;
       putAway = rest;
       const why = `Could not remove it: ${errorText(err)}`;
-      refused = { ...refused, [job]: why };
-      said(`clip list: the clip made by hand by ${job} could not be removed, ${why}`, { level: "warn", video: path });
+      said(`clip list: the work of ${job} that stopped could not be removed, ${why}`, { level: "warn", video: path });
+      toasts.say(where(), why, { video: path, report: true });
     });
   }
 
@@ -1001,17 +1023,16 @@
   for (const [job, until] of Object.entries(untrack(() => putAway))) if (until === 0) send(job);
 
   // A card whose work was called off goes when its job says so, and what
-  // was kept of its time, or why it could not go, goes with it. So does
-  // one whose job runs again. A job not heard of yet, as the video opens,
-  // keeps its time.
+  // was kept of its time goes with it. So does one whose job runs again.
+  // A job not heard of yet, as the video opens, keeps its time.
   $effect(() => {
     const here = new Set(arrivingNow.filter((a) => a.stopped).map((a) => a.job));
+    // The search's own row, which stands while it has no clip on the way.
+    if (halted && search) here.add(search.id);
     const known = new Set(jobs.forEpisode(path).map((j) => j.id));
     untrack(() => {
       const kept = Object.entries(putAway).filter(([job, until]) => here.has(job) || (until !== 0 && !known.has(job)));
       if (kept.length < Object.keys(putAway).length) putAway = Object.fromEntries(kept);
-      const still = Object.entries(refused).filter(([job]) => here.has(job));
-      if (still.length < Object.keys(refused).length) refused = Object.fromEntries(still);
     });
   });
   // Everything that puts the clip list on screen takes a ticket: a read of
@@ -3765,7 +3786,7 @@
               waiting={comingNow}
               next={shownNext}
               {carry}
-              {stopped}
+              stopped={stoppedRow}
               removed={removedRows}
               emptied={note}
               onforget={forget}

@@ -692,6 +692,26 @@ func (q *queue) settle(episode, kind, record string) {
 	}
 	q.mu.Unlock()
 	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that stopped is settled, nothing says it stopped any more")
+		q.emit(JobUpdate{Job: j})
+	}
+}
+
+// settleRefused settles a job the queue refused, which failed before it
+// wrote anything, so its row goes like one whose record was forgotten.
+func (q *queue) settleRefused(id string) {
+	q.mu.Lock()
+	var settled []Job
+	for _, j := range q.jobs {
+		if j.ID == id && j.State == JobFailed && j.Record == "" {
+			j.State = JobCancelled
+			q.stampLocked(j)
+			settled = append(settled, *j)
+		}
+	}
+	q.mu.Unlock()
+	for _, j := range settled {
+		theLog.jobLine(zerolog.InfoLevel, &j).Msg("the job that was refused is settled, its row removed")
 		q.emit(JobUpdate{Job: j})
 	}
 }
