@@ -2927,11 +2927,17 @@ beside **Report** says how the page works and what goes in a report.
 Tim found standing lines there, Listening and Saved on the Desktop,
 read as news that was not true yet.
 
-**Clear**, beside the paperclip and away from Report, empties the
-report, what was written and every picture and recording, issue #415.
-It asks first in the box over the page, which says what goes, because
-nothing brings it back. Report and Clear are off while there is
-nothing to report, no words and no pictures.
+**Clear**, then **Report**, the buttons of words on the right as the
+buttons of icons are on the left, issue #415. Clear empties the report,
+what was written and every picture and recording. It asks first in the
+box over the page, "Everything you wrote and attached will be deleted.
+You can undo it with Cmd+Z." Cmd+Z then brings it all back and Cmd+Y
+clears it again, as Tim asked, until something else is typed, attached
+or removed. The words go as one step of the field's own undo and the
+pictures follow it, removed on the Go side the way the bin removes one,
+so the app's copies go at the next start or the next report. Report and
+Clear are off while there is nothing to report, no words and no
+pictures.
 
 Tab goes from the field to Report, then through the pictures and back
 to the field, and Shift+Tab the other way, issue #404, so Enter, Tab and

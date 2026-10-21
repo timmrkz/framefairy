@@ -357,8 +357,9 @@
 //                      off, as they are with nothing to report
 //   ["clear", how]     presses Clear, and the box over the page asks
 //                      first, with the keyboard on Cancel and saying
-//                      what goes. "cancel" presses Escape, "clear" presses
-//                      Clear in the box. The box is gone after
+//                      that everything goes and Cmd+Z undoes it. "cancel"
+//                      presses Escape, "clear" presses Clear in the box.
+//                      The box is gone after
 //   ["pictures fit"]   every picture is drawn whole in its tile, in its
 //                      middle, reaching both sides or top and bottom
 //   ["report at end"]  the report's field is scrolled to its end
@@ -2249,8 +2250,9 @@ export const sequences = [
   {
     // Issue #415. Tim asked for one button that empties a report that
     // turned out to be for nothing, after asking, rather than removing
-    // the text and every picture by hand.
-    name: "Clear asks first, then empties the words and the pictures for good",
+    // the text and every picture by hand. Then that Cmd+Z brings it all
+    // back and Cmd+Y clears it again.
+    name: "Clear asks first, empties the words and the pictures, and undo brings them back",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
@@ -2261,6 +2263,19 @@ export const sequences = [
       ["clear", "clear"],
       ["pictures", 0],
       ["report on", false],
+      ["undo"],
+      ["report reads", "It froze."],
+      ["pictures", 2],
+      ["redo"],
+      ["report reads", ""],
+      ["pictures", 0],
+      ["undo"],
+      ["pictures", 2],
+      ["close report"],
+      ["bugs"],
+      ["report reads", "It froze."],
+      ["pictures", 2],
+      ["clear", "clear"],
       ["close report"],
       ["bugs"],
       ["report reads", ""],
@@ -7025,8 +7040,15 @@ for (const seq of toWalk) {
       case "pictures": {
         const n = await page.evaluate(() => document.querySelectorAll("li.tile figure img").length);
         if (n !== arg) wrong = `the report window shows ${n} pictures, not ${arg}`;
-        // Each one is the picture the Go side kept, loaded and shown.
-        const unseen = await page.evaluate(() => [...document.querySelectorAll("li.tile figure img")].filter((i) => !i.complete || i.naturalWidth === 0).length);
+        // Each one is the picture the Go side kept, loaded and shown. One
+        // just put back is told when it has loaded, or failed to.
+        const unseen = await page.evaluate(async () => {
+          const all = [...document.querySelectorAll("li.tile figure img")];
+          await Promise.all(
+            all.filter((i) => !i.complete).map((i) => new Promise((done) => (i.addEventListener("load", done, { once: true }), i.addEventListener("error", done, { once: true })))),
+          );
+          return all.filter((i) => i.naturalWidth === 0).length;
+        });
         if (!wrong && unseen) wrong = `${unseen} of the pictures did not load`;
         break;
       }
@@ -7247,9 +7269,9 @@ for (const seq of toWalk) {
           says: document.querySelector("dialog[open] .body")?.textContent.trim(),
           focused: document.activeElement?.textContent.trim(),
         }));
-        if (box.title !== "Clear this report?") wrong = `Clear asked ${JSON.stringify(box.title)}`;
+        if (box.title !== "Clear the report?") wrong = `Clear asked ${JSON.stringify(box.title)}`;
         else if (box.focused !== "Cancel") wrong = `the box opened with the keyboard on ${box.focused}, not Cancel`;
-        else if (!/ go(es)?\. This cannot be taken back\.$/.test(box.says)) wrong = `the box says ${JSON.stringify(box.says)}`;
+        else if (box.says !== "Everything you wrote and attached will be deleted. You can undo it with Cmd+Z.") wrong = `the box says ${JSON.stringify(box.says)}`;
         if (wrong) break;
         if (arg === "cancel") await page.keyboard.press("Escape");
         else await page.locator("dialog[open] button.danger").click();

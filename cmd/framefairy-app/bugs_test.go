@@ -487,8 +487,9 @@ func TestPicturesPickedAreReadFromWhereTheyAre(t *testing.T) {
 	}
 }
 
-// Clear empties the draft, the text and every picture, removed ones too,
-// and it stays empty after a restart. Issue #415.
+// Clear empties the draft, the text and every picture, removed ones too.
+// Its pictures can be put back, the way Cmd+Z does it, and after a
+// restart the app's copies are gone and the draft stays empty. Issue #415.
 func TestClearEmptiesTheDraft(t *testing.T) {
 	files := afero.NewMemMapFs()
 	s := &FrameFairy{report: newReporting(files, "/config/report")}
@@ -501,14 +502,21 @@ func TestClearEmptiesTheDraft(t *testing.T) {
 	if d := s.ClearReport(); d.Text != "" || len(d.Pictures) != 0 || d.Error != "" {
 		t.Fatalf("cleared, the draft is %+v", d)
 	}
-	for _, id := range ids {
-		if _, err := files.Stat("/config/report/" + id + ".png"); err == nil {
-			t.Fatalf("picture %s is still kept after Clear", id)
-		}
+	if _, pics := s.report.reportPictures(); len(pics) != 0 {
+		t.Fatalf("a report after Clear would hold %d pictures", len(pics))
 	}
+	if d := s.PutBackPicture(ids[0]); names(d) != "a.png" {
+		t.Fatalf("put back after Clear, the draft holds %s", names(d))
+	}
+	s.ClearReport()
 	s = &FrameFairy{report: newReporting(files, "/config/report")}
 	if d := s.ReportDraft(); d.Text != "" || len(d.Pictures) != 0 {
 		t.Fatalf("after a restart the cleared draft is %+v", d)
+	}
+	for _, id := range ids {
+		if _, err := files.Stat("/config/report/" + id + ".png"); err == nil {
+			t.Fatalf("picture %s is still kept after Clear and a restart", id)
+		}
 	}
 	// A picture attached after Clear gets an id of its own.
 	if d := s.report.attach("drop", []handed{{name: "c.png", data: pngOf(t, 8, 8)}}); len(d.Pictures) != 1 || slices.Contains(ids, d.Pictures[0].ID) {

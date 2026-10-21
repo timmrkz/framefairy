@@ -364,8 +364,10 @@ func (s *FrameFairy) PutBackPicture(id string) ReportDraft {
 }
 
 // ClearReport empties the draft, what was written and every picture and
-// recording, once Clear has asked first. The app's own copies of the
-// pictures go, never the files they were handed over from. Issue #415.
+// recording, once Clear has asked first. The pictures are removed the way
+// the bin removes one, so Cmd+Z in the window puts them back with
+// PutBackPicture, and the app's copies go at the next start or the next
+// report. Never the files they were handed over from. Issue #415.
 func (s *FrameFairy) ClearReport() ReportDraft {
 	if s.report == nil {
 		return ReportDraft{Pictures: []ReportPicture{}}
@@ -374,12 +376,12 @@ func (s *FrameFairy) ClearReport() ReportDraft {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.load()
-	for _, p := range r.draft.Pictures {
-		r.forget(p)
+	n := r.count()
+	for i := range r.draft.Pictures {
+		r.draft.Pictures[i].Removed = true
 	}
-	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(r.draft.Text)).Int("pictures", len(r.draft.Pictures)).Msg("the report was cleared")
-	// Next stays, so an id is never given twice in a run.
-	r.draft = draftFile{Pictures: []ReportPicture{}, Next: r.draft.Next}
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(r.draft.Text)).Int("pictures", n).Msg("the report was cleared")
+	r.draft.Text = ""
 	if err := r.keep(); err != nil {
 		return r.shown(sentence(err.Error()))
 	}

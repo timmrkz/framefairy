@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
-  import { api, clock, onDictation, onLoudness, onReportDraft, type ReportDraft, type ReportPicture } from "../lib/api";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { api, clock, onDictation, onLoudness, onReportDraft, onUndo, type ReportDraft, type ReportPicture } from "../lib/api";
+  import { asking, typing } from "../lib/keys";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
   import Busy from "../components/Busy.svelte";
@@ -129,35 +130,90 @@
   // over the page has asked, issue #415. A report that turned out to be
   // for nothing had to be emptied by hand, a picture at a time.
   let clearing = $state(false);
-  // What Clear takes, in the words of the box that asks first.
-  const goes = $derived.by(() => {
-    const films = pictures.filter((p) => p.recording).length;
-    const shots = pictures.length - films;
-    const parts = [
-      what.trim() ? "what you wrote" : "",
-      shots === 1 ? "the picture" : shots ? `the ${shots} pictures` : "",
-      films === 1 ? "the recording" : films ? `the ${films} recordings` : "",
-    ].filter(Boolean);
-    const all = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : (parts[0] ?? "");
-    return `${all.charAt(0).toUpperCase()}${all.slice(1)} ${parts.length > 1 || pictures.length > 1 ? "go" : "goes"}.`;
-  });
+  // What the last Clear took, while Cmd+Z can still bring it back and
+  // Cmd+Y take it again, as Tim asked: whether it took words, the
+  // pictures, and whether it is undone now. The words go as one step of
+  // the field's own undo, so the field's Cmd+Z brings them back, and the
+  // pictures follow that step. Anything done after it, a letter typed or
+  // a picture added or removed, ends it, as in any editor.
+  let cleared: { text: boolean; pics: ReportPicture[]; undone: boolean } | null = null;
+  // An edit of the field that Clear or its undo makes, which ends nothing.
+  let quiet = false;
+  const unclear = () => (cleared = null);
+
   async function clearAll() {
     clearing = false;
     log("report: cleared", { level: "info" });
-    // The words go at once, and a save still to come would bring them back.
-    if (saving) clearTimeout(saving);
-    saving = null;
-    field.textContent = "";
-    what = "";
+    // The box lets go of the focus as it closes, and the field can only
+    // take it, and its undo the words, once it has.
+    await tick();
+    const pics = [...pictures];
     removed = {};
     pictures = [];
     field.focus({ preventScroll: true });
+    let text = false;
+    if (field.textContent) {
+      getSelection()?.selectAllChildren(field);
+      quiet = true;
+      text = document.execCommand("delete");
+      quiet = false;
+      // Where the field's own undo is not to be had, the words go anyway.
+      if (field.textContent) field.textContent = "";
+    }
+    what = "";
+    // A save still to come would bring the words back.
+    if (saving) clearTimeout(saving);
+    saving = null;
+    cleared = { text, pics, undone: false };
     try {
       took(await api.clearReport());
     } catch (e) {
       oops(sentence(e));
     }
   }
+
+  // Undo and Redo in the Edit menu. After Clear they bring everything
+  // back and clear it again. Otherwise they go to the field, as on every
+  // page with no workspace, or Cmd+Z in it would do nothing.
+  async function undo(how: "undo" | "redo") {
+    if (asking()) return;
+    const c = cleared;
+    if (!c || c.undone !== (how === "redo")) {
+      if (typing()) document.execCommand(how);
+      return;
+    }
+    c.undone = how === "undo";
+    log(`report: ${how === "undo" ? "Undo brings back" : "Redo clears again"} the words and ${c.pics.length} pictures`, { level: "info" });
+    field.focus({ preventScroll: true });
+    if (c.text) {
+      quiet = true;
+      document.execCommand(how);
+      quiet = false;
+    }
+    read();
+    if (how === "redo") {
+      if (saving) clearTimeout(saving);
+      saving = null;
+      pictures = pictures.filter((p) => !c.pics.some((q) => q.id === p.id));
+      try {
+        took(await api.clearReport());
+      } catch (e) {
+        oops(sentence(e));
+      }
+      return;
+    }
+    pictures = [...pictures, ...c.pics].sort((a, b) => order(a.id) - order(b.id));
+    let last: ReportDraft | null = null;
+    for (const p of c.pics) {
+      try {
+        last = await api.putBackPicture(p.id);
+      } catch (e) {
+        oops(sentence(e));
+      }
+    }
+    if (last) took(last);
+  }
+  onMount(() => onUndo(undo));
 
   // took shows what the Go side says the draft holds now, with why a
   // picture was left out.
@@ -169,11 +225,13 @@
 
   // A drop says what came of it on its own.
   function dropped(d: ReportDraft) {
+    unclear();
     took(d);
   }
 
   async function attach() {
     if (attaching) return;
+    unclear();
     attaching = true;
     try {
       took(await api.attachPictures());
@@ -185,6 +243,7 @@
   }
 
   function removePicture(p: ReportPicture) {
+    unclear();
     removed[p.id] = { picture: p };
     pictures = pictures.filter((q) => q.id !== p.id);
     api.removePicture(p.id).then(took, (e) => oops(sentence(e)));
@@ -196,6 +255,7 @@
   function putBack(id: string) {
     const r = removed[id];
     if (!r) return;
+    unclear();
     pictures = [...pictures, r.picture];
     delete removed[id];
     const again = () => {
@@ -220,6 +280,7 @@
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (files.length === 0) return;
     e.preventDefault();
+    unclear();
     for (const f of files) {
       const reader = new FileReader();
       reader.onload = () => {
@@ -460,6 +521,7 @@
   // after it, at once rather than when something more is heard, which
   // may be never once the person stops talking.
   function typed() {
+    if (!quiet) unclear();
     if (listening && said && mark && field.contains(said)) space(mark.textContent!.trim());
     read();
   }
@@ -655,6 +717,7 @@
   async function dictate() {
     if (hearing) return;
     if (listening) return keep();
+    unclear();
     note = "";
     unheard = "";
     listening = true;
@@ -737,7 +800,7 @@
     const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled);
     const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length];
     next.focus();
-    log(`report: ${e.shiftKey ? "Shift+Tab" : "Tab"} moved the focus from ${named(here)} to ${named(next)}`);
+    if (next !== here) log(`report: ${e.shiftKey ? "Shift+Tab" : "Tab"} moved the focus from ${named(here)} to ${named(next)}`);
   }
 
   // A recording is not left running behind another page.
@@ -857,7 +920,7 @@
         data-loud={loud}
         aria-label={listening ? "Stop" : hearing ? "Writing" : "Dictate"}
         title={listening
-          ? "Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z takes it back"
+          ? "Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z undoes it"
           : hearing
             ? "Writing down what you said"
             : "Dictate. Say what happened. The speech model on this computer writes it into the field as you talk, and you can correct it while it does"}
@@ -874,16 +937,6 @@
       >
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
-      </button>
-      <!-- Away from Report, so the hand going for Report does not find
-           it, and it asks first anyway. -->
-      <button
-        class="act danger clear"
-        onclick={() => (clearing = true)}
-        disabled={nothing || making || listening || hearing || attaching}
-        title="Empties this report, what you wrote and everything attached, after asking"
-      >
-        Clear
       </button>
       <!-- Only what the microphone hears, and why a recording stopped by
            itself. What the buttons are doing shows on the buttons, how the
@@ -903,15 +956,26 @@
            before it is made. -->
       <span class="ask always">
         <Info label="How a report works" side="right">
-          Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z takes it back. Attach
+          Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach
           screenshots or screen recordings with the paperclip, by dropping them on this window or by pasting them, up
           to ten of 10 MB each.
-          What you write and attach stays here when you close the window, and Clear empties it all after asking. Report saves one zip file on the Desktop,
+          What you write and attach stays here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the Desktop,
           shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what
           else their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. Never a video, its
           words or its captions, and your home folder is written as ~. You can look inside before you send it.
         </Info>
       </span>
+      <!-- Clear and then Report, the buttons of words on the right as the
+           buttons of icons are on the left, as Tim asked. Clear asks
+           first and Cmd+Z undoes it, so a slip of the hand costs nothing. -->
+      <button
+        class="act danger clear"
+        onclick={() => (clearing = true)}
+        disabled={nothing || making || listening || hearing || attaching}
+        title="Empties this report, what you wrote and everything attached, after asking"
+      >
+        Clear
+      </button>
       <button bind:this={report} class="act primary report" onclick={make} disabled={nothing || making || listening || attaching} title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
         {making ? "Making…" : "Report"}
@@ -957,8 +1021,8 @@
     </div>
   {/if}
   {#if clearing}
-    <Confirm title="Clear this report?" oncancel={() => (clearing = false)}>
-      <p>{goes} This cannot be taken back.</p>
+    <Confirm title="Clear the report?" oncancel={() => (clearing = false)}>
+      <p>Everything you wrote and attached will be deleted. You can undo it with Cmd+Z.</p>
       {#snippet actions()}
         <button onclick={() => (clearing = false)}>Cancel</button>
         <button class="danger" onclick={clearAll}>Clear</button>
