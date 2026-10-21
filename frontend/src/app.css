@@ -737,7 +737,6 @@ input[type="password"] {
    the lists wear, so the three are one thing and none drifts the day
    another changes. Each keeps only its size and what is in it. */
 .panel {
-  z-index: 60;
   color: var(--text);
   background: var(--ink-1);
   border: 1px solid var(--line);
@@ -749,7 +748,9 @@ input[type="password"] {
    has read it, a frame after the panel opens. For that frame the colour
    picker lay under the video's menu it opened from, and a click on its
    shade landed on Remove, issue #401. So the box lies over the app from
-   its first frame, and a panel opened from another is over it at once. */
+   its first frame, at the panel's own z-index, one rule for both, and a
+   panel opened from another is over it at once. */
+.panel,
 [data-bits-floating-content-wrapper] {
   z-index: 60;
 }
