@@ -192,9 +192,9 @@ jobs:
   # (cached) whatever tests were added elsewhere. Every test runs once,
   # since -skip takes exactly what the two -run leave, fuzz seeds among
   # it. The engine's tests whose names start with A are a third of all
-  # the time, so they are split by their second letter. tests names the
-  # patterns, and the cache with them, since a cache made with other
-  # patterns holds no result for these. On one machine the tests took six minutes, and no job takes over
+  # the time, so they are split by their second letter. The cache is
+  # keyed by the pattern, since one made with another pattern holds no
+  # result for this one. On one machine the tests took six minutes, and no job takes over
   # five. Split by package, the app with the small packages took 208 s
   # on one machine, in one run, because the app's tests run one after
   # another.
@@ -242,8 +242,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -297,7 +297,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ matrix.tests }}-${{ runner.os }}-${{ github.sha }}
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
