@@ -178,6 +178,42 @@ export async function letClockGo(page) {
   await page.clock.resume();
 }
 
+// Waits for n of the browser's own frames, which go on while the app's
+// time is held.
+export async function realFrames(page, n = 2) {
+  await page.evaluate((n) => {
+    const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
+    return new Promise((done) => {
+      const next = (left) => (left ? frame(() => next(left - 1)) : done());
+      next(n);
+    });
+  }, n);
+}
+
+// Waits until every row of the clip list on its way out has folded and
+// left the page. Svelte marks a leaving row inert the moment it starts to
+// go and takes it out when its fold ends, so the page changing is the
+// signal. Its animations are no signal: Svelte starts the fold from the
+// end of a first animation of no length. Two frames more let the rows
+// under it settle.
+export async function foldsDone(page) {
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const gone = () => !document.querySelector("aside ol li[inert]");
+        if (gone()) return done();
+        const watch = new MutationObserver(() => {
+          if (gone()) {
+            watch.disconnect();
+            done();
+          }
+        });
+        watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["inert"] });
+      }),
+  );
+  await realFrames(page);
+}
+
 // Waits until the sidebar has stopped sliding, so what a walk reads or
 // clicks next stays where it is. It opens and shuts in the frame the
 // pointer reaches or leaves it, and slides for 140 ms, see App.svelte,
@@ -528,7 +564,7 @@ export async function clipList(page) {
       count: Number(text(pane.querySelector(".listhead .num")) || 0),
       cards: [...pane.querySelectorAll("ol li[data-key]")].map((li) => li.dataset.key),
       rows: [...pane.querySelectorAll("ol li.ghost")]
-        .map((li) => ({ what: text(li.querySelector(".title")), meta: text(li.querySelector(".meta")) }))
+        .map((li) => ({ what: text(li.querySelector(".title")), meta: text(li.querySelector(".meta")), leaving: li.inert }))
         .filter((r) => r.what),
     };
   });

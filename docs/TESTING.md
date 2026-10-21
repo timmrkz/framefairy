@@ -730,7 +730,12 @@ before the walk had looked, #341. Every timer, frame and
 `performance.now` of the app stands still while the clock is held, so a
 step that needs the app's own frames comes before `["hold the clock"]` or
 after `letClockGo`. The walk's own waits, `settle` among them, keep the
-real time and frames, kept on `window.__real`.
+real time and frames, kept on `window.__real`. A timer the app started
+before the fake clock came is a real one and does not hold, so where the
+time starts on its own, as the row a search leaves when it found nothing
+new, the sequence begins with `["fake clock"]`, `fakeClock`, which runs
+the app on Playwright's clock as fast as the real one until it is held,
+and the step reads what is left of the time from the row's fill.
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
