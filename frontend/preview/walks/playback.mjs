@@ -47,18 +47,6 @@ function overlaysFollow(overlays, state) {
   if (broke) watch.broke("the video preview shows the clip only on the clip", broke);
 }
 
-// While a play runs, the screen is asked for a rate that shows the video
-// evenly, and given back once the play stops, see MatchScreen in
-// cmd/framefairy-app/match.go. The bridge has no screen to change, so
-// what is checked is what the video preview asked of the Go side.
-async function screenMatched(from, what) {
-  const asked = await page.evaluate((from) => window.__calls.slice(from).filter((c) => c.name === "MatchScreen").map((c) => c.args[0]), from);
-  const fps = 1 / frame;
-  if (!asked.some((x) => Math.abs(x - fps) < 0.01) || asked[asked.length - 1] !== 0) {
-    watch.broke("the screen is matched to the video while it plays, and given back after", `${what}: asked for ${asked.join(", ") || "nothing"}, the video at ${fps.toFixed(3)} frames a second`);
-  }
-}
-
 // Paused, the picture stays where it was paused: the playhead stays, and
 // the frame on screen is the one that holds it, or where a play stopped on
 // the clip's end, the frame that holds the moment a frame before it, the
@@ -111,7 +99,6 @@ const gestures = [
       const clip = await playsClip();
       const ms = 300 + rng.int(2700);
       const stop = await recordFrames(page, frame);
-      const calls = await page.evaluate(() => window.__calls.length);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
       await page.waitForTimeout(ms);
@@ -131,7 +118,6 @@ const gestures = [
       if (clip) framesInClip(frames, p);
       overlaysFollow(overlays, state);
       await staysPaused(`after playing for ${ms} ms`);
-      await screenMatched(calls, `played for ${ms} ms`);
       return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms`;
     },
   },
@@ -154,7 +140,6 @@ const gestures = [
       // A clip at its end starts over, so as long as the whole clip.
       const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
       const stop = await recordFrames(page, frame);
-      const calls = await page.evaluate(() => window.__calls.length);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
       // Playing, the play button says Pause, and once the clip has stopped
@@ -194,7 +179,6 @@ const gestures = [
         watch.broke("a clip played to its end stops there", `end ${end.toFixed(3)}, stopped ${v.paused} at ${v.at.toFixed(3)}`);
       }
       await staysPaused("at the end");
-      await screenMatched(calls, "played to the end");
       return `play the clip from ${from.toFixed(2)} to its end${looped ? `, loop on and off ${looped.toFixed(1)} s before it` : ""}`;
     },
   },

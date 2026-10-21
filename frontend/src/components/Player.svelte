@@ -30,7 +30,6 @@
   import { shownColour, type Light } from "../lib/frames/light";
   import Info from "./Info.svelte";
   import {
-    api,
     captionYStep,
     snapCaptionY,
     type CaptionsView,
@@ -313,7 +312,6 @@
       if (s.drew) pictured = true;
       return;
     }
-    matchScreen(s.playing && !s.ended ? fpsOf(queue) : 0);
     // A picture: the video preview has what it is going to show. A file
     // that cannot be opened at all says so where the picture would be, see
     // open. Trouble on the way is no picture: the sound stopping said the
@@ -339,22 +337,6 @@
     // where the playhead already is. A correction holds the caption on its
     // own moment, frozen, so this changes nothing under the caret.
     time = inEpisode(s.at, source.duration);
-  }
-
-  // The screen runs at a rate that shows the video evenly while it plays,
-  // 50 Hz for a video of 25 frames a second on a screen of 120 Hz, where
-  // its frames stood 4 and 5 refreshes by turns. The Go side picks the
-  // rate and says what came of it in the log, see
-  // cmd/framefairy-app/match.go. Issue #251.
-  let matched = 0;
-  function matchScreen(fps: number) {
-    if (fps === matched) return;
-    matched = fps;
-    api.matchScreen(fps).catch(() => {});
-  }
-  function fpsOf(q: FrameQueue | null): number {
-    const frame = q?.movie?.video?.frame ?? 0;
-    return frame > 0 && Number.isFinite(1 / frame) ? 1 / frame : 0;
   }
 
   // What play plays for a place: on the video the whole episode straight
@@ -1711,7 +1693,6 @@
     window.addEventListener("pointerdown", forget, true);
     window.addEventListener("focusin", focusMoves);
     return () => {
-      matchScreen(0);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", forget, true);
       window.removeEventListener("focusin", focusMoves);

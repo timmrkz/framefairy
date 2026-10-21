@@ -367,25 +367,18 @@ refreshes a minute where it had missed 25.6.
 At 120 Hz a frame of 25 a second still stands 4 and 5 refreshes by
 turns, 33 and 42 ms, and so it does in QuickTime and Final Cut on the
 same screen: macOS never changes a screen's rate for a video by itself.
-Apple's advice is to set the screen to a rate that divides evenly by the
-video's, and the screen of a MacBook Pro offers 47.95, 48, 50, 59.94 and
-60 Hz besides its own 120. So while a video plays, the app runs the
-screen at the highest rate it offers that shows the video evenly, 50 Hz
-for 25 or 50 frames a second, where every frame of 25 stands exactly 40
-ms, and gives the screen back when the play stops. A video of 24, 30 or
-60 frames a second is even at 120 already and changes nothing.
-`MatchScreen` in `cmd/framefairy-app/match.go` picks the rate and says in
-the log what the screen offered and what came of it. It asks with
-`kCGConfigureForAppOnly`, so macOS gives the screen back by itself when
-the app quits, crashed or not. Windows and Linux are not matched yet.
+Apple's advice is to set the screen by hand to a rate that divides evenly
+by the video's, and the screen of a MacBook Pro offers 47.95, 48, 50,
+59.94 and 60 Hz besides its own 120. At 50 Hz every frame of 25 a second
+stands exactly 40 ms. The app could switch the screen to 50 Hz while a
+video plays, and Tim chose on 21 October 2026 to leave the rhythm as
+QuickTime has it. A video of 24, 30 or 60 frames a second is even at 120.
 
-The line of a play judges each time between animation frames by the
-refresh on either side of it, so a play that began at 120 Hz and went
-on at 50 counts no refresh as missed, and says both rates. It also says
-how long the picture waited for the sound to start, about 45 ms, which
-every play does on purpose, see `START_LEAD` in `lib/frames/queue.ts`.
-That wait once read as the clock off its line by 23 to 47 ms each play,
-so the line is now fitted from the moment the sound starts.
+The line of a play also says how long the picture waited for the sound
+to start, about 45 ms, which every play does on purpose, see
+`START_LEAD` in `lib/frames/queue.ts`. That wait once read as the clock
+off its line by 23 to 47 ms each play, so the line is now fitted from the
+moment the sound starts.
 
 ## Colour
 

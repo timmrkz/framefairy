@@ -57,32 +57,6 @@ describe("Even", () => {
     expect(play(25, 60, 4).evenness.startWait).toBe(0);
   });
 
-  test("a screen that changes its rate during a play counts no refresh as missed", () => {
-    // The app runs the screen at 50 Hz while a video of 25 frames a second
-    // plays, see MatchScreen in cmd/framefairy-app/match.go, and the
-    // screen may take a moment to change: the play starts at 120 Hz.
-    const e = new Even();
-    let shown = -1;
-    const at: number[] = [];
-    for (let t = 0; t < 3000; t += 1000 / 120) at.push(t);
-    for (let t = at[at.length - 1] + 20; t < 5000; t += 20) at.push(t);
-    for (const t of at) {
-      e.tick(t, t / 1000, "stamp");
-      const k = Math.floor((t / 1000) * 25 + 1e-9);
-      if (k !== shown) {
-        shown = k;
-        e.put(t, k / 25);
-      }
-    }
-    const got = e.evenness;
-    expect(got.missed).toBe(0);
-    expect(got.uneven).toBe(0);
-    expect([...got.held.keys()].sort()).toEqual([2, 4, 5]);
-    expect(got.refresh).toBeCloseTo(20);
-    expect(got.firstRefresh).toBeCloseTo(1000 / 120);
-    expect(describeEvenness(got)).toContain("the screen at 50 Hz, 20.0 ms a refresh, 120 Hz as the play began");
-  });
-
   test("a frame of 30 a second stands 2 refreshes at 60 Hz and 4 at 120 Hz", () => {
     expect([...play(30, 60, 2).evenness.held.keys()]).toEqual([2]);
     expect([...play(30, 120, 2).evenness.held.keys()]).toEqual([4]);

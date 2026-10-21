@@ -27,8 +27,7 @@ type refreshRaw struct {
 // times a second. A video of 25 frames a second on 60 updates stands 2 and
 // 3 updates by turns, 33 and 50 ms, which Tim saw as playback not quite
 // even, issue #251. At 120 they stand 4 and 5, 33 and 42 ms, as in
-// QuickTime on the same screen, and the screen is matched to the video
-// while it plays, see MatchScreen. The page asks for an update only while
+// QuickTime on the same screen. The page asks for an update only while
 // something moves, so a still app costs nothing more.
 //
 // It is done once the page is up, and again whenever it is loaded anew.
