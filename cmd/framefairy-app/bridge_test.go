@@ -407,6 +407,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Get("ms") == "hold" {
+			b.words.hold()
+			answer(w, nil, nil)
+			return
+		}
+		b.words.release()
 		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
 		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
@@ -488,6 +494,38 @@ type prose struct {
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
 	pace atomic.Int64
+	// held keeps it from hearing anything more, so a walk can look at a
+	// transcript part way that stays where it is. The next pace or a reset
+	// lets it go on. hearing counts the pieces it is hearing now.
+	gate    sync.Mutex
+	turn    *sync.Cond
+	held    bool
+	hearing int
+}
+
+func (p *prose) cond() *sync.Cond {
+	if p.turn == nil {
+		p.turn = sync.NewCond(&p.gate)
+	}
+	return p.turn
+}
+
+// hold stops it hearing and returns once the pieces it was hearing are
+// heard, so the edge of what is heard stands still from then on.
+func (p *prose) hold() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.held = true
+	for p.hearing > 0 {
+		p.cond().Wait()
+	}
+}
+
+func (p *prose) release() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.held = false
+	p.cond().Broadcast()
 }
 
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof
@@ -499,6 +537,18 @@ allen erzählt, er wäre gebrochen. Das war meine erste richtige Lüge, glaube
 ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
+	p.gate.Lock()
+	for p.held {
+		p.cond().Wait()
+	}
+	p.hearing++
+	p.gate.Unlock()
+	defer func() {
+		p.gate.Lock()
+		p.hearing--
+		p.cond().Broadcast()
+		p.gate.Unlock()
+	}()
 	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1197,6 +1247,7 @@ func (b *bridge) reopen() ([]Job, error) {
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
+	b.words.release()
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)

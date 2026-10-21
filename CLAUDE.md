@@ -383,7 +383,9 @@ messages, pull request text, code comments and chat replies.
 - **One frame for what is chosen.** The crop in the video preview, the
   window on the range picker and the clip on the clip timeline are one
   thing in three places, drawn by `.frame` in `app.css` with the same
-  line, corners and colour, and lit the same way under the hand.
+  line, corners and colour, and lit the same way under the hand. The
+  clip chosen is lit whether the hand is on it or not, because a clip
+  is lit one way however it was reached.
 - **One list to pick from.** Every list a person picks from in the app is
   `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
   by the system: on macOS the webview hands the whole list to AppKit, which

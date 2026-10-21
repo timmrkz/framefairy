@@ -1,0 +1,2 @@
+go test fuzz v1
+string("{\"clips\": [{\"id\": \"01\", \"segments\": [{\"start\": 0.5, \"end\": 1}], \"thumbnails\": [0.9996, 0.4996]}]}")

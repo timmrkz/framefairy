@@ -313,6 +313,30 @@ export async function nextPaint(page, n = 1) {
   );
 }
 
+// How many times the Go side has told the interface something of a name,
+// "job" above all, counted from the first time a walk asks, so it can wait
+// for the next. The bridge sends every event to every page listening, so
+// the walk listens beside the app and takes nothing from it.
+export async function news(page, name = "job") {
+  return page.evaluate((name) => {
+    if (!window.__news) {
+      window.__news = {};
+      new EventSource("/events").onmessage = (m) => {
+        const ev = JSON.parse(m.data);
+        window.__news[ev.name] = (window.__news[ev.name] ?? 0) + 1;
+      };
+    }
+    return window.__news[name] ?? 0;
+  }, name);
+}
+
+// Waits until the Go side has told the interface something of a name more
+// often than seen, a count news gave, and says how often now.
+export async function nextNews(page, seen, name = "job") {
+  await page.waitForFunction(([name, seen]) => (window.__news?.[name] ?? 0) > seen, [name, seen], { polling: "raf", timeout: 30000 });
+  return news(page, name);
+}
+
 // A drag of the pointer from a point, by dx, in steps the way a hand
 // moves, with shift held when asked. Each step is a frame of its own, the
 // way a pointer moves on screen. A step a fixed 30 ms after the last can
