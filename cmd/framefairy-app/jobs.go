@@ -928,16 +928,6 @@ func (q *queue) update(job *Job, change func(*Job)) {
 	q.emit(JobUpdate{Job: snapshot})
 }
 
-// windowLength is how long the window of a search is, in seconds. A search
-// of the whole episode is taken as an hour, which only sizes the model's
-// memory, and the search starts it again if it needs more.
-func windowLength(req engine.PlanRequest) float64 {
-	if req.To > req.From {
-		return req.To - req.From
-	}
-	return 3600
-}
-
 // Render queues rendering clips of a plan. The render keeps a record of
 // the clips it has finished, so one that is cut off carries on with the
 // rest, see search.go.

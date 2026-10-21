@@ -121,6 +121,9 @@ const workingAllowance = 1 << 30
 // sends one user message, so it is three however long the episode. The
 // measured three were 144, 200 and 200 MiB for Gemma 4 26B A4B. A model
 // with no window keeps none, because its cache can be cut back instead.
+// The transcript read ahead of a search makes two more with every read,
+// so the server is told to keep no more than these, --ctx-checkpoints,
+// and lets the oldest go.
 const checkpoints = 3
 
 func perToken(layers, heads, dim int) int64 { return int64(2 * layers * heads * dim * 2) }

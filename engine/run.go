@@ -265,6 +265,32 @@ func (r *runner) finish(ctx context.Context, plan Plan, clips []Clip) error {
 	return r.render(ctx, plan, clips)
 }
 
+// forSpan is the options for a window of the episode: how many clips to
+// look for and how long to think follow the window, unless they were
+// given. See suggest.go.
+func (opts Options) forSpan(span Window) Options {
+	if opts.Count == 0 {
+		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
+	}
+	if opts.Think == ThinkForWindow {
+		opts.Think = SuggestedThink(span.End - span.Start)
+	}
+	return opts
+}
+
+// askedWith is what of a run's options the model is asked with. The plan
+// a run makes is asked with these and what the run knows besides, and the
+// transcript read ahead of a search is written out with the same, so what
+// is read ahead is the start of what the search asks, see readahead.go.
+func askedWith(opts Options) PlanOptions {
+	return PlanOptions{
+		Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max, Context: opts.Context,
+		MaxTokens: opts.MaxTokens, Budget: opts.Budget, MaxPause: opts.MaxPause,
+		KeepPause: opts.KeepPause, Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
+		Recipe: opts.Recipe, Switches: opts.Switches,
+	}
+}
+
 // askedWindow is the window --from and --to ask for: nil when neither is
 // given, and an end at infinity when only the start is.
 func askedWindow(opts Options) (*Window, error) {
@@ -390,14 +416,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	if span.End <= span.Start {
 		return nil, fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
 	}
-	// How many clips to look for and how long to think follow the window,
-	// unless they were given. See suggest.go.
-	if opts.Count == 0 {
-		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
-	}
-	if opts.Think == ThinkForWindow {
-		opts.Think = SuggestedThink(span.End - span.Start)
-	}
+	opts = opts.forSpan(span)
 
 	// The clip plan is something the tool produces, not something you
 	// write. A saved plan is reused so hand edits survive, and --replan
@@ -555,19 +574,11 @@ func (r *runner) plan(ctx context.Context) error {
 	if whole {
 		count = 1
 	}
-	plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
-		PlanOptions{
-			Count: count, Whole: whole, MinLen: opts.Min, MaxLen: opts.Max,
-			Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
-			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
-			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
-			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
-			Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
-			Recipe:   opts.Recipe,
-			Switches: opts.Switches,
-			PlanPath: planPath,
-			wrote:    opts.wrote,
-		})
+	asked := askedWith(opts)
+	asked.Count, asked.Whole, asked.Model, asked.OutW, asked.OutH = count, whole, plannerName(opts), outW, outH
+	asked.LogDir, asked.Window, asked.Fresh, asked.Local = logsDir, window, opts.Replan, local
+	asked.Record, asked.PlanPath, asked.wrote = !opts.NoRecord && !experiment, planPath, opts.wrote
+	plan, err := e.BuildPlan(ctx, opts.Source, source, lines, asked)
 	if err != nil {
 		return e.planFailed(ctx, err)
 	}

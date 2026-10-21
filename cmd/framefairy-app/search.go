@@ -6,6 +6,8 @@ import (
 	"math"
 	"path/filepath"
 
+	"github.com/rs/zerolog"
+
 	"framefairy/engine"
 )
 
@@ -55,11 +57,22 @@ func (s *FrameFairy) Search(path string, req engine.PlanRequest, click string) J
 		default:
 			unheard = len(engine.Unheard(s.store.files, p.Source, model, engine.Window{Start: req.From, End: req.To})) > 0
 		}
+		// It also reads the transcript of the window as it is heard, so
+		// the search finds most of its prompt read.
 		if unheard {
 			go func() {
 				defer func() { _ = recover() }()
-				if err := p.WarmModel(ctx, windowLength(req)); err != nil && ctx.Err() == nil {
-					log.Printf("could not load the model ahead of the search: %v", err)
+				video := filepath.Base(path)
+				ahead, err := p.WarmModel(ctx, req)
+				switch {
+				case err != nil && ctx.Err() == nil:
+					theLog.line(zerolog.WarnLevel, "jobs").Str("video", video).Err(err).
+						Msg("the model could not be loaded ahead of the search")
+				case ahead.Reads > 0:
+					theLog.line(zerolog.InfoLevel, "jobs").Str("video", video).Int("reads", ahead.Reads).
+						Int("tokens", ahead.Tokens).Int("read", ahead.Read).
+						Int("ms", int(ahead.Seconds*1000)).
+						Msg("the model read the transcript ahead of the search")
 				}
 			}()
 		}

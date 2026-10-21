@@ -1438,6 +1438,29 @@ out, which is what a second model beside one already loaded does on a
 a server from an earlier run still holding its model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
 
+**The transcript is read before the search asks.** Reading the prompt
+takes the model about 30 seconds for a half hour window on an M2 Max, and
+the prompt is mostly the transcript. The first search of a new video is
+asked for while its transcript is still being heard, so while it grows,
+the model loaded ahead is given what of the window's transcript is
+settled to read, every time a part heard is written, and keeps it, in
+`engine/readahead.go`. The search then reads only the rest. What is read
+is the start of the search's own prompt, token for token: the transcript
+is written out by the search's request, `searchRequest`, from every line
+heard but the last, which may still grow, laid out by llama-server with
+the model's template, and of its tokens only those the request with one
+line more starts with too. A model that looks back over a window, as
+Gemma 4 does, cannot go back to an earlier point of what it read without
+a checkpoint, so anything else would be read again from the start.
+Reading ahead stops once the window is heard, and when the search asks,
+a read still under way is called off and what it read is kept: a read
+after the ask would take the server back to the start of the search's
+prompt, and the question that follows the answer would be read again.
+The search's line in the log says how much of its prompt was new. Each
+read leaves two checkpoints, and llama-server keeps 32 by itself, about
+200 MiB each for Gemma 4, so it is told to keep three, the three the
+memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
+
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same
 `NeedsAt` the app offers models by, is held against the memory the system
