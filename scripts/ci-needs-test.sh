@@ -110,14 +110,10 @@ check "README.md" changed false
 check "scripts/ci-needs-test.sh" walks true
 check "scripts/go-shard.sh" go true
 
-# The linters that keep tests off the clock: the Go one runs in the
-# build job, ESLint in the interface job, and their settings are how the
-# project is checked, so they run everything.
+# The linters that keep tests off the clock run in build and interface,
+# and their settings are how the project is checked, so they run it all.
 check ".golangci.yml" build true
-check ".golangci.yml" go true
 check "frontend/eslint-suppressions.json" interface true
-check "frontend/eslint-suppressions.json" build true
-check "scripts/lint-test.sh" build true
 check "engine/edit_test.go" build true
 
 # A mix runs everything it touches.

@@ -87,7 +87,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
-| `make lint` | golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock). It fetches the release `scripts/golangci-lint.sh` pins into `.build/` the first time, unless `INSTALL=0` |
+| `make lint` | golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock). It fetches the version the Makefile pins into `.build/` the first time, unless `INSTALL=0` |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
 | `make models` | downloads the speech model and the language model into `~/.framefairy/models`, for the command line, through the engine's own installers, so each is held to its pinned size and SHA-256. The app does this itself |
@@ -123,7 +123,7 @@ committed or not, new files included, and runs what those files can reach:
 | `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
-| `.golangci.yml`, `frontend/eslint.config.js`, `frontend/eslint-suppressions.json`, `scripts/golangci-lint.sh`, `scripts/lint-test.sh`, the interface's packages | the linter they are for, and `scripts/lint-test.sh` |
+| `.golangci.yml`, `frontend/eslint*`, `scripts/lint-test.sh` and its fixtures, the interface's packages | the linter they are for, and `scripts/lint-test.sh` |
 | `scripts/plan-frozen*.sh`, `docs/GUI-PLAN.md` | `scripts/plan-frozen-test.sh`, then `scripts/plan-frozen.sh`, which fails when the plan, which is history, was edited |
 | a workflow | a read of its YAML |
 | docs | nothing |
@@ -255,47 +255,40 @@ test case for the bug, and it becomes a seed for every later run.
 ### No test waits on the clock
 
 A test waits on a signal, never on the clock, see CLAUDE.md, and two
-linters hold every test to it, each with this one rule and no other:
+linters hold every test to it, each with that one rule:
 
-- golangci-lint, `make lint`, with only forbidigo on and only for test
-  files, see `.golangci.yml`. It refuses `time.Sleep`, `time.After`,
-  `time.Tick`, `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, by
-  type, so time imported under another name is time too. The version is
-  the release `scripts/golangci-lint.sh` pins with its SHA-256, 2.14.0,
-  built with Go 1.27. An older one refuses to read a module that says go
-  1.27, and the 2.5.0 a cloud session has in `/usr/local/bin` is one.
-- ESLint, in `make interface`, with `eslint-plugin-playwright`'s
-  `no-wait-for-timeout` and the clock refused by name: `waitForTimeout` on
-  any window, `setTimeout`, `setInterval`, `Date.now`,
+- golangci-lint, `make lint`, with only forbidigo, and only on test files,
+  see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
+  `time.NewTimer`, `time.NewTicker` and `time.AfterFunc`, by type, so
+  `time` under another name is caught too. `time.Second` and the other
+  durations are fine. It runs with `--new-from-rev`, against `HEAD^1` in
+  CI, which checks a pull request out as a merge commit on main, and
+  against where the branch left `origin/main` here, so a line main already
+  has passes and a new or changed one fails. The waits from before are
+  #394. The version is the one the Makefile pins, 2.14.0, which make
+  fetches into `.build/` from the release and checks against the
+  release's checksums, the first time and unless `INSTALL=0`. An older
+  one refuses a module that says go 1.27, and the 2.5.0 a cloud session
+  has in `/usr/local/bin` is one.
+- ESLint, in `make interface`, see `frontend/eslint.config.js`:
+  `eslint-plugin-playwright`'s `no-wait-for-timeout`, and `waitForTimeout`
+  on a window of another name, `setTimeout`, `setInterval`, `Date.now`,
   `performance.now` and Node's timers by import, in
-  `frontend/preview/walks/*.mjs` and `frontend/src/**/*.test.ts`, see
-  `frontend/eslint.config.js`.
+  `frontend/preview/walks/*.mjs` and `frontend/src/**/*.test.ts`. The uses
+  from before are counted in `frontend/eslint-suppressions.json`, ESLint's
+  own list: one more in a file fails, and so does one fewer, until
+  `npm run lint -- --prune-suppressions` in `frontend/` counts again. The
+  walks' waits are #341.
 
-A clock the test controls is not refused: Playwright's `page.clock` and
-Vitest's `vi.useFakeTimers` and `vi.advanceTimersByTime`. A Go test in a
-`testing/synctest` bubble has such a clock too, and says so on the line,
-`//nolint:forbidigo` with the reason.
+A clock the test controls is not refused: Playwright's `page.clock`,
+Vitest's `vi.useFakeTimers`, and a `time.Sleep` in a `testing/synctest`
+bubble, whose line says `//nolint:forbidigo // synctest bubble`.
 
-The waits from before the rule was enforced are listed as known, so only
-a new one fails, each with its linter's own way of keeping such a list.
-`.golangci.yml` lists them line by line, by file and by the text of the
-line, 83 lines for 104 uses: a line that is changed is new, and a line
-that no longer matches anything is said by `make lint`.
-`frontend/eslint-suppressions.json` counts them, by file and by rule, 169
-uses: one more in a file fails every use of that rule there, and one
-fewer fails too, until `npm run lint -- --prune-suppressions` in
-`frontend/` writes the count again. Neither
-list needs git, so a shallow checkout reads them the same. Taking the
-waits out is #394 for Go and #341 for the walks, and the lists only ever
-shrink.
-
-`scripts/lint-test.sh` proves both on small projects of their own, in a
-folder it throws away: a test that waits on a channel, on `page.clock` or
-on Vitest's fake timers passes, every way of reaching the clock fails and
-is named, and a known use passes where a second one beside it fails. It
-took 5 s in one run in a cloud session. CI runs it, then `make lint`, in
-the job `build`, and `make changed` runs it when the settings, the lists
-or the packages change.
+`scripts/lint-test.sh` proves both on the fixtures in
+`scripts/testdata/lint`: each linter fails on the one that waits on the
+clock, naming the rule, and passes the one that waits on a signal or on
+a clock the test controls. CI runs it, then `make lint`, in the job
+`build`, and `make changed` runs it when the linters' settings change.
 
 Tests live next to what they test, so `transcript.go` is tested by
 `transcript_test.go`. The tests that measure real audio use a tone that is
@@ -312,7 +305,7 @@ needs any of the rest:
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
-| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then the golangci-lint `scripts/golangci-lint.sh` pins, `scripts/lint-test.sh` and `make lint` |
+| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
 | `linux (1/3)` to `linux (3/3)` | Linux | `make unit GOSHARD=1/3`, `2/3` and `3/3`, every third test each, under the race detector. On one machine they took six minutes, on two one still took 5:35 |
 | `walks (1/4)` to `walks (4/4)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/4` to `4/4`, a quarter of the runs each by how long they took last. On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |

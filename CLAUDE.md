@@ -540,11 +540,13 @@ messages, pull request text, code comments and chat replies.
   same. What is left of their waits on the clock is #341. Where the code
   under test offers only the clock, the code gains the signal. The
   linters hold it, and CI fails a new wait on the clock: golangci-lint in
-  `make lint` for a Go test, ESLint in `make interface` for a walk or an
-  interface test. The waits from before are listed as known in
-  `.golangci.yml` and `frontend/eslint-suppressions.json`, the list only
-  ever shrinks, and a clock the test controls, Playwright's `page.clock`
-  or Vitest's fake timers, is no clock to them.
+  `make lint` for a Go test, which passes only the lines main already
+  has, and ESLint in `make interface` for a walk or an interface test,
+  which passes the uses counted in `frontend/eslint-suppressions.json`.
+  A clock the test controls is no clock to them: Playwright's
+  `page.clock`, Vitest's fake timers, and a `time.Sleep` in a
+  `testing/synctest` bubble, whose line says
+  `//nolint:forbidigo // synctest bubble`.
 - **A fix to the interface comes with a walk** that does what Tim did and
   checks what he saw, so the fix is proven against the real Go side and
   Tim does not have to try it by hand to know it holds. See

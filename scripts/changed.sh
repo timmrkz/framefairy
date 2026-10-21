@@ -18,13 +18,10 @@
 #                   fuzz_what_changed. go.mod or go.sum is every package
 #                   and every target. A changed test also runs
 #                   internal/offdisk, which reads every test file, and
-#                   make lint, which refuses a new Go test that waits on
-#                   the clock.
-#   frontend/       make interface, which lints the walks and the
-#                   interface's tests for the same
-#   .golangci.yml, frontend/eslint.config.js, the known lists
-#                   the linters, and scripts/lint-test.sh, which proves
-#                   them on small projects of their own
+#                   make lint, which reads them for waits on the clock.
+#   frontend/       make interface
+#   the linters' settings and scripts/lint-test.sh
+#                   that test, which proves them
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
 #                   tests for the rules, a read by its own shell for a
@@ -128,10 +125,9 @@ for file in $changed; do
 	# The plan is history, and the check that keeps it so runs on it.
 	docs/GUI-PLAN.md) plan_rules=1 ;;
 	*.md | docs/* | LICENSE | .claude/* | .vscode/*) ;;
-	# The settings of the linters that keep tests off the clock, and what
-	# they list as known, are checked by linting with them and by the test
-	# of what they refuse. make interface runs ESLint.
-	.golangci.yml)
+	# The linters that keep tests off the clock, and the test that proves
+	# them. make interface runs ESLint, and the packages are ESLint's too.
+	.golangci.yml | scripts/lint-test.sh | scripts/testdata/lint/*)
 		lint=1
 		lint_rules=1
 		;;
@@ -139,7 +135,6 @@ for file in $changed; do
 		interface=1
 		lint_rules=1
 		;;
-	# The packages are ESLint's too.
 	frontend/package.json | frontend/package-lock.json)
 		interface=1
 		walks=1
@@ -186,15 +181,6 @@ for file in $changed; do
 		plan_rules=1
 		shells="$shells $file"
 		;;
-	scripts/golangci-lint.sh)
-		lint=1
-		lint_rules=1
-		shells="$shells $file"
-		;;
-	scripts/lint-test.sh)
-		lint_rules=1
-		shells="$shells $file"
-		;;
 	*.sh)
 		shells="$shells $file"
 		build=1
@@ -220,8 +206,7 @@ for file in $changed; do
 			gopkgs="$gopkgs $pkg"
 			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
 			# internal/offdisk reads every test file and imports none, so
-			# a changed test is what reaches it. And a test is what the
-			# linter of the clock reads.
+			# a changed test is what reaches it, and make lint too.
 			case $file in *_test.go)
 				gopkgs="$gopkgs $module/internal/offdisk"
 				lint=1
@@ -433,7 +418,10 @@ done
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
 [ "$shard_rules" = 1 ] && sh scripts/go-shard-test.sh
-[ "$lint_rules" = 1 ] && MAKE=$MAKE sh scripts/lint-test.sh
+if [ "$lint_rules" = 1 ]; then
+	$MAKE -s --no-print-directory golangci-lint frontend/node_modules/.package-lock.json
+	sh scripts/lint-test.sh
+fi
 if [ "$plan_rules" = 1 ]; then
 	sh scripts/plan-frozen-test.sh
 	sh scripts/plan-frozen.sh ${base:-}

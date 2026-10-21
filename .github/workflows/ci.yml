@@ -62,8 +62,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # And ESLint, which refuses a new walk or interface test that waits
-      # on the clock, see frontend/eslint.config.js.
+      # ESLint among it, see frontend/eslint.config.js.
       - name: Type check and interface tests
         if: steps.needs.outputs.run == 'true'
         run: make interface
@@ -160,19 +159,14 @@ jobs:
       - name: Build
         if: steps.needs.outputs.run == 'true'
         run: make NOTOOLS=1
-      # No new Go test waits on the clock, see CLAUDE.md. make installs
-      # nothing here, so the workflow fetches the golangci-lint make lint
-      # takes, the release scripts/golangci-lint.sh pins. After the build,
-      # because the linter reads the packages through Go's build cache,
-      # which the build has just filled. The test of the linters' settings
-      # first, so settings that let everything through cannot pass. The
-      # walks and the interface's tests are linted in the job interface.
-      - name: golangci-lint
-        if: steps.needs.outputs.run == 'true'
-        run: sh scripts/golangci-lint.sh
+      # No new Go test waits on the clock, see .golangci.yml. make
+      # installs nothing here, so this step asks for the golangci-lint the
+      # Makefile pins. After the build, whose Go build cache the linter
+      # reads. The proof first, so settings that let all through fail.
       - name: No new test waits on the clock
         if: steps.needs.outputs.run == 'true'
         run: |
+          make golangci-lint INSTALL=1
           sh scripts/lint-test.sh
           make lint
 
