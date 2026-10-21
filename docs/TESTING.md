@@ -660,6 +660,23 @@ the table also counts the frames read ahead, and those of them let go of
 from the kept frames before the hand asked for them. Plan row 2.269 in
 [GUI-PLAN.md](GUI-PLAN.md) has the numbers it measured.
 
+### `smooth.mjs`: how evenly the video preview plays
+
+`smooth.mjs` is not a walk either, and is run by hand the same way,
+before and after a change to how a play is drawn:
+
+    BRIDGE_URL=http://127.0.0.1:8123/ node frontend/preview/walks/smooth.mjs
+
+It adds the same video of a minute at 1920 by 1080, plays it to the end
+`ROUNDS` times, 3 unless set, and prints the line each play ends with in
+the app's log, see `lib/frames/even.ts`: the refreshes missed, how long
+each frame stood, and where the time of an animation frame went, typical,
+most and before a missed refresh. `GPU=1` draws on the WebGPU canvas the
+app draws on rather than the 2D one the walks read frames back from, but
+headless Chromium in the cloud draws WebGPU on the processor, at about
+25 frames a second, so only a Mac's numbers say how the app plays.
+`VIEWPORT` and `SCALE` are as for `speed.mjs`.
+
 ### Where they run
 
 `make walks` runs the sequences and every walk for seeds 1 to `WALKS`, 3

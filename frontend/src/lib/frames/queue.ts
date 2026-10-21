@@ -1050,6 +1050,7 @@ export class FrameQueue {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.idler?.port1.close();
     // A queue closed before its canvas had a size stops waiting for one.
     this.sizeKnown();
     this.stopPlay();
@@ -1634,6 +1635,7 @@ export class FrameQueue {
 
   private tick(now: number) {
     if (this.state !== "playing" || !this.vplan) return;
+    const begun = performance.now();
     const plan = this.vplan;
     // Never back: the sound heard only ever moves on, and a stamp that says
     // a hair less than the last one is the clock's jitter.
@@ -1655,6 +1657,7 @@ export class FrameQueue {
     }
     this.k = k;
     let drew = false;
+    let put: number | undefined;
     const need = plan.need(k);
     if (need) {
       const slot = this.slotOf(need.run);
@@ -1666,7 +1669,9 @@ export class FrameQueue {
           }
           if (slot.ready[0]?.rank === need.rank) {
             const h = slot.ready.shift()!;
+            const putting = performance.now();
             this.put(h.frame, need.run, h.rank);
+            put = performance.now() - putting;
             this.drawnFor = plan.moment(k) ?? this.drawnFor;
             drew = true;
             this.began?.even.put(now, plan.at(k));
@@ -1680,6 +1685,7 @@ export class FrameQueue {
     }
     const there = this.program.locate(pos);
     if (there) this.at = there.at;
+    const telling = performance.now();
     this.emit({
       at: this.at,
       frame: this.shown ? this.shownAt(this.shown.rank) : NaN,
@@ -1689,13 +1695,37 @@ export class FrameQueue {
       drawnAt: now,
       trouble: this.trouble,
     });
+    const feeding = performance.now();
     // A run whose frames are all behind the playhead is done with.
     for (const s of this.slots) if (s.run && s.run.id >= 0 && s.run.kLast < k) this.release(s);
     plan.forget(k);
     this.aplan?.forget(Math.round(pos * this.sampleRate));
     this.pump();
     this.pumpSound();
+    const done = performance.now();
+    if (!this.behind && this.began) {
+      const i = this.began.even.work({ late: begun - now, put, tell: feeding - telling, feed: done - feeding, all: done - begun });
+      this.idle(this.began.even, i, done);
+    }
     this.loop();
+  }
+
+  // When the page next has nothing to do after an animation frame: a
+  // message posted to itself is taken only once the page has drawn what
+  // the frame changed and done whatever else was waiting, see Work in
+  // even.ts.
+  private idler: MessageChannel | null = null;
+  private idling: { even: Even; i: number; from: number }[] = [];
+  private idle(even: Even, i: number, from: number) {
+    if (!this.idler) {
+      this.idler = new MessageChannel();
+      this.idler.port1.onmessage = () => {
+        const w = this.idling.shift();
+        w?.even.drawn(w.i, performance.now(), w.from);
+      };
+    }
+    this.idling.push({ even, i, from });
+    this.idler.port2.postMessage(0);
   }
 
   private end() {

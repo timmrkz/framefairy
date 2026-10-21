@@ -24,6 +24,23 @@
 // sound card's own time, or that time less its latency.
 export type Source = "stamp" | "held" | "plain";
 
+// Where an animation frame's time went, milliseconds on the page's clock:
+// how late its callback began after the frame's own time, then putting
+// the frame up, which is left out on an animation frame that puts none
+// up, telling the app, feeding the decoders and the sound, and all of the
+// callback. after is from the callback's end to the first
+// moment the page had nothing else to do, which is the page drawing what
+// the callback changed and whatever else waited, see drawn.
+export type Work = { late: number; put?: number; tell: number; feed: number; all: number; after?: number };
+
+export const PARTS = ["late", "put", "tell", "feed", "all", "after"] as const;
+export type Part = (typeof PARTS)[number];
+
+// A part of the work, typical and most over every animation frame, and on
+// average over the animation frames just before a missed refresh, where
+// late is the late one's own.
+export type Spent = Record<Part, { typical: number; most: number; beforeMissed: number }>;
+
 export type Evenness = {
   // The screen's refresh, milliseconds, from the time between two
   // animation frames, see refreshOf.
@@ -46,18 +63,22 @@ export type Evenness = {
   mostStray: number;
   rate: number;
   sources: Record<Source, number>;
+  spent: Spent;
 };
 
 export class Even {
   private ticks: { at: number; pos: number }[] = [];
-  // The animation frames that came straight after the one before, without
-  // a timer's tick between, see behind.
-  private gaps: number[] = [];
+  // The times between animation frames that came straight after the one
+  // before, without a timer's tick between, see behind, each with the
+  // place of the later one among the ticks.
+  private gaps: { gap: number; i: number }[] = [];
   private puts: { at: number; due: number }[] = [];
   private sources: Record<Source, number> = { stamp: 0, held: 0, plain: 0 };
   private broken = true;
   // The latest times between animation frames, for the refresh now.
   private recent: number[] = [];
+  // The work of each animation frame, in step with ticks.
+  private works: (Work | null)[] = [];
 
   // An animation frame of the play: when it came on the page's clock,
   // milliseconds, the place on the program it showed, seconds, and where
@@ -65,13 +86,29 @@ export class Even {
   tick(at: number, pos: number, source: Source) {
     const last = this.ticks[this.ticks.length - 1];
     if (last && !this.broken) {
-      this.gaps.push(at - last.at);
+      this.gaps.push({ gap: at - last.at, i: this.ticks.length });
       this.recent.push(at - last.at);
       if (this.recent.length > RECENT) this.recent.shift();
     }
     this.ticks.push({ at, pos });
+    this.works.push(null);
     this.sources[source]++;
     this.broken = false;
+  }
+
+  // Where the time of the animation frame just ticked went. Gives its
+  // place, for drawn.
+  work(w: Work): number {
+    const i = this.works.length - 1;
+    if (i >= 0) this.works[i] = { ...w };
+    return i;
+  }
+
+  // The page had nothing else to do at, after the animation frame at place
+  // i, whose callback ended at end.
+  drawn(i: number, at: number, end: number) {
+    const w = this.works[i];
+    if (w) w.after = at - end;
   }
 
   // A frame put up on the animation frame at, which lasts from due on the
@@ -99,16 +136,22 @@ export class Even {
   }
 
   get evenness(): Evenness {
-    const refresh = refreshOf(this.gaps);
+    const refresh = refreshOf(this.gaps.map((g) => g.gap));
     let missed = 0;
     let missedRefreshes = 0;
     let longest = 0;
-    for (const g of this.gaps) {
-      longest = Math.max(longest, g);
-      const over = Math.round(g / refresh) - 1;
+    // The animation frames on either side of each missed refresh, by
+    // their place among the ticks.
+    const before: number[] = [];
+    const lateOnes: number[] = [];
+    for (const { gap, i } of this.gaps) {
+      longest = Math.max(longest, gap);
+      const over = Math.round(gap / refresh) - 1;
       if (refresh > 0 && over >= 1) {
         missed++;
         missedRefreshes += over;
+        before.push(i - 1);
+        lateOnes.push(i);
       }
     }
     const held = new Map<number, number>();
@@ -138,8 +181,26 @@ export class Even {
       mostStray: line.most,
       rate: line.rate,
       sources: { ...this.sources },
+      spent: spentOf(this.works, before, lateOnes),
     };
   }
+}
+
+function spentOf(works: (Work | null)[], before: number[], lateOnes: number[]): Spent {
+  const out = {} as Spent;
+  for (const part of PARTS) {
+    const all = works.flatMap((w) => (w && w[part] !== undefined ? [w[part]!] : []));
+    const near = (part === "late" ? lateOnes : before).flatMap((i) => {
+      const w = works[i];
+      return w && w[part] !== undefined ? [w[part]!] : [];
+    });
+    out[part] = {
+      typical: median(all),
+      most: all.length ? Math.max(...all) : 0,
+      beforeMissed: near.length ? near.reduce((a, b) => a + b, 0) / near.length : 0,
+    };
+  }
+  return out;
 }
 
 // How many of the latest times between animation frames the refresh now
@@ -162,6 +223,7 @@ export function describeEvenness(e: Evenness): string {
     `${e.uneven} frames a refresh longer or shorter than they last`,
     `the clock off a straight line by ${e.stray.toFixed(1)} ms typically and ${e.mostStray.toFixed(1)} ms at most, running at ${e.rate.toFixed(4)} of the page's clock`,
     `the moment heard from the output timestamp ${s.stamp} times, held to the sound card's time ${s.held}, the sound card's time less its latency ${s.plain}`,
+    `an animation frame's work in ms, typical, most and before a missed refresh: ${describeSpent(e.spent)}`,
   ].join(", ");
 }
 
@@ -176,6 +238,22 @@ function refreshOf(gaps: number[]): number {
   const typical = median(gaps);
   const near = gaps.filter((g) => g > typical * 0.5 && g < typical * 1.5);
   return near.length ? near.reduce((a, b) => a + b, 0) / near.length : typical;
+}
+
+const PART_NAMES: Record<Part, string> = {
+  late: "begun late",
+  put: "putting the frame up",
+  tell: "telling the app",
+  feed: "feeding the decoders",
+  all: "all of it",
+  after: "the page after it",
+};
+
+function describeSpent(spent: Spent): string {
+  return PARTS.map((p) => {
+    const x = spent[p];
+    return `${PART_NAMES[p]} ${x.typical.toFixed(1)}/${x.most.toFixed(1)}/${x.beforeMissed.toFixed(1)}`;
+  }).join(", ");
 }
 
 function median(xs: number[]): number {

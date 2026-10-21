@@ -110,6 +110,26 @@ describe("Even", () => {
     expect(got.longest).toBeCloseTo(16.7);
   });
 
+  test("says what the animation frame before a missed refresh spent its time on", () => {
+    const e = new Even();
+    for (let i = 0; i < 20; i++) {
+      // Refresh 10 is missed: the app took 20 ms to be told on refresh 9.
+      if (i === 10) continue;
+      const at = (i * 1000) / 60;
+      e.tick(at, i / 60, "held");
+      const tell = i === 9 ? 20 : 1;
+      const w = e.work({ late: i === 11 ? 5 : 0.5, put: 2, tell, feed: 0.5, all: 3 + tell });
+      e.drawn(w, at + 3 + tell + 2, at + 3 + tell);
+    }
+    const spent = e.evenness.spent;
+    expect(e.evenness.missed).toBe(1);
+    expect(spent.tell).toEqual({ typical: 1, most: 20, beforeMissed: 20 });
+    expect(spent.put.beforeMissed).toBe(2);
+    expect(spent.late.beforeMissed).toBe(5);
+    expect(spent.after.typical).toBe(2);
+    expect(describeEvenness(e.evenness)).toContain("telling the app 1.0/20.0/20.0");
+  });
+
   test("says where the moment heard came from", () => {
     const e = new Even();
     e.tick(0, 0, "stamp");
