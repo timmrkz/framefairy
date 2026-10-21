@@ -751,6 +751,15 @@ new, the sequence begins with `["fake clock"]`, `fakeClock`, which runs
 the app on Playwright's clock as fast as the real one until it is held,
 and the step reads what is left of the time from the row's fill.
 
+ESLint refuses a new wait on the clock in a walk, in `make interface`:
+`waitForTimeout`, `setTimeout`, `setInterval`, `Date.now` and
+`performance.now`, see `frontend/eslint.config.js`. Playwright's
+`page.clock` is no clock to it, so `holdClock` and `runClock` are the way
+to let time pass. The waits from before are counted as known in
+`frontend/eslint-suppressions.json`, one more in a file fails, and taking
+them out is #341. See No test waits on the clock in
+[BUILD.md](BUILD.md#no-test-waits-on-the-clock).
+
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
 runs it in the job `walks`, the only one that installs Chromium, on the

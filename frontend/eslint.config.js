@@ -4,10 +4,11 @@
 //
 // What waited on the clock before the rule was enforced is listed in
 // eslint-suppressions.json, file by file and rule by rule, so only a new
-// one fails. Taking one out is #341, and npx eslint --prune-suppressions
-// then shortens the list. A clock the test controls is not the clock:
-// Playwright's page.clock and Vitest's vi.useFakeTimers and
-// vi.advanceTimersByTime are not touched by any rule below.
+// one fails. Taking one out is #341, and ESLint then fails until
+// npm run lint -- --prune-suppressions shortens the list. The list only
+// ever shrinks. A clock the test controls is not the clock: Playwright's
+// page.clock and Vitest's vi.useFakeTimers and vi.advanceTimersByTime are
+// not touched by any rule below.
 import playwright from "eslint-plugin-playwright";
 import typescript from "@typescript-eslint/parser";
 

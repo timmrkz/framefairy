@@ -107,6 +107,21 @@ is "cmd/framefairy-app/update-key.txt" "go framefairy/cmd/framefairy-app walks"
 has "train/export_test.go" "go framefairy/train" "go framefairy/internal/offdisk"
 lacks "train/export.go" "go framefairy/internal/offdisk"
 
+# A changed test is read by the linter of the clock, and code is not.
+has "train/export_test.go" "lint"
+lacks "train/export.go" "lint"
+# The walks and the interface's tests are linted by make interface.
+is "frontend/preview/walks/words.mjs" "interface walks"
+
+# The linters' settings and their known lists run the linters and the
+# test of what they refuse, and the packages are ESLint's too.
+is ".golangci.yml" "lint lint-rules"
+is "frontend/eslint.config.js" "interface lint-rules"
+is "frontend/eslint-suppressions.json" "interface lint-rules"
+has "frontend/package-lock.json" "interface" "walks" "lint-rules"
+is "scripts/golangci-lint.sh" "lint lint-rules script scripts/golangci-lint.sh"
+is "scripts/lint-test.sh" "lint-rules script scripts/lint-test.sh"
+
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 
