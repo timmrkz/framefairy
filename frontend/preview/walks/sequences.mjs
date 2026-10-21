@@ -7675,11 +7675,24 @@ for (const seq of toWalk) {
         // whole pixels and shook on Tim's Mac. It falls back no faster
         // than a level meter's needle, a third of a second for the whole
         // way: jumping to every reading shook too.
-        const track = await page.evaluate(
+        const { xs: track, writes } = await page.evaluate(
           () =>
             new Promise((done) => {
               const b = document.querySelector("button.dictate");
               const xs = [];
+              // Every size the app writes, at the time of the frame it
+              // wrote it in, so each step is matched with the time it
+              // went by. Read on the walk's own frames, a step showed one
+              // frame late once the walk's frame came before the app's,
+              // and was set against the gap after it: a step of 100 ms
+              // after a long frame, seen across a short one, read six
+              // times too fast on a busy machine, issue #354.
+              const writes = [];
+              const wrote = new MutationObserver(() => {
+                const icon = b.querySelector("svg");
+                writes.push({ t: document.timeline.currentTime, w: icon.getBoundingClientRect().width });
+              });
+              wrote.observe(b, { subtree: true, attributes: true, attributeFilter: ["style"] });
               const start = performance.now();
               const step = (now) => {
                 const icon = b.querySelector("svg");
@@ -7694,7 +7707,10 @@ for (const seq of toWalk) {
                   size: Number(icon.getAttribute("width")),
                 });
                 if (now - start < 3000) requestAnimationFrame(step);
-                else done(xs);
+                else {
+                  wrote.disconnect();
+                  done({ xs, writes });
+                }
               };
               requestAnimationFrame(step);
             }),
@@ -7704,9 +7720,9 @@ for (const seq of toWalk) {
         const boxes = [...new Set(track.map((f) => f.box))];
         const drift = Math.max(...track.map((f) => Math.hypot(f.x - track[0].x, f.y - track[0].y)));
         let fastest = 0;
-        for (let k = 1; k < track.length; k++) {
-          const dt = track[k].t - track[k - 1].t;
-          if (dt > 0) fastest = Math.max(fastest, (track[k - 1].w - track[k].w) / track[0].size / dt);
+        for (let k = 1; k < writes.length; k++) {
+          const dt = writes[k].t - writes[k - 1].t;
+          if (dt > 0) fastest = Math.max(fastest, (writes[k - 1].w - writes[k].w) / track[0].size / dt);
         }
         if (widest < 16 * (1 + 0.6 * loudest) - 0.5) {
           wrong = `the microphone hardly grew with the voice, ${widest.toFixed(1)} px wide at most at a loudness of ${loudest}`;
