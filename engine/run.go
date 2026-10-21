@@ -551,10 +551,6 @@ func (r *runner) plan(ctx context.Context) error {
 	if whole {
 		count = 1
 	}
-	// TEMPORARY, issue #311, see showfailures.go.
-	if ShowFailures {
-		return e.planFailed(ctx, nextFailure(opts.Source))
-	}
 	plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
 		PlanOptions{
 			Count: count, Whole: whole, MinLen: opts.Min, MaxLen: opts.Max,

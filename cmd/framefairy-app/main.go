@@ -62,8 +62,6 @@ top of the repository, which builds the interface first, then start <code>bin/fr
 func main() {
 	// Started again to put a new build in place once the app has quit.
 	installIfAsked()
-	// TEMPORARY, issue #311, see engine/showfailures.go.
-	engine.ShowFailures = strings.Contains(runningVersion(), "-pr412.")
 	go tidyTemp(os.TempDir(), time.Now())
 	engine.PreferSavedKeys()
 	// The fonts installed on the Mac are offered for captions beside ours.
