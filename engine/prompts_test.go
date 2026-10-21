@@ -219,7 +219,11 @@ func TestAPromptFileIsOneMessage(t *testing.T) {
 	if len(saved) != 1 {
 		t.Fatalf("saved %v", saved)
 	}
-	if _, use := lastLocalAnswer(disk, filepath.Dir(saved[0]), written{}); use.Asks != 1 || use.Read != 100 {
+	body, err := os.ReadFile(saved[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if use := localUse(body); use.Asks != 1 || use.Read != 100 {
 		t.Errorf("the saved answer tells %+v", use)
 	}
 
