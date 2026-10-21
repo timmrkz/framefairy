@@ -157,8 +157,7 @@ func roomBeforeSearch(opts Options, seconds float64) error {
 	if held {
 		return nil
 	}
-	chars := int(max(seconds, 60)*warmChars) + runeLen(SystemPrompt)
-	return roomForModel(local.Model, localContextFor(local.Model, chars, opts.MaxTokens))
+	return roomForModel(local.Model, warmSize(local.Model, seconds, opts.MaxTokens))
 }
 
 // inGB is a size in gigabytes the way the app says a model's size, in

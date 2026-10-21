@@ -1409,17 +1409,37 @@ which halved the record on every such search. A record from before the
 fitting and the framing were timed per clip measured something else, and
 is replaced.
 
-**The model is loaded before the search needs it.** Loading takes
-llama-server about 24 seconds. The running server belongs to the
+**The model is loaded before the search needs it.** Loading took
+llama-server about 24 seconds when it was first measured, and 9.0 on
+Tim's M2 Max on 21 October 2026, 7.4 of them reading the model file,
+which is likely the difference between a file the system has to read
+from the disk and one it still holds. The running server belongs to the
 program rather than to one search, in `engine/modelhost.go`: a search
 that finds the model loaded uses it, and one that finds it loading waits
-for it. The app loads it for the first search of a new episode while the
-transcript is still on its way to the end of the window, and a search
-that is waiting for the transcript loads it while it waits. A model
-loaded ahead waits five minutes for its search. A search lets go of it
-the moment it is done and it stops, because a model left in memory
-between searches that are days apart is memory taken from everything
-else. One model is in memory at a time, never two, because two do not
+for it. **The app keeps it loaded while it is open**, `KeepModel`, and
+`cmd/framefairy-app/keep.go`: it loads it as it opens, if the memory free
+then holds it, and again when the settings or an install change the
+model, and after every search, which may have put it aside for another,
+sized for a window of an hour. A model loaded or loading already is left
+at its size. A search of a bigger window loads it again with more, and
+that is kept. It is first loaded once a llama-server a crashed run left
+behind is stopped, so the two are never in memory together, and it is
+given up before its file is removed. So even the first search of a new
+video finds it loaded, and its transcript is read into it while it is
+heard, see below. Loaded only when a video was added, the model was
+still loading for much of the time a window was heard, a half hour in
+about 22 seconds on an M2 Max, so little of the transcript could be read
+ahead. Kept idle it
+costs less than its size: llama.cpp maps the weights from the file and
+holds them wired for the graphics chip only for three minutes after the
+last use, `keep_alive_s` in `ggml-metal-device.m`, so the system can take
+the memory back for another program, and the weights are read from the
+disk again at the next ask, not loaded anew. Without the app, a model
+loaded ahead waits five minutes for its search, and a search lets go of
+it the moment it is done and it stops. The time a load takes is said in
+its parts, from the lines llama-server writes as it begins each:
+starting, reading the model, making room for the context, warming up and
+getting ready to answer, `loadPhases`. One model is in memory at a time, never two, because two do not
 fit: an ask that needs another model, or more room, waits for the one in
 memory to be let go of and then takes its place. A warm-up gives way to a
 model in use instead of waiting, and the search it was for loads the model
@@ -1438,6 +1458,42 @@ out, which is what a second model beside one already loaded does on a
 32 GB Mac: on 3 October a comparison failed on every side that way, with
 a server from an earlier run still holding its model. The server runs one ask at a time (`-np 1`) with
 the whole context for it.
+
+**The transcript is read before the search asks.** Reading the prompt
+takes the model about 30 seconds for a half hour window on an M2 Max, and
+the prompt is mostly the transcript. The first search of a new video is
+asked for while its transcript is still being heard, so while it grows,
+the model loaded ahead is given what of the window's transcript is
+settled to read, every time a part heard is written, and keeps it, in
+`engine/readahead.go`. The search then reads only the rest. What is read
+is the start of the search's own prompt, token for token: the transcript
+is written out by the search's request, `searchRequest`, from every line
+heard but the last, which may still grow, laid out by llama-server with
+the model's template, and of its tokens only those the request with one
+line more starts with too. A model that looks back over a window, as
+Gemma 4 does, cannot go back to an earlier point of what it read without
+a checkpoint, so anything else would be read again from the start.
+Reading ahead stops once the window is heard, and when the search asks,
+a read still under way is called off and what it read is kept: a read
+after the ask would take the server back to the start of the search's
+prompt, and the question that follows the answer would be read again.
+Only the model this program loaded ahead of the search is read into,
+only while nobody else holds it, and never one it would have to load:
+a search of any video that wants the model while it reads, or another
+model, or more room, calls the read off, and has the model as soon as
+the read lets go of it. Between a search's answer and its question about
+the clips that did not fit, the model is still the search's, so no read
+puts its own prompt where the search's was, `saved` on the model held.
+A server that runs already,
+`--llm-url`, is left alone. Only a request that starts with the
+transcript is read ahead of, which of the recipes is `middle`. A line
+read can still be written out differently once more is heard, because
+the loudness a pause is told from is the mean of all that is heard, and
+then it is read again, issue #437.
+The search's line in the log says how much of its prompt was new. Each
+read leaves two checkpoints, and llama-server keeps 32 by itself, about
+200 MiB each for Gemma 4, so it is told to keep three, the three the
+memory a model is judged by holds, `--ctx-checkpoints`. Issue #242.
 
 **A model that does not fit is not started.** Before llama-server starts,
 what the model needs at the context it is started with, the same
@@ -1492,8 +1548,12 @@ llama-server -m ~/.framefairy/models/gemma-4-26B_q4_0-it.gguf -c 65536 -ngl 999 
 framefairy episode.mp4 --llm-url http://127.0.0.1:8080
 ```
 
-The server's output is kept in `logs/llm-server.log`, at log level 4,
-which is the first level where llama.cpp says what it took from memory.
+The server's output is kept in `logs/llm-server.log` of the video it
+was loaded for, at log level 4, which is the first level where llama.cpp
+says what it took from memory. The model the app keeps is loaded for no
+video, so its server writes `llm-server.log` in the app's own log folder,
+`~/Library/Logs/Frame Fairy/` on a Mac, for as long as it runs, and a
+search that uses it leaves none in its `logs/`.
 
 **A server the engine starts answers only to the engine.** Left to
 itself, llama-server answers anybody: every program on the machine, and

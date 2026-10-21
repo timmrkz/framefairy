@@ -732,3 +732,16 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 		t.Errorf("work after the queue reopened was refused: %s", job.Error)
 	}
 }
+
+// A search that has ended asks for the model to be kept again, because it
+// may have put the kept model aside for another one, see keep.go.
+func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
+	t.Parallel()
+	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+	searched := make(chan struct{}, 1)
+	q.searched = func() { searched <- struct{}{} }
+	q.add("/home/tim/ep.mp4", engine.JobSearch, "Search", func(context.Context, *engine.Project) (string, error) {
+		return "", nil
+	})
+	<-searched
+}

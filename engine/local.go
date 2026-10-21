@@ -364,7 +364,12 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		"--no-slots",
 		// How far it has read the prompt is said once a batch, see
 		// promptBatch.
-		"-b", itoa(promptBatch)}
+		"-b", itoa(promptBatch),
+		// No more copies of the window than the memory a model is judged
+		// by holds, see checkpoints in language.go. The transcript read
+		// ahead of a search, see readahead.go, makes two with every read,
+		// and llama.cpp keeps 32 of them by itself, gigabytes of them.
+		"--ctx-checkpoints", itoa(checkpoints)}
 	e.Log.Detail("%s %s", server, strings.Join(args, " "))
 	key, err := newServerKey()
 	if err != nil {
@@ -462,17 +467,19 @@ func (e *Engine) startServer(ctx context.Context, m LocalModel, contextSize int,
 		// it took before.
 		if healthy(ctx, url) {
 			took := time.Since(started).Seconds()
+			// What loading costs is worth knowing in its parts, to know
+			// which of them to make shorter.
+			var parts []string
 			if logFile != nil {
-				if before, ok := setupTime(logFile.Name()); ok {
-					// What loading costs is worth knowing in two parts:
-					// llama-server setting itself and the graphics up,
-					// and reading the model into memory.
-					e.Log.Info("model loaded in %ss, %ss of it before llama-server began reading the model",
-						fixed(took, 1), fixed(before, 1))
-					return url, stop, nil
+				for _, p := range loadPhases(logFile.Name(), took) {
+					parts = append(parts, fixed(p.seconds, 1)+"s "+p.name)
 				}
 			}
-			e.Log.Info("model loaded in %ss", fixed(took, 1))
+			if len(parts) > 0 {
+				e.Log.Info("model loaded in %ss: %s", fixed(took, 1), strings.Join(parts, ", "))
+			} else {
+				e.Log.Info("model loaded in %ss", fixed(took, 1))
+			}
 			return url, stop, nil
 		}
 		if time.Since(started) > 10*time.Minute {
@@ -506,21 +513,54 @@ func healthy(ctx context.Context, url string) bool {
 	return response.StatusCode == http.StatusOK
 }
 
-// setupTime reads from llama-server's log how long it took before it began
-// reading the model file. Each line starts with the time since it started,
-// minutes, seconds, milliseconds and microseconds, as in 0.19.335.706.
-func setupTime(logPath string) (float64, bool) {
+// loadPhase is a part of loading a model and how long it took.
+type loadPhase struct {
+	name    string
+	seconds float64
+}
+
+// loadMarks are the lines llama-server b11430 writes as it begins each
+// part of loading a model, at -lv 4, and what the part is called.
+var loadMarks = []struct{ mark, name string }{
+	{"loading model tensors", "reading the model"},
+	{"constructing llama_context", "making room for the context"},
+	{"warming up the model", "warming up"},
+	{"model loaded", "getting ready to answer"},
+}
+
+// loadPhases reads from llama-server's log how long each part of loading
+// took, the last ending when took seconds had gone by. Each line starts
+// with the time since it started, minutes, seconds, milliseconds and
+// microseconds, as in 0.19.335.706. A part whose line is not there is
+// left out, and its time goes to the part before it.
+func loadPhases(logPath string, took float64) []loadPhase {
 	data, err := os.ReadFile(logPath)
 	if err != nil {
-		return 0, false
+		return nil
 	}
+	phases := []loadPhase{{"starting", 0}}
+	began := 0.0
+	next := 0
 	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.Contains(line, "load_model: loading model") {
-			continue
+		for i := next; i < len(loadMarks); i++ {
+			if !strings.Contains(line, loadMarks[i].mark) {
+				continue
+			}
+			at, ok := serverStamp(line)
+			if !ok || at < began {
+				break
+			}
+			phases[len(phases)-1].seconds = at - began
+			phases = append(phases, loadPhase{loadMarks[i].name, 0})
+			began, next = at, i+1
+			break
 		}
-		return serverStamp(line)
 	}
-	return 0, false
+	if len(phases) == 1 {
+		return nil
+	}
+	phases[len(phases)-1].seconds = max(took-began, 0)
+	return phases
 }
 
 func serverStamp(line string) (float64, bool) {
@@ -548,6 +588,15 @@ type chatError struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// refusal is what llama-server said when it answered status with raw.
+func refusal(status int, raw []byte) string {
+	var refused chatError
+	if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
+		return refused.Error.Message
+	}
+	return fmt.Sprintf("status %d", status)
 }
 
 // CallLocal asks the model on this machine for a plan. The answer is read
@@ -592,6 +641,10 @@ type chatMessage struct {
 
 func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages []chatMessage,
 	units, count, maxTokens int, logDir, promptFile string, listen *Listener) (*localAnswer, error) {
+	// Nothing more of the transcript is read ahead of this search: the
+	// server reads one thing at a time, and the asks after this one build
+	// on what it leaves there, see readahead.go.
+	e.ahead.close()
 	url := strings.TrimRight(m.URL, "/")
 	var stalled atomic.Bool
 	if url == "" {
@@ -624,52 +677,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 	}
 	listen.part(partReading)
 
-	// A run works the budget out from its window before it asks, see
-	// SuggestedThink. One that did not is given the budget for half an
-	// hour rather than none at all.
-	think := m.Think
-	if think == ThinkForWindow {
-		think = DefaultThink
-	}
-	// A plain answer is a few tokens a clip, so it may run little past its
-	// thinking, see answerCap. A thought without a budget is not capped.
-	if r.Plain != nil && think >= 0 {
-		maxTokens = min(maxTokens, r.Plain.answerCap(think, count))
-	}
-	ask := map[string]any{
-		"model":      filepath.Base(m.Model),
-		"messages":   messages,
-		"max_tokens": maxTokens,
-		// How long the model may think. The server stops the thought at the
-		// budget and closes it with the message, so the answer follows.
-		"reasoning_budget_tokens":  max(think, -1),
-		"reasoning_budget_message": thinkEnough,
-		// Streamed, with the reading of the prompt reported as it goes and
-		// what it cost at the end, which a stream otherwise leaves out.
-		"stream":          true,
-		"stream_options":  map[string]any{"include_usage": true},
-		"return_progress": true,
-	}
-	// An answer without JSON is held to nothing. A grammar of our own
-	// would hold the model from its first token, so Gemma could not open
-	// its thought, which only a schema's grammar leaves room for, and it
-	// wrote its thinking into an answer line that never ended. The reader
-	// passes over any line that is not a clip.
-	if r.Plain == nil {
-		schema := json.RawMessage(r.Schema(units, count))
-		ask["response_format"] = map[string]any{
-			"type": "json_schema",
-			"json_schema": map[string]any{
-				"name": "plan", "strict": true, "schema": schema,
-			},
-		}
-	}
-	if m.Seed != 0 {
-		ask["seed"] = m.Seed
-	}
-	if m.Temperature != nil {
-		ask["temperature"] = *m.Temperature
-	}
+	ask, maxTokens := localAsk(m, r, messages, units, count, maxTokens)
 	body, err := json.Marshal(ask)
 	if err != nil {
 		return nil, err
@@ -728,11 +736,7 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		if logDir != "" {
 			writeJSONText(e.Files, filepath.Join(logDir, "plan-error.json"), raw)
 		}
-		message := fmt.Sprintf("status %d", response.StatusCode)
-		var refused chatError
-		if json.Unmarshal(raw, &refused) == nil && refused.Error != nil {
-			message = refused.Error.Message
-		}
+		message := refusal(response.StatusCode, raw)
 		// llama.cpp says only this when the graphics memory runs out partway,
 		// and the usual reason is another program holding some of it.
 		if strings.Contains(message, "Compute error") {
@@ -760,10 +764,12 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 		reading, writing = t.PromptPerSecond, t.PredictedPerSecond
 	}
 	// A prompt that starts the way the one before did is read only from
-	// where it differs, and the count of what was read says so.
+	// where it differs, the transcript read ahead of a search above all,
+	// see readahead.go, and the count of what was read says so, with how
+	// long it took. All of it at that speed is what it would have taken.
 	fresh := ""
 	if t := answer.Timings; t != nil && t.PromptN > 0 && t.PromptN < answer.PromptTokens {
-		fresh = fmt.Sprintf(", %s of them new", commas(t.PromptN))
+		fresh = fmt.Sprintf(", %s of them new in %ss", commas(t.PromptN), fixed(t.PromptMS/1000, 1))
 	}
 	e.Log.Info("local model answered in %ss  read %s tok%s at %s tok/s  wrote %s tok at %s tok/s",
 		fixed(time.Since(started).Seconds(), 1),
@@ -782,4 +788,59 @@ func (e *Engine) askLocal(ctx context.Context, m LocalModel, r Recipe, messages 
 			commas(maxTokens))
 	}
 	return answer, nil
+}
+
+// localAsk is what llama-server is asked for these messages, and the most
+// it may write. A search asks with it, and the transcript read ahead of a
+// search is laid out by the server from the same, so it is laid out the
+// way the search's is, see readahead.go.
+func localAsk(m LocalModel, r Recipe, messages []chatMessage, units, count,
+	maxTokens int) (map[string]any, int) {
+	// A run works the budget out from its window before it asks, see
+	// SuggestedThink. One that did not is given the budget for half an
+	// hour rather than none at all.
+	think := m.Think
+	if think == ThinkForWindow {
+		think = DefaultThink
+	}
+	// A plain answer is a few tokens a clip, so it may run little past its
+	// thinking, see answerCap. A thought without a budget is not capped.
+	if r.Plain != nil && think >= 0 {
+		maxTokens = min(maxTokens, r.Plain.answerCap(think, count))
+	}
+	ask := map[string]any{
+		"model":      filepath.Base(m.Model),
+		"messages":   messages,
+		"max_tokens": maxTokens,
+		// How long the model may think. The server stops the thought at the
+		// budget and closes it with the message, so the answer follows.
+		"reasoning_budget_tokens":  max(think, -1),
+		"reasoning_budget_message": thinkEnough,
+		// Streamed, with the reading of the prompt reported as it goes and
+		// what it cost at the end, which a stream otherwise leaves out.
+		"stream":          true,
+		"stream_options":  map[string]any{"include_usage": true},
+		"return_progress": true,
+	}
+	// An answer without JSON is held to nothing. A grammar of our own
+	// would hold the model from its first token, so Gemma could not open
+	// its thought, which only a schema's grammar leaves room for, and it
+	// wrote its thinking into an answer line that never ended. The reader
+	// passes over any line that is not a clip.
+	if r.Plain == nil {
+		schema := json.RawMessage(r.Schema(units, count))
+		ask["response_format"] = map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name": "plan", "strict": true, "schema": schema,
+			},
+		}
+	}
+	if m.Seed != 0 {
+		ask["seed"] = m.Seed
+	}
+	if m.Temperature != nil {
+		ask["temperature"] = *m.Temperature
+	}
+	return ask, maxTokens
 }

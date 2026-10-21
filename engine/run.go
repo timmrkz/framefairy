@@ -265,6 +265,32 @@ func (r *runner) finish(ctx context.Context, plan Plan, clips []Clip) error {
 	return r.render(ctx, plan, clips)
 }
 
+// forSpan is the options for a window of the episode: how many clips to
+// look for and how long to think follow the window, unless they were
+// given. See suggest.go.
+func (opts Options) forSpan(span Window) Options {
+	if opts.Count == 0 {
+		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
+	}
+	if opts.Think == ThinkForWindow {
+		opts.Think = SuggestedThink(span.End - span.Start)
+	}
+	return opts
+}
+
+// askedWith is what of a run's options the model is asked with. The plan
+// a run makes is asked with these and what the run knows besides, and the
+// transcript read ahead of a search is written out with the same, so what
+// is read ahead is the start of what the search asks, see readahead.go.
+func askedWith(opts Options) PlanOptions {
+	return PlanOptions{
+		Count: opts.Count, MinLen: opts.Min, MaxLen: opts.Max, Context: opts.Context,
+		MaxTokens: opts.MaxTokens, Budget: opts.Budget, MaxPause: opts.MaxPause,
+		KeepPause: opts.KeepPause, Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
+		Recipe: opts.Recipe, Switches: opts.Switches,
+	}
+}
+
 // askedWindow is the window --from and --to ask for: nil when neither is
 // given, and an end at infinity when only the start is.
 func askedWindow(opts Options) (*Window, error) {
@@ -390,14 +416,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	if span.End <= span.Start {
 		return nil, fmt.Errorf("%s reports no duration, so there is no audio to work with", opts.Source)
 	}
-	// How many clips to look for and how long to think follow the window,
-	// unless they were given. See suggest.go.
-	if opts.Count == 0 {
-		opts.Count = SuggestedCount(span.End-span.Start, opts.Min, opts.Max)
-	}
-	if opts.Think == ThinkForWindow {
-		opts.Think = SuggestedThink(span.End - span.Start)
-	}
+	opts = opts.forSpan(span)
 
 	// The clip plan is something the tool produces, not something you
 	// write. A saved plan is reused so hand edits survive, and --replan
@@ -473,11 +492,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 // transcript is the transcript of the run's window, heard where it was not.
 func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
 	e, opts, source, span, logsDir := r.e, r.opts, r.source, r.span, r.logsDir
-	modelDir := opts.ASRModel
-	if modelDir == "" {
-		modelDir = DefaultModelDir()
-	}
-	transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, modelDir,
+	transcript, err := e.LoadTranscript(ctx, opts.Source, span, source.Duration, logsDir, speechModel(opts),
 		opts.SilenceDB)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -486,6 +501,21 @@ func (r *runner) transcript(ctx context.Context) (*Transcript, error) {
 		return nil, fmt.Errorf("transcription failed: %w", err)
 	}
 	return transcript, nil
+}
+
+// speechModel is the folder of the speech model a run hears with.
+func speechModel(opts Options) string {
+	if opts.ASRModel == "" {
+		return DefaultModelDir()
+	}
+	return opts.ASRModel
+}
+
+// searchLines are the lines a search asks about, from the transcript of
+// its window. The transcript read ahead of a search is made of the same,
+// see readahead.go.
+func searchLines(t *Transcript, opts Options) []Line {
+	return BuildLines(t.Words, t.Levels(), opts.MaxPause)
 }
 
 // hear makes the transcript of the window and writes it out to be read.
@@ -546,7 +576,7 @@ func (r *runner) plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lines := BuildLines(transcript.Words, transcript.Levels(), opts.MaxPause)
+	lines := searchLines(transcript, opts)
 	if len(lines) == 0 {
 		return errors.New("no speech was found in the audio")
 	}
@@ -555,19 +585,11 @@ func (r *runner) plan(ctx context.Context) error {
 	if whole {
 		count = 1
 	}
-	plan, err := e.BuildPlan(ctx, opts.Source, source, lines,
-		PlanOptions{
-			Count: count, Whole: whole, MinLen: opts.Min, MaxLen: opts.Max,
-			Context: opts.Context, Model: plannerName(opts), OutW: outW, OutH: outH,
-			MaxTokens: opts.MaxTokens, Budget: opts.Budget, LogDir: logsDir,
-			Window: window, MaxPause: opts.MaxPause, KeepPause: opts.KeepPause,
-			Fresh: opts.Replan, Local: local, Record: !opts.NoRecord && !experiment,
-			Pass: opts.Pass, Taken: opts.Taken, Listed: opts.Listed,
-			Recipe:   opts.Recipe,
-			Switches: opts.Switches,
-			PlanPath: planPath,
-			wrote:    opts.wrote,
-		})
+	asked := askedWith(opts)
+	asked.Count, asked.Whole, asked.Model, asked.OutW, asked.OutH = count, whole, plannerName(opts), outW, outH
+	asked.LogDir, asked.Window, asked.Fresh, asked.Local = logsDir, window, opts.Replan, local
+	asked.Record, asked.PlanPath, asked.wrote = !opts.NoRecord && !experiment, planPath, opts.wrote
+	plan, err := e.BuildPlan(ctx, opts.Source, source, lines, asked)
 	if err != nil {
 		return e.planFailed(ctx, err)
 	}

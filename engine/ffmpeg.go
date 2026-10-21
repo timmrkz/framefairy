@@ -119,6 +119,11 @@ type Engine struct {
 	// encoder is given up, encoderStall unless a test says otherwise.
 	stall time.Duration
 
+	// ahead lets the transcript be read into the local model ahead of
+	// the search this engine runs, until the search asks, see
+	// readahead.go.
+	ahead aheadGate
+
 	mu               sync.Mutex
 	encoder          Encoder
 	hdrEncoder       Encoder
