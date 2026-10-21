@@ -152,9 +152,20 @@ export async function fakeClock(page) {
 // removed row has run only as far as runClock turns them on, and a busy
 // machine cannot spend them on the steps before, #341. letClockGo lets it
 // run as it does without a walk, from where it was held.
+//
+// Playwright holds the clock only at a moment it is told, and the app's
+// time runs on between reading the moment and holding it there, so now
+// and then the moment read is already past and Playwright says so. It is
+// read again then: the next reading is not behind.
 export async function holdClock(page) {
   await fakeClock(page);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+  for (;;) {
+    try {
+      return await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+    } catch (e) {
+      if (!String(e?.message).includes("fast-forward to the past")) throw e;
+    }
+  }
 }
 
 // Runs the app's held time on by ms, every timer and frame on the way
