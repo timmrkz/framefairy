@@ -74,31 +74,79 @@ export type Evenness = {
 };
 
 export class Even {
-  private ticks: { at: number; pos: number }[] = [];
-  // The times between animation frames that came straight after the one
-  // before, without a timer's tick between, see behind, each with the
-  // place of the later one among the ticks.
-  private gaps: { gap: number; i: number }[] = [];
-  private puts: { at: number; due: number }[] = [];
-  private sources: Record<Source, number> = { stamp: 0, held: 0, plain: 0 };
+  // Everything is counted as the play goes, in sums and in samples of a
+  // bounded size, so the line costs the same and the memory stays the
+  // same however long the play. Kept per animation frame, the line of a
+  // play of 10 minutes took 90 ms to work out at the pause, and one of 9
+  // minutes at 120 Hz threw, see the review of #430.
+  private ticks = 0;
+  private last: { at: number; pos: number } | null = null;
   private broken = true;
-  // The latest times between animation frames, for the refresh now.
+  private sources: Record<Source, number> = { stamp: 0, held: 0, plain: 0 };
+  // The latest times between animation frames, for the refresh now, and
+  // a longer sample of them for the refresh of the play.
   private recent: number[] = [];
-  // The work of each animation frame, in step with ticks.
-  private works: (Work | null)[] = [];
+  private refresh = 1000 / 60;
+  private gaps = new Sample(SAMPLE);
+  private missed = 0;
+  private missedRefreshes = 0;
+  private longest = 0;
+  // The frame put up last, gone after a tick that was not an animation
+  // frame.
+  private lastPut: { at: number; due: number } | null = null;
+  private held = new Map<number, number>();
+  private frames = 0;
+  private uneven = 0;
+  // The clock: where it stood first, and from the moment it moved a
+  // straight line through it, see Line.
+  private first: { at: number; pos: number } | null = null;
+  private line: Line | null = null;
+  // How many animation frames the clock stood at its first place.
+  private stood = 0;
+  // The work of the animation frame ticked last, whether it came just
+  // before a missed refresh, and whether the one ticked now came late
+  // after one.
+  private work_: { w: Work; i: number; beforeMissed: boolean } | null = null;
+  private lateNow = false;
+  private parts = Object.fromEntries(PARTS.map((p) => [p, { sample: new Sample(SAMPLE), most: 0, near: 0, nearCount: 0 }])) as Record<
+    Part,
+    { sample: Sample; most: number; near: number; nearCount: number }
+  >;
 
   // An animation frame of the play: when it came on the page's clock,
   // milliseconds, the place on the program it showed, seconds, and where
   // that place came from.
   tick(at: number, pos: number, source: Source) {
-    const last = this.ticks[this.ticks.length - 1];
-    if (last && !this.broken) {
-      this.gaps.push({ gap: at - last.at, i: this.ticks.length });
-      this.recent.push(at - last.at);
+    this.lateNow = false;
+    if (this.last && !this.broken) {
+      const gap = at - this.last.at;
+      // Judged by the refresh just before it, so a gap is a missed
+      // refresh whatever the screen's rate was earlier in the play.
+      const over = Math.round(gap / this.refreshNow) - 1;
+      if (over >= 1) {
+        this.missed++;
+        this.missedRefreshes += over;
+        this.lateNow = true;
+        const before = this.work_;
+        if (before && before.i === this.ticks - 1) {
+          before.beforeMissed = true;
+          for (const p of PARTS) if (p !== "late" && before.w[p] !== undefined) this.near(p, before.w[p]!);
+        }
+      }
+      this.longest = Math.max(this.longest, gap);
+      this.gaps.push(gap);
+      this.recent.push(gap);
       if (this.recent.length > RECENT) this.recent.shift();
+      this.refresh = this.recent.length >= 4 ? refreshOf(this.recent) : 1000 / 60;
     }
-    this.ticks.push({ at, pos });
-    this.works.push(null);
+    this.first ??= { at, pos };
+    if (!this.line && pos > this.first.pos) {
+      this.line = new Line(at, pos);
+      this.stood = this.ticks;
+    }
+    this.line?.add(at, pos);
+    this.last = { at, pos };
+    this.ticks++;
     this.sources[source]++;
     this.broken = false;
   }
@@ -106,22 +154,35 @@ export class Even {
   // Where the time of the animation frame just ticked went. Gives its
   // place, for drawn.
   work(w: Work): number {
-    const i = this.works.length - 1;
-    if (i >= 0) this.works[i] = { ...w };
+    const i = this.ticks - 1;
+    this.work_ = { w: { ...w }, i, beforeMissed: false };
+    for (const p of PARTS) if (w[p] !== undefined) this.count(p, w[p]!);
+    if (this.lateNow) this.near("late", w.late);
     return i;
   }
 
   // The page had nothing else to do at, after the animation frame at place
   // i, whose callback ended at end.
   drawn(i: number, at: number, end: number) {
-    const w = this.works[i];
-    if (w) w.after = at - end;
+    const k = this.work_;
+    if (!k || k.i !== i || k.w.after !== undefined) return;
+    k.w.after = at - end;
+    this.count("after", k.w.after);
+    if (k.beforeMissed) this.near("after", k.w.after);
   }
 
   // A frame put up on the animation frame at, which lasts from due on the
   // program, seconds.
   put(at: number, due: number) {
-    this.puts.push({ at, due });
+    const a = this.lastPut;
+    this.lastPut = { at, due };
+    if (!a) return;
+    const refresh = this.refreshNow;
+    const stood = Math.round((at - a.at) / refresh);
+    const lasts = ((due - a.due) * 1000) / refresh;
+    this.held.set(stood, (this.held.get(stood) ?? 0) + 1);
+    this.frames++;
+    if (Math.abs(stood - lasts) >= 1 - 1e-6) this.uneven++;
   }
 
   // A tick that was not an animation frame: the app was behind another
@@ -129,7 +190,18 @@ export class Even {
   // since nothing could be seen.
   behind() {
     this.broken = true;
-    this.puts.push({ at: NaN, due: NaN });
+    this.lastPut = null;
+  }
+
+  private count(p: Part, x: number) {
+    const part = this.parts[p];
+    part.sample.push(x);
+    part.most = Math.max(part.most, x);
+  }
+
+  private near(p: Part, x: number) {
+    this.parts[p].near += x;
+    this.parts[p].nearCount++;
   }
 
   // The screen's refresh as the play goes, milliseconds, from the latest
@@ -139,78 +211,109 @@ export class Even {
   // queue.ts. It took a refresh at 60 Hz for granted, and at 120 Hz put
   // each frame up 8 ms ahead of its sound.
   get refreshNow(): number {
-    return this.recent.length >= 4 ? refreshOf(this.recent) : 1000 / 60;
+    return this.refresh;
   }
 
   get evenness(): Evenness {
-    const refresh = refreshOf(this.gaps.map((g) => g.gap));
-    let missed = 0;
-    let missedRefreshes = 0;
-    let longest = 0;
-    // The animation frames on either side of each missed refresh, by
-    // their place among the ticks.
-    const before: number[] = [];
-    const lateOnes: number[] = [];
-    for (const { gap, i } of this.gaps) {
-      longest = Math.max(longest, gap);
-      const over = Math.round(gap / refresh) - 1;
-      if (refresh > 0 && over >= 1) {
-        missed++;
-        missedRefreshes += over;
-        before.push(i - 1);
-        lateOnes.push(i);
-      }
+    const line = this.line;
+    const first = this.first;
+    const spent = {} as Spent;
+    for (const p of PARTS) {
+      const x = this.parts[p];
+      spent[p] = { typical: median(x.sample.values()), most: x.most, beforeMissed: x.nearCount ? x.near / x.nearCount : 0 };
     }
-    const held = new Map<number, number>();
-    let frames = 0;
-    let uneven = 0;
-    for (let i = 0; i + 1 < this.puts.length; i++) {
-      const a = this.puts[i];
-      const b = this.puts[i + 1];
-      if (!(refresh > 0) || Number.isNaN(a.at) || Number.isNaN(b.at)) continue;
-      const stood = Math.round((b.at - a.at) / refresh);
-      const lasts = ((b.due - a.due) * 1000) / refresh;
-      held.set(stood, (held.get(stood) ?? 0) + 1);
-      frames++;
-      if (Math.abs(stood - lasts) >= 1 - 1e-6) uneven++;
-    }
-    const first = this.ticks[0]?.pos;
-    const moved = Math.max(0, this.ticks.findIndex((k) => k.pos > first));
-    const line = straight(this.ticks.slice(moved));
     return {
-      refresh,
-      ticks: this.ticks.length,
-      missed,
-      missedRefreshes,
-      longest,
-      held,
-      frames,
-      uneven,
-      stray: line.stray,
-      mostStray: line.most,
-      rate: line.rate,
-      startWait: moved ? Math.max(0, line.reaches(first) - this.ticks[0].at) : 0,
+      refresh: refreshOf(this.gaps.values()),
+      ticks: this.ticks,
+      missed: this.missed,
+      missedRefreshes: this.missedRefreshes,
+      longest: this.longest,
+      held: new Map(this.held),
+      frames: this.frames,
+      uneven: this.uneven,
+      stray: line?.stray ?? 0,
+      mostStray: line?.most ?? 0,
+      rate: line?.rate ?? 1,
+      startWait: line && first && this.stood > 1 ? Math.max(0, line.reaches(first.pos) - first.at) : 0,
       sources: { ...this.sources },
-      spent: spentOf(this.works, before, lateOnes),
+      spent,
     };
   }
 }
 
-function spentOf(works: (Work | null)[], before: number[], lateOnes: number[]): Spent {
-  const out = {} as Spent;
-  for (const part of PARTS) {
-    const all = works.flatMap((w) => (w && w[part] !== undefined ? [w[part]!] : []));
-    const near = (part === "late" ? lateOnes : before).flatMap((i) => {
-      const w = works[i];
-      return w && w[part] !== undefined ? [w[part]!] : [];
-    });
-    out[part] = {
-      typical: median(all),
-      most: all.length ? Math.max(...all) : 0,
-      beforeMissed: near.length ? near.reduce((a, b) => a + b, 0) / near.length : 0,
-    };
+// How many of the latest values a sample keeps, about half a minute of
+// animation frames at 120 Hz: enough for what is typical, and the same
+// for every play.
+const SAMPLE = 4096;
+
+// The latest values of something counted, at most size of them.
+class Sample {
+  private xs: Float64Array;
+  private n = 0;
+  constructor(size: number) {
+    this.xs = new Float64Array(size);
   }
-  return out;
+  push(x: number) {
+    this.xs[this.n % this.xs.length] = x;
+    this.n++;
+  }
+  values(): number[] {
+    return Array.from(this.xs.subarray(0, Math.min(this.n, this.xs.length)));
+  }
+}
+
+// A straight line through the places the clock gave, by least squares,
+// kept as running means and sums of squares, Welford's way, so it stays
+// exact over an hour of animation frames. Its slope is how fast the clock
+// ran against the page's, and how far the places strayed from it is the
+// root of the mean square for the whole play, and the most any place
+// strayed from the line as it stood when that place came, once the line
+// had a second to settle.
+class Line {
+  n = 0;
+  most = 0;
+  private mt = 0;
+  private mp = 0;
+  private ctt = 0;
+  private ctp = 0;
+  private cpp = 0;
+  // Milliseconds and seconds from the first place on the line.
+  constructor(
+    private at0: number,
+    private pos0: number,
+  ) {}
+
+  add(at: number, pos: number) {
+    const t = (at - this.at0) / 1000;
+    const p = pos - this.pos0;
+    if (this.n > 2 && t > 1 && this.ctt > 0) {
+      const off = Math.abs(p - this.mp - this.rate * (t - this.mt)) * 1000;
+      this.most = Math.max(this.most, off);
+    }
+    this.n++;
+    const dt = t - this.mt;
+    const dp = p - this.mp;
+    this.mt += dt / this.n;
+    this.mp += dp / this.n;
+    this.ctt += dt * (t - this.mt);
+    this.ctp += dt * (p - this.mp);
+    this.cpp += dp * (p - this.mp);
+  }
+
+  get rate(): number {
+    return this.ctt > 0 ? this.ctp / this.ctt : 1;
+  }
+
+  get stray(): number {
+    if (this.n < 3 || !(this.ctt > 0)) return 0;
+    return Math.sqrt(Math.max(0, this.cpp - (this.ctp * this.ctp) / this.ctt) / this.n) * 1000;
+  }
+
+  // When on the page's clock the line stood at a place.
+  reaches(pos: number): number {
+    const r = this.rate;
+    return r > 0 ? this.at0 + (this.mt + (pos - this.pos0 - this.mp) / r) * 1000 : this.at0;
+  }
 }
 
 // How many of the latest times between animation frames the refresh now
@@ -272,46 +375,4 @@ function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-// The straight line through the places the clock gave, by least squares,
-// and how far the places strayed from it: the root of the mean square and
-// the most, milliseconds. Its slope is how fast the clock ran against the
-// page's, and reaches gives when on the page's clock the line stood at a
-// place.
-function straight(ticks: { at: number; pos: number }[]): {
-  stray: number;
-  most: number;
-  rate: number;
-  reaches: (pos: number) => number;
-} {
-  const n = ticks.length;
-  if (n < 3) return { stray: 0, most: 0, rate: 1, reaches: () => ticks[0]?.at ?? 0 };
-  const t0 = ticks[0].at;
-  const p0 = ticks[0].pos;
-  let st = 0;
-  let sp = 0;
-  for (const k of ticks) {
-    st += (k.at - t0) / 1000;
-    sp += k.pos - p0;
-  }
-  const mt = st / n;
-  const mp = sp / n;
-  let stt = 0;
-  let stp = 0;
-  for (const k of ticks) {
-    const t = (k.at - t0) / 1000 - mt;
-    stt += t * t;
-    stp += t * (k.pos - p0 - mp);
-  }
-  const rate = stt > 0 ? stp / stt : 1;
-  let sum = 0;
-  let most = 0;
-  for (const k of ticks) {
-    const off = (k.pos - p0 - mp - rate * ((k.at - t0) / 1000 - mt)) * 1000;
-    sum += off * off;
-    most = Math.max(most, Math.abs(off));
-  }
-  const reaches = (pos: number) => (rate > 0 ? t0 + (mt + (pos - p0 - mp) / rate) * 1000 : t0);
-  return { stray: Math.sqrt(sum / n), most, rate, reaches };
 }

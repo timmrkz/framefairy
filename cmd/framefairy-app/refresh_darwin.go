@@ -41,7 +41,14 @@ static WKWebView *refreshWebView(NSView *view) {
 // WebKit reads the setting when the page's screen changes, so the window
 // is then said to have changed screen, the way macOS says it when the
 // window is dragged to another. It is said a turn of the main loop later,
-// once the setting has gone to the page.
+// once the setting has gone to the page. Everything else that listens for
+// a change of screen hears it too, on every load of the page, with the
+// screen as it was: Wails sends WindowDidChangeScreen, and watchChrome in
+// chrome.go measures the title bar again, which changes nothing.
+//
+// _features and _setEnabled:forFeature: are WebKit's own, not Apple's
+// public API. Where a WebKit has them no more, the hold stays and the log
+// says so, see refreshSaid. Packaging should know they are here.
 static struct refreshOut refreshFree(void *nsWindow) {
 	struct refreshOut out = {0, 0};
 	NSWindow *window = (NSWindow *)nsWindow;

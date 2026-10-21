@@ -28,14 +28,24 @@ try {
   }
   await control(url, "/pick?seconds=60&size=1080");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  await page.waitForFunction(
-    () => {
-      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-      return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
-    },
-    null,
-    { timeout: 180000, polling: 250 },
+  // The clip list has a clip of the video added: the page changing is
+  // the signal, nothing waits on the clock.
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const there = () => {
+          const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+          return on.startsWith("folge-") && pane?.querySelectorAll("ol li[data-key]").length > 0;
+        };
+        if (there()) return done();
+        const watch = new MutationObserver(() => {
+          if (!there()) return;
+          watch.disconnect();
+          done();
+        });
+        watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+      }),
   );
   const rows = [];
   for (let r = 0; r < rounds; r++) {
@@ -43,18 +53,35 @@ try {
     await page.locator("ol li[data-key]").first().click();
     await page.mouse.move(vw / 2, vh / 2);
     await page.keyboard.press("Space");
-    const line = await page.waitForFunction(
-      (from) => {
-        for (const c of window.__calls.slice(from)) {
-          if (c.name !== "Said") continue;
-          for (const l of c.args[0] ?? []) if (/video preview: played to the end/.test(l.text)) return l.text;
-        }
-        return null;
-      },
+    // The line the play ends with, as the app hands it to the Go side:
+    // every call goes onto window.__calls, see wails-bridge.ts, so its
+    // push is the signal.
+    const line = await page.evaluate(
+      (from) =>
+        new Promise((done) => {
+          const calls = window.__calls;
+          const push = calls.push;
+          const look = () => {
+            for (const c of calls.slice(from)) {
+              if (c.name !== "Said") continue;
+              for (const l of c.args[0] ?? []) {
+                if (!/video preview: played to the end/.test(l.text)) continue;
+                calls.push = push;
+                done(l.text);
+                return;
+              }
+            }
+          };
+          calls.push = function (...xs) {
+            const n = push.apply(this, xs);
+            look();
+            return n;
+          };
+          look();
+        }),
       before,
-      { timeout: 120000, polling: 500 },
     );
-    rows.push(await line.jsonValue());
+    rows.push(line);
   }
   for (const [i, l] of rows.entries()) console.log(`play ${i + 1}: ${l.replace(/^.*?played to the end, /, "")}\n`);
 } finally {

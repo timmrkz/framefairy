@@ -53,6 +53,13 @@ export class Pool {
     this.kept += b.byteLength;
   }
 
+  // Lets go of every buffer kept, once no play is coming: they are 96 MB
+  // at most, and a video preview that closed keeps none.
+  clear() {
+    this.free.clear();
+    this.kept = 0;
+  }
+
   // The bytes kept, for the tests.
   get bytes(): number {
     return this.kept;

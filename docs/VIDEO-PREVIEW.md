@@ -340,12 +340,24 @@ for its window as the page
 comes up, `freeRefresh` in `cmd/framefairy-app/refresh.go`, and the log
 says whether it took and what the screen can do. A page asks for an
 update only while something moves, so a still app costs nothing more.
+The beam, the motes, the shimmer and the pulse of work in hand move
+only transform and opacity, which WebKit hands to Core Animation to run
+at the screen's own rate with or without the hold, so a search costs no
+more either. That is how WebKit draws them, not a measurement.
 
 The second report, three plays with the hold lifted, said the screen can
 show 120 frames a second and the page updated that often. Of 1576
-frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, 33 to 50 ms
-became 33 to 42, and Tim found it smoother. The 5 that stood 6 each
-stood over a refresh the page missed, 27 in about 63 s of play. WebKit
+frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, and Tim found
+it smoother. How long a frame stood, from the two reports, three plays
+of start.mp4 each:
+
+| Frame stood           | Before (ms) | After (ms) | Change      |
+| --------------------- | ----------: | ---------: | ----------- |
+| Shortest              |          33 |         33 | no change   |
+| Longest, all but 5    |          50 |         42 | 17 % less   |
+
+The 5 that stood 6 refreshes each stood over a refresh the page missed,
+27 in about 63 s of play. WebKit
 gives the page its times to the whole millisecond, so the refresh is
 the mean of the times between animation frames, not the most common
 one, which read 8 ms and a screen of 125 Hz.
@@ -361,8 +373,12 @@ the page cleaning up memory for about 1.3 s of every 12 s: every frame
 came in a new buffer of 7 MB, 170 MB a second. So the buffers are now
 kept and handed back to the next pull once no frame holds them,
 `lib/frames/pool.ts`, and a play makes no new memory for its frames.
-The third report, with the buffers kept, said the page missed 9.1
-refreshes a minute where it had missed 25.6.
+Refreshes the page missed on Tim's Mac, from the second and the third
+report, three plays each:
+
+| Refreshes missed         | Before | After | Change     |
+| ------------------------ | -----: | ----: | ---------- |
+| A minute, buffers kept   |   25.6 |   9.1 | 64 % fewer |
 
 At 120 Hz a frame of 25 a second still stands 4 and 5 refreshes by
 turns, 33 and 42 ms, and so it does in QuickTime and Final Cut on the
@@ -373,6 +389,12 @@ by the video's, and the screen of a MacBook Pro offers 47.95, 48, 50,
 stands exactly 40 ms. The app could switch the screen to 50 Hz while a
 video plays, and Tim chose on 21 October 2026 to leave the rhythm as
 QuickTime has it. A video of 24, 30 or 60 frames a second is even at 120.
+
+The line of a play is counted as the play goes, in sums and in samples
+of a fixed size, so it costs the same and keeps the same memory however
+long the play. Kept per animation frame, it took 90 ms at the pause of a
+play of 10 minutes, and threw on one of half an hour, so the space bar
+could not pause it.
 
 The line of a play also says how long the picture waited for the sound
 to start, about 45 ms, which every play does on purpose, see

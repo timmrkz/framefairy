@@ -30,6 +30,15 @@ describe("Pool", () => {
     expect(p.take(120)).toBeDefined();
   });
 
+  test("lets go of every buffer it kept when cleared", () => {
+    const p = new Pool(1000);
+    p.give(new ArrayBuffer(100));
+    p.give(new ArrayBuffer(200));
+    p.clear();
+    expect(p.bytes).toBe(0);
+    expect(p.take(100)).toBeUndefined();
+  });
+
   test("passes over a buffer handed to a Worker", () => {
     const p = new Pool(1000);
     const a = new ArrayBuffer(100);

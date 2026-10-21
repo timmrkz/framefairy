@@ -57,6 +57,34 @@ describe("Even", () => {
     expect(play(25, 60, 4).evenness.startWait).toBe(0);
   });
 
+  test("a play of half an hour at 120 Hz is said like a short one", () => {
+    // The line of a play worked out the most of each part of an animation
+    // frame's work by spreading every animation frame into Math.max,
+    // which throws past 65536 in WebKit and past about 125000 in Chromium,
+    // so the space bar could not pause a long play. The review of #430.
+    const e = new Even();
+    const n = 30 * 60 * 120;
+    let shown = -1;
+    for (let i = 0; i < n; i++) {
+      const at = (i * 1000) / 120;
+      e.tick(at, i / 120, "held");
+      e.drawn(e.work({ late: 0.5, put: 1, tell: 0.2, feed: 0.1, all: 1.5 }), at + 3, at + 1.5);
+      const k = Math.floor((i / 120) * 25 + 1e-9);
+      if (k !== shown) {
+        shown = k;
+        e.put(at, k / 25);
+      }
+    }
+    const got = e.evenness;
+    expect(got.ticks).toBe(n);
+    expect(got.missed).toBe(0);
+    expect(got.uneven).toBe(0);
+    expect(got.frames).toBe(30 * 60 * 25 - 1);
+    expect(got.stray).toBeLessThan(0.01);
+    expect(got.spent.all).toEqual({ typical: 1.5, most: 1.5, beforeMissed: 0 });
+    expect(got.spent.after.typical).toBe(1.5);
+  });
+
   test("a frame of 30 a second stands 2 refreshes at 60 Hz and 4 at 120 Hz", () => {
     expect([...play(30, 60, 2).evenness.held.keys()]).toEqual([2]);
     expect([...play(30, 120, 2).evenness.held.keys()]).toEqual([4]);

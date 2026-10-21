@@ -36,6 +36,7 @@ import type { Over } from "./captions";
 import type { Light } from "./light";
 import { screenOf, type Screen } from "./screen";
 import { describeEvenness, Even, type Source } from "./even";
+import { frames as framePool } from "./pool";
 import { rankAt, type AudioTrack, type Movie, type VideoTrack } from "./movie";
 import {
   AudioPlan,
@@ -1064,6 +1065,9 @@ export class FrameQueue {
     this.soundDecoder?.close();
     if (this.audio && this.audio.state !== "closed") void this.audio.close();
     this.listeners.clear();
+    // The buffers kept for the next play are let go of with the video
+    // preview, see pool.ts.
+    framePool.clear();
   }
 
   // The canvas has this many device pixels, as the stylesheet laid it out.
@@ -1532,7 +1536,15 @@ export class FrameQueue {
     const b = this.began;
     if (!b) return "no play under way";
     const ran = (performance.now() - b.when) / 1000;
-    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s, ${describeEvenness(b.even.evenness)}`;
+    // The log never stands in the way of a pause or an end: what it could
+    // not work out, it says instead.
+    let even: string;
+    try {
+      even = describeEvenness(b.even.evenness);
+    } catch (e) {
+      even = `how even it was could not be worked out: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    return `it ran ${ran.toFixed(1)} s, drew ${this.stats.drawn - b.drawn} frames, ${this.stats.late - b.late} frames late, ${this.stats.lateSound - b.lateSound} pieces of sound late, the frame on screen is for ${this.drawnFor.toFixed(3)} s, ${even}`;
   }
 
   // What a play that has not started waits for, for the log.
