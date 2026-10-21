@@ -308,9 +308,13 @@ messages, pull request text, code comments and chat replies.
   video and shows only while that video is on screen. Its time runs
   down from the moment it comes, the way toasts do everywhere, stands
   still while the pointer is on it, and its cross takes it away at once.
-  Every toast is in the log, so one gone unread is not lost. A failure
-  that has a row, a card or a field of its own is said there and never
-  in a toast.
+  Every toast is in the log, so one gone unread is not lost. Why
+  something failed is said in a toast too, whole, never pressed into a
+  row or a card, where it is cut to a line: a search that failed says
+  Failed with Continue in its row and why in a toast, with Report, which
+  opens Report a Problem with the toast's words in it. A video whose file
+  is gone says so in a toast, and its video preview shows nothing. A
+  field that was typed wrong is still said at the field.
   Work called off by hand says so the same way as work cut off by the app
   closing, Stopped with Continue, because what it did stays and can be
   carried on. An empty column after Cancel reads as work that vanished.
@@ -383,7 +387,9 @@ messages, pull request text, code comments and chat replies.
 - **One frame for what is chosen.** The crop in the video preview, the
   window on the range picker and the clip on the clip timeline are one
   thing in three places, drawn by `.frame` in `app.css` with the same
-  line, corners and colour, and lit the same way under the hand.
+  line, corners and colour, and lit the same way under the hand. The
+  clip chosen is lit whether the hand is on it or not, because a clip
+  is lit one way however it was reached.
 - **One list to pick from.** Every list a person picks from in the app is
   `Pick.svelte`, and there is no `<select>` anywhere. A `<select>` is drawn
   by the system: on macOS the webview hands the whole list to AppKit, which

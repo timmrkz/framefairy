@@ -1,6 +1,16 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
-  import { api, clock, onDictation, onLoudness, onReportDraft, onUndo, type ReportDraft, type ReportPicture } from "../lib/api";
+  import {
+    api,
+    clock,
+    onDictation,
+    onLoudness,
+    onReportAbout,
+    onReportDraft,
+    onUndo,
+    type ReportDraft,
+    type ReportPicture,
+  } from "../lib/api";
   import { asking, typing } from "../lib/keys";
   import Removed from "../components/Removed.svelte";
   import { chime, wake } from "../lib/chime";
@@ -828,10 +838,21 @@
       .catch(() => {})
       .finally(() => (loaded = true));
     const noDraft = onReportDraft(dropped);
+    // A toast's Report button, while this window is open: its words go
+    // after what is written, a line apart, and are kept like typing.
+    const noAbout = onReportAbout((text) => {
+      if (!text) return;
+      // Words written in end what Cmd+Z could bring back after Clear.
+      unclear();
+      const was = what.replace(/\s+$/, "");
+      field.innerText = was ? `${was}\n\n${text}` : text;
+      read();
+    });
     const leave = () => saveNow();
     window.addEventListener("pagehide", leave);
     return () => {
       noDraft();
+      noAbout();
       window.removeEventListener("pagehide", leave);
       saveNow();
     };

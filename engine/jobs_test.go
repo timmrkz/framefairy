@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+
+	"framefairy/internal/standin"
 )
 
 // searchProject makes a project of a forty second episode with the stand-in
@@ -551,7 +553,7 @@ func TestARenderThatFailsKeepsTheShortBefore(t *testing.T) {
 		"for a in \"$@\"; do last=$a; done\n" +
 		"case \" $* \" in *\" +faststart \"*) printf half > \"$last\"; exit 1 ;; esac\n" +
 		"exec '" + p.Engine().FFmpeg + "' \"$@\"\n"
-	if err := os.WriteFile(broken, []byte(script), 0o755); err != nil {
+	if err := standin.Write(broken, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	p.Engine().FFmpeg = broken

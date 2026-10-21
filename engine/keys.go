@@ -208,10 +208,10 @@ func readAPIKey(ctx context.Context, p Provider) (key, source string, err error)
 // different places.
 func refusedKey(p Provider, source string) error {
 	if source == "the keychain" {
-		return renderErr("%s did not accept the saved API key. Replace it in the settings, "+
+		return saidErr("%s did not accept the saved API key. Replace it in the settings, "+
 			"or check it at %s.", p.Title, p.KeysAt)
 	}
-	return renderErr("%s did not accept the API key in %s. Check it at %s.",
+	return saidErr("%s did not accept the API key in %s. Check it at %s.",
 		p.Title, source, p.KeysAt)
 }
 

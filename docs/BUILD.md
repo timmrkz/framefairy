@@ -375,6 +375,25 @@ calls `t.TempDir`, a file function of `os`, `afero.NewOsFs` or the
 engine's `disk` without one. It imports none of the files it reads, so
 `make changed` runs it whenever a test file changed.
 
+**A program a test writes is written through `standin.Write`.** A
+stand-in for ffmpeg, ffprobe or llama-server is a shell script the test
+writes and then runs. Linux refuses to run a file that is open for
+writing, "text file busy", and a fork made by another test while the
+script was being written kept it open in the child until that child had
+started its own program. So now and then a stand-in was refused the first
+time it ran, which is how a stand-in ffmpeg was once asked one question
+in place of two, #410. `standin.Write` in `internal/standin` holds
+`syscall.ForkLock` for reading while the file is open. Every fork in Go
+creates its child while it holds the lock for writing, so no child is
+created while the file is open, and none can hold it.
+`TestAProgramWrittenWhileOthersStartRunsAtOnce` writes and runs 800
+scripts from 16 goroutines at once, and with `os.WriteFile` 130 to 146
+of them were refused in each of three runs in a cloud session.
+`TestEveryProgramATestWritesIsWrittenThroughStandin` in `internal/offdisk`
+reads every test file in the same walk as the check above, and fails on
+an `os.WriteFile`, `os.OpenFile` or `os.Chmod` whose mode lets the file
+run, so `make changed` runs it whenever a test file changed.
+
 **On a Mac the tests use the ffmpeg the programs ship with.** `make unit`,
 `make fuzz` and `make changed` put `bin/` first on the `PATH` there, so a
 test finds the ffmpeg and llama-server `make` built before any other. Not

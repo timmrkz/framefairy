@@ -12,7 +12,8 @@ struct chromeOut {
 	double bar;
 	double left;
 	double right;
-	double middle;
+	double closeTop;
+	double closeBottom;
 	bool fullscreen;
 };
 
@@ -31,7 +32,7 @@ struct chromeOut {
 // It answers zeros where there is nothing to ask, and the app leaves the
 // bar as the stylesheet has it.
 static struct chromeOut chromeMeasure(void *nsWindow) {
-	struct chromeOut out = {0, 0, 0, 0, false};
+	struct chromeOut out = {0, 0, 0, 0, 0, false};
 	NSWindow *window = (NSWindow *)nsWindow;
 	if (window == nil) {
 		return out;
@@ -58,7 +59,8 @@ static struct chromeOut chromeMeasure(void *nsWindow) {
 	NSRect z = [zoom convertRect:[zoom bounds] toView:content];
 	out.left = NSMinX(c);
 	out.right = NSMaxX(z);
-	out.middle = NSMaxY(bounds) - NSMidY(c);
+	out.closeTop = NSMaxY(bounds) - NSMaxY(c);
+	out.closeBottom = NSMaxY(bounds) - NSMinY(c);
 	return out;
 }
 */
@@ -74,10 +76,11 @@ func chromeMeasure(window unsafe.Pointer) chromeRaw {
 	}
 	out := C.chromeMeasure(window)
 	return chromeRaw{
-		bar:        float64(out.bar),
-		left:       float64(out.left),
-		right:      float64(out.right),
-		middle:     float64(out.middle),
-		fullscreen: bool(out.fullscreen),
+		bar:         float64(out.bar),
+		left:        float64(out.left),
+		right:       float64(out.right),
+		closeTop:    float64(out.closeTop),
+		closeBottom: float64(out.closeBottom),
+		fullscreen:  bool(out.fullscreen),
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"framefairy/engine"
 	"framefairy/internal/ffmpegtest"
+	"framefairy/internal/standin"
 )
 
 // Add takes a file only where the episode's decoder hands over its first
@@ -72,7 +73,7 @@ func TestAddTakesAVideoWhoseFirstFrameIsLate(t *testing.T) {
 	d := open(t)
 	good := d.episode("spaet", "6")
 	hung := filepath.Join(t.TempDir(), "framefairy-frames")
-	if err := os.WriteFile(hung, []byte("#!/bin/sh\nexec cat >/dev/null\n"), 0o755); err != nil {
+	if err := standin.Write(hung, []byte("#!/bin/sh\nexec cat >/dev/null\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FRAMEFAIRY_FRAMES", hung)

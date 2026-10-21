@@ -3,12 +3,13 @@ package engine
 import (
 	"context"
 	"io"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+
+	"framefairy/internal/standin"
 )
 
 // A fake ffmpeg that answers -encoders with whatever the test wants, so the
@@ -30,7 +31,7 @@ func fakeFFmpeg(t *testing.T, encoders ...string) string {
 	}
 	path := filepath.Join(t.TempDir(), "ffmpeg")
 	script := "#!/bin/sh\nprintf '" + rows.String() + "'\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

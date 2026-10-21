@@ -23,11 +23,11 @@
      What was really wrong was asking for a toolbar, which makes the bar
      taller and makes macOS inset the buttons to centre them in it. See
      the WebviewWindowOptions in main.go.
-     Then the buttons are on the bar's middle because the bar is what
-     they were centred in. The name goes in a box whose middle is their
-     middle, which is the same thing said the other way round. Where the
-     system draws its own title bar there is nothing to agree with and
-     the stylesheet keeps its own numbers. -->
+     Then macOS centres the buttons in the bar, and the name is centred
+     between the edge of the window macOS draws over its top and the
+     line at its foot, see .name below. Where the system draws its own title
+     bar there is nothing to agree with and the stylesheet keeps its
+     own numbers. -->
 <header class="bar">
   <span class="name"
     ><span class="what">{title}</span>{#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}</span
@@ -55,19 +55,16 @@
     --wails-draggable: drag;
   }
 
-  /* The name stands in a box that reaches from the top of the bar to as
-     far below the buttons' middle as that middle is below the top, so the
-     middle of the box is the middle of the buttons. It starts one space
-     after the last of them. Nothing is moved by a transform, so nothing
-     is put on a compositing surface of its own and the whole pixel rule
-     holds. Where there are no buttons in the page the box is the
-     bar, and the name is centred in it. */
+  /* The name stands in a box as tall as the bar, so it is centred on the
+     bar's middle, and starts one space after the buttons. Nothing is
+     moved by a transform, so nothing is put on a compositing surface of
+     its own and the whole pixel rule holds. */
   .bar .name {
     position: absolute;
     top: 0;
     left: calc(var(--lights-r, 0px) + var(--gap));
     right: var(--gap);
-    height: calc(2 * var(--lights-y, calc(var(--bar-h) / 2)));
+    height: var(--bar-h);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -113,6 +110,22 @@
       line-height: normal;
       padding: 0;
     }
+  }
+
+  /* Where macOS puts its buttons in the bar, it draws the edge of the
+     window over the top 2 points of the page, and the line at the foot
+     takes the last point. What a person sees as the bar is what lies
+     between the two, and the name and its label are centred in that.
+     Read off Tim's pictures, at 2 pixels a point: a bar 32 high, the
+     edge over its first 2, the line on its last 1. Centred under the
+     edge alone, the label stood 5 points under the edge and 4 over the
+     line, half a point low, #399. Between the two it stands 4.5 from
+     each. The circles are macOS's own, centred 17 down, half a point
+     under the middle of what is seen. AppKit's frame for the close
+     button says 16, so it is no measure of where they are drawn. */
+  :global(.shell[style*="--lights-r"]) .bar .name {
+    top: 2px;
+    height: calc(var(--bar-h) - 3px);
   }
 
   /* Where the system draws its own title bar the name keeps the left of

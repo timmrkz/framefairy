@@ -15,6 +15,7 @@ import (
 
 	"framefairy/internal/ffmpegtest"
 	"framefairy/internal/framewire"
+	"framefairy/internal/standin"
 )
 
 // A render goes on when the Mac's media engine fails to encode. VideoToolbox
@@ -260,7 +261,7 @@ cat "$calls.said" >&2
 exit $code
 `
 	path := filepath.Join(t.TempDir(), "ffmpeg")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

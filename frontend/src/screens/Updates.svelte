@@ -11,53 +11,28 @@
   // Reached from Updates at the foot of the sidebar and from Check for
   // Updates in the app menu. See docs/UPDATES.md.
   import { onMount } from "svelte";
-  import { api, errorText, onUpdates, size, type UpdateState } from "../lib/api";
+  import { api, errorText } from "../lib/api";
   import Busy from "../components/Busy.svelte";
   import Icon from "../components/Icon.svelte";
   import Info from "../components/Info.svelte";
   import Pick from "../components/Pick.svelte";
   import { jobs } from "../lib/state.svelte";
+  import { channelName, conflicted as conflictedIn, following as followingIn, standing as standingOf, updates } from "../lib/updates.svelte";
 
-  // A check that finds nothing is over in a tenth of a second, which is
-  // a flash nobody can read: the button lit and went out and the line
-  // under the build changed and changed back. So looking is shown for at
-  // least this long, the answer after it.
-  const LOOK_AT_LEAST = 1400;
-
-  // What the Go side last said, and what is on screen, which trails it
-  // while a check is held.
-  let latest = $state<UpdateState | null>(null);
-  let update = $state<UpdateState | null>(null);
-  let lookingSince = 0;
-  let held: ReturnType<typeof setTimeout> | undefined;
+  // What is on screen, which the sidebar's dot on Updates is read from
+  // too, so the two say the same, see lib/updates.svelte.ts.
+  const update = $derived(updates.shown);
   let restarting = $state(false);
   let problem = $state("");
   // Now, a few times a minute, so "just now" becomes a time by itself.
   let now = $state(Date.now());
-
-  function heard(u: UpdateState) {
-    latest = u;
-    if (u.phase === "checking") {
-      if (update?.phase !== "checking") lookingSince = Date.now();
-      clearTimeout(held);
-      update = u;
-      return;
-    }
-    const left = LOOK_AT_LEAST - (Date.now() - lookingSince);
-    if (update?.phase === "checking" && left > 0) {
-      clearTimeout(held);
-      held = setTimeout(() => (update = latest), left);
-      return;
-    }
-    update = u;
-  }
 
   // A click shows at once. The Go side's own word that it is looking
   // follows a moment later and changes nothing.
   async function check() {
     if (!update) return;
     problem = "";
-    heard({ ...update, phase: "checking" });
+    updates.heard({ ...update, phase: "checking" });
     try {
       await api.checkForUpdates();
     } catch (e) {
@@ -71,15 +46,12 @@
   async function follow(channel: string) {
     if (!update) return;
     problem = "";
-    heard({ ...update, picked: channel, gone: "", building: "", next: "", phase: "checking" });
+    updates.heard({ ...update, picked: channel, gone: "", building: "", next: "", phase: "checking" });
     try {
       await api.followChannel(channel);
     } catch (e) {
       problem = errorText(e);
-      api
-        .updates()
-        .then(heard)
-        .catch(() => {});
+      updates.ask();
     }
   }
 
@@ -94,20 +66,9 @@
     }
   }
 
-  // A channel is what it is and nothing more: a branch or a pull request
-  // by its number. The pull request's title says what it is about, which
-  // is not what is being picked here. Customers will see releases the same
-  // way, by their version.
-  const channelName = (id: string) => (id.startsWith("pr-") ? `PR #${id.slice(3)}` : `Branch ${id}`);
-  // The channel followed, as updates.Followed has it: the one picked, or
-  // the one a build from a channel came from. Empty for a build made on
-  // the Mac until a channel is chosen.
-  const following = $derived(update ? update.picked || update.follows || update.gone || update.channel || "" : "");
+  const following = $derived(followingIn(update));
   const followingName = $derived(following ? channelName(following) : "");
-  // The pull request followed no longer merges into main. Its builds
-  // still come, but CI does not run on them, so the page wears the colour
-  // of a warning for it, the way it does for one that closed.
-  const conflicted = $derived(!!update?.channels?.some((c) => c.id === following && c.conflict));
+  const conflicted = $derived(conflictedIn(update));
   const channelOptions = $derived.by(() => {
     // A pull request that no longer merges into main says so in its name,
     // the way a closed one does. Its build is of the branch as it is, so
@@ -135,16 +96,6 @@
     return listed;
   });
 
-  function when(checked: string | undefined): string {
-    if (!checked) return "";
-    const at = Date.parse(checked);
-    // Go's zero time is the year 1.
-    if (!isFinite(at) || at < Date.UTC(2000, 0, 1)) return "";
-    if (now - at < 60_000) return "Checked just now.";
-    const t = new Date(at);
-    return `Checked at ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}.`;
-  }
-
   // Work running or waiting to, which Relaunch waits for: quitting into
   // the new build would stop it half way, issue #382. The Go side refuses
   // a Relaunch pressed all the same. In the words of the work the person
@@ -165,107 +116,20 @@
   });
 
   const short = (commit: string) => commit.slice(0, 7);
-  // A build's version ends in its commit, so the version says it all.
-  const next = $derived(update?.next ?? "");
 
-  // A commit pushed to the channel whose build has not come yet. The build
-  // there is is still offered, it is the newest there is, but never as
-  // the newest commit: a build of the commit before was once tested as
-  // the fix it did not have yet.
-  const building = $derived(update?.building ? short(update.building) : "");
-  const stillBuilding = $derived(building ? ` ${building} is being built.` : "");
-
-  // Where things stand, in the words of the line under the build: what it
-  // is in a few words, then what that means.
-  const standing = $derived.by((): { mark: string; head: string; more: string } => {
-    const u = update;
-    if (!u) return { mark: "", head: "", more: "" };
-    if (u.off) return { mark: "off", head: "This build does not update itself", more: u.off };
-    switch (u.phase) {
-      case "checking":
-        return { mark: "look", head: "Looking for a newer build", more: following ? `Of ${followingName}.` : "" };
-      case "downloading": {
-        const part = u.total > 0 ? `${Math.floor((u.written / u.total) * 100)} % of ${size(u.total)}.` : "";
-        // Work running, so the pulse, the same as looking.
-        return { mark: "look", head: "A newer build is downloading", more: `${next}. ${part}${stillBuilding}`.trim() };
-      }
-      case "ready":
-        return {
-          mark: "new",
-          head: "A newer build is ready",
-          more: working
-            ? `${next}. Relaunch once ${working} is done, or it goes in when you quit.${stillBuilding}`
-            : `${next}. Relaunch to finish updating, or it goes in when you quit.${stillBuilding}`,
-        };
-      case "failed":
-        return { mark: "err", head: "The check did not get through", more: `${u.problem} ${when(u.checked)}`.trim() };
-      // The newest build is here, and a newer commit is on its way. Work
-      // running somewhere else, so the pulse.
-      case "current":
-        if (building)
-          return {
-            mark: "look",
-            head: "A newer commit is being built",
-            more: `${building}. This is the build before it, the newest of ${followingName} so far. ${when(u.checked)}`.trim(),
-          };
-        if (conflicted)
-          return {
-            mark: "warn",
-            head: "Up to date",
-            more: `This is the newest build of ${followingName}. It conflicts with main, so CI has not tested it. ${when(u.checked)}`.trim(),
-          };
-        return {
-          mark: "ok",
-          head: "Up to date",
-          more: `This is the newest build of ${followingName}. ${when(u.checked)}`.trim(),
-        };
-      // The pull request followed was merged or closed. Nothing downloads
-      // by itself: which channel to follow next is the person's to say.
-      case "gone":
-        return {
-          mark: "warn",
-          head: `${channelName(u.gone)} is closed`,
-          more: "Nothing downloads until you choose what to follow next.",
-        };
-    }
-    // A build made on the Mac follows nothing until a channel is chosen,
-    // whatever an earlier build picked. Choosing one follows it fully, so
-    // looking is the next thing this line says.
-    if (!following) {
-      return {
-        mark: "idle",
-        head: "Built on this Mac",
-        more: "It stays as it is until you choose a channel to follow.",
-      };
-    }
-    // A build from a channel, in the moment before its first look has
-    // answered.
-    return { mark: "idle", head: "Not checked yet", more: "It looks when the app starts and every ten minutes." };
-  });
+  // Where things stand, in the words of the line under the build, with
+  // the mark the sidebar's dot is made from.
+  const standing = $derived(standingOf(update, { working, now }));
 
   const looking = $derived(update?.phase === "checking");
   const downloading = $derived(update?.phase === "downloading");
 
   onMount(() => {
-    // Asking also reads the channel list, and what that read found is
-    // sent as an event, which can arrive before the answer to the asking
-    // does. The answer is then the older of the two, and it emptied the
-    // list again, so it only counts while no event has come.
-    let told = false;
-    const noUpdates = onUpdates((u) => {
-      told = true;
-      heard(u);
-    });
-    api
-      .updates()
-      .then((u) => told || heard(u))
-      .catch(() => {});
+    // The app listens from its start, see App.svelte. Opening the page
+    // asks again, so what it shows is never older than the opening.
+    updates.ask();
     const tick = setInterval(() => (now = Date.now()), 15_000);
-    return () => {
-      noUpdates();
-      clearInterval(tick);
-      clearTimeout(held);
-    };
+    return () => clearInterval(tick);
   });
 </script>
 

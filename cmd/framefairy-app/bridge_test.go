@@ -316,6 +316,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			}
 			return b.d.svc.takeFiles("add", picked), nil
 		},
+		// The title bar, as macOS answered it if a walk said so, see
+		// /chrome, or nothing, the way every other system answers.
+		"Chrome": func() (any, error) {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			return b.chrome, nil
+		},
 	}
 	mux.Handle("/call", callHandler(svc, own, b.held))
 	mux.Handle("/events", b.d.bus)
@@ -405,12 +412,31 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Get("ms") == "hold" {
+			b.words.hold()
+			answer(w, nil, nil)
+			return
+		}
+		b.words.release()
 		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
 		if from, err := strconv.Atoi(q.Get("from")); err == nil && from >= 0 {
 			b.words.from(from)
 		}
 		answer(w, nil, nil)
+	})
+	// The app's window as macOS lays it out, in points: the title bar's
+	// height and where its buttons start and end. It goes through what
+	// the Go side does with the answer and is told the way a resize is.
+	mux.HandleFunc("/chrome", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		num := func(k string) float64 { v, _ := strconv.ParseFloat(q.Get(k), 64); return v }
+		now := (&chromeWatch{}).settle(chromeRaw{bar: num("bar"), left: num("left"), right: num("right")})
+		b.mu.Lock()
+		b.chrome = now
+		b.mu.Unlock()
+		b.d.bus.send(chromeEvent("app"), now)
+		answer(w, now, nil)
 	})
 	mux.HandleFunc("/hold", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -473,6 +499,38 @@ type prose struct {
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
 	pace atomic.Int64
+	// held keeps it from hearing anything more, so a walk can look at a
+	// transcript part way that stays where it is. The next pace or a reset
+	// lets it go on. hearing counts the pieces it is hearing now.
+	gate    sync.Mutex
+	turn    *sync.Cond
+	held    bool
+	hearing int
+}
+
+func (p *prose) cond() *sync.Cond {
+	if p.turn == nil {
+		p.turn = sync.NewCond(&p.gate)
+	}
+	return p.turn
+}
+
+// hold stops it hearing and returns once the pieces it was hearing are
+// heard, so the edge of what is heard stands still from then on.
+func (p *prose) hold() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.held = true
+	for p.hearing > 0 {
+		p.cond().Wait()
+	}
+}
+
+func (p *prose) release() {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.held = false
+	p.cond().Broadcast()
 }
 
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof
@@ -484,6 +542,18 @@ allen erzählt, er wäre gebrochen. Das war meine erste richtige Lüge, glaube
 ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
+	p.gate.Lock()
+	for p.held {
+		p.cond().Wait()
+	}
+	p.hearing++
+	p.gate.Unlock()
+	defer func() {
+		p.gate.Lock()
+		p.hearing--
+		p.cond().Broadcast()
+		p.gate.Unlock()
+	}()
 	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -589,6 +659,9 @@ type bridge struct {
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
+	// chrome is the app's title bar as macOS answers it, once a walk
+	// asked for one, see /chrome.
+	chrome Chrome
 	// channels serves the channel list and the builds the Updates page is
 	// walked with, see /updates.
 	channels *channelServer
@@ -1211,6 +1284,7 @@ func (b *bridge) reopen() ([]Job, error) {
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
+	b.words.release()
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)
@@ -1218,6 +1292,7 @@ func (b *bridge) reset() error {
 	b.picks = nil
 	clear(b.holds)
 	clear(b.fails)
+	b.chrome = Chrome{}
 	b.mu.Unlock()
 	b.d.pictureMu.Lock()
 	b.d.pictures = nil

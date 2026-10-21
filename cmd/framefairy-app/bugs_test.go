@@ -680,3 +680,38 @@ func chunk(kind string, data []byte) []byte {
 	out = append(out, data...)
 	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(append([]byte(kind), data...)))
 }
+
+// The Report button of a toast opens Report a Problem with the toast's
+// words in its field, after what was written there. An open window is
+// handed them to write in, and the draft it keeps is not written behind
+// its back, since the window's field would save over it. Issue #311.
+func TestAToastsReportButtonWritesItsWordsInTheReport(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	made := 0
+	r.make = func(closed func()) (func(), func()) {
+		made++
+		return func() {}, func() { closed() }
+	}
+	var handed []string
+	r.about = func(text string) { handed = append(handed, text) }
+	s := &FrameFairy{report: r}
+
+	if err := s.SaveReportText("The search stopped.\n"); err != nil {
+		t.Fatal(err)
+	}
+	s.ReportAbout("Anthropic is busy.")
+	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
+		t.Fatalf("the report says %q", d.Text)
+	}
+	if made != 1 || len(handed) != 0 {
+		t.Fatalf("%d windows made, %v handed to one", made, handed)
+	}
+
+	s.ReportAbout("Could not reach Anthropic.")
+	if made != 1 || fmt.Sprint(handed) != "[Could not reach Anthropic.]" {
+		t.Fatalf("with the window open: %d windows made, %v handed to it", made, handed)
+	}
+	if d := s.ReportDraft(); d.Text != "The search stopped.\n\nAnthropic is busy." {
+		t.Fatalf("the draft was written behind the open window's back: %q", d.Text)
+	}
+}

@@ -55,6 +55,37 @@
      that sinks. A layer mixes with what is under it, so the step is the
      same wherever the control stands. */
   --lift: rgba(255, 255, 255, 0.08);
+  /* The dots of a part not transcribed yet, in a card and on the range
+     picker, a grid of them rising from the foot and thinning out upwards,
+     with none in the top third, where the minutes of the range picker
+     stand and a card has its time. Tim picked them from a sheet, after
+     dots over the whole height hid the minutes and their lines. They are
+     never brighter than the dashes round them, and under the hand they
+     go up a step with the grey of the card. They are that grey at a
+     share of its strength, because at full strength Tim found them too
+     strong. One dot is one tile of --dot-pitch, and the fade reaches the
+     foot, so the dots go on to the edge like a surface, the way Tim
+     liked them. A row and a column left clear round them looked cut off,
+     found by Tim.
+     A card's dashes run at the same pitch, a dash in the middle of each
+     tile, laid where its dots are, so every dash stands over a column or
+     beside a row of dots. Dashes the browser drew went their own way,
+     found by Tim. */
+  --dot-pitch: 6px;
+  --halftone: radial-gradient(circle, color-mix(in srgb, var(--ink-3) 70%, transparent) 1.2px, transparent 1.7px);
+  --halftone-lit: radial-gradient(circle, color-mix(in srgb, var(--line) 70%, transparent) 1.2px, transparent 1.7px);
+  --halftone-fade: linear-gradient(transparent 30%, #000);
+  --halftone-dash-x: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(var(--dot-pitch) / 4),
+    #000 0 calc(var(--dot-pitch) * 3 / 4),
+    transparent 0 var(--dot-pitch)
+  );
+  --halftone-dash-y: repeating-linear-gradient(
+    transparent 0 calc(var(--dot-pitch) / 4),
+    #000 0 calc(var(--dot-pitch) * 3 / 4),
+    transparent 0 var(--dot-pitch)
+  );
   /* The same, for a control that takes something away. It says what the
      control does as well as that the pointer is on it, which is what the
      warning outline does on a button in a box. */
@@ -371,6 +402,14 @@ input[type="number"] {
   width: 80px;
 }
 
+/* What a field is for, before anything is typed in it, a step below the
+   words typed: the browser's grey read like something already written,
+   found by Tim. */
+::placeholder {
+  color: color-mix(in srgb, var(--muted) 45%, var(--faint));
+  opacity: 1;
+}
+
 input[type="text"],
 input[type="password"] {
   width: 100%;
@@ -380,8 +419,10 @@ input[type="password"] {
    the video preview, the window on the range picker and the clip on the
    clip timeline are the same thing in three places, so they are drawn by
    this one rule, in the app's colour, with the same line and the same
-   corners, and lit the same way while the hand is on them. Each place
-   keeps only where it sits and what it takes hold of. Three copies of
+   corners, and lit the same way while the hand is on them. The clip
+   chosen on the clip timeline is lit whether the hand is on it or not,
+   because a clip is lit one way however it was reached. Each place keeps
+   only where it sits and what it takes hold of. Three copies of
    this were three frames that no longer matched: one with square corners,
    one with a corner of 4 pixels, one of 3. */
 .frame {
@@ -449,7 +490,10 @@ input[type="password"] {
 
    A mark is lit, .lit, while the hand is on the same clip somewhere else,
    its card in the clip list or its mark on the other track, and looks
-   exactly as it does under the pointer. */
+   exactly as it does under the pointer. The clip chosen is lit as well,
+   however it was chosen: a clip is lit one way, by the hand or by the
+   keys. Chosen with the keys, its frame was a step darker than the hand
+   made it, found by Tim. */
 .clipmark {
   --clipmark-h: round(16%, 2px);
   position: absolute;
@@ -474,19 +518,14 @@ input[type="password"] {
   background: var(--ok);
 }
 
-.clipmark.selected {
+.clipmark.selected,
+.clipmark.selected:hover:not(:disabled) {
   --clipmark-h: round(44%, 2px);
   box-sizing: border-box;
   min-width: 10px;
   background: var(--accent-wash);
-  border: var(--frame-line) solid var(--accent);
+  border: var(--frame-line) solid var(--accent-hi);
   border-radius: var(--frame-radius);
-}
-
-.clipmark.selected:hover:not(:disabled),
-.clipmark.selected.lit {
-  background: var(--accent-wash);
-  border-color: var(--accent-hi);
 }
 
 /* The chosen clip while the playhead is on the video rather than on the
@@ -513,6 +552,28 @@ input[type="password"] {
 .clipmark.selected.dim:not(.lit):not(:hover),
 .chosen.dim:not(.lit) > * {
   opacity: var(--dimmed);
+}
+
+/* The edge of a card of the chosen clip, in the app's own colour, the
+   same in the clip list and in the transcript: a straight bar down the
+   card's left side, cut off by the card's rounded corners and never bent
+   round them. In the transcript it was a shadow on a rounded button, so
+   it curved round the corners, a pixel narrower than Tim wanted, and not
+   the clip list's, found by Tim. The card the class is on clips it. */
+.clip-edge {
+  position: relative;
+  overflow: hidden;
+}
+
+.clip-edge::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
 }
 
 :focus-visible {

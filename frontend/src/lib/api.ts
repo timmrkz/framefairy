@@ -300,6 +300,16 @@ export interface ClipView {
   found: [number, number];
 }
 
+// One sentence of what a video says, when it is said and its words.
+export interface Sentence {
+  start: number;
+  end: number;
+  text: string;
+  // The key of the clip that shows it, for a caption of a clip, which is
+  // a card of its own.
+  clip?: string;
+}
+
 // One line of a caption, the way the render lays it out.
 export interface CaptionLine {
   words: Word[];
@@ -667,6 +677,7 @@ export const api = {
   // Opens the report window, or brings it forward when it is open, see
   // bugs.go. how is what was clicked, for the log.
   openReport: (how: string) => call<void>("OpenReport", how),
+  reportAbout: (text: string) => call<void>("ReportAbout", text),
   reportWindowOpen: () => call<boolean>("ReportWindowOpen"),
   // The draft of a report, what is written and the pictures attached,
   // kept until a report is made from it.
@@ -815,6 +826,9 @@ export const api = {
   // The words said in a part of the episode, for walking the playhead
   // from word to word.
   words: (path: string, from: number, to: number) => call<Word[] | null>("Words", path, from, to),
+  // What the video says, sentence by sentence, as far as it has been
+  // heard, for searching it in the clip column.
+  sentences: (path: string) => call<Sentence[] | null>("Sentences", path),
   setWord: (path: string, plan: string, clip: string, start: number, text: string) =>
     call<ClipEntry>("SetWord", path, plan, clip, start, text),
   // Removes one word from the captions of one clip alone, the word heard
@@ -942,8 +956,6 @@ export interface Chrome {
   // last, so the name of what is on screen starts after them.
   left: number;
   right: number;
-  // The middle of those buttons, from the top of the page.
-  middle: number;
 }
 
 // The windows with a title bar of their own, each measured on its own:
@@ -1051,6 +1063,12 @@ export function onReportWindow(fn: (open: boolean) => void): () => void {
 // What became of files dropped on the report window.
 export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
   return Events.On("report-draft", (ev) => fn(ev.data as ReportDraft));
+}
+
+// Words a toast's Report button hands the report window, already open,
+// to write in its field, see ReportAbout in bugs.go.
+export function onReportAbout(fn: (text: string) => void): () => void {
+  return Events.On("report-about", (ev) => fn(String(ev.data ?? "")));
 }
 
 export function onEpisodeChanged(fn: (path: string) => void): () => void {

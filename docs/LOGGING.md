@@ -115,7 +115,9 @@ Other fields come where they mean something: `stream` for the frames,
 it reads, `removed` for a word corrected to nothing, `out` and `back` for
 how many words a caption edge took out and put back, `ms` for how long
 something took,
-`status`, `bytes` and `said` for a call, `build` when the app starts.
+`status`, `bytes` and `said` for a call, `build` when the app starts,
+`plans`, `clips` and `cards` for the cards of what was said, how many
+and never what they read.
 
 ### Acts
 

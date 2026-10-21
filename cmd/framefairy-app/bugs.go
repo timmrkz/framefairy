@@ -123,6 +123,9 @@ type reporting struct {
 	// it. Both are events in the app.
 	told func(open bool)
 	said func(ReportDraft)
+	// about hands an open report window text to write in its field, see
+	// ReportAbout.
+	about func(text string)
 	// pick asks for pictures in the system's open box.
 	pick func() ([]string, error)
 	// stop drops the recording the window had going, once the window is
@@ -142,6 +145,41 @@ func (s *FrameFairy) OpenReport(how string) {
 	if s.report != nil {
 		s.report.open(how)
 	}
+}
+
+// ReportAbout opens Report a Problem with text written in its field, after
+// whatever is written there already, from the Report button of a toast. A
+// window already open is handed the text to write in, since its field is
+// what is kept and would otherwise save over it. Issue #311.
+func (s *FrameFairy) ReportAbout(text string) {
+	if s.report == nil {
+		return
+	}
+	r := s.report
+	r.mu.Lock()
+	r.load()
+	written := r.front != nil
+	if !written {
+		r.draft.Text = cut(after(r.draft.Text, text), reportWordsMax)
+		if err := r.keep(); err != nil {
+			theLog.line(zerolog.WarnLevel, "report").Err(err).Msg("the text from a toast was not kept")
+		}
+	}
+	about := r.about
+	r.mu.Unlock()
+	if written && about != nil {
+		about(text)
+	}
+	r.open("toast")
+}
+
+// after is text written after what is already written, a line apart.
+func after(was, text string) string {
+	was = strings.TrimRight(was, "\n ")
+	if was == "" {
+		return text
+	}
+	return was + "\n\n" + text
 }
 
 // ReportWindowOpen says whether the report window is open, for Bugs in the

@@ -108,6 +108,11 @@ func main() {
 			app.Event.Emit("report-draft", d)
 		}
 	}
+	svc.report.about = func(text string) {
+		if app != nil {
+			app.Event.Emit("report-about", text)
+		}
+	}
 	// The searches and renders that were cut off or failed the last time
 	// say so where their work was.
 	svc.jobs.restore(st.Episodes())

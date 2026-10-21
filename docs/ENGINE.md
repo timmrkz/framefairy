@@ -1093,7 +1093,9 @@ edge of a stretch: a gesture that would make one parts it there,
 `partedAtTurns`. The render rotates a piece before it crops it, so the crop
 is the shape of the short in the picture rotated. A rotated piece keeps
 its crop on the rotated picture as `crop_x_turned`, apart from the one it
-has as filmed, which stays as it was. Absent, it stands in the middle. A
+has as filmed, which stays as it was. A part turned the way another
+part already is takes the crop of that one, since the pieces turned alike
+share one. Absent, it stands in the middle. A
 crop placed by hand on a rotated part moves every piece of the clip
 rotated alike, `rotationOf`, and one placed on the picture as filmed
 moves every piece of the clip.
@@ -1290,6 +1292,19 @@ GPT-6 Sol, two of the same price, so the choice is of company rather
 than budget. Any other model either company has can be named with `--model`.
 The tests stand a fake server in for both, in `engine/provider_test.go`, down
 to a whole search on a GPT model from transcript to plan.
+
+**A failure says why in words,** issue #311. A company's error is
+JSON with a message for people inside, and that message is what is said,
+never the JSON around it: "Anthropic refused the request: Your credit
+balance is too low". A company that is busy on every try, a 429, a 5xx or
+Anthropic's 529, says it is busy and to try again in a few minutes, one
+that cannot be reached is named with the connection to check, and a key
+refused says where to replace it. A video whose file is no longer where
+it was added from says where it was and to put it back, `videoGone`,
+rather than what ffprobe said about it. These are made with `saidErr`, and a
+search says them as they are, without "planning failed" in front, since
+the first sentence is what the row of the search shows, the same as
+"not enough memory".
 
 The command line reads the environment first and the keychain after. The
 app turns that round with `PreferSavedKeys` as it starts, so the key saved

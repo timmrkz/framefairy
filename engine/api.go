@@ -246,7 +246,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 						attempt, maxAttempts)
 					continue
 				}
-				return nil, nil, renderErr("the API did not respond within 10 minutes")
+				return nil, nil, saidErr("%s did not answer within 10 minutes. Try again in a few minutes.", p.Title)
 			}
 			if attempt < maxAttempts {
 				e.Log.Warn("network error (%s), retrying in %ss", Scrub(err.Error(), 80),
@@ -257,7 +257,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				delay = min(delay*2, 60)
 				continue
 			}
-			return nil, nil, renderErr("cannot reach the API: %s", Scrub(err.Error(), 200))
+			return nil, nil, unreachable(p, err)
 		}
 		if stream && response.StatusCode >= 200 && response.StatusCode <= 299 {
 			read := readClaudeStream
@@ -282,10 +282,14 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 			refused, fromServer := asStreamError(err)
 			worthAgain := !heard && attempt < maxAttempts && (!fromServer || refused.transient())
 			if !worthAgain {
-				if fromServer {
-					return nil, nil, renderErr("the API reported an error: %s", Scrub(refused.Error(), 400))
+				if fromServer && refused.transient() {
+					return nil, nil, busyErr(p, refused.message)
 				}
-				return nil, nil, renderErr("the API's answer broke off: %s", Scrub(err.Error(), 200))
+				if fromServer {
+					return nil, nil, saidErr("%s stopped with an error: %s", p.Title, sentence(Scrub(refused.message, 400)))
+				}
+				return nil, nil, saidErr("The answer from %s broke off. Try again. The system said: %s",
+					p.Title, Scrub(err.Error(), 200))
 			}
 			e.Log.Warn("the API's answer broke off (%s), retrying in %ss", Scrub(err.Error(), 80),
 				fixed(delay, 0))
@@ -314,7 +318,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				delay = min(delay*2, 60)
 				continue
 			}
-			return nil, nil, renderErr("cannot reach the API: %s", Scrub(readErr.Error(), 200))
+			return nil, nil, unreachable(p, readErr)
 		}
 
 		if response.StatusCode < 200 || response.StatusCode > 299 {
@@ -350,12 +354,7 @@ func (e *Engine) post(ctx context.Context, p Provider, build func(prefill bool) 
 				e.Log.Detail("the API returned 401: %s", Scrub(detail, 400))
 				return nil, nil, refusedKey(p, source)
 			}
-			hint := ""
-			switch code {
-			case 400:
-				hint = " The request itself was refused, so this will not succeed on a retry."
-			}
-			return nil, nil, renderErr("the API returned %d: %s%s", code, Scrub(detail, 400), hint)
+			return nil, nil, apiRefused(p, code, detail)
 		}
 
 		if logDir != "" {
@@ -646,8 +645,11 @@ func (e *Engine) CallAPI(ctx context.Context, prompt, model string, maxTokens in
 		}
 		// The whole request, not half of it, so the log shows what the model
 		// was actually asked.
-		_ = afero.WriteFile(e.Files, filepath.Join(logDir, tag+"-prompt.txt"),
-			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644)
+		path := filepath.Join(logDir, tag+"-prompt.txt")
+		if afero.WriteFile(e.Files, path,
+			[]byte("=== system ===\n"+system+"\n\n=== user ===\n"+prompt), 0o644) == nil {
+			listen.prompt(path)
+		}
 	}
 	e.Log.Detail("POST %s model=%s max_tokens=%d prompt=%s chars", p.URL, model,
 		maxTokens, commas(runeLen(prompt)))
@@ -781,4 +783,65 @@ func (e *Engine) RepairJSON(ctx context.Context, broken, model, logDir string) (
 		return "{" + text, nil
 	}
 	return text, nil
+}
+
+// apiRefused says in words why a company answered a call with code and
+// body. Its errors are JSON with a message for people inside, and that
+// message is what is said, never the JSON around it. Asked again is a
+// busy company, after every try. The rest it refused. Issue #311.
+func apiRefused(p Provider, code int, body string) error {
+	message := providerMessage(body)
+	if transientCodes[code] {
+		return busyErr(p, message)
+	}
+	again := ""
+	if code == http.StatusBadRequest {
+		again = " Asking again will not change that."
+	}
+	if message == "" {
+		return saidErr("%s refused the request, with code %d.%s", p.Title, code, again)
+	}
+	return saidErr("%s refused the request: %s%s", p.Title, message, again)
+}
+
+// busyErr is a company that asked to be asked later on every try.
+func busyErr(p Provider, message string) error {
+	if message = sentence(Scrub(message, 300)); message != "" {
+		message = " " + p.Title + " said: " + message
+	}
+	return saidErr("%s is busy and did not answer after %d tries. Try again in a few minutes.%s",
+		p.Title, maxAttempts, message)
+}
+
+// unreachable is a company the call never got to, after every try.
+func unreachable(p Provider, err error) error {
+	return saidErr("Could not reach %s. Check the internet connection, then try again. The system said: %s",
+		p.Title, Scrub(err.Error(), 200))
+}
+
+// providerMessage is the message for people in a company's error, the
+// same place in Anthropic's JSON and in OpenAI's, as a sentence. It is
+// nothing when the body holds none.
+func providerMessage(body string) string {
+	var reply struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(body), &reply) != nil {
+		return ""
+	}
+	return sentence(Scrub(reply.Error.Message, 300))
+}
+
+// sentence is text ending on a full stop, or nothing when there is none.
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if last := text[len(text)-1]; last != '.' && last != '!' && last != '?' {
+		text += "."
+	}
+	return text
 }

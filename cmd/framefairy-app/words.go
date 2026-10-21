@@ -191,6 +191,43 @@ func (s *FrameFairy) Words(path string, from, to float64) ([]engine.WordView, er
 	return out, nil
 }
 
+// Sentences returns what the video says, as far as it has been heard, as
+// cards for searching it in the clip column: a card for every caption of
+// every clip that is not rejected, named by the clip's key, and cards of
+// sentences for what no clip keeps, see engine.SaidCards. Before the first
+// transcription there are none, which is an empty answer and not a
+// failure.
+func (s *FrameFairy) Sentences(path string) (cards []engine.SentenceView, err error) {
+	if !s.store.Known(path) {
+		return nil, errNotInLibrary
+	}
+	began := time.Now()
+	plans := plansOf(s.store.files, path)
+	var clips []engine.ClipSaid
+	// How long the cards took and how many there were, so a report of a
+	// transcript that came empty or slow says so. Never a word of them.
+	defer func() {
+		level := zerolog.DebugLevel
+		if err != nil {
+			level = zerolog.ErrorLevel
+		}
+		theLog.line(level, "files").Str("video", filepath.Base(path)).Int("plans", len(plans)).Int("clips", len(clips)).
+			Int("cards", len(cards)).Int64("ms", time.Since(began).Milliseconds()).Err(err).Msg("the cards of what was said")
+	}()
+	t, err := s.words(path)
+	if err != nil {
+		return nil, err
+	}
+	for _, summary := range plans {
+		of := summary.Said(t, s.captionLook(path, summary.Path))
+		for i := range of {
+			of[i].Key = filepath.Base(summary.Path) + "/" + of[i].Key
+		}
+		clips = append(clips, of...)
+	}
+	return engine.SaidCards(t, clips), nil
+}
+
 // SetWord corrects a word of one clip, typed in its caption box. Every
 // other clip still reads it as it was heard. A word typed empty is removed
 // from the clip, and a word the clip removed typed back in beside its

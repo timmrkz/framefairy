@@ -336,20 +336,27 @@ bar is what they were centred in. Everywhere else the system draws its own
 title bar above the app and this one is an ordinary header.
 
 The Go side measures and the stylesheet lays out. `FrameFairy.Chrome` answers
-four numbers in whole pixels, the title bar's height and the left edge,
-right edge and middle of those buttons, and the interface is told again
+three numbers in whole pixels, the title bar's height and the left and
+right edge of those buttons, and the interface is told again
 on its window's event whenever the answer changes, `chrome` for the app's
 window and `chrome-report` for the report window, each measured on its own: a resize, either way
 through fullscreen, another display, another scale, light or dark, back
 from the Dock. Nothing is ever moved, so there is nothing that can snap
-back, and nothing is measured on the page. The four numbers land on the
-shell as `--bar-h`, `--lights-l`, `--lights-r` and `--lights-y`, and the
-bar lays itself out from them. `--bar-h` is in `app.css` as well, which is
+back, and nothing is measured on the page. The three numbers land on the
+shell as `--bar-h`, `--lights-l` and `--lights-r`, and the bar lays itself
+out from them. `--bar-h` is in `app.css` as well, which is
 what the first frame uses and what every other system keeps. In native
 fullscreen there is no title bar and no buttons, so the height stays as it
 was and the name moves to the left edge rather than the bar collapsing.
 
-The name of what is on screen sits on the buttons' line. Its box is
+The name of what is on screen, and its label beside it, are centred in
+the bar a person sees. That is not the bar's middle: macOS draws the edge
+of the window over the top 2 points of the page, and the line at the foot
+takes the last point, so the name's box runs from under the edge to the
+line. macOS centres its buttons under the edge alone, half a point lower,
+and AppKit's frame for the close button says the middle of the whole bar,
+so neither is a measure for the name. Away from the buttons, on other systems and in fullscreen, the
+name is centred in the whole bar. The name's box is
 trimmed to the capitals and the baseline, so it is the letters that are
 centred and not the space a line of text reserves around them, and then it
 is padded back out so a name with a tail below the baseline, `YouTube.mp4`,
@@ -882,10 +889,9 @@ dashed frame with the shade round it, which laid a short over a part of
 the episode that is in none.
 
 All of that is one expression in the stylesheet, worked out from the size
-of the app itself and the tokens in `app.css`. Two things it cannot know
-come in as custom properties, the shape of the episode and the height of
-the line above the workspace that says its file is missing, and neither
-changes because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
+of the app itself and the tokens in `app.css`. The one thing it cannot
+know comes in as a custom property, the shape of the episode, and it does
+not change because the app was resized. So dragging the edge of the app costs no JavaScript at all and the
 workspace keeps up with the edge instead of arriving a frame behind it. The waveform is the
 one thing still told its size in pixels, because a canvas has to be, and
 nothing is laid out from the answer.
@@ -1991,6 +1997,194 @@ the one the video preview reads from when the episode opens, so asking
 costs no start later. A file with no picture, and one that is no video at
 all, said nothing at Add before and failed in the video preview after.
 
+### Searching what was said
+
+The transcript button in the head of the clip column, left of
+**Search**, a speech bubble with quotes in it, the mark Apple Podcasts
+puts on the button that opens an episode's transcript, searches
+everything the video says, as far as it has been heard (#366).
+Search finds clips with the model. This finds a moment yourself: a line
+found is a place in the video, and I and O make a clip there.
+
+- **The field takes the head's place.** A click on the transcript button
+  swaps the whole head, Clips, the count, the info mark and Search, for a
+  search field at the same height, with the keyboard in it. It says
+  Search transcript in a grey darker than a label, because the browser's
+  lighter grey read like something already typed, found by Tim. The cross in
+  the field gives the head and the clip cards back. There is no
+  shortcut to open it, because the app has no ⌘ shortcuts.
+- **A card for every caption, and for every sentence between.** While
+  the field is open, the column shows what was said as cards, each with
+  its time at the head and its words under it, `engine.SaidCards`. A
+  clip's cards are its captions, one card a caption, so a block in the
+  video preview, a block on the clip timeline and a card here are one
+  thing in three places, found by Tim. A card reads what its caption
+  shows, a word corrected in the caption box among it. Two clips over
+  each other each have their cards of the same words. What no clip keeps
+  is in sentences, the engine's, `engine.Sentences`, the lines the model
+  reads grouped the way the stories recipe groups them. A long sentence
+  is more than one card: a card ends at a line once it runs 8 seconds,
+  and never runs more than 12. Cards of twenty seconds and more were too
+  much to read as one place, found by Tim. A sentence card is also cut at
+  every edge of what a clip keeps, so it never holds a word a clip shows.
+- **The clips stand out.** A card of a clip wears the chosen clip's
+  accent edge, the clip's name next to its time and its words a step
+  below white. The edge is one and the same in both lists, `.clip-edge`
+  in `app.css`: a bar 4 px wide down the card's left side, which the
+  card's rounded corners cut off straight. In the transcript it curved
+  round the corners and was a pixel narrower, found by Tim. Every other card is in the grey of a label, and the words
+  that answer what is typed are white in every card, so they stand out.
+- **Word for word first, then with a slip.** With nothing typed, every
+  card is there. Typing keeps the cards that hold what was typed. Only
+  where no card holds it, the cards where every word typed is a word of
+  the card typed with a slip, a letter too many, too few, wrong or two
+  swapped, `near` in `lib/match.ts`. A word of up to seven letters may
+  have one slip and a longer one two, two letters none, and from five
+  letters on it may be the start of a longer word. So arrm finds Arm and
+  genomen finds genommen. The font list's way of finding a name, by its
+  letters in order with gaps, found Verteidigungsministers for ernste in
+  a transcript, found by Tim. The words that answer are bold. What is typed
+  is read from the top of the list, wherever the hand had scrolled it.
+  The field says in grey, before its cross, how many cards match, the
+  number fading in anew as it changes. Where nothing matches, the list
+  says No matches.
+- **A card is a place.** A click puts the playhead on its words, and a
+  card of a clip makes that clip the one worked on, with the list left
+  where it is. The other way round, the playhead put anywhere else, on
+  the clip timeline, the range picker or a caption block, brings the card
+  it is in into view, or the next card where nothing is said. A part not
+  transcribed yet is a place too, so the playhead in one brings its
+  dashed card, not the next words heard after it. The card of the
+  playhead is marked in the grey the chosen clip wears in the clip list.
+  The list follows a video that plays the way the clip timeline does, by
+  turning the page: while the card of the playhead is in view the list
+  stands still, and once the card is out of view, or going out of it at
+  the foot, it comes to the top, found by Tim. In a pause between two
+  captions of a clip the caption before stays the card until the next
+  begins. Only the playhead moving moves the list, so the hand can
+  scroll it while the video stands. The playhead put again in the card
+  it stands in, and playing, bring the card back into view, wherever the
+  hand had scrolled. Cards that come in above the ones in view, as the
+  transcript grows, leave the ones in view where they stand: WebKit
+  keeps no anchor of its own, so the card of the playhead was pushed out
+  at the foot and nothing brought it back.
+  A search let go of, by Escape or by taking the words away, goes back to
+  the card of the playhead, the one it stood at before or the one clicked
+  in the search, never to the top of the whole transcript. The search
+  opens at the playhead, and the clip list comes back where it was when
+  the search closes, the chosen clip in view: the two take turns in one
+  scrolled column, and each came back where the other had been.
+- **The space bar still plays.** With nothing typed in the field, the
+  space bar plays and stops and the field lets go of the keyboard,
+  because a space at the start of nothing is no search, found by Tim.
+  Stopping gives the field the keyboard back, so what is typed next is a
+  search again, unless the keyboard or the hand went somewhere else
+  while it played.
+- **Shift and the arrows up and down walk the cards.** While the
+  transcript is in the column, they walk its cards the way they walk the
+  clip list when that is shown, from the field too. The playhead goes
+  onto each card. A card walked to out of view turns the page, the way
+  playing does: walked down, it comes to the top, and walked up, to the
+  foot, so the page before is shown. A clip walked to in the clip list
+  turns the page the same way. Both were brought just into view, and
+  then went on standing at the foot as the walk went down, found by
+  Tim. The answers to what is
+  typed are walked from the first, down, or the last, up, and go round.
+  The whole transcript is walked from the card of the playhead, a
+  "Not transcribed yet" card among them, one card at a step either way.
+  Where a card runs on a little into the part after it, the playhead put
+  at the start of that part is in the part, not in the card, so a step
+  down no longer stands still at the card before it and a step up no
+  longer goes past it, found by Tim. A card clicked or walked to is the
+  card of the playhead for as long as the playhead is in it, so a card
+  that begins just before a part, a word heard at its edge, lights
+  itself when it is clicked and not the part, found by Tim. A search
+  walked and then let go of, by Escape, by taking the words away or by
+  its cross, puts the playhead and the chosen clip back where they stood
+  before the first step, the way a search through a document goes back
+  to where it began, found by Tim. Enter at a card walked to stays there,
+  and so does a card clicked or the playhead moved off the card walked
+  to, because then the person went where they meant to go.
+- **A press elsewhere closes a list.** A list open, the font list among
+  them, closes the moment anything else in the app is pressed, and the
+  keyboard goes to what was pressed, the way a menu on the Mac goes. The
+  font list open and the transcript button pressed left both open, with
+  the keyboard in the font list's field, found by Tim. See `Pick.svelte`.
+- **A failed read is said.** Cards that could not be read leave a line in
+  the list, The transcript could not be read, with the reason under the
+  pointer, until the next read works.
+- **One light.** Whatever is lit is lit one way, whether the hand is on
+  it or the keys brought it there. A card under the hand takes the grey
+  of the card the keys are on, in the transcript and in the clip list,
+  and the clip chosen is lit on the range picker and the clip timeline
+  the way the hand on its card lights it. The hand lit a card a step
+  less than the keys did, and the keys lit a clip's mark and frame a
+  step less than the hand did, found by Tim.
+- **One clip in every place.** The hand on a card a clip keeps lights
+  that clip on the range picker and the clip timeline, the way the hand
+  on its clip card does. In the list only the card under the hand is
+  lit, never every card of its clip with it. The space between two cards
+  belongs to them, half to the card above and half to the card below, so
+  the hand going from one card of a clip to the next never leaves the
+  clip dark for a moment, a flicker found by Tim. A clip chosen on the range picker or the clip timeline leaves
+  its first card where it is when it is in view, and otherwise puts it at
+  the top of the list, where the first card stands, and choosing it
+  again does it again. Every card is laid out at its own
+  height, never at a height guessed for the cards out of view, because a
+  guess put the place off as soon as the cards around it were laid out,
+  and WebKit keeps no anchor that would have made up for it. The accent
+  edge is the card's button's, so the grey a card takes under the hand
+  never covers it.
+- **What was not transcribed is said.** With nothing typed, a part of the
+  video the transcript has not reached yet is a dashed card in its place,
+  "Not transcribed yet", because the search cannot look there. With
+  something typed the list holds only what matches. While the field
+  is open, the range picker draws the same part under the minutes and
+  the window. A part is dots on nothing, a halftone grid, `--halftone`
+  in `app.css`, that rises from the foot and thins out upwards, with none
+  in the top third, so the minutes and their lines show through. A grey
+  wash under the dots hid them, found by Tim, who picked this one from a
+  sheet of seven. The dots are the grey of a card's edge at a share of
+  its strength, so they are quieter than the dashes and the minute
+  lines, because at full strength Tim found them too strong. A row and
+  a column left clear round them looked cut off, found by Tim. In a card
+  they are whole columns and rows, centred, with at least 2 px of room
+  inside the dashes on every side, because dots right on to the edge sat
+  too close to the dashes, found by Tim. The grid is worked out from the
+  card's own size, and the card's dashes run at the same pitch over
+  exactly the span of the dots, so every dash stands over a column of
+  dots or beside a row. The dashes the browser
+  drew went their own way round the dots, found by Tim. On the range
+  picker a part has no edge of its own, which Tim found the dots did
+  without, and its dots cover the whole part, to its foot and its sides,
+  as whole columns centred in the part, the same space on either side,
+  and the foot row a pixel up from the range picker's foot. A row and a
+  column left clear round them looked cut off, a pattern that started
+  wherever its grid fell looked off, and the foot row looked clutched to
+  the foot, all found by Tim. Lit, the part goes up
+  a step with the grey of every lit card, which the card's dashes
+  go into, the way every card's edge does, and its dots go up a step
+  too, `--halftone-lit`, keeping their fade. On the range picker the
+  range picker's own border stays over the lit part. The hand on a part
+  lights its card and the hand on a card lights its part, both ways
+  round, and the keys on its card light the part as well, the same
+  way. Walked to with the keys it lit nothing on the range picker,
+  found by Tim. The parts give way as the work hears, from what is heard, not
+  from the transcript, which is saved in pieces: a search hearing half an
+  hour took the parts away in thirds, found by Tim. While the work hears
+  into a part, its dots stand still, laid from its right edge, which
+  never moves, and its left edge wipes over them as it goes. Centred, the
+  pattern walked back and forth as the edge passed, found by Tim. Once
+  the work stops, the dots are centred in the part again.
+- **Escape steps back wherever the keyboard is**, unless the keyboard is
+  in another field. The first takes back what was typed, so the whole of
+  what was said is there again, and the next closes the search. Tim
+  scrolled the sentences, pressed Escape and nothing happened, because
+  the field no longer had the keyboard.
+- **The sentences are there when it opens.** They are read once the video
+  opens and kept, and read again when the transcript hears more, so the
+  column never stands empty for a moment after the transcript button.
+
 ### Toasts
 
 What goes wrong with no place of its own on screen is said in a toast,
@@ -2024,8 +2218,23 @@ else reads as a mistake. Every toast and how it went is in the log,
 went.
 
 What has a place of its own keeps it: a clip that failed says so on its
-card, a search that stopped in its row, a missing file in the line over
-the workspace, and what dictation did not hear beside the microphone.
+card, a search that stopped in its row, and what dictation did not hear
+beside the microphone. Why is said in a toast, whole, issue #311. A
+search that failed says Failed with Continue in its row and why in a
+toast, which offers Report: Report a Problem opens with the toast's
+words written in its field, after what was there, and a report window
+already open is handed them to write in, see `ReportAbout` in
+`bugs.go`. Cut to one line in the row, the reason lost the part that
+said what to do, and Tim read "Anthropic is busy and did not a…".
+
+A video whose file is gone says so in a toast as the workspace finds it
+gone, and its video preview shows nothing of what it showed. A gone file
+was once a red line over the workspace, which pushed everything down,
+and a toast said it again because the clip list asked for the file. The
+clip list of such a video stays as it was. The workspace reads the video
+again whenever the library, read as the app comes to the front, says
+otherwise than it does about the file, so a file put back in Finder
+shows again in the video preview as the sidebar sees it.
 
 ### The colour picker
 

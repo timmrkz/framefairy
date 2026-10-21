@@ -122,6 +122,10 @@ type Options struct {
 	HighlightColour string
 	NoHighlight     bool
 	DryRun          bool
+
+	// wrote hears from the search what it wrote, for a comparison, see
+	// searchWrote.
+	wrote *searchWrote
 }
 
 // DefaultOptions are the defaults the command line documents.
@@ -291,7 +295,7 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	e.UseTools(opts.FFmpeg, opts.FFprobe)
 
 	if !exists(e.Files, opts.Source) {
-		return nil, fmt.Errorf("source not found: %s", opts.Source)
+		return nil, videoGone(opts.Source)
 	}
 	if opts.Planner != "local" && opts.Planner != "api" {
 		return nil, errors.New("the planner must be local or api")
@@ -344,6 +348,9 @@ func (e *Engine) prepare(ctx context.Context, opts Options, ask *Window) (*runne
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, e.fail(ctx, ctx.Err())
+		}
+		if inWords(err) {
+			return nil, err
 		}
 		return nil, fmt.Errorf("cannot read %s: %w", opts.Source, err)
 	}
@@ -559,6 +566,7 @@ func (r *runner) plan(ctx context.Context) error {
 			Recipe:   opts.Recipe,
 			Switches: opts.Switches,
 			PlanPath: planPath,
+			wrote:    opts.wrote,
 		})
 	if err != nil {
 		return e.planFailed(ctx, err)
@@ -972,9 +980,10 @@ func (e *Engine) planFailed(ctx context.Context, err error) error {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return e.fail(ctx, err)
 	}
-	// A model that does not fit says so as it is: its first sentence is
-	// what the row of the search shows, see ErrNoRoom.
-	if errors.Is(err, ErrNoRoom) {
+	// A model that does not fit, and anything else already said in a
+	// person's words, says so as it is: its first sentence is what the
+	// row of the search shows, see ErrNoRoom and saidErr.
+	if errors.Is(err, ErrNoRoom) || inWords(err) {
 		return err
 	}
 	return fmt.Errorf("planning failed: %w", err)

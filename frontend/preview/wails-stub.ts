@@ -762,6 +762,25 @@ function handHeard(h: FakeHand): [number, number] | null {
   if (now.state === "running" || now.state === "done") return [a, b];
   return null;
 }
+// What the video says, sentence by sentence, from the words the transcript
+// on disk holds: every round of the sample sentence is one sentence.
+function sentences() {
+  const parts = heardParts();
+  const said = allWords().filter((w) => parts.some(([a, b]) => w.start >= a && w.end <= b));
+  const out: { start: number; end: number; text: string }[] = [];
+  let run: typeof said = [];
+  const close = () => {
+    if (run.length) out.push({ start: run[0].start, end: run[run.length - 1].end, text: run.map((w) => w.text).join(" ") + "." });
+    run = [];
+  };
+  for (const w of said) {
+    const last = run[run.length - 1];
+    if (last && (w.text === "Und" || w.start - last.end > 1)) close();
+    run.push(w);
+  }
+  close();
+  return out;
+}
 // What the transcript on disk has heard: from the start as far as the
 // searches got, and the parts the clips made by hand had heard.
 function heardParts(): [number, number][] {
@@ -1408,12 +1427,12 @@ const Answers = {
         if (location.search.includes("full") && args[0] !== "report") {
           // Native fullscreen: the title bar is gone and the buttons with
           // it, and the bar keeps the height it had.
-          return Promise.resolve({ bar: 52, left: 0, right: 0, middle: 0 });
+          return Promise.resolve({ bar: 52, left: 0, right: 0 });
         }
         return Promise.resolve(
           location.search.includes("mac")
-            ? { bar: 52, left: 20, right: 92, middle: 26 }
-            : { bar: 0, left: 0, right: 0, middle: 0 },
+            ? { bar: 52, left: 20, right: 92 }
+            : { bar: 0, left: 0, right: 0 },
         );
       case "ChosenClip":
         return Promise.resolve((window as any).__chosen ?? "");
@@ -1808,6 +1827,8 @@ const Answers = {
           captions: { captions: captionCues(id, out.pieces), style: {} },
         });
       }
+      case "Sentences":
+        return Promise.resolve(sentences());
       case "Words":
         if (location.search.includes("transcribing")) return Promise.resolve([]);
         // What the video says, as it was heard, the way the Go side answers.

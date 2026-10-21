@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"framefairy/internal/standin"
 )
 
 // A stand-in for ffmpeg or ffprobe that writes a line to asked for every
@@ -33,7 +35,7 @@ case "$*" in
 *v:0*) printf '{"streams":[{"width":1920,"height":1080,"r_frame_rate":"25/1","avg_frame_rate":"25/1","start_time":"0.000000","color_primaries":"bt709"}],"format":{"duration":"60.0","start_time":"0.000000","format_name":"mov,mp4"}}' ;;
 esac
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := standin.Write(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path, func() int {
