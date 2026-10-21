@@ -13,12 +13,14 @@ function play(
   clock: (pos: number) => number = (p) => p,
   skip: (i: number) => boolean = () => false,
   source: Source = "stamp",
+  // How the page's clock rounds a time, milliseconds.
+  round: (ms: number) => number = (ms) => ms,
 ): Even {
   const e = new Even();
   let shown = -1;
   for (let i = 0; i * (1 / hz) < seconds; i++) {
     if (skip(i)) continue;
-    const at = (i * 1000) / hz;
+    const at = round((i * 1000) / hz);
     const pos = clock(i / hz);
     e.tick(at, pos, source);
     const k = Math.floor(pos * fps + 1e-9);
@@ -45,6 +47,16 @@ describe("Even", () => {
     expect([...play(30, 60, 2).evenness.held.keys()]).toEqual([2]);
     expect([...play(30, 120, 2).evenness.held.keys()]).toEqual([4]);
     expect(play(25, 120, 2).evenness.uneven).toBe(0);
+  });
+
+  test("a screen of 120 Hz reads as 120 Hz on a clock of whole milliseconds, and 25 frames a second on it as even", () => {
+    // WebKit gives the page its times to the whole millisecond, so the
+    // animation frames come 8 and 9 ms apart. Tim's Mac on 21 October.
+    const e = play(25, 120, 4, undefined, undefined, "held", Math.round).evenness;
+    expect(Math.round(1000 / e.refresh)).toBe(120);
+    expect([...e.held.keys()].sort()).toEqual([4, 5]);
+    expect(e.uneven).toBe(0);
+    expect(e.missed).toBe(0);
   });
 
   test("a refresh the page missed is counted, and the frame due on it stood a refresh too short", () => {

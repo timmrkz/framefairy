@@ -341,6 +341,15 @@ comes up, `freeRefresh` in `cmd/framefairy-app/refresh.go`, and the log
 says whether it took and what the screen can do. A page asks for an
 update only while something moves, so a still app costs nothing more.
 
+The second report, three plays with the hold lifted, said the screen can
+show 120 frames a second and the page updated that often. Of 1576
+frames, 317 stood 4 refreshes, 1254 stood 5 and 5 stood 6, 33 to 50 ms
+became 33 to 42, and Tim found it smoother. The 5 that stood 6 each
+stood over a refresh the page missed, 27 in about 63 s of play. WebKit
+gives the page its times to the whole millisecond, so the refresh is
+the mean of the times between animation frames, not the most common
+one, which read 8 ms and a screen of 125 Hz.
+
 ## Colour
 
 **What Tim saw** was a pale, foggy picture: black shown as a grey of 17

@@ -25,8 +25,8 @@
 export type Source = "stamp" | "held" | "plain";
 
 export type Evenness = {
-  // The screen's refresh, milliseconds, the most common time between two
-  // animation frames.
+  // The screen's refresh, milliseconds, from the time between two
+  // animation frames, see refreshOf.
   refresh: number;
   ticks: number;
   // Animation frames that came a refresh or more late, the refreshes they
@@ -83,7 +83,7 @@ export class Even {
   }
 
   get evenness(): Evenness {
-    const refresh = median(this.gaps);
+    const refresh = refreshOf(this.gaps);
     let missed = 0;
     let missedRefreshes = 0;
     let longest = 0;
@@ -143,6 +143,19 @@ export function describeEvenness(e: Evenness): string {
     `the clock off a straight line by ${e.stray.toFixed(1)} ms typically and ${e.mostStray.toFixed(1)} ms at most, running at ${e.rate.toFixed(4)} of the page's clock`,
     `the moment heard from the output timestamp ${s.stamp} times, held to the sound card's time ${s.held}, the sound card's time less its latency ${s.plain}`,
   ].join(", ");
+}
+
+// The screen's refresh, from the times between animation frames: the mean
+// of those near the most common one, so a refresh missed does not count.
+// The mean and not the most common time itself, because WebKit gives the
+// page its times to the whole millisecond: at 120 Hz they come 8 and 9 ms
+// apart, and the most common, 8, made a screen of 125 Hz, on which every
+// frame of 25 a second that stood its 4 refreshes of the true 8.33 ms
+// counted as uneven. Tim's second report said 92 of 446.
+function refreshOf(gaps: number[]): number {
+  const typical = median(gaps);
+  const near = gaps.filter((g) => g > typical * 0.5 && g < typical * 1.5);
+  return near.length ? near.reduce((a, b) => a + b, 0) / near.length : typical;
 }
 
 function median(xs: number[]): number {
