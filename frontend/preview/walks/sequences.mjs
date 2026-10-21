@@ -6534,12 +6534,34 @@ for (const seq of toWalk) {
           // A shade clicked in the colour picker at the end of the
           // colours, or none, and the picker left with Return or Escape,
           // then the menu with Escape.
+          // The picker lies over the menu from the moment it is there. For
+          // a frame it lay under it, so a click on its shade made that soon
+          // pressed Remove, which CI's quick machines did now and then,
+          // issue #401: its box is read the moment it is put in the page.
+          await page.evaluate(() => {
+            window.__pickerOver = null;
+            const seen = new MutationObserver(() => {
+              const pop = document.querySelector(".colour-pop");
+              if (!pop) return;
+              seen.disconnect();
+              const box = pop.closest("[data-bits-floating-content-wrapper]");
+              window.__pickerOver = getComputedStyle(box).zIndex;
+            });
+            seen.observe(document.body, { childList: true, subtree: true });
+          });
           await menu.locator('button[aria-label="Another colour"]').click();
-          const shade = await page.locator('.colour-pop [aria-label="Shade"]').boundingBox();
-          if (how.startsWith("a colour of its own")) await page.mouse.click(shade.x + shade.width * 0.8, shade.y + shade.height * 0.3);
+          await page.waitForFunction(() => window.__pickerOver !== null);
+          const over = await page.evaluate(() => [window.__pickerOver, getComputedStyle(document.querySelector(".video-menu").closest("[data-bits-floating-content-wrapper]")).zIndex]);
+          if (!wrong && !(Number(over[0]) >= Number(over[1])))
+            wrong = `the colour picker opened at z-index ${over[0]}, under the menu at ${over[1]}, so a click on it lands on the menu`;
+          // A click Playwright makes on the shade itself, so it says so if
+          // anything else would take it.
+          const shade = page.locator('.colour-pop [aria-label="Shade"]');
+          const box = await shade.boundingBox();
+          if (how.startsWith("a colour of its own")) await shade.click({ position: { x: box.width * 0.8, y: box.height * 0.3 } });
           await page.keyboard.press(how.endsWith("Return") ? "Enter" : "Escape");
           await page.locator(".colour-pop").waitFor({ state: "detached" });
-          if (!(await menu.isVisible())) wrong = `${how.split(", ").pop()} in the colour picker closed the menu too`;
+          if (!(await menu.isVisible())) wrong ||= `${how.split(", ").pop()} in the colour picker closed the menu too`;
           // Escape put back what was there before the picker opened: the
           // words in the field and the colour chosen. Tim's review found a
           // video with no label given its folder's name in white.

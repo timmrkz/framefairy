@@ -745,6 +745,15 @@ input[type="password"] {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
 }
 
+/* The box bits-ui places a panel in takes the panel's z-index only once it
+   has read it, a frame after the panel opens. For that frame the colour
+   picker lay under the video's menu it opened from, and a click on its
+   shade landed on Remove, issue #401. So the box lies over the app from
+   its first frame, and a panel opened from another is over it at once. */
+[data-bits-floating-content-wrapper] {
+  z-index: 60;
+}
+
 /* A video's label: its words in a pill of its own colour, the way Finder
    draws a tag. The colour is the accent colour picked for it, laid on the
    dark as a wash with a line round it and the words in a light shade of
