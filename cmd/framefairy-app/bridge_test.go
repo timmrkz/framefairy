@@ -410,6 +410,12 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.model.hangs(q.Get("hang") == "1")
 		answer(w, nil, nil)
 	})
+	// The person dictating stops talking, and the microphone hears
+	// nothing more once the phrase it is on has been said.
+	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
+		b.silent.Store(r.URL.Query().Get("silent") == "1")
+		answer(w, nil, nil)
+	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("ms") == "hold" {
@@ -670,6 +676,9 @@ type bridge struct {
 	// channels serves the channel list and the builds the Updates page is
 	// walked with, see /updates.
 	channels *channelServer
+	// silent says the person dictating has stopped talking, see
+	// /microphone.
+	silent *atomic.Bool
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -807,18 +816,25 @@ func openBridge(t *testing.T) *bridge {
 	engine.UseFontFolders(installed, []string{"/Library/Fonts"})
 	t.Cleanup(func() { engine.UseFontFolders(nil, nil) })
 	// Dictate on Report a Problem records two seconds of a hum, then a
-	// pause and a second and a half more, four times over, as fast as it
+	// pause and a second and a half more, over and over, as fast as it
 	// would be said, which the stand-in hears as words: what came before a
 	// pause is settled while the recording runs, and there is more to be
-	// heard for 12 s. A busy runner reached a click into the words being
-	// heard only once the last of a shorter one was heard, and then
-	// nothing more came.
+	// heard until the recording stops, or until a walk has the person
+	// fall silent, see /microphone. A busy runner reached a click into
+	// the words being heard only once the last of a shorter one was
+	// heard, and then nothing more came. With 12 s of it, a busy machine
+	// reached the end of it in the walk of Shift+Enter, issue #424: the
+	// last words shown as being heard were then written down as none,
+	// since the stand-in hears new words each time, and nothing was said
+	// after the new line.
+	silent := &atomic.Bool{}
 	openMicrophone = func() microphone {
-		talk := tone(2)
-		for range 4 {
-			talk = slices.Concat(talk, hush(1), tone(1.5))
-		}
-		return &playingMicrophone{samples: talk, live: true}
+		return &playingMicrophone{samples: tone(2), live: true, more: func() []float32 {
+			if silent.Load() {
+				return nil
+			}
+			return slices.Concat(hush(1), tone(1.5))
+		}}
 	}
 	// The desk is started again with a bus, before anything is in it.
 	d.svc.jobs.shutDown()
@@ -834,7 +850,7 @@ func openBridge(t *testing.T) *bridge {
 		return desk
 	}
 	showReport = func(string) error { return nil }
-	b := &bridge{t: t, d: d, words: words, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
+	b := &bridge{t: t, d: d, words: words, silent: silent, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
 		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
@@ -1298,6 +1314,10 @@ func (b *bridge) reopen() ([]Job, error) {
 //
 // On the real disk: it puts back the library where ffmpeg and the episode's decoder read the episode.
 func (b *bridge) reset() error {
+	// A recording the walk before left running talks on, and the next
+	// walk's Dictate would be given it.
+	b.d.svc.CancelListening()
+	b.silent.Store(false)
 	b.words.release()
 	b.words.pace.Store(0)
 	b.d.model.hangs(false)

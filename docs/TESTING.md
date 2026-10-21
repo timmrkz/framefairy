@@ -451,8 +451,8 @@ puts the cursor so many characters in, `dictate` presses Dictate, sees
 it say Stop in the same frame, the words appear grey while it
 listens and the microphone move with the hum, then ends it with Stop,
 Enter or Escape, or with `ends` lets it stop by itself and say why, or
-with `start` only starts it, with `hearing` waits for more to be heard
-and with `settled` waits for the words before the pause, `click heard`
+with `start` only starts it, with `hearing` waits for more to be said
+and settled, so it is kept however the recording ends, and with `settled` waits for the words before the pause, `click heard`
 clicks into the first word still being heard and sees it settled with
 the cursor in it, with what the Go side tells the window held back from
 reading the word to the click, `window.__pauseEvents` in
@@ -461,10 +461,11 @@ click would land in other words than the ones it read,
 `report reads`, the field reads so, with `*` for whatever the speech
 model heard, and `report as before`, it reads what it did then. The
 bridge's microphone plays two seconds of a hum, then a pause and a
-second and a half more, four times over, as fast as they would be said,
-so pieces are settled while it listens and there is more to hear for
-12 s, and then nothing, and a recording there stops by itself after 8 s
-without a word. `field` clicks a field by its selector and
+second and a half more, over and over, as fast as they would be said,
+so pieces are settled while it listens and there is more to hear until
+it stops. With `ends` the person falls silent once the phrase they are
+on is said, through `/microphone?silent=1`, and a recording there stops
+by itself after 8 s without a word. `field` clicks a field by its selector and
 types, and `field reads` says what it holds. `escape lets go` clicks a
 control or field, presses Escape and sees nothing left open, nothing
 holding the keyboard and no ring. For a clip of two cameras: `add cameras`, a video filmed by two cameras,

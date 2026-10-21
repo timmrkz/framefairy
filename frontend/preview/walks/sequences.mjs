@@ -422,7 +422,7 @@
 //                      open, and two going down when it stops, however
 //                      it stops.
 //                      "start" only starts it, "hearing" waits for more
-//                      to be heard, "settled" waits for words
+//                      to be said and settled, "settled" waits for words
 //                      before a pause to be settled, and a recording
 //                      already running is only ended
 //   ["click heard"]    clicks into the first word still being heard and
@@ -7860,12 +7860,35 @@ for (const seq of toWalk) {
       case "dictate": {
         const button = page.locator("button.dictate");
         if (arg === "hearing") {
-          // More is heard after what was there.
-          const more = await page
-            .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
-            .then(() => true)
-            .catch(() => false);
-          if (!more) wrong = "nothing more was heard";
+          // More is said after what was there, and settled. The stand-in
+          // speech model hears new words each time it is asked, so the
+          // words shown as being heard when the recording stops can be
+          // written down as none, and the walk of Shift+Enter then found
+          // nothing said after the new line on a busy machine, issue #424.
+          // What is settled is kept however the recording ends.
+          const more = await page.locator(".telling").evaluate(
+            (f) =>
+              new Promise((done) => {
+                const button = document.querySelector("button.dictate");
+                const settled = () => {
+                  const copy = f.cloneNode(true);
+                  copy.querySelector(".hearing")?.remove();
+                  return copy.textContent;
+                };
+                const was = settled();
+                const look = () => {
+                  const ended = button.getAttribute("aria-label") === "Dictate";
+                  if (settled() === was && !ended) return;
+                  seen.disconnect();
+                  done(!ended);
+                };
+                const seen = new MutationObserver(look);
+                seen.observe(f, { subtree: true, childList: true, characterData: true });
+                seen.observe(button, { attributes: true, attributeFilter: ["aria-label"] });
+                look();
+              }),
+          );
+          if (!more) wrong = "the recording stopped before anything more was said and settled";
           break;
         }
         if (arg === "settled") {
@@ -8035,7 +8058,9 @@ for (const seq of toWalk) {
         }
         if (arg === "button") await button.click();
         else if (arg === "ends") {
-          // Nobody presses anything: it stops by itself and says why.
+          // Nobody presses anything, and nobody talks any more: it stops
+          // by itself and says why.
+          await control(url, "/microphone?silent=1");
           const why = await page
             .waitForFunction(() => /without a word/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 30000 })
             .then(() => true)
