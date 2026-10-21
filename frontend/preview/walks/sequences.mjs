@@ -718,8 +718,9 @@
 //                      under the pointer, then lets the reads work, opens it
 //                      again and sees the cards with nothing said of it
 //   ["heard some"]     waits until the engine has a sentence of the video
-//                      on screen, and for the piece of audio being heard
-//                      then to land
+//                      on screen, or n with ["heard some", n], asking again each time the work says how
+//                      far it heard. ["speech", "hold"] after it lets the
+//                      piece of audio being heard then land
 //   ["font list"]      the Font list hangs on the field's left edge with
 //                      its corners, every row is as tall as the field and
 //                      square, nothing stands between the search field and
@@ -1101,7 +1102,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -1516,7 +1517,7 @@ export const sequences = [
       ["speech", 1500],
       ["add", 600],
       ["heard some"],
-      ["speech", 20000],
+      ["speech", "hold"],
       ["search said", ["*", 1]],
       ["speech", 0],
     ],
@@ -1550,7 +1551,7 @@ export const sequences = [
     // walked to with the keys lit nothing on the range picker, where the
     // hand on its card lit it there. Whatever is lit is lit one way.
     name: "the hand and the keys light a card of the transcript and a part not transcribed yet the same",
-    steps: [["speech", 1500], ["add", 600], ["heard some"], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
+    steps: [["speech", 1500], ["add", 600], ["heard some", 3], ["speech", "hold"], ["one light", "said"], ["speech", 0]],
   },
   {
     // Found by Tim on 20 October: the clip chosen with the keys had its
@@ -8789,40 +8790,55 @@ for (const seq of toWalk) {
       case "parts give way": {
         // With the transcript open while the work hears, where the first
         // part not transcribed yet begins, against how far the saved
-        // transcript reaches, for a few seconds.
+        // transcript reaches, over nine of the job's news.
         const path = await episodeOn(page);
         await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
         await watch.step("click", s);
         // Where its dots end on the right, too, which must not move while
         // its left edge does: centred, the pattern walked back and forth
-        // as the edge passed over it, found by Tim.
-        const edges = [];
-        const dots = [];
+        // as the edge passed over it, found by Tim. Read in every frame
+        // until the work has told the app how far it heard nine times,
+        // with what the saved transcript holds asked after each.
+        const from = await news(page);
+        const times = 9;
+        const sampled = page.evaluate(
+          ([from, times]) =>
+            new Promise((done) => {
+              const seen = [];
+              const tick = () => {
+                const u = document.querySelector(".track .unheard");
+                let now = null;
+                if (u) {
+                  const box = u.getBoundingClientRect();
+                  const cs = getComputedStyle(u, "::before");
+                  now = {
+                    left: Math.round(box.left * 10) / 10,
+                    end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
+                    side: parseFloat(cs.left),
+                  };
+                }
+                if (!seen.length || JSON.stringify(seen.at(-1)) !== JSON.stringify(now)) seen.push(now);
+                if ((window.__news.job ?? 0) >= from + times) done(seen);
+                else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            }),
+          [from, times],
+        );
         const saves = new Set();
-        const until = Date.now() + 9000;
-        while (Date.now() < until) {
-          const seen = await page.evaluate(() => {
-            const u = document.querySelector(".track .unheard");
-            if (!u) return null;
-            const box = u.getBoundingClientRect();
-            const cs = getComputedStyle(u, "::before");
-            return {
-              left: Math.round(box.left * 10) / 10,
-              end: Math.round((box.left + parseFloat(cs.left) + parseFloat(cs.width)) * 100) / 100,
-              side: parseFloat(cs.left),
-            };
-          });
-          edges.push(seen?.left ?? null);
-          if (seen) dots.push(seen);
+        for (let seen = from; seen < from + times; ) {
+          seen = await nextNews(page, seen);
           const status = await ask(page, "Episode", path).catch(() => null);
           saves.add(JSON.stringify(status?.heard ?? null));
-          await page.waitForTimeout(150);
         }
+        const samples = await sampled;
+        const edges = samples.map((d) => d?.left ?? null);
+        const dots = samples.filter(Boolean);
         await page.keyboard.press("Escape");
         const moves = edges.filter((v, i) => i && v !== null && edges[i - 1] !== null && v !== edges[i - 1]).length;
         if (edges.every((v) => v === null)) wrong = "no part was not transcribed yet while the work heard";
         else if (moves < Math.max(4, 2 * saves.size))
-          wrong = `the first part not transcribed yet moved ${moves} times in 9 s while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
+          wrong = `the first part not transcribed yet moved ${moves} times over ${times} of the job's news while the saved transcript changed ${saves.size - 1} times, so it gives way as the transcript is saved, not as the work hears`;
         else {
           // The samples taken while the edge moved, from the first move
           // to the last, the dots' right end in each.
@@ -9231,12 +9247,11 @@ for (const seq of toWalk) {
         break;
       }
       case "heard some": {
+        // Asked again each time the work says how far it heard, until the
+        // saved transcript holds a sentence, or as many as asked for.
         const path = await episodeOn(page);
-        const until = Date.now() + 60000;
-        while (Date.now() < until && !(await ask(page, "Sentences", path))?.length) await page.waitForTimeout(250);
-        // The piece of audio being heard as the speech model is held lands
-        // before the search looks.
-        await page.waitForTimeout(2500);
+        const least = arg ?? 1;
+        for (let seen = await news(page); ((await ask(page, "Sentences", path)) ?? []).length < least; ) seen = await nextNews(page, seen);
         await settled();
         break;
       }
@@ -9253,7 +9268,6 @@ for (const seq of toWalk) {
         await page.waitForSelector(".pick-list .pick-row");
         await page.locator('.listhead button[aria-label="Search the transcript"]').click();
         await watch.step("click", s);
-        await page.waitForTimeout(300);
         const seen = await page.evaluate(() => ({
           list: !!document.querySelector(".pick-list"),
           focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.placeholder ?? document.activeElement?.tagName ?? null,
@@ -9281,7 +9295,10 @@ for (const seq of toWalk) {
           break;
         }
         await page.locator('.listhead button[aria-label="Search the transcript"]').click();
-        await page.waitForTimeout(500);
+        // Once the read of the cards has failed and the list has had its
+        // frames to say so.
+        await page.waitForFunction(() => window.__calls.some((c) => c.name === "Sentences" && String(c.failed).includes("the disk went away")));
+        await settle(page);
         const failing = await page.evaluate(() => {
           // The failure is the answer here, so it is taken off the calls
           // that failed before the rules read them.
@@ -9295,7 +9312,6 @@ for (const seq of toWalk) {
         await watch.step("press", s);
         await page.locator('.listhead button[aria-label="Search the transcript"]').click();
         await watch.step("click", s);
-        await page.waitForTimeout(500);
         const again = await page.evaluate(() => ({
           failed: !!document.querySelector("ol.said li.failed"),
           cards: document.querySelectorAll("ol.said li[data-at]").length,
@@ -9359,8 +9375,7 @@ for (const seq of toWalk) {
         // The cards open at the playhead, not where the clip list was
         // scrolled to, found in the review of #367. Once the cards read
         // as it opens have come.
-        await page.waitForFunction(() => window.__pending === 0, null, { timeout: 10000 }).catch(() => {});
-        await page.waitForTimeout(100);
+        await settle(page);
         const opened = await page.evaluate(() => {
           const list = document.querySelector(".scroll.list");
           const ol = document.querySelector("ol.said");
@@ -9393,7 +9408,6 @@ for (const seq of toWalk) {
         // the list shows and the list could have stayed where it was.
         await page.keyboard.type("e");
         await watch.step("type", s);
-        await page.waitForTimeout(100);
         const typedTop = await page.evaluate(() => {
           const list = document.querySelector(".scroll.list");
           return { top: list.scrollTop, more: list.scrollHeight - list.clientHeight };
@@ -9580,7 +9594,6 @@ for (const seq of toWalk) {
         const field = page.locator('input[aria-label="Search transcript"]');
         await field.fill("qxzvqxzv");
         await watch.step("type", s);
-        await page.waitForTimeout(200);
         const none = await page.evaluate(() => ({
           says: document.querySelector("ol.said li.none")?.textContent.trim() ?? null,
           rows: document.querySelectorAll("ol.said li:not(.none)").length,
@@ -9593,7 +9606,6 @@ for (const seq of toWalk) {
         // the cards that hold them, found in the review of #367.
         await field.fill("sch");
         await watch.step("type", s);
-        await page.waitForTimeout(200);
         const short = await page.evaluate(() => document.querySelectorAll("ol.said li[data-at]").length);
         const holdShort = sentences.filter((x) => x.text.toLowerCase().includes("sch")).length;
         if (!wrong && holdShort && short !== holdShort) wrong = `${short} cards answer sch, and ${holdShort} hold it`;
@@ -9602,7 +9614,6 @@ for (const seq of toWalk) {
         const slip = word.slice(0, 2) + word.slice(1);
         await field.fill(slip);
         await watch.step("type", s);
-        await page.waitForTimeout(200);
         const slipped = await page.evaluate(() => [...document.querySelectorAll("ol.said li[data-at]")].map((li) => Number(li.dataset.at)));
         const missed = holds.find((x) => !slipped.some((at) => Math.abs(at - x.start) < 0.0005));
         if (!wrong && missed) wrong = `${slip} typed for ${word} finds ${slipped.length} cards and not "${missed.text}"`;
@@ -9610,7 +9621,6 @@ for (const seq of toWalk) {
         // for every part not transcribed yet.
         await field.fill("");
         await watch.step("type", s);
-        await page.waitForTimeout(200);
         const whole = await page.evaluate(() => ({
           holes: document.querySelectorAll("ol.said li.hole").length,
           count: document.querySelector(".listhead .search .saycount")?.textContent.trim() ?? null,
@@ -9654,7 +9664,6 @@ for (const seq of toWalk) {
         if (!wrong && clips.some((k) => !k.rejected)) {
           await field.fill("");
           await watch.step("type", s);
-          await page.waitForTimeout(200);
           const pair = await page.evaluate(() => {
             const cards = [...document.querySelectorAll("ol.said li[data-clip]")];
             const i = cards.findIndex((li, i) => li.nextElementSibling === cards[i + 1] && cards[i + 1]?.dataset.clip === li.dataset.clip);
@@ -9897,7 +9906,6 @@ for (const seq of toWalk) {
           });
           await page.mouse.click(part.x, part.y);
           await watch.step("click", s);
-          await page.waitForTimeout(300);
           const there = await page.evaluate(() => {
             const list = document.querySelector(".scroll.list");
             const box = list.getBoundingClientRect();
@@ -9941,14 +9949,13 @@ for (const seq of toWalk) {
               const box = list.getBoundingClientRect();
               list.scrollTop = hole.getBoundingClientRect().top - box.top > box.height / 2 ? 0 : list.scrollHeight;
             });
-            await page.waitForTimeout(100);
+            await nextPaint(page, 2);
             const again = await page.evaluate(() => {
               const r = [...document.querySelectorAll(".track .unheard")].at(-1).getBoundingClientRect();
               return { x: r.left + r.width / 4, y: r.top + r.height / 2 };
             });
             await page.mouse.click(again.x, again.y);
             await watch.step("click", s);
-            await page.waitForTimeout(300);
             const back = await page.evaluate(() => {
               const list = document.querySelector(".scroll.list");
               const box = list.getBoundingClientRect();
@@ -10035,7 +10042,6 @@ for (const seq of toWalk) {
           // not where the playhead was put before the search opened.
           await page.evaluate(() => document.querySelector(".track .clipmark.selected").click());
           await watch.step("click", s);
-          await page.waitForTimeout(200);
           await page.evaluate(() => {
             const list = document.querySelector(".scroll.list");
             list.style.overflowAnchor = "none";
@@ -10112,11 +10118,9 @@ for (const seq of toWalk) {
               const before = await topRow();
               await field.fill(word);
               await watch.step("type", s);
-              await page.waitForTimeout(200);
               if (how === "Escape") await field.press("Escape");
               else await field.fill("");
               await watch.step(how === "Escape" ? "press" : "type", s);
-              await page.waitForTimeout(200);
               const after = await topRow();
               if (!wrong && (!before.standing || before.clip !== chosenKey))
                 wrong = `the clip chosen on the range picker left ${before.top} at the top, not its card ${before.followed}`;
@@ -10137,7 +10141,6 @@ for (const seq of toWalk) {
             await field.focus();
             await page.keyboard.press("Space");
             await watch.step("press", s);
-            await page.waitForTimeout(250);
             const started = await page.evaluate(() => ({
               typed: document.querySelector(".listhead .search input")?.value ?? null,
               focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null,
@@ -10150,26 +10153,21 @@ for (const seq of toWalk) {
             else if (!started.playing) wrong = "the space bar in the empty search field did not play";
             else if (started.at < own[1].start && !first.standing)
               wrong = `playing from ${started.at.toFixed(2)} left ${first.top} at the top of a list scrolled away, not the card of the playhead ${first.followed}`;
-            const until = Date.now() + 20000;
-            let seen = null;
-            while (Date.now() < until) {
-              seen = await page.evaluate(() => {
-                const list = document.querySelector(".scroll.list");
-                const box = list.getBoundingClientRect();
-                const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
-                const li = document.querySelector("ol.said .pick.current")?.closest("li");
-                const r = li?.getBoundingClientRect();
-                const inView = !!r && r.top >= box.top + pad - 1 && r.bottom <= box.bottom - pad + 1;
-                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: li && inView ? Number(li.dataset.at) : null, clip: li?.dataset.clip ?? null };
-              });
-              if (seen.at >= own[1].start + 0.3) break;
-              await page.waitForTimeout(100);
-            }
+            // Read in the frame the playhead comes into the next caption,
+            // or stops before it.
+            const seen = await playedTo(page, own[1].start + 0.3, () => {
+              const list = document.querySelector(".scroll.list");
+              const box = list.getBoundingClientRect();
+              const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
+              const li = document.querySelector("ol.said .pick.current")?.closest("li");
+              const r = li?.getBoundingClientRect();
+              const inView = !!r && r.top >= box.top + pad - 1 && r.bottom <= box.bottom - pad + 1;
+              return { top: li && inView ? Number(li.dataset.at) : null, clip: li?.dataset.clip ?? null };
+            });
             await page.keyboard.press("Space");
             await watch.step("press", s);
             // Stopping gives the search field the keyboard back, the one
             // the space bar took it from, found by Tim.
-            await page.waitForTimeout(200);
             const stopped = await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName ?? null);
             // The card the playhead is in, or the one before it in a pause.
             const now = own.filter((x) => x.start <= seen.at).at(-1);
@@ -10190,7 +10188,6 @@ for (const seq of toWalk) {
             // leaves the list where it is.
             await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
             await watch.step("click", s);
-            await page.waitForTimeout(200);
             const both = await page.evaluate((rows) => {
               const list = document.querySelector(".scroll.list");
               const box = list.getBoundingClientRect();
@@ -10205,15 +10202,8 @@ for (const seq of toWalk) {
               await page.evaluate(() => document.activeElement?.blur());
               await page.keyboard.press("Space");
               await watch.step("press", s);
-              const until = Date.now() + 20000;
-              let at = 0;
-              let moved = null;
-              while (Date.now() < until && at < own[1].start + 0.3) {
-                const now = await page.evaluate(() => ({ at: Number(document.querySelector(".screen")?.dataset.playhead), scrolled: document.querySelector(".scroll.list").scrollTop }));
-                at = now.at;
-                if (now.scrolled !== both.scrolled) moved ??= now;
-                await page.waitForTimeout(50);
-              }
+              const frames = await playedTo(page, own[1].start + 0.3, () => ({ scrolled: document.querySelector(".scroll.list").scrollTop }), true);
+              const moved = frames.find((now) => now.scrolled !== both.scrolled);
               await page.keyboard.press("Space");
               await watch.step("press", s);
               if (moved) wrong = `playing on into the next card, in view, moved the list ${(moved.scrolled - both.scrolled).toFixed(0)} px at ${moved.at.toFixed(2)}`;
@@ -10222,7 +10212,6 @@ for (const seq of toWalk) {
           if (!wrong && own.length >= 2) {
             await page.locator(`ol.said li[data-row="s${own[0].start}|${chosenKey}"] button.pick`).click();
             await watch.step("click", s);
-            await page.waitForTimeout(200);
             await page.evaluate((row) => {
               const list = document.querySelector(".scroll.list");
               const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
@@ -10233,26 +10222,25 @@ for (const seq of toWalk) {
               list.style.flex = "none";
               list.style.height = `${Math.ceil(r.height + 2 * pad + 4)}px`;
             }, `s${own[0].start}|${chosenKey}`);
-            await page.waitForTimeout(100);
+            await nextPaint(page, 2);
             const from = await page.evaluate(() => document.querySelector(".scroll.list").scrollTop);
             await page.evaluate(() => document.activeElement?.blur());
             await page.keyboard.press("Space");
             await watch.step("press", s);
-            const until = Date.now() + 20000;
-            let turned = null;
-            let still = true;
-            while (Date.now() < until) {
-              turned = await page.evaluate(() => {
+            const frames = await playedTo(
+              page,
+              own[1].start + 0.3,
+              () => {
                 const list = document.querySelector(".scroll.list");
                 const box = list.getBoundingClientRect();
                 const pad = parseFloat(getComputedStyle(document.querySelector("ol.said")).paddingTop);
                 const top = [...document.querySelectorAll("ol.said li[data-at]")].find((li) => Math.abs(li.getBoundingClientRect().top - box.top - pad) <= 1);
-                return { at: Number(document.querySelector(".screen")?.dataset.playhead), top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop };
-              });
-              if (turned.at < own[1].start - 0.05 && turned.scrolled !== from) still = false;
-              if (turned.at >= own[1].start + 0.3) break;
-              await page.waitForTimeout(50);
-            }
+                return { top: top ? Number(top.dataset.at) : null, scrolled: list.scrollTop };
+              },
+              true,
+            );
+            const turned = frames.at(-1);
+            const still = !frames.some((now) => now.at < own[1].start - 0.05 && now.scrolled !== from);
             await page.keyboard.press("Space");
             await watch.step("press", s);
             await page.evaluate(() => {
@@ -10273,7 +10261,6 @@ for (const seq of toWalk) {
         // to the clip's first card would move it.
         await field.fill("");
         await watch.step("type", s);
-        await page.waitForTimeout(200);
         const clockAt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
         const pickAt = await page.evaluate(
           (labels) => {
@@ -10293,7 +10280,6 @@ for (const seq of toWalk) {
           const stood = await page.evaluate((row) => document.querySelector(row).getBoundingClientRect().top, row);
           await button.click();
           await watch.step("click", s);
-          await page.waitForTimeout(300);
           const after = await page.evaluate((row) => {
             const li = document.querySelector(row);
             return {
@@ -10336,13 +10322,11 @@ for (const seq of toWalk) {
             if (wrong) break;
             await field.fill(word);
             await watch.step("type", s);
-            await page.waitForTimeout(200);
             const from = await where();
             const went = [];
             for (let i = 0; i < 2; i++) {
               await field.press("Shift+ArrowDown");
               await watch.step("press", s);
-              await page.waitForTimeout(250);
               went.push(await where());
             }
             for (const [i, w] of went.entries()) {
@@ -10362,7 +10346,6 @@ for (const seq of toWalk) {
             }
             await field.press("Escape");
             await watch.step("press", s);
-            await page.waitForTimeout(250);
             const back = await where();
             if (!stay && (Math.abs(back.at - from.at) > 0.05 || back.chosen !== from.chosen))
               wrong = `a search walked and let go of by Escape left the playhead at ${back.at.toFixed(2)} in ${back.chosen}, not back at ${from.at.toFixed(2)} in ${from.chosen}`;
@@ -13038,6 +13021,29 @@ async function standsAt(page) {
       return r ? [q, r.x, r.y, r.width, r.height] : [q];
     }),
   );
+}
+
+// What read says in every frame while the video plays, with the playhead
+// as at, until the playhead reaches to or the video stops: the last frame,
+// or with every set, each frame read.
+async function playedTo(page, to, read, every = false) {
+  const frames = await page.evaluate(
+    ([to, read]) =>
+      new Promise((done) => {
+        const look = new Function(`return (${read})()`);
+        const seen = [];
+        const tick = () => {
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          seen.push({ at, ...look() });
+          const playing = !!document.querySelector('button[aria-label="Pause"]');
+          if (at >= to || !playing) done(seen);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    [to, read.toString()],
+  );
+  return every ? frames : frames.at(-1);
 }
 
 // Whether nothing matches selector within ms.
