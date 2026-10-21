@@ -81,6 +81,35 @@ check "frontend/src/App.svelte" workflows false
 check "Makefile scripts/ci-needs.sh" workflows false
 check "README.md" workflows false
 
+# The scripts that check a rule, and the rules no job runs but their own
+# check, give no job anything to do: the build job checks them whatever
+# changed. Issue #322: a pull request that changed only them and docs ran
+# every job.
+for kind in go interface build walks outside workflows changed; do
+	check "scripts/main-moved.sh scripts/main-moved-test.sh docs/BUILD.md" $kind false
+	check "scripts/plan-frozen.sh scripts/plan-frozen-test.sh" $kind false
+	check "scripts/needs-build.sh scripts/needs-build-test.sh" $kind false
+done
+check "scripts/needs-build.sh engine/edit.go" go true
+check "scripts/plan-frozen.sh frontend/src/App.svelte" walks true
+
+# The rules of make changed are checked only by the check of what make
+# changed runs, which also runs when anything unknown changed.
+for kind in go interface build walks outside workflows; do
+	check "scripts/changed.sh scripts/changed-test.sh" $kind false
+done
+check "scripts/changed.sh" changed true
+check "scripts/changed-test.sh docs/BUILD.md" changed true
+check "Makefile" changed true
+check ".github/workflows/ci.yml" changed true
+check "engine/edit.go frontend/src/App.svelte" changed false
+check "README.md" changed false
+
+# But not the rules that decide what runs, nor the split of the Go tests,
+# which every Go job takes.
+check "scripts/ci-needs-test.sh" walks true
+check "scripts/go-shard.sh" go true
+
 # A mix runs everything it touches.
 check "engine/edit.go frontend/src/App.svelte" go true
 check "engine/edit.go frontend/src/App.svelte" interface true
