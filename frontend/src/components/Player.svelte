@@ -1396,6 +1396,9 @@
   // The light of the frame on screen. The colours the browser draws over
   // it, the box a word is typed in, are shown in its look, see shownColour.
   let shownLight = $state<Light>("");
+  // The frame drawn with its own captions over it, for the probes: a walk
+  // that reads what libass drew waits for it, issue #389.
+  let captioned = $state<number | null>(null);
   // The colours of the captions as the frame on screen shows them.
   const shownCaptions = $derived(
     captions
@@ -1424,6 +1427,8 @@
     const layer = ask && size ? layers.at(frame, size) : null;
     onScreen(layer?.track ?? null, layer?.showing, layer?.scale);
     drawnOver = f && size && layer ? { layer, size, left: f.left, width: f.width, turn: f.turn } : null;
+    const own = drawnOver && !layers.late ? frame : null;
+    if (own !== captioned) captioned = own;
     return drawnOver;
   }
 
@@ -1728,6 +1733,7 @@
     bind:this={screen}
     data-playhead={time}
     data-shown={frameStart}
+    data-captioned={captioned}
     data-turn={shownTurn}
     data-crop={held ? held.left : crop?.inside ? (dragLeft ?? cropLeft) : null}
     style="--turn: {-shownTurn}deg"

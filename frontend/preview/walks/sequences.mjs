@@ -4815,6 +4815,25 @@ for (const seq of toWalk) {
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     }
   };
+  // Until the frame on screen is drawn with its own captions over it, so
+  // what libass drew is there to be read, see data-captioned in
+  // Player.svelte. Nothing waiting for a layer was no sign of it: the walk
+  // of a word opened in the caption box read a picture with none of its
+  // letters on CI, issue #389.
+  const captioned = () =>
+    page.locator(".screen").evaluate(
+      (screen) =>
+        new Promise((done) => {
+          const own = () => screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === Number(screen.dataset.shown);
+          if (own()) return done();
+          const seen = new MutationObserver(() => {
+            if (!own()) return;
+            seen.disconnect();
+            done();
+          });
+          seen.observe(screen, { attributes: true, attributeFilter: ["data-captioned", "data-shown"] });
+        }),
+    );
 
   for (const [what, ...args] of seq.steps) {
     const arg = args.length > 1 ? args : args[0];
@@ -5229,6 +5248,7 @@ for (const seq of toWalk) {
               popped: window.__captionLayers?.stats.popped ?? 0,
             };
           }, arg);
+        await captioned();
         await settled();
         const shut = await look();
         if (!shut) {
