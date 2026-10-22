@@ -14273,19 +14273,27 @@ async function pickCards(page, n) {
   const path = await episodeOn(page);
   await canLook(page);
   // Where the new clips are made, the last ones for a click taken again.
-  // Not every one starts where somebody speaks, see freshClip.
-  const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
+  // Not every one gives a clip that can be used, see freshClip.
+  const fresh = [20, 60, 100, 24, 64, 104, 16, 96, 32, 44, 72, 84, 112];
   const problems = [];
   // A new clip at the next place of fresh with a word said as it starts,
-  // so its captions can be seen to come, or null when none is left. One
-  // that starts where nobody speaks has no captions to see, which says
-  // nothing about the app, so another is made at the next place, without
-  // spending a click taken again on a busy machine, issue #438.
+  // so its captions can be seen to come, and where no other clip starts,
+  // or null when none is left. One that starts where nobody speaks has no
+  // captions to see, and one that starts where another clip does may put
+  // up the very picture that is on screen, which nothing changes until
+  // its captions come, and they wait for the change. Neither says anything
+  // about the app, so another is made at the next place, without spending
+  // a click taken again on a busy machine, issue #438.
   const freshClip = async () => {
     while (fresh.length) {
       const [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
-      const clip = (await ask(page, "Clips", path)).find((c) => c.key === key);
+      const all = await ask(page, "Clips", path);
+      const clip = all.find((c) => c.key === key);
       if (!clip) return null;
+      if (all.some((c) => c.key !== key && Math.abs(c.start - clip.start) < 0.05)) {
+        console.log(`        the new clip at ${clip.start.toFixed(2)} s starts where another does, again at another place`);
+        continue;
+      }
       // A clip starts a moment before its first word, and its first
       // caption with it.
       const words = await ask(page, "Words", path, clip.start, clip.start + 0.5);
