@@ -264,7 +264,11 @@ jobs:
             gh release view dev >/dev/null
 
       # The two files of this channel by name, never a pattern: one channel
-      # has no business with another's entry.
+      # has no business with another's entry. The zip goes up first and the
+      # entry only once it is there, because the app reads the entry of the
+      # channel it follows and would be offered a build it cannot download
+      # yet. One command sends its files side by side, so the small entry
+      # was up long before the zip. Issue #420.
       - id: upload
         if: steps.zip.outputs.ready == 'true'
         name: Upload the build and its entry
@@ -272,7 +276,8 @@ jobs:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
         run: |
-          gh release upload dev "dist/$ZIP" "dist/channel-$CHANNEL.json" --clobber
+          gh release upload dev "dist/$ZIP" --clobber
+          gh release upload dev "dist/channel-$CHANNEL.json" --clobber
           echo "published=true" >> "$GITHUB_OUTPUT"
 
   list:

@@ -36,10 +36,10 @@
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import {
-    waitShare,
     Heard,
     covers,
     heardIn,
+    nothingToMark,
     type Parts,
     inEpisode,
     endInEpisode,
@@ -64,6 +64,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { Failures } from "../lib/failed";
   import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
   import {
     secondThoughts,
@@ -269,23 +270,21 @@
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
   // A search that fails while the app is open says why in a toast, with
-  // Report for what the person cannot put right alone. Its row goes on
-  // saying Failed with Continue, after a restart too. One seen failed
-  // only as the app opened has said why already, the time it failed.
-  // Only its state and id are read, see the rule on watching jobs.
-  let failedSeenRunning = "";
-  $effect(() => {
-    const id = search?.id ?? "";
-    const state = search?.state;
-    if (state === "running" || state === "queued") {
-      failedSeenRunning = id;
-      return;
-    }
-    if (state !== "failed" || !id || failedSeenRunning !== id) return;
-    failedSeenRunning = "";
-    const why = untrack(() => reasonOf(search?.error));
-    tell(`search failed: ${why}`);
+  // Report for what the person cannot put right alone, and so does a clip
+  // made by hand with I or O, see lib/failed.ts. Its row or card goes on
+  // saying Failed with Continue, after a restart too, and never why, issue
+  // #450. Only the jobs' states and ids are read, see the rule on watching
+  // jobs.
+  const failures = new Failures<Job>((job) => {
+    const what = job.kind === "clip" ? "clip made by hand" : "search";
+    const why = untrack(() => reasonOf(job.error, what));
+    tell(`${what} failed: ${why}`);
     toasts.say(where(), why, { video: path, report: true });
+  });
+  $effect(() => {
+    for (const job of jobs.forEpisode(path)) {
+      if (job.kind === "search" || job.kind === "clip") failures.seen(job);
+    }
   });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
@@ -709,16 +708,12 @@
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
   const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
-  // How much of the window has been transcribed, by the same edge the range
-  // picker draws, so the row is a view of the window on the range picker:
-  // empty at its start, half full when half of it is transcribed, full at
-  // its end. It used to be measured from the start of the episode, so a
-  // window two hours in began nearly full.
-  const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
   // The row the next clip will appear in says which step the search is in,
   // in the words of lib/steps.ts, the same words every row that shows work
-  // uses. While it hears, how far it has come is how far the window has
-  // been heard. Nothing more: the clips it has found so far are the cards
+  // uses. While it hears, how far it has come is how far it has heard what
+  // of the window it has to hear, from 0, see stepLine. It was once how
+  // much of the window was heard, which started half full on a window
+  // heard half already, issue #444. Nothing more: the clips it has found so far are the cards
   // above the row, and the row said "2 of 12 found" in the place the third
   // clip was to appear.
   const next = $derived.by(() => {
@@ -727,13 +722,13 @@
     // the search is about to take, so Continue goes from Stopped straight
     // to Transcribing, with no empty card and no word in between.
     if (!working) {
-      const fraction = heardWindow ? -1 : heardShare;
+      const fraction = heardWindow ? -1 : 0;
       // Cancel pressed before the Go side answered: the row says so at
       // once, the same as for a search that runs.
       if (stopping) return { what: "Stopping", left: windowText, fraction, still: true, now: true };
       return { what: heardWindow ? "Finding clips" : "Transcribing", left: windowText, fraction, now: true };
     }
-    const line = stepLine(working, heardShare);
+    const line = stepLine(working);
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
@@ -754,7 +749,7 @@
   // see ClipList.
   const carry = $derived.by(() => {
     if (!working) return null;
-    const { fraction, left } = stepLine(working, heardShare);
+    const { fraction, left } = stepLine(working);
     return { job: working.id, fraction, left, still: stopping };
   });
 
@@ -852,9 +847,10 @@
   // itself. A search called off by hand leaves nothing to say.
   // Why a search failed, as a sentence. The engine's reasons begin in
   // lower case, the way an error does in the log.
-  function reasonOf(error?: string): string {
+  function reasonOf(error?: string, what = "search"): string {
     const said = error?.trim() ?? "";
-    return said ? said[0].toUpperCase() + said.slice(1) : "The search failed, and no reason was given.";
+    if (said) return said[0].toUpperCase() + said.slice(1);
+    return what === "search" ? "The search failed, and no reason was given." : "The clip could not be made, and no reason was given.";
   }
   const halted = $derived.by(() => {
     if (!search || busy) return null;
@@ -1773,10 +1769,11 @@
     try {
       const job = await api.makeClip(path, time, backward);
       jobs.apply(job);
-      if (job.state === "failed") {
-        oops(job.error ?? "The clip could not be made");
-        return;
-      }
+      // Asked for here, so a failure says why in a toast however soon it
+      // comes, the store's news of it before this answer too.
+      const now = jobs.list.find((j) => j.id === job.id) ?? job;
+      failures.asked(now);
+      if (now.state === "failed") return;
       const key = `${job.id}/1`;
       madeHere.set(job.id, key);
       selected = key;
@@ -1862,6 +1859,11 @@
       t <= Math.max(...pieces.map((p) => p.end));
     return clips.some((c) => !c.rejected && covers(c.segments)) || onTheWay.some((a) => covers(wayPieces(a)));
   });
+  // Where I or O would make no clip, because nothing is said after the
+  // playhead or before it, they are not offered, so a card that can only
+  // fail is never made, found by Tim on #456.
+  const noIn = $derived(nothingToMark(time, false, saved, status?.said, duration));
+  const noOut = $derived(nothingToMark(time, true, saved, status?.said, duration));
   // The clip on its way that was just asked for is followed until it is
   // written: brought into view once its card has slid open, and again
   // whenever it moves in the list, and with the video paused the playhead
@@ -1899,7 +1901,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
     if (keysElsewhere() || asleep(root)) return;
-    if (inClip) return;
+    if (inClip || (out ? noOut : noIn)) return;
     event.preventDefault();
     void makeClip(out);
   }
@@ -3952,26 +3954,30 @@
              inside one, its edges are dragged instead. -->
         <button
           class="glyph"
-          disabled={duration <= 0 || inClip}
+          disabled={duration <= 0 || inClip || noIn}
           onclick={() => makeClip(false)}
           aria-label="Mark In"
           title={makingIn
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+              : noIn
+                ? "Nothing is said after the playhead, so no clip can start here"
+                : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
           >{#if makingIn}<Busy />{/if}<Icon name="mark-in" /></button
         >
         <button
           class="glyph"
-          disabled={duration <= 0 || inClip}
+          disabled={duration <= 0 || inClip || noOut}
           onclick={() => makeClip(true)}
           aria-label="Mark Out"
           title={makingOut
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+              : noOut
+                ? "Nothing is said before the playhead, so no clip can end here"
+                : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
           >{#if makingOut}<Busy />{/if}<Icon name="mark-out" /></button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to

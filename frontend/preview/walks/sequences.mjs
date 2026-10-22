@@ -284,7 +284,11 @@
 //   ["restart"]        closes the app and opens it again on the episode
 //   ["speech", ms]     the speech model takes so many milliseconds over
 //                      each piece of audio, so a video added is heard
-//                      slowly enough to do something while it is
+//                      slowly enough to do something while it is.
+//                      ["speech", "hold"] stops it hearing, and the steps
+//                      that say so let it on one piece at a time.
+//                      ["speech", "wordless"] hears no word at all, the way
+//                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
 //   ["app log", "open"]
@@ -968,6 +972,28 @@
 //   ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
 //                      the head of the clip list, so the clip made by hand
 //                      says Stopped with Continue in its card
+//   ["heard part", [share, seconds]]
+//                      with the speech held, lets it on one piece at a
+//                      time until a video this long is heard as far as
+//                      this share of it
+//   ["cancel held"]    with the speech held, presses Cancel at the head of
+//                      the clip list and lets the piece being heard land,
+//                      until the head says Continue
+//   ["fills from nothing", seconds]
+//                      with the speech held, on a search stopped part way
+//                      through the window of a video this long, presses
+//                      Continue and lets the speech on one piece at a time
+//                      until the search has heard one, and the fill of the
+//                      row that says Transcribing starts at nothing and
+//                      only grows, however much was heard before
+//   ["no mark after the end", seconds]
+//                      puts the playhead at the end of a video this long,
+//                      after its last word, and Mark In is not offered and
+//                      says why, I makes no clip, and Mark Out is offered
+//   ["hand failed"]    with the speech silent and held, presses I where
+//                      nothing is heard yet and lets the speech go, and
+//                      the clip's card says Failed. Click Continue and
+//                      where it lies, and a toast with Report says why
 //   ["remove stopped", how]
 //                      the bin on that card is clicked, and it says
 //                      Removed with Put it back, and its mark leaves the
@@ -3492,6 +3518,36 @@ export const sequences = [
       ["restart"],
       ["no hand card"],
     ],
+  },
+  {
+    // Issue #444: Tim searched windows heard in part already, and the fill
+    // of the transcription started well past nothing. The speech is slow,
+    // so a search is stopped part way through its window and carried on.
+    name: "Continue fills the transcription from nothing over what is left to hear",
+    steps: [
+      // Held from the start, so every piece of audio heard is one the walk
+      // let through, and nothing depends on how fast the speech is.
+      ["speech", "hold"],
+      ["add", 120],
+      ["wait for", "Cancel"],
+      ["heard part", [0.2, 120]],
+      ["cancel held"],
+      ["fills from nothing", 120],
+      ["speech", 0],
+    ],
+  },
+  {
+    // Issue #450: the card of a clip made by hand that failed said why in
+    // its second line, cut to a line. A video with no speech has nothing
+    // to make a clip of, which the clip finds once it has heard it.
+    name: "a clip made by hand that failed says where it lies, and why in a toast",
+    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"]],
+  },
+  {
+    // Tim on #456: I at the end of the video made a card that could only
+    // fail. Nothing is said after the last word, so I is not offered there.
+    name: "I after the last word is not offered, and says why",
+    steps: [["add", 120], ["wait for", "Search"], ["no mark after the end", 120]],
   },
   {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
@@ -7322,7 +7378,7 @@ for (const seq of toWalk) {
         await watch.step("head", s);
         break;
       case "speech":
-        await control(url, `/speech?ms=${arg}`);
+        await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
         break;
       case "hold":
         await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
@@ -12039,6 +12095,200 @@ for (const seq of toWalk) {
         await watch.step("wait", s);
         break;
       }
+      case "heard part": {
+        // One piece at a time, until the video, this many seconds long, is
+        // heard as far as this share. What is heard is saved only now and
+        // then, so how far the work says it heard counts too.
+        const [share, seconds] = arg;
+        const path = await episodeOn(page);
+        const heardOf = async () => {
+          const saved = ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, seconds) - a, 0), 0);
+          const said = (await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => j.progress?.covered ?? 0);
+          return Math.max(saved, ...said);
+        };
+        while ((await heardOf()) < share * seconds) await onePiece(page, url, path);
+        break;
+      }
+      case "cancel held": {
+        // The search waits on the piece it is hearing, which is held, so
+        // Cancel ends it once that piece is let through.
+        const path = await episodeOn(page);
+        const pressed = await pressHead(page);
+        if (pressed.pressed !== "Cancel") {
+          wrong = `the head said ${pressed.pressed}, not Cancel`;
+          break;
+        }
+        // Every call the press made is answered, so the search is called
+        // off before the piece it waits on lands.
+        await settle(page);
+        const running = async () => {
+          const job = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+          return job?.state === "running" || job?.state === "queued";
+        };
+        while (await running()) await onePiece(page, url, path);
+        await settle(page);
+        const head = await page.evaluate(() => document.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim());
+        if (head !== "Continue") wrong = `after Cancel the head says ${head}, not Continue`;
+        break;
+      }
+      case "fills from nothing": {
+        // Issue #444: Tim searched windows heard in part already, and the
+        // fill of the transcription started well past nothing. Continue on
+        // a search stopped while it heard hears only what is left of its
+        // window, and its fill goes from nothing over that alone.
+        const path = await episodeOn(page);
+        const search = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+        const from = search?.from ?? 0;
+        const to = search?.to > 0 ? search.to : arg;
+        const heard = ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, to) - Math.max(a, from), 0), 0);
+        const before = heard / (to - from);
+        if (!(before >= 0.2 && before < 0.9)) {
+          wrong = `${Math.round(before * 100)} % of the window ${from} to ${to} s was heard before Continue, too little or too much to tell a fill from nothing from how much is heard: ${JSON.stringify((await ask(page, "Episode", path))?.heard)}`;
+          break;
+        }
+        // Every fill the row of the next clip shows while it says
+        // Transcribing, from the press on, read off the fill's place.
+        await page.evaluate(() => {
+          window.__fills = [];
+          const list = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          const look = () => {
+            const li = list.querySelector("ol li.next");
+            const i = li?.querySelector(".fill i");
+            if (li?.querySelector(".title")?.textContent.trim() !== "Transcribing" || !i) return;
+            const moved = /translateX\((-?[\d.]+)%\)/.exec(i.style.transform);
+            const fraction = moved ? 1 + Number(moved[1]) / 100 : NaN;
+            if (window.__fills.at(-1) !== fraction) window.__fills.push(fraction);
+          };
+          new MutationObserver(look).observe(list, { subtree: true, childList: true, attributes: true, characterData: true });
+        });
+        const pressed = await pressHead(page);
+        if (pressed.pressed !== "Continue") {
+          wrong = `the head said ${pressed.pressed}, not Continue`;
+          break;
+        }
+        // Every call the press made is answered and drawn, and then one
+        // piece at a time, to whatever hears it, the video heard by itself
+        // after Cancel first, until the engine has said how far the search
+        // heard of what is left.
+        await settle(page);
+        for (;;) {
+          const job = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+          if (job?.state === "running" && job.step === "hearing" && job.progress?.fraction > 0) break;
+          if (job?.state !== "running" && job?.state !== "queued") {
+            const now = (await ask(page, "Episode", path))?.heard;
+            wrong = `the search of ${from} to ${to} s heard nothing more after Continue, and is ${job?.state} ${job?.step ?? ""}, with ${JSON.stringify(now)} heard now and ${Math.round(before * 100)} % of it before`;
+            break;
+          }
+          await onePiece(page, url, path);
+        }
+        if (wrong) break;
+        // Until the row has shown it.
+        await settle(page);
+        const fills = await page.evaluate(() => window.__fills);
+        if (!fills.length) wrong = "the row never showed a fill while it said Transcribing";
+        else if (!(fills[0] < 0.05)) wrong = `the fill started at ${Math.round(fills[0] * 100)} %, not at nothing, with ${Math.round(before * 100)} % of the window heard before: ${JSON.stringify(fills)}`;
+        else if (fills.some((f, n) => n > 0 && f < fills[n - 1])) wrong = `the fill went back: ${JSON.stringify(fills)}`;
+        break;
+      }
+      case "no mark after the end": {
+        // Tim on #456: I at the end of the video made a card that could
+        // only fail, since nothing is said after the last word. The
+        // playhead goes to the end the way a hand takes it there: a press
+        // in the middle of the range picker, away from the tips of the
+        // window at its ends, dragged on past its right end.
+        const path = await episodeOn(page);
+        const picker = await page.locator(".track[aria-label='The range picker']").boundingBox();
+        const y = picker.y + picker.height / 2;
+        await page.mouse.move(picker.x + picker.width / 2, y);
+        await page.mouse.down();
+        for (const share of [0.7, 0.9, 1.1, 1.3]) await page.mouse.move(picker.x + picker.width * share, y, { steps: 2 });
+        await page.mouse.up();
+        await settle(page);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        const said = (await ask(page, "Episode", path))?.said;
+        if (!(at > arg - 0.5) || !said || !(said[1] <= at)) {
+          wrong = `the playhead is at ${at} s, with words said from ${JSON.stringify(said)}, not after the last word at the end of the video, ${arg} s`;
+          break;
+        }
+        const marks = await page.evaluate(() => {
+          const look = (name) => {
+            const b = document.querySelector(`button[aria-label='${name}']`);
+            return { off: !!b?.disabled, title: b?.title ?? "" };
+          };
+          return { in: look("Mark In"), out: look("Mark Out") };
+        });
+        if (!marks.in.off) wrong = `Mark In is offered after the last word: ${JSON.stringify(marks.in)}`;
+        else if (marks.in.title !== "Nothing is said after the playhead, so no clip can start here") wrong = `Mark In says "${marks.in.title}", not why it is not offered`;
+        else if (marks.out.off) wrong = `Mark Out is not offered after the last word, where a clip can end: ${JSON.stringify(marks.out)}`;
+        if (wrong) break;
+        // I does what the button would: nothing. Every call it made is
+        // answered by the time the app is quiet, so a clip asked for is in
+        // the jobs by then.
+        const was = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").length;
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        await settle(page);
+        const now = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").length;
+        const cards = await page.locator("li.stopped.failed").count();
+        if (now !== was) wrong = `I after the last word asked for a clip, ${now - was} of them`;
+        else if (cards) wrong = `I after the last word made ${cards} cards that failed`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "hand failed": {
+        // Issue #450: a card whose clip could not be made said why in its
+        // second line, cut to a line. I where nothing is heard yet is
+        // offered, and with the speech silent the clip finds once it has
+        // heard that nothing is said there. The card says Failed with
+        // Continue and where it lies, and why only in a toast.
+        const path = await episodeOn(page);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        const was = new Set((await ask(page, "Jobs")).map((j) => j.id));
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        // Every call the press made is answered, so the clip is asked for,
+        // and then the speech is let go, silent still.
+        await settle(page);
+        const asked = (await ask(page, "Jobs")).find((j) => j.kind === "clip" && j.episode === path && !was.has(j.id));
+        if (!asked) {
+          wrong = `I at ${at} s, where nothing is heard yet, asked for no clip`;
+          break;
+        }
+        await control(url, "/speech?ms=0");
+        // Until the Go side says the clip asked for has ended, and then the
+        // frame the card shows it in.
+        let job;
+        for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+          job = (await ask(page, "Jobs")).find((j) => j.id === asked.id);
+          if (job && job.state !== "running" && job.state !== "queued") break;
+        }
+        if (job.state !== "failed") {
+          wrong = `I at ${at} s on a video with no speech made a clip that is ${job.state}, not failed`;
+          break;
+        }
+        // The failed news is in the store, so its card and its toast are
+        // drawn once the app is quiet, and read straight away, well inside
+        // the toast's own time.
+        await settle(page);
+        const said = await page.evaluate((id) => {
+          const li = document.querySelector(`li[data-key^="${id}/"]`);
+          return {
+            failed: !!li?.matches(".stopped.failed"),
+            title: li?.querySelector(".title")?.textContent.trim() ?? "",
+            meta: li?.querySelector(".meta")?.textContent.trim() ?? "",
+          };
+        }, job.id);
+        const toast = await toastSays(page);
+        const report = await page.locator(".toast:not([inert]) button.report").count();
+        const where = clockOf(job.underway?.[0]?.start ?? at);
+        if (!said.failed) wrong = `the clip that failed has no card that says so: ${JSON.stringify(said)}`;
+        else if (said.title !== "Failed. Click Continue") wrong = `the card says "${said.title}", not Failed. Click Continue`;
+        else if (said.meta !== where) wrong = `the card's second line says "${said.meta}", not where the clip lies, ${where}`;
+        else if (!toast.includes("Nothing is said here yet")) wrong = `the toast says "${toast}", not why the clip could not be made`;
+        else if (!report) wrong = "the toast offers no Report";
+        await watch.step("wait", s);
+        break;
+      }
       case "remove stopped": {
         const card = page.locator(`li[data-key^="${handJob}/"]`).first();
         const key = await card.getAttribute("data-key");
@@ -14005,6 +14255,21 @@ function glideOf(marks, src) {
 // middle and below it, over whatever the page has there. Says what was
 // wrong, or null: the app has to wear its frame while the files are held
 // over it, take the drop, and wear no frame after it.
+// Lets the held speech hear one piece of audio, and waits until the news
+// of the work on the video says something changed for it: how far a job
+// heard, its step or its state. Whatever hears next hears it, the search
+// or the video heard by itself. A hearing called off between two pieces
+// changes its state without hearing one, and the piece is left for the
+// next, so a walk allows for a piece more than it counted.
+async function onePiece(page, url, path) {
+  const now = async () =>
+    JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
+  const before = await now();
+  let seen = await news(page);
+  await control(url, "/speech?step=1");
+  while ((await now()) === before) seen = await nextNews(page, seen);
+}
+
 // What the toasts over the window say, one after the other.
 // What the toasts over the app say. One that is fading out has gone,
 // though it is still in the page for its fade: Svelte marks it inert the

@@ -35,19 +35,23 @@ export type StepLine = {
   fraction: number;
 };
 
-// The line for a job that runs. hearing is how far the episode has been heard
-// towards the end of the search's window, from 0 to 1, because that is how
-// far hearing has come for this search, whatever the speech model says about
-// the whole episode.
-export function stepLine(job: Job, hearing = -1): StepLine {
+// The line for a job that runs. While it hears, how far it has come is the
+// engine's own share of what this job hears, the parts of its window not
+// heard yet by their total length, so it fills from 0 to 1 over the work
+// it does and the parts heard before count for nothing, see hearingShare
+// in engine/audio.go. Read from how much of the window was heard, it
+// started half full on a window heard half already, issue #444. Before the
+// first piece is heard, nothing is.
+export function stepLine(job: Job): StepLine {
   const p = job.progress;
   const left = p && p.remaining > 0 ? `About ${clock(Math.ceil(p.remaining / 5) * 5)} left` : "";
   if (!job.step || job.step === "waiting") {
     return { what: waitingTo[job.lane] ?? "Waiting", left: "", fraction: -1 };
   }
   const what = doing[job.step] ?? sentence(job.label);
-  if (job.step === "hearing") return { what, left, fraction: hearing };
-  return { what, left, fraction: p && p.fraction >= 0 ? p.fraction : -1 };
+  const known = p && p.fraction >= 0 ? p.fraction : -1;
+  if (job.step === "hearing") return { what, left, fraction: Math.max(known, 0) };
+  return { what, left, fraction: known };
 }
 
 // The line for a clip on its way, the same for every clip whichever job
@@ -59,7 +63,7 @@ export function arrivalLine(job: Job, clip: Underway): StepLine {
   // The job's progress is the clip's own when the job is the one clip. A
   // search's is the whole search's, and its clips on their way are not
   // that far along, see Carrier.
-  if (job.kind === "clip") return stepLine({ ...job, step: clip.step }, job.progress?.fraction ?? -1);
+  if (job.kind === "clip") return stepLine({ ...job, step: clip.step });
   return { ...stepLine({ ...job, step: clip.step }), left: "", fraction: -1 };
 }
 

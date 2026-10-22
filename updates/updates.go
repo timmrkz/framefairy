@@ -53,6 +53,12 @@ var ListCopies = []string{
 	Repository + "/releases/download/dev/channels-b.json",
 }
 
+// EntriesURL is the folder of the release called dev, where each channel
+// has its own entry, channel-<channel>.json, uploaded with its build. The
+// list is written from the entries after that, so an entry can be newer
+// than the list for a while, see Source.fresher.
+const EntriesURL = Repository + "/releases/download/dev/"
+
 // CommitURL is the page of a commit of this repository, or empty when
 // what it is given is not a commit.
 func CommitURL(commit string) string {

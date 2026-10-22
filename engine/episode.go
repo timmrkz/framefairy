@@ -88,6 +88,13 @@ type EpisodeStatus struct {
 	// made by hand has the part it needs heard first.
 	Covered float64      `json:"covered"`
 	Heard   [][2]float64 `json:"heard"`
+	// Said is from the start of the first line heard to the end of the
+	// last, nil while no word is: the edges handEntry goes by, of the
+	// words as they are placed on the sound, not as the recogniser timed
+	// them. I after the last line and O before the first make no clip, so
+	// where the parts around the playhead are heard the app offers
+	// neither there.
+	Said *[2]float64 `json:"said,omitempty"`
 	// Measured is how many seconds of the loudness are measured, which is
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
@@ -112,8 +119,10 @@ type EpisodeStatus struct {
 	Label *Label `json:"label,omitempty"`
 }
 
-// Status reads an episode's state from disk.
-func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
+// Status reads an episode's state from disk. silenceDB is the floor the
+// words are placed on the sound with, Options.SilenceDB, nil for the one
+// worked out from the episode.
+func Status(fsys afero.Fs, source, asrModelDir string, silenceDB *float64) EpisodeStatus {
 	st := EpisodeStatus{Source: source, Name: filepath.Base(source)}
 	info, err := fsys.Stat(source)
 	if err != nil {
@@ -130,9 +139,13 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	model := filepath.Base(filepath.Clean(asrModelDir))
 	whole := filepath.Join(logs, TranscriptName(nil))
 	if stamp, err := stampOf(fsys, source); err == nil {
-		if file, _, _, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
+		if file, words, frames, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
 			st.Transcribed = file.done()
 			st.Heard = file.heard()
+			// The lines a clip made by hand is made of, the way MakeClip
+			// makes them, see Project.Transcript.
+			t := fromStored(words, frames, float64(file.From), float64(file.Mean), silenceDB)
+			st.Said = saidOf(BuildLines(t.Words, t.Levels(), nil))
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}
@@ -157,6 +170,20 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 	st.EverSearched = EverSearched(fsys, source)
 	st.Label = ReadLabel(fsys, source)
 	return st
+}
+
+// saidOf is from the start of the first line to the end of the one that
+// ends last, nil for none: where handEntry finds a line after the
+// playhead and one before it.
+func saidOf(lines []Line) *[2]float64 {
+	if len(lines) == 0 {
+		return nil
+	}
+	span := [2]float64{lines[0].Start(), lines[0].End()}
+	for _, l := range lines[1:] {
+		span[1] = math.Max(span[1], l.End())
+	}
+	return &span
 }
 
 // EverSearched says whether this episode has ever been searched for clips: it
@@ -257,7 +284,7 @@ func ScanFolder(fsys afero.Fs, dir, asrModelDir string) ([]EpisodeStatus, error)
 		if !entry.Mode().IsRegular() || strings.HasPrefix(name, ".") || !IsVideo(name) {
 			continue
 		}
-		out = append(out, Status(fsys, filepath.Join(dir, name), asrModelDir))
+		out = append(out, Status(fsys, filepath.Join(dir, name), asrModelDir, nil))
 	}
 	return out, nil
 }
