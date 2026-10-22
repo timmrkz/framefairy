@@ -553,15 +553,14 @@ func (p *prose) release() {
 }
 
 // step lets n pieces more be heard while it is held, by whatever hears
-// next, and returns once they are heard.
+// next. It does not wait for them: a hearing called off between two
+// pieces never asks for the next, and a walk waits on the news of the
+// work instead.
 func (p *prose) step(n int) {
 	p.gate.Lock()
 	defer p.gate.Unlock()
 	p.steps += n
 	p.cond().Broadcast()
-	for p.held && (p.steps > 0 || p.hearing > 0) {
-		p.cond().Wait()
-	}
 }
 
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof

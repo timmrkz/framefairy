@@ -3525,7 +3525,7 @@ export const sequences = [
       ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
-      ["heard part", [0.4, 120]],
+      ["heard part", [0.2, 120]],
       ["cancel held"],
       ["fills from nothing", 120],
       ["speech", 0],
@@ -14207,7 +14207,9 @@ function glideOf(marks, src) {
 // Lets the held speech hear one piece of audio, and waits until the news
 // of the work on the video says something changed for it: how far a job
 // heard, its step or its state. Whatever hears next hears it, the search
-// or the video heard by itself.
+// or the video heard by itself. A hearing called off between two pieces
+// changes its state without hearing one, and the piece is left for the
+// next, so a walk allows for a piece more than it counted.
 async function onePiece(page, url, path) {
   const now = async () =>
     JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
