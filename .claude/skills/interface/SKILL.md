@@ -231,8 +231,10 @@ is right. Read the inline style beside the rect and the two answer
 different questions: `style.left` is what the interface decided,
 `getBoundingClientRect` is what the browser has drawn so far. The edge of
 the transcript looked like it was still moving after a pause, with the
-style holding at 142px the whole time. Wait for a glide to settle before
-measuring, or measure both and say which one is being talked about.
+style holding at 142px the whole time. Measure once the glide's
+`transitionend` has said it is over, never after a pause that is meant
+to be long enough, or measure both and say which one is being talked
+about.
 
 **A moving target cannot be clicked at a point worked out a moment ago.**
 By the time the click lands the element is somewhere else, and the click
@@ -1125,14 +1127,16 @@ container and outside it.
 
 ## Before saying it is done
 
+- The walk for the fix fails on main and passes with it, written the way
+  the testing skill in `.claude/skills/testing/` says: it never waits on
+  the clock, and it checks what Tim saw.
 - `make interface`, which is the type check and the interface's own tests.
 - Build the preview, and the motion bench if the change touches any of the
   five ways work in hand is shown.
-- `make test` and `make` only if the change touches Go. A change only to
-  `frontend/` or `docs/` does not: the Go tests fuzz for ten thousand
-  executions a target and take minutes, and no line of CSS can move them.
-  CI runs everything anyway, on both systems. Waiting on them in a cloud
-  session is Tim waiting.
+- Push once those pass, then `make changed`, which runs what the change
+  reaches and no more, see CLAUDE.md. A change only to `frontend/` runs
+  no Go test, and no line of CSS can move one. Waiting on tests a change
+  cannot reach is Tim waiting.
 - Say what to look at and what should happen, in the app, in the order
   Tim would do it. He is the one who can see it.
 - Name what you could not verify. A fix reported as certain and found

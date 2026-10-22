@@ -476,6 +476,9 @@ type model struct {
 	fail   bool
 	asked  chan struct{}
 	calls  atomic.Int32
+	// holding is how many answers it holds now, for a walk to know that a
+	// search waiting on it has nothing to report, see /model.
+	holding atomic.Int32
 	// let is closed when the model stops holding its answers, and gives
 	// every answer it held, see hangs.
 	let chan struct{}
@@ -535,6 +538,8 @@ func (m *model) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Unlock()
 	if hang && !fail {
+		m.holding.Add(1)
+		defer m.holding.Add(-1)
 		select {
 		case <-r.Context().Done():
 			return

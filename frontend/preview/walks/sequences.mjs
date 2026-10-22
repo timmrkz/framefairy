@@ -1209,7 +1209,7 @@ import { open, chosen, shown, engineState, handles, timeline, inside, middle, hi
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -4274,51 +4274,6 @@ function watchEdge(page, label) {
     };
     tick();
   }, label);
-}
-
-// Waits for the video preview to show the frame that holds the playhead,
-// by where the app says the frame shown begins, and with captions for
-// that frame to be drawn with its own captions over it, see data-captioned
-// in Player.svelte. It says true then, and false when a layer of captions
-// is given up on first, data-captions-lost, counted from lost, the count
-// read before the gesture, since a layer can be given up on while the
-// walk settles after it. T and C put a mark on the frame shown, the frame
-// a person sees, and the caption box shows what was drawn on it, and on a
-// busy machine both come a moment after the playhead. It waits on the
-// page changing, never on the clock, so a frame that never comes is ended
-// by the -timeout of make walks.
-async function shownOnPlayhead(page, { captions = false, lost } = {}) {
-  const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
-  return page.locator(".screen").evaluate(
-    (screen, [fps, start, captions, lost]) =>
-      new Promise((done) => {
-        const since = lost ?? screen.dataset.captionsLost ?? "";
-        const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
-        const up = () => {
-          const at = Number(screen.dataset.playhead);
-          const shown = Number(screen.dataset.shown);
-          // The frame that holds the playhead, one that begins a
-          // millisecond or less after it included, see frameAt in
-          // lib/flow.ts.
-          const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
-          if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
-          return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
-        };
-        if (up()) return done(true);
-        if (gone()) return done(false);
-        const seen = new MutationObserver(() => {
-          const came = up();
-          if (!came && !gone()) return;
-          seen.disconnect();
-          done(came);
-        });
-        seen.observe(screen, {
-          attributes: true,
-          attributeFilter: ["data-playhead", "data-shown", "data-captioned", "data-captions-lost"],
-        });
-      }),
-    [fps, videoStart, captions, lost],
-  );
 }
 
 // How many layers of captions the video preview has given up on, as
@@ -12946,7 +12901,7 @@ for (const seq of toWalk) {
       case "rotate at": {
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // R works on the frame the video preview shows, inShort in
         // Episode.svelte, and the turn read is that frame's, so R is
@@ -12965,7 +12920,7 @@ for (const seq of toWalk) {
       case "keyframe at": {
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // C puts the keyframe on the frame the video preview shows, so it
         // is pressed once that is the playhead's frame, see thumbnail at.
@@ -13036,7 +12991,7 @@ for (const seq of toWalk) {
         const before = await count();
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // T makes a thumbnail of the frame the video preview shows, the
         // frame a person sees, so it is pressed once that is the playhead's

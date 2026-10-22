@@ -185,10 +185,18 @@ word, typing a word after or before what a word reads, replacing it,
 clearing it, Enter to save, Escape, delete on the framed word, Undo,
 Redo, and playing for a moment. The words typed are some of the
 episode's own, the words the walk has removed above all, so it types
-them back in, and some it never says.
+them back in, and some it never says. Each Shift and arrow waits until
+the video preview shows the frame of the word it stepped to before the
+next is pressed, once the app has settled on the press,
+`shownOnPlayhead` in `walks/bridge.mjs`. A play goes on until the
+playhead has moved as far into the episode as the walk asked, or the
+clip has ended, `playFor`, which pauses in the frame it sees that, and
+says so when the space bar played nothing. Neither waits on the clock,
+so a busy machine takes longer over a step, never another step.
 
-The rules, after every step, once no call has been on its way for a
-quarter of a second:
+The rules, after every step, once the app has settled, `settle`: no
+call is on its way, no timer of the app's is set to fire in a moment and
+nothing on the page moves for a moment, see below:
 
 | Rule | What it would have caught |
 | --- | --- |
@@ -222,7 +230,8 @@ Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
 off the handles' `aria-valuenow`, to a millisecond. The engine's state a
 walk compares before and after a step, for Undo and Redo, is the clip's
-pieces as well as its captions.
+pieces as well as its captions. A play goes as far into the clip as the
+walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
 the loop: look, pick a gesture that can be made, make it, check the
@@ -306,13 +315,17 @@ quick, the app closed and opened again, another episode opened, and a
 wait. With the speech quick and the model answering, adding a video waits
 for its first clips. With the speech slow the walk goes on while the
 video is transcribed, so the next steps land in the middle of it. The
+wait goes on for one to four of the engine's reports of its work, a job
+event each, or not at all when nothing runs that would report: no more
+jobs run than the bridge's model holds answers for, `/model-holding`,
+whatever step a held search is in. It never waits on the clock. The
 rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech is quick |
+| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
-| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | asked again for a few seconds, since a row is held a moment to be read |
+| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
 | At rest, as many cards and the count beside Clips as the engine has clips | |
 | How work ended stays after a restart: a search the closing cut off is interrupted, one that stopped or failed stays as it was, one that was done leaves nothing | by how the engine left the search, which `/reopen` answers with |
@@ -322,6 +335,35 @@ not the captions the interface last asked for: an episode just opened
 shows its clip before that, and a walk then held it to another episode's.
 
 #### A walk waits on what a rule is about
+
+The screen is compared with the engine at one moment. `caughtUp` in
+`walks/bridge.mjs` asks the bridge for a mark, `/mark` in
+`bridge_test.go`, which it sends down the events behind everything the
+Go side told the interface before it, and waits until the app has heard
+it, `__heardMark` in `preview/wails-bridge.ts`, and settled. Every page
+hears the events in the order they were sent, so what the engine sent
+before the mark is on screen then, however late a busy machine
+delivered it. A job's news is sent after the queue is let go of,
+`queue.update` in `jobs.go`, so a list of jobs can show a change whose
+news the mark overtakes. So `caughtUp` also waits until the app has had
+the newest change of each job the walk compares, by the job's `seq`,
+`__heardSeqs`, from its news and from the lists of jobs the app asked
+for. It
+asks for the mark only once the app's own stream of events is open,
+`__listening`, so after a reload the mark is not sent to nobody, and the
+bridge prints any event it drops for a page that did not keep up. How
+many events of each name the app heard is `__heard`, which says whether
+anything moved on while the walk looked.
+
+A walk prints every step as it begins, with its seed, and a step that
+throws ends the walk as a broken rule with its seed and steps, see
+`walk.mjs`. Every wait these walks have is a promise the page settles
+when the thing it waits for happens: `nextNews` when the news comes,
+`caughtUp` when the mark and the job's change come, `playFor` when the
+playhead the video preview says has gone far enough, `sidebarStill`
+when the sidebar's slide ends, and `fromSidebar` when the video picked
+has taken its place. None has a deadline, so news that never comes is a
+walk that hangs, named by its last step.
 
 A search goes on while the walk looks. The model the walk set to fail
 fails a search the moment it comes to finding, and one that answers ends
@@ -750,12 +792,30 @@ each job still took four and three quarter minutes, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
-Where a walk's time goes, measured: a walk of 60 steps takes about 30
-seconds, and more than half of that is waiting after each step until no call
-has been on its way for a quarter of a second. That is as long as the
-app's own short delays, the 150 ms before the clip timeline reads its
-waveform and the 240 ms before a newly chosen clip is shown, and a
-shorter wait would check a step before the app had finished it. Opening
+Where a walk's time goes, measured: a walk of 60 steps took about 33
+seconds, and 23 of them went on waiting after each step until no call
+had been on its way for a quarter of a second. That quarter stood in for
+the app's own short delays, the 150 ms before the clip timeline reads
+its waveform and the 240 ms before a newly chosen clip is shown. Now
+`settle` waits for those delays themselves, and for nothing else.
+`__settled` in `preview/wails-bridge.ts` answers once no call is out, no
+timer of the app's is set to fire within a second, and nothing on the
+page moves for a second or less, a row sliding open or the clip
+timeline gliding to its view. It is woken by the call coming back, the
+timer firing or being cleared, and the movement's own end, never by
+looking again on every frame. When nothing is left it lets two of the
+browser's frames go by and answers if nothing came in between. The timer
+that writes the log is left out, the same as its calls, marked
+`logOnly` in `said.ts`. A longer timer is how long something stays on
+screen, which a walk turns on itself with `holdClock`, and while the
+app's time is held `settle` does not wait for timers at all. The same
+walk now takes about 15 seconds, and a busy machine makes it slower
+without making it check a step sooner. Steps that come sooner meet the
+app's own sense of time where a person's hand has one: the clip
+timeline reads two presses within half a second and six pixels as a
+double-click, which cuts a part out. A walk that clicks where it clicked
+a step before uses `clickOnTrack`, which lands eight pixels beside the
+last spot first, so the click is one on its own. Opening
 the browser takes a second or two. The rest is the gestures, and the
 ones that play wait in real time: playing a clip to its end once took
 most of the playback walk, so it now starts a moment before the clip's
@@ -772,7 +832,7 @@ before the walk had looked, #341. Every timer, frame and
 `performance.now` of the app stands still while the clock is held, so a
 step that needs the app's own frames comes before `["hold the clock"]` or
 after `letClockGo`. The walk's own waits, `settle` among them, keep the
-real time and frames, kept on `window.__real`. A timer the app started
+real frames, kept on `window.__real`. A timer the app started
 before the fake clock came is a real one and does not hold, so where the
 time starts on its own, as the row a search leaves when it found nothing
 new, the sequence begins with `["fake clock"]`, `fakeClock`, which runs
@@ -996,3 +1056,37 @@ open the job's log.
 
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.
+
+## The testing skill in this project
+
+The skill in `.claude/skills/testing/` is written for any project, so it
+names nothing of ours. This is where its words meet this repository.
+
+What the code takes from outside, so a test can drive it:
+
+| What | Handed in as | Where |
+| --- | --- | --- |
+| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals` |
+| the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
+| random numbers | `io.Reader` | `signer.WithRandom` |
+| the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
+| a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
+| the end of work | a callback the caller gives | `emit` in `newQueue`, `cmd/framefairy-app/jobs.go` |
+
+The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
+`//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the
+interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
+Playwright's clock in the walks, through `fakeClock`, `holdClock`,
+`runClock` and `letClockGo` in `walks/bridge.mjs`. The end-to-end tests
+are the walks, against the real Go side through the bridge, and the
+rules every walk checks after every step are in `walks/rules.mjs`.
+
+What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
+`make lint` and ESLint in `make interface` for the clock in a test, with
+the old breaks in `frontend/eslint-suppressions.json` and `--new-from-rev`
+for Go, the race detector on every Go test, and `internal/offdisk` for a
+test on the real disk. What it does not hold yet, skipped tests, polls
+with a deadline, mutation testing and a check a pull request cannot
+weaken, is #475. What is left of waits on the clock is #341 for the walks
+and #394 for the Go tests.

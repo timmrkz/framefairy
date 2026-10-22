@@ -5,7 +5,7 @@
 //
 //   SEED=12 STEPS=80 BRIDGE_URL=http://127.0.0.1:8123/ node timeline.mjs
 import { begin, walk } from "./walk.mjs";
-import { timeline, handles as look, inside, middle, high, drag } from "./bridge.mjs";
+import { timeline, handles as look, inside, middle, high, drag, playFor } from "./bridge.mjs";
 
 const w = await begin();
 const { page, rng } = w;
@@ -105,10 +105,8 @@ const gestures = [
     async run() {
       const ms = 300 + rng.int(1200);
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      await page.waitForTimeout(ms);
-      await page.keyboard.press("Space");
-      return `play for ${ms} ms`;
+      const played = await playFor(page, ms / 1000);
+      return played ? `play ${ms} ms of the episode` : "the space bar played nothing";
     },
   },
 ];
