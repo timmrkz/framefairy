@@ -14,13 +14,24 @@ describe("a search and a render say which step they are in", () => {
       left: "About 1:05 left",
       fraction: 0.4,
     });
-    const heard = { kind: "progress", text: "transcribing", fraction: 0.9, remaining: 0, elapsed: 1, time: "" };
-    expect(stepLine(job({ step: "hearing", lane: "hearing", progress: heard }), 0.25)).toEqual({
+    const heard = { kind: "progress", text: "transcribing", fraction: 0.25, remaining: 0, elapsed: 1, time: "" };
+    expect(stepLine(job({ step: "hearing", lane: "hearing", progress: heard }))).toEqual({
       what: "Transcribing",
       left: "",
       fraction: 0.25,
     });
     expect(stepLine(job({ kind: "render", step: "rendering", lane: "rendering" })).what).toBe("Rendering");
+  });
+
+  // Issue #444: Tim searched windows heard in part already, and the fill
+  // started well past 0. It is the engine's share of what this search
+  // hears, which starts at 0 however much of the window was heard before.
+  test("hearing fills from 0 over what is left to hear, not by how much of the window is heard", () => {
+    const loading = { kind: "progress", text: "loading the speech model", fraction: -1, remaining: -1, elapsed: 0, time: "" };
+    expect(stepLine(job({ step: "hearing", lane: "hearing", progress: loading })).fraction).toBe(0);
+    expect(stepLine(job({ step: "hearing", lane: "hearing" })).fraction).toBe(0);
+    const first = { kind: "progress", text: "transcribing", fraction: 0.1, remaining: 90, elapsed: 10, time: "", from: 600, covered: 660 };
+    expect(stepLine(job({ step: "hearing", lane: "hearing", progress: first })).fraction).toBe(0.1);
   });
 
   test("waiting says what it waits to do, by the lane it waits for", () => {

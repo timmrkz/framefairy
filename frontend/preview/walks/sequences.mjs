@@ -968,6 +968,14 @@
 //   ["hand stopped"]   I is pressed on a part not heard yet and Cancel at
 //                      the head of the clip list, so the clip made by hand
 //                      says Stopped with Continue in its card
+//   ["fills from nothing", seconds]
+//                      on a search stopped part way through the window of
+//                      a video this long, presses Continue, and the fill of
+//                      the row that says Transcribing starts at nothing and
+//                      only grows, however much was heard before
+//   ["hand failed"]    presses O on a video just added, before its first
+//                      word, and the clip's card says Failed. Click Continue
+//                      and 0:00, and a toast with Report says why
 //   ["remove stopped", how]
 //                      the bin on that card is clicked, and it says
 //                      Removed with Put it back, and its mark leaves the
@@ -3492,6 +3500,19 @@ export const sequences = [
       ["restart"],
       ["no hand card"],
     ],
+  },
+  {
+    // Issue #444: Tim searched windows heard in part already, and the fill
+    // of the transcription started well past nothing. The speech is slow,
+    // so a search is stopped part way through its window and carried on.
+    name: "Continue fills the transcription from nothing over what is left to hear",
+    steps: [["speech", 1500], ["add", 120], ["heard some", 4], ["head"], ["wait for", "Continue"], ["fills from nothing", 120], ["speech", 0]],
+  },
+  {
+    // Issue #450: the card of a clip made by hand that failed said why in
+    // its second line, cut to a line.
+    name: "a clip made by hand that failed says where it lies, and why in a toast",
+    steps: [["add", 120], ["hand failed"]],
   },
   {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
@@ -12036,6 +12057,103 @@ for (const seq of toWalk) {
           })
           .then(() => true, () => false);
         if (!said) wrong = `the clip made by hand says "${(await card.first().textContent())?.replace(/\s+/g, " ").trim()}", not Stopped. Click Continue`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "fills from nothing": {
+        // Issue #444: Tim searched windows heard in part already, and the
+        // fill of the transcription started well past nothing. Continue on
+        // a search stopped while it heard hears only what is left of its
+        // window, and its fill goes from nothing over that alone.
+        const path = await episodeOn(page);
+        const search = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+        const from = search?.from ?? 0;
+        const to = search?.to > 0 ? search.to : arg;
+        const heard = ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, to) - Math.max(a, from), 0), 0);
+        const before = heard / (to - from);
+        if (!(before >= 0.2 && before < 0.9)) {
+          wrong = `${Math.round(before * 100)} % of the window was heard before Continue, too little or too much to tell a fill from nothing from how much is heard`;
+          break;
+        }
+        // Every fill the row of the next clip shows while it says
+        // Transcribing, from the press on, read off the fill's place.
+        await page.evaluate(() => {
+          window.__fills = [];
+          const list = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+          const look = () => {
+            const li = list.querySelector("ol li.next");
+            const i = li?.querySelector(".fill i");
+            if (li?.querySelector(".title")?.textContent.trim() !== "Transcribing" || !i) return;
+            const moved = /translateX\((-?[\d.]+)%\)/.exec(i.style.transform);
+            const fraction = moved ? 1 + Number(moved[1]) / 100 : NaN;
+            if (window.__fills.at(-1) !== fraction) window.__fills.push(fraction);
+          };
+          new MutationObserver(look).observe(list, { subtree: true, childList: true, attributes: true, characterData: true });
+        });
+        const pressed = await pressHead(page);
+        if (pressed.pressed !== "Continue") {
+          wrong = `the head said ${pressed.pressed}, not Continue`;
+          break;
+        }
+        // Until the engine has said how far it heard of what is left, and
+        // the row has shown it.
+        for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+          const job = (await ask(page, "Jobs")).find((j) => j.episode === path && j.kind === "search" && j.state === "running");
+          if (job?.step === "hearing" && job.progress?.fraction > 0) break;
+          if (!job) {
+            wrong = "the search heard nothing more after Continue";
+            break;
+          }
+        }
+        if (wrong) break;
+        await settle(page);
+        const fills = await page.evaluate(() => window.__fills);
+        if (!fills.length) wrong = "the row never showed a fill while it said Transcribing";
+        else if (!(fills[0] < 0.05)) wrong = `the fill started at ${Math.round(fills[0] * 100)} %, not at nothing, with ${Math.round(before * 100)} % of the window heard before: ${JSON.stringify(fills)}`;
+        else if (fills.some((f, n) => n > 0 && f < fills[n - 1])) wrong = `the fill went back: ${JSON.stringify(fills)}`;
+        break;
+      }
+      case "hand failed": {
+        // Issue #450: a card whose clip could not be made said why in its
+        // second line, cut to a line. O with the playhead before the first
+        // word fails, since nothing is said before it, and the card says
+        // Failed with Continue and where it lies, and why only in a toast.
+        const path = await episodeOn(page);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
+        if (!(at < 0.1)) {
+          wrong = `the playhead of the video just added is at ${at} s, not before its first word`;
+          break;
+        }
+        const before = await page.evaluate(() => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key));
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("o");
+        const key = await page
+          .waitForFunction(
+            (was) => [...document.querySelectorAll("li[data-key].stopped.failed")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)),
+            before,
+            { timeout: 20000 },
+          )
+          .then((h) => h.jsonValue(), () => null);
+        const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
+        if (!job || job.kind !== "clip" || job.episode !== path || job.state !== "failed") {
+          wrong = key ? `the card that failed, ${key}, is not of a clip made by hand` : "O before the first word made no card that failed";
+          break;
+        }
+        const said = await page.evaluate((k) => {
+          const li = document.querySelector(`li[data-key="${k}"]`);
+          return {
+            title: li?.querySelector(".title")?.textContent.trim() ?? "",
+            meta: li?.querySelector(".meta")?.textContent.trim() ?? "",
+          };
+        }, key);
+        const toast = await page
+          .waitForFunction(() => document.querySelector(".toast .text")?.textContent.trim() ?? "", null, { timeout: 10000 })
+          .then((h) => h.jsonValue(), () => "");
+        const report = await page.locator(".toast button.report").count();
+        if (said.title !== "Failed. Click Continue") wrong = `the card says "${said.title}", not Failed. Click Continue`;
+        else if (said.meta !== "0:00") wrong = `the card's second line says "${said.meta}", not where the clip lies, 0:00`;
+        else if (!toast.includes("Nothing is said before")) wrong = `the toast says "${toast}", not why the clip could not be made`;
+        else if (!report) wrong = "the toast offers no Report";
         await watch.step("wait", s);
         break;
       }

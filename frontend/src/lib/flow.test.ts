@@ -1,6 +1,5 @@
 import { describe, expect, it, test } from "vitest";
 import {
-  waitShare,
   Heard,
   heardIn,
   joinParts,
@@ -439,28 +438,6 @@ describe("a job's news", () => {
     let list = heard;
     for (const got of read) list = mergeJob(list, got) ?? list;
     expect(list).toEqual([job("running", 5)]);
-  });
-});
-
-// The row of a search waiting for the transcript is a view of the window on
-// the range picker: how much of the window is transcribed. Measured from the
-// start of the episode, a window two hours in began nearly full.
-describe("waitShare", () => {
-  it("is empty while nothing of the window is heard", () => {
-    expect(waitShare(7200, [], 9000)).toBe(0);
-    expect(waitShare(7200, [[0, 7200]], 9000)).toBe(0);
-  });
-
-  it("is how much of the window is transcribed", () => {
-    expect(waitShare(7200, [[0, 8100]], 9000)).toBe(0.5);
-    expect(waitShare(1800, [[0, 2500]], 3600)).toBeCloseTo(700 / 1800, 9);
-    // Wherever in the window it was heard.
-    expect(waitShare(1800, [[3000, 3600]], 3600)).toBeCloseTo(600 / 1800, 9);
-  });
-
-  it("is full when all of the window is heard and never past it", () => {
-    expect(waitShare(1800, [[0, 3600]], 3600)).toBe(1);
-    expect(waitShare(1800, [[0, 4000]], 3600)).toBe(1);
   });
 });
 

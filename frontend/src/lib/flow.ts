@@ -48,16 +48,6 @@ export function gapsIn(parts: Parts, from: number, to: number): Parts {
   return out;
 }
 
-// How much of a window has been transcribed, by what has been heard: the
-// row of a search waiting for the transcript is a view of the window on the
-// range picker. Empty while nothing of the window is heard, full when all
-// of it is. It was measured from the start of the episode, so a window two
-// hours in began nearly full.
-export function waitShare(from: number, heard: Parts, to: number): number {
-  if (to - from < 0.5) return covers(heard, from, to) ? 1 : 0;
-  return Math.min(Math.max(heardIn(heard, from, to) / (to - from), 0), 1);
-}
-
 // A part of the episode, in seconds. The range picker works in these.
 export type Span = { from: number; to: number };
 

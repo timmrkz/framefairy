@@ -513,6 +513,80 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 	}
 }
 
+// Issue #444: Tim searched windows heard in part already, and the fill of
+// the transcription started well past 0. What a hearing says of how far it
+// has come is a share of what it hears, the parts of the window not heard
+// yet, so a window heard half already starts at 0 and ends at 1 all the
+// same, and each moment it reports is that far through the part left.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+
+	var mu sync.Mutex
+	type moment struct{ fraction, covered float64 }
+	var said []moment
+	listening := false
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if listening {
+			said = append(said, moment{ev.Fraction, ev.Covered})
+		}
+	})
+	var calls int32
+	e := NewEngine(log, disk)
+	e.checkpointEvery = time.Hour
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Hear(context.Background(), Window{0, 35}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	gaps := Unheard(disk, source, base.ASRModel, Window{0, 70})
+	if len(gaps) != 1 {
+		t.Fatalf("after hearing the first half, what is left is %v, not one part", gaps)
+	}
+	left := gaps[0]
+	mu.Lock()
+	listening = true
+	mu.Unlock()
+	if err := p.Hear(context.Background(), Window{0, 70}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(said) < 2 {
+		t.Fatalf("hearing the second half reported %d moments, %v", len(said), said)
+	}
+	for i, m := range said {
+		want := math.Max(m.covered-left.Start, 0) / (left.End - left.Start)
+		if math.Abs(m.fraction-want) > 0.01 {
+			t.Errorf("at %.2f s it said %.3f, not %.3f, how far it is through %v: %v", m.covered, m.fraction, want, left, said)
+			break
+		}
+		if i > 0 && m.fraction < said[i-1].fraction {
+			t.Errorf("it went back from %.3f to %.3f: %v", said[i-1].fraction, m.fraction, said)
+			break
+		}
+	}
+	// The share of the window heard is never what it says: the half
+	// heard before counts for nothing.
+	if first := said[0]; first.fraction > first.covered/70-0.1 {
+		t.Errorf("at %.2f s it said %.3f, about the share of the window heard: %v", first.covered, first.fraction, said)
+	}
+	if last := said[len(said)-1].fraction; last < 0.99 {
+		t.Errorf("it ended at %.3f, not 1: %v", last, said)
+	}
+}
+
 // A transcription that is stopped writes down everything it heard before it
 // goes, not only what the last save held. A search pauses it, and carrying
 // on afterwards has to start where the work really got to, or minutes of

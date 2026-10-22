@@ -36,7 +36,6 @@
   } from "../lib/api";
   import { jobs } from "../lib/state.svelte";
   import {
-    waitShare,
     Heard,
     covers,
     heardIn,
@@ -269,23 +268,26 @@
   // search starts or stops. It is undefined when there is nothing to say.
   const search = $derived(jobs.search(path));
   // A search that fails while the app is open says why in a toast, with
-  // Report for what the person cannot put right alone. Its row goes on
-  // saying Failed with Continue, after a restart too. One seen failed
-  // only as the app opened has said why already, the time it failed.
-  // Only its state and id are read, see the rule on watching jobs.
-  let failedSeenRunning = "";
+  // Report for what the person cannot put right alone, and so does a clip
+  // made by hand with I or O. Its row or card goes on saying Failed with
+  // Continue, after a restart too, and never why, issue #450. One seen
+  // failed only as the app opened has said why already, the time it
+  // failed. Only the jobs' states and ids are read, see the rule on
+  // watching jobs.
+  const seenRunning = new Set<string>();
   $effect(() => {
-    const id = search?.id ?? "";
-    const state = search?.state;
-    if (state === "running" || state === "queued") {
-      failedSeenRunning = id;
-      return;
+    for (const job of [search, ...jobs.clips(path)]) {
+      if (!job) continue;
+      if (job.state === "running" || job.state === "queued") {
+        seenRunning.add(job.id);
+        continue;
+      }
+      if (job.state !== "failed" || !seenRunning.delete(job.id)) continue;
+      const what = job.kind === "clip" ? "clip made by hand" : "search";
+      const why = untrack(() => reasonOf(job.error, what));
+      tell(`${what} failed: ${why}`);
+      toasts.say(where(), why, { video: path, report: true });
     }
-    if (state !== "failed" || !id || failedSeenRunning !== id) return;
-    failedSeenRunning = "";
-    const why = untrack(() => reasonOf(search?.error));
-    tell(`search failed: ${why}`);
-    toasts.say(where(), why, { video: path, report: true });
   });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
   const working = $derived(searching ? search : undefined);
@@ -709,16 +711,12 @@
   // An empty headline means nothing new to say, which is what the moment
   // between two reports of the engine is, and the row keeps what it says.
   const windowText = $derived(`Window ${clock(from)} to ${clock(to)}`);
-  // How much of the window has been transcribed, by the same edge the range
-  // picker draws, so the row is a view of the window on the range picker:
-  // empty at its start, half full when half of it is transcribed, full at
-  // its end. It used to be measured from the start of the episode, so a
-  // window two hours in began nearly full.
-  const heardShare = $derived(to > 0 ? waitShare(from, shownHeard, to) : -1);
   // The row the next clip will appear in says which step the search is in,
   // in the words of lib/steps.ts, the same words every row that shows work
-  // uses. While it hears, how far it has come is how far the window has
-  // been heard. Nothing more: the clips it has found so far are the cards
+  // uses. While it hears, how far it has come is how far it has heard what
+  // of the window it has to hear, from 0, see stepLine. It was once how
+  // much of the window was heard, which started half full on a window
+  // heard half already, issue #444. Nothing more: the clips it has found so far are the cards
   // above the row, and the row said "2 of 12 found" in the place the third
   // clip was to appear.
   const next = $derived.by(() => {
@@ -727,13 +725,13 @@
     // the search is about to take, so Continue goes from Stopped straight
     // to Transcribing, with no empty card and no word in between.
     if (!working) {
-      const fraction = heardWindow ? -1 : heardShare;
+      const fraction = heardWindow ? -1 : 0;
       // Cancel pressed before the Go side answered: the row says so at
       // once, the same as for a search that runs.
       if (stopping) return { what: "Stopping", left: windowText, fraction, still: true, now: true };
       return { what: heardWindow ? "Finding clips" : "Transcribing", left: windowText, fraction, now: true };
     }
-    const line = stepLine(working, heardShare);
+    const line = stepLine(working);
     // Cancel pressed: the row says so in the same frame, and stands still
     // where it got to, until the search has saved what it did and says it
     // stopped. It went on saying Transcribing for a second after the click.
@@ -754,7 +752,7 @@
   // see ClipList.
   const carry = $derived.by(() => {
     if (!working) return null;
-    const { fraction, left } = stepLine(working, heardShare);
+    const { fraction, left } = stepLine(working);
     return { job: working.id, fraction, left, still: stopping };
   });
 
@@ -852,9 +850,10 @@
   // itself. A search called off by hand leaves nothing to say.
   // Why a search failed, as a sentence. The engine's reasons begin in
   // lower case, the way an error does in the log.
-  function reasonOf(error?: string): string {
+  function reasonOf(error?: string, what = "search"): string {
     const said = error?.trim() ?? "";
-    return said ? said[0].toUpperCase() + said.slice(1) : "The search failed, and no reason was given.";
+    if (said) return said[0].toUpperCase() + said.slice(1);
+    return what === "search" ? "The search failed, and no reason was given." : "The clip could not be made, and no reason was given.";
   }
   const halted = $derived.by(() => {
     if (!search || busy) return null;
@@ -1772,6 +1771,9 @@
     pressed = backward ? "out" : "in";
     try {
       const job = await api.makeClip(path, time, backward);
+      // Asked for here, so a failure says why in a toast however soon it
+      // comes, see seenRunning.
+      if (job.state !== "failed") seenRunning.add(job.id);
       jobs.apply(job);
       if (job.state === "failed") {
         oops(job.error ?? "The clip could not be made");
