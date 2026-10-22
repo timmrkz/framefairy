@@ -360,21 +360,115 @@ export async function nextPaint(page, n = 1) {
   );
 }
 
+// Waits for the video preview to show the frame that holds the playhead,
+// by where the app says the frame shown begins, and with captions for
+// that frame to be drawn with its own captions over it, see data-captioned
+// in Player.svelte. It says true then, and false when a layer of captions
+// is given up on first, data-captions-lost, counted from lost, the count
+// read before the gesture, since a layer can be given up on while the
+// walk settles after it. T and C put a mark on the frame shown, the frame
+// a person sees, and the caption box shows what was drawn on it, and on a
+// busy machine both come a moment after the playhead. It waits on the
+// page changing, never on the clock, so a frame that never comes is ended
+// by the -timeout of make walks.
+export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
+  const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+  return page.locator(".screen").evaluate(
+    (screen, [fps, start, captions, lost]) =>
+      new Promise((done) => {
+        const since = lost ?? screen.dataset.captionsLost ?? "";
+        const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
+        const up = () => {
+          const at = Number(screen.dataset.playhead);
+          const shown = Number(screen.dataset.shown);
+          // The frame that holds the playhead, one that begins a
+          // millisecond or less after it included, see frameAt in
+          // lib/flow.ts.
+          const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+          if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
+          return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
+        };
+        if (up()) return done(true);
+        if (gone()) return done(false);
+        const seen = new MutationObserver(() => {
+          const came = up();
+          if (!came && !gone()) return;
+          seen.disconnect();
+          done(came);
+        });
+        seen.observe(screen, {
+          attributes: true,
+          attributeFilter: ["data-playhead", "data-shown", "data-captioned", "data-captions-lost"],
+        });
+      }),
+    [fps, videoStart, captions, lost],
+  );
+}
+
+
+// Plays from the playhead until the video has gone on by seconds, or until
+// the play has stopped by itself at the clip's end, and pauses it there.
+// It follows the playhead the video preview says, data-playhead, never the
+// clock, so a busy machine plays as far as a quiet one, only slower. A
+// play that loops back to the clip's start counts on from there. Whether
+// it still plays is asked in the same moment as it is paused, inside the
+// page: asked first and paused after, a clip that reached its end in
+// between would play again from its start.
+export async function playFor(page, seconds) {
+  await page.evaluate(() => (window.__played = null));
+  await page.keyboard.press("Space");
+  await page.waitForFunction(
+    (seconds) => {
+      const at = Number(document.querySelector(".screen")?.dataset.playhead);
+      const playing = !document.querySelector('button[aria-label="Play"]');
+      const p = (window.__played ??= { last: at, gone: 0, started: false });
+      if (Number.isFinite(at) && at > p.last) p.gone += at - p.last;
+      p.last = at;
+      p.started ||= playing;
+      return p.gone >= seconds || (p.started && !playing);
+    },
+    seconds,
+    { polling: "raf", timeout: 0 },
+  );
+  await page.evaluate(() => {
+    if (document.querySelector('button[aria-label="Play"]')) return;
+    const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+    document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+    document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+  });
+}
+
 // How many times the Go side has told the interface something of a name,
 // "job" above all, counted from the first time a walk asks, so it can wait
 // for the next. The bridge sends every event to every page listening, so
 // the walk listens beside the app and takes nothing from it.
+// The first ask waits until the walk is listening, so nothing the Go side
+// says after it is missed.
 export async function news(page, name = "job") {
-  return page.evaluate((name) => {
+  return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
-      new EventSource("/events").onmessage = (m) => {
+      const source = new EventSource("/events");
+      source.onmessage = (m) => {
         const ev = JSON.parse(m.data);
         window.__news[ev.name] = (window.__news[ev.name] ?? 0) + 1;
       };
+      window.__listening = new Promise((r) => (source.onopen = r));
     }
+    await window.__listening;
     return window.__news[name] ?? 0;
   }, name);
+}
+
+// Waits until the interface has heard everything the Go side told it up
+// to now, by a mark the bridge sends behind it, see /mark in
+// bridge_test.go, and then until the app has settled on it. What the
+// engine said before this is then what the screen shows, however late a
+// busy machine delivered it.
+export async function caughtUp(page, url) {
+  const mark = await control(url, "/mark");
+  await page.waitForFunction((mark) => window.__mark >= mark, mark, { polling: "raf", timeout: 0 });
+  await settle(page);
 }
 
 // Waits until the Go side has told the interface something of a name more

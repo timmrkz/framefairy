@@ -31,7 +31,16 @@ function listen() {
     else tell(name, data);
   };
 }
+// How many times the interface has been told something of each name, and
+// the last mark it heard, which the bridge sends behind everything it told
+// the interface before, see /mark in bridge_test.go. A walk that has seen
+// a mark come knows the count is whole up to it.
+const heard: Record<string, number> = {};
+(window as any).__heard = heard;
+(window as any).__mark = 0;
 function tell(name: string, data: unknown) {
+  heard[name] = (heard[name] ?? 0) + 1;
+  if (name === "mark") (window as any).__mark = data;
   for (const fn of listeners.get(name) ?? []) fn({ data });
 }
 

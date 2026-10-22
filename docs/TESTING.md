@@ -185,7 +185,12 @@ word, typing a word after or before what a word reads, replacing it,
 clearing it, Enter to save, Escape, delete on the framed word, Undo,
 Redo, and playing for a moment. The words typed are some of the
 episode's own, the words the walk has removed above all, so it types
-them back in, and some it never says.
+them back in, and some it never says. Each Shift and arrow waits until
+the video preview shows the frame of the word it stepped to before the
+next is pressed, `shownOnPlayhead` in `walks/bridge.mjs`, and a play
+goes on until the playhead has moved as far as the walk asked, or the
+clip has ended, `playFor`. Neither waits on the clock, so a busy
+machine takes longer over a step, never another step.
 
 The rules, after every step, once no call has been on its way for a
 quarter of a second:
@@ -222,7 +227,8 @@ Every walk also checks, after every step, that the clip timeline shows
 the clip the engine has: where it starts and ends and every cut, read
 off the handles' `aria-valuenow`, to a millisecond. The engine's state a
 walk compares before and after a step, for Undo and Redo, is the clip's
-pieces as well as its captions.
+pieces as well as its captions. A play goes as far into the clip as the
+walk asked, by the playhead, `playFor`, the same as in `words.mjs`.
 
 A walk is a script in the folder that walks with `walk.mjs`, which runs
 the loop: look, pick a gesture that can be made, make it, check the
@@ -306,13 +312,16 @@ quick, the app closed and opened again, another episode opened, and a
 wait. With the speech quick and the model answering, adding a video waits
 for its first clips. With the speech slow the walk goes on while the
 video is transcribed, so the next steps land in the middle of it. The
-rules, besides every walk's:
+wait goes on for one to four of the engine's reports of its work, a job
+event each, or not at all when nothing runs that would report, none
+running, or a search waiting on a model that holds its answers. It
+never waits on the clock. The rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech is quick |
+| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
-| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | asked again for a few seconds, since a row is held a moment to be read |
+| The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
 | At rest, as many cards and the count beside Clips as the engine has clips | |
 | How work ended stays after a restart: a search the closing cut off is interrupted, one that stopped or failed stays as it was, one that was done leaves nothing | by how the engine left the search, which `/reopen` answers with |
@@ -322,6 +331,16 @@ not the captions the interface last asked for: an episode just opened
 shows its clip before that, and a walk then held it to another episode's.
 
 #### A walk waits on what a rule is about
+
+The screen is compared with the engine at one moment. `caughtUp` in
+`walks/bridge.mjs` asks the bridge for a mark, `/mark` in
+`bridge_test.go`, which it sends down the events behind everything the
+Go side told the interface before it, and waits until the app has heard
+it, `__mark` in `preview/wails-bridge.ts`, and settled. Every page hears
+the events in the order they were sent, so what the engine said before
+the mark is on screen then, however late a busy machine delivered it.
+How many events of each name the app heard is `__heard`, which says
+whether the engine's work moved on while the walk looked.
 
 A search goes on while the walk looks. The model the walk set to fail
 fails a search the moment it comes to finding, and one that answers ends
