@@ -231,8 +231,11 @@ jobs:
             flags: -run=^Test(A[^S-Z]|[B-O])
           - tests: AS-AZ+P-S
             flags: -run=^Test(A[S-Z]|[P-S])
+          # TestVideosAreNamedOnce runs in build, whatever changed. It
+          # reads the docs, so here it would run the engine's tests again
+          # for every change to a doc.
           - tests: rest
-            flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
+            flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])|^TestVideosAreNamedOnce$
     runs-on: ubuntu-24.04
     steps:
       # The whole history, for git restore-mtime below.

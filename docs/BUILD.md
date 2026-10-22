@@ -372,8 +372,11 @@ tests run, takes the time of the newest file it is built from, see
 `frames` in the Makefile, so building it again from the same files
 changes nothing the tests see. And the log of the tests goes to
 `$RUNNER_TEMP`, because one test resolves a path through the top of the
-checkout, whose time changes when a file is made in it. `macos` does none
-of this, so there the engine and the app run every time.
+checkout, whose time changes when a file is made in it. The one engine
+test that reads the docs, `TestVideosAreNamedOnce`, is skipped in
+`linux`, because it runs in `build` whatever changed, and otherwise a
+change to a doc would run the engine's tests again. `macos` does none of
+this, so there the engine and the app run every time.
 
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
