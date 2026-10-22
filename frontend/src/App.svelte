@@ -56,6 +56,15 @@
   const open = $derived(shell.pinned || near || holding);
   let aside = $state<HTMLElement>();
 
+  // What opened or closed the sidebar last, for the log, so a report
+  // says what did it.
+  let why = "";
+  function reach(to: boolean, cause: string) {
+    if (near === to) return;
+    why = cause;
+    near = to;
+  }
+
   // What the sidebar knew of the pointer is out of date once its list
   // closes: while the list was open the pointer was on the list, not on
   // the sidebar. Falling back on that closed the sidebar the moment Escape
@@ -67,7 +76,7 @@
     holds = Math.max(0, holds + (isOpen ? 1 : -1));
     holding = holds > 0;
     if (!holding) {
-      near = true;
+      reach(true, "its list closed");
       asking = true;
     }
   }
@@ -80,7 +89,7 @@
   // the pointer is.
   function away() {
     if (holding) return;
-    near = false;
+    reach(false, "the app lost the focus");
     asking = true;
   }
 
@@ -88,13 +97,41 @@
   // back to the button last clicked, when the app's window has the focus
   // again, is not the person reaching for the sidebar.
   function focusIn(e: FocusEvent) {
-    if ((e.target as Element).matches?.(":focus-visible")) near = true;
+    if ((e.target as Element).matches?.(":focus-visible")) reach(true, "the keyboard went into it");
   }
 
+  // The sidebar opens when the hand moves the pointer onto it, and for
+  // nothing else. Tim had the pointer on the sidebar, swiped up for
+  // Mission Control, and saw it open and close over and over until he
+  // clicked back into the app. WebKit hands on every mouse entered and
+  // exited macOS sends as a move of the pointer, and a sidebar that opens
+  // and closes under a still pointer can have the system send another, so
+  // the sidebar answered itself. Those moves move nothing: what the hand
+  // does on the trackpad or the mouse is in a move's movement, and theirs
+  // is none. Only the very first move is taken without it, since the
+  // pointer had no place before it to have moved from. And the sidebar
+  // only answers the pointer while the app is in front, the way the Mac's
+  // own windows do. Where the pointer was at its last real move, so it
+  // opens on the way in and not again while it stays.
+  let inside = false;
+  let moved = false;
   function pointerMoved(e: PointerEvent) {
-    if (!asking || holding) return;
-    asking = false;
-    near = !!aside?.contains(e.target as Node);
+    if (moved && !e.movementX && !e.movementY) return;
+    moved = true;
+    const now = !!aside?.contains(e.target as Node);
+    const came = now && !inside;
+    inside = now;
+    if (holding) return;
+    const front = document.hasFocus();
+    if (asking) {
+      asking = false;
+      reach(now && front, now ? "the pointer is on it" : "the pointer is away from it");
+    } else if (came && front) reach(true, "the pointer moved onto it");
+  }
+
+  function pointerLeft() {
+    inside = false;
+    reach(false, "the pointer left it");
   }
 
   // Escape closes one thing at a time, the way a menu on the Mac does: the
@@ -104,7 +141,7 @@
   // layer too: the press lets go of it, see escapeLetsGo.
   function escape(e: KeyboardEvent) {
     if (e.key !== "Escape" || holding || shell.pinned || !near || removing || typing()) return;
-    near = false;
+    reach(false, "Escape");
     asking = false;
   }
 
@@ -112,9 +149,22 @@
   // with the pointer still on it. Hover opens it again once the pointer has
   // left and come back.
   function toggleBar() {
+    why = open ? "its button closed it" : "its button pinned it";
     shell.set(!open);
     if (open) near = false;
   }
+
+  // Every time the sidebar opens or closes, and what did it, so a report
+  // shows a sidebar that went back and forth and why.
+  let wasOpen: boolean | null = null;
+  $effect(() => {
+    const now = open;
+    untrack(() => {
+      if (wasOpen !== null && wasOpen !== now) said(`sidebar: ${now ? "opened" : "closed"}, ${why || "pinned"}`);
+      wasOpen = now;
+      why = "";
+    });
+  });
 
   let episodes = $state<EpisodeStatus[]>([]);
   // A label being made in a video's menu, drawn in its row and the title
@@ -664,10 +714,9 @@
   <aside
     bind:this={aside}
     class:open
-    onpointerenter={() => (near = true)}
-    onpointerleave={() => (near = false)}
+    onpointerleave={pointerLeft}
     onfocusin={focusIn}
-    onfocusout={() => (near = false)}
+    onfocusout={() => reach(false, "the keyboard left it")}
   >
     <div class="head row">
       <button

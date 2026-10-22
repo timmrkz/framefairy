@@ -209,7 +209,12 @@ come back. It closes when the app's window loses the focus, as it does
 to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
-back to the button last clicked. Closed, it leaves room for the settings column of the workspace,
+back to the button last clicked. Hovering opens it only on a real move
+of the pointer onto it, and only while the app is in front: macOS hands
+the app moves that move nothing, while Mission Control shows it above
+all, and a sidebar that answered them opened and closed over and over
+under a still pointer. The log says every time it opens or closes and
+what did it. Closed, it leaves room for the settings column of the workspace,
 which is exactly what it covers when it opens. Open, it casts a shadow on
 the workspace to its right and none on the title bar above it. **Add episode**,
 **Settings** and **Updates** sit at the bottom of it and stay reachable as
@@ -3171,7 +3176,10 @@ to the field, and Shift+Tab the other way, issue #404, so Enter, Tab and
 Enter end a dictation and make the report. The page moves the focus
 itself: macOS tabs past buttons unless full keyboard access is on, so
 Tab went from the field to the first picture, or with none to nothing
-Tim could see. Report pressed while the last words of a dictation are
+Tim could see. Each move asks for the focus ring, because WebKit draws
+none on a focus the page moved after a click into the field. Tab pressed
+while the last words of a dictation are still written down leaves the
+focus on Report once they are in. Report pressed while the last words of a dictation are
 still written down says Making at once and waits for them, so they are
 in the report. While dictating Tab does nothing: only Enter, Escape and
 the microphone end a dictation, as Tim asked.
