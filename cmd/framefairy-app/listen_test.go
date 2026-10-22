@@ -92,6 +92,14 @@ func listenWith(t *testing.T, samples []float32) (*FrameFairy, func() []map[stri
 	})
 	f := &FrameFairy{}
 	f.listening.every = 10 * time.Millisecond
+	// A recording still being written down when the test ends wrote its
+	// last lines into a log whose folder was being removed, and on the
+	// Mac the removal then found the folder not empty, issue #441. So
+	// the test lets go of the log only once nothing of a recording runs.
+	t.Cleanup(func() {
+		f.CancelListening()
+		f.listening.running.Wait()
+	})
 	return f, read
 }
 
@@ -371,10 +379,14 @@ func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
 	if !strings.Contains(d.Error, "the file is damaged") {
 		t.Errorf("told %q", d.Error)
 	}
-	if _, err := f.Listen(); err != nil {
-		t.Errorf("listening again after the model failed: %v", err)
+	again, err := f.Listen()
+	if err != nil {
+		t.Fatalf("listening again after the model failed: %v", err)
 	}
-	f.CancelListening()
+	d = awaitTold(t, told, func(d Dictation) bool { return d.Recording == again && d.Error != "" })
+	if !strings.Contains(d.Error, "the file is damaged") {
+		t.Errorf("told the second time %q", d.Error)
+	}
 }
 
 // sentences stands in for a speech model that writes what it is given as

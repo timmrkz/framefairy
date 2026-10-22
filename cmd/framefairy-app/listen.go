@@ -69,6 +69,10 @@ type listening struct {
 	every time.Duration
 	quiet time.Duration
 	most  int
+	// running is every goroutine a recording started, which goes on for a
+	// moment after the recording ends and may still write a line to the
+	// log. A test waits on it before it lets go of what they use.
+	running sync.WaitGroup
 }
 
 // listenQuiet is how long a recording goes on with no new words before it
@@ -272,8 +276,9 @@ func (f *FrameFairy) Listen() (int, error) {
 	}
 	l.now = r
 	every := cmp.Or(l.every, listenEvery)
-	go l.write(r, dir, every, cmp.Or(l.quiet, listenQuiet))
-	go l.measure(r)
+	quiet := cmp.Or(l.quiet, listenQuiet)
+	l.running.Go(func() { l.write(r, dir, every, quiet) })
+	l.running.Go(func() { l.measure(r) })
 	r.line(zerolog.InfoLevel).Msg("recording for a report")
 	return r.id, nil
 }
