@@ -30,8 +30,7 @@
   // closing, and Export transcript once it is all there. Each is an
   // action, which closes the menu the way a menu item does on the Mac.
   // How far the work has come is not the menu's to show: the dots on the
-  // range picker shrink and the video's row in the sidebar says how much
-  // is transcribed, Tim's call on #458. Export hangs a list of its formats
+  // range picker shrink and the video's dot pulses, Tim's call on #458. Export hangs a list of its formats
   // on the right of the menu, the way Export To does in Pages, and a
   // format opens the system's save box. Two rows of which one never works
   // were two things to read for one.

@@ -176,9 +176,6 @@ export interface EpisodeStatus {
   measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
   transcriptStale: boolean;
-  // How long the episode is, as its transcript knows it, missing before
-  // it has one.
-  length?: number;
   plans: PlanSummary[] | null;
   rendered: number;
   previews: number;

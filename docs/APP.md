@@ -193,16 +193,14 @@ menu's to show, Tim's call on #458:
   always gets the format's ending, whatever name is typed, so the save
   box can never replace the video or any other kind of file.
 
-While it runs, the video's row in the sidebar says how much of the video
-is transcribed, `62 %` at the end of the row, and its dot pulses the way
-it does for all work, both from the frame Transcribe whole video is
-clicked. The dots on the range picker shrink as it hears. The number is
-read from the same parts heard the dots are drawn from, a mark that only
-ever grows, `Heard` in `lib/flow.ts`, so it never goes back, and the
-library is read again each time the work goes on to the next part of the
-video. Read only when the job ended, the number went back each time the
-work went on to the next part and jumped from 60 to 96 % when it was
-stopped, found by Tim.
+While it runs, the dots on the range picker shrink as it hears, and the
+video's dot in the sidebar pulses the way it does for all work, from the
+frame Transcribe whole video is clicked until the frame Stop
+transcribing is. Nothing else says how far it has come, Tim's call on
+#458: a number in the menu, and then one in the video's row, were more
+to read for what the dots already show. The library is read again each
+time the work goes on to the next part of the video, so the summary in
+the video's row keeps up with it.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told

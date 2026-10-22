@@ -837,10 +837,11 @@ func (q *queue) runJob(job *Job) {
 		}
 		copied := ev
 		// A hearing that begins a new part has saved the part before it,
-		// so the library is read again: what it says was heard stays true
-		// while a job hears a video in parts, not only once the job ends.
-		// Read only when it ended, the menu's share of a video heard went
-		// back each time the work went on to the next part, found by Tim.
+		// so the library is read again: what it says was heard, and the
+		// summary in the video's row, stay true while a job hears a video
+		// in parts, not only once the job ends. Read only when it ended, a
+		// share of the video worked out from it went back each time the
+		// work went on to the next part, found by Tim on #458.
 		if copied.Kind == engine.EventProgress && copied.Covered > 0 {
 			partMu.Lock()
 			moved := partFrom >= 0 && copied.From != partFrom
