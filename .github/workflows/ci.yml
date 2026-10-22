@@ -6,16 +6,14 @@
 # links on macOS. Run one after another they take about six minutes, and the
 # answer arrives when the slowest one does instead.
 #
-# On a pull request each job then asks scripts/ci-needs.sh whether there is
-# anything for it to do, so a change to the docs does not fuzz two platforms
-# and a change to the interface does not run the Go tests. The rules live in
-# that script rather than in here, and they err towards running: a test that
-# runs when it need not costs a minute, one that does not run when it should
+# On a pull request the job changes first reads which files changed, with
+# dorny/paths-filter and the filters in .github/ci-filters.yml, and a job
+# with nothing to do never starts a machine. GitHub shows it as skipped,
+# and a skipped job counts as passed for a required check. So a change to
+# the docs does not fuzz two platforms, and a change to the interface does
+# not run the Go tests. The filters err towards running: a test that runs
+# when it need not costs a minute, one that does not run when it should
 # have costs a broken main.
-#
-# Every job still runs and still reports, it just does nothing when there is
-# nothing to do. That keeps the checks a branch rule can be built on, which
-# a job skipped outright would not.
 #
 # A push to main narrows nothing. Whatever it touched, everything is built
 # and tested, so main is always known to be sound and a mistake in the rules
@@ -46,40 +44,75 @@ env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
 jobs:
+  # Which jobs a pull request needs, see .github/ci-filters.yml. A push to
+  # main needs them all. The action asks GitHub for the files the pull
+  # request changed, which takes reading pull requests, and the checkout
+  # brings the filters and nothing else.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.app == 'true' }}
+      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
+      interface: ${{ github.event_name != 'pull_request' || steps.filter.outputs.interface == 'true' }}
+      workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
+      changed: ${{ github.event_name != 'pull_request' || steps.filter.outputs.changed == 'true' }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/ci-filters.yml
+          sparse-checkout-cone-mode: false
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: .github/ci-filters.yml
+          predicate-quantifier: some-with-excludes
+
   # First back, by a long way, and the one most changes touch. It needs Node
   # and nothing else: no Go, no system libraries, no build.
   interface:
+    needs: changes
+    if: needs.changes.outputs.interface == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh interface >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # ESLint among it, see frontend/eslint.config.js.
       - name: Type check and interface tests
-        if: steps.needs.outputs.run == 'true'
         run: make interface
 
   # Builds everything, the interface included, which is what proves the
   # programs still link and that Go can embed what make built.
   build:
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
+      # Two commits, for the main the merge commit sits on, which the
+      # clock lint and the check of the plan compare against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # Node for the check of the CI rules, which matches with the
+      # picomatch the action uses, and for the build.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       # Always, whatever changed. A mistake in the rules that decide what
       # runs is silent: CI goes green having run less than it should. This
-      # takes a second and it is the one thing nothing else would catch.
+      # takes seconds and it is the one thing nothing else would catch.
       - name: Check the CI rules
-        run: sh scripts/ci-needs-test.sh
+        run: sh scripts/ci-filters-test.sh
       # And the rule that decides whether a push gets a build to update to,
       # which is as silent when it is wrong.
       - name: Check the rule for a build
@@ -98,73 +131,60 @@ jobs:
       # And, when a workflow changed, that every action is pinned to a
       # commit with its full version beside it, so a bump says which
       # release it moves to. Nothing else can change a pin.
-      - id: pins
-        run: sh scripts/ci-needs.sh workflows >> "$GITHUB_OUTPUT"
       - name: Check the action pins
-        if: steps.pins.outputs.run == 'true'
+        if: needs.changes.outputs.workflows == 'true'
         run: sh scripts/pins.sh
-      - id: needs
-        run: sh scripts/ci-needs.sh build >> "$GITHUB_OUTPUT"
-      - id: changed
-        run: sh scripts/ci-needs.sh changed >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true' || steps.changed.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+      # And, whatever changed, the one Go test that reads the interface,
+      # the docs and the scripts whole, for the endings of a video. Those
+      # files start no Go tests, so without this a pull request that names
+      # the endings a second time would go green and break main.
+      - name: Check the video endings are named once
+        run: go test -run '^TestVideosAreNamedOnce$' ./engine
       # And what make changed runs for a change, which is as silent when it
       # is wrong: the check before a push goes green having run less than
       # the change needed. It reads the packages with Go, so it runs
       # whenever Go is set up, which a change to its rules alone does too.
       # It took 7 s here, in one run.
       - name: Check what make changed runs
-        if: steps.needs.outputs.run == 'true' || steps.changed.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true' || needs.changes.outputs.changed == 'true'
         run: sh scripts/changed-test.sh
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
-        if: steps.needs.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true'
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
+      - if: needs.changes.outputs.app == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/apt
           key: apt-build-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
           restore-keys: apt-build-
       - name: System packages
-        if: steps.needs.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh patchelf
-      # And the split of the Go tests over machines, which would go green
-      # having run a part of them when it is wrong. It needs Go to
-      # list the tests, so it runs after Go is set up.
-      - name: Check the split of the Go tests
-        if: steps.needs.outputs.run == 'true'
-        run: sh scripts/go-shard-test.sh
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
       - name: go.mod is tidy
-        if: steps.needs.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true'
         run: go mod tidy -diff
       # Without the tools we ship, which this runner does not build: it
       # proves the programs link, and NOTOOLS says so rather than make
       # stopping for want of them.
       - name: Build
-        if: steps.needs.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true'
         run: make NOTOOLS=1
       # No new Go test waits on the clock, see .golangci.yml. make
       # installs nothing here, so this step asks for the golangci-lint the
       # Makefile pins. After the build, whose Go build cache the linter
       # reads. The proof first, so settings that let all through fail.
       - name: No new test waits on the clock
-        if: steps.needs.outputs.run == 'true'
+        if: needs.changes.outputs.app == 'true'
         run: |
           make golangci-lint INSTALL=1
           sh scripts/lint-test.sh
@@ -174,62 +194,72 @@ jobs:
   # of every fuzz target. ffmpeg is here because the tests that render skip
   # without it, and they are worth having.
   #
-  # On three machines, each with every third test, see scripts/go-shard.sh:
-  # on one they took six minutes, on two one of them still took 5:35, and
-  # no job takes over five.
+  # On three machines, each with the tests of every package whose names
+  # start with some letters. The patterns never change, because Go keys
+  # its test cache on them, so a package a change does not reach says
+  # (cached) whatever tests were added elsewhere. Every test runs once,
+  # since -skip takes exactly what the two -run leave, fuzz seeds among
+  # it. The engine's tests whose names start with A are a third of all
+  # the time, so they are split by their second letter. The cache is
+  # keyed by the pattern, since one made with another pattern holds no
+  # result for this one. On one machine the tests took six minutes, and no job takes over
+  # five. Split by package, the app with the small packages took 208 s
+  # on one machine, in one run, because the app's tests run one after
+  # another.
   #
   # Go's build cache: setup-go keeps it by go.sum alone and saves it only
   # when go.sum changes, so a job started from one that was weeks old and
   # compiled nearly everything again, a minute here and close to two on a
   # Mac. The jobs that compile most, linux, walks and macos, take theirs
   # from the cache main saved last, one for each job, because each
-  # compiles with other flags. Main saves it after every push. A pull
+  # compiles with other flags, and one for each machine of linux, since
+  # each keeps the results of other tests. Main saves it after every
+  # push. A pull
   # request saves one only when it found none, before main has saved one
   # or after GitHub dropped it, so its next push starts warm. Otherwise it
   # saves nothing: a cache a pull request writes is its own, and the
   # upload would cost every run.
   linux:
-    name: linux (${{ matrix.shard }}/3)
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    name: linux (${{ matrix.tests }})
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        include:
+          - tests: A-AR+B-O
+            flags: -run=^Test(A[^S-Z]|[B-O])
+          - tests: AS-AZ+P-S
+            flags: -run=^Test(A[S-Z]|[P-S])
+          - tests: rest
+            flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
       # linux.
       - id: gocache
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ runner.os }}-
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
-        if: steps.needs.outputs.run == 'true'
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/apt
           key: apt-linux-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
           restore-keys: apt-linux-
       - name: System packages
-        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
       # The episode's decoder, which the tests and the walks play through,
@@ -238,16 +268,14 @@ jobs:
       # changes. The tests still take the system's ffmpeg from the PATH,
       # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
       - id: ffmpeg
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: The ffmpeg we ship
-        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The episode's decoder
-        if: steps.needs.outputs.run == 'true'
         run: make frames
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
@@ -258,25 +286,24 @@ jobs:
       # on what a failed test had left running, until it was cancelled by
       # hand.
       - name: Go tests
-        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 15
         run: |
-          make unit GOSHARD=${{ matrix.shard }}/3 2>&1 | tee unit.log
+          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
       # Whichever way the tests ended, what they left running is named on
       # the check and stopped, see scripts/leftovers.sh.
       - name: Nothing left running
-        if: always() && steps.needs.outputs.run == 'true'
+        if: always()
         run: sh scripts/leftovers.sh
-      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
+      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ github.sha }}
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -290,6 +317,8 @@ jobs:
   # quarters, too close to five. More walkers on a machine of four cores
   # finish no sooner and break walks that wait on the clock.
   walks:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     name: walks (${{ matrix.shard }}/4)
     strategy:
       fail-fast: false
@@ -298,19 +327,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh walks >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
       # linux.
       - id: gocache
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -318,8 +341,7 @@ jobs:
             ~/.cache/go-build
           key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-walks-${{ runner.os }}-
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -327,17 +349,14 @@ jobs:
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
-        if: steps.needs.outputs.run == 'true'
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/apt
           key: apt-walks-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
           restore-keys: apt-walks-
       # ffmpeg makes the bridge's episode and reads it.
       - name: System packages
-        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
       # The episode's decoder, which the tests and the walks play through,
@@ -346,34 +365,30 @@ jobs:
       # changes. The tests still take the system's ffmpeg from the PATH,
       # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
       - id: ffmpeg
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: The ffmpeg we ship
-        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The episode's decoder
-        if: steps.needs.outputs.run == 'true'
         run: make frames
       # The version of Chromium the pinned Playwright was made for, with the
       # libraries it needs.
       - name: Chromium
-        if: steps.needs.outputs.run == 'true'
         run: |
           make frontend/node_modules/.package-lock.json
           cd frontend && npm exec -- playwright install --with-deps chromium
       # A walk or a sequence that breaks a rule is named on the check, see
       # scripts/test-failures.sh.
       - name: Sequences and walks
-        if: steps.needs.outputs.run == 'true'
         run: |
           make walks WALKSHARD=${{ matrix.shard }}/4 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
-      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
+      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -392,20 +407,16 @@ jobs:
   # does not build every package before it starts. What a pull request
   # finds is not saved, because a cache a pull request writes is its own.
   fuzz:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -415,24 +426,20 @@ jobs:
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
-        if: steps.needs.outputs.run == 'true'
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/apt
           key: apt-fuzz-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
           restore-keys: apt-fuzz-
       - name: System packages
-        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 10
         run: sh scripts/ci-packages.sh
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
       - name: Fuzz
-        if: steps.needs.outputs.run == 'true'
         run: make fuzz SIMTIME=0
-      - if: always() && steps.needs.outputs.run == 'true' && github.ref == 'refs/heads/main'
+      - if: always() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -453,22 +460,18 @@ jobs:
   # the keychain, is all still tested. The build with no warnings allowed
   # is in the job outside, which builds the app anyway.
   macos:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh go >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
       # linux.
       - id: gocache
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -477,18 +480,16 @@ jobs:
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-macos-${{ runner.os }}-
       - id: ffmpeg
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: The ffmpeg we ship
-        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
           brew install meson ninja pkg-config nasm cmake
           sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: ffmpeg on the path, for the tests
-        if: steps.needs.outputs.run == 'true'
         run: |
           .build/ffmpeg/bin/ffmpeg -hide_banner -encoders | grep videotoolbox
           echo "$PWD/.build/ffmpeg/bin" >> "$GITHUB_PATH"
@@ -496,11 +497,9 @@ jobs:
       # which pkg-config finds. A runner whose ffmpeg came from the cache
       # installed nothing above.
       - name: pkg-config, for the episode's decoder
-        if: steps.needs.outputs.run == 'true'
         run: command -v pkg-config >/dev/null || brew install pkg-config
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
-        if: steps.needs.outputs.run == 'true'
         timeout-minutes: 15
         run: |
           make frames
@@ -509,9 +508,9 @@ jobs:
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
       - name: Nothing left running
-        if: always() && steps.needs.outputs.run == 'true'
+        if: always()
         run: sh scripts/leftovers.sh
-      - if: always() && steps.needs.outputs.run == 'true' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
+      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -529,23 +528,19 @@ jobs:
   # build the Mac has to pass, so the app is built once on a Mac in CI
   # rather than twice.
   outside:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
     # The app is opened by macOS and nothing ends it but the test. A run
     # that hangs stops here, not at GitHub's six hours.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: needs
-        run: sh scripts/ci-needs.sh outside >> "$GITHUB_OUTPUT"
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - if: steps.needs.outputs.run == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -553,27 +548,24 @@ jobs:
       # The same ffmpeg and llama-server as the job macos, from the same
       # caches: the app runs no other, so make stops without them.
       - id: ffmpeg
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: The ffmpeg we ship
-        if: steps.needs.outputs.run == 'true' && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
           brew install meson ninja pkg-config nasm cmake
           sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: pkg-config, for the episode's decoder
-        if: steps.needs.outputs.run == 'true'
         run: command -v pkg-config >/dev/null || brew install pkg-config
       - id: llama
-        if: steps.needs.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
       - name: The llama-server we ship
-        if: steps.needs.outputs.run == 'true' && steps.llama.outputs.cache-hit != 'true'
+        if: steps.llama.outputs.cache-hit != 'true'
         run: |
           brew install cmake
           sh scripts/build-llama.sh .build/llama
@@ -581,7 +573,6 @@ jobs:
       # box on screen that nobody here can answer, so this one is made
       # unlocked, never locks again and becomes the default.
       - name: A keychain of its own
-        if: steps.needs.outputs.run == 'true'
         run: |
           kc="$RUNNER_TEMP/outside.keychain-db"
           security create-keychain -p outside "$kc"
@@ -592,7 +583,6 @@ jobs:
       # Tim's platform, so the build has to be clean: a warning from clang
       # or the linker fails it. make outside builds on what this built.
       - name: Build without warnings
-        if: steps.needs.outputs.run == 'true'
         run: |
           make 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
@@ -602,5 +592,4 @@ jobs:
             exit 1
           fi
       - name: Opened from outside
-        if: steps.needs.outputs.run == 'true'
         run: make outside

@@ -714,9 +714,10 @@ the skills listed last show their name without what they are for.
   on Linux and on macOS, where the build has to be clean of warnings, and
   fuzzes on Linux, and drives the interface against the real Go side, see
   [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
-  the answer comes back in the time the slowest takes, and on a pull request
-  each one asks `scripts/ci-needs.sh` whether the change gives it anything
-  to do. A push to main narrows nothing. `make changed` runs what a branch
+  the answer comes back in the time the slowest takes. On a pull request a
+  first job reads which paths changed, by `.github/ci-filters.yml`, and a
+  job with nothing to do never starts a machine. A push to main narrows
+  nothing. `make changed` runs what a branch
   reaches, `make test` runs the lot, and `make unit`, `make fuzz`,
   `make interface` and `make walks` are the four parts of it, see
   [docs/BUILD.md](docs/BUILD.md).

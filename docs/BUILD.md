@@ -83,7 +83,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface`, `walks` and `lint` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included. `GOSHARD=1/2` runs every other test, see `scripts/go-shard.sh`, `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
 | `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
@@ -120,7 +120,7 @@ committed or not, new files included, and runs what those files can reach:
 | `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
 | a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
 | `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
-| `scripts/ci-needs*.sh`, `ci.yml` | `scripts/ci-needs-test.sh` |
+| `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh` |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
 | `.golangci.yml`, `frontend/eslint*`, `scripts/lint-test.sh` and its fixtures, the interface's packages | the linter they are for, and `scripts/lint-test.sh` |
@@ -300,20 +300,22 @@ out.
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
 main. It is twelve jobs on twelve machines, all at once, because none of them
-needs any of the rest:
+needs any of the rest, after a first one, `changes`, that says which of
+them a pull request needs, see [What runs for a change](#what-runs-for-a-change):
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
-| `linux (1/3)` to `linux (3/3)` | Linux | `make unit GOSHARD=1/3`, `2/3` and `3/3`, every third test each, under the race detector. On one machine they took six minutes, on two one still took 5:35 |
+| `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux | `make unit` under the race detector, every package on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
 | `walks (1/4)` to `walks (4/4)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/4` to `4/4`, a quarter of the runs each by how long they took last. On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 `linux`, `walks` and `macos` start from Go's build cache as main left it
-after its last push, one cache for each job, saved by main. A pull
+after its last push, one cache for each job and for each machine of
+`linux`, saved by main. A pull
 request saves its own only when it found none, for its next push. setup-go keeps the cache by `go.sum` alone and saves
 it only when `go.sum` changes, so with it a job started from a cache
 weeks old and compiled nearly everything again: a minute on Linux and
@@ -336,14 +338,19 @@ has a bug even when it passed. Before, a job once waited half an hour on
 two ffmpeg programs a failed test left behind, and the log never said
 whose they were.
 
-`scripts/ci-needs-test.sh` checks those rules and runs in the `build` job
-whatever changed, because a mistake in them is silent: CI would go green
-having run less than it should. Run it by hand with
-`sh scripts/ci-needs-test.sh`.
-
 Run together the answer comes when the slowest one does, and no job may
 take over five minutes, see Keeping the tests quick in CLAUDE.md. A job
 that grows past it is split over machines, the way `linux` is.
+
+The Go tests are split by patterns that never change, never by a list of
+test names, because Go keys its test cache on `-run`: with one list for
+the whole module, a test added anywhere made every package miss the cache
+on every machine. Now a package says `(cached)` unless the change reaches
+it. `-skip` takes exactly what the two `-run` leave, so every test runs
+once, the fuzz seeds among them. Split by package instead, the app's
+tests with the small packages took 208 s on one machine, in one run,
+because the app's tests run one after another, while the engine's run
+side by side.
 
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
@@ -356,36 +363,58 @@ both. The known inputs of every target run on a Mac in `make unit`.
 
 ### What runs for a change
 
-On a pull request each job asks `scripts/ci-needs.sh` whether there is
-anything for it to do, so a typo in a README does not fuzz two platforms:
+On a pull request the first job, `changes`, reads which files changed
+with [dorny/paths-filter](https://github.com/dorny/paths-filter) and the
+filters in `.github/ci-filters.yml`. A job with nothing to do never starts
+a machine, so a typo in a README does not fuzz two platforms:
 
-| What changed | What runs |
+| What changed | What starts |
 | --- | --- |
-| `docs/`, any `.md`, `.vscode/`, `.claude/` | nothing |
-| `frontend/` only | `interface`, `build`, `macos`, and everything when a Go test reads one of the files, like `api.ts` |
+| `docs/`, any `.md`, `LICENSE`, `.vscode/`, `.claude/` | `build` only, for the checks of the rules, which run whatever changed |
+| `frontend/` only | everything but `linux`, `fuzz` and `macos`, and those too when a Go test reads one of the files, like `api.ts` |
 | Go files, `go.mod`, `go.sum` only | everything but `interface` |
-| `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | the checks of the rules in `build`, which run whatever changed |
-| `scripts/changed*.sh` only | those checks and `scripts/changed-test.sh` in `build` |
+| `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
+| `scripts/changed*.sh` only | `build`, with `scripts/changed-test.sh` |
 | anything else, or a mix | everything |
 
-Anything else means the `Makefile`, the workflow, the other `scripts/` and
-whatever is added next: they decide how the project is built, so none of
-them counts as harmless. The scripts that check a rule, and the rules only
-those checks run, are the exception: no job but `build` has anything to do
-for them, and a pull request that changed only them ran every job, #322.
-The Go test that reads every script for the endings of a video then runs
-on main only, as it does for the docs. A file the rules do not recognise runs everything too. The rules
-err towards running, because a test that runs when it need not costs a
-minute and one that does not run when it should have costs a broken main.
+Each filter is every file less the files that cannot matter to its jobs,
+so anything else starts everything: the `Makefile`, the workflows, the
+other `scripts/` and whatever is added next. They decide how the project
+is built, so none of them counts as harmless. The scripts that check a
+rule, and the rules only those checks run, are the exception: no job but
+`build` has anything to do for them, and a pull request that changed only
+them ran every job, #322. The one Go test that reads the docs, the
+scripts and the interface whole, for the endings of a video, runs in
+`build` whatever changed, so none of them has to start the Go tests. The
+filters err towards running, because a test that runs when it need not
+costs a minute and one that does not run when it should have costs a
+broken main.
+
+`scripts/ci-filters-test.sh` checks the filters on the files a pull
+request really arrives with, matched the way the action matches them,
+with the picomatch the action locks at its pinned commit, 2.3.1, or the
+patch after it, which fixes only advisories in patterns the filters do
+not use. The interface's packages carry it as `picomatch-paths-filter`,
+so it needs no
+network. When the pin of the action moves, that version moves with it.
+It also checks that every filter is true on a push to main, and it fails
+on a Go test that reads a whole folder of the interface, which no file
+of it would start. It
+runs in the `build` job whatever changed, because a mistake in the
+filters is silent: CI would go green having run less than it should. Run
+it by hand with `sh scripts/ci-filters-test.sh`.
 
 A push to main narrows nothing. Whatever it touched, everything is built and
 tested, so main is always known to be sound and a mistake in the rules can
 never be what hides a break.
 
-Every job still runs and still reports, it just does nothing when there is
-nothing to do. That keeps the checks a branch rule can be built on, which a
-job skipped outright would not, and it costs no waiting: a job with nothing
-to do is back in seconds.
+A job a pull request does not need shows as skipped. GitHub counts a
+skipped job as passed for a required check, but a skipped job with a
+matrix shows once under its own name, not under the names of its
+machines, like `linux (A-AR+B-O)`. A check a branch rule requires is
+therefore a job without a matrix, or one job that waits on all the
+others. The Updates page does not read CI at all: it follows
+the builds of `builds.yml`, see [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never

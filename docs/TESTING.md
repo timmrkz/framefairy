@@ -779,8 +779,10 @@ them out is #341. See No test waits on the clock in
 
 `make changed` runs it whenever the interface changed, the preview's own
 stand-in aside, or a package the app reaches, the engine among them. CI
-runs it in the job `walks`, the only one that installs Chromium, on the
-same rules as the build.
+runs it in the job `walks`, the only one that installs Chromium. A pull
+request starts that job for the same files as the build, and one that
+changed only docs does not start it at all, see
+[What runs for a change](BUILD.md#what-runs-for-a-change).
 
 A walk that breaks a rule leaves a picture of the app at that moment in
 `/tmp/walk-<seed>.png`.

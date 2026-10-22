@@ -9,7 +9,7 @@
 # make test runs everything, which is ten minutes, most of it the engine's
 # tests under the race detector and ten thousand executions of every fuzz
 # target. Nearly every change reaches a small part of that. This works out
-# which part, the way scripts/ci-needs.sh does for CI, and runs it:
+# which part, the way .github/ci-filters.yml does for CI, and runs it:
 #
 #   Go code         gofmt on the files, then go vet and the tests under the
 #                   race detector for the packages that changed and every
@@ -96,7 +96,7 @@ package_of() {
 # is not Go, the way the bindings test reads api.ts and the notices test
 # reads the build scripts. A test is found by the path it reads the file
 # by, "../frontend/..." in quotes, so a file a test only names in a
-# comment does not count. The same rule as scripts/ci-needs.sh.
+# comment does not count.
 read_by_tests() {
 	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git -- "../$1\"" . 2>/dev/null); do
 		gopkgs="$gopkgs $(package_of "${t#./}")"
@@ -113,7 +113,6 @@ rules=0
 changed_rules=0
 build_rules=0
 moved_rules=0
-shard_rules=0
 plan_rules=0
 lint=0
 lint_rules=0
@@ -157,7 +156,8 @@ for file in $changed; do
 		;;
 	go.mod | go.sum) all_go=1 ;;
 	Makefile) build=1 ;;
-	scripts/ci-needs.sh | scripts/ci-needs-test.sh)
+	.github/ci-filters.yml) rules=1 ;;
+	scripts/ci-filters-test.sh)
 		rules=1
 		shells="$shells $file"
 		;;
@@ -171,10 +171,6 @@ for file in $changed; do
 		;;
 	scripts/main-moved.sh | scripts/main-moved-test.sh)
 		moved_rules=1
-		shells="$shells $file"
-		;;
-	scripts/go-shard.sh | scripts/go-shard-test.sh)
-		shard_rules=1
 		shells="$shells $file"
 		;;
 	scripts/plan-frozen.sh | scripts/plan-frozen-test.sh)
@@ -261,17 +257,16 @@ fi
 [ "$interface" = 1 ] && say "interface: make interface"
 [ "$walks" = 1 ] && say "walks:     make walks"
 [ "$build" = 1 ] && say "build:     make"
-[ "$rules" = 1 ] && say "rules:     scripts/ci-needs-test.sh"
+[ "$rules" = 1 ] && say "rules:     scripts/ci-filters-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
-[ "$shard_rules" = 1 ] && say "rules:     scripts/go-shard-test.sh"
 [ "$plan_rules" = 1 ] && say "rules:     scripts/plan-frozen-test.sh, scripts/plan-frozen.sh"
 [ "$lint" = 1 ] && say "lint:      make lint"
 [ "$lint_rules" = 1 ] && say "rules:     scripts/lint-test.sh"
 [ -n "$shells" ] && say "scripts:   read by the shell each names$shells"
 [ -n "$workflows" ] && say "workflows:$workflows"
-if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$shard_rules$plan_rules$lint$lint_rules" = 00000000000 ]; then
+if [ -z "$gofiles$affected$shells$workflows" ] && [ "$interface$walks$build$rules$changed_rules$build_rules$moved_rules$plan_rules$lint$lint_rules" = 0000000000 ]; then
 	say "only docs changed, so nothing runs"
 fi
 
@@ -285,7 +280,6 @@ if [ "$plan_only" = 1 ]; then
 	[ "$changed_rules" = 1 ] && echo changed-rules
 	[ "$build_rules" = 1 ] && echo build-rules
 	[ "$moved_rules" = 1 ] && echo moved-rules
-	[ "$shard_rules" = 1 ] && echo shard-rules
 	[ "$plan_rules" = 1 ] && echo plan-rules
 	[ "$lint" = 1 ] && echo lint
 	[ "$lint_rules" = 1 ] && echo lint-rules
@@ -413,11 +407,10 @@ for w in $workflows; do
 done
 
 [ -n "$workflows" ] && sh scripts/pins.sh
-[ "$rules" = 1 ] && sh scripts/ci-needs-test.sh
+[ "$rules" = 1 ] && sh scripts/ci-filters-test.sh
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
-[ "$shard_rules" = 1 ] && sh scripts/go-shard-test.sh
 if [ "$lint_rules" = 1 ]; then
 	$MAKE -s --no-print-directory golangci-lint frontend/node_modules/.package-lock.json
 	sh scripts/lint-test.sh

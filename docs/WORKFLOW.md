@@ -154,8 +154,9 @@ answer comes back in the time the slowest takes:
   warning, then the app opened by macOS from a link, see
   [TESTING.md](TESTING.md#from-outside-the-app).
 
-On a pull request each job first asks `scripts/ci-needs.sh` whether the
-change gives it anything to do, and does nothing when it does not. A push to
+On a pull request a first job reads which files changed, and a job the
+change gives nothing to do never starts, see
+[What runs for a change](BUILD.md#what-runs-for-a-change). A push to
 `main` narrows nothing.
 
 ### When main moves
