@@ -356,9 +356,13 @@ Go knows a file a test read by its size and modification time, not by
 what is in it, and a checkout gives every file the time of the checkout.
 So the engine, the app and every package whose tests read a file of the
 checkout ran again on every push, whatever changed. In `linux`,
-`git restore-mtime`, from the Ubuntu package `git-restore-mtime`, gives
-each file the time of the last commit that changed it, which takes the
-whole history, `fetch-depth: 0`. Folders all get one fixed time: Go knows
+`git restore-mtime` from MestreLion/git-tools gives each file the time of
+the last commit that changed it, which takes the whole history,
+`fetch-depth: 0`. It comes with
+[chetan/git-restore-mtime-action](https://github.com/chetan/git-restore-mtime-action),
+which carries its 2025.08 version. Ubuntu's package is 2022.12, which
+asks `git whatchanged`, and the runner's git 2.55 refuses that command,
+so every file kept the time of the checkout. Folders all get one fixed time: Go knows
 a folder a test lists by the names and times of what is in it, so the
 folder's own time tells it nothing, and `git restore-mtime` leaves some
 folders at the time of the checkout, like one that holds only folders.
