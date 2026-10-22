@@ -76,8 +76,10 @@ if [ -z "$changed" ]; then
 fi
 
 # Go and the modules first, the same check make does before it builds,
-# so a go.mod that changed is resolved before anything reads it.
-[ -z "${CHANGED+x}" ] && $MAKE -s --no-print-directory toolchain modules >/dev/null
+# so a go.mod that changed is resolved before anything reads it. What
+# they say goes to stderr, so a tool that is missing is named, and the
+# plan on stdout stays the plan.
+[ -z "${CHANGED+x}" ] && $MAKE -s --no-print-directory toolchain modules >&2
 
 # Every package of the module, as a directory relative to the top.
 module=$($GO list -m)

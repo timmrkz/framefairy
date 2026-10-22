@@ -255,15 +255,6 @@ jobs:
             ~/.cache/go-build
           key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
           restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
-      # On a pull request, only the packages make changed picks, see
-      # scripts/changed.sh: those that changed and every one that imports
-      # them. HEAD is the merge commit GitHub made, so HEAD^1 is main. make
-      # unit reads UNITPKGS, and tests every package when it is not set.
-      - name: The packages this change reaches
-        if: github.event_name == 'pull_request'
-        run: |
-          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
-          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -291,6 +282,17 @@ jobs:
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The episode's decoder
         run: make frames
+      # On a pull request, only the packages make changed picks, see
+      # scripts/changed.sh: those that changed and every one that imports
+      # them. HEAD is the merge commit GitHub made, so HEAD^1 is main. make
+      # unit reads UNITPKGS, and tests every package when it is not set.
+      # Right before the tests, because changed.sh asks make what make
+      # unit asks, the system packages among it.
+      - name: The packages this change reaches
+        if: github.event_name == 'pull_request'
+        run: |
+          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
+          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
       #
@@ -506,12 +508,6 @@ jobs:
             ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-macos-${{ runner.os }}-
-      # The same packages as in the job linux, see there.
-      - name: The packages this change reaches
-        if: github.event_name == 'pull_request'
-        run: |
-          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
-          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       - id: ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -531,6 +527,12 @@ jobs:
       # installed nothing above.
       - name: pkg-config, for the episode's decoder
         run: command -v pkg-config >/dev/null || brew install pkg-config
+      # The same packages as in the job linux, see there.
+      - name: The packages this change reaches
+        if: github.event_name == 'pull_request'
+        run: |
+          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
+          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # With a limit and a look at what is left, as in the job linux.
       - name: Go tests
         timeout-minutes: 15
