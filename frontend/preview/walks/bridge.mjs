@@ -411,22 +411,33 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // is past the moment past, or the play has stopped, or the playhead has
 // gone on by most seconds of the episode without stopping, whichever
 // comes first, and says where it stood, whether it still plays and how
-// far it went. Each is read when the page changes, the playhead or the
-// Play button coming back, never on the clock, and most is counted in the
-// episode's own time, so a play that never stops ends the wait as surely
-// on a busy machine as on a quiet one.
-export async function playUntil(page, { past = Infinity, most = Infinity } = {}) {
+// far it went. A jump over a cut counts as far as it jumps, and a play
+// that loops back to the clip's start counts on from there. Each is read
+// when the page changes, the playhead or the Play button coming back,
+// never on the clock, and most is counted in the episode's own time, so
+// a busy machine plays as far as a quiet one, only slower. The way goes
+// from the moment from, the playhead now unless it is given. With pause,
+// a play still going is paused in the frame the wait ends, inside the
+// page: pressed a trip later, the play went on further the busier the
+// machine, and a clip that reached its end in between would play again
+// from its start.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false } = {}) {
   return page.evaluate(
-    ([past, most]) =>
+    ([past, most, from, pause]) =>
       new Promise((done) => {
-        let last = Number(document.querySelector(".screen")?.dataset.playhead);
+        let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
         let gone = 0;
         const look = () => {
           const at = Number(document.querySelector(".screen")?.dataset.playhead);
           const playing = !document.querySelector('button[aria-label="Play"]');
           if (Number.isFinite(at) && at > last) gone += at - last;
           last = at;
-          if (playing && !(at > past) && !(gone > most)) return null;
+          if (playing && !(at > past) && gone < most) return null;
+          if (playing && pause) {
+            const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+            document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+            document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+          }
           return { at, playing, gone };
         };
         const now = look();
@@ -439,21 +450,14 @@ export async function playUntil(page, { past = Infinity, most = Infinity } = {})
         });
         watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
       }),
-    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most],
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause],
   );
 }
 
 // Plays from the playhead until it has gone on by seconds of the episode,
-// a jump over a cut counted as far as it jumps, or until the play has
-// stopped by itself at the clip's end, and pauses it there. It follows the
-// playhead the video preview says, data-playhead, never the clock, so a
-// busy machine plays as far as a quiet one, only slower. A play that loops
-// back to the clip's start counts on from there. The pause is pressed in
-// the frame the play is seen to have gone far enough, inside the page:
-// pressed a trip later, the play went on further the busier the machine,
-// and a clip that reached its end in between would play again from its
-// start. Says false, and plays nothing, when the space bar did not start a
-// play, once the app has settled on the press.
+// or until the play has stopped by itself at the clip's end, and pauses it
+// there, see playUntil. Says false, and plays nothing, when the space bar
+// did not start a play, once the app has settled on the press.
 export async function playFor(page, seconds) {
   const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
   await page.keyboard.press("Space");
@@ -463,36 +467,7 @@ export async function playFor(page, seconds) {
     at: document.querySelector(".screen")?.dataset.playhead ?? null,
   }));
   if (!now.playing) return now.at !== from;
-  await page.evaluate(
-    ([from, seconds]) =>
-      new Promise((done) => {
-        let last = from;
-        let gone = 0;
-        const look = () => {
-          const at = Number(document.querySelector(".screen")?.dataset.playhead);
-          const playing = !document.querySelector('button[aria-label="Play"]');
-          if (Number.isFinite(at) && at > last) gone += at - last;
-          last = at;
-          if (playing && gone < seconds) return false;
-          if (playing) {
-            const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-            document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-            document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-          }
-          return true;
-        };
-        if (look()) return done();
-        // The playhead the video preview says, and the Play button coming
-        // back when the play stops by itself.
-        const watch = new MutationObserver(() => {
-          if (!look()) return;
-          watch.disconnect();
-          done();
-        });
-        watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
-      }),
-    [Number(from), seconds],
-  );
+  await playUntil(page, { most: seconds, from: Number(from), pause: true });
   return true;
 }
 

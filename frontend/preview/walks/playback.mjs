@@ -103,10 +103,10 @@ const gestures = [
       // reached its end first stand, see playFor.
       await playFor(page, ms / 1000);
       const { frames, moved, overlays } = await stop();
-      if (!frames.length && !moved) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
+      if (!frames.length && !moved) watch.broke("the space bar plays", `played ${ms} ms of the episode from ${from.toFixed(3)} and no frame came`);
       if (clip) framesInClip(frames, p);
       overlaysFollow(overlays, state);
-      await staysPaused(`after playing for ${ms} ms`);
+      await staysPaused(`after playing ${ms} ms of the episode`);
       return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms of the episode`;
     },
   },
@@ -140,7 +140,8 @@ const gestures = [
       const looped = rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
       // Each wait ends at the latest once the play has gone on by the
       // whole clip and a second more, in the episode's own time, so a clip
-      // that never stops breaks the rule below and hangs nothing.
+      // that plays on breaks the rule below. A play that stalls is ended by
+      // the timeout of make walks, which prints the step.
       if (looped) {
         await page.keyboard.press("l");
         await playUntil(page, { past: end - looped, most: length + 1 });
@@ -193,8 +194,9 @@ const gestures = [
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
       // Half the time the hand skips ahead on the way, shift and the right
-      // arrow, or the arrow alone, every 300 ms: on the video either is a
-      // skip through the episode, and the clip stays dimmed.
+      // arrow, or the arrow alone, after every 0.3 s of the episode played:
+      // on the video either is a skip through the episode, and the clip
+      // stays dimmed.
       const skip = rng.next() < 0.5 ? rng.pick(["Shift+ArrowRight", "ArrowRight"]) : "";
       const past = (to) => page.evaluate((to) => Number(document.querySelector(".screen").dataset.playhead) > to, to);
       // Either way the play goes on until the playhead is past the clip's
@@ -204,9 +206,11 @@ const gestures = [
       if (skip) {
         let gone = 0;
         while (gone <= most && !(await past(start + 1.5))) {
-          // The next skip once the playhead has moved on from this one.
+          // The next skip once the play has gone on 0.3 s from where this
+          // one landed.
           await page.keyboard.press(skip);
-          const now = await playUntil(page, { past: (await at()).at, most: most - gone });
+          await settle(page);
+          const now = await playUntil(page, { past: (await at()).at + 0.3, most: most - gone });
           gone += now.gone;
           if (!now.playing) break;
         }

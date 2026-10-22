@@ -255,11 +255,13 @@ whether it plays off the play button, Play or Pause. It waits on nothing
 but those: a play of a moment goes on until the playhead has moved that
 far into the episode, `playFor`, a play to the end and a play into the
 clip until the playhead is past where they aim or the play has stopped,
-`playUntil` in `walks/bridge.mjs`, and a skip on the way is pressed each
-time the playhead has moved on from the last. A play that never stops
+`playUntil` in `walks/bridge.mjs`, which `playFor` is built on, and a
+skip on the way is pressed each time the play has gone on 0.3 s of the
+episode from where the last one landed. A play that goes on past its end
 ends the wait once the playhead has gone on by the whole clip and a
-second more, counted in the episode's time, so it breaks a rule rather
-than hang. Paused, the picture is read before and after the app has
+second more, counted in the episode's time, and breaks a rule. A play
+that stalls moves nothing to wake the wait, so the timeout of make walks
+ends it and prints the step. Paused, the picture is read before and after the app has
 settled. The rules, besides every walk's:
 
 | Rule | What it would have caught |
