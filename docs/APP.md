@@ -2322,6 +2322,15 @@ reasoning is in [THUMBNAILS.md](THUMBNAILS.md).
     never started over by I or O: a clip plays only with the playhead
     inside it, and outside every clip the episode plays straight on,
     which a new clip there does not change.
+  - **Only where something is said.** I after the last word of the
+    video and O before the first make no clip, since no sentence starts
+    after the playhead or ends before it. Where the part after the
+    playhead, or before it, is heard, and at the very end or the very
+    start of the video whatever is heard, the button is off and says so
+    in its title, and the key does nothing. Tim found I at the end of the
+    video making a card that could only fail, on #456. A part not heard
+    yet is heard first, so they are offered there, and a clip that then
+    finds nothing said fails with Continue and why in a toast.
   - **The playhead is on the clip it makes.** The clip is made around
     the playhead, so from the frame it is there, on its way and once it
     is written, it is not dimmed, and its crop frame and its captions
