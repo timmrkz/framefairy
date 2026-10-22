@@ -134,6 +134,15 @@ has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/
 has "scripts/fuzz.sh" "build" "go framefairy/engine" "go framefairy/updates"
 has "scripts/ci-packages.sh" "build" "go framefairy/engine" "go framefairy/updates"
 
+# The fuzz targets are those of the packages a change reaches, all of them.
+fuzz=$(CHANGED=updates/source.go sh "$here/changed.sh" --fuzz-targets 2>/dev/null)
+if [ "$fuzz" = "FuzzKeyFromLink FuzzKnownStaysInTheLibrary FuzzParse" ]; then
+	printf 'ok  \t%-44s fuzz %s\n' "updates/source.go" "$fuzz"
+else
+	printf 'FAIL\t%-44s wanted the targets of updates and the app, got: %s\n' "updates/source.go" "$fuzz"
+	fail=1
+fi
+
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 

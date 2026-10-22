@@ -456,12 +456,18 @@ jobs:
         run: sh scripts/ci-packages.sh
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
-      # On a pull request only the targets make changed fuzzes, see
-      # fuzz_what_changed in scripts/changed.sh, compared with main.
+      # On a pull request only the targets of the packages the change
+      # reaches, as make changed fuzzes them, see scripts/changed.sh,
+      # compared with main.
       - name: Fuzz
         run: |
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            BASE=HEAD^1 SIMTIME=0 sh scripts/changed.sh --fuzz
+            targets=$(BASE=HEAD^1 sh scripts/changed.sh --fuzz-targets)
+            if [ -z "$targets" ]; then
+              echo "no fuzz target this change reaches"
+              exit 0
+            fi
+            make fuzz SIMTIME=0 FUZZTARGETS="$targets"
           else
             make fuzz SIMTIME=0
           fi

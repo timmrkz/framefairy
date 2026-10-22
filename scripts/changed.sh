@@ -5,9 +5,9 @@
 #                             committed or not
 #   sh scripts/changed.sh --plan
 #                             say what would run, and run nothing
-#   sh scripts/changed.sh --fuzz
-#                             fuzz the targets a change reaches, and run
-#                             nothing else
+#   sh scripts/changed.sh --fuzz-targets
+#                             name the fuzz targets a change reaches, and
+#                             run nothing
 #
 # make test runs everything, which is ten minutes, most of it the engine's
 # tests under the race detector and ten thousand executions of every fuzz
@@ -16,9 +16,8 @@
 #
 #   Go code         gofmt on the files, then go vet and the tests under the
 #                   race detector for the packages that changed and every
-#                   package that imports them, and of their fuzz targets
-#                   those that go through a changed file, see
-#                   fuzz_what_changed. go.mod or go.sum is every package
+#                   package that imports them, and their fuzz targets,
+#                   see fuzz_targets. go.mod or go.sum is every package
 #                   and every target. A changed test also runs the
 #                   tests of internal/offdisk and internal/ffmpegtest,
 #                   which read every test file, and make lint, which
@@ -39,8 +38,8 @@
 #
 # Anything it does not know runs the build, so a file nobody thought of is
 # checked rather than skipped. On a pull request CI runs the Go packages
-# --plan names and fuzzes with --fuzz, comparing with main, see ci.yml. A
-# push to main still runs everything.
+# --plan names and fuzzes those --fuzz-targets names, comparing with main,
+# see ci.yml. A push to main still runs everything.
 #
 # BASE= names another commit to compare with. CHANGED= hands it the list of
 # files instead of asking git, which is how scripts/changed-test.sh checks
@@ -341,86 +340,28 @@ if [ "$plan_only" = 1 ]; then
 	exit 0
 fi
 
-# The fuzz targets a change reaches, fuzzed, and no others. Fuzzing is the
-# slow part, ten thousand executions a target, and most targets read one
-# kind of input a change never goes near. A target is fuzzed when:
-#
-#   one of its own seeds changed, in testdata/fuzz/<target>/
-#   a test file of its package changed, which may be the target itself
-#   go.mod or go.sum changed, which can change anything
-#   running its seeds once, with coverage, goes through a file that changed
-#
-# The last is the one that decides most of the time. Running the seeds is
-# what go test does anyway, and takes a second. What it goes through is
-# what the target is about, so a change to the renderer does not fuzz the
-# plan reader, and a change to the plan reader does.
-fuzz_what_changed() {
-	gosources=""
-	gotests=""
-	for f in $changed; do
-		case $f in
-		*_test.go) gotests="$gotests $f" ;;
-		*.go) gosources="$gosources $f" ;;
-		esac
-	done
-	targets=""
-	skipped=""
-	# Every target, found in the source by the script that fuzzes them.
+# The fuzz targets of the packages a change reaches, by name on one line.
+# It once ran each target's seeds with coverage and fuzzed only those that
+# went through a changed file. For a change to engine/clips.go that took
+# 122 s, where fuzzing every target of those packages took 46 s, so a
+# package that is tested is fuzzed whole.
+fuzz_targets() {
 	all=$(sh scripts/fuzz.sh --list)
+	targets=""
 	for pkg in $affected; do
 		dir=${pkg#"$module"}
 		dir=${dir#/}
 		[ -z "$dir" ] && dir=.
-		for target in $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }'); do
-			if fuzz_reaches "$pkg" "$dir" "$target"; then
-				targets="$targets $target"
-			else
-				skipped="$skipped $target"
-			fi
-		done
+		targets="$targets $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }')"
 	done
-	[ -n "$skipped" ] && printf 'skip	fuzzing%s, which no change reaches\n' "$skipped"
-	if [ -n "$targets" ]; then
-		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="${targets# }" sh scripts/fuzz.sh
-	fi
+	echo $targets
 }
 
-fuzz_reaches() {
-	pkg=$1
-	dir=$2
-	target=$3
-	[ "$all_go" = 1 ] && return 0
-	for f in $changed; do
-		case $f in "$dir"/testdata/fuzz/"$target"/*) return 0 ;; esac
-	done
-	for f in $gotests; do
-		[ "$(dirname -- "$f")" = "$dir" ] && return 0
-	done
-	[ -z "$gosources" ] && return 1
-	profile=$(mktemp)
-	if ! $GO test -run "^$target\$" -coverpkg="$module/..." -coverprofile="$profile" "$pkg" >/dev/null 2>&1; then
-		# Its seeds fail, so fuzzing it says why.
-		rm -f "$profile"
-		return 0
-	fi
-	for f in $gosources; do
-		if grep "^$module/$f:" "$profile" | awk '$NF > 0 { hit = 1 } END { exit !hit }'; then
-			rm -f "$profile"
-			return 0
-		fi
-	done
-	rm -f "$profile"
-	return 1
-}
-
-# Called as a command of its own, never after && or as a condition, so
-# set -e still stops it when a target fails.
-if [ "${1:-}" = "--fuzz" ]; then
-	if [ -z "$affected" ]; then
-		say "no Go package this change reaches, so nothing is fuzzed"
-		exit 0
-	fi
-	fuzz_what_changed
+# --fuzz-targets says them and stops, which is how CI hands them to make
+# fuzz on a pull request.
+if [ "${1:-}" = "--fuzz-targets" ]; then
+	targets=$(fuzz_targets)
+	echo "$targets"
 	exit 0
 fi
 
@@ -443,7 +384,10 @@ if [ -n "$affected" ]; then
 	path=$PATH
 	PATH=${TOOLS_FIRST:-$PATH}
 	$GO test -race -ldflags "${LDFLAGS:-}" $affected
-	fuzz_what_changed
+	targets=$(fuzz_targets)
+	if [ -n "$targets" ]; then
+		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="$targets" sh scripts/fuzz.sh
+	fi
 	PATH=$path
 fi
 
