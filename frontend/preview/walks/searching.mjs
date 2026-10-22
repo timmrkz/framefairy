@@ -8,6 +8,7 @@
 //   SEED=12 STEPS=30 BRIDGE_URL=http://127.0.0.1:8123/ node searching.mjs
 import { begin, walk } from "./walk.mjs";
 import { ask, clipList, control, settle, pressHead as pressHeadOn, fromSidebar, episodeOn as episodeOnIn } from "./bridge.mjs";
+import { caughtUp, news, nextNews } from "./bridge.mjs";
 
 const w = await begin({ steps: 30 });
 const { page, rng, watch, url } = w;
@@ -26,6 +27,40 @@ async function searchOf(path) {
   return jobs[jobs.length - 1] ?? null;
 }
 
+const running = (j) => j.state === "running" || j.state === "queued";
+
+// Whether the engine's work has more to report by itself: more jobs run
+// than the model holds answers for, as the bridge's model says itself,
+// whatever step a held search is in. One that only waits its turn behind
+// it reports nothing either.
+async function reporting() {
+  const jobs = (await ask(page, "Jobs")).filter((j) => j.state === "running" && j.step !== "waiting");
+  return jobs.length > (await control(url, "/model-holding"));
+}
+
+// Waits on the engine's reports until the first search of a video just
+// added has ended and nothing of the video runs any more, and hands back
+// that search. A search started late, once the video is heard, is waited
+// for, since starting is reported too. Once nothing of the engine runs at
+// all and the app has caught up with it, and the video still has no
+// search, nothing is left to start one: that hands back null.
+async function firstSearch(path) {
+  for (;;) {
+    const seen = await news(page);
+    const all = await ask(page, "Jobs");
+    const jobs = all.filter((j) => j.episode === path);
+    const search = jobs.find((j) => j.kind === "search");
+    if (search && !jobs.some(running)) return search;
+    if (!search && !all.some(running)) {
+      await caughtUp(page, url, jobs);
+      const again = (await ask(page, "Jobs")).filter((j) => j.episode === path);
+      if (!again.some((j) => j.kind === "search")) return null;
+      continue;
+    }
+    await nextNews(page, seen);
+  }
+}
+
 // What the clip list should say for the episode's last search: its head
 // button, and the row a search that stopped leaves.
 function expected(job) {
@@ -39,18 +74,27 @@ function expected(job) {
 
 // The clip list and the engine agree: the head button, the row of a
 // search that stopped, no word of a failure that did not happen, and at
-// rest as many cards as the engine has clips. The rows are held a moment
-// so they can be read, so this is asked again for a few seconds before it
-// is a broken rule. The episode on screen is asked again each time too: a
+// rest as many cards as the engine has clips. The engine is asked, and
+// then the walk waits until the app has heard everything the engine told
+// it up to then and has settled, caughtUp, so the screen and the answer
+// are of the same moment. Unless the engine's work moved on in the
+// meantime: then they are compared again, once the screen has caught up
+// with that too. Work that went on moving through 24 looks, about one
+// report a look, and never agreed is a broken rule, and so is the first
+// disagreement the work stood still through, however long a busy machine
+// took to show it. The episode on screen is asked again each time too: a
 // video just added opens when the Go side has added it, which can be after
 // the walk first looked, and the walk then held the new episode's list to
 // the search of the one before.
 async function agree() {
   let problem = null;
-  for (let tries = 0; tries < 24; tries++) {
+  for (let looks = 0; looks < 24; looks++) {
+    const before = await heardAll();
     const path = await episodeOn();
     if (!path) return null;
-    const [list, job] = [await clipList(page), await searchOf(path)];
+    const job = await searchOf(path);
+    await caughtUp(page, url, job ? [job] : []);
+    const list = await clipList(page);
     const want = expected(job);
     problem = null;
     if (!list) problem = "there is no clip list";
@@ -64,10 +108,15 @@ async function agree() {
       }
     }
     if (!problem) return null;
-    await page.waitForTimeout(250);
+    if ((await heardAll()) === before) return problem;
   }
   return problem;
 }
+
+// How many times the app has been told anything by the Go side, the
+// marks aside: a job's report, a plan written anew, a clip list.
+const heardAll = () =>
+  page.evaluate(() => Object.entries(window.__heard).reduce((n, [name, c]) => (name === "mark" ? n : n + c), 0));
 
 const pressHead = () => pressHeadOn(page);
 
@@ -87,25 +136,22 @@ const gestures = [
     when: (s) => s.episodes < 3,
     async run() {
       const seconds = 40 + rng.int(80);
-      await control(url, `/pick?seconds=${seconds}`);
+      const path = await control(url, `/pick?seconds=${seconds}`);
       await sidebar(() => page.locator("aside").getByText("Add", { exact: true }).first().click());
       // A new video is transcribed and its first search starts by itself.
       // With the model answering and the speech quick, the clips come
       // without a click. With the speech slow the walk goes on while it is
       // transcribed, so the next steps land in the middle of it.
       if (!model.hang && !model.fail && pace === 0) {
-        const came = await page
-          .waitForFunction(
-            () => {
-              const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-              return pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
-                pane.querySelectorAll("ol li[data-key]").length > 0;
-            },
-            null,
-            { timeout: 60000, polling: 250 },
-          )
-          .then(() => true, () => false);
-        if (!came) watch.broke("a new video gets its first clips by itself", `added ${seconds} s and no clip came in a minute`);
+        const search = await firstSearch(path);
+        await caughtUp(page, url, search ? [search] : []);
+        const list = await clipList(page);
+        if (search?.state !== "done" || list?.head !== "Search" || !list.cards.length) {
+          watch.broke(
+            "a new video gets its first clips by itself",
+            `added ${seconds} s, its first search ${search ? `${search.state}${search.step ? ` (${search.step})` : ""}` : "never started"}, and the list says ${list?.head} with ${list?.cards.length ?? 0} cards`,
+          );
+        }
       }
       return `add a video of ${seconds} s`;
     },
@@ -243,9 +289,19 @@ const gestures = [
     weight: 2,
     when: () => true,
     async run() {
-      const ms = 500 + rng.int(3000);
-      await page.waitForTimeout(ms);
-      return `wait ${ms} ms`;
+      // The work goes on for a few of its reports. Counted in the
+      // engine's reports, never on the clock, so a busy machine waits as
+      // far into the work, only longer. Work that has nothing more to
+      // report is not waited for: none runs, or what runs waits on a
+      // model that holds its answers.
+      const n = 1 + rng.int(4);
+      let seen = await news(page);
+      let came = 0;
+      while (came < n && (await reporting())) {
+        seen = await nextNews(page, seen);
+        came++;
+      }
+      return `wait for ${n} reports of the work, ${came} came`;
     },
   },
 ];

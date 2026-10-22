@@ -26,23 +26,33 @@ export async function begin({ steps: usual = 60 } = {}) {
 
 // Walks: look is what a gesture's when and run are handed, the caption box
 // unless a walk says otherwise, and show is what VERBOSE prints.
+//
+// Each step is printed as it begins, with the seed, so a walk that waits
+// for good on something that never comes says which step it hung in when
+// the -timeout of make walks ends it. A step that throws ends the walk as
+// a broken rule, with the seed and the steps.
 export async function walk(w, gestures, { look = shown, show } = {}) {
   const { page, rng, watch, seed, steps } = w;
   const walked = [];
   await watch.start();
   for (let step = 1; step <= steps && !watch.failed; step++) {
-    const seen = await look(page);
-    const box = await shown(page);
-    const can = gestures.filter((g) => g.when(seen));
-    const g = rng.weighted(can);
-    const said = await g.run(seen);
-    walked.push(`${String(step).padStart(3)}  ${said}`);
-    const { now } = await watch.step(g.name, box);
-    if (process.env.VERBOSE) {
-      const line = show
-        ? await show(page)
-        : now.map((x) => (x.focused ? `[${x.text}]` : x.keyed ? `<${x.text}>` : x.text)).join(" ");
-      console.log(`${walked[walked.length - 1].padEnd(36)} ${line}`);
+    try {
+      const seen = await look(page);
+      const box = await shown(page);
+      const can = gestures.filter((g) => g.when(seen));
+      const g = rng.weighted(can);
+      console.log(`seed ${seed}, step ${step}: ${g.name}`);
+      const said = await g.run(seen);
+      walked.push(`${String(step).padStart(3)}  ${said}`);
+      const { now } = await watch.step(g.name, box);
+      if (process.env.VERBOSE) {
+        const line = show
+          ? await show(page)
+          : now.map((x) => (x.focused ? `[${x.text}]` : x.keyed ? `<${x.text}>` : x.text)).join(" ");
+        console.log(`${walked[walked.length - 1].padEnd(36)} ${line}`);
+      }
+    } catch (e) {
+      watch.broke("a step ends", `step ${step} threw: ${e?.stack ?? e}`);
     }
   }
   const failed = watch.failed;

@@ -81,9 +81,12 @@ func (b *bus) send(name string, data any) {
 	for c := range b.subs {
 		// A browser that does not keep up misses an event rather than
 		// holding up the queue that sent it, which is what Wails does too.
+		// It is said, since a walk waiting on that event then waits for
+		// good, and the reason is in what the bridge printed.
 		select {
 		case c <- body:
 		default:
+			fmt.Fprintf(os.Stderr, "the bridge dropped %q for a page that did not keep up\n", name)
 		}
 	}
 }
@@ -345,6 +348,16 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
 		answer(w, nil, b.reset())
 	})
+	// A mark sent down the events behind everything the Go side told the
+	// interface before it. A page that has heard the mark has heard all
+	// of that, since every page hears the events in the order they were
+	// sent, so a walk can wait until the interface knows what the engine
+	// knew when the walk asked it, see caughtUp in bridge.mjs.
+	mux.HandleFunc("/mark", func(w http.ResponseWriter, r *http.Request) {
+		n := b.marks.Add(1)
+		b.d.bus.send("mark", n)
+		answer(w, n, nil)
+	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
@@ -417,6 +430,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.model.fails(q.Get("fail") == "1")
 		b.d.model.hangs(q.Get("hang") == "1")
 		answer(w, nil, nil)
+	})
+	// How many answers the model holds now, so a walk knows how many
+	// searches wait on it and have nothing to report.
+	mux.HandleFunc("/model-holding", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, b.d.model.holding.Load(), nil)
 	})
 	// The person dictating stops talking, and the microphone hears
 	// nothing more once the phrase it is on has been said.
@@ -735,6 +753,8 @@ type bridge struct {
 	// silent says the person dictating has stopped talking, see
 	// /microphone.
 	silent *atomic.Bool
+	// marks counts the marks sent down the events, see /mark.
+	marks atomic.Int64
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
