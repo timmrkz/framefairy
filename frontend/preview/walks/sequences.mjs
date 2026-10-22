@@ -14223,7 +14223,6 @@ function clickCard(page, key, start) {
         // through yet, see pickCards.
         const looks = [{ ...window.__look(), t: 0, open: !!window.__captionsOpen }];
         const t0 = performance.now();
-        window.__clickChanged = false;
         document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
         let rested = false;
         void window.__readAheadRested().then(() => (rested = true));
@@ -14273,10 +14272,28 @@ async function pickCards(page, n) {
   if (typeof clips === "string") return clips;
   const path = await episodeOn(page);
   await canLook(page);
-  // Where the new clips are made, each starting on a caption, the last
-  // ones for a click taken again.
+  // Where the new clips are made, the last ones for a click taken again.
+  // Not every one starts where somebody speaks, see freshClip.
   const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
   const problems = [];
+  // A new clip at the next place of fresh with a word said as it starts,
+  // so its captions can be seen to come, or null when none is left. One
+  // that starts where nobody speaks has no captions to see, which says
+  // nothing about the app, so another is made at the next place, without
+  // spending a click taken again on a busy machine, issue #438.
+  const freshClip = async () => {
+    while (fresh.length) {
+      const [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
+      const clip = (await ask(page, "Clips", path)).find((c) => c.key === key);
+      if (!clip) return null;
+      // A clip starts a moment before its first word, and its first
+      // caption with it.
+      const words = await ask(page, "Words", path, clip.start, clip.start + 0.5);
+      if (words.some((w) => w.end > clip.start && w.start < clip.start + 0.5)) return key;
+      console.log(`        the new clip at ${clip.start.toFixed(2)} s starts where nobody speaks, again at another place`);
+    }
+    return null;
+  };
   // What went to and from the Go side about captions, and what the video
   // preview said in the log, each by the clock of this machine: told with
   // a click that changed more than once, to say which of them came late.
@@ -14320,8 +14337,19 @@ async function pickCards(page, n) {
       // were read ahead before the click, and the clip came at once,
       // issue #438.
       await control(url, "/hold?call=Captions&gate=shut");
-      await page.evaluate(() => (window.__captionsOpen = false));
-      [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
+      // Both before the click, so what the card before left in them
+      // cannot open the gate early, whatever order the page runs the
+      // walk's evaluations in.
+      await page.evaluate(() => {
+        window.__captionsOpen = false;
+        window.__clickChanged = false;
+      });
+      key = await freshClip();
+      if (!key) {
+        problems.push(`card ${i + 1}: no place was left for a new clip that starts where somebody speaks`);
+        await control(url, "/hold?call=Captions&gate=open");
+        break;
+      }
     } else {
       await restAhead(page);
       const { cards, current } = await cardsNow(page);
@@ -14330,13 +14358,13 @@ async function pickCards(page, n) {
     }
     const clicked = Date.now();
     clicks.push(clicked);
-    const { bare, dressing } = await page.evaluate(() => window.__frameQueue.stats);
+    const { bare, waitedForDress } = await page.evaluate(() => window.__frameQueue.stats);
     const clicking = clickCard(page, key, null);
     if (held) {
       // The frame of the clip waits for what lies over it, dress in
       // queue.ts, and then the gate opens. A clip that came without
       // waiting has changed the video preview by then, and fails below.
-      await page.waitForFunction((was) => window.__frameQueue.stats.dressing > was || window.__clickChanged, dressing, {
+      await page.waitForFunction((was) => window.__frameQueue.stats.waitedForDress > was || window.__clickChanged, waitedForDress, {
         polling: "raf",
         timeout: 0,
       });
@@ -14358,19 +14386,10 @@ async function pickCards(page, n) {
     }
     const first = looks[0];
     const last = looks[looks.length - 1];
-    // A new clip that starts where nobody speaks has no captions to see
-    // come, which says nothing about the app, so it is taken again on
-    // another, issue #438.
-    if (held && !last.captions && again < 3 && fresh.length) {
-      console.log(`        card ${i + 1}: the new clip starts with no caption, again on another new clip`);
-      again++;
-      i--;
-      continue;
-    }
     const changes = changesOf(looks);
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
     const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
-    if (!last.captions) problems.push(`${card}: the clip has no caption at its start, so its captions cannot be seen to come`);
+    if (!last.captions) problems.push(`${card}: no caption showed at the start of the clip${held ? ", which starts on a word" : ""}`);
     else if (changes.length !== 1) {
       problems.push(
         `${card}: the video preview changed ${changes.length} times, not once: ${changes

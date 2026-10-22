@@ -283,18 +283,14 @@ func dictating(t *testing.T, set ...func(*listening)) (*FrameFairy, *talkingMicr
 	return f, mic, told
 }
 
-// awaitTold waits for the window to be told something that passes ok.
+// awaitTold waits for the window to be told something that passes ok. A
+// window never told is ended by go test's -timeout, which shows where it
+// waited.
 func awaitTold(t *testing.T, told chan Dictation, ok func(Dictation) bool) Dictation {
 	t.Helper()
-	deadline := time.After(10 * time.Second)
 	for {
-		select {
-		case d := <-told:
-			if ok(d) {
-				return d
-			}
-		case <-deadline:
-			t.Fatal("the window was never told")
+		if d := <-told; ok(d) {
+			return d
 		}
 	}
 }

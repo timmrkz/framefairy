@@ -684,7 +684,10 @@ type bridge struct {
 	holdsLeft map[string]int
 	// gates are shut for every call of a name, which waits until the walk
 	// opens it, see /hold. A walk that holds a call by a time proves only
-	// that the time was long enough on that machine.
+	// that the time was long enough on that machine. Each call waiting
+	// holds one of the browser's six connections to the bridge, and the
+	// events hold another, so a walk shuts a gate only on a call the page
+	// makes a few of at a time, like Captions.
 	gates map[string]chan struct{}
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
@@ -1558,7 +1561,14 @@ func TestWalks(t *testing.T) {
 				tookMu.Unlock()
 				what := fmt.Sprintf("%s (%.0f s)", name(r), seconds)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "failed %s\n", what)
+					// A walk that was stopped says what it printed at once
+					// too, since the bridges may not end in time either,
+					// and then t holds it back for good.
+					if ctx.Err() != nil {
+						fmt.Fprintf(os.Stderr, "failed %s: %v\n%s\n", what, err, out.Bytes())
+					} else {
+						fmt.Fprintf(os.Stderr, "failed %s\n", what)
+					}
 					t.Errorf("%s: %v\n%s", what, err, out.Bytes())
 					continue
 				}
@@ -1690,7 +1700,7 @@ func walk(ctx context.Context, name string, args []string, dir string, env []str
 	// its output is not worth waiting for.
 	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()
-	if ctx.Err() != nil {
+	if err != nil && ctx.Err() != nil {
 		return errors.New("it had not ended when the test's time ran out, and was stopped")
 	}
 	return err
