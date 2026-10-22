@@ -184,7 +184,9 @@ if git -C "$root" worktree add -q --detach "$wt" HEAD 2>/dev/null; then
 	git -C "$wt" mv updates/cache_test.go updates/sub/cache_test.go
 	printf 'package train_test\n\nimport _ "framefairy/licence"\n' >"$wt/train/outside_test.go"
 	echo "// changed" >>"$wt/licence/licence.go"
-	got=$(cd "$wt" && BASE=HEAD sh scripts/changed.sh --plan 2>/dev/null | tr '\n' ' ')
+	# MAKE=true: changed.sh asks make for the toolchain first, which the
+	# job build runs this before it installs, and a plan needs none of it.
+	got=$(cd "$wt" && MAKE=true BASE=HEAD sh scripts/changed.sh --plan 2>/dev/null | tr '\n' ' ')
 	git -C "$root" worktree remove --force "$wt"
 	case " $got " in
 	*" go framefairy/train_test "*)
