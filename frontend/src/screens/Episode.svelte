@@ -314,10 +314,16 @@
   const handWork = $derived(jobs.clips(path));
   const handRunning = $derived(handWork.filter((j) => j.state === "running" || j.state === "queued"));
   const handStopped = $derived(handWork.filter((j) => j.state === "interrupted" || j.state === "failed"));
-  // Whatever hears the episode now, the search or a clip made by hand, one
-  // at a time. Its progress says which part it hears and how far it has
-  // come in it.
-  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing"));
+  // The video heard to its end by itself, Transcribe whole video in its
+  // menu, while it hears.
+  const wholeHearing = $derived.by(() => {
+    const j = jobs.transcription(path);
+    return j?.state === "running" && j.step === "hearing" ? j : undefined;
+  });
+  // Whatever hears the episode now, the search, a clip made by hand or the
+  // whole video, one at a time. Its progress says which part it hears and
+  // how far it has come in it.
+  const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing") ?? wholeHearing);
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
   // What the search is doing right now, in the step's own words, see
@@ -3244,11 +3250,11 @@
     onhold={(held) => player?.hold(held)}
     dimmed={!onClip}
     locked={busy}
-    unheard={saying ? unheard : []}
-    {unheardLit}
+    {unheard}
+    unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
     giving={live && !stoppedAt ? live[1] : -1}
-    onhoverunheard={(i) => (unheardLit = i)}
+    onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}
     bind:grid

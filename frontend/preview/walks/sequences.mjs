@@ -195,6 +195,23 @@
 //                      together. The label the Go side keeps has to be the
 //                      one the row and the title bar show, and the video
 //                      has to keep its name and its bytes
+//   ["transcript", how] opens the three dots of the video on screen in the
+//                      sidebar, whose row about the words says the one
+//                      thing that can be done with them now, issue #432.
+//                      "transcribe" needs it to say Transcribe whole
+//                      video, clicks it, and in the next frame it has to
+//                      say it is transcribing or waiting to. "Text" and
+//                      "Subtitles" wait, asking again each time the work
+//                      says how far it heard, until the Go side says the
+//                      video is transcribed to its end, then need the row
+//                      to say Export transcript, hover it, which
+//                      hangs the formats on the right of the menu, and
+//                      click that format: the file saved has to be named
+//                      for the video with the format's ending and hold
+//                      the words of the video, and the menu has closed.
+//                      "Escape" hangs the formats the same way and needs
+//                      Escape to close them and the menu with them
+//   ["exported", word] the file exported last holds the word
 //   ["title bar"]      lays the app's window out the way macOS does on
 //                      Tim's Mac, a title bar 30 points high with its
 //                      buttons from 12 to 72 points in. macOS draws the
@@ -1314,6 +1331,41 @@ export const sequences = [
       ["gone", "Schulhoff"],
       ["holds", "Schulhof"],
       ["blocks"],
+    ],
+  },
+  {
+    // Issue #432, asked for by Tim: the transcript of the whole video is
+    // exported from its menu with the word corrected in the caption box.
+    name: "the transcript is exported with a word corrected in the caption box",
+    steps: [
+      ["frame", "Schulhof"],
+      ["click", "Schulhof"],
+      ["press", "End"],
+      ["type", "f"],
+      ["press", "Enter"],
+      ["holds", "Schulhoff"],
+      ["transcript", "Text"],
+      ["exported", "Schulhoff"],
+      ["transcript", "Escape"],
+      ["transcript", "Subtitles"],
+      ["exported", "Schulhoff"],
+    ],
+  },
+  {
+    // Issue #432: a video just added, still being heard by its first
+    // search, is transcribed to its end from its menu, and then offers
+    // its transcript.
+    name: "a video added is transcribed to its end from its menu",
+    steps: [
+      // Heard slowly, and held once some of it is, so most of it is
+      // still to come when Transcribe whole video is clicked.
+      ["speech", 1500],
+      ["add", 600],
+      ["heard some"],
+      ["speech", "hold"],
+      ["transcript", "transcribe"],
+      ["speech", 0],
+      ["transcript", "Text"],
     ],
   },
   {
@@ -6710,6 +6762,104 @@ for (const seq of toWalk) {
         await control(url, `/model?${how}`);
         break;
       }
+      case "transcript": {
+        const source = await episodeOn(page);
+        const row = page.locator("aside li:has(button.episode.current)");
+        await page.mouse.move(20, 500);
+        await sidebarStill(page);
+        await row.hover();
+        await row.locator("button.more").click();
+        const menu = page.locator(".video-menu");
+        await menu.waitFor();
+        // The row about the words is the first row of the menu, under the
+        // label.
+        const says = () => page.evaluate(() => (document.querySelector(".video-menu .item")?.textContent ?? "").replace(/\s+/g, " ").trim());
+        const first = await says();
+        if (arg === "transcribe") {
+          if (!first.startsWith("Transcribe whole video")) {
+            wrong = `the menu of a video not transcribed to its end says ${JSON.stringify(first)}, not Transcribe whole video`;
+            break;
+          }
+          // A click shows at once: in the next frame, before the Go side
+          // has said anything.
+          const next = await page.evaluate(
+            () =>
+              new Promise((done) => {
+                document.querySelector(".video-menu .item").click();
+                requestAnimationFrame(() => done((document.querySelector(".video-menu .item")?.textContent ?? "").replace(/\s+/g, " ").trim()));
+              }),
+          );
+          if (!/^(Transcribing|Waiting to transcribe)/.test(next)) {
+            wrong = `the frame after Transcribe whole video was clicked, the row says ${JSON.stringify(next)}`;
+            break;
+          }
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          break;
+        }
+        // Asked again each time the work says how far it heard, until the
+        // Go side says the video is transcribed to its end, and the menu
+        // opened again on it.
+        const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
+        if (!(await whole())) {
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          for (let seen = await news(page); !(await whole()); ) seen = await nextNews(page, seen);
+          await settle(page);
+          await row.hover();
+          await row.locator("button.more").click();
+          await menu.waitFor();
+          await page.waitForFunction(() => !/^(Transcribing|Waiting to transcribe|Stopping)/.test((document.querySelector(".video-menu .item")?.textContent ?? "").trim()), null, {
+            polling: "raf",
+            timeout: 30000,
+          });
+        }
+        if (!(await says()).startsWith("Export transcript")) {
+          wrong = `the menu of a video transcribed to its end says ${JSON.stringify(await says())}, not Export transcript`;
+          break;
+        }
+        await menu.locator(".item", { hasText: "Export transcript" }).hover();
+        const formats = page.locator(".formats");
+        await formats.waitFor();
+        const hangs = await page.evaluate(() => {
+          const m = document.querySelector(".video-menu").getBoundingClientRect();
+          const f = document.querySelector(".formats").getBoundingClientRect();
+          const r = [...document.querySelectorAll(".video-menu .item")].find((el) => el.textContent.includes("Export transcript")).getBoundingClientRect();
+          return { right: f.left >= m.right, top: Math.abs(f.top - r.top) <= 2 };
+        });
+        if (!hangs.right || !hangs.top) {
+          wrong = "the formats do not hang on the right of the menu, beside Export transcript";
+          break;
+        }
+        if (arg === "Escape") {
+          // Escape closes the formats and the menu with them, the way it
+          // closes a submenu on the Mac.
+          await page.keyboard.press("Escape");
+          await formats.waitFor({ state: "detached" });
+          if (await menu.isVisible()) {
+            wrong = "Escape in the formats left the menu open";
+            await page.keyboard.press("Escape");
+          }
+          await menu.waitFor({ state: "detached" });
+          break;
+        }
+        await formats.locator(".item", { hasText: arg }).click();
+        await menu.waitFor({ state: "detached" });
+        const file = await control(url, "/exported");
+        const ending = { Text: ".txt", Subtitles: ".srt" }[arg];
+        const name = `${basename(source, extname(source))} transcript${ending}`;
+        if (file?.name !== name) wrong = `the transcript was saved as ${JSON.stringify(file?.name)}, not ${JSON.stringify(name)}`;
+        else if (!file.text.trim()) wrong = "the transcript saved is empty";
+        else if (arg === "Subtitles" && !file.text.startsWith("1\n00:00:")) wrong = `the subtitles begin ${JSON.stringify(file.text.slice(0, 40))}`;
+        else if (arg === "Text" && !/^\d+:\d\d\n/.test(file.text)) wrong = `the text begins ${JSON.stringify(file.text.slice(0, 40))}, not with the time of its first paragraph`;
+        break;
+      }
+      case "exported": {
+        const file = await control(url, "/exported");
+        if (!file?.text.split(/\s+/).some((w) => w.replace(/[.,!?]$/, "") === arg))
+          wrong = `the transcript exported does not hold ${JSON.stringify(arg)}`;
+        break;
+      }
       case "add": {
         const [seconds, rate, timing, inside] = [arg].flat();
         await control(url, `/pick?seconds=${seconds}${rate ? `&rate=${rate}` : ""}${timing ? `&timing=${timing}` : ""}${inside ? `&in=${inside}` : ""}`);
@@ -11164,8 +11314,14 @@ for (const seq of toWalk) {
           said: !!document.querySelector("ol.said"),
           edges: document.querySelectorAll(".track .unheard").length,
         }));
-        if (!wrong && (!back.search || back.said || back.edges))
-          wrong = `Escape left ${back.said ? "the sentences" : back.edges ? "the dashed parts on the range picker" : "no Search button"}`;
+        // The parts not transcribed yet stay on the range picker after the
+        // search, as they are there before it, Tim's pick on issue #432.
+        if (!wrong && (!back.search || back.said || back.edges !== gaps))
+          wrong = back.said
+            ? "Escape left the sentences"
+            : !back.search
+              ? "Escape left no Search button"
+              : `after Escape the range picker shows ${back.edges} parts not transcribed yet, not the ${gaps} there are`;
         if (!wrong && (await headHigh()) !== was) wrong = "the head changed height after the search";
         break;
       }

@@ -148,8 +148,8 @@ where they are on disk, and the ones added from now on go at the foot.
 
 Three dots show at the end of a row while the pointer is on it, and open
 what can be done with that video, the way Finder offers it on a
-right-click: its **label**, **Show in folder** and **Remove**, which asks
-first. The dots lie in a row, the way the Mac draws More, not one over the
+right-click: its **label**, a row about its words, **Show in folder** and
+**Remove**, which asks first. The dots lie in a row, the way the Mac draws More, not one over the
 other as Android does. They are the sort mark's size, lit the same way and
 in its column, so the marks of the sidebar stand one under the other. A
 row is lit while the pointer is anywhere on it, its dots included, and the
@@ -162,6 +162,37 @@ open while it is. Its icons stand in the sidebar's column of icons and its
 words where the sidebar's words start. Its rows are as tall as the rows of
 videos above it and run from edge to edge, the way a list's do in
 `Pick.svelte`.
+
+The row about the words says the one thing that can be done with them
+now, issue #432, asked for by Tim. Two rows of which one never works were
+two things to read for one:
+
+- **Transcribe whole video** while the transcript has not reached the
+  video's end. It hears the video to its end with no search after, a job
+  of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md). It says
+  Transcribing in the frame it is clicked.
+- **Transcribing**, with how much of the video is transcribed as a
+  number and as the fill of work in hand, while it runs, or **Waiting to
+  transcribe** while a search hears or finds, which always goes first. The
+  cross at its end stops it, the way a download in Safari is stopped, and
+  says Stopping at once. What was heard stays.
+- **Continue transcribing** once it stopped, by hand, by the app closing
+  or by failing, with its fill standing still. Why it failed is said in a
+  toast as it fails.
+- **Export transcript** once the transcript reaches the end. It hangs its
+  formats on the right of the menu, the way Export To does in Pages, and
+  a format opens the system's save box on "<video> transcript" with the
+  format's ending. **Text** is the words in paragraphs, each opening with
+  the time it starts at, to read or paste into show notes. **Subtitles**
+  is an srt file, at most two lines of 42 characters and 7 seconds each,
+  which YouTube, Apple Podcasts and every video editor take. WebVTT is
+  left out because everything that takes it takes srt too. Every word
+  reads the way it was corrected in the caption box of a clip that is not
+  removed, `engine.CorrectedTranscript`, and where two clips correct the
+  same word differently, the clip in the plan changed last wins. A word
+  removed from a clip's captions is still said, so it stays. The file
+  always gets the format's ending, whatever name is typed, so the save
+  box can never replace the video or any other kind of file.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told
@@ -929,9 +960,12 @@ bubble scrolled by those eight pixels.
   exactly on its edge, and then finds. Adding a video asks for its first
   search, of its first window, so the Go side starts it and the
   workspace only shows it. Nothing carries the transcription on through
-  the rest of the episode afterwards. So there is nothing to control about
-  it but the search: **Search** starts it and **Cancel** stops it, and what
-  was heard stays, so the next search goes on from there. While another
+  the rest of the episode afterwards by itself. So there is nothing to
+  control about it in the workspace but the search: **Search** starts it
+  and **Cancel** stops it, and what was heard stays, so the next search
+  goes on from there. Hearing the whole video is asked for in its menu in
+  the sidebar, **Transcribe whole video**, see above, and gives way to
+  every search. While another
   episode's search finds its clips, a search that hears waits and carries
   on after, because the two models want the same memory.
 - **What is not there yet says so by waiting.** The part of the clip
@@ -948,8 +982,12 @@ bubble scrolled by those eight pixels.
   the work has come is said on the clip cards, the transcribing and the
   finding alike, and the range picker said only the first half of it.
   Tim had it taken away: while clips are found the window breathes and
-  the motes of work in hand rise through it, and nothing else on the
-  range picker moves.
+  the motes of work in hand rise through it. What it does show, always,
+  is where the transcript has not reached yet, the dots of a part not
+  transcribed, see What was not transcribed is said below. That is no
+  progress, it is where a search has to transcribe first. Tim picked
+  dots on what is not transcribed over dots on what is, so a video
+  transcribed to its end is a plain range picker, issue #432.
 
   **The width it is measured at is the width it grows from.** Which way a
   list grows is the placement's to decide, and it decides from the width
@@ -2145,9 +2183,11 @@ found is a place in the video, and I and O make a clip there.
 - **What was not transcribed is said.** With nothing typed, a part of the
   video the transcript has not reached yet is a dashed card in its place,
   "Not transcribed yet", because the search cannot look there. With
-  something typed the list holds only what matches. While the field
-  is open, the range picker draws the same part under the minutes and
-  the window. A part is dots on nothing, a halftone grid, `--halftone`
+  something typed the list holds only what matches. The range picker
+  draws the same part under the minutes and the window, always, not only
+  while the field is open, so where a search has to transcribe first is
+  seen without opening the cards, issue #432. The part is lit from its
+  card, and its card from it, only while the cards are open. A part is dots on nothing, a halftone grid, `--halftone`
   in `app.css`, that rises from the foot and thins out upwards, with none
   in the top third, so the minutes and their lines show through. A grey
   wash under the dots hid them, found by Tim, who picked this one from a

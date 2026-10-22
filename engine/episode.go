@@ -92,13 +92,17 @@ type EpisodeStatus struct {
 	// the waveform, MeasuredParts which, from and to, and MeasuredAll says
 	// all of it. It runs ahead of the transcript, where the clip timeline
 	// looks first, see levels.go.
-	Measured        float64       `json:"measured"`
-	MeasuredParts   [][2]float64  `json:"measuredParts"`
-	MeasuredAll     bool          `json:"measuredAll"`
-	TranscriptStale bool          `json:"transcriptStale"`
-	Plans           []PlanSummary `json:"plans"`
-	Rendered        int           `json:"rendered"`
-	Previews        int           `json:"previews"`
+	Measured        float64      `json:"measured"`
+	MeasuredParts   [][2]float64 `json:"measuredParts"`
+	MeasuredAll     bool         `json:"measuredAll"`
+	TranscriptStale bool         `json:"transcriptStale"`
+	// Length is how long the episode is, as its transcript knows it, and 0
+	// before it has one. A video's menu says by it how much of the video
+	// is transcribed.
+	Length   float64       `json:"length,omitempty"`
+	Plans    []PlanSummary `json:"plans"`
+	Rendered int           `json:"rendered"`
+	Previews int           `json:"previews"`
 	// Work says whether the episode's work folder is there at all. It is
 	// gone when the episode has just been added, and when someone has
 	// deleted it by hand, and then there is nothing of the episode to keep
@@ -133,6 +137,7 @@ func Status(fsys afero.Fs, source, asrModelDir string) EpisodeStatus {
 		if file, _, _, ok := readTranscriptFile(fsys, whole, stamp, model); ok {
 			st.Transcribed = file.done()
 			st.Heard = file.heard()
+			st.Length = float64(file.End)
 			if len(st.Heard) > 0 && st.Heard[0][0] <= 0.005 {
 				st.Covered = st.Heard[0][1]
 			}

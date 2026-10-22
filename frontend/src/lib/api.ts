@@ -143,6 +143,10 @@ export interface Check {
   sha256?: string;
 }
 
+// The formats Export transcript saves in, see transcriptFormats in
+// cmd/framefairy-app/export.go.
+export type TranscriptFormat = "text" | "srt";
+
 export interface PlanSummary {
   path: string;
   name: string;
@@ -172,6 +176,9 @@ export interface EpisodeStatus {
   measuredParts?: [number, number][] | null;
   measuredAll?: boolean;
   transcriptStale: boolean;
+  // How long the episode is, as its transcript knows it, missing before
+  // it has one.
+  length?: number;
   plans: PlanSummary[] | null;
   rendered: number;
   previews: number;
@@ -479,7 +486,7 @@ export interface Underway {
 export interface Job {
   id: string;
   episode: string;
-  kind: "search" | "render" | "clip" | "model" | "llm";
+  kind: "search" | "render" | "clip" | "transcribe" | "model" | "llm";
   label: string;
   state: JobState;
   error?: string;
@@ -817,6 +824,14 @@ export const api = {
   // Continue: carries on a search or a render that stopped. click as for
   // search, "" where no Cancel can follow it.
   continueJob: (id: string, click: string) => call<Job>("Continue", id, click),
+  // Transcribe whole video in a video's menu: hears it to its end, with no
+  // search after. Asked again while it runs, it gives the job that runs.
+  transcribe: (path: string) => call<Job>("Transcribe", path),
+  // Export transcript: the words of the whole video with every correction
+  // made in a clip's caption box, as text or as subtitles, saved where the
+  // system's save box says. Gives where, or "" when the box was cancelled.
+  exportTranscript: (path: string, format: TranscriptFormat) =>
+    call<string>("ExportTranscript", path, format),
   // Cancel at the head of the clip list: stops all the work on the clips
   // of an episode, and the search the press named click asked for, even
   // one the Go side has not heard of yet. It needs no answer to anything

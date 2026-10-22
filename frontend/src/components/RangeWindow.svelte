@@ -106,8 +106,11 @@
     // A search stands stopped on the window, so the mark is where Continue
     // carries it on rather than where Search looks.
     resumes?: boolean;
-    // The parts of the video not heard yet, drawn while what was said is
-    // searched, because that search cannot look there.
+    // The parts of the video not transcribed yet, always, so where a search
+    // has to transcribe first, and how much is left to Transcribe whole
+    // video, is seen without opening the cards of what was said. Tim
+    // picked dots on what is not transcribed over dots on what is: a
+    // video transcribed to its end is a plain range picker, issue #432.
     unheard?: [number, number][];
     // The one of them whose card is under the hand, lit a step.
     unheardLit?: number;
@@ -118,7 +121,7 @@
     // passes over them.
     giving?: number;
     // The one of them under the hand here, by its place among them, or -1,
-    // so its card is lit too.
+    // so its card is lit too, while the cards are open.
     onhoverunheard?: (index: number) => void;
   } = $props();
 
@@ -369,7 +372,7 @@
      the very start or the very end it would otherwise be cut off by the
      corner. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="over" onpointermove={unheard.length ? hoverUnheard : undefined} onpointerleave={unheard.length ? hoverUnheard : undefined}>
+<div class="over" onpointermove={unheard.length && onhoverunheard ? hoverUnheard : undefined} onpointerleave={unheard.length && onhoverunheard ? hoverUnheard : undefined}>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="track asks"

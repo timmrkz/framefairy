@@ -51,11 +51,20 @@ Cancel, because nothing could tell the two apart.
 ## What a job is
 
 A job is one piece of work a person started, or the app started for them:
-a **search**, a **clip** made by hand, or a **render**. It is owned by the
+a **search**, a **clip** made by hand, a **render**, or the whole video
+**transcribed** to its end from its menu, issue #432. It is owned by the
 Go side. It has what it was asked for and a step it is in. An episode has
 at most one search at a time, and any number of clips and renders.
 
-A search goes **waiting**, **hearing**, **finding**, **done**. A clip made
+A search goes **waiting**, **hearing**, **finding**, **done**. A
+transcription of the whole video goes **waiting**, **hearing**, **done**,
+and its hearing comes last: it gives the lane back to any search or clip
+made by hand that asks to hear, a search asked after it goes first, and
+it waits while a search finds, because it can take an hour and nobody is
+waiting on it, see `wholeHearingTurn` in `lanes.go`. Its record is
+`transcribe.json`, so an app closed while it hears says so in the
+video's menu, and Continue transcribing carries it on. Called off with its
+cross, its record goes, and what it heard stays. A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
 far enough yet, **framing**, **done**. A render goes **waiting**,
 **rendering**, **done**. Waiting is its turn behind

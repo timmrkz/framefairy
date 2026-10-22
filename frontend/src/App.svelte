@@ -12,10 +12,13 @@
     onLicenceLink,
     onQuit,
     type EpisodeStatus,
+    type Job,
     type Label,
     type Added,
+    type TranscriptFormat,
     errorText,
   } from "./lib/api";
+  import { heardIn, joinParts } from "./lib/flow";
   import { jobs, nav, shell } from "./lib/state.svelte";
   import { railDot, standing, updates } from "./lib/updates.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
@@ -166,6 +169,59 @@
       if (made[ep.source] === mine) delete drafts[ep.source];
     };
     queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
+  }
+
+  // How much of a video is transcribed, from 0 to 1, for the row about its
+  // words in its menu: what its transcript has heard, with what the work
+  // that hears it now has got to since it was last saved. -1 before the
+  // video has a transcript that knows how long it is.
+  function transcribedShare(ep: EpisodeStatus, work: Job | undefined): number {
+    const length = ep.length ?? 0;
+    if (!(length > 0)) return -1;
+    if (ep.transcribed) return 1;
+    const p = work?.state === "running" ? work.progress : undefined;
+    const live: [number, number][] = p?.covered ? [[p.from ?? 0, p.covered]] : [];
+    return Math.min(heardIn(joinParts([...(ep.heard ?? []), ...live]), 0, length) / length, 1);
+  }
+
+  // Transcribe whole video, and Continue transcribing, in a video's menu.
+  // The job it answers with is taken at once, so the row says Transcribing
+  // without waiting for the job's first news.
+  async function transcribe(ep: EpisodeStatus) {
+    said(`video menu: transcribe whole video`, { video: ep.source });
+    try {
+      jobs.apply(await api.transcribe(ep.source));
+    } catch (err) {
+      toasts.say("transcribe whole video", errorText(err), { video: ep.source });
+    }
+  }
+
+  // A transcription that fails says why in a toast, the way a search does,
+  // and its row says Continue transcribing. One seen failed only as the
+  // app opened has said why already. Only the state and id are read, see
+  // the rule on watching jobs.
+  const transcribingSeen = new Set<string>();
+  $effect(() => {
+    for (const j of jobs.list) {
+      if (j.kind !== "transcribe") continue;
+      if (j.state === "running" || j.state === "queued") transcribingSeen.add(j.id);
+      else if (transcribingSeen.delete(j.id) && j.state === "failed") {
+        const said = j.error?.trim() ?? "";
+        const why = said ? said[0].toUpperCase() + said.slice(1) : "The transcription failed, and no reason was given.";
+        toasts.say("transcribe whole video", why, { video: j.episode, report: true });
+      }
+    }
+  });
+
+  // Export transcript: the save box is the system's, so nothing is said
+  // here but a failure.
+  async function exportTranscript(ep: EpisodeStatus, format: TranscriptFormat) {
+    try {
+      const saved = await api.exportTranscript(ep.source, format);
+      said(`video menu: export transcript as ${format}, ${saved ? "saved" : "cancelled"}`, { video: ep.source });
+    } catch (err) {
+      toasts.say("export transcript", errorText(err), { video: ep.source });
+    }
   }
 
   // A menu closed: what it drew and did not save is let go, unless a save
@@ -725,6 +781,14 @@
               onsave={(l) => saveLabel(ep, l)}
               onreveal={() => api.reveal(ep.source)}
               onremove={() => (removing = ep)}
+              work={jobs.transcription(ep.source)}
+              share={transcribedShare(ep, jobs.transcription(ep.source))}
+              ontranscribe={() => transcribe(ep)}
+              onstoptranscribe={() => {
+                const work = jobs.transcription(ep.source);
+                if (work) void api.cancelJob(work.id);
+              }}
+              onexport={(format) => exportTranscript(ep, format)}
             />
           </span>
         </li>

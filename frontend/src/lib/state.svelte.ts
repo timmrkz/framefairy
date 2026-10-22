@@ -68,6 +68,15 @@ class JobStore {
     );
   }
 
+  // The video's transcription to its end, Transcribe whole video in its
+  // menu, the newest there is: running, or stopped, cut off or failed,
+  // which its menu offers to carry on. One that is done has nothing to say.
+  transcription(path: string): Job | undefined {
+    const last = this.list.findLast((j) => j.episode === path && j.kind === "transcribe");
+    if (!last || last.state === "done") return undefined;
+    return last;
+  }
+
   get busy(): number {
     return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
   }

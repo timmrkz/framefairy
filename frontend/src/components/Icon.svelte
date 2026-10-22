@@ -39,6 +39,7 @@
   import Search from "@lucide/svelte/icons/search";
   import MessageSquareQuote from "@lucide/svelte/icons/message-square-quote";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
+  import Share from "@lucide/svelte/icons/share";
   import type { Component } from "svelte";
 
   // Mark In and Mark Out are the square brackets every editor draws on
@@ -110,6 +111,9 @@
     // What can be done with a video in the sidebar, behind the three dots
     // Finder and Mail put on a row for its menu.
     more: Ellipsis,
+    // Saving something out of the app in another format, the box with an
+    // arrow up the Mac puts on Share and Export.
+    export: Share,
   };
 
   // The marks that are solid wherever people see them, play and pause on

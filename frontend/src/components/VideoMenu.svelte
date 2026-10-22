@@ -23,15 +23,27 @@
   // is no label, so the field, the colours and the row never disagree, and
   // a menu opened for Show in folder leaves the video as it was.
   //
+  // One row is about the words of the video, and says the one thing that
+  // can be done with them now, issue #432: Transcribe whole video while
+  // the transcript has not reached the end, Transcribing with how far it
+  // has come while that runs, and its cross to stop it, the way a download
+  // in Safari is stopped, Continue transcribing once it stopped, by hand
+  // or by the app closing, and Export transcript once it is all there.
+  // Export hangs a list of its formats on the right of the menu, the way
+  // Export To does in Pages, and a format opens the system's save box.
+  // Two rows of which one never works were two things to read for one.
+  //
   // Everything saves at once, the way it does everywhere in the app: a
   // colour the moment it is clicked, the words when Return is pressed, the
   // field is left or the menu closes. The pill in the row follows the words
   // while they are typed. Escape puts back what was there, and the cross at
   // the end of the field, there while it has words, removes the label.
+  import { untrack } from "svelte";
   import { Popover } from "bits-ui";
+  import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
-  import type { EpisodeStatus, Label } from "../lib/api";
+  import type { EpisodeStatus, Job, Label, TranscriptFormat } from "../lib/api";
   import { freshColour } from "../lib/colour";
 
   // How many characters a label keeps, engine.LabelLength.
@@ -48,6 +60,11 @@
     onsave,
     onreveal,
     onremove,
+    work,
+    share,
+    ontranscribe,
+    onstoptranscribe,
+    onexport,
   }: {
     ep: EpisodeStatus;
     // The label the row draws, which is the one being saved while a save
@@ -72,7 +89,55 @@
     onsave: (label: Label | null) => void;
     onreveal: () => void;
     onremove: () => void;
+    // The video's transcription to its end, running or stopped, or nothing,
+    // and how much of the video is transcribed, from 0 to 1, or -1 before
+    // that is known.
+    work: Job | undefined;
+    share: number;
+    ontranscribe: () => void;
+    onstoptranscribe: () => void;
+    onexport: (format: TranscriptFormat) => void;
   } = $props();
+
+  // A click shows at once: Transcribe says Transcribing, and the cross
+  // says Stopping, from the frame it is pressed until the job says so too.
+  let asked = $state("");
+  let stopping = $state("");
+  const running = $derived(work?.state === "running" || work?.state === "queued");
+  const transcribing = $derived(running || (asked !== "" && asked === (work?.id ?? "none")));
+  $effect(() => {
+    const id = work?.id ?? "none";
+    const on = running;
+    untrack(() => {
+      if (asked && (asked !== id || on)) asked = "";
+      if (stopping && (stopping !== id || !on)) stopping = "";
+    });
+  });
+
+  // What the row about the words says, see above. A video whose
+  // transcript reaches its end is done, whatever job brought it there.
+  const words = $derived(
+    ep.transcribed && !transcribing
+      ? "export"
+      : transcribing
+        ? "transcribing"
+        : work && work.state !== "done"
+          ? "continue"
+          : "transcribe",
+  );
+  // How far, in the row's fill and its number, while it runs and once it
+  // stopped, where the fill stands still.
+  const percent = $derived(share >= 0 ? `${Math.floor(share * 100)} %` : "");
+  // Waiting for its turn behind a search is said as the search says it.
+  const waiting = $derived(transcribing && (!work?.step || work.step === "waiting"));
+
+  // The list of formats Export transcript hangs on the right of the menu.
+  let exporting = $state(false);
+  function exportAs(format: TranscriptFormat) {
+    exporting = false;
+    close();
+    onexport(format);
+  }
 
   let open = $state(false);
   let text = $state("");
@@ -184,6 +249,7 @@
 
   function close() {
     save();
+    exporting = false;
     open = false;
     onopenchange(false);
   }
@@ -253,6 +319,12 @@
               aria-label="More for {ep.name}"
               onkeydown={keepKeys}
               onpointerdown={() => (pressed = true)}
+              onpointerover={(e) => {
+                // The pointer anywhere else in the menu takes the formats in
+                // again, the way a submenu goes when the pointer leaves its
+                // row.
+                if (!(e.target as Element).closest("[data-export]")) exporting = false;
+              }}
             >
               <div class="label">
                 <span class="field">
@@ -295,6 +367,104 @@
                   />
                 </span>
               </div>
+              {#if words === "export"}
+                <Popover.Root bind:open={exporting}>
+                  <Popover.Trigger>
+                    {#snippet child({ props })}
+                      <button
+                        {...props}
+                        class="item"
+                        class:lit={exporting}
+                        data-export
+                        disabled={ep.missing}
+                        title="Save the transcript with every word you corrected"
+                        onpointerenter={() => (exporting = !ep.missing)}
+                      >
+                        <Icon name="export" />
+                        Export transcript
+                        <span class="end"><Icon name="chevron" size={12} /></span>
+                      </button>
+                    {/snippet}
+                  </Popover.Trigger>
+                  <Popover.Portal>
+                    <!-- Hung out by the pointer, the formats leave the keyboard
+                         where it was, so a label being typed is neither saved
+                         nor lost by it. Escape closes them and the menu with
+                         them, the way it closes a submenu on the Mac, and puts
+                         the label back as Escape on the menu does. -->
+                    <Popover.Content
+                      side="right"
+                      align="start"
+                      sideOffset={4}
+                      collisionPadding={4}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                      onEscapeKeydown={(e) => {
+                        e.preventDefault();
+                        exporting = false;
+                        putBack = true;
+                        open = false;
+                        ondraft(kept);
+                        onopenchange(false);
+                      }}
+                    >
+                      {#snippet child({ props, wrapperProps, open: listed })}
+                        {#if listed}
+                          <div {...wrapperProps}>
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <div {...props} class="formats panel" role="menu" aria-label="Formats" onkeydown={(e) => e.key !== "Escape" && e.stopPropagation()}>
+                              <button class="item" role="menuitem" title="The words in paragraphs, to read or paste" onclick={() => exportAs("text")}>
+                                Text
+                                <span class="end">.txt</span>
+                              </button>
+                              <button class="item" role="menuitem" title="Subtitles for YouTube or a video editor" onclick={() => exportAs("srt")}>
+                                Subtitles
+                                <span class="end">.srt</span>
+                              </button>
+                            </div>
+                          </div>
+                        {/if}
+                      {/snippet}
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              {:else if words === "transcribing"}
+                <div class="item busyhost">
+                  <Busy fraction={share} />
+                  <Icon name="transcript" />
+                  <span class="words">{stopping ? "Stopping" : waiting ? "Waiting to transcribe" : "Transcribing"}</span>
+                  <span class="end num">{percent}</span>
+                  <button
+                    class="stop quiet"
+                    title="Stop transcribing. What is transcribed stays"
+                    aria-label="Stop transcribing"
+                    disabled={!!stopping || !running}
+                    onclick={() => {
+                      stopping = work?.id ?? "";
+                      onstoptranscribe();
+                    }}
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                </div>
+              {:else}
+                <button
+                  class="item"
+                  disabled={ep.missing}
+                  title={words === "continue"
+                    ? "Carry on transcribing from where it stopped"
+                    : "Transcribe the whole video, so its transcript can be exported"}
+                  onclick={() => {
+                    asked = work?.id ?? "none";
+                    ontranscribe();
+                  }}
+                >
+                  {#if words === "continue" && share >= 0}<Busy fraction={share} still />{/if}
+                  <Icon name="transcript" />
+                  <span class="words">{words === "continue" ? "Continue transcribing" : "Transcribe whole video"}</span>
+                  {#if words === "continue"}<span class="end num">{percent}</span>{/if}
+                </button>
+              {/if}
               <button
                 class="item"
                 onclick={() => {
@@ -411,8 +581,50 @@
   }
 
   .item:hover:not(:disabled),
-  .item:focus-visible {
+  .item:focus-visible,
+  .item.lit {
     background: var(--ink-3);
+    outline: none;
+  }
+
+  /* What stands at the end of a row, the chevron of Export, a number or a
+     format's ending, in the grey of a secondary word, the way a menu on
+     the Mac puts a shortcut there. */
+  .item .end {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    color: var(--muted);
+  }
+
+  /* The row while the video is transcribed is no button: what it is for
+     is the cross at its end, as in Safari's list of downloads, and its
+     fill is how far, .busyhost in app.css. */
+  .stop {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    color: var(--muted);
+  }
+
+  .stop:hover:not(:disabled) {
+    color: var(--text);
+  }
+
+  /* The list of formats hangs beside the menu, as wide as its words, its
+     rows the menu's rows and running from edge to edge the same way. */
+  .formats {
+    min-width: 160px;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .formats:focus-visible {
     outline: none;
   }
 
