@@ -26,7 +26,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if EverSearched(fsys, source) {
 		t.Fatal("an episode nobody has searched should not say it has been")
 	}
-	if st := Status(fsys, source, ""); st.EverSearched || st.Work {
+	if st := Status(fsys, source, "", nil); st.EverSearched || st.Work {
 		t.Errorf("status of a fresh episode %+v", st)
 	}
 
@@ -59,7 +59,7 @@ func TestAnEpisodeRemembersItHasBeenSearched(t *testing.T) {
 	if !EverSearched(fsys, source) {
 		t.Fatal("an episode that was searched says it was not")
 	}
-	if st := Status(fsys, source, ""); !st.EverSearched || !st.Work {
+	if st := Status(fsys, source, "", nil); !st.EverSearched || !st.Work {
 		t.Errorf("status after a search %+v", st)
 	}
 
@@ -105,7 +105,7 @@ func TestAShortBeingWrittenIsNotCounted(t *testing.T) {
 	if err := recordShort(disk, plan, "01", filepath.Join(out, "done.mp4")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(disk, source, "").Rendered; got != 1 {
+	if got := Status(disk, source, "", nil).Rendered; got != 1 {
 		t.Errorf("%d rendered, want 1", got)
 	}
 }
@@ -134,7 +134,7 @@ func TestAShortInTheOutputFolderIsTheClipsShort(t *testing.T) {
 		}
 		return view.Clips[0]
 	}
-	rendered := func() int { return Status(disk, p.Source, p.Base.ASRModel).Rendered }
+	rendered := func() int { return Status(disk, p.Source, p.Base.ASRModel, nil).Rendered }
 	shorts := t.TempDir()
 	other := filepath.Join(ResolvePath(shorts), clip().Slug+".mp4")
 	short := filepath.Join(ResolvePath(shorts), clip().Slug+" 2.mp4")
@@ -548,15 +548,52 @@ func TestAPreviewLeavesTheShortAlone(t *testing.T) {
 	}
 }
 
-// What a video says runs from the start of its first word to the end of
-// its last, whatever order the words were heard in, and is nothing while
-// no word is heard.
-func TestWhatIsSaidSpansTheWordsHeard(t *testing.T) {
-	if got := saidSpan(nil); got != nil {
-		t.Errorf("no words said %v", got)
+// What the app is told is said, and where I and O can make a clip, are the
+// edges of the lines handEntry goes by: the words placed on the sound, not
+// as the recogniser timed them. The recogniser folds the silence round a
+// video's speech into its first and last word, here 0.4 s before and 0.6 s
+// after, so the words as heard ran wider, and I was offered just after the
+// last word where the clip could only fail, found by the second review of
+// #456. Just inside the edges a clip is made, just outside it is not.
+func TestWhatIsSaidIsWhereAClipMadeByHandCanBe(t *testing.T) {
+	if got := saidOf(nil); got != nil {
+		t.Errorf("no lines said %v", got)
 	}
-	words := []Cue{{40, 41.5, "später"}, {2.25, 3, "Es"}, {10, 12.75, "war"}}
-	if got := saidSpan(words); got == nil || *got != [2]float64{2.25, 41.5} {
-		t.Errorf("said %v, not 2.25 to 41.5", got)
+	frames := make([]float32, 1000)
+	for i := range frames {
+		frames[i] = -90
+		if i >= 100 && i < 300 {
+			frames[i] = -20
+		}
+	}
+	floor := -50.0
+	heard := fromStored([]Cue{{0.6, 1.8, "Es"}, {1.8, 3.6, "war."}}, frames, 0, -40, &floor)
+	lines := BuildLines(heard.Words, heard.Levels(), nil)
+	said := saidOf(lines)
+	if said == nil || said[0] <= 0.6 || said[1] >= 3.6 {
+		t.Fatalf("said %v, not inside the words as heard, 0.6 to 3.6", said)
+	}
+	seconds := func(keep [][2]int) float64 {
+		total := 0.0
+		for _, run := range keep {
+			total += lines[run[1]-1].End() - lines[run[0]-1].Start()
+		}
+		return total
+	}
+	for _, c := range []struct {
+		name string
+		req  ClipRequest
+		made bool
+	}{
+		{"I just before the last word ends", ClipRequest{At: said[1] - 0.05}, true},
+		{"I where the last word ends", ClipRequest{At: said[1]}, false},
+		{"I between the line and the word as heard", ClipRequest{At: said[1] + 0.3}, false},
+		{"O where the first word starts", ClipRequest{At: said[0], Backward: true}, true},
+		{"O just before the first word starts", ClipRequest{At: said[0] - 0.05, Backward: true}, false},
+	} {
+		_, err := handEntry(lines, c.req, 1, 30, seconds)
+		if made := err == nil; made != c.made {
+			t.Errorf("%s, at %.2f s with %v said: made a clip %v, %v", c.name, c.req.At, *said, made, err)
+		}
 	}
 }

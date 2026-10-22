@@ -82,7 +82,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if got, done := Coverage(disk, source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
-	if st := Status(disk, source, base.ASRModel); st.Transcribed || st.Covered != cut {
+	if st := Status(disk, source, base.ASRModel, nil); st.Transcribed || st.Covered != cut {
 		t.Errorf("status of a partial transcript %+v", st)
 	}
 
@@ -166,7 +166,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(fsys, source, "modell"); st.TranscriptStale == read {
+		if st := Status(fsys, source, "modell", nil); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -440,7 +440,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
-			st := Status(disk, source, model)
+			st := Status(disk, source, model, nil)
 			if st.Covered > 0 && !st.Transcribed {
 				seen = append(seen, st.Covered)
 			}
@@ -459,7 +459,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	if seen[len(seen)-1] <= seen[0] {
 		t.Errorf("coverage did not grow while it ran: %v", seen)
 	}
-	if st := Status(disk, source, model); !st.Transcribed || st.Covered < 69.9 {
+	if st := Status(disk, source, model, nil); !st.Transcribed || st.Covered < 69.9 {
 		t.Errorf("status when it is done %+v", st)
 	}
 }
@@ -853,7 +853,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 				default:
 				}
 				covered, done := Coverage(disk, source, base.ASRModel)
-				st := Status(disk, source, base.ASRModel)
+				st := Status(disk, source, base.ASRModel, nil)
 				mu.Lock()
 				if covered < last-0.001 {
 					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))

@@ -287,7 +287,7 @@
 //                      slowly enough to do something while it is.
 //                      ["speech", "hold"] stops it hearing, and the steps
 //                      that say so let it on one piece at a time.
-//                      ["speech", "silent"] hears no word at all, the way
+//                      ["speech", "wordless"] hears no word at all, the way
 //                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
@@ -3541,7 +3541,7 @@ export const sequences = [
     // its second line, cut to a line. A video with no speech has nothing
     // to make a clip of, which the clip finds once it has heard it.
     name: "a clip made by hand that failed says where it lies, and why in a toast",
-    steps: [["speech", "silent"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"]],
+    steps: [["speech", "wordless"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"]],
   },
   {
     // Tim on #456: I at the end of the video made a card that could only
@@ -7378,7 +7378,7 @@ for (const seq of toWalk) {
         await watch.step("head", s);
         break;
       case "speech":
-        await control(url, arg === "silent" ? "/speech?silent=1" : `/speech?ms=${arg}`);
+        await control(url, arg === "wordless" ? "/speech?wordless=1" : `/speech?ms=${arg}`);
         break;
       case "hold":
         await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);

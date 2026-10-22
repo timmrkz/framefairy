@@ -575,6 +575,11 @@ describe("where I and O can make a clip", () => {
     expect(nothingToMark(120, false, [], undefined, 120)).toBe(true);
     expect(nothingToMark(119.97, false, [], undefined, 120)).toBe(true);
   });
+  test("I makes none on the last frame either, where play stops short of the end", () => {
+    expect(nothingToMark(120 - 1 / 15, false, [], undefined, 120)).toBe(true);
+    expect(nothingToMark(120 - 1 / 15, false, [[0, 60]], [3, 58], 120)).toBe(true);
+    expect(nothingToMark(119.6, false, [[0, 60]], [3, 58], 120)).toBe(true);
+  });
   test("O makes none at the very start of the video, heard or not", () => {
     expect(nothingToMark(0, true, [], undefined, 120)).toBe(true);
   });

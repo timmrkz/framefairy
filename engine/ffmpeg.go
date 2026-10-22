@@ -128,7 +128,11 @@ type Engine struct {
 	// hearingWhole is how much audio, in seconds, the job hearing in
 	// turns set out to hear when it started, see Project.hear, so a
 	// hearing that gave the lane back and has it again counts on from
-	// where it got to. Zero is a hearing on its own.
+	// where it got to. Zero is a hearing on its own. It is the engine's
+	// and not the call's because one engine runs one job: the app makes
+	// an engine for each, see runJob in cmd/framefairy-app/jobs.go, and the
+	// command line runs one job at a time. A second hearing on the same
+	// engine at once would take the first one's whole.
 	hearingWhole     float64
 	encoder          Encoder
 	hdrEncoder       Encoder

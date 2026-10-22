@@ -92,7 +92,10 @@ func (s *Source) Name() string { return "channels" }
 // neither to be had the list itself, tried again while it answers 404.
 func (s *Source) Fetch(ctx context.Context) (List, error) {
 	// The entry of the channel followed is read beside the list, not
-	// after it, so it adds no time to a check.
+	// after it, so it adds no time to a check. Its read ends with Fetch,
+	// so a list that failed takes no entry read on with it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	entry := s.readEntry(ctx)
 	list, err := s.fetchCopies(ctx)
 	if err != nil {

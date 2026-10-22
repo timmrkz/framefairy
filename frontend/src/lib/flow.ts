@@ -40,9 +40,12 @@ export function covers(parts: Parts, from: number, to: number): boolean {
 // the very end of the video for I and the very start for O, whatever is
 // heard, and wherever the part on that side of the playhead is heard and
 // no word is said in it. Where it is not heard yet, a clip is made by
-// hearing it first, so it is offered. said is from the start of the first
-// word heard to the end of the last, see EpisodeStatus.Said, and the rule
-// is the engine's, see handEntry.
+// hearing it first, so it is offered. The very end is the last half second,
+// the room covers allows, because play that runs out stops the playhead
+// where the last frame or the sound ends, short of the duration, and a
+// clip cannot start in so little. said is from the start of the first line
+// to the end of the last, see EpisodeStatus.Said, and the rule is the
+// engine's, see handEntry.
 export function nothingToMark(at: number, backward: boolean, heard: Parts, said: [number, number] | null | undefined, duration: number): boolean {
   if (!(duration > 0)) return false;
   const [from, to] = backward ? [0, at] : [at, duration];
