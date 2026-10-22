@@ -383,15 +383,21 @@ other `scripts/` and whatever is added next. They decide how the project
 is built, so none of them counts as harmless. The scripts that check a
 rule, and the rules only those checks run, are the exception: no job but
 `build` has anything to do for them, and a pull request that changed only
-them ran every job, #322. The Go test that reads every script for the
-endings of a video then runs on main only, as it does for the docs. The
+them ran every job, #322. The one Go test that reads the docs, the
+scripts and the interface whole, for the endings of a video, runs in
+`build` whatever changed, so none of them has to start the Go tests. The
 filters err towards running, because a test that runs when it need not
 costs a minute and one that does not run when it should have costs a
 broken main.
 
 `scripts/ci-filters-test.sh` checks the filters on the files a pull
 request really arrives with, matched the way the action matches them,
-with picomatch from the interface's packages, so it needs no network. It
+with the picomatch the action locks at its pinned commit, which the
+interface's packages carry as `picomatch-paths-filter`, so it needs no
+network. When the pin of the action moves, that version moves with it.
+It also checks that every filter is true on a push to main, and it fails
+on a Go test that reads a whole folder of the interface, which no file
+of it would start. It
 runs in the `build` job whatever changed, because a mistake in the
 filters is silent: CI would go green having run less than it should. Run
 it by hand with `sh scripts/ci-filters-test.sh`.
@@ -401,8 +407,11 @@ tested, so main is always known to be sound and a mistake in the rules can
 never be what hides a break.
 
 A job a pull request does not need shows as skipped. GitHub counts a
-skipped job as passed for a required check, so a branch rule can still be
-built on the jobs. The Updates page does not read CI at all: it follows
+skipped job as passed for a required check, but a skipped job with a
+matrix shows once under its own name, not under the names of its
+machines, like `linux (A-AR+B-O)`. A check a branch rule requires is
+therefore a job without a matrix, or one job that waits on all the
+others. The Updates page does not read CI at all: it follows
 the builds of `builds.yml`, see [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its

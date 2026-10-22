@@ -15,7 +15,8 @@
 # The jobs build, walks and outside: the app as a whole. Never a reason
 # to start a job, in every filter below: the docs, and the rules that no
 # job runs but their own check, which the job build runs whatever
-# changed.
+# changed. So does the Go test that reads the docs, the scripts and the
+# interface whole for the endings of a video.
 app:
   - '**'
   - '!docs/**'
@@ -26,7 +27,8 @@ app:
   - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
 
 # The jobs linux, fuzz and macos: the Go tests. No Go test builds the
-# interface, so only the files of it a Go test reads count, like api.ts.
+# interface, so only the files of it a Go test reads count, like api.ts,
+# and the one that reads all of it runs in the job build.
 go:
   - '**'
   - '!docs/**'

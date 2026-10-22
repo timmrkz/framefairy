@@ -5,8 +5,11 @@
 #
 #   sh scripts/ci-filters-test.sh
 #
-# It matches the way dorny/paths-filter v4.0.3 does, with picomatch from
-# the interface's packages, so it needs no network. The lines mirrored
+# It matches the way dorny/paths-filter v4.0.3 does, with the picomatch
+# the action locks at the commit ci.yml pins, 2.3.1. The interface's
+# packages carry it as picomatch-paths-filter, so this needs no network,
+# and when the pin of the action moves, that version moves with it. The
+# lines mirrored
 # from the action's src/filter.ts: 15 (picomatch with dot), 133 to 148
 # (some-with-excludes: a negated pattern that excludes the file ends it,
 # else any other pattern that matches takes it) and 199 to 212 (each
@@ -15,7 +18,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-[ -f "$root/frontend/node_modules/picomatch/package.json" ] ||
+[ -f "$root/frontend/node_modules/picomatch-paths-filter/package.json" ] ||
 	make -s --no-print-directory -C "$root" frontend/node_modules/.package-lock.json >&2
 fail=0
 
@@ -23,7 +26,7 @@ fail=0
 check() {
 	got=$(node -e '
 		const fs = require("fs")
-		const pm = require(process.argv[1] + "/frontend/node_modules/picomatch")
+		const pm = require(process.argv[1] + "/frontend/node_modules/picomatch-paths-filter")
 		const filters = {}
 		let name
 		for (const line of fs.readFileSync(process.argv[1] + "/.github/ci-filters.yml", "utf8").split("\n")) {
@@ -90,11 +93,34 @@ check "some/new/thing.py" "app go interface"
 check ".gitignore" "app go interface"
 
 # Every file of the interface a Go test reads starts the Go tests, found
-# by the path the test reads it by, so a new one needs no case here.
+# by the path the test reads it by, so a new one needs no case here. A
+# test that reads a whole folder cannot be checked file by file, so it
+# fails here to be looked at. The walks read theirs, and run in the jobs
+# every file of the interface starts.
 for f in $(grep -rhoE --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build '"(\.\./)+frontend/[^"]*"' "$root" |
 	tr -d '"' | sed 's#^\(\.\./\)*##' | sort -u); do
-	[ -f "$root/$f" ] && check "$f" "app go interface"
+	case $f in frontend/preview/walks | frontend/preview/dist-bridge) continue ;; esac
+	if [ -d "$root/$f" ]; then
+		printf 'FAIL\t%s is a folder a Go test reads, start the Go tests for it in ci-filters.yml or run the test in the job build\n' "$f"
+		fail=1
+	elif [ -f "$root/$f" ]; then
+		check "$f" "app go interface"
+	fi
 done
+
+# A push to main runs everything: each filter has an output in the job
+# changes of ci.yml that is true whenever the event is not a pull request,
+# and each output has its filter.
+want=$(sed -n 's/^\([a-z]*\):$/\1/p' "$root/.github/ci-filters.yml" | sort)
+got=$(sed -n "s/^      \([a-z]*\): \\\${{ github.event_name != 'pull_request' || steps.filter.outputs.\([a-z]*\) == 'true' }}\$/\1 \2/p" "$root/.github/workflows/ci.yml" |
+	awk '$1 == $2 { print $1 }' | sort)
+outputs=$(sed -n '/^    outputs:$/,/^    steps:$/p' "$root/.github/workflows/ci.yml" | grep -c '^      [a-z]*: ')
+if [ "$got" = "$want" ] && [ "$outputs" = "$(echo "$want" | wc -l)" ]; then
+	printf 'ok  \t%-52s %s\n' "a push to main" "$(echo $want)"
+else
+	printf 'FAIL\ta push to main runs %s of the filters %s\n' "$(echo $got)" "$(echo $want)"
+	fail=1
+fi
 
 [ "$fail" = 0 ] && echo "ok  	the CI filters behave"
 exit $fail
