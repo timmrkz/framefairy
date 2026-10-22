@@ -5,6 +5,9 @@
 #                             committed or not
 #   sh scripts/changed.sh --plan
 #                             say what would run, and run nothing
+#   sh scripts/changed.sh --fuzz
+#                             fuzz the targets a change reaches, and run
+#                             nothing else
 #
 # make test runs everything, which is ten minutes, most of it the engine's
 # tests under the race detector and ten thousand executions of every fuzz
@@ -30,8 +33,9 @@
 #                   is history and left alone, scripts/plan-frozen.sh
 #
 # Anything it does not know runs the build, so a file nobody thought of is
-# checked rather than skipped. CI still runs everything on every pull
-# request. This is for getting there with fewer round trips, not instead.
+# checked rather than skipped. On a pull request CI runs the Go packages
+# --plan names and fuzzes with --fuzz, comparing with main, see ci.yml. A
+# push to main still runs everything.
 #
 # BASE= names another commit to compare with. CHANGED= hands it the list of
 # files instead of asking git, which is how scripts/changed-test.sh checks
@@ -359,6 +363,17 @@ fuzz_reaches() {
 	rm -f "$profile"
 	return 1
 }
+
+# Called as a command of its own, never after && or as a condition, so
+# set -e still stops it when a target fails.
+if [ "${1:-}" = "--fuzz" ]; then
+	if [ -z "$affected" ]; then
+		say "no Go package this change reaches, so nothing is fuzzed"
+		exit 0
+	fi
+	fuzz_what_changed
+	exit 0
+fi
 
 if [ -n "$gofiles" ]; then
 	unformatted=$(gofmt -l $gofiles)

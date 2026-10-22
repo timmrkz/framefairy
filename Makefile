@@ -405,7 +405,8 @@ motion: frontend/node_modules/.package-lock.json
 # interface is type checked is waiting for nothing.
 # The check before a push: what the branch changed, worked out file by
 # file, and only that. See scripts/changed.sh for what each kind of file
-# runs. CI still runs everything.
+# runs. CI runs the same Go packages and fuzz targets on a pull request,
+# and everything on main.
 changed: $(FRESH_FRAMES)
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
@@ -428,13 +429,23 @@ test: unit fuzz interface walks lint
 # UNITFLAGS is one more flag for go test, like -run or -skip, passed as
 # it is, so a pattern needs no quoting. It is how CI spreads the tests
 # over machines, see the job linux in ci.yml.
+#
+# UNITPKGS names the packages to test, every one unless it says. On a pull
+# request CI names the ones make changed picks, see the job linux in
+# ci.yml, and when that is none, no test runs.
 RACE ?= -race
 UNITSKIP ?=
 UNITFLAGS ?=
-UNITPACKAGES = $(if $(UNITSKIP),$$($(GO) list ./... | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))),./...)
+UNITPKGS ?= ./...
 unit: toolchain modules $(FRESH_FRAMES)
-	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$(GO) test $(RACE) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $(UNITPACKAGES)
+	@pkgs='$(strip $(UNITPKGS))'; \
+	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
+		pkgs=$$($(GO) list $$pkgs) || exit 1; \
+		pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))); \
+	fi; \
+	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
+	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
+		$(GO) test $(RACE) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.

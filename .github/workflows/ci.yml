@@ -13,7 +13,9 @@
 # the docs does not fuzz two platforms, and a change to the interface does
 # not run the Go tests. The filters err towards running: a test that runs
 # when it need not costs a minute, one that does not run when it should
-# have costs a broken main.
+# have costs a broken main. The Go jobs then narrow further, to the
+# packages and fuzz targets make changed picks for the change, see
+# scripts/changed.sh.
 #
 # A push to main narrows nothing. Whatever it touched, everything is built
 # and tested, so main is always known to be sound and a mistake in the rules
@@ -235,7 +237,10 @@ jobs:
             flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
     runs-on: ubuntu-24.04
     steps:
+      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -250,6 +255,15 @@ jobs:
             ~/.cache/go-build
           key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
           restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
+      # On a pull request, only the packages make changed picks, see
+      # scripts/changed.sh: those that changed and every one that imports
+      # them. HEAD is the merge commit GitHub made, so HEAD^1 is main. make
+      # unit reads UNITPKGS, and tests every package when it is not set.
+      - name: The packages this change reaches
+        if: github.event_name == 'pull_request'
+        run: |
+          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
+          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -411,7 +425,10 @@ jobs:
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
+      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -437,8 +454,15 @@ jobs:
         run: sh scripts/ci-packages.sh
       # The licence dispenser's simulation is fuzzed at night only, see
       # SIMTIME in scripts/fuzz.sh. Its known seeds run in the job linux.
+      # On a pull request only the targets make changed fuzzes, see
+      # fuzz_what_changed in scripts/changed.sh, compared with main.
       - name: Fuzz
-        run: make fuzz SIMTIME=0
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            BASE=HEAD^1 SIMTIME=0 sh scripts/changed.sh --fuzz
+          else
+            make fuzz SIMTIME=0
+          fi
       - if: always() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -464,7 +488,10 @@ jobs:
     if: needs.changes.outputs.go == 'true'
     runs-on: macos-latest
     steps:
+      # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -479,6 +506,12 @@ jobs:
             ~/Library/Caches/go-build
           key: go-v1-macos-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-v1-macos-${{ runner.os }}-
+      # The same packages as in the job linux, see there.
+      - name: The packages this change reaches
+        if: github.event_name == 'pull_request'
+        run: |
+          plan=$(BASE=HEAD^1 sh scripts/changed.sh --plan)
+          echo "UNITPKGS=$(printf '%s\n' "$plan" | sed -n 's/^go //p' | tr '\n' ' ')" >> "$GITHUB_ENV"
       - id: ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
