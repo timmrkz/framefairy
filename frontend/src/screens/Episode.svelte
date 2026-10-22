@@ -39,6 +39,7 @@
     Heard,
     covers,
     heardIn,
+    nothingToMark,
     type Parts,
     inEpisode,
     endInEpisode,
@@ -1858,6 +1859,11 @@
       t <= Math.max(...pieces.map((p) => p.end));
     return clips.some((c) => !c.rejected && covers(c.segments)) || onTheWay.some((a) => covers(wayPieces(a)));
   });
+  // Where I or O would make no clip, because nothing is said after the
+  // playhead or before it, they are not offered, so a card that can only
+  // fail is never made, found by Tim on #456.
+  const noIn = $derived(nothingToMark(time, false, saved, status?.said, duration));
+  const noOut = $derived(nothingToMark(time, true, saved, status?.said, duration));
   // The clip on its way that was just asked for is followed until it is
   // written: brought into view once its card has slid open, and again
   // whenever it moves in the list, and with the video paused the playhead
@@ -1895,7 +1901,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (event.defaultPrevented || event.repeat) return;
     if (keysElsewhere() || asleep(root)) return;
-    if (inClip) return;
+    if (inClip || (out ? noOut : noIn)) return;
     event.preventDefault();
     void makeClip(out);
   }
@@ -3948,26 +3954,30 @@
              inside one, its edges are dragged instead. -->
         <button
           class="glyph"
-          disabled={duration <= 0 || inClip}
+          disabled={duration <= 0 || inClip || noIn}
           onclick={() => makeClip(false)}
           aria-label="Mark In"
           title={makingIn
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
+              : noIn
+                ? "Nothing is said after the playhead, so no clip can start here"
+                : "Mark In: start a clip with the sentence under the playhead, as long as Shortest. I does the same"}
           >{#if makingIn}<Busy />{/if}<Icon name="mark-in" /></button
         >
         <button
           class="glyph"
-          disabled={duration <= 0 || inClip}
+          disabled={duration <= 0 || inClip || noOut}
           onclick={() => makeClip(true)}
           aria-label="Mark Out"
           title={makingOut
             ? "Making a clip"
             : inClip
               ? "The playhead is in a clip. Drag its edges to change it"
-              : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
+              : noOut
+                ? "Nothing is said before the playhead, so no clip can end here"
+                : "Mark Out: end a clip with the sentence under the playhead, grown back to Shortest. O does the same"}
           >{#if makingOut}<Busy />{/if}<Icon name="mark-out" /></button
         >
         <!-- One job, whatever is chosen: go to the playhead. Going back to

@@ -87,7 +87,14 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	summaries := Status(disk, source, p.Base.ASRModel).Plans
+	st := Status(disk, source, p.Base.ASRModel)
+	// What is said is where the clip heard, so the app knows where I
+	// and O can make a clip. The last word starts in it and may end a
+	// moment after, heard across the edge.
+	if st.Said == nil || st.Said[0] < reach.Start || st.Said[1] > reach.End+hearingPad || st.Said[0] >= st.Said[1] {
+		t.Errorf("said %v, not within the %v heard", st.Said, reach)
+	}
+	summaries := st.Plans
 	if len(summaries) != 1 || summaries[0].By != ByHand {
 		t.Fatalf("clip sets %+v", summaries)
 	}

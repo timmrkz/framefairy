@@ -286,7 +286,9 @@
 //                      each piece of audio, so a video added is heard
 //                      slowly enough to do something while it is.
 //                      ["speech", "hold"] stops it hearing, and the steps
-//                      that say so let it on one piece at a time
+//                      that say so let it on one piece at a time.
+//                      ["speech", "silent"] hears no word at all, the way
+//                      a video with no speech is heard
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
 //   ["app log", "open"]
@@ -984,11 +986,14 @@
 //                      until the search has heard one, and the fill of the
 //                      row that says Transcribing starts at nothing and
 //                      only grows, however much was heard before
-//   ["hand failed", seconds]
-//                      puts the playhead at the end of a video this long
-//                      and presses I, after its last word, and the clip's
-//                      card says Failed. Click Continue and where it lies,
-//                      and a toast with Report says why
+//   ["no mark after the end", seconds]
+//                      puts the playhead at the end of a video this long,
+//                      after its last word, and Mark In is not offered and
+//                      says why, I makes no clip, and Mark Out is offered
+//   ["hand failed"]    with the speech silent and held, presses I where
+//                      nothing is heard yet and lets the speech go, and
+//                      the clip's card says Failed. Click Continue and
+//                      where it lies, and a toast with Report says why
 //   ["remove stopped", how]
 //                      the bin on that card is clicked, and it says
 //                      Removed with Put it back, and its mark leaves the
@@ -3533,9 +3538,16 @@ export const sequences = [
   },
   {
     // Issue #450: the card of a clip made by hand that failed said why in
-    // its second line, cut to a line. I after the last word fails.
+    // its second line, cut to a line. A video with no speech has nothing
+    // to make a clip of, which the clip finds once it has heard it.
     name: "a clip made by hand that failed says where it lies, and why in a toast",
-    steps: [["add", 120], ["wait for", "Search"], ["hand failed", 120]],
+    steps: [["speech", "silent"], ["speech", "hold"], ["add", 120], ["wait for", "Cancel"], ["hand failed"]],
+  },
+  {
+    // Tim on #456: I at the end of the video made a card that could only
+    // fail. Nothing is said after the last word, so I is not offered there.
+    name: "I after the last word is not offered, and says why",
+    steps: [["add", 120], ["wait for", "Search"], ["no mark after the end", 120]],
   },
   {
     // Issue #384: Tim rendered a clip, uploaded the short and removed it
@@ -7366,7 +7378,7 @@ for (const seq of toWalk) {
         await watch.step("head", s);
         break;
       case "speech":
-        await control(url, `/speech?ms=${arg}`);
+        await control(url, arg === "silent" ? "/speech?silent=1" : `/speech?ms=${arg}`);
         break;
       case "hold":
         await control(url, `/hold?call=${arg[0]}&ms=${arg[1]}`);
@@ -12178,14 +12190,12 @@ for (const seq of toWalk) {
         else if (fills.some((f, n) => n > 0 && f < fills[n - 1])) wrong = `the fill went back: ${JSON.stringify(fills)}`;
         break;
       }
-      case "hand failed": {
-        // Issue #450: a card whose clip could not be made said why in its
-        // second line, cut to a line. I with the playhead after the last
-        // word fails, since nothing is said after it, and the card says
-        // Failed with Continue and where it lies, and why only in a toast.
-        // The playhead goes to the end the way a hand takes it there: a
-        // press in the middle of the range picker, away from the tips of
-        // the window at its ends, dragged on past its right end.
+      case "no mark after the end": {
+        // Tim on #456: I at the end of the video made a card that could
+        // only fail, since nothing is said after the last word. The
+        // playhead goes to the end the way a hand takes it there: a press
+        // in the middle of the range picker, away from the tips of the
+        // window at its ends, dragged on past its right end.
         const path = await episodeOn(page);
         const picker = await page.locator(".track[aria-label='The range picker']").boundingBox();
         const y = picker.y + picker.height / 2;
@@ -12195,24 +12205,65 @@ for (const seq of toWalk) {
         await page.mouse.up();
         await settle(page);
         const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
-        if (!(at > arg - 0.5)) {
-          const under = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.outerHTML.slice(0, 120), [picker.x + picker.width / 2, y]);
-          wrong = `the range picker, pressed on ${under} and dragged past its end, put the playhead at ${at} s, not at the end of the video, ${arg} s`;
+        const said = (await ask(page, "Episode", path))?.said;
+        if (!(at > arg - 0.5) || !said || !(said[1] <= at)) {
+          wrong = `the playhead is at ${at} s, with words said from ${JSON.stringify(said)}, not after the last word at the end of the video, ${arg} s`;
           break;
         }
+        const marks = await page.evaluate(() => {
+          const look = (name) => {
+            const b = document.querySelector(`button[aria-label='${name}']`);
+            return { off: !!b?.disabled, title: b?.title ?? "" };
+          };
+          return { in: look("Mark In"), out: look("Mark Out") };
+        });
+        if (!marks.in.off) wrong = `Mark In is offered after the last word: ${JSON.stringify(marks.in)}`;
+        else if (marks.in.title !== "Nothing is said after the playhead, so no clip can start here") wrong = `Mark In says "${marks.in.title}", not why it is not offered`;
+        else if (marks.out.off) wrong = `Mark Out is not offered after the last word, where a clip can end: ${JSON.stringify(marks.out)}`;
+        if (wrong) break;
+        // I does what the button would: nothing. Every call it made is
+        // answered by the time the app is quiet, so a clip asked for is in
+        // the jobs by then.
+        const was = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").length;
+        await page.evaluate(() => document.body.focus());
+        await page.keyboard.press("i");
+        await settle(page);
+        const now = (await ask(page, "Jobs")).filter((j) => j.kind === "clip").length;
+        const cards = await page.locator("li.stopped.failed").count();
+        if (now !== was) wrong = `I after the last word asked for a clip, ${now - was} of them`;
+        else if (cards) wrong = `I after the last word made ${cards} cards that failed`;
+        await watch.step("wait", s);
+        break;
+      }
+      case "hand failed": {
+        // Issue #450: a card whose clip could not be made said why in its
+        // second line, cut to a line. I where nothing is heard yet is
+        // offered, and with the speech silent the clip finds once it has
+        // heard that nothing is said there. The card says Failed with
+        // Continue and where it lies, and why only in a toast.
+        const path = await episodeOn(page);
+        const at = await page.evaluate(() => Number(document.querySelector(".screen")?.dataset.playhead));
         const was = new Set((await ask(page, "Jobs")).map((j) => j.id));
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("i");
+        // Every call the press made is answered, so the clip is asked for,
+        // and then the speech is let go, silent still.
+        await settle(page);
+        const asked = (await ask(page, "Jobs")).find((j) => j.kind === "clip" && j.episode === path && !was.has(j.id));
+        if (!asked) {
+          wrong = `I at ${at} s, where nothing is heard yet, asked for no clip`;
+          break;
+        }
+        await control(url, "/speech?ms=0");
         // Until the Go side says the clip asked for has ended, and then the
         // frame the card shows it in.
         let job;
         for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
-          job = (await ask(page, "Jobs")).find((j) => j.kind === "clip" && j.episode === path && !was.has(j.id));
+          job = (await ask(page, "Jobs")).find((j) => j.id === asked.id);
           if (job && job.state !== "running" && job.state !== "queued") break;
         }
         if (job.state !== "failed") {
-          const last = ((await ask(page, "Sentences", path)) ?? []).at(-1);
-          wrong = `I at ${at} s made a clip that is ${job.state}, not failed, with the last sentence ending at ${last?.end} s`;
+          wrong = `I at ${at} s on a video with no speech made a clip that is ${job.state}, not failed`;
           break;
         }
         // The failed news is in the store, so its card and its toast are
@@ -12233,7 +12284,7 @@ for (const seq of toWalk) {
         if (!said.failed) wrong = `the clip that failed has no card that says so: ${JSON.stringify(said)}`;
         else if (said.title !== "Failed. Click Continue") wrong = `the card says "${said.title}", not Failed. Click Continue`;
         else if (said.meta !== where) wrong = `the card's second line says "${said.meta}", not where the clip lies, ${where}`;
-        else if (!toast.includes("Nothing is said after")) wrong = `the toast says "${toast}", not why the clip could not be made`;
+        else if (!toast.includes("Nothing is said here yet")) wrong = `the toast says "${toast}", not why the clip could not be made`;
         else if (!report) wrong = "the toast offers no Report";
         await watch.step("wait", s);
         break;

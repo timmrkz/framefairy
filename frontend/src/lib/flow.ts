@@ -35,6 +35,23 @@ export function covers(parts: Parts, from: number, to: number): boolean {
   return heardIn(parts, from, to) >= to - from - 0.5;
 }
 
+// Whether I, or O when it ends a clip, can make no clip at this moment of
+// the video: no sentence starts after it, or ends before it. That is so at
+// the very end of the video for I and the very start for O, whatever is
+// heard, and wherever the part on that side of the playhead is heard and
+// no word is said in it. Where it is not heard yet, a clip is made by
+// hearing it first, so it is offered. said is from the start of the first
+// word heard to the end of the last, see EpisodeStatus.Said, and the rule
+// is the engine's, see handEntry.
+export function nothingToMark(at: number, backward: boolean, heard: Parts, said: [number, number] | null | undefined, duration: number): boolean {
+  if (!(duration > 0)) return false;
+  const [from, to] = backward ? [0, at] : [at, duration];
+  if (to - from < 0.05) return true;
+  if (!covers(heard, from, to)) return false;
+  if (!said) return true;
+  return backward ? at < said[0] : at >= said[1];
+}
+
 // What of from..to the parts do not hold, in order.
 export function gapsIn(parts: Parts, from: number, to: number): Parts {
   const out: Parts = [];

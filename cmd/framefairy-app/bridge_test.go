@@ -418,6 +418,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Has("silent") {
+			b.words.silent.Store(q.Get("silent") == "1")
+			answer(w, nil, nil)
+			return
+		}
 		if q.Get("ms") == "hold" {
 			b.words.hold()
 			answer(w, nil, nil)
@@ -515,6 +520,9 @@ type prose struct {
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
 	pace atomic.Int64
+	// silent hears no word at all, the way a video with no speech is
+	// heard, so a walk can make a clip by hand that fails.
+	silent atomic.Bool
 	// held keeps it from hearing anything more, so a walk can look at a
 	// transcript part way that stays where it is. The next pace or a reset
 	// lets it go on. steps is how many pieces it may still hear while it
@@ -588,6 +596,9 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 		p.gate.Unlock()
 	}()
 	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
+	if p.silent.Load() {
+		return nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	length := float64(len(samples)) / float64(rate)
@@ -1349,6 +1360,7 @@ func (b *bridge) reset() error {
 	b.silent.Store(false)
 	b.words.release()
 	b.words.pace.Store(0)
+	b.words.silent.Store(false)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)
 	b.mu.Lock()

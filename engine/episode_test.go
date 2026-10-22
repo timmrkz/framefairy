@@ -547,3 +547,16 @@ func TestAPreviewLeavesTheShortAlone(t *testing.T) {
 		t.Errorf("the folder holds %q, not the short and the preview beside it", shorts)
 	}
 }
+
+// What a video says runs from the start of its first word to the end of
+// its last, whatever order the words were heard in, and is nothing while
+// no word is heard.
+func TestWhatIsSaidSpansTheWordsHeard(t *testing.T) {
+	if got := saidSpan(nil); got != nil {
+		t.Errorf("no words said %v", got)
+	}
+	words := []Cue{{40, 41.5, "später"}, {2.25, 3, "Es"}, {10, 12.75, "war"}}
+	if got := saidSpan(words); got == nil || *got != [2]float64{2.25, 41.5} {
+		t.Errorf("said %v, not 2.25 to 41.5", got)
+	}
+}

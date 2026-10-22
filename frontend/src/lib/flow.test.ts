@@ -1,5 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 import {
+  nothingToMark,
   Heard,
   heardIn,
   joinParts,
@@ -565,5 +566,39 @@ describe("wordInEpisode", () => {
   test("a word where a cut ends is the piece after's", () => {
     const pieces: Piece[] = [{ start: 20.1, end: 20.7 }, { start: 24.3, end: 26 }];
     expect(wordInEpisode(pieces, 0.6)).toBe(24.3);
+  });
+});
+
+describe("where I and O can make a clip", () => {
+  const all: Parts = [[0, 120]];
+  test("I makes none at the very end of the video, heard or not", () => {
+    expect(nothingToMark(120, false, [], undefined, 120)).toBe(true);
+    expect(nothingToMark(119.97, false, [], undefined, 120)).toBe(true);
+  });
+  test("O makes none at the very start of the video, heard or not", () => {
+    expect(nothingToMark(0, true, [], undefined, 120)).toBe(true);
+  });
+  test("I after the last word and O before the first make none where it is heard", () => {
+    expect(nothingToMark(115, false, all, [3, 110], 120)).toBe(true);
+    expect(nothingToMark(110, false, all, [3, 110], 120)).toBe(true);
+    expect(nothingToMark(2, true, all, [3, 110], 120)).toBe(true);
+  });
+  test("I before the last word and O after the first make one", () => {
+    expect(nothingToMark(109.9, false, all, [3, 110], 120)).toBe(false);
+    expect(nothingToMark(3, true, all, [3, 110], 120)).toBe(false);
+    expect(nothingToMark(115, true, all, [3, 110], 120)).toBe(false);
+    expect(nothingToMark(2, false, all, [3, 110], 120)).toBe(false);
+  });
+  test("a video heard to its end with no word in it offers neither", () => {
+    expect(nothingToMark(60, false, all, null, 120)).toBe(true);
+    expect(nothingToMark(60, true, all, null, 120)).toBe(true);
+  });
+  test("a part not heard yet is heard first, so I and O are offered there", () => {
+    const half: Parts = [[0, 60]];
+    expect(nothingToMark(100, false, half, [3, 58], 120)).toBe(false);
+    expect(nothingToMark(100, true, [[60, 120]], [70, 110], 120)).toBe(false);
+  });
+  test("a video of no length offers nothing to decide", () => {
+    expect(nothingToMark(0, false, [], undefined, 0)).toBe(false);
   });
 });
