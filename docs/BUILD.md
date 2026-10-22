@@ -119,8 +119,8 @@ committed or not, new files included, and runs what those files can reach:
 | `go.mod`, `go.sum` | every package and every fuzz target |
 | `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
 | a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
-| `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
-| `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh` |
+| `Makefile`, a build script | `make`, and for the `Makefile` every package and every fuzz target, since it decides how the Go tests run. For a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
+| `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh`, and for `ci.yml` every package and every fuzz target, since it decides how the Go tests run |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
 | `.golangci.yml`, `frontend/eslint*`, `scripts/lint-test.sh` and its fixtures, the interface's packages | the linter they are for, and `scripts/lint-test.sh` |
@@ -409,10 +409,11 @@ The jobs `linux`, `macos` and `fuzz` then narrow further, to what `make
 changed` picks for the change. The checkout is the merge commit GitHub
 made, so `HEAD^1` is main, and `BASE=HEAD^1 sh scripts/changed.sh --plan`
 names the packages the change reaches: those that changed and every
-package that imports them, and every package when `go.mod` or `go.sum`
-changed. Their names go to `make unit` as `UNITPKGS`. When the change
-reaches none, the step says `no Go package to test` and passes, which is
-what a change to the `Makefile` or a workflow alone does. The fuzz job
+package that imports them, and every package when `go.mod`, `go.sum`,
+the `Makefile` or `ci.yml` changed, since the last two decide how the Go
+tests run. Their names go to `make unit` as `UNITPKGS`. When the change
+reaches none, like a change to the interface that no Go test reads, the
+step says `no Go package to test` and passes. The fuzz job
 runs `scripts/changed.sh --fuzz`, which fuzzes only the targets the
 change reaches, see [Checking a change](#checking-a-change).
 `scripts/changed-test.sh` in the `build` job checks those rules.

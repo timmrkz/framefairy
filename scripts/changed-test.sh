@@ -118,8 +118,11 @@ is "frontend/eslint-suppressions.json" "interface lint-rules"
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 
-# How the project is built is the build, and not the Go tests.
-is "Makefile" "build"
+# How the project is built is the build. The Makefile and the CI
+# workflow also decide how the Go tests run, so they are every package.
+has "Makefile" "build" "go framefairy/engine" "go framefairy/updates"
+has ".github/workflows/ci.yml" "go framefairy/engine" "go framefairy/updates"
+lacks ".github/workflows/builds.yml" "go framefairy/engine"
 has "scripts/build-ffmpeg.sh" "build" "script scripts/build-ffmpeg.sh"
 lacks "scripts/build-ffmpeg.sh" "go framefairy/engine"
 # Except for the Go test that reads it: the notices test checks the

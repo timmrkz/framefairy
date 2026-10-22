@@ -28,7 +28,9 @@
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
 #                   tests for the rules, a read by its own shell for a
-#                   script, a read of the YAML for a workflow
+#                   script, a read of the YAML for a workflow. The
+#                   Makefile and ci.yml decide how the Go tests run, so
+#                   they are every package and every target too
 #   docs            nothing, but docs/GUI-PLAN.md runs the check that it
 #                   is history and left alone, scripts/plan-frozen.sh
 #
@@ -159,7 +161,12 @@ for file in $changed; do
 		read_by_tests "$file"
 		;;
 	go.mod | go.sum) all_go=1 ;;
-	Makefile) build=1 ;;
+	# make unit and the job linux decide how the Go tests run, the
+	# flags, the PATH and the shards, so a change to either runs them all.
+	Makefile)
+		build=1
+		all_go=1
+		;;
 	.github/ci-filters.yml) rules=1 ;;
 	scripts/ci-filters-test.sh)
 		rules=1
@@ -194,7 +201,10 @@ for file in $changed; do
 		# and the builds and publish workflows are what the rule for a
 		# build is for.
 		case $file in
-		*/ci.yml) rules=1 ;;
+		*/ci.yml)
+			rules=1
+			all_go=1
+			;;
 		*/builds.yml | */publish.yml) build_rules=1 ;;
 		*/main-moved.yml) moved_rules=1 ;;
 		esac
