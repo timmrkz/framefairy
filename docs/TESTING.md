@@ -347,7 +347,8 @@ delivered it. A job's news is sent after the queue is let go of,
 `queue.update` in `jobs.go`, so a list of jobs can show a change whose
 news the mark overtakes. So `caughtUp` also waits until the app has had
 the newest change of each job the walk compares, by the job's `seq`,
-`__seqs`, from its news and from the lists of jobs the app asked for. It
+`__heardSeqs`, from its news and from the lists of jobs the app asked
+for. It
 asks for the mark only once the app's own stream of events is open,
 `__listening`, so after a reload the mark is not sent to nobody, and the
 bridge prints any event it drops for a page that did not keep up. How
@@ -356,8 +357,13 @@ anything moved on while the walk looked.
 
 A walk prints every step as it begins, with its seed, and a step that
 throws ends the walk as a broken rule with its seed and steps, see
-`walk.mjs`. `nextNews` waits for good, like `caughtUp` and `playFor`, so
-news that never comes is a walk that hangs, named by its last step.
+`walk.mjs`. Every wait these walks have is a promise the page settles
+when the thing it waits for happens: `nextNews` when the news comes,
+`caughtUp` when the mark and the job's change come, `playFor` when the
+playhead the video preview says has gone far enough, `sidebarStill`
+when the sidebar's slide ends, and `fromSidebar` when the video picked
+has taken its place. None has a deadline, so news that never comes is a
+walk that hangs, named by its last step.
 
 A search goes on while the walk looks. The model the walk set to fail
 fails a search the moment it comes to finding, and one that answers ends
@@ -780,13 +786,14 @@ seconds, and 23 of them went on waiting after each step until no call
 had been on its way for a quarter of a second. That quarter stood in for
 the app's own short delays, the 150 ms before the clip timeline reads
 its waveform and the 240 ms before a newly chosen clip is shown. Now
-`settle` waits for those delays themselves: `preview/wails-bridge.ts`
-counts every timer of the app set to fire within a second, `__soon`,
-until it fires or is cleared, and `__moving` says whether anything on
-the page moves for a second or less, a row sliding open or the clip
-timeline gliding to its view. `settle` goes on once no call is out,
-none came back since its last look, no such timer is set and nothing
-moves. The timer
+`settle` waits for those delays themselves, and for nothing else.
+`__settled` in `preview/wails-bridge.ts` answers once no call is out, no
+timer of the app's is set to fire within a second, and nothing on the
+page moves for a second or less, a row sliding open or the clip
+timeline gliding to its view. It is woken by the call coming back, the
+timer firing or being cleared, and the movement's own end, never by
+looking again on every frame. When nothing is left it lets two of the
+browser's frames go by and answers if nothing came in between. The timer
 that writes the log is left out, the same as its calls, marked
 `logOnly` in `said.ts`. A longer timer is how long something stays on
 screen, which a walk turns on itself with `holdClock`, and while the

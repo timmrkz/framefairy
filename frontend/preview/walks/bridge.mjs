@@ -104,28 +104,12 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   return { browser, page, errors };
 }
 
-// Waits until the app has nothing on its way: no call out, none come back
-// since the last look, no timer of the app's set to fire in a moment and
-// nothing on the page moving for a moment, see wails-bridge.ts. It looks on every frame, and a call that went and
-// came back between two looks makes it look again. Then two frames more
-// let the page draw what came. While the app's time is held, its timers
-// fire only when runClock turns them on, so they are not waited for, see
-// holdClock.
+// Waits until the app has nothing on its way: no call out, no timer of
+// the app's set to fire in a moment and nothing on the page moving for a
+// moment. The page answers when the last of them ends, __settled in
+// wails-bridge.ts, and the walk only waits for that answer.
 export async function settle(page) {
-  await page.waitForFunction(
-    (held) => {
-      const w = window;
-      const still = w.__pending === 0 && w.__answered === w.__answeredSeen && (held || !w.__soon) && !w.__moving?.();
-      w.__answeredSeen = w.__answered;
-      return still;
-    },
-    Boolean(page.__held),
-    { polling: "raf", timeout: 15000 },
-  );
-  await page.evaluate(() => {
-    const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
-    return new Promise((r) => frame(() => frame(r)));
-  });
+  await page.evaluate((held) => window.__settled(held), Boolean(page.__held));
 }
 
 // Gives a page Playwright's own fake clock, once, in place of the app's
@@ -221,10 +205,10 @@ export async function foldsDone(page) {
 // or held open while a video is dragged in the list, does not slide at
 // all, and then this is two frames.
 export async function sidebarStill(page) {
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await page.waitForFunction(() => (document.querySelector("aside")?.getAnimations().length ?? 0) === 0, null, {
-    polling: "raf",
-    timeout: 15000,
+  await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const aside = document.querySelector("aside");
+    while (aside?.getAnimations().length) await Promise.all(aside.getAnimations().map((a) => a.finished.catch(() => {})));
   });
 }
 
@@ -435,10 +419,7 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
 // start. Says false, and plays nothing, when the space bar did not start a
 // play, once the app has settled on the press.
 export async function playFor(page, seconds) {
-  const from = await page.evaluate(() => {
-    window.__played = null;
-    return document.querySelector(".screen")?.dataset.playhead ?? null;
-  });
+  const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
   await page.keyboard.press("Space");
   await settle(page);
   const now = await page.evaluate(() => ({
@@ -446,24 +427,35 @@ export async function playFor(page, seconds) {
     at: document.querySelector(".screen")?.dataset.playhead ?? null,
   }));
   if (!now.playing) return now.at !== from;
-  await page.waitForFunction(
-    ([from, seconds]) => {
-      const at = Number(document.querySelector(".screen")?.dataset.playhead);
-      const playing = !document.querySelector('button[aria-label="Play"]');
-      const p = (window.__played ??= { last: from, gone: 0 });
-      if (Number.isFinite(at) && at > p.last) p.gone += at - p.last;
-      p.last = at;
-      if (playing && p.gone < seconds) return false;
-      if (playing) {
-        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-      }
-      window.__played = null;
-      return true;
-    },
+  await page.evaluate(
+    ([from, seconds]) =>
+      new Promise((done) => {
+        let last = from;
+        let gone = 0;
+        const look = () => {
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const playing = !document.querySelector('button[aria-label="Play"]');
+          if (Number.isFinite(at) && at > last) gone += at - last;
+          last = at;
+          if (playing && gone < seconds) return false;
+          if (playing) {
+            const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+            document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+            document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+          }
+          return true;
+        };
+        if (look()) return done();
+        // The playhead the video preview says, and the Play button coming
+        // back when the play stops by itself.
+        const watch = new MutationObserver(() => {
+          if (!look()) return;
+          watch.disconnect();
+          done();
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
+      }),
     [Number(from), seconds],
-    { polling: "raf", timeout: 0 },
   );
   return true;
 }
@@ -478,10 +470,14 @@ export async function news(page, name = "job") {
   return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
+      window.__newsWaiting = [];
       const source = new EventSource("/events");
       source.onmessage = (m) => {
         const ev = JSON.parse(m.data);
         window.__news[ev.name] = (window.__news[ev.name] ?? 0) + 1;
+        const now = window.__newsWaiting.filter((w) => w.name === ev.name && window.__news[ev.name] > w.seen);
+        window.__newsWaiting = window.__newsWaiting.filter((w) => !now.includes(w));
+        for (const w of now) w.done();
       };
       window.__listening = new Promise((r) => (source.onopen = r));
     }
@@ -501,24 +497,10 @@ export async function news(page, name = "job") {
 // overtook. The mark is asked for once the interface is listening, so
 // after a reload too it is not sent to nobody.
 export async function caughtUp(page, url, jobs = []) {
-  await page.waitForFunction(() => window.__listening, null, { polling: "raf", timeout: 0 });
   await page.evaluate(() => window.__listening);
   const mark = await control(url, "/mark");
   const due = jobs.map((j) => [j.id, j.seq]);
-  await page.evaluate(
-    ([mark, due]) =>
-      window.__heardMark(mark).then(() =>
-        new Promise((done) => {
-          const had = () => due.every(([id, seq]) => (window.__seqs[id] ?? 0) >= seq);
-          if (had()) return done();
-          // The news of a job comes after the mark here, and nothing but
-          // the next news says it came, so this looks once a frame.
-          const look = () => (had() ? done() : requestAnimationFrame(look));
-          requestAnimationFrame(look);
-        }),
-      ),
-    [mark, due],
-  );
+  await page.evaluate(([mark, due]) => window.__heardMark(mark).then(() => window.__heardSeqs(due)), [mark, due]);
   await settle(page);
 }
 
@@ -527,7 +509,11 @@ export async function caughtUp(page, url, jobs = []) {
 // for good: news that never comes is a walk that hangs, ended by the
 // -timeout of make walks with the step it was in printed, see walk.mjs.
 export async function nextNews(page, seen, name = "job") {
-  await page.waitForFunction(([name, seen]) => (window.__news?.[name] ?? 0) > seen, [name, seen], { polling: "raf", timeout: 0 });
+  await page.evaluate(
+    ([name, seen]) =>
+      new Promise((done) => ((window.__news[name] ?? 0) > seen ? done() : window.__newsWaiting.push({ name, seen, done }))),
+    [name, seen],
+  );
   return news(page, name);
 }
 
@@ -762,10 +748,18 @@ export async function fromSidebar(page, click) {
   // An episode picked is built behind the one on screen and takes its
   // place once it is ready, see App.svelte. Until then there are two, and
   // whatever a walk reads next is about the one it picked.
-  await page.waitForFunction(
-    () => document.querySelectorAll(".workspace").length <= 1 && !document.querySelector(".workspace.behind"),
-    null,
-    { polling: "raf", timeout: 15000 },
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const one = () => document.querySelectorAll(".workspace").length <= 1 && !document.querySelector(".workspace.behind");
+        if (one()) return done();
+        const watch = new MutationObserver(() => {
+          if (!one()) return;
+          watch.disconnect();
+          done();
+        });
+        watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      }),
   );
 }
 
