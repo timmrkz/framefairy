@@ -4,14 +4,6 @@
       "count": 2
     }
   },
-  "preview/walks/playback.mjs": {
-    "no-restricted-properties": {
-      "count": 2
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 3
-    }
-  },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
       "count": 6

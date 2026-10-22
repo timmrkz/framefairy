@@ -407,6 +407,42 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
   );
 }
 
+// Waits, while a play goes on, until the playhead the video preview says
+// is past the moment past, or the play has stopped, or the playhead has
+// gone on by most seconds of the episode without stopping, whichever
+// comes first, and says where it stood, whether it still plays and how
+// far it went. Each is read when the page changes, the playhead or the
+// Play button coming back, never on the clock, and most is counted in the
+// episode's own time, so a play that never stops ends the wait as surely
+// on a busy machine as on a quiet one.
+export async function playUntil(page, { past = Infinity, most = Infinity } = {}) {
+  return page.evaluate(
+    ([past, most]) =>
+      new Promise((done) => {
+        let last = Number(document.querySelector(".screen")?.dataset.playhead);
+        let gone = 0;
+        const look = () => {
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const playing = !document.querySelector('button[aria-label="Play"]');
+          if (Number.isFinite(at) && at > last) gone += at - last;
+          last = at;
+          if (playing && !(at > past) && !(gone > most)) return null;
+          return { at, playing, gone };
+        };
+        const now = look();
+        if (now) return done(now);
+        const watch = new MutationObserver(() => {
+          const now = look();
+          if (!now) return;
+          watch.disconnect();
+          done(now);
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
+      }),
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most],
+  );
+}
+
 // Plays from the playhead until it has gone on by seconds of the episode,
 // a jump over a cut counted as far as it jumps, or until the play has
 // stopped by itself at the clip's end, and pauses it there. It follows the
