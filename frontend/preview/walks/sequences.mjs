@@ -14219,18 +14219,22 @@ function clickCard(page, key, start) {
         const frames = window.__appFrames;
         const first = start === null ? null : window.__frameQueue.firstFrameAt(start);
         const kept = frames.stats.kept;
-        const looks = [{ ...window.__look(), t: 0 }];
+        // open says whether the Go side's answers about captions were let
+        // through yet, see pickCards.
+        const looks = [{ ...window.__look(), t: 0, open: !!window.__captionsOpen }];
         const t0 = performance.now();
+        window.__clickChanged = false;
         document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
         let rested = false;
         void window.__readAheadRested().then(() => (rested = true));
         let after = 0;
         const next = () => {
           const t = performance.now() - t0;
-          const l = { ...window.__look(), t };
+          const l = { ...window.__look(), t, open: !!window.__captionsOpen };
           const was = looks[looks.length - 1];
           looks.push(l);
           const changed = looks.some((x, j) => j > 0 && (x.crop !== looks[j - 1].crop || x.canvas !== looks[j - 1].canvas));
+          window.__clickChanged ||= changed;
           if (l.crop !== was.crop || l.canvas !== was.canvas) after = 0;
           else if (changed && rested && !window.__captionLayers.busy) after++;
           if (after < 10) return requestAnimationFrame(next);
@@ -14261,9 +14265,9 @@ function changesOf(looks) {
 // Tim saw the crop frame jump first, then the picture, then the captions,
 // issue #383. Every other click is on a clip made just then, whose
 // captions were not read ahead, with the Go side's answers about captions
-// held back for a moment, the way a video of hours answers: the frame
-// waits on the Go side for its captions, captionsDue in Episode.svelte,
-// rather than coming first. The others are on the clips read ahead.
+// held back, the way a video of hours answers: the frame waits on the Go
+// side for its captions, captionsDue in Episode.svelte, rather than coming
+// first. The others are on the clips read ahead.
 async function pickCards(page, n) {
   const clips = await shotClips(page);
   if (typeof clips === "string") return clips;
@@ -14310,11 +14314,13 @@ async function pickCards(page, n) {
     const held = i % 2 === 1;
     let key;
     if (held) {
-      // Held 100 ms, so the captions' whole way stays well inside the 600
-      // ms a frame waits for them, DRESS_WAIT in queue.ts, on a machine
-      // busy with other walks too. Held 250 ms, the way there took 624 ms
-      // once beside three other walkers, and the frame went up first.
-      await control(url, "/hold?call=Captions&ms=100&times=100");
+      // Held behind a gate until the clip's frame waits for its captions,
+      // and only then let through, so the frame is seen to wait for them
+      // on any machine. They were held 100 ms, and on a busy machine they
+      // were read ahead before the click, and the clip came at once,
+      // issue #438.
+      await control(url, "/hold?call=Captions&gate=shut");
+      await page.evaluate(() => (window.__captionsOpen = false));
       [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
     } else {
       await restAhead(page);
@@ -14324,9 +14330,20 @@ async function pickCards(page, n) {
     }
     const clicked = Date.now();
     clicks.push(clicked);
-    const bare = await page.evaluate(() => window.__frameQueue.stats.bare);
-    const { looks } = await clickCard(page, key, null);
-    if (held) await control(url, "/hold?call=Captions&ms=0&times=0");
+    const { bare, dressing } = await page.evaluate(() => window.__frameQueue.stats);
+    const clicking = clickCard(page, key, null);
+    if (held) {
+      // The frame of the clip waits for what lies over it, dress in
+      // queue.ts, and then the gate opens. A clip that came without
+      // waiting has changed the video preview by then, and fails below.
+      await page.waitForFunction((was) => window.__frameQueue.stats.dressing > was || window.__clickChanged, dressing, {
+        polling: "raf",
+        timeout: 0,
+      });
+      await page.evaluate(() => (window.__captionsOpen = true));
+      await control(url, "/hold?call=Captions&gate=open");
+    }
+    const { looks } = await clicking;
     // A frame put up without its captions, which did not come in the 600
     // ms it waits, is the machine and not the app: libass took 590 ms to
     // draw one layer once in make changed, beside three other walkers,
@@ -14341,6 +14358,15 @@ async function pickCards(page, n) {
     }
     const first = looks[0];
     const last = looks[looks.length - 1];
+    // A new clip that starts where nobody speaks has no captions to see
+    // come, which says nothing about the app, so it is taken again on
+    // another, issue #438.
+    if (held && !last.captions && again < 3 && fresh.length) {
+      console.log(`        card ${i + 1}: the new clip starts with no caption, again on another new clip`);
+      again++;
+      i--;
+      continue;
+    }
     const changes = changesOf(looks);
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
     const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
@@ -14356,7 +14382,7 @@ async function pickCards(page, n) {
           .join(", ")}`,
       );
       late.push({ card: i + 1, clicked });
-    } else if (held && changes[0].t < 100) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 100 ms could have`);
+    } else if (held && !changes[0].open) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before its captions were let through`);
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }

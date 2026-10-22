@@ -124,10 +124,11 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //
 // svc is the service now: a restart of the app is a new one. own are the
 // calls the bridge answers itself, a box from the system among them. held
-// says how long a call of a name waits before it reaches the service, and
-// the reason it fails with instead of reaching it, if it does, see /hold.
+// says how long a call of a name waits before it reaches the service, the
+// gate it waits behind until the gate opens, and the reason it fails with
+// instead of reaching it, if it does, see /hold.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (time.Duration, string)) http.Handler {
+	held func(name string) (time.Duration, <-chan struct{}, string)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,9 +141,16 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		wait, fails := held(name)
+		wait, gate, fails := held(name)
 		if wait > 0 {
 			time.Sleep(wait)
+		}
+		if gate != nil {
+			select {
+			case <-gate:
+			case <-r.Context().Done():
+				return
+			}
 		}
 		if fails != "" {
 			http.Error(w, fails, http.StatusInternalServerError)
@@ -454,6 +462,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.mu.Lock()
 		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
 		b.holdsLeft[q.Get("call")] = min(max(times, 0), 100)
+		switch gate, shut := b.gates[q.Get("call")]; {
+		case q.Get("gate") == "shut" && !shut:
+			b.gates[q.Get("call")] = make(chan struct{})
+		case q.Get("gate") == "open" && shut:
+			close(gate)
+			delete(b.gates, q.Get("call"))
+		}
 		if reason := q.Get("fail"); reason != "" {
 			b.fails[q.Get("call")] = reason
 		}
@@ -667,6 +682,10 @@ type bridge struct {
 	holds map[string]time.Duration
 	// holdsLeft is how many calls of a name the hold is still for.
 	holdsLeft map[string]int
+	// gates are shut for every call of a name, which waits until the walk
+	// opens it, see /hold. A walk that holds a call by a time proves only
+	// that the time was long enough on that machine.
+	gates map[string]chan struct{}
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
@@ -748,18 +767,19 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 }
 
 // held is how long a call of this name waits before it reaches the
-// service, and the reason it fails with instead, if it does. A hold is for
-// the next call of the name, or the next so many, see /hold.
-func (b *bridge) held(name string) (time.Duration, string) {
+// service, the gate it waits behind, and the reason it fails with instead,
+// if it does. A hold is for the next call of the name, or the next so
+// many, and a gate for every call until it opens, see /hold.
+func (b *bridge) held(name string) (time.Duration, <-chan struct{}, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	wait, fails := b.holds[name], b.fails[name]
+	wait, gate, fails := b.holds[name], b.gates[name], b.fails[name]
 	if b.holdsLeft[name]--; b.holdsLeft[name] <= 0 {
 		delete(b.holds, name)
 		delete(b.holdsLeft, name)
 	}
 	delete(b.fails, name)
-	return wait, fails
+	return wait, gate, fails
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
@@ -855,7 +875,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, silent: silent, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, fails: map[string]string{}}
+		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, gates: map[string]chan struct{}{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1332,6 +1352,10 @@ func (b *bridge) reset() error {
 	b.mu.Lock()
 	b.picks = nil
 	clear(b.holds)
+	for _, gate := range b.gates {
+		close(gate)
+	}
+	clear(b.gates)
 	clear(b.fails)
 	b.chrome = Chrome{}
 	b.mu.Unlock()

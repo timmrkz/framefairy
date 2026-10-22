@@ -101,6 +101,10 @@ export type Stats = {
   // Frames a gesture put the playhead on that were put up without what
   // lies over it, because it did not come in DRESS_WAIT, see dress.
   bare: number;
+  // Frames a gesture put the playhead on that waited for what lies over
+  // it, counted as each starts to wait, so a walk knows the frame is
+  // being held for its captions, see dress.
+  dressing: number;
   // Plays started, a seek while playing and a new program included. A
   // press of L starts none, see relooped.
   starts: number;
@@ -508,6 +512,7 @@ export class FrameQueue {
     lateSound: 0,
     dressWait: 0,
     bare: 0,
+    dressing: 0,
     starts: 0,
     soundDecoded: 0,
     soundScheduled: 0,
@@ -1250,6 +1255,7 @@ export class FrameQueue {
     if (!came) return null;
     const ticket = this.ticket;
     const asked = performance.now();
+    this.stats.dressing++;
     let timer = 0;
     const late = new Promise<"late">((done) => (timer = window.setTimeout(() => done("late"), DRESS_WAIT)));
     return Promise.race([came.then(() => "came" as const), late]).then((how) => {
