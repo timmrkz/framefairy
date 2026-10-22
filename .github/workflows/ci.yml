@@ -244,8 +244,8 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux. v2 since the files have their times from git: the test
-      # results in v1 were kept under the times of a checkout, which no
+      # linux. v3 since the files have their times from git: the test
+      # results before were kept under the times of a checkout, which no
       # run has again.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -253,8 +253,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
-          restore-keys: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-
+          key: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -266,7 +266,7 @@ jobs:
           restore-keys: apt-linux-
       - name: System packages
         timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm git-restore-mtime
+        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
@@ -282,17 +282,23 @@ jobs:
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       # Go's test cache knows a file the tests read by its size and time,
       # and a checkout gives every file the time of the checkout. So each
-      # file takes the time of the last commit that changed it, and the
-      # decoder then the time of its newest source, see the Makefile.
-      # Folders all take one fixed time, once the caches and the decoder
-      # have added theirs: Go knows a folder a test lists by the names and
-      # times of what is in it, so a folder's own time tells it nothing,
-      # and git restore-mtime leaves some at the time of the checkout. The
-      # log of the tests goes outside the checkout, so nothing the tests
-      # read changes between two runs of the same code.
-      - name: The episode's decoder, on file times from git
+      # file takes the time of the last commit that changed it, with git
+      # restore-mtime from MestreLion/git-tools, which this action carries
+      # in its 2025.08 version. Ubuntu's 2022.12 asks git whatchanged,
+      # which the runner's git refuses. The decoder then takes the time of
+      # its newest source, see the Makefile. Folders all take one fixed
+      # time, once the caches and the decoder have added theirs: Go knows
+      # a folder a test lists by the names and times of what is in it, so
+      # a folder's own time tells it nothing, and git restore-mtime leaves
+      # some at the time of the checkout. The log of the tests goes outside
+      # the checkout, so nothing the tests read changes between two runs of
+      # the same code.
+      - name: File times from git, for Go's test cache
+        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2.3
+        with:
+          args: --no-directories
+      - name: The episode's decoder
         run: |
-          git restore-mtime --quiet --no-directories
           make frames
           find . -path './.git/*' -prune -o -type d -exec touch -d 2026-01-01T00:00:00Z {} +
       # A test that fails is named on the check, see
@@ -321,7 +327,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          key: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs

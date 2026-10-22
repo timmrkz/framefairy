@@ -9,7 +9,9 @@
 # it in full, v7.0.2 and never v7: v7 is a line of releases, so a bump
 # from one v7 to the next read as the same v7 with a new commit, which
 # looks like the pin was swapped. Dependabot moves the full version in the
-# comment together with the commit, see docs/BUILD.md, Keeping up.
+# comment together with the commit, see docs/BUILD.md, Keeping up. A
+# release whose own tags have two numbers, like v2.3 of
+# chetan/git-restore-mtime-action, is named in full with two.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -19,7 +21,7 @@ for f in "$here"/../.github/workflows/*.yml; do
 	# Every line that uses something not in this repository. A local
 	# action, ./ or a docker:// image, has no release to name.
 	bad=$(grep -nE '^[[:space:]-]*uses:' "$f" | grep -vE 'uses:[[:space:]]*(\./|docker://)' |
-		grep -vE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}[[:space:]]+# v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' || true)
+		grep -vE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}[[:space:]]+# v[0-9]+\.[0-9]+(\.[0-9]+)?[[:space:]]*$' || true)
 	[ -z "$bad" ] && continue
 	echo "$bad" | while IFS= read -r line; do
 		echo "FAIL: $(basename "$f"):$line" >&2
