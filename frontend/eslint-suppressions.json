@@ -1,7 +1,7 @@
 {
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
-      "count": 4
+      "count": 2
     }
   },
   "preview/walks/playback.mjs": {

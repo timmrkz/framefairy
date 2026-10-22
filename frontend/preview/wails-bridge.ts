@@ -21,6 +21,64 @@ const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__answered = 0;
 const logOnly = new Set(["Said", "Acted"]);
 
+// The app's timers that are to fire in a moment, up to a second, so a walk
+// can wait for what the app does after one as it waits for a call: a
+// clip timeline that loads its view when a swipe has stopped, a frame put
+// up without its captions when they are late, a workspace shown once it
+// has had its second to be built. Longer ones are how long something
+// stays on screen, a toast or a Copied, which a walk turns on itself with
+// holdClock. The timer that writes the log is left out, the same as its
+// calls, see said.ts. A timer is counted until it fires or is cleared.
+const SOON = 1000;
+(window as any).__soon = 0;
+const soon = new Set<unknown>();
+let faked = false;
+const arm = window.setTimeout.bind(window);
+const disarm = window.clearTimeout.bind(window);
+window.setTimeout = ((fn: TimerHandler, ms = 0, ...args: unknown[]) => {
+  if (faked || typeof fn !== "function" || ms > SOON || (fn as any).logOnly) return arm(fn, ms, ...args);
+  const id = arm(
+    (...given: unknown[]) => {
+      soon.delete(id);
+      (window as any).__soon = soon.size;
+      fn(...given);
+    },
+    ms,
+    ...args,
+  );
+  soon.add(id);
+  (window as any).__soon = soon.size;
+  return id;
+}) as typeof window.setTimeout;
+window.clearTimeout = ((id?: number) => {
+  soon.delete(id);
+  (window as any).__soon = soon.size;
+  disarm(id);
+}) as typeof window.clearTimeout;
+// Whether something on the page moves for a moment, a row sliding open
+// or a clip timeline gliding to its view, which a walk waits for as it
+// waits for a timer, because what it reads or clicks next is where the
+// movement ends. What moves for longer, or for good, like the shimmer
+// over a place waiting to be filled, is not waited for, see SOON.
+(window as any).__moving = () =>
+  document.getAnimations().some((a) => {
+    const end = Number(a.effect?.getComputedTiming().endTime);
+    return a.playState === "running" && Number.isFinite(end) && end <= SOON;
+  });
+
+// Playwright's fake clock, put in while the page is open, takes the place
+// of these two for the app, and keeps them for its own timers, which run
+// it as fast as the real one and are cleared where this never sees it.
+// So the walk stops counting then, see fakeClock in walks/bridge.mjs: the
+// app's timers are the fake clock's from then on, which a walk turns on
+// itself. After a load the fake clock comes first, with the browser's
+// own timers, and these wrap what it gives the app.
+(window as any).__forgetSoon = () => {
+  faked = true;
+  soon.clear();
+  (window as any).__soon = 0;
+};
+
 // Settled once the interface is listening, so a walk asks for a mark only
 // when the interface can hear it, after a reload too.
 let opened = () => {};

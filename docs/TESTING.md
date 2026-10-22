@@ -194,8 +194,9 @@ clip has ended, `playFor`, which pauses in the frame it sees that, and
 says so when the space bar played nothing. Neither waits on the clock,
 so a busy machine takes longer over a step, never another step.
 
-The rules, after every step, once no call has been on its way for a
-quarter of a second:
+The rules, after every step, once the app has settled, `settle`: no
+call is on its way, no timer of the app's is set to fire in a moment and
+nothing on the page moves for a moment, see below:
 
 | Rule | What it would have caught |
 | --- | --- |
@@ -774,12 +775,29 @@ each job still took four and three quarter minutes, setup included. More
 bridges on a machine do not help: on four cores eight bridges finished a
 share no sooner than six and broke three walks that wait on the clock.
 
-Where a walk's time goes, measured: a walk of 60 steps takes about 30
-seconds, and more than half of that is waiting after each step until no call
-has been on its way for a quarter of a second. That is as long as the
-app's own short delays, the 150 ms before the clip timeline reads its
-waveform and the 240 ms before a newly chosen clip is shown, and a
-shorter wait would check a step before the app had finished it. Opening
+Where a walk's time goes, measured: a walk of 60 steps took about 33
+seconds, and 23 of them went on waiting after each step until no call
+had been on its way for a quarter of a second. That quarter stood in for
+the app's own short delays, the 150 ms before the clip timeline reads
+its waveform and the 240 ms before a newly chosen clip is shown. Now
+`settle` waits for those delays themselves: `preview/wails-bridge.ts`
+counts every timer of the app set to fire within a second, `__soon`,
+until it fires or is cleared, and `__moving` says whether anything on
+the page moves for a second or less, a row sliding open or the clip
+timeline gliding to its view. `settle` goes on once no call is out,
+none came back since its last look, no such timer is set and nothing
+moves. The timer
+that writes the log is left out, the same as its calls, marked
+`logOnly` in `said.ts`. A longer timer is how long something stays on
+screen, which a walk turns on itself with `holdClock`, and while the
+app's time is held `settle` does not wait for timers at all. The same
+walk now takes about 15 seconds, and a busy machine makes it slower
+without making it check a step sooner. Steps that come sooner meet the
+app's own sense of time where a person's hand has one: the clip
+timeline reads two presses within half a second and six pixels as a
+double-click, which cuts a part out. A walk that clicks where it clicked
+a step before uses `clickOnTrack`, which lands eight pixels beside the
+last spot first, so the click is one on its own. Opening
 the browser takes a second or two. The rest is the gestures, and the
 ones that play wait in real time: playing a clip to its end once took
 most of the playback walk, so it now starts a moment before the clip's
@@ -796,7 +814,7 @@ before the walk had looked, #341. Every timer, frame and
 `performance.now` of the app stands still while the clock is held, so a
 step that needs the app's own frames comes before `["hold the clock"]` or
 after `letClockGo`. The walk's own waits, `settle` among them, keep the
-real time and frames, kept on `window.__real`. A timer the app started
+real frames, kept on `window.__real`. A timer the app started
 before the fake clock came is a real one and does not hold, so where the
 time starts on its own, as the row a search leaves when it found nothing
 new, the sequence begins with `["fake clock"]`, `fakeClock`, which runs

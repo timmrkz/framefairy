@@ -72,6 +72,10 @@ export function said(text: string, how: Said = {}) {
   timer ??= setTimeout(write, 250);
 }
 
+// A walk waits for the app's timers but not for this one, which only
+// writes the log, see preview/wails-bridge.ts.
+(write as unknown as { logOnly: boolean }).logOnly = true;
+
 function write() {
   timer = null;
   if (repeats) waiting.push({ at: repeatedAt, text: `(said ${repeats} more times)` });

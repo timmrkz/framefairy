@@ -1179,7 +1179,7 @@ import { open, chosen, shown, engineState, handles, timeline, inside, middle, hi
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -12605,7 +12605,7 @@ for (const seq of toWalk) {
       case "rotate at": {
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // R works on the frame the video preview shows, inShort in
         // Episode.svelte, and the turn read is that frame's, so R is
@@ -12624,7 +12624,7 @@ for (const seq of toWalk) {
       case "keyframe at": {
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // C puts the keyframe on the frame the video preview shows, so it
         // is pressed once that is the playhead's frame, see thumbnail at.
@@ -12695,7 +12695,7 @@ for (const seq of toWalk) {
         const before = await count();
         const g = await handles(page);
         const from = g.start.x + g.start.w;
-        await page.mouse.click(from + arg * (g.end.x - from), high(g.track));
+        await clickOnTrack(page, from + arg * (g.end.x - from), high(g.track));
         await settle(page);
         // T makes a thumbnail of the frame the video preview shows, the
         // frame a person sees, so it is pressed once that is the playhead's

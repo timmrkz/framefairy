@@ -104,47 +104,44 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   return { browser, page, errors };
 }
 
-// Waits until no call has been on its way for a while and the page has
-// drawn what came back. It looks on every frame, and a call that went and
-// came back between two looks starts the while again, see
-// wails-bridge.ts. It keeps the page's real time, so it still tells quiet
-// from busy while the app's time is held, see holdClock.
+// Waits until the app has nothing on its way: no call out, none come back
+// since the last look, no timer of the app's set to fire in a moment and
+// nothing on the page moving for a moment, see wails-bridge.ts. It looks on every frame, and a call that went and
+// came back between two looks makes it look again. Then two frames more
+// let the page draw what came. While the app's time is held, its timers
+// fire only when runClock turns them on, so they are not waited for, see
+// holdClock.
 export async function settle(page) {
   await page.waitForFunction(
-    () => {
+    (held) => {
       const w = window;
-      const now = w.__real?.now ?? (() => performance.now());
-      if (w.__pending > 0 || w.__answered !== w.__answeredSeen) {
-        w.__answeredSeen = w.__answered;
-        w.__quietSince = 0;
-        return false;
-      }
-      w.__quietSince ||= now();
-      return now() - w.__quietSince > 250;
+      const still = w.__pending === 0 && w.__answered === w.__answeredSeen && (held || !w.__soon) && !w.__moving?.();
+      w.__answeredSeen = w.__answered;
+      return still;
     },
-    null,
+    Boolean(page.__held),
     { polling: "raf", timeout: 15000 },
   );
   await page.evaluate(() => {
     const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
     return new Promise((r) => frame(() => frame(r)));
   });
-  await page.evaluate(() => (window.__quietSince = 0));
 }
 
 // Gives a page Playwright's own fake clock, once, in place of the app's
 // timers, frames and performance.now. The walk's own waits keep the real
-// time and frames, kept on window.__real before the fake clock comes, and
-// again on every load, so settle still tells quiet from busy. The clock
-// runs as the real one does until holdClock stops it.
+// frames, kept on window.__real before the fake clock comes, and again on
+// every load, so settle still looks while the app's time is held. The
+// clock runs as the real one does until holdClock stops it.
 export async function fakeClock(page) {
   if (page.__clock) return;
   const keep = () => {
-    window.__real = { now: performance.now.bind(performance), frame: requestAnimationFrame.bind(window) };
+    window.__real = { frame: requestAnimationFrame.bind(window) };
   };
   await page.addInitScript(keep);
   await page.evaluate(keep);
   await page.clock.install();
+  await page.evaluate(() => window.__forgetSoon?.());
   page.__clock = true;
 }
 
@@ -161,7 +158,9 @@ export async function holdClock(page) {
   await fakeClock(page);
   for (;;) {
     try {
-      return await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+      await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+      page.__held = true;
+      return;
     } catch (e) {
       if (!String(e?.message).includes("fast-forward to the past")) throw e;
     }
@@ -176,6 +175,7 @@ export async function runClock(page, ms) {
 
 export async function letClockGo(page) {
   await page.clock.resume();
+  page.__held = false;
 }
 
 // Waits for n of the browser's own frames, which go on while the app's
@@ -346,6 +346,24 @@ export const inside = (t, x) => x > t.x + 2 && x < t.x + t.w - 2;
 export const middle = (r) => r.x + r.w / 2;
 // High on the track, over the waveform rather than the captions' band.
 export const high = (t) => t.y + t.h * 0.2;
+
+// One click on the clip timeline, never the second of a double-click. The
+// clip timeline tells a double-click from two presses within half a
+// second and six pixels of each other, the Mac's own, see twice in
+// ClipTimeline.svelte, and a double-click inside a clip cuts a part out.
+// A walk that clicks where it clicked a step before used to be half a
+// second apart only because it waited on the clock between steps. Now
+// the hand lands eight pixels beside the last spot first, on the side
+// away from the new one, as a hand that misses by a little does, so the
+// click is one on its own however soon it comes.
+export async function clickOnTrack(page, x, y) {
+  const last = page.__pressed;
+  if (last && Math.abs(last.x - x) < 6 && Math.abs(last.y - y) < 6) {
+    await page.mouse.click(last.x + (x < last.x ? 8 : -8), y);
+  }
+  await page.mouse.click(x, y);
+  page.__pressed = { x, y };
+}
 
 // Waits for the page to draw n frames, so whatever the walk did last has
 // reached the screen however busy the machine is.
