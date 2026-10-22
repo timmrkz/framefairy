@@ -235,21 +235,26 @@ jobs:
             flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
     runs-on: ubuntu-24.04
     steps:
+      # The whole history, for git restore-mtime below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux.
+      # linux. v2 since the files have their times from git: the test
+      # results in v1 were kept under the times of a checkout, which no
+      # run has again.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
+          key: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -261,7 +266,7 @@ jobs:
           restore-keys: apt-linux-
       - name: System packages
         timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
+        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm git-restore-mtime
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
@@ -275,8 +280,21 @@ jobs:
       - name: The ffmpeg we ship
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
-      - name: The episode's decoder
-        run: make frames
+      # Go's test cache knows a file the tests read by its size and time,
+      # and a checkout gives every file the time of the checkout. So each
+      # file takes the time of the last commit that changed it, and the
+      # decoder then the time of its newest source, see the Makefile.
+      # Folders all take one fixed time, once the caches and the decoder
+      # have added theirs: Go knows a folder a test lists by the names and
+      # times of what is in it, so a folder's own time tells it nothing,
+      # and git restore-mtime leaves some at the time of the checkout. The
+      # log of the tests goes outside the checkout, so nothing the tests
+      # read changes between two runs of the same code.
+      - name: The episode's decoder, on file times from git
+        run: |
+          git restore-mtime --quiet --no-directories
+          make frames
+          find . -path './.git/*' -prune -o -type d -exec touch -d 2026-01-01T00:00:00Z {} +
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
       #
@@ -288,9 +306,9 @@ jobs:
       - name: Go tests
         timeout-minutes: 15
         run: |
-          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee unit.log
+          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee "$RUNNER_TEMP/unit.log"
           status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
+          if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh "$RUNNER_TEMP/unit.log"; fi
           exit "$status"
       # Whichever way the tests ended, what they left running is named on
       # the check and stopped, see scripts/leftovers.sh.
@@ -303,7 +321,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          key: go-v2-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs

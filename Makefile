@@ -314,7 +314,11 @@ endif
 # It is a tool beside the app like ffmpeg, summed and checked the same way.
 # Built when it is not there, or its code, the modules or the ffmpeg under
 # it changed since, which make decides by file times alone. Without the
-# ffmpeg make builds it cannot be built, and says so.
+# ffmpeg make builds it cannot be built, and says so. It takes the time of
+# the newest file it is built from, not the time it was built, so built
+# again from the same files it looks the same to Go's test cache, which
+# knows a file the tests run by its size and time. CI builds it on every
+# run, see docs/BUILD.md.
 FRAMES := $(STAMPS)/frames/framefairy-frames$(EXE)
 FRAMES_SRC := $(wildcard cmd/framefairy-frames/*.go internal/framewire/*.go) go.mod go.sum
 frames:
@@ -331,6 +335,7 @@ $(FRAMES): $(FRAMES_SRC) $(wildcard $(STAMPS)/ffmpeg/built) | modules
 	@PKG_CONFIG="$(CURDIR)/scripts/pkg-config-static.sh" \
 		PKG_CONFIG_PATH="$(CURDIR)/$(STAMPS)/ffmpeg/lib/pkgconfig:$(CURDIR)/$(STAMPS)/ffmpeg/deps/lib/pkgconfig" \
 		CGO_ENABLED=1 CGO_CFLAGS="$${CGO_CFLAGS:--O2} -Wno-unused-result" $(GO) build -trimpath -tags ffmpeglibs -ldflags "$(FRAMES_LDFLAGS)" -o $(FRAMES) ./cmd/framefairy-frames
+	@touch -r "$$(ls -t $^ | head -n 1)" $(FRAMES)
 
 # In a cloud session the decoder is built in the background as the session
 # starts, see scripts/cloud-decoder.sh, and the targets that run it wait
