@@ -6,10 +6,12 @@
 #   sh scripts/ci-filters-test.sh
 #
 # It matches the way dorny/paths-filter v4.0.3 does, with the picomatch
-# the action locks at the commit ci.yml pins, 2.3.1. The interface's
-# packages carry it as picomatch-paths-filter, so this needs no network,
-# and when the pin of the action moves, that version moves with it. The
-# lines mirrored
+# the action locks at the commit ci.yml pins, 2.3.1, or rather 2.3.2,
+# which only fixes two advisories npm audit fails on, in POSIX classes
+# and extglob quantifiers, neither of which the filters use. The
+# interface's packages carry it as picomatch-paths-filter, so this needs
+# no network, and when the pin of the action moves, that version moves
+# with it. The lines mirrored
 # from the action's src/filter.ts: 15 (picomatch with dot), 133 to 148
 # (some-with-excludes: a negated pattern that excludes the file ends it,
 # else any other pattern that matches takes it) and 199 to 212 (each

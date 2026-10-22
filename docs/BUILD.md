@@ -392,8 +392,10 @@ broken main.
 
 `scripts/ci-filters-test.sh` checks the filters on the files a pull
 request really arrives with, matched the way the action matches them,
-with the picomatch the action locks at its pinned commit, which the
-interface's packages carry as `picomatch-paths-filter`, so it needs no
+with the picomatch the action locks at its pinned commit, 2.3.1, or the
+patch after it, which fixes only advisories in patterns the filters do
+not use. The interface's packages carry it as `picomatch-paths-filter`,
+so it needs no
 network. When the pin of the action moves, that version moves with it.
 It also checks that every filter is true on a push to main, and it fails
 on a Go test that reads a whole folder of the interface, which no file
