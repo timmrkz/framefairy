@@ -1488,6 +1488,20 @@ func TestWalks(t *testing.T) {
 	var tookMu sync.Mutex
 	took := map[string]float64{}
 
+	// A walk waits on signals, so one whose signal never comes runs until
+	// go test's -timeout ends the whole binary, and that prints neither
+	// which walk it was nor anything the runs said through t. So the runs
+	// still going a minute before then are stopped and reported, with
+	// what they printed, and every run says on stderr, which is not held
+	// back, when it starts and ends. Issue #443.
+	ctx := context.Background()
+	if end, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, end.Add(-walkGrace))
+		defer cancel()
+	}
+	var unwalked atomic.Int32
+
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1505,27 +1519,36 @@ func TestWalks(t *testing.T) {
 				return
 			}
 			for r := range todo {
+				if ctx.Err() != nil {
+					unwalked.Add(1)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "walking %s\n", name(r))
 				began := time.Now()
-				cmd := exec.Command(node, filepath.Join(walks, r.script))
-				cmd.Dir = walks
-				cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+url), r.env...)
-				out, err := cmd.CombinedOutput()
+				var out bytes.Buffer
+				err := walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks,
+					append(append(os.Environ(), "BRIDGE_URL="+url), r.env...), &out)
 				seconds := time.Since(began).Seconds()
 				tookMu.Lock()
 				took[name(r)] = seconds
 				tookMu.Unlock()
 				what := fmt.Sprintf("%s (%.0f s)", name(r), seconds)
 				if err != nil {
-					t.Errorf("%s:\n%s", what, out)
+					fmt.Fprintf(os.Stderr, "failed %s\n", what)
+					t.Errorf("%s: %v\n%s", what, err, out.Bytes())
 					continue
 				}
-				t.Logf("%s:\n%s", what, out)
+				fmt.Fprintf(os.Stderr, "walked %s\n", what)
+				t.Logf("%s:\n%s", what, out.Bytes())
 			}
 		})
 	}
 	wg.Wait()
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
+	}
+	if n := unwalked.Load(); n > 0 {
+		t.Errorf("%d runs were not walked, since the test's time ran out", n)
 	}
 	// WALKTIMES=1 keeps what the runs took for the next split, and drops
 	// the runs that are gone.
@@ -1578,6 +1601,75 @@ func startBridge(t *testing.T) (string, error) {
 		before = append(before, line)
 	}
 	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+}
+
+// A walk that hangs is stopped when the test's time runs out, and what it
+// printed until then is kept, so the report says which walk it was and
+// how far it got, issue #443.
+func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	out := &saying{what: "halfway", said: make(chan struct{})}
+	go func() {
+		<-out.said
+		stop()
+	}()
+	// tail -f waits for more forever, the way a walk waits on a signal
+	// that never comes.
+	err := walk(ctx, "sh", []string{"-c", "echo halfway; exec tail -f /dev/null"}, "", nil, out)
+	if err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that hangs ends with %v, want that its time ran out", err)
+	}
+	if !strings.Contains(out.String(), "halfway") {
+		t.Errorf("what the walk printed before it was stopped is %q", out.String())
+	}
+	if err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
+		t.Errorf("a walk that ends gives %v", err)
+	}
+	if err := walk(context.Background(), "sh", []string{"-c", "exit 1"}, "", nil, io.Discard); err == nil || strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that fails gives %v, want its own failure", err)
+	}
+}
+
+// saying keeps what is written to it and closes said once it holds what.
+// The buffer is a field, not embedded, since a bytes.Buffer's ReadFrom
+// would read the walk's output past Write.
+type saying struct {
+	buf  bytes.Buffer
+	what string
+	said chan struct{}
+	once sync.Once
+}
+
+func (s *saying) Write(p []byte) (int, error) {
+	n, err := s.buf.Write(p)
+	if strings.Contains(s.buf.String(), s.what) {
+		s.once.Do(func() { close(s.said) })
+	}
+	return n, err
+}
+
+func (s *saying) String() string { return s.buf.String() }
+
+// walkGrace is how long before go test's -timeout the walks still
+// running are stopped, time enough to end them and report.
+const walkGrace = time.Minute
+
+// walk runs one walk, name with args in dir, and writes what it prints to
+// out. One still running when ctx ends is stopped, and says so, and what
+// it printed until then is in out.
+func walk(ctx context.Context, name string, args []string, dir string, env []string, out io.Writer) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir, cmd.Env = dir, env
+	cmd.Stdout, cmd.Stderr = out, out
+	// The browser a stopped walk started may hold its output open, and
+	// its output is not worth waiting for.
+	cmd.WaitDelay = 5 * time.Second
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		return errors.New("it had not ended when the test's time ran out, and was stopped")
+	}
+	return err
 }
 
 // walkScripts are the walks in the folder: every script that walks with
