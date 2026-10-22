@@ -652,12 +652,17 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 
 // Relaunch finds the queue idle and closes it in one step, so no search
 // starts between the two and is stopped half way by the quit, issue #382.
-// In each round work is added from several goroutines at once while
-// Relaunch asks: whenever it was told the queue was idle, nothing runs or
-// waits until it reopens. Then the round waits for the news that its work
-// has ended, so the queue is idle at a moment the test knows rather than
-// one it hopes for, issue #455, and Relaunch must find it so and refuse
-// the work added after, with the reason.
+// That it is one step is held by closeIfIdle, which looks and closes
+// under one lock. No test can make the scheduler land in a gap between
+// the two, so none proves it.
+//
+// What the test proves: in each round the queue's work ends, told by the
+// jobs' news, so the queue is idle at a moment the test knows rather than
+// one it hopes for, issue #455. Relaunch must find it so, and refuse the
+// work added after with the reason. Before that, in each round, work is
+// added from several goroutines at once while Relaunch asks again and
+// again, for the race detector, and whenever Relaunch was told the queue
+// was idle, nothing may run or wait until it reopens.
 func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	t.Parallel()
 	news := newJobNews()
@@ -698,9 +703,6 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	kinds := []string{"render", "model", "plan", engine.JobSearch}
 	// burst lets four hands add n pieces of work each, all at once. done
 	// closes when they have, and took hands back the work the queue took.
-	// Forty each in the race is what made it catch a Relaunch that looks
-	// and closes in two steps in a quarter of the runs, in a cloud session,
-	// where three each caught it in none.
 	burst := func(round, n int, start <-chan struct{}) (done <-chan struct{}, took func() []string) {
 		var mu sync.Mutex
 		var ids []string
@@ -733,9 +735,9 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	}
 
 	for round := range 20 {
-		// Relaunch asks again and again while the hands add, which is the
-		// race. Whichever comes first, once it has found the queue idle
-		// nothing runs or waits until it reopens.
+		// Relaunch asks again and again while the hands add, so the race
+		// detector sees the two at once. Whichever comes first, once it has
+		// found the queue idle nothing runs or waits until it reopens.
 		start := make(chan struct{})
 		done, took := burst(round, 40, start)
 		close(start)
