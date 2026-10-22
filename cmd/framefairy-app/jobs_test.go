@@ -651,13 +651,30 @@ func TestAJobKeepsItsLogInTheWorkFolder(t *testing.T) {
 
 // Relaunch finds the queue idle and closes it in one step, so no search
 // starts between the two and is stopped half way by the quit, issue #382.
-// Work is added from several goroutines at once while Relaunch asks again
-// and again: whenever it was told the queue was idle, nothing runs or
-// waits until it reopens, and work added meanwhile is refused with the
-// reason.
+// In each round work is added from several goroutines at once while
+// Relaunch asks: whenever it was told the queue was idle, nothing runs or
+// waits until it reopens. Then the round waits for the news that its work
+// has ended, so the queue is idle at a moment the test knows rather than
+// one it hopes for, issue #455, and Relaunch must find it so and refuse
+// the work added after, with the reason.
 func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 	t.Parallel()
-	q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {})
+	news := newJobNews()
+	q := newQueue(memoryStore(), func(u JobUpdate) { news.heard(u.Job) }, func(string) {})
+	// ended waits for the news that every job named has ended. A job's
+	// news is sent after the queue has said so, so from then on the queue
+	// is idle unless other work came in.
+	ended := func(ids []string) {
+		news.until(func(jobs map[string]Job) bool {
+			for _, id := range ids {
+				if j, ok := jobs[id]; !ok || j.State == JobQueued || j.State == JobRunning {
+					return false
+				}
+			}
+			return true
+		})
+	}
+	const relaunching = "the app is relaunching into a new build"
 
 	// While work runs, Relaunch is refused and closes nothing.
 	block := make(chan struct{})
@@ -669,63 +686,75 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 		reopen()
 		t.Fatal("Relaunch found the queue idle while work ran")
 	}
-	if job := q.add("/eps/more.mp4", "render", "More", func(context.Context, *engine.Project) (string, error) { return "ok", nil }); job.State == JobFailed {
-		t.Fatalf("work was refused after a Relaunch that was refused: %s", job.Error)
+	more := q.add("/eps/more.mp4", "render", "More", func(context.Context, *engine.Project) (string, error) { return "ok", nil })
+	if more.State == JobFailed {
+		t.Fatalf("work was refused after a Relaunch that was refused: %s", more.Error)
 	}
 	close(block)
-	for deadline := time.Now().Add(10 * time.Second); q.busy(); time.Sleep(time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s never ended", held.ID)
-		}
-	}
+	ended([]string{held.ID, more.ID})
 
-	brief := func(ctx context.Context, p *engine.Project) (string, error) {
-		time.Sleep(200 * time.Microsecond)
-		return "ok", nil
-	}
+	brief := func(ctx context.Context, p *engine.Project) (string, error) { return "ok", nil }
 	kinds := []string{"render", "model", "plan", engine.JobSearch}
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	for hand := range 4 {
-		wg.Go(func() {
-			for k := 0; ; k++ {
-				select {
-				case <-stop:
-					return
-				default:
+	// burst lets four hands add three pieces of work each, all at once,
+	// and hands back the work the queue took.
+	burst := func(round int, start <-chan struct{}) (took func() []string) {
+		var mu sync.Mutex
+		var ids []string
+		var wg sync.WaitGroup
+		for hand := range 4 {
+			wg.Go(func() {
+				<-start
+				for k := range 3 {
+					job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(round+hand+k)%len(kinds)], "Work", brief)
+					switch {
+					case job.State != JobFailed:
+						mu.Lock()
+						ids = append(ids, job.ID)
+						mu.Unlock()
+					case job.Error != relaunching:
+						t.Errorf("work refused with %q", job.Error)
+					}
 				}
-				job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(hand+k)%len(kinds)], "Work", brief)
-				if job.State == JobFailed && job.Error != "the app is relaunching into a new build" {
-					t.Errorf("work refused with %q", job.Error)
-				}
-				time.Sleep(time.Duration(k%3) * time.Millisecond)
-			}
-		})
+			})
+		}
+		return func() []string {
+			wg.Wait()
+			return ids
+		}
 	}
 
-	// Asked until the queue was found idle often enough, however fast
-	// the machine runs the work.
-	idle := 0
-	for deadline := time.Now().Add(10 * time.Second); idle < 20 && time.Now().Before(deadline); {
-		reopen, ok := q.closeIfIdle()
-		if !ok {
-			reopen()
-			continue
+	for round := range 20 {
+		// Relaunch asks while the hands add, which is the race. Whichever
+		// comes first, once it has found the queue idle nothing runs or
+		// waits after it.
+		start := make(chan struct{})
+		took := burst(round, start)
+		close(start)
+		reopen, idle := q.closeIfIdle()
+		added := took()
+		if idle && q.busy() {
+			t.Fatal("work ran or waited after Relaunch found the queue idle")
 		}
-		idle++
-		for range 20 {
-			if q.busy() {
-				t.Fatal("work ran or waited after Relaunch found the queue idle")
-			}
-			time.Sleep(50 * time.Microsecond)
+		reopen()
+
+		// Once all of that has ended the queue is idle, and Relaunch finds
+		// it so. Work asked for after that is refused, and none runs.
+		ended(added)
+		reopen, idle = q.closeIfIdle()
+		if !idle {
+			t.Fatalf("round %d: Relaunch did not find the queue idle once its work had ended", round)
+		}
+		start = make(chan struct{})
+		took = burst(round, start)
+		close(start)
+		if added := took(); len(added) > 0 {
+			t.Fatalf("round %d: %d pieces of work were taken after Relaunch found the queue idle", round, len(added))
+		}
+		if q.busy() {
+			t.Fatal("work ran or waited after Relaunch found the queue idle")
 		}
 		reopen()
 		reopen()
-	}
-	close(stop)
-	wg.Wait()
-	if idle == 0 {
-		t.Fatal("Relaunch never found the queue idle, which proves nothing")
 	}
 	// Reopened, it takes work again.
 	if job := q.add("/eps/after.mp4", "render", "After", brief); job.State == JobFailed {
