@@ -352,6 +352,25 @@ tests with the small packages took 208 s on one machine, in one run,
 because the app's tests run one after another, while the engine's run
 side by side.
 
+Go knows a file a test read by its size and modification time, not by
+what is in it, and a checkout gives every file the time of the checkout.
+So the engine, the app and every package whose tests read a file of the
+checkout ran again on every push, whatever changed. In `linux`,
+`git restore-mtime`, from the Ubuntu package `git-restore-mtime`, gives
+each file the time of the last commit that changed it, which takes the
+whole history, `fetch-depth: 0`. Folders all get one fixed time: Go knows
+a folder a test lists by the names and times of what is in it, so the
+folder's own time tells it nothing, and `git restore-mtime` leaves some
+folders at the time of the checkout, like one that holds only folders.
+That runs after the caches are restored, because restoring one adds a
+folder to the checkout. The episode's decoder, which the app's tests run, takes the
+time of the newest file it is built from, see `frames` in the Makefile,
+so building it again from the same files changes nothing the tests see.
+And the log of the tests goes to `$RUNNER_TEMP`, because one test
+resolves a path through the top of the checkout, whose time changes when
+a file is made in it. `macos` does none of this, so there the engine and
+the app run every time.
+
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
 Mac runs on a Mac too. The account runs five Mac jobs at once for every
