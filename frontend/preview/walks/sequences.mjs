@@ -14273,34 +14273,26 @@ async function pickCards(page, n) {
   const path = await episodeOn(page);
   await canLook(page);
   // Where the new clips are made, the last ones for a click taken again.
-  // Not every one gives a clip that can be used, see freshClip.
-  const fresh = [20, 60, 100, 24, 64, 104, 16, 96, 32, 44, 72, 84, 112];
+  // Each gives a clip with a caption at its start, so its captions can be
+  // seen to come, and one that starts where no other clip does, which
+  // could put up the very picture on screen, so nothing would change
+  // until its captions came. Checked against the bridge's speech stand-in
+  // on 22 October 2026: 16, 28, 40, 56, 64, 76, 84, 88, 92 and 108 give a
+  // clip where one of these or of shotClips does, and 44, 68, 72, 80, 96
+  // and 104 one whose first word comes more than a tenth of a second
+  // after its start, with no caption there yet, issue #438.
+  const fresh = [20, 60, 100, 24, 32, 112, 36, 48, 52];
   const problems = [];
-  // A new clip at the next place of fresh with a word said as it starts,
-  // so its captions can be seen to come, and where no other clip starts,
-  // or null when none is left. One that starts where nobody speaks has no
-  // captions to see, and one that starts where another clip does may put
-  // up the very picture that is on screen, which nothing changes until
-  // its captions come, and they wait for the change. Neither says anything
-  // about the app, so another is made at the next place, without spending
-  // a click taken again on a busy machine, issue #438.
+  // The new clip at the next place, or a problem when the place gives a
+  // clip where another starts.
   const freshClip = async () => {
-    while (fresh.length) {
-      const [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
-      const all = await ask(page, "Clips", path);
-      const clip = all.find((c) => c.key === key);
-      if (!clip) return null;
-      if (all.some((c) => c.key !== key && Math.abs(c.start - clip.start) < 0.05)) {
-        console.log(`        the new clip at ${clip.start.toFixed(2)} s starts where another does, again at another place`);
-        continue;
-      }
-      // A clip starts a moment before its first word, and its first
-      // caption with it.
-      const words = await ask(page, "Words", path, clip.start, clip.start + 0.5);
-      if (words.some((w) => w.end > clip.start && w.start < clip.start + 0.5)) return key;
-      console.log(`        the new clip at ${clip.start.toFixed(2)} s starts where nobody speaks, again at another place`);
-    }
-    return null;
+    const at = fresh.shift();
+    const [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, at, false));
+    const all = await ask(page, "Clips", path);
+    const clip = all.find((c) => c.key === key);
+    if (all.some((c) => c.key !== key && Math.abs(c.start - clip.start) < 0.05))
+      return { problem: `the new clip at ${at} s starts at ${clip.start.toFixed(2)} s, where another clip does, so pick another place for it` };
+    return { key };
   };
   // What went to and from the Go side about captions, and what the video
   // preview said in the log, each by the clock of this machine: told with
@@ -14352,12 +14344,13 @@ async function pickCards(page, n) {
         window.__captionsOpen = false;
         window.__clickChanged = false;
       });
-      key = await freshClip();
-      if (!key) {
-        problems.push(`card ${i + 1}: no place was left for a new clip that starts where somebody speaks`);
+      const made = await freshClip();
+      if (made.problem) {
+        problems.push(`card ${i + 1}: ${made.problem}`);
         await control(url, "/hold?call=Captions&gate=open");
         break;
       }
+      key = made.key;
     } else {
       await restAhead(page);
       const { cards, current } = await cardsNow(page);
@@ -14397,7 +14390,7 @@ async function pickCards(page, n) {
     const changes = changesOf(looks);
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
     const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
-    if (!last.captions) problems.push(`${card}: no caption showed at the start of the clip${held ? ", which starts on a word" : ""}`);
+    if (!last.captions) problems.push(`${card}: no caption showed at the start of the clip`);
     else if (changes.length !== 1) {
       problems.push(
         `${card}: the video preview changed ${changes.length} times, not once: ${changes
