@@ -377,16 +377,29 @@ func TestTheFollowedChannelsOwnEntryIsNewerThanTheList(t *testing.T) {
 	// An entry of the build the list has, or an older one, an entry that
 	// is gone for a moment while it is replaced, and one that names
 	// another channel all leave the list as it is.
+	// Only an entry that could not be read or taken is refused, with why,
+	// so the log says it: one that is merely not newer is the usual case.
+	var refused []error
+	src.Refused = func(channel string, why error) {
+		if channel != "pr-367" {
+			t.Errorf("refused the entry of %q", channel)
+		}
+		refused = append(refused, why)
+	}
 	for name, data := range map[string][]byte{
 		"older":   mustJSON(t, func() Build { b := entry; b.Published = now.Add(-2 * time.Hour); return b }()),
 		"missing": nil,
 		"another": mustJSON(t, func() Build { b := entry; b.Channel = "pr-368"; return b }()),
 		"broken":  []byte("{"),
 	} {
+		refused = nil
 		r.set("/channel-pr-367.json", data)
 		rel, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-pr412.174466c"})
 		if err != nil || rel == nil || rel.Version != listed.Version {
 			t.Errorf("with an entry %s, offered %+v, %v, not the list's build", name, rel, err)
+		}
+		if want := name != "older"; (len(refused) == 1) != want || len(refused) > 1 {
+			t.Errorf("with an entry %s, refused %v", name, refused)
 		}
 	}
 
@@ -397,6 +410,42 @@ func TestTheFollowedChannelsOwnEntryIsNewerThanTheList(t *testing.T) {
 	r.set("/channel-pr-367.json", mustJSON(t, forged))
 	if rel, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-pr412.174466c"}); err == nil {
 		t.Errorf("an entry with a claim of another build was offered: %+v", rel)
+	}
+}
+
+// The entry of the channel followed is read beside the list, not after
+// it, so a slow answer for it adds no time to a check. Here the list is
+// not answered until the entry has been asked for.
+func TestTheOwnEntryIsReadBesideTheList(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	asked := make(chan struct{})
+	var once sync.Once
+	list := writtenList(t, key, "0.3.0-main.1", time.Now().UTC())
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/channel-main.json" {
+			once.Do(func() { close(asked) })
+			http.NotFound(w, req)
+			return
+		}
+		select {
+		case <-asked:
+		case <-req.Context().Done():
+			return
+		}
+		_, _ = w.Write(list)
+	}))
+	t.Cleanup(srv.Close)
+	src := copiesOf(srv)
+	src.Entries = srv.URL + "/"
+	src.Key = key.Public().(ed25519.PublicKey)
+	src.Picked = func() string { return "main" }
+	got, err := src.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("the list waited for the entry, which was read only after it: %v", err)
+	}
+	if b, ok := got.Find("main"); !ok || b.Version != "0.3.0-main.1" {
+		t.Errorf("read %+v", got)
 	}
 }
 

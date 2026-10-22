@@ -259,6 +259,7 @@ The Updates page writes lines of `updates`: a channel picked, the build
 a check found for it and the build running when that is the newest,
 the build ready for Relaunch, a check or a download that failed with
 the reason, and the channel's own entry when it was newer than the list
-and offered in its place, with both versions. Before #420 nothing of it
+and offered in its place, with both versions, or, at `debug`, why it
+was not taken when it could not be read or was refused. Before #420 nothing of it
 reached the log, so a pick that came back as the build before could not
 be told apart from one that found nothing newer.

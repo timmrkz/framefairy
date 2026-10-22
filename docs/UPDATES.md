@@ -437,8 +437,8 @@ with its newest build, so one fetch is the whole check:
   into main: #24 was closed in that state, the close was never seen, and
   the app went on offering it.
 - **The channel followed is read from its own entry too.** A build and
-  its entry, `channel-<channel>.json`, are uploaded in one step, and the
-  list is written from the entries only after that, in one queue that
+  its entry, `channel-<channel>.json`, are uploaded one after the other,
+  and the list is written from the entries only after that, in one queue that
   every build of every channel shares. On 20 October the list took two
   minutes to follow a build of #367, and a pick in between came back at
   once as the build before, which was kept in the cache, #420. So every
@@ -447,7 +447,12 @@ with its newest build, so one fetch is the whole check:
   list's place for that channel, with the list's name, `newest` and
   `conflict`. The entry is checked the way the list is, claim and all.
   One that is missing for a moment while it is replaced, or is of the
-  build the list has, changes nothing.
+  build the list has, changes nothing. The zip goes up before its entry,
+  because one upload of both sent them side by side, and the entry, a
+  few hundred bytes, named a build for a minute before its zip could be
+  downloaded. An app that read it then would have said the download
+  failed. GitHub takes a few seconds to answer for a new file, see the
+  list above, and the entry has that wait after the zip, not before it.
 - **A pull request in conflict says so.** One that no longer merges into
   main keeps its entry, because its build is of the branch as it is and
   can still be tried, and the list marks it with `"conflict": true`. The

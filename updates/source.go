@@ -59,6 +59,10 @@ type Source struct {
 	// Newer is told when the followed channel's own entry is of a newer
 	// build than the list's, and is offered in its place.
 	Newer func(listed, entry Build)
+	// Refused is told when the followed channel's own entry could not be
+	// read or was not taken, and why. An entry of the build the list has
+	// already, the usual case, is not refused.
+	Refused func(channel string, why error)
 
 	// fetches are the builds on their way into the cache, by SHA-256, see
 	// fetch.go.
@@ -87,6 +91,9 @@ func (s *Source) Name() string { return "channels" }
 // Fetch reads the channel list: the newer of its two copies, or with
 // neither to be had the list itself, tried again while it answers 404.
 func (s *Source) Fetch(ctx context.Context) (List, error) {
+	// The entry of the channel followed is read beside the list, not
+	// after it, so it adds no time to a check.
+	entry := s.readEntry(ctx)
 	list, err := s.fetchCopies(ctx)
 	if err != nil {
 		list, err = s.fetchRetrying(ctx)
@@ -94,7 +101,7 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	if err != nil {
 		return List{}, err
 	}
-	list = s.fresher(ctx, list)
+	list = s.fresher(list, <-entry)
 	s.prune(list)
 	if s.Seen != nil {
 		s.Seen(list)
@@ -102,37 +109,72 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	return list, nil
 }
 
-// fresher is the list with the followed channel's own entry in the place
-// of the list's, when the entry is of a newer build. The publish workflow
-// uploads a build and its entry in one step, and writes the list from
-// every entry only after that, in one queue that every build of every
-// channel shares. On 20 October the list took two minutes to follow a
-// build of a pull request, and Tim picked it in between: the list still
-// named the build before, which was kept in the cache, so the app came
-// back as that at once, issue #420. The entry is as untrusted as the list
-// and is checked the same way, its claim among it before it is installed.
-// An entry that cannot be read, or is of the build the list has or an
-// older one, leaves the list as it is.
-func (s *Source) fresher(ctx context.Context, list List) List {
+// ownEntry is the followed channel's own entry as it was read, see
+// readEntry. An empty channel is no entry to read.
+type ownEntry struct {
+	channel string
+	data    []byte
+	err     error
+}
+
+// readEntry starts reading the followed channel's own entry, and hands it
+// over on the channel it returns once it is read.
+func (s *Source) readEntry(ctx context.Context) <-chan ownEntry {
+	out := make(chan ownEntry, 1)
 	picked := ""
 	if s.Picked != nil {
 		picked = s.Picked()
 	}
 	wanted := Followed(picked, s.Own)
 	if s.Entries == "" || !ValidChannel(wanted) {
+		out <- ownEntry{}
+		return out
+	}
+	go func() {
+		data, err := s.read(ctx, s.Entries+"channel-"+wanted+".json")
+		out <- ownEntry{wanted, data, err}
+	}()
+	return out
+}
+
+// fresher is the list with the followed channel's own entry in the place
+// of the list's, when the entry is of a newer build. The publish workflow
+// uploads a build and then its entry, and writes the list from every
+// entry only after that, in one queue that every build of every channel
+// shares. On 20 October the list took two minutes to follow a build of a
+// pull request, and Tim picked it in between: the list still named the
+// build before, which was kept in the cache, so the app came back as that
+// at once, issue #420. The entry is as untrusted as the list and is
+// checked the same way, its claim among it before it is installed. An
+// entry that cannot be read, or is of the build the list has or an older
+// one, leaves the list as it is.
+func (s *Source) fresher(list List, entry ownEntry) List {
+	if entry.channel == "" {
 		return list
 	}
+	wanted := entry.channel
 	at := slices.IndexFunc(list.Channels, func(b Build) bool { return b.Channel == wanted })
 	if at < 0 {
 		return list
 	}
-	data, err := s.read(ctx, s.Entries+"channel-"+wanted+".json")
-	if err != nil {
+	refuse := func(why error) List {
+		if s.Refused != nil {
+			s.Refused(wanted, why)
+		}
 		return list
 	}
+	if entry.err != nil {
+		return refuse(entry.err)
+	}
 	var b Build
-	if err := json.Unmarshal(data, &b); err != nil || b.Check() != nil || b.Channel != wanted {
-		return list
+	if err := json.Unmarshal(entry.data, &b); err != nil {
+		return refuse(fmt.Errorf("the entry is not a build: %w", err))
+	}
+	if err := b.Check(); err != nil {
+		return refuse(err)
+	}
+	if b.Channel != wanted {
+		return refuse(fmt.Errorf("the entry is of the channel %q", b.Channel))
 	}
 	listed := list.Channels[at]
 	if !b.Published.After(listed.Published) {

@@ -124,7 +124,12 @@ type Engine struct {
 	// readahead.go.
 	ahead aheadGate
 
-	mu               sync.Mutex
+	mu sync.Mutex
+	// hearingWhole is how much audio, in seconds, the job hearing in
+	// turns set out to hear when it started, see Project.hear, so a
+	// hearing that gave the lane back and has it again counts on from
+	// where it got to. Zero is a hearing on its own.
+	hearingWhole     float64
 	encoder          Encoder
 	hdrEncoder       Encoder
 	subtitleTemplate string

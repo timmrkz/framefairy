@@ -587,6 +587,82 @@ func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
 	}
 }
 
+// Issue #444, from the review of #456: a search that gives the lane of
+// hearing back, to a clip made by hand that needs words sooner or to a
+// search that finds, and gets it again, hears on in the same run. What it
+// says of how far it has come goes on from where it got to, over all it
+// set out to hear, and never starts from nothing again.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+
+	var mu sync.Mutex
+	type moment struct {
+		turn              int
+		fraction, covered float64
+	}
+	var said []moment
+	turns := 0
+	var takeBack context.CancelFunc
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, moment{turns, ev.Fraction, ev.Covered})
+		// The lane is taken back the first time the hearing says how far
+		// it has come, the way a clip made by hand takes it.
+		if takeBack != nil {
+			takeBack()
+			takeBack = nil
+		}
+	})
+	var calls int32
+	e := NewEngine(log, disk)
+	e.checkpointEvery = time.Hour
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		c, cancel := context.WithCancel(ctx)
+		mu.Lock()
+		turns++
+		if turns == 1 {
+			takeBack = cancel
+		}
+		mu.Unlock()
+		return c, cancel, nil
+	}
+	if err := p.hear(context.Background(), turn, Window{0, 70}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if turns < 2 || len(said) < 3 || said[len(said)-2].turn < 2 {
+		t.Fatalf("the hearing took %d turns and said %v, not two turns with more than the end in the second", turns, said)
+	}
+	for i, m := range said {
+		if want := m.covered / 70; math.Abs(m.fraction-want) > 0.01 {
+			t.Errorf("in turn %d at %.2f s it said %.3f, not %.3f, how far it is through the 70 s it set out to hear: %v",
+				m.turn, m.covered, m.fraction, want, said)
+			break
+		}
+		if i > 0 && m.fraction < said[i-1].fraction {
+			t.Errorf("it went back from %.3f to %.3f: %v", said[i-1].fraction, m.fraction, said)
+			break
+		}
+	}
+	if last := said[len(said)-1].fraction; last < 0.99 {
+		t.Errorf("it ended at %.3f, not 1: %v", last, said)
+	}
+}
+
 // A transcription that is stopped writes down everything it heard before it
 // goes, not only what the last save held. A search pauses it, and carrying
 // on afterwards has to start where the work really got to, or minutes of

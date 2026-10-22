@@ -295,7 +295,7 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	src.Picked = c.picked
 	src.Seen = c.seen
 	src.Progress = c.progress
-	src.Newer = newerEntry
+	src.Newer, src.Refused = newerEntry, refusedEntry
 	c.cfg = updater.Config{
 		CurrentVersion: c.state.Version,
 		Providers:      []updater.Provider{src},
@@ -426,6 +426,14 @@ func (c *updating) seen(l updates.List) {
 func newerEntry(listed, entry updates.Build) {
 	theLog.line(zerolog.InfoLevel, "updates").Str("channel", entry.Channel).Str("listed", listed.Version).
 		Str("build", entry.Version).Msg("the channel's own entry is newer than the list, so its build is offered")
+}
+
+// refusedEntry says in the log why the followed channel's own entry was
+// not taken, so a report tells a missing or broken entry from a list
+// that had the newest build already.
+func refusedEntry(channel string, why error) {
+	theLog.line(zerolog.DebugLevel, "updates").Str("channel", channel).Err(why).
+		Msg("the channel's own entry was not taken, so the list's build is offered")
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a
