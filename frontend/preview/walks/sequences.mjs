@@ -14219,7 +14219,9 @@ function clickCard(page, key, start) {
         const frames = window.__appFrames;
         const first = start === null ? null : window.__frameQueue.firstFrameAt(start);
         const kept = frames.stats.kept;
-        const looks = [{ ...window.__look(), t: 0 }];
+        // open says whether the Go side's answers about captions were let
+        // through yet, see pickCards.
+        const looks = [{ ...window.__look(), t: 0, open: !!window.__captionsOpen }];
         const t0 = performance.now();
         document.querySelector(`aside ol li[data-key="${CSS.escape(key)}"] button.pick`).click();
         let rested = false;
@@ -14227,10 +14229,11 @@ function clickCard(page, key, start) {
         let after = 0;
         const next = () => {
           const t = performance.now() - t0;
-          const l = { ...window.__look(), t };
+          const l = { ...window.__look(), t, open: !!window.__captionsOpen };
           const was = looks[looks.length - 1];
           looks.push(l);
           const changed = looks.some((x, j) => j > 0 && (x.crop !== looks[j - 1].crop || x.canvas !== looks[j - 1].canvas));
+          window.__clickChanged ||= changed;
           if (l.crop !== was.crop || l.canvas !== was.canvas) after = 0;
           else if (changed && rested && !window.__captionLayers.busy) after++;
           if (after < 10) return requestAnimationFrame(next);
@@ -14261,18 +14264,36 @@ function changesOf(looks) {
 // Tim saw the crop frame jump first, then the picture, then the captions,
 // issue #383. Every other click is on a clip made just then, whose
 // captions were not read ahead, with the Go side's answers about captions
-// held back for a moment, the way a video of hours answers: the frame
-// waits on the Go side for its captions, captionsDue in Episode.svelte,
-// rather than coming first. The others are on the clips read ahead.
+// held back, the way a video of hours answers: the frame waits on the Go
+// side for its captions, captionsDue in Episode.svelte, rather than coming
+// first. The others are on the clips read ahead.
 async function pickCards(page, n) {
   const clips = await shotClips(page);
   if (typeof clips === "string") return clips;
   const path = await episodeOn(page);
   await canLook(page);
-  // Where the new clips are made, each starting on a caption, the last
-  // ones for a click taken again.
-  const fresh = [20, 60, 100, 24, 64, 104, 16, 96];
+  // Where the new clips are made, the last ones for a click taken again.
+  // Each gives a clip with a caption at its start, so its captions can be
+  // seen to come, and one that starts where no other clip does, which
+  // could put up the very picture on screen, so nothing would change
+  // until its captions came. Checked against the bridge's speech stand-in
+  // on 22 October 2026: 16, 28, 40, 56, 64, 76, 84, 88, 92 and 108 give a
+  // clip where one of these or of shotClips does, and 44, 68, 72, 80, 96
+  // and 104 one whose first word comes more than a tenth of a second
+  // after its start, with no caption there yet, issue #438.
+  const fresh = [20, 60, 100, 24, 32, 112, 36, 48, 52];
   const problems = [];
+  // The new clip at the next place, or a problem when the place gives a
+  // clip where another starts.
+  const freshClip = async () => {
+    const at = fresh.shift();
+    const [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, at, false));
+    const all = await ask(page, "Clips", path);
+    const clip = all.find((c) => c.key === key);
+    if (all.some((c) => c.key !== key && Math.abs(c.start - clip.start) < 0.05))
+      return { problem: `the new clip at ${at} s starts at ${clip.start.toFixed(2)} s, where another clip does, so pick another place for it` };
+    return { key };
+  };
   // What went to and from the Go side about captions, and what the video
   // preview said in the log, each by the clock of this machine: told with
   // a click that changed more than once, to say which of them came late.
@@ -14310,12 +14331,26 @@ async function pickCards(page, n) {
     const held = i % 2 === 1;
     let key;
     if (held) {
-      // Held 100 ms, so the captions' whole way stays well inside the 600
-      // ms a frame waits for them, DRESS_WAIT in queue.ts, on a machine
-      // busy with other walks too. Held 250 ms, the way there took 624 ms
-      // once beside three other walkers, and the frame went up first.
-      await control(url, "/hold?call=Captions&ms=100&times=100");
-      [key] = await newCards(page, 1, () => ask(page, "MakeClip", path, fresh.shift(), false));
+      // Held behind a gate until the clip's frame waits for its captions,
+      // and only then let through, so the frame is seen to wait for them
+      // on any machine. They were held 100 ms, and on a busy machine they
+      // were read ahead before the click, and the clip came at once,
+      // issue #438.
+      await control(url, "/hold?call=Captions&gate=shut");
+      // Both before the click, so what the card before left in them
+      // cannot open the gate early, whatever order the page runs the
+      // walk's evaluations in.
+      await page.evaluate(() => {
+        window.__captionsOpen = false;
+        window.__clickChanged = false;
+      });
+      const made = await freshClip();
+      if (made.problem) {
+        problems.push(`card ${i + 1}: ${made.problem}`);
+        await control(url, "/hold?call=Captions&gate=open");
+        break;
+      }
+      key = made.key;
     } else {
       await restAhead(page);
       const { cards, current } = await cardsNow(page);
@@ -14324,9 +14359,20 @@ async function pickCards(page, n) {
     }
     const clicked = Date.now();
     clicks.push(clicked);
-    const bare = await page.evaluate(() => window.__frameQueue.stats.bare);
-    const { looks } = await clickCard(page, key, null);
-    if (held) await control(url, "/hold?call=Captions&ms=0&times=0");
+    const { bare, waitedForDress } = await page.evaluate(() => window.__frameQueue.stats);
+    const clicking = clickCard(page, key, null);
+    if (held) {
+      // The frame of the clip waits for what lies over it, dress in
+      // queue.ts, and then the gate opens. A clip that came without
+      // waiting has changed the video preview by then, and fails below.
+      await page.waitForFunction((was) => window.__frameQueue.stats.waitedForDress > was || window.__clickChanged, waitedForDress, {
+        polling: "raf",
+        timeout: 0,
+      });
+      await page.evaluate(() => (window.__captionsOpen = true));
+      await control(url, "/hold?call=Captions&gate=open");
+    }
+    const { looks } = await clicking;
     // A frame put up without its captions, which did not come in the 600
     // ms it waits, is the machine and not the app: libass took 590 ms to
     // draw one layer once in make changed, beside three other walkers,
@@ -14344,7 +14390,7 @@ async function pickCards(page, n) {
     const changes = changesOf(looks);
     const say = (l) => `${Math.round(l.t)} ms, crop ${l.crop}`;
     const card = `card ${i + 1}${held ? ", a new clip with its captions held" : ""}`;
-    if (!last.captions) problems.push(`${card}: the clip has no caption at its start, so its captions cannot be seen to come`);
+    if (!last.captions) problems.push(`${card}: no caption showed at the start of the clip`);
     else if (changes.length !== 1) {
       problems.push(
         `${card}: the video preview changed ${changes.length} times, not once: ${changes
@@ -14356,7 +14402,7 @@ async function pickCards(page, n) {
           .join(", ")}`,
       );
       late.push({ card: i + 1, clicked });
-    } else if (held && changes[0].t < 100) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before the captions held 100 ms could have`);
+    } else if (held && !changes[0].open) problems.push(`${card}: the clip came ${Math.round(changes[0].t)} ms after the click, before its captions were let through`);
     else if (first.canvas === last.canvas && first.crop === last.crop) problems.push(`${card}: the video preview shows what it showed before`);
     else console.log(`        ${card}: one change, ${say(changes[0])}`);
   }
