@@ -436,6 +436,18 @@ with its newest build, so one fetch is the whole check:
   because GitHub runs nothing for a pull request that no longer merges
   into main: #24 was closed in that state, the close was never seen, and
   the app went on offering it.
+- **The channel followed is read from its own entry too.** A build and
+  its entry, `channel-<channel>.json`, are uploaded in one step, and the
+  list is written from the entries only after that, in one queue that
+  every build of every channel shares. On 20 October the list took two
+  minutes to follow a build of #367, and a pick in between came back at
+  once as the build before, which was kept in the cache, #420. So every
+  read of the list also reads the entry of the channel followed, and
+  when the entry is of a newer build, by `published`, it takes the
+  list's place for that channel, with the list's name, `newest` and
+  `conflict`. The entry is checked the way the list is, claim and all.
+  One that is missing for a moment while it is replaced, or is of the
+  build the list has, changes nothing.
 - **A pull request in conflict says so.** One that no longer merges into
   main keeps its entry, because its build is of the branch as it is and
   can still be tried, and the list marks it with `"conflict": true`. The

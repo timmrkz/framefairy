@@ -5,12 +5,14 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"sync"
 	"time"
 
@@ -50,6 +52,13 @@ type Source struct {
 	// Copies are the addresses of the two copies of the list, read before
 	// URL, see ListCopies. Empty reads URL alone.
 	Copies []string
+	// Entries is the folder each channel's own entry is in, as
+	// channel-<channel>.json, read for the channel followed, see fresher.
+	// Empty reads the list alone.
+	Entries string
+	// Newer is told when the followed channel's own entry is of a newer
+	// build than the list's, and is offered in its place.
+	Newer func(listed, entry Build)
 
 	// fetches are the builds on their way into the cache, by SHA-256, see
 	// fetch.go.
@@ -85,11 +94,61 @@ func (s *Source) Fetch(ctx context.Context) (List, error) {
 	if err != nil {
 		return List{}, err
 	}
+	list = s.fresher(ctx, list)
 	s.prune(list)
 	if s.Seen != nil {
 		s.Seen(list)
 	}
 	return list, nil
+}
+
+// fresher is the list with the followed channel's own entry in the place
+// of the list's, when the entry is of a newer build. The publish workflow
+// uploads a build and its entry in one step, and writes the list from
+// every entry only after that, in one queue that every build of every
+// channel shares. On 20 October the list took two minutes to follow a
+// build of a pull request, and Tim picked it in between: the list still
+// named the build before, which was kept in the cache, so the app came
+// back as that at once, issue #420. The entry is as untrusted as the list
+// and is checked the same way, its claim among it before it is installed.
+// An entry that cannot be read, or is of the build the list has or an
+// older one, leaves the list as it is.
+func (s *Source) fresher(ctx context.Context, list List) List {
+	picked := ""
+	if s.Picked != nil {
+		picked = s.Picked()
+	}
+	wanted := Followed(picked, s.Own)
+	if s.Entries == "" || !ValidChannel(wanted) {
+		return list
+	}
+	at := slices.IndexFunc(list.Channels, func(b Build) bool { return b.Channel == wanted })
+	if at < 0 {
+		return list
+	}
+	data, err := s.read(ctx, s.Entries+"channel-"+wanted+".json")
+	if err != nil {
+		return list
+	}
+	var b Build
+	if err := json.Unmarshal(data, &b); err != nil || b.Check() != nil || b.Channel != wanted {
+		return list
+	}
+	listed := list.Channels[at]
+	if !b.Published.After(listed.Published) {
+		return list
+	}
+	// What only the list knows stays: the pull request's title now, the
+	// newer commit still to be built, unless it is this build's, and
+	// whether it merges.
+	b.Name, b.Newest, b.Conflict = listed.Name, listed.Newest, listed.Conflict
+	b.Newest = b.Behind()
+	if s.Newer != nil {
+		s.Newer(listed, b)
+	}
+	list.Channels = slices.Clone(list.Channels)
+	list.Channels[at] = b
+	return list
 }
 
 // fetchCopies reads both copies of the list at once and keeps the one
@@ -145,26 +204,36 @@ func (s *Source) fetchRetrying(ctx context.Context) (List, error) {
 }
 
 func (s *Source) fetch(ctx context.Context, addr string) (List, error) {
+	data, err := s.read(ctx, addr)
+	if err != nil {
+		return List{}, err
+	}
+	return Parse(data)
+}
+
+// read reads a file of the release, a copy of the list or an entry, no
+// more than MaxList of it, so Parse can tell one that is too large.
+func (s *Source) read(ctx context.Context, addr string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
 	if err != nil {
-		return List{}, err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := s.client().Do(req)
 	if err != nil {
-		return List{}, fmt.Errorf("the channel list could not be fetched: %w", err)
+		return nil, fmt.Errorf("the channel list could not be fetched: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return List{}, &statusError{code: resp.StatusCode, status: resp.Status}
+		return nil, &statusError{code: resp.StatusCode, status: resp.Status}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxList+1))
 	if err != nil {
-		return List{}, fmt.Errorf("the channel list could not be read: %w", err)
+		return nil, fmt.Errorf("the channel list could not be read: %w", err)
 	}
-	return Parse(data)
+	return data, nil
 }
 
 // Check implements updater.Provider.

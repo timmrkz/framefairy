@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 // flaky serves the channel list, answering with code for the first misses
@@ -313,4 +315,96 @@ func TestChecksAtOnceWhileTheCopiesAreReplaced(t *testing.T) {
 	if n := r.asks("/channels.json"); n != 0 {
 		t.Errorf("the list itself was asked for %d times", n)
 	}
+}
+
+// Issue #420: Tim picked a pull request two minutes after its newest build
+// was published, while the list, written from every entry in a queue all
+// builds share, still named the build before. That one was in the cache,
+// so the app came back as it at once. The channel's own entry is uploaded
+// with its build, so it is read for the channel followed, and a newer
+// build there is the one offered.
+func TestTheFollowedChannelsOwnEntryIsNewerThanTheList(t *testing.T) {
+	t.Parallel()
+	key := testKey(t)
+	r, srv := serveRelease(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	listed := build(t, key, "pr-367", "0.3.0-pr367.5ae00f1", "https://example.com/old.zip", appZip(t, "old"))
+	listed.Name, listed.Published, listed.Newest = "#367 Search what was said", now.Add(-time.Hour), "abc4de25c523"
+	other := build(t, key, "main", "0.3.0-main.1", "https://example.com/main.zip", appZip(t, "main"))
+	list, err := json.Marshal(List{Channels: []Build{other, listed}, Written: now.Add(-2 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.set("/channels-a.json", list)
+	entry := build(t, key, "pr-367", "0.3.0-pr367.abc4de2", "https://example.com/new.zip", appZip(t, "new"))
+	entry.Commit, entry.Published = "abc4de25c523", now.Add(-time.Minute)
+	entry.Claim = SignClaim(key, entry)
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.set("/channel-pr-367.json", data)
+
+	var seen []Build
+	var told [][2]string
+	src := copiesOf(srv)
+	src.Entries = srv.URL + "/"
+	src.Key = key.Public().(ed25519.PublicKey)
+	src.Picked = func() string { return "pr-367" }
+	src.Seen = func(l List) { seen = l.Channels }
+	src.Newer = func(listed, entry Build) { told = append(told, [2]string{listed.Version, entry.Version}) }
+	rel, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-pr412.174466c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel == nil || rel.Version != "0.3.0-pr367.abc4de2" {
+		t.Fatalf("offered %+v, not the entry's newer build", rel)
+	}
+	got, _ := (List{Channels: seen}).Find("pr-367")
+	if got.Version != entry.Version || got.Name != listed.Name || got.Newest != "" {
+		t.Errorf("the page was shown %+v, not the entry's build with the list's name and nothing newer to come", got)
+	}
+	if m, _ := (List{Channels: seen}).Find("main"); m.Version != other.Version {
+		t.Errorf("main became %+v", m)
+	}
+	if len(told) != 1 || told[0] != [2]string{listed.Version, entry.Version} {
+		t.Errorf("told %v", told)
+	}
+	if n := r.asks("/channel-main.json"); n != 0 {
+		t.Errorf("the entry of a channel not followed was read %d times", n)
+	}
+
+	// An entry of the build the list has, or an older one, an entry that
+	// is gone for a moment while it is replaced, and one that names
+	// another channel all leave the list as it is.
+	for name, data := range map[string][]byte{
+		"older":   mustJSON(t, func() Build { b := entry; b.Published = now.Add(-2 * time.Hour); return b }()),
+		"missing": nil,
+		"another": mustJSON(t, func() Build { b := entry; b.Channel = "pr-368"; return b }()),
+		"broken":  []byte("{"),
+	} {
+		r.set("/channel-pr-367.json", data)
+		rel, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-pr412.174466c"})
+		if err != nil || rel == nil || rel.Version != listed.Version {
+			t.Errorf("with an entry %s, offered %+v, %v, not the list's build", name, rel, err)
+		}
+	}
+
+	// The entry is as untrusted as the list: one whose claim is not of
+	// the build it names is not installed.
+	forged := entry
+	forged.Version = "0.3.0-pr367.fffffff"
+	r.set("/channel-pr-367.json", mustJSON(t, forged))
+	if rel, err := src.Check(context.Background(), updater.CheckRequest{CurrentVersion: "0.3.0-pr412.174466c"}); err == nil {
+		t.Errorf("an entry with a claim of another build was offered: %+v", rel)
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
