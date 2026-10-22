@@ -112,10 +112,11 @@ func (d *desk) start(st *store) {
 		return true
 	}
 	// The save box is the desk's: it saves on the desk's Desktop under the
-	// name the app offers, so a walk can read what was exported.
+	// name the app offers, in the store's files, so a walk can read what
+	// was exported.
 	d.svc.saveBox = func(name string) (string, error) {
 		desktop := filepath.Join(d.home, "Desktop")
-		if err := os.MkdirAll(desktop, 0o755); err != nil {
+		if err := st.files.MkdirAll(desktop, 0o755); err != nil {
 			return "", err
 		}
 		path := filepath.Join(desktop, name)

@@ -485,7 +485,7 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
-		body, err := os.ReadFile(*p)
+		body, err := afero.ReadFile(b.d.svc.store.files, *p)
 		answer(w, map[string]string{"name": filepath.Base(*p), "text": string(body)}, err)
 	})
 	// The app's log, which the bridge keeps none of until a walk asks:
