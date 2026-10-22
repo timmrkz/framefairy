@@ -115,13 +115,43 @@ is ".golangci.yml" "lint lint-rules"
 is "scripts/testdata/lint/walks/waits.mjs" "lint lint-rules"
 is "frontend/eslint-suppressions.json" "interface lint-rules"
 
+# Tests that run the decoder as a program do not import it, so what
+# builds it reaches them by FRAMEFAIRY_FRAMES.
+has "cmd/framefairy-frames/main.go" "go framefairy/cmd/framefairy-frames" "go framefairy/engine" "go framefairy/cmd/framefairy-app"
+has "scripts/build-ffmpeg.sh" "go framefairy/engine" "go framefairy/cmd/framefairy-app"
+lacks "cmd/framefairy-frames/ink_test.go" "go framefairy/engine"
+# A changed test runs ffmpegtest's own test, not its importers.
+lacks "updates/cache_test.go" "go framefairy/engine"
+
+# internal/ffmpegtest reads every test for skips, as offdisk does.
+has "engine/rotate_test.go" "go framefairy/internal/ffmpegtest"
+lacks "engine/rotate.go" "go framefairy/internal/ffmpegtest"
+
+# The notices test counts the hyphenation files by a path it builds.
+has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/notices"
+
+# The scripts the Go jobs run decide how they run, like the Makefile.
+has "scripts/fuzz.sh" "build" "go framefairy/engine" "go framefairy/updates"
+has "scripts/ci-packages.sh" "build" "go framefairy/engine" "go framefairy/updates"
+
+# The fuzz targets are those of the packages a change reaches, all of them.
+fuzz=$(CHANGED=updates/source.go sh "$here/changed.sh" --fuzz-targets 2>/dev/null)
+if [ "$fuzz" = "FuzzKeyFromLink FuzzKnownStaysInTheLibrary FuzzParse" ]; then
+	printf 'ok  \t%-44s fuzz %s\n' "updates/source.go" "$fuzz"
+else
+	printf 'FAIL\t%-44s wanted the targets of updates and the app, got: %s\n' "updates/source.go" "$fuzz"
+	fail=1
+fi
+
 # The modules are every package.
 has "go.sum" "go framefairy/engine" "go framefairy/updates" "go framefairy/train"
 
-# How the project is built is the build, and not the Go tests.
-is "Makefile" "build"
+# How the project is built is the build. The Makefile and the CI
+# workflow also decide how the Go tests run, so they are every package.
+has "Makefile" "build" "go framefairy/engine" "go framefairy/updates"
+has ".github/workflows/ci.yml" "go framefairy/engine" "go framefairy/updates"
+lacks ".github/workflows/builds.yml" "go framefairy/engine"
 has "scripts/build-ffmpeg.sh" "build" "script scripts/build-ffmpeg.sh"
-lacks "scripts/build-ffmpeg.sh" "go framefairy/engine"
 # Except for the Go test that reads it: the notices test checks the
 # versions the build scripts pin.
 has "scripts/build-ffmpeg.sh" "go framefairy/notices"
@@ -148,5 +178,46 @@ is "build/icon.png" "build"
 
 # A mix runs everything it touches.
 has "frontend/src/App.svelte updates/source.go docs/UPDATES.md" "interface" "go framefairy/updates"
+
+# Two cases that need a real checkout, made in a worktree of its own
+# with this changed.sh in it. A file moved out of a package is seen at
+# the place it left too, since git reports a move by its new place only.
+# And a package reached through its external tests, package x_test, is
+# named x, the package go test knows.
+root=$(CDPATH= cd -- "$here/.." && pwd)
+wt=$(mktemp -d)
+if git -C "$root" worktree add -q --detach "$wt" HEAD 2>/dev/null; then
+	cp "$here/changed.sh" "$wt/scripts/changed.sh"
+	git -C "$wt" update-index --skip-worktree scripts/changed.sh
+	mkdir "$wt/updates/sub"
+	git -C "$wt" mv updates/cache_test.go updates/sub/cache_test.go
+	printf 'package train_test\n\nimport _ "framefairy/licence"\n' >"$wt/train/outside_test.go"
+	echo "// changed" >>"$wt/licence/licence.go"
+	# MAKE=true: changed.sh asks make for the toolchain first, which the
+	# job build runs this before it installs, and a plan needs none of it.
+	got=$(cd "$wt" && MAKE=true BASE=HEAD sh scripts/changed.sh --plan 2>/dev/null | tr '\n' ' ')
+	git -C "$root" worktree remove --force "$wt"
+	case " $got " in
+	*" go framefairy/train_test "*)
+		printf 'FAIL\t%-44s did not want go framefairy/train_test, plan is: %s\n' "an external test package" "$got"
+		fail=1
+		;;
+	*" go framefairy/train "*) printf 'ok  \t%-44s %s\n' "an external test package" "go framefairy/train" ;;
+	*)
+		printf 'FAIL\t%-44s wanted go framefairy/train, plan is: %s\n' "an external test package" "$got"
+		fail=1
+		;;
+	esac
+	case " $got " in
+	*" go framefairy/updates "*) printf 'ok  \t%-44s %s\n' "a move out of updates/" "go framefairy/updates" ;;
+	*)
+		printf 'FAIL\t%-44s wanted go framefairy/updates, plan is: %s\n' "a move out of updates/" "$got"
+		fail=1
+		;;
+	esac
+else
+	printf 'FAIL\tno worktree for the cases that need one\n'
+	fail=1
+fi
 
 exit "$fail"

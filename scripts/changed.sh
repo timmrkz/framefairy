@@ -5,6 +5,9 @@
 #                             committed or not
 #   sh scripts/changed.sh --plan
 #                             say what would run, and run nothing
+#   sh scripts/changed.sh --fuzz-targets
+#                             name the fuzz targets a change reaches, and
+#                             run nothing
 #
 # make test runs everything, which is ten minutes, most of it the engine's
 # tests under the race detector and ten thousand executions of every fuzz
@@ -13,25 +16,30 @@
 #
 #   Go code         gofmt on the files, then go vet and the tests under the
 #                   race detector for the packages that changed and every
-#                   package that imports them, and of their fuzz targets
-#                   those that go through a changed file, see
-#                   fuzz_what_changed. go.mod or go.sum is every package
-#                   and every target. A changed test also runs
-#                   internal/offdisk, which reads every test file, and
-#                   make lint, which reads them for waits on the clock.
+#                   package that imports them, and their fuzz targets,
+#                   see fuzz_targets. go.mod or go.sum is every package
+#                   and every target. A changed test also runs the
+#                   tests of internal/offdisk and internal/ffmpegtest,
+#                   which read every test file, and make lint, which
+#                   reads them for waits on the clock. The decoder and
+#                   scripts/build-ffmpeg.sh reach the tests that run the
+#                   decoder, and the hyphenation files reach notices.
 #   frontend/       make interface
 #   the linters' settings and scripts/lint-test.sh
 #                   that test, which proves them
 #   Makefile, a script, a workflow
 #                   what that file is for: make for the build, the rules
 #                   tests for the rules, a read by its own shell for a
-#                   script, a read of the YAML for a workflow
+#                   script, a read of the YAML for a workflow. The
+#                   Makefile and ci.yml decide how the Go tests run, so
+#                   they are every package and every target too
 #   docs            nothing, but docs/GUI-PLAN.md runs the check that it
 #                   is history and left alone, scripts/plan-frozen.sh
 #
 # Anything it does not know runs the build, so a file nobody thought of is
-# checked rather than skipped. CI still runs everything on every pull
-# request. This is for getting there with fewer round trips, not instead.
+# checked rather than skipped. On a pull request CI runs the Go packages
+# --plan names and fuzzes those --fuzz-targets names, comparing with main,
+# see ci.yml. A push to main still runs everything.
 #
 # BASE= names another commit to compare with. CHANGED= hands it the list of
 # files instead of asking git, which is how scripts/changed-test.sh checks
@@ -59,7 +67,9 @@ else
 		base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || echo HEAD)
 	fi
 	changed=$({
-		git diff --name-only "$base" 2>/dev/null
+		# Without renames, so a file moved out of a package is seen at
+		# the place it left as well.
+		git diff --name-only --no-renames "$base" 2>/dev/null
 		git ls-files --others --exclude-standard 2>/dev/null
 	} | sort -u)
 fi
@@ -70,8 +80,10 @@ if [ -z "$changed" ]; then
 fi
 
 # Go and the modules first, the same check make does before it builds,
-# so a go.mod that changed is resolved before anything reads it.
-[ -z "${CHANGED+x}" ] && $MAKE -s --no-print-directory toolchain modules >/dev/null
+# so a go.mod that changed is resolved before anything reads it. What
+# they say goes to stderr, so a tool that is missing is named, and the
+# plan on stdout stays the plan.
+[ -z "${CHANGED+x}" ] && $MAKE -s --no-print-directory toolchain modules >&2
 
 # Every package of the module, as a directory relative to the top.
 module=$($GO list -m)
@@ -103,7 +115,17 @@ read_by_tests() {
 	done
 }
 
+# runs_the_decoder adds the package of every Go test that runs the
+# episode's decoder as a program, through FRAMEFAIRY_FRAMES. They do not
+# import it, so the imports never lead to them.
+runs_the_decoder() {
+	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git FRAMEFAIRY_FRAMES . 2>/dev/null); do
+		gopkgs="$gopkgs $(package_of "${t#./}")"
+	done
+}
+
 gopkgs=""
+alone=""
 gofiles=""
 all_go=0
 interface=0
@@ -155,7 +177,12 @@ for file in $changed; do
 		read_by_tests "$file"
 		;;
 	go.mod | go.sum) all_go=1 ;;
-	Makefile) build=1 ;;
+	# make unit and the job linux decide how the Go tests run, the
+	# flags, the PATH and the shards, so a change to either runs them all.
+	Makefile)
+		build=1
+		all_go=1
+		;;
 	.github/ci-filters.yml) rules=1 ;;
 	scripts/ci-filters-test.sh)
 		rules=1
@@ -177,12 +204,21 @@ for file in $changed; do
 		plan_rules=1
 		shells="$shells $file"
 		;;
+	# The Go jobs run these, so they decide how the tests run and what
+	# is fuzzed, like the Makefile.
+	scripts/fuzz.sh | scripts/ci-packages.sh)
+		shells="$shells $file"
+		build=1
+		all_go=1
+		;;
 	*.sh)
 		shells="$shells $file"
 		build=1
 		# The notices test reads the build scripts for the versions they
 		# pin, and a raised version passed here and failed in CI.
 		read_by_tests "$file"
+		# The decoder is built against the ffmpeg this builds.
+		[ "$file" = scripts/build-ffmpeg.sh ] && runs_the_decoder
 		;;
 	.github/workflows/*)
 		workflows="$workflows $file"
@@ -190,7 +226,10 @@ for file in $changed; do
 		# and the builds and publish workflows are what the rule for a
 		# build is for.
 		case $file in
-		*/ci.yml) rules=1 ;;
+		*/ci.yml)
+			rules=1
+			all_go=1
+			;;
 		*/builds.yml | */publish.yml) build_rules=1 ;;
 		*/main-moved.yml) moved_rules=1 ;;
 		esac
@@ -201,12 +240,20 @@ for file in $changed; do
 		if [ -n "$pkg" ]; then
 			gopkgs="$gopkgs $pkg"
 			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
-			# internal/offdisk reads every test file and imports none, so
-			# a changed test is what reaches it, and make lint too.
-			case $file in *_test.go)
-				gopkgs="$gopkgs $module/internal/offdisk"
+			case $file in
+			# internal/offdisk and internal/ffmpegtest have a test that
+			# reads every test file, so a changed test is what reaches
+			# them, and make lint too. Their own tests and no more: the
+			# engine's tests import ffmpegtest, and a changed test is no
+			# change to it.
+			*_test.go)
+				alone="$alone $module/internal/offdisk $module/internal/ffmpegtest"
 				lint=1
 				;;
+			cmd/framefairy-frames/*) runs_the_decoder ;;
+			# The notices test counts these by a path it builds, which
+			# read_by_tests cannot find.
+			engine/hyphenation/*) gopkgs="$gopkgs $module/notices" ;;
 			esac
 		else
 			build=1
@@ -225,10 +272,14 @@ elif [ -n "$gopkgs" ]; then
 	affected=$($GO list -test -f '{{.ImportPath}} {{join .Deps " "}}' ./... |
 		while read -r pkg deps; do
 			# A test variant reads "p [p.test]" and p.test is its binary.
-			case $pkg in *.test) continue ;; esac
+			# Each pattern opens with "(" because the bash 3.2 of macOS
+			# reads a lone ")" inside $( ) as its end.
+			case $pkg in (*.test) continue ;; esac
 			pkg=${pkg%% *}
+			# An external test package, x_test, is tested as x.
+			pkg=${pkg%_test}
 			for c in $gopkgs; do
-				case " $pkg $deps " in *" $c "*)
+				case " $pkg $deps " in (*" $c "*)
 					echo "$pkg"
 					break
 					;;
@@ -236,6 +287,7 @@ elif [ -n "$gopkgs" ]; then
 			done
 		done | sort -u)
 fi
+[ -n "$alone" ] && affected=$(printf '%s\n' $affected $alone | sort -u)
 
 # What will run, said first, so a run that is less than expected is seen
 # before it is trusted.
@@ -288,77 +340,30 @@ if [ "$plan_only" = 1 ]; then
 	exit 0
 fi
 
-# The fuzz targets a change reaches, fuzzed, and no others. Fuzzing is the
-# slow part, ten thousand executions a target, and most targets read one
-# kind of input a change never goes near. A target is fuzzed when:
-#
-#   one of its own seeds changed, in testdata/fuzz/<target>/
-#   a test file of its package changed, which may be the target itself
-#   go.mod or go.sum changed, which can change anything
-#   running its seeds once, with coverage, goes through a file that changed
-#
-# The last is the one that decides most of the time. Running the seeds is
-# what go test does anyway, and takes a second. What it goes through is
-# what the target is about, so a change to the renderer does not fuzz the
-# plan reader, and a change to the plan reader does.
-fuzz_what_changed() {
-	gosources=""
-	gotests=""
-	for f in $changed; do
-		case $f in
-		*_test.go) gotests="$gotests $f" ;;
-		*.go) gosources="$gosources $f" ;;
-		esac
-	done
-	targets=""
-	skipped=""
-	# Every target, found in the source by the script that fuzzes them.
+# The fuzz targets of the packages a change reaches, by name on one line.
+# It once ran each target's seeds with coverage and fuzzed only those that
+# went through a changed file. For a change to engine/clips.go that took
+# 122 s, where fuzzing every target of those packages took 46 s, so a
+# package that is tested is fuzzed whole.
+fuzz_targets() {
 	all=$(sh scripts/fuzz.sh --list)
+	targets=""
 	for pkg in $affected; do
 		dir=${pkg#"$module"}
 		dir=${dir#/}
 		[ -z "$dir" ] && dir=.
-		for target in $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }'); do
-			if fuzz_reaches "$pkg" "$dir" "$target"; then
-				targets="$targets $target"
-			else
-				skipped="$skipped $target"
-			fi
-		done
+		targets="$targets $(printf '%s\n' "$all" | awk -v d="./$dir" '$1 == d { print $2 }')"
 	done
-	[ -n "$skipped" ] && printf 'skip	fuzzing%s, which no change reaches\n' "$skipped"
-	if [ -n "$targets" ]; then
-		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="${targets# }" sh scripts/fuzz.sh
-	fi
+	echo $targets
 }
 
-fuzz_reaches() {
-	pkg=$1
-	dir=$2
-	target=$3
-	[ "$all_go" = 1 ] && return 0
-	for f in $changed; do
-		case $f in "$dir"/testdata/fuzz/"$target"/*) return 0 ;; esac
-	done
-	for f in $gotests; do
-		[ "$(dirname -- "$f")" = "$dir" ] && return 0
-	done
-	[ -z "$gosources" ] && return 1
-	profile=$(mktemp)
-	if ! $GO test -run "^$target\$" -coverpkg="$module/..." -coverprofile="$profile" "$pkg" >/dev/null 2>&1; then
-		# Its seeds fail, so fuzzing it says why.
-		rm -f "$profile"
-		return 0
-	fi
-	for f in $gosources; do
-		if grep "^$module/$f:" "$profile" | awk '$NF > 0 { hit = 1 } END { exit !hit }'; then
-			rm -f "$profile"
-			return 0
-		fi
-	done
-	rm -f "$profile"
-	return 1
-}
+# --fuzz-targets says them and stops, which is how CI hands them to make
+# fuzz on a pull request.
+if [ "${1:-}" = "--fuzz-targets" ]; then
+	targets=$(fuzz_targets)
+	echo "$targets"
+	exit 0
+fi
 
 if [ -n "$gofiles" ]; then
 	unformatted=$(gofmt -l $gofiles)
@@ -379,7 +384,10 @@ if [ -n "$affected" ]; then
 	path=$PATH
 	PATH=${TOOLS_FIRST:-$PATH}
 	$GO test -race -ldflags "${LDFLAGS:-}" $affected
-	fuzz_what_changed
+	targets=$(fuzz_targets)
+	if [ -n "$targets" ]; then
+		GO=$GO FUZZTIME=$FUZZTIME FUZZTARGETS="$targets" sh scripts/fuzz.sh
+	fi
 	PATH=$path
 fi
 

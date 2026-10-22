@@ -578,7 +578,8 @@ messages, pull request text, code comments and chat replies.
   to one package is checked in seconds rather than the ten minutes of
   everything, and a change that reaches everything, `go.mod` or the
   engine, still runs what it reaches. `make test` runs all of it, for a
-  deep run by hand. CI runs everything anyway, on both systems.
+  deep run by hand. On a pull request CI tests and fuzzes the same Go
+  packages, on both systems, and a push to main runs everything.
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
   see `engine/files.go`: the programs hand them the real disk, a test
@@ -725,7 +726,8 @@ the skills listed last show their name without what they are for.
   [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes. On a pull request a
   first job reads which paths changed, by `.github/ci-filters.yml`, and a
-  job with nothing to do never starts a machine. A push to main narrows
+  job with nothing to do never starts a machine, and the Go jobs test
+  and fuzz only what `make changed` picks. A push to main narrows
   nothing. `make changed` runs what a branch
   reaches, `make test` runs the lot, and `make unit`, `make fuzz`,
   `make interface` and `make walks` are the four parts of it, see
