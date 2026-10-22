@@ -81,9 +81,12 @@ func (b *bus) send(name string, data any) {
 	for c := range b.subs {
 		// A browser that does not keep up misses an event rather than
 		// holding up the queue that sent it, which is what Wails does too.
+		// It is said, since a walk waiting on that event then waits for
+		// good, and the reason is in what the bridge printed.
 		select {
 		case c <- body:
 		default:
+			fmt.Fprintf(os.Stderr, "the bridge dropped %q for a page that did not keep up\n", name)
 		}
 	}
 }
@@ -419,6 +422,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.model.fails(q.Get("fail") == "1")
 		b.d.model.hangs(q.Get("hang") == "1")
 		answer(w, nil, nil)
+	})
+	// How many answers the model holds now, so a walk knows how many
+	// searches wait on it and have nothing to report.
+	mux.HandleFunc("/model-holding", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, b.d.model.holding.Load(), nil)
 	})
 	// The person dictating stops talking, and the microphone hears
 	// nothing more once the phrase it is on has been said.

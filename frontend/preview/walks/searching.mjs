@@ -29,24 +29,34 @@ async function searchOf(path) {
 
 const running = (j) => j.state === "running" || j.state === "queued";
 
-// Whether the engine's work has more to report by itself: a job runs that
-// is not waiting on a model holding its answers. One that only waits its
-// turn behind it reports nothing either.
+// Whether the engine's work has more to report by itself: more jobs run
+// than the model holds answers for, as the bridge's model says itself,
+// whatever step a held search is in. One that only waits its turn behind
+// it reports nothing either.
 async function reporting() {
-  const jobs = (await ask(page, "Jobs")).filter((j) => j.state === "running");
-  return jobs.some((j) => !(model.hang && j.step === "finding"));
+  const jobs = (await ask(page, "Jobs")).filter((j) => j.state === "running" && j.step !== "waiting");
+  return jobs.length > (await control(url, "/model-holding"));
 }
 
 // Waits on the engine's reports until the first search of a video just
 // added has ended and nothing of the video runs any more, and hands back
 // that search. A search started late, once the video is heard, is waited
-// for, since starting is reported too.
+// for, since starting is reported too. Once nothing of the engine runs at
+// all and the app has caught up with it, and the video still has no
+// search, nothing is left to start one: that hands back null.
 async function firstSearch(path) {
   for (;;) {
     const seen = await news(page);
-    const jobs = (await ask(page, "Jobs")).filter((j) => j.episode === path);
+    const all = await ask(page, "Jobs");
+    const jobs = all.filter((j) => j.episode === path);
     const search = jobs.find((j) => j.kind === "search");
     if (search && !jobs.some(running)) return search;
+    if (!search && !all.some(running)) {
+      await caughtUp(page, url, jobs);
+      const again = (await ask(page, "Jobs")).filter((j) => j.episode === path);
+      if (!again.some((j) => j.kind === "search")) return null;
+      continue;
+    }
     await nextNews(page, seen);
   }
 }
@@ -79,11 +89,11 @@ function expected(job) {
 async function agree() {
   let problem = null;
   for (let looks = 0; looks < 24; looks++) {
-    const before = await heardJobs();
+    const before = await heardAll();
     const path = await episodeOn();
     if (!path) return null;
     const job = await searchOf(path);
-    await caughtUp(page, url);
+    await caughtUp(page, url, job ? [job] : []);
     const list = await clipList(page);
     const want = expected(job);
     problem = null;
@@ -98,13 +108,15 @@ async function agree() {
       }
     }
     if (!problem) return null;
-    if ((await heardJobs()) === before) return problem;
+    if ((await heardAll()) === before) return problem;
   }
   return problem;
 }
 
-// How many reports of its work the app has heard from the engine.
-const heardJobs = () => page.evaluate(() => window.__heard.job ?? 0);
+// How many times the app has been told anything by the Go side, the
+// marks aside: a job's report, a plan written anew, a clip list.
+const heardAll = () =>
+  page.evaluate(() => Object.entries(window.__heard).reduce((n, [name, c]) => (name === "mark" ? n : n + c), 0));
 
 const pressHead = () => pressHeadOn(page);
 
@@ -132,7 +144,7 @@ const gestures = [
       // transcribed, so the next steps land in the middle of it.
       if (!model.hang && !model.fail && pace === 0) {
         const search = await firstSearch(path);
-        await caughtUp(page, url);
+        await caughtUp(page, url, search ? [search] : []);
         const list = await clipList(page);
         if (search?.state !== "done" || list?.head !== "Search" || !list.cards.length) {
           watch.broke(

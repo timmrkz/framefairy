@@ -105,8 +105,8 @@ const gestures = [
     async run() {
       const ms = 300 + rng.int(1200);
       await page.evaluate(() => document.body.focus());
-      await playFor(page, ms / 1000);
-      return `play ${ms} ms of the video`;
+      const played = await playFor(page, ms / 1000);
+      return played ? `play ${ms} ms of the episode` : "the space bar played nothing";
     },
   },
 ];

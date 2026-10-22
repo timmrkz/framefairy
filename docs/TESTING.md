@@ -187,10 +187,12 @@ Redo, and playing for a moment. The words typed are some of the
 episode's own, the words the walk has removed above all, so it types
 them back in, and some it never says. Each Shift and arrow waits until
 the video preview shows the frame of the word it stepped to before the
-next is pressed, `shownOnPlayhead` in `walks/bridge.mjs`, and a play
-goes on until the playhead has moved as far as the walk asked, or the
-clip has ended, `playFor`. Neither waits on the clock, so a busy
-machine takes longer over a step, never another step.
+next is pressed, once the app has settled on the press,
+`shownOnPlayhead` in `walks/bridge.mjs`. A play goes on until the
+playhead has moved as far into the episode as the walk asked, or the
+clip has ended, `playFor`, which pauses in the frame it sees that, and
+says so when the space bar played nothing. Neither waits on the clock,
+so a busy machine takes longer over a step, never another step.
 
 The rules, after every step, once no call has been on its way for a
 quarter of a second:
@@ -313,13 +315,14 @@ wait. With the speech quick and the model answering, adding a video waits
 for its first clips. With the speech slow the walk goes on while the
 video is transcribed, so the next steps land in the middle of it. The
 wait goes on for one to four of the engine's reports of its work, a job
-event each, or not at all when nothing runs that would report, none
-running, or a search waiting on a model that holds its answers. It
-never waits on the clock. The rules, besides every walk's:
+event each, or not at all when nothing runs that would report: no more
+jobs run than the bridge's model holds answers for, `/model-holding`,
+whatever step a held search is in. It never waits on the clock. The
+rules, besides every walk's:
 
 | Rule | |
 | --- | --- |
-| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports |
+| A new video gets its first clips with no click | while the models answer and the speech is quick, judged once its first search has ended and nothing of the video runs, by the engine's reports. Broken too when nothing of the engine runs, the app has caught up, and the video has no search |
 | Cancel shows at once: in the frame after the click the head no longer says Cancel, or a row says Stopping | held to a press of the button while it said Cancel |
 | The clip list says what the engine's jobs do: Cancel while a search runs, Continue with "Stopped", "Interrupted" or "Failed. Click Continue" after one that stopped, Search otherwise | the engine is asked, and the screen read once the app has heard everything the engine told it until then and settled, `caughtUp`. Asked again while the engine's work moves on in between, up to 24 looks, and broken the first time it stood still and the two disagree |
 | No row speaks of a failure the engine did not have | |
@@ -336,11 +339,24 @@ The screen is compared with the engine at one moment. `caughtUp` in
 `walks/bridge.mjs` asks the bridge for a mark, `/mark` in
 `bridge_test.go`, which it sends down the events behind everything the
 Go side told the interface before it, and waits until the app has heard
-it, `__mark` in `preview/wails-bridge.ts`, and settled. Every page hears
-the events in the order they were sent, so what the engine said before
-the mark is on screen then, however late a busy machine delivered it.
-How many events of each name the app heard is `__heard`, which says
-whether the engine's work moved on while the walk looked.
+it, `__heardMark` in `preview/wails-bridge.ts`, and settled. Every page
+hears the events in the order they were sent, so what the engine sent
+before the mark is on screen then, however late a busy machine
+delivered it. A job's news is sent after the queue is let go of,
+`queue.update` in `jobs.go`, so a list of jobs can show a change whose
+news the mark overtakes. So `caughtUp` also waits until the app has had
+the newest change of each job the walk compares, by the job's `seq`,
+`__seqs`, from its news and from the lists of jobs the app asked for. It
+asks for the mark only once the app's own stream of events is open,
+`__listening`, so after a reload the mark is not sent to nobody, and the
+bridge prints any event it drops for a page that did not keep up. How
+many events of each name the app heard is `__heard`, which says whether
+anything moved on while the walk looked.
+
+A walk prints every step as it begins, with its seed, and a step that
+throws ends the walk as a broken rule with its seed and steps, see
+`walk.mjs`. `nextNews` waits for good, like `caughtUp` and `playFor`, so
+news that never comes is a walk that hangs, named by its last step.
 
 A search goes on while the walk looks. The model the walk set to fail
 fails a search the moment it comes to finding, and one that answers ends

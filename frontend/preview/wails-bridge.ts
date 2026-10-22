@@ -21,10 +21,16 @@ const calls: { name: string; args: unknown[]; failed?: string }[] = [];
 (window as any).__answered = 0;
 const logOnly = new Set(["Said", "Acted"]);
 
+// Settled once the interface is listening, so a walk asks for a mark only
+// when the interface can hear it, after a reload too.
+let opened = () => {};
+(window as any).__listening = new Promise<void>((done) => (opened = done));
+
 let source: EventSource | null = null;
 function listen() {
   if (source) return;
   source = new EventSource("/events");
+  source.onopen = () => opened();
   source.onmessage = (message) => {
     const { name, data } = JSON.parse(message.data) as { name: string; data: unknown };
     if (paused) paused.push({ name, data });
@@ -34,13 +40,34 @@ function listen() {
 // How many times the interface has been told something of each name, and
 // the last mark it heard, which the bridge sends behind everything it told
 // the interface before, see /mark in bridge_test.go. A walk that has seen
-// a mark come knows the count is whole up to it.
+// a mark come knows the count is whole up to it. window.__heardMark(n)
+// settles once mark n has come.
 const heard: Record<string, number> = {};
 (window as any).__heard = heard;
-(window as any).__mark = 0;
+let mark = 0;
+let waiting: { n: number; done: () => void }[] = [];
+(window as any).__heardMark = (n: number) =>
+  new Promise<void>((done) => (mark >= n ? done() : waiting.push({ n, done })));
+// The newest change of each job the interface has had, by the job's seq,
+// from its news and from the lists of jobs it asked for. The Go side sends
+// a job's news after it lets go of the queue, so a list asked for can show
+// a change whose news is still on its way, and a walk waits for the seq
+// the list showed, see caughtUp in walks/bridge.mjs.
+const seqs: Record<string, number> = {};
+(window as any).__seqs = seqs;
+function had(job: { id?: string; seq?: number } | undefined) {
+  if (!job?.id || typeof job.seq !== "number") return;
+  seqs[job.id] = Math.max(seqs[job.id] ?? 0, job.seq);
+}
 function tell(name: string, data: unknown) {
   heard[name] = (heard[name] ?? 0) + 1;
-  if (name === "mark") (window as any).__mark = data;
+  if (name === "job") had((data as { job?: { id?: string; seq?: number } })?.job);
+  if (name === "mark") {
+    mark = Math.max(mark, data as number);
+    const now = waiting.filter((w) => w.n <= mark);
+    waiting = waiting.filter((w) => w.n > mark);
+    for (const w of now) w.done();
+  }
   for (const fn of listeners.get(name) ?? []) fn({ data });
 }
 
@@ -92,7 +119,9 @@ export const Call = {
       call.failed = body.trim();
       throw new Error(call.failed);
     }
-    return body ? JSON.parse(body) : null;
+    const answered = body ? JSON.parse(body) : null;
+    if (call.name === "Jobs" && Array.isArray(answered)) answered.forEach(had);
+    return answered;
   },
 };
 

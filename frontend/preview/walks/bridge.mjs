@@ -405,37 +405,49 @@ export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
   );
 }
 
-
-// Plays from the playhead until the video has gone on by seconds, or until
-// the play has stopped by itself at the clip's end, and pauses it there.
-// It follows the playhead the video preview says, data-playhead, never the
-// clock, so a busy machine plays as far as a quiet one, only slower. A
-// play that loops back to the clip's start counts on from there. Whether
-// it still plays is asked in the same moment as it is paused, inside the
-// page: asked first and paused after, a clip that reached its end in
-// between would play again from its start.
+// Plays from the playhead until it has gone on by seconds of the episode,
+// a jump over a cut counted as far as it jumps, or until the play has
+// stopped by itself at the clip's end, and pauses it there. It follows the
+// playhead the video preview says, data-playhead, never the clock, so a
+// busy machine plays as far as a quiet one, only slower. A play that loops
+// back to the clip's start counts on from there. The pause is pressed in
+// the frame the play is seen to have gone far enough, inside the page:
+// pressed a trip later, the play went on further the busier the machine,
+// and a clip that reached its end in between would play again from its
+// start. Says false, and plays nothing, when the space bar did not start a
+// play, once the app has settled on the press.
 export async function playFor(page, seconds) {
-  await page.evaluate(() => (window.__played = null));
+  const from = await page.evaluate(() => {
+    window.__played = null;
+    return document.querySelector(".screen")?.dataset.playhead ?? null;
+  });
   await page.keyboard.press("Space");
+  await settle(page);
+  const now = await page.evaluate(() => ({
+    playing: !document.querySelector('button[aria-label="Play"]'),
+    at: document.querySelector(".screen")?.dataset.playhead ?? null,
+  }));
+  if (!now.playing) return now.at !== from;
   await page.waitForFunction(
-    (seconds) => {
+    ([from, seconds]) => {
       const at = Number(document.querySelector(".screen")?.dataset.playhead);
       const playing = !document.querySelector('button[aria-label="Play"]');
-      const p = (window.__played ??= { last: at, gone: 0, started: false });
+      const p = (window.__played ??= { last: from, gone: 0 });
       if (Number.isFinite(at) && at > p.last) p.gone += at - p.last;
       p.last = at;
-      p.started ||= playing;
-      return p.gone >= seconds || (p.started && !playing);
+      if (playing && p.gone < seconds) return false;
+      if (playing) {
+        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+      }
+      window.__played = null;
+      return true;
     },
-    seconds,
+    [Number(from), seconds],
     { polling: "raf", timeout: 0 },
   );
-  await page.evaluate(() => {
-    if (document.querySelector('button[aria-label="Play"]')) return;
-    const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-    document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-    document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-  });
+  return true;
 }
 
 // How many times the Go side has told the interface something of a name,
@@ -462,19 +474,42 @@ export async function news(page, name = "job") {
 
 // Waits until the interface has heard everything the Go side told it up
 // to now, by a mark the bridge sends behind it, see /mark in
-// bridge_test.go, and then until the app has settled on it. What the
-// engine said before this is then what the screen shows, however late a
-// busy machine delivered it.
-export async function caughtUp(page, url) {
+// bridge_test.go, and the newest change of every job in jobs, a list the
+// engine gave, by the job's seq. Then until the app has settled on it.
+// What the engine said and sent before this is then what the screen
+// shows, however late a busy machine delivered it. The seq is waited for
+// too because the Go side sends a job's news after it lets go of the
+// queue, so a list of jobs can show a change whose news the mark
+// overtook. The mark is asked for once the interface is listening, so
+// after a reload too it is not sent to nobody.
+export async function caughtUp(page, url, jobs = []) {
+  await page.waitForFunction(() => window.__listening, null, { polling: "raf", timeout: 0 });
+  await page.evaluate(() => window.__listening);
   const mark = await control(url, "/mark");
-  await page.waitForFunction((mark) => window.__mark >= mark, mark, { polling: "raf", timeout: 0 });
+  const due = jobs.map((j) => [j.id, j.seq]);
+  await page.evaluate(
+    ([mark, due]) =>
+      window.__heardMark(mark).then(() =>
+        new Promise((done) => {
+          const had = () => due.every(([id, seq]) => (window.__seqs[id] ?? 0) >= seq);
+          if (had()) return done();
+          // The news of a job comes after the mark here, and nothing but
+          // the next news says it came, so this looks once a frame.
+          const look = () => (had() ? done() : requestAnimationFrame(look));
+          requestAnimationFrame(look);
+        }),
+      ),
+    [mark, due],
+  );
   await settle(page);
 }
 
 // Waits until the Go side has told the interface something of a name more
-// often than seen, a count news gave, and says how often now.
+// often than seen, a count news gave, and says how often now. It waits
+// for good: news that never comes is a walk that hangs, ended by the
+// -timeout of make walks with the step it was in printed, see walk.mjs.
 export async function nextNews(page, seen, name = "job") {
-  await page.waitForFunction(([name, seen]) => (window.__news?.[name] ?? 0) > seen, [name, seen], { polling: "raf", timeout: 30000 });
+  await page.waitForFunction(([name, seen]) => (window.__news?.[name] ?? 0) > seen, [name, seen], { polling: "raf", timeout: 0 });
   return news(page, name);
 }
 

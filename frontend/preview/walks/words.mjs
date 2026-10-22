@@ -6,7 +6,7 @@
 //   SEED=12 STEPS=80 BRIDGE_URL=http://127.0.0.1:8123/ node words.mjs
 import { begin, walk } from "./walk.mjs";
 import { editing, keyed } from "./rules.mjs";
-import { playFor, shownOnPlayhead } from "./bridge.mjs";
+import { playFor, settle, shownOnPlayhead } from "./bridge.mjs";
 
 const w = await begin();
 const { page, rng } = w;
@@ -28,10 +28,12 @@ const gestures = [
     async run() {
       const key = rng.next() < 0.6 ? "Shift+ArrowRight" : "Shift+ArrowLeft";
       const n = 1 + rng.int(3);
-      // Each step lands before the next is taken: the video preview shows
-      // the frame of the word it stepped to.
+      // Each step lands before the next is taken: once the app has
+      // settled on the press, the video preview shows the frame of the
+      // word it stepped to, as the sequences wait for it.
       for (let i = 0; i < n; i++) {
         await page.keyboard.press(key);
+        await settle(page);
         await shownOnPlayhead(page);
       }
       return `${key} x${n}`;
@@ -153,8 +155,8 @@ const gestures = [
     when: (s) => !editing(s),
     async run() {
       const ms = 300 + rng.int(1500);
-      await playFor(page, ms / 1000);
-      return `play ${ms} ms of the video`;
+      const played = await playFor(page, ms / 1000);
+      return played ? `play ${ms} ms of the episode` : "the space bar played nothing";
     },
   },
 ];
