@@ -241,10 +241,12 @@ elif [ -n "$gopkgs" ]; then
 	affected=$($GO list -test -f '{{.ImportPath}} {{join .Deps " "}}' ./... |
 		while read -r pkg deps; do
 			# A test variant reads "p [p.test]" and p.test is its binary.
-			case $pkg in *.test) continue ;; esac
+			# Each pattern opens with "(" because the bash 3.2 of macOS
+			# reads a lone ")" inside $( ) as its end.
+			case $pkg in (*.test) continue ;; esac
 			pkg=${pkg%% *}
 			for c in $gopkgs; do
-				case " $pkg $deps " in *" $c "*)
+				case " $pkg $deps " in (*" $c "*)
 					echo "$pkg"
 					break
 					;;
