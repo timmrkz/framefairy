@@ -87,7 +87,10 @@ check "frontend/package.json" "app interface"
 # Issue #322: a pull request that changed only them ran every job.
 check "scripts/main-moved.sh scripts/main-moved-test.sh docs/BUILD.md" ""
 check "scripts/plan-frozen.sh scripts/needs-build-test.sh" ""
-check "scripts/changed.sh scripts/changed-test.sh" "changed"
+check "scripts/changed-test.sh" "changed"
+# Except changed.sh, which the Go jobs run on a pull request, so a change
+# to it runs it there, on Linux and on the Mac.
+check "scripts/changed.sh" "go changed"
 check "scripts/needs-build.sh engine/edit.go" "app go"
 
 # A file nobody thought of starts everything.

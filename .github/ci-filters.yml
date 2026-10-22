@@ -28,7 +28,8 @@ app:
 
 # The jobs linux, fuzz and macos: the Go tests. No Go test builds the
 # interface, so only the files of it a Go test reads count, like api.ts,
-# and the one that reads all of it runs in the job build.
+# and the one that reads all of it runs in the job build. These jobs run
+# scripts/changed.sh on a pull request, so a change to it starts them.
 go:
   - '**'
   - '!docs/**'
@@ -36,7 +37,8 @@ go:
   - '!LICENSE'
   - '!.vscode/**'
   - '!.claude/**'
-  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!scripts/{main-moved,needs-build,plan-frozen}{,-test}.sh'
+  - '!scripts/changed-test.sh'
   - '!frontend/**/!(api.ts|*.cases.json)'
 
 # The job interface, which needs Node and nothing of Go.

@@ -19,9 +19,12 @@
 #                   package that imports them, and of their fuzz targets
 #                   those that go through a changed file, see
 #                   fuzz_what_changed. go.mod or go.sum is every package
-#                   and every target. A changed test also runs
-#                   internal/offdisk, which reads every test file, and
-#                   make lint, which reads them for waits on the clock.
+#                   and every target. A changed test also runs the
+#                   tests of internal/offdisk and internal/ffmpegtest,
+#                   which read every test file, and make lint, which
+#                   reads them for waits on the clock. The decoder and
+#                   scripts/build-ffmpeg.sh reach the tests that run the
+#                   decoder, and the hyphenation files reach notices.
 #   frontend/       make interface
 #   the linters' settings and scripts/lint-test.sh
 #                   that test, which proves them
@@ -65,7 +68,9 @@ else
 		base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || echo HEAD)
 	fi
 	changed=$({
-		git diff --name-only "$base" 2>/dev/null
+		# Without renames, so a file moved out of a package is seen at
+		# the place it left as well.
+		git diff --name-only --no-renames "$base" 2>/dev/null
 		git ls-files --others --exclude-standard 2>/dev/null
 	} | sort -u)
 fi
@@ -111,7 +116,17 @@ read_by_tests() {
 	done
 }
 
+# runs_the_decoder adds the package of every Go test that runs the
+# episode's decoder as a program, through FRAMEFAIRY_FRAMES. They do not
+# import it, so the imports never lead to them.
+runs_the_decoder() {
+	for t in $(grep -rlF --include='*_test.go' --exclude-dir=node_modules --exclude-dir=.build --exclude-dir=.git FRAMEFAIRY_FRAMES . 2>/dev/null); do
+		gopkgs="$gopkgs $(package_of "${t#./}")"
+	done
+}
+
 gopkgs=""
+alone=""
 gofiles=""
 all_go=0
 interface=0
@@ -190,12 +205,21 @@ for file in $changed; do
 		plan_rules=1
 		shells="$shells $file"
 		;;
+	# The Go jobs run these, so they decide how the tests run and what
+	# is fuzzed, like the Makefile.
+	scripts/fuzz.sh | scripts/ci-packages.sh)
+		shells="$shells $file"
+		build=1
+		all_go=1
+		;;
 	*.sh)
 		shells="$shells $file"
 		build=1
 		# The notices test reads the build scripts for the versions they
 		# pin, and a raised version passed here and failed in CI.
 		read_by_tests "$file"
+		# The decoder is built against the ffmpeg this builds.
+		[ "$file" = scripts/build-ffmpeg.sh ] && runs_the_decoder
 		;;
 	.github/workflows/*)
 		workflows="$workflows $file"
@@ -217,12 +241,20 @@ for file in $changed; do
 		if [ -n "$pkg" ]; then
 			gopkgs="$gopkgs $pkg"
 			case $file in *.go) [ -f "$file" ] && gofiles="$gofiles $file" ;; esac
-			# internal/offdisk reads every test file and imports none, so
-			# a changed test is what reaches it, and make lint too.
-			case $file in *_test.go)
-				gopkgs="$gopkgs $module/internal/offdisk"
+			case $file in
+			# internal/offdisk and internal/ffmpegtest have a test that
+			# reads every test file, so a changed test is what reaches
+			# them, and make lint too. Their own tests and no more: the
+			# engine's tests import ffmpegtest, and a changed test is no
+			# change to it.
+			*_test.go)
+				alone="$alone $module/internal/offdisk $module/internal/ffmpegtest"
 				lint=1
 				;;
+			cmd/framefairy-frames/*) runs_the_decoder ;;
+			# The notices test counts these by a path it builds, which
+			# read_by_tests cannot find.
+			engine/hyphenation/*) gopkgs="$gopkgs $module/notices" ;;
 			esac
 		else
 			build=1
@@ -245,6 +277,8 @@ elif [ -n "$gopkgs" ]; then
 			# reads a lone ")" inside $( ) as its end.
 			case $pkg in (*.test) continue ;; esac
 			pkg=${pkg%% *}
+			# An external test package, x_test, is tested as x.
+			pkg=${pkg%_test}
 			for c in $gopkgs; do
 				case " $pkg $deps " in (*" $c "*)
 					echo "$pkg"
@@ -254,6 +288,7 @@ elif [ -n "$gopkgs" ]; then
 			done
 		done | sort -u)
 fi
+[ -n "$alone" ] && affected=$(printf '%s\n' $affected $alone | sort -u)
 
 # What will run, said first, so a run that is less than expected is seen
 # before it is trusted.

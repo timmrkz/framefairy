@@ -115,11 +115,13 @@ committed or not, new files included, and runs what those files can reach:
 
 | Changed | Runs |
 | --- | --- |
-| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below. A Go test file runs `make lint` too |
+| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below. A Go test file runs `make lint` too, and the tests of `internal/offdisk` and `internal/ffmpegtest`, which read every test file. A file moved counts at both places |
+| `cmd/framefairy-frames/`, `scripts/build-ffmpeg.sh` | the packages whose tests run the episode's decoder, found by `FRAMEFAIRY_FRAMES`, since they do not import it |
+| `engine/hyphenation/` | the engine, and `notices`, whose test counts those files |
 | `go.mod`, `go.sum` | every package and every fuzz target |
 | `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
 | a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
-| `Makefile`, a build script | `make`, and for the `Makefile` every package and every fuzz target, since it decides how the Go tests run. For a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
+| `Makefile`, a build script | `make`, and for the `Makefile`, `scripts/fuzz.sh` and `scripts/ci-packages.sh` every package and every fuzz target, since they decide how the Go tests run. For a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
 | `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh`, and for `ci.yml` every package and every fuzz target, since it decides how the Go tests run |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
@@ -375,7 +377,8 @@ a machine, so a typo in a README does not fuzz two platforms:
 | `frontend/` only | everything but `linux`, `fuzz` and `macos`, and those too when a Go test reads one of the files, like `api.ts` |
 | Go files, `go.mod`, `go.sum` only | everything but `interface` |
 | `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
-| `scripts/changed*.sh` only | `build`, with `scripts/changed-test.sh` |
+| `scripts/changed-test.sh` only | `build`, with `scripts/changed-test.sh` |
+| `scripts/changed.sh` | `build`, with `scripts/changed-test.sh`, and `linux`, `fuzz` and `macos`, which run it on a pull request, so its own pull request runs it on Linux and on the Mac |
 | anything else, or a mix | everything |
 
 Each filter is every file less the files that cannot matter to its jobs,
