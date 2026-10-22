@@ -426,8 +426,18 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Has("wordless") {
+			b.words.wordless.Store(q.Get("wordless") == "1")
+			answer(w, nil, nil)
+			return
+		}
 		if q.Get("ms") == "hold" {
 			b.words.hold()
+			answer(w, nil, nil)
+			return
+		}
+		if n, err := strconv.Atoi(q.Get("step")); err == nil {
+			b.words.step(min(max(n, 0), 100))
 			answer(w, nil, nil)
 			return
 		}
@@ -525,12 +535,19 @@ type prose struct {
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
 	pace atomic.Int64
+	// wordless hears no word at all, the way a video with no speech is
+	// heard, so a walk can make a clip by hand that fails. Not the
+	// bridge's silent, which is the microphone's.
+	wordless atomic.Bool
 	// held keeps it from hearing anything more, so a walk can look at a
 	// transcript part way that stays where it is. The next pace or a reset
-	// lets it go on. hearing counts the pieces it is hearing now.
+	// lets it go on. steps is how many pieces it may still hear while it
+	// is held, so a walk can let the hearing on one piece at a time.
+	// hearing counts the pieces it is hearing now.
 	gate    sync.Mutex
 	turn    *sync.Cond
 	held    bool
+	steps   int
 	hearing int
 }
 
@@ -546,7 +563,7 @@ func (p *prose) cond() *sync.Cond {
 func (p *prose) hold() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = true
+	p.held, p.steps = true, 0
 	for p.hearing > 0 {
 		p.cond().Wait()
 	}
@@ -555,7 +572,18 @@ func (p *prose) hold() {
 func (p *prose) release() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = false
+	p.held, p.steps = false, 0
+	p.cond().Broadcast()
+}
+
+// step lets n pieces more be heard while it is held, by whatever hears
+// next. It does not wait for them: a hearing called off between two
+// pieces never asks for the next, and a walk waits on the news of the
+// work instead.
+func (p *prose) step(n int) {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.steps += n
 	p.cond().Broadcast()
 }
 
@@ -569,8 +597,11 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	for p.held {
+	for p.held && p.steps == 0 {
 		p.cond().Wait()
+	}
+	if p.held {
+		p.steps--
 	}
 	p.hearing++
 	p.gate.Unlock()
@@ -581,6 +612,9 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 		p.gate.Unlock()
 	}()
 	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
+	if p.wordless.Load() {
+		return nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	length := float64(len(samples)) / float64(rate)
@@ -1350,6 +1384,7 @@ func (b *bridge) reset() error {
 	b.silent.Store(false)
 	b.words.release()
 	b.words.pace.Store(0)
+	b.words.wordless.Store(false)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)
 	b.mu.Lock()

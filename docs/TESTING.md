@@ -634,13 +634,21 @@ on a caption block after a trim waits until `data-answered` on the clip
 timeline's box names the track the trim saved, and fails when
 `data-framed` does not, since until then a click goes by the words' own
 times, issue #290. A frame that never comes is ended by the `-timeout`
-of `make walks`: a minute before it, `TestWalks` stops every walk still
-running and fails it with what it printed, and every walk writes
-`walking`, `walked` or `failed` with its name to stderr as it starts and
-ends, so a walk that hung is named, issue #443. And a check counts what the app drew
-against the frames the screen drew, not against a number: a bounce is
-drawn on every frame the screen drew while it lasted, and the crop frame
-of a glide stands in a place of its own on every frame the play showed.
+of `make walks`, `WALKTIMEOUT`, 30 minutes by hand and 8 in CI, where a
+share takes about two and a half, issue #461. A minute before it,
+`TestWalks` stops every walk still running and fails it with what it
+printed, and every walk writes `walking`, `walked` or `failed` with its
+name to stderr as it starts and ends, so a walk that hung is named,
+issue #443. And a check counts what the app drew against the frames the
+screen drew, not against a number: a bounce is drawn on every frame the
+screen drew while it lasted, the crop frame of a glide stands in a place
+of its own on every frame the play showed, and the card under a removed
+row has risen, in every frame the row folds, by as much of the row and
+the space after it as the row has folded, so frames the screen did not
+draw make no jump, issue #442. That the row leaves the list only once
+its fold has finished is heard from the fold's own animation, which says
+so before Svelte takes the row out. A fold the screen drew no frame of
+is tried again on a new clip, up to three times.
 A bounce the screen drew too few frames of to judge, fewer than three or
 none for 90 ms, is stepped onto again, up to three times. A bounce drawn
 on every other frame fails with "bounced on 8 of the 15 frames the screen

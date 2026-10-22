@@ -22,10 +22,10 @@ import (
 // deleted outside the app is let go first, so it is not listed.
 func (s *FrameFairy) Library() []engine.EpisodeStatus {
 	s.letGoOfRemoved()
-	asrDir := s.store.Settings().ASRModel
+	opts := s.store.Settings().options()
 	out := []engine.EpisodeStatus{}
 	for _, ep := range s.store.Episodes() {
-		out = append(out, engine.Status(s.store.files, ep, asrDir))
+		out = append(out, engine.Status(s.store.files, ep, opts.ASRModel, opts.SilenceDB))
 	}
 	return out
 }
@@ -35,7 +35,8 @@ func (s *FrameFairy) Episode(path string) engine.EpisodeStatus {
 	if !s.store.Known(path) {
 		return engine.EpisodeStatus{}
 	}
-	return engine.Status(s.store.files, path, s.store.Settings().ASRModel)
+	opts := s.store.Settings().options()
+	return engine.Status(s.store.files, path, opts.ASRModel, opts.SilenceDB)
 }
 
 // ChooseFolder asks for a folder, the way a Mac app asks where to save

@@ -42,7 +42,8 @@
 #   make lint       that no new Go test waits on the clock, by golangci-lint
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
-#                   its own length unless STEPS says, WALKERS at once
+#                   its own length unless STEPS says, WALKERS at once,
+#                   stopped after WALKTIMEOUT, 30m unless set
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -469,9 +470,14 @@ WALKERS ?=
 # walk-times.tsv. WALKTIMES=1 writes what the runs took into that file.
 WALKSHARD ?=
 WALKTIMES ?=
+# How long the runs may take before go test stops them. TestWalks stops
+# what still runs a minute before and names it with what it printed. CI
+# sets a few minutes over what a share takes, so a run that hangs is
+# named in minutes and does not hold its machine for half an hour.
+WALKTIMEOUT ?= 30m
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

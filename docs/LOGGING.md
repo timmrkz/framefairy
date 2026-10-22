@@ -104,7 +104,7 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `run` | one start of the app, so a restart is seen and two runs never mix |
-| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `wails` |
+| `from` | the part that wrote it: `app`, `window`, `files`, `decoder`, `jobs`, `edits`, `updates`, `wails` |
 | `video` | the video it is about, by file name, where there is one |
 | `act` | what the person did that led to it, see below |
 | `msg` | what happened, in words |
@@ -254,3 +254,12 @@ jq -c 'select(.video == "start.mp4")' app.log
    the slowest, never what was said. Every pass is a `trace` line, and a
    pass slower than the words should appear is a `warn`, once. Questions
    from the model about what is missing come after.
+
+The Updates page writes lines of `updates`: a channel picked, the build
+a check found for it and the build running when that is the newest,
+the build ready for Relaunch, a check or a download that failed with
+the reason, and the channel's own entry when it was newer than the list
+and offered in its place, with both versions, or, at `debug`, why it
+was not taken when it could not be read or was refused. Before #420 nothing of it
+reached the log, so a pick that came back as the build before could not
+be told apart from one that found nothing newer.

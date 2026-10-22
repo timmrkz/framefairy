@@ -16,7 +16,7 @@ func TestLabelRoundTrip(t *testing.T) {
 	if err := afero.WriteFile(fsys, source, []byte("video"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := Status(fsys, source, "").Label; got != nil {
+	if got := Status(fsys, source, "", nil).Label; got != nil {
 		t.Fatalf("a new video has the label %+v", got)
 	}
 	l, err := WriteLabel(fsys, source, Label{Text: "  Ben,\n Kindergarten ", Colour: "#0A64D6"})
@@ -27,7 +27,7 @@ func TestLabelRoundTrip(t *testing.T) {
 	if l == nil || *l != want {
 		t.Fatalf("written %+v, want %+v", l, want)
 	}
-	if got := Status(fsys, source, "").Label; got == nil || *got != want {
+	if got := Status(fsys, source, "", nil).Label; got == nil || *got != want {
 		t.Fatalf("read back %+v, want %+v", got, want)
 	}
 	if _, err := WriteLabel(fsys, source, want); err != nil {
@@ -38,7 +38,7 @@ func TestLabelRoundTrip(t *testing.T) {
 	if l, err := WriteLabel(fsys, source, Label{Text: "\x00\t\x1b", Colour: "#0a64d6"}); err != nil || l != nil {
 		t.Fatalf("a label of control characters gave %+v, %v", l, err)
 	}
-	if got := Status(fsys, source, "").Label; got != nil {
+	if got := Status(fsys, source, "", nil).Label; got != nil {
 		t.Fatalf("the label taken away by control characters is still %+v", got)
 	}
 	if _, err := WriteLabel(fsys, source, want); err != nil {
@@ -47,7 +47,7 @@ func TestLabelRoundTrip(t *testing.T) {
 	if l, err := WriteLabel(fsys, source, Label{Text: " ", Colour: "#0a64d6"}); err != nil || l != nil {
 		t.Fatalf("a label with no words gave %+v, %v", l, err)
 	}
-	if got := Status(fsys, source, "").Label; got != nil {
+	if got := Status(fsys, source, "", nil).Label; got != nil {
 		t.Fatalf("the label taken away is still %+v", got)
 	}
 	if body, _ := afero.ReadFile(fsys, source); string(body) != "video" {

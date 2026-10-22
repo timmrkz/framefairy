@@ -397,10 +397,13 @@ jobs:
           make frontend/node_modules/.package-lock.json
           cd frontend && npm exec -- playwright install --with-deps chromium
       # A walk or a sequence that breaks a rule is named on the check, see
-      # scripts/test-failures.sh.
+      # scripts/test-failures.sh. A share takes about two and a half
+      # minutes, so one that hangs is stopped and named after eight rather
+      # than holding the machine for the half hour make walks gives by
+      # hand.
       - name: Sequences and walks
         run: |
-          make walks WALKSHARD=${{ matrix.shard }}/4 2>&1 | tee walks.log
+          make walks WALKSHARD=${{ matrix.shard }}/4 WALKTIMEOUT=8m 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
