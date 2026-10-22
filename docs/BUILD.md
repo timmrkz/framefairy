@@ -254,8 +254,9 @@ test case for the bug, and it becomes a seed for every later run.
 
 ### No test waits on the clock
 
-A test waits on a signal, never on the clock, see CLAUDE.md, and two
-linters hold every test to it, each with that one rule:
+A test never waits, and never on the clock, see CLAUDE.md and the
+testing skill in `.claude/skills/testing/`, and two linters hold every
+test to the part about the clock, each with that one rule:
 
 - golangci-lint, `make lint`, with only forbidigo, and only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,

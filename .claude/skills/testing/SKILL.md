@@ -308,8 +308,7 @@ every push, by Tim waiting on CI and by the machines.
     download in CI is cached the same way.
 - **Where a cache cannot apply yet, push for one.** Rerunning what did
   not change is a cost to remove, not a fact to accept. Say so to Tim or
-  log an issue with what it would save. The walks today run with
-  `-count=1`, because Go cannot see the files the browser reads.
+  log an issue with what it would save.
 - **Fast by design.** No waits, section 3. The lowest level that can see
   the behaviour, section 2. The smallest and shortest test video that
   shows it. `t.Parallel()` for a test over a second, unless it changes
