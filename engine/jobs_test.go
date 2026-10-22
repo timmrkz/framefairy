@@ -282,6 +282,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 	good := []JobRecord{
 		{ID: SearchID, Kind: JobSearch, To: 60, Count: 12, Min: 20, Max: 30, Step: StepHearing},
 		{ID: "render-1", Kind: JobRender, Plan: filepath.Join(logs, "clips-0-60.json"), Step: StepRendering},
+		{ID: TranscribeID, Kind: JobTranscribe, Step: StepHearing},
 	}
 	for _, r := range good {
 		if err := WriteJob(fsys, source, r); err != nil {
@@ -298,6 +299,7 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		"Other.json":     `{"id": "Other", "kind": "search", "step": "hearing"}`,
 		"other.json":     `{"id": "other", "kind": "search", "step": "hearing"}`,
 		"render-7.json":  `not json`,
+		"render-11.json": `{"id": "render-11", "kind": "transcribe", "step": "hearing"}`,
 		"render-8.json":  `{"id": "render-8", "kind": "upload", "step": "waiting"}`,
 		"render-9.json":  `{"id": "render-9", "kind": "render", "step": "done"}`,
 		"timings.jsonl":  `{"kind": "search"}`,
@@ -309,13 +311,13 @@ func TestARecordThatIsNotOneIsNoRecord(t *testing.T) {
 		}
 	}
 	got := ReadJobs(fsys, source)
-	if len(got) != 2 || got[0].ID != SearchID || got[1].ID != "render-1" {
+	if len(got) != 3 || got[0].ID != SearchID || got[1].ID != "render-1" || got[2].ID != TranscribeID {
 		t.Errorf("read %+v", got)
 	}
 	if err := WriteJob(fsys, source, JobRecord{ID: "../out", Kind: JobRender}); err == nil {
 		t.Error("a record written outside the jobs folder")
 	}
-	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 1 {
+	if err := RemoveJob(fsys, source, "render-1"); err != nil || len(ReadJobs(fsys, source)) != 2 {
 		t.Errorf("removed: %v, %d left", err, len(ReadJobs(fsys, source)))
 	}
 }
@@ -620,5 +622,44 @@ func TestASearchCutOffBeforeItBeginsIsInterrupted(t *testing.T) {
 		if !rec.Interrupted() || rec.From != req.From || rec.To != req.To || rec.Count != req.Count {
 			t.Errorf("%+v: the record says %+v", req, rec)
 		}
+	}
+}
+
+// Transcribe whole video hears what no search heard, to the end of the
+// episode, and finds nothing: it takes turns to hear and no other, and
+// leaves no record once it is done.
+//
+// On the real disk: ffmpeg reads the episode the transcription hears.
+func TestATranscriptionHearsTheWholeEpisodeAndNothingElse(t *testing.T) {
+	t.Parallel()
+	p, asked := searchProject(t, nil)
+	if _, err := p.Search(context.Background(), PlanRequest{From: 5, To: 15, Count: 1, Min: 5}, nil); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	plans := p.Plans()
+	var turns []string
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		turns = append(turns, step)
+		if rec := ReadJobs(disk, p.Source); len(rec) != 1 || rec[0].ID != TranscribeID || rec[0].Step != StepWaiting {
+			t.Errorf("waiting for %s, the records say %+v", step, rec)
+		}
+		return ctx, func() {}, nil
+	}
+	if err := p.TranscribeJob(context.Background(), turn); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	if _, done := Coverage(disk, p.Source, p.Base.ASRModel); !done {
+		t.Errorf("the transcript was not finished, heard %v", HeardParts(disk, p.Source, p.Base.ASRModel))
+	}
+	if strings.Join(turns, " ") != "hearing" || *asked != 1 || len(p.Plans()) != len(plans) {
+		t.Errorf("turns %v, the model asked %d times, plans %v then %v", turns, *asked, plans, p.Plans())
+	}
+	if rec := ReadJobs(disk, p.Source); len(rec) != 0 {
+		t.Errorf("a finished transcription keeps %+v", rec)
+	}
+	// Heard to the end, there is nothing left to wait for.
+	turns = nil
+	if err := p.TranscribeJob(context.Background(), turn); err != nil || len(turns) != 0 {
+		t.Errorf("again: %v, turns %v", err, turns)
 	}
 }

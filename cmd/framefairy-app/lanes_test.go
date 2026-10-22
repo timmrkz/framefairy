@@ -257,3 +257,65 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 		t.Errorf("left behind: %d held, %d asked", len(l.held), len(l.asks))
 	}
 }
+
+// The whole video heard by itself, Transcribe whole video in its menu,
+// hears last: it gives the hearing lane to a search or a clip made by hand
+// that asks for it, a search asked after it goes ahead of it, and it waits
+// while a search finds. Nobody waits on it the way somebody waits on a
+// search, and it can take an hour. Issue #432.
+//
+// Every wait is on a turn coming or a turn's context ending, and which of
+// two comes first is read from the one channel that gets it.
+func TestTheWholeVideoHearsLast(t *testing.T) {
+	if lane, kind := laneOfStep(engine.JobTranscribe, "hearing", true); lane != LaneHearing || kind != wholeHearingTurn {
+		t.Fatalf("the whole video hears in %s as %d", lane, kind)
+	}
+	l := newLanes()
+	whole, wholeDone := given(t, l, LaneHearing, wholeHearingTurn)
+	search, _ := waiting(l, LaneHearing, hearingTurn)
+	<-whole.Done()
+	wholeDone()
+	again, _ := waiting(l, LaneHearing, wholeHearingTurn)
+	searched := <-search
+	hand, _ := waiting(l, LaneHearing, handHearingTurn)
+	searched()
+	select {
+	case done := <-hand:
+		done()
+	case <-again:
+		t.Fatal("the whole video heard before a clip made by hand")
+	}
+	(<-again)()
+
+	// A search asked after it goes ahead of it.
+	_, held := given(t, l, LaneHearing, plainTurn)
+	later, _ := waiting(l, LaneHearing, wholeHearingTurn)
+	first, _ := waiting(l, LaneHearing, hearingTurn)
+	held()
+	select {
+	case done := <-first:
+		done()
+	case <-later:
+		t.Fatal("the whole video heard before a search asked after it")
+	}
+	(<-later)()
+
+	// A search that finds takes it back and holds it up.
+	whole, wholeDone = given(t, l, LaneHearing, wholeHearingTurn)
+	_, found := given(t, l, LaneFinding, findingTurn)
+	<-whole.Done()
+	wholeDone()
+	after := l.enqueue(LaneHearing, wholeHearingTurn)
+	l.mu.Lock()
+	may := l.mayLocked(after)
+	l.mu.Unlock()
+	if may {
+		t.Error("the whole video may hear while a search finds")
+	}
+	found()
+	_, done, err := l.wait(context.Background(), after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done()
+}

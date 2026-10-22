@@ -61,11 +61,18 @@ const (
 	JobRender = "render"
 	// JobClip is a clip made by hand, see MakeClip.
 	JobClip = "clip"
+	// JobTranscribe is the whole episode heard to its end, with no search
+	// after, see TranscribeJob.
+	JobTranscribe = "transcribe"
 )
 
 // SearchID is the id of an episode's search. An episode has one search at
 // a time, and a new one takes the place of the last.
 const SearchID = "search"
+
+// TranscribeID is the id of an episode's transcription to its end. An
+// episode has one at a time.
+const TranscribeID = "transcribe"
 
 // JobRecord is what the work folder keeps about a job.
 type JobRecord struct {
@@ -297,9 +304,13 @@ func saneJob(source string, r *JobRecord) bool {
 		}
 	case JobRender:
 		// The plan is one of this episode's, by name and by where it is.
-		if r.ID == SearchID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
+		if r.ID == SearchID || r.ID == TranscribeID || filepath.Dir(r.Plan) != filepath.Join(WorkDir(source), "logs") ||
 			!IsPlanFile(r.Plan) || len(r.Clips) > 1000 || len(r.Done) > 1000 ||
 			r.Step == StepHearing || r.Step == StepFinding || r.Step == StepFraming {
+			return false
+		}
+	case JobTranscribe:
+		if r.ID != TranscribeID || r.Step == StepFinding || r.Step == StepFraming || r.Step == StepRendering {
 			return false
 		}
 	case JobClip:
@@ -478,6 +489,27 @@ func (p *Project) Search(ctx context.Context, req PlanRequest, turn Turn) (plan 
 	}
 	defer release()
 	return p.Plan(stepCtx, req)
+}
+
+// TranscribeJob hears the whole episode, from wherever the transcript has
+// not heard it yet to its end, and nothing after: Transcribe whole video in
+// a video's menu. It keeps a record like a search, so an app closed while
+// it hears says so, and carries on from what was heard. Its hearing gives
+// way to every search and clip made by hand, which the app's lanes decide.
+func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
+	j := p.startJob(JobRecord{ID: TranscribeID, Kind: JobTranscribe})
+	defer j.end(&err)
+	if ctx.Err() != nil {
+		return ErrCancelled
+	}
+	end, err := p.windowEnd(ctx, PlanRequest{})
+	if err != nil {
+		return err
+	}
+	stepOf := func(ctx context.Context, step string) (context.Context, func(), error) {
+		return j.turn(ctx, turn, step)
+	}
+	return p.hear(ctx, stepOf, Window{0, end})
 }
 
 // hear has the one transcript hear a span of the episode, the way every job

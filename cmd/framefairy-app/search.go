@@ -135,6 +135,9 @@ func (s *FrameFairy) Continue(id, click string) Job {
 	if carry.Kind == engine.JobClip {
 		return s.makeClip(path, carry.Clip(), carry.ID, click)
 	}
+	if carry.Kind == engine.JobTranscribe {
+		return s.Transcribe(path)
+	}
 	return s.render(path, carry.Render(), carry)
 }
 

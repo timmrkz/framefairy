@@ -370,6 +370,8 @@ type FrameFairy struct {
 	link *LicenceLink
 	// clipboard stands in for the system's in tests, see copyText.
 	clipboard func(string) bool
+	// saveBox stands in for the system's save box in tests, see saveAs.
+	saveBox func(name string) (string, error)
 	// firstFrame is how long Add waits for a video's first frame,
 	// firstFrameWait unless a test says otherwise, see undecodable.
 	firstFrame time.Duration

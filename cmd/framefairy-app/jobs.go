@@ -202,7 +202,7 @@ func newIdleQueue(s *store, emit func(JobUpdate), notify func(string)) *queue {
 // the lane of finding and moves as its steps go, see lanes.go.
 func laneFor(kind string) string {
 	switch kind {
-	case "model":
+	case "model", engine.JobTranscribe:
 		return LaneHearing
 	case "render":
 		return LaneRendering
@@ -390,6 +390,8 @@ func jobLabel(kind string, preview bool) string {
 		return "Render"
 	case kind == engine.JobClip:
 		return "Make a clip"
+	case kind == engine.JobTranscribe:
+		return "Transcribe whole video"
 	}
 	return "Find clips"
 }

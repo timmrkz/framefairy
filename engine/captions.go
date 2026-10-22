@@ -74,10 +74,15 @@ func endsSentence(s string) bool {
 
 // WriteSRT writes cues as an srt file.
 func WriteSRT(cues []Cue, path string) error {
+	return os.WriteFile(path, []byte(SRT(cues)), 0o644)
+}
+
+// SRT is cues as the text of an srt file.
+func SRT(cues []Cue) string {
 	var lines []string
 	for i, cue := range cues {
 		lines = append(lines, strconv.Itoa(i+1),
 			SecondsToSRT(cue.Start)+" --> "+SecondsToSRT(cue.End), cue.Text, "")
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+	return strings.Join(lines, "\n")
 }

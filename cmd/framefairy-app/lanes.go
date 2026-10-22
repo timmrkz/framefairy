@@ -32,6 +32,13 @@ import (
 // finding does, and does not wait for a search that finds: a minute of
 // audio is heard in a second or two. Clips made by hand hear in the order
 // they were asked for.
+//
+// And last: the whole video heard by itself, Transcribe whole video in
+// its menu, hears only when no search and no clip needs the lane. It can
+// take an hour, and nobody waits on it the way somebody waits on a search
+// or a clip, so it goes behind every one of them that asks to hear, gives
+// the lane back to each, and waits while a search finds, like a search
+// that hears. Issue #432.
 type lanes struct {
 	mu      sync.Mutex
 	held    map[string]*holder
@@ -41,7 +48,8 @@ type lanes struct {
 
 // A turn is either plain, or a step of a search: hearing, which gives way,
 // or finding, which the hearing lane gives way to, or the hearing of a clip
-// made by hand, which everything of a search gives way to.
+// made by hand, which everything of a search gives way to, or the hearing
+// of a whole video, which gives way to all of them.
 type turnKind int
 
 const (
@@ -49,6 +57,7 @@ const (
 	hearingTurn
 	findingTurn
 	handHearingTurn
+	wholeHearingTurn
 )
 
 type holder struct {
@@ -103,10 +112,9 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 		}
 		// A clip made by hand takes the lane back from a search that
 		// hears. The search saves what it heard and asks again, behind it.
-		if a.kind == handHearingTurn {
-			if hearing := l.held[a.lane]; hearing != nil && hearing.kind == hearingTurn {
-				hearing.cancel()
-			}
+		// Both take it back from the whole video heard by itself.
+		if hearing := l.held[a.lane]; hearing != nil && givesWay(hearing.kind, a.kind) {
+			hearing.cancel()
 		}
 		changed := l.changed
 		l.mu.Unlock()
@@ -126,7 +134,7 @@ func (l *lanes) wait(ctx context.Context, a *ask) (context.Context, func(), erro
 	h := &holder{kind: a.kind, cancel: cancel}
 	l.held[a.lane] = h
 	if a.kind == findingTurn {
-		if hearing := l.held[LaneHearing]; hearing != nil && hearing.kind == hearingTurn {
+		if hearing := l.held[LaneHearing]; hearing != nil && (hearing.kind == hearingTurn || hearing.kind == wholeHearingTurn) {
 			hearing.cancel()
 		}
 	}
@@ -155,12 +163,12 @@ func (l *lanes) mayLocked(a *ask) bool {
 	if l.held[a.lane] != nil {
 		return false
 	}
-	if a.kind == hearingTurn {
+	if a.kind == hearingTurn || a.kind == wholeHearingTurn {
 		if finding := l.held[LaneFinding]; finding != nil && finding.kind == findingTurn {
 			return false
 		}
 		for _, other := range l.asks {
-			if other.lane == a.lane && other.kind == handHearingTurn {
+			if other.lane == a.lane && givesWay(a.kind, other.kind) {
 				return false
 			}
 		}
@@ -169,11 +177,37 @@ func (l *lanes) mayLocked(a *ask) bool {
 		if earlier == a {
 			return true
 		}
-		if earlier.lane == a.lane && (a.kind != handHearingTurn || earlier.kind == handHearingTurn) {
+		if earlier.lane == a.lane && !passes(a.kind, earlier.kind) {
 			return false
 		}
 	}
 	return true
+}
+
+// givesWay says whether a turn that hears gives the hearing lane to another
+// that asks for it: a search to a clip made by hand, and the whole video
+// to both.
+func givesWay(held, asks turnKind) bool {
+	switch held {
+	case hearingTurn:
+		return asks == handHearingTurn
+	case wholeHearingTurn:
+		return asks == hearingTurn || asks == handHearingTurn
+	}
+	return false
+}
+
+// passes says whether an ask goes ahead of one in the same lane asked for
+// before it: a clip made by hand goes ahead of everything but another clip,
+// and a search that hears goes ahead of the whole video.
+func passes(a, earlier turnKind) bool {
+	switch a {
+	case handHearingTurn:
+		return earlier != handHearingTurn
+	case hearingTurn:
+		return earlier == wholeHearingTurn
+	}
+	return false
 }
 
 func (l *lanes) dropLocked(a *ask) {
@@ -193,6 +227,9 @@ func laneOfStep(kind, step string, local bool) (string, turnKind) {
 	case "hearing":
 		if kind == engine.JobClip {
 			return LaneHearing, handHearingTurn
+		}
+		if kind == engine.JobTranscribe {
+			return LaneHearing, wholeHearingTurn
 		}
 		return LaneHearing, hearingTurn
 	case "finding":
