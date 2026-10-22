@@ -284,7 +284,9 @@
 //   ["restart"]        closes the app and opens it again on the episode
 //   ["speech", ms]     the speech model takes so many milliseconds over
 //                      each piece of audio, so a video added is heard
-//                      slowly enough to do something while it is
+//                      slowly enough to do something while it is.
+//                      ["speech", "hold"] stops it hearing, and the steps
+//                      that say so let it on one piece at a time
 //   ["settings"]       opens the settings from the sidebar, and remembers
 //                      the models they name
 //   ["app log", "open"]
@@ -969,13 +971,18 @@
 //                      the head of the clip list, so the clip made by hand
 //                      says Stopped with Continue in its card
 //   ["heard part", [share, seconds]]
-//                      waits until a video this long is heard as far as
-//                      this share of it, asking again each time the work
-//                      says how far it heard
+//                      with the speech held, lets it on one piece at a
+//                      time until a video this long is heard as far as
+//                      this share of it
+//   ["cancel held"]    with the speech held, presses Cancel at the head of
+//                      the clip list and lets the piece being heard land,
+//                      until the head says Continue
 //   ["fills from nothing", seconds]
-//                      on a search stopped part way through the window of
-//                      a video this long, presses Continue, and the fill of
-//                      the row that says Transcribing starts at nothing and
+//                      with the speech held, on a search stopped part way
+//                      through the window of a video this long, presses
+//                      Continue and lets the speech on one piece at a time
+//                      until the search has heard one, and the fill of the
+//                      row that says Transcribing starts at nothing and
 //                      only grows, however much was heard before
 //   ["hand failed", seconds]
 //                      puts the playhead at the end of a video this long
@@ -3513,16 +3520,13 @@ export const sequences = [
     // so a search is stopped part way through its window and carried on.
     name: "Continue fills the transcription from nothing over what is left to hear",
     steps: [
-      ["speech", 3000],
+      // Held from the start, so every piece of audio heard is one the walk
+      // let through, and nothing depends on how fast the speech is.
+      ["speech", "hold"],
       ["add", 120],
       ["wait for", "Cancel"],
       ["heard part", [0.4, 120]],
-      ["head"],
-      ["wait for", "Continue"],
-      // The video goes on being heard by itself after Cancel, so it is
-      // held, and let go again just before Continue.
-      ["speech", "hold"],
-      ["speech", 3000],
+      ["cancel held"],
       ["fills from nothing", 120],
       ["speech", 0],
     ],
@@ -12080,12 +12084,39 @@ for (const seq of toWalk) {
         break;
       }
       case "heard part": {
-        // Asked again each time the work says how far it heard, until the
-        // video, this many seconds long, is heard as far as this share.
+        // One piece at a time, until the video, this many seconds long, is
+        // heard as far as this share. What is heard is saved only now and
+        // then, so how far the work says it heard counts too.
         const [share, seconds] = arg;
         const path = await episodeOn(page);
-        const heardOf = async () => ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, seconds) - a, 0), 0);
-        for (let seen = await news(page); (await heardOf()) < share * seconds; ) seen = await nextNews(page, seen);
+        const heardOf = async () => {
+          const saved = ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, seconds) - a, 0), 0);
+          const said = (await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => j.progress?.covered ?? 0);
+          return Math.max(saved, ...said);
+        };
+        while ((await heardOf()) < share * seconds) await onePiece(page, url, path);
+        break;
+      }
+      case "cancel held": {
+        // The search waits on the piece it is hearing, which is held, so
+        // Cancel ends it once that piece is let through.
+        const path = await episodeOn(page);
+        const pressed = await pressHead(page);
+        if (pressed.pressed !== "Cancel") {
+          wrong = `the head said ${pressed.pressed}, not Cancel`;
+          break;
+        }
+        // Every call the press made is answered, so the search is called
+        // off before the piece it waits on lands.
+        await settle(page);
+        const running = async () => {
+          const job = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
+          return job?.state === "running" || job?.state === "queued";
+        };
+        while (await running()) await onePiece(page, url, path);
+        await settle(page);
+        const head = await page.evaluate(() => document.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim());
+        if (head !== "Continue") wrong = `after Cancel the head says ${head}, not Continue`;
         break;
       }
       case "fills from nothing": {
@@ -12100,7 +12131,7 @@ for (const seq of toWalk) {
         const heard = ((await ask(page, "Episode", path))?.heard ?? []).reduce((sum, [a, b]) => sum + Math.max(Math.min(b, to) - Math.max(a, from), 0), 0);
         const before = heard / (to - from);
         if (!(before >= 0.2 && before < 0.9)) {
-          wrong = `${Math.round(before * 100)} % of the window was heard before Continue, too little or too much to tell a fill from nothing from how much is heard`;
+          wrong = `${Math.round(before * 100)} % of the window ${from} to ${to} s was heard before Continue, too little or too much to tell a fill from nothing from how much is heard: ${JSON.stringify((await ask(page, "Episode", path))?.heard)}`;
           break;
         }
         // Every fill the row of the next clip shows while it says
@@ -12123,9 +12154,12 @@ for (const seq of toWalk) {
           wrong = `the head said ${pressed.pressed}, not Continue`;
           break;
         }
-        // Until the engine has said how far it heard of what is left, and
-        // the row has shown it.
-        for (let seen = await news(page); ; seen = await nextNews(page, seen)) {
+        // Every call the press made is answered and drawn, and then one
+        // piece at a time, to whatever hears it, the video heard by itself
+        // after Cancel first, until the engine has said how far the search
+        // heard of what is left.
+        await settle(page);
+        for (;;) {
           const job = (await ask(page, "Jobs")).findLast((j) => j.episode === path && j.kind === "search");
           if (job?.state === "running" && job.step === "hearing" && job.progress?.fraction > 0) break;
           if (job?.state !== "running" && job?.state !== "queued") {
@@ -12133,8 +12167,10 @@ for (const seq of toWalk) {
             wrong = `the search of ${from} to ${to} s heard nothing more after Continue, and is ${job?.state} ${job?.step ?? ""}, with ${JSON.stringify(now)} heard now and ${Math.round(before * 100)} % of it before`;
             break;
           }
+          await onePiece(page, url, path);
         }
         if (wrong) break;
+        // Until the row has shown it.
         await settle(page);
         const fills = await page.evaluate(() => window.__fills);
         if (!fills.length) wrong = "the row never showed a fill while it said Transcribing";
@@ -12179,8 +12215,9 @@ for (const seq of toWalk) {
           wrong = `I at ${at} s made a clip that is ${job.state}, not failed, with the last sentence ending at ${last?.end} s`;
           break;
         }
-        const card = page.locator(`li[data-key^="${job.id}/"]`);
-        await card.first().waitFor({ timeout: 10000 }).catch(() => {});
+        // The failed news is in the store, so its card and its toast are
+        // drawn once the app is quiet, and read straight away, well inside
+        // the toast's own time.
         await settle(page);
         const said = await page.evaluate((id) => {
           const li = document.querySelector(`li[data-key^="${id}/"]`);
@@ -12190,10 +12227,8 @@ for (const seq of toWalk) {
             meta: li?.querySelector(".meta")?.textContent.trim() ?? "",
           };
         }, job.id);
-        const toast = await page
-          .waitForFunction(() => document.querySelector(".toast .text")?.textContent.trim() ?? "", null, { timeout: 10000 })
-          .then((h) => h.jsonValue(), () => "");
-        const report = await page.locator(".toast button.report").count();
+        const toast = await toastSays(page);
+        const report = await page.locator(".toast:not([inert]) button.report").count();
         const where = clockOf(job.underway?.[0]?.start ?? at);
         if (!said.failed) wrong = `the clip that failed has no card that says so: ${JSON.stringify(said)}`;
         else if (said.title !== "Failed. Click Continue") wrong = `the card says "${said.title}", not Failed. Click Continue`;
@@ -14169,6 +14204,19 @@ function glideOf(marks, src) {
 // middle and below it, over whatever the page has there. Says what was
 // wrong, or null: the app has to wear its frame while the files are held
 // over it, take the drop, and wear no frame after it.
+// Lets the held speech hear one piece of audio, and waits until the news
+// of the work on the video says something changed for it: how far a job
+// heard, its step or its state. Whatever hears next hears it, the search
+// or the video heard by itself.
+async function onePiece(page, url, path) {
+  const now = async () =>
+    JSON.stringify((await ask(page, "Jobs")).filter((j) => j.episode === path).map((j) => [j.id, j.state, j.step, j.progress?.covered]));
+  const before = await now();
+  let seen = await news(page);
+  await control(url, "/speech?step=1");
+  while ((await now()) === before) seen = await nextNews(page, seen);
+}
+
 // What the toasts over the window say, one after the other.
 // What the toasts over the app say. One that is fading out has gone,
 // though it is still in the page for its fade: Svelte marks it inert the

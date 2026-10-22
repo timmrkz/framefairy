@@ -423,6 +423,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 			answer(w, nil, nil)
 			return
 		}
+		if n, err := strconv.Atoi(q.Get("step")); err == nil {
+			b.words.step(min(max(n, 0), 100))
+			answer(w, nil, nil)
+			return
+		}
 		b.words.release()
 		ms, _ := strconv.Atoi(q.Get("ms"))
 		b.words.pace.Store(int64(min(max(ms, 0), 5000)))
@@ -512,10 +517,13 @@ type prose struct {
 	pace atomic.Int64
 	// held keeps it from hearing anything more, so a walk can look at a
 	// transcript part way that stays where it is. The next pace or a reset
-	// lets it go on. hearing counts the pieces it is hearing now.
+	// lets it go on. steps is how many pieces it may still hear while it
+	// is held, so a walk can let the hearing on one piece at a time.
+	// hearing counts the pieces it is hearing now.
 	gate    sync.Mutex
 	turn    *sync.Cond
 	held    bool
+	steps   int
 	hearing int
 }
 
@@ -531,7 +539,7 @@ func (p *prose) cond() *sync.Cond {
 func (p *prose) hold() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = true
+	p.held, p.steps = true, 0
 	for p.hearing > 0 {
 		p.cond().Wait()
 	}
@@ -540,8 +548,20 @@ func (p *prose) hold() {
 func (p *prose) release() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = false
+	p.held, p.steps = false, 0
 	p.cond().Broadcast()
+}
+
+// step lets n pieces more be heard while it is held, by whatever hears
+// next, and returns once they are heard.
+func (p *prose) step(n int) {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.steps += n
+	p.cond().Broadcast()
+	for p.held && (p.steps > 0 || p.hearing > 0) {
+		p.cond().Wait()
+	}
 }
 
 var proseText = strings.Fields(`Ich war vielleicht sechs Jahre alt, als mich auf dem Schulhof
@@ -554,8 +574,11 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	for p.held {
+	for p.held && p.steps == 0 {
 		p.cond().Wait()
+	}
+	if p.held {
+		p.steps--
 	}
 	p.hearing++
 	p.gate.Unlock()

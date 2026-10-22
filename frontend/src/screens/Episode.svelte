@@ -63,6 +63,7 @@
   import { suggestedCount, suggestedWindow } from "../lib/suggest";
   import { captionColours, joinColour, splitColour } from "../lib/colour";
   import { stepLine } from "../lib/steps";
+  import { Failures } from "../lib/failed";
   import { asleep, asking, keysElsewhere, typing } from "../lib/keys";
   import {
     secondThoughts,
@@ -269,24 +270,19 @@
   const search = $derived(jobs.search(path));
   // A search that fails while the app is open says why in a toast, with
   // Report for what the person cannot put right alone, and so does a clip
-  // made by hand with I or O. Its row or card goes on saying Failed with
-  // Continue, after a restart too, and never why, issue #450. One seen
-  // failed only as the app opened has said why already, the time it
-  // failed. Only the jobs' states and ids are read, see the rule on
-  // watching jobs.
-  const seenRunning = new Set<string>();
+  // made by hand with I or O, see lib/failed.ts. Its row or card goes on
+  // saying Failed with Continue, after a restart too, and never why, issue
+  // #450. Only the jobs' states and ids are read, see the rule on watching
+  // jobs.
+  const failures = new Failures<Job>((job) => {
+    const what = job.kind === "clip" ? "clip made by hand" : "search";
+    const why = untrack(() => reasonOf(job.error, what));
+    tell(`${what} failed: ${why}`);
+    toasts.say(where(), why, { video: path, report: true });
+  });
   $effect(() => {
-    for (const job of [search, ...jobs.clips(path)]) {
-      if (!job) continue;
-      if (job.state === "running" || job.state === "queued") {
-        seenRunning.add(job.id);
-        continue;
-      }
-      if (job.state !== "failed" || !seenRunning.delete(job.id)) continue;
-      const what = job.kind === "clip" ? "clip made by hand" : "search";
-      const why = untrack(() => reasonOf(job.error, what));
-      tell(`${what} failed: ${why}`);
-      toasts.say(where(), why, { video: path, report: true });
+    for (const job of jobs.forEpisode(path)) {
+      if (job.kind === "search" || job.kind === "clip") failures.seen(job);
     }
   });
   const searching = $derived(!!search && (search.state === "running" || search.state === "queued"));
@@ -1771,14 +1767,12 @@
     pressed = backward ? "out" : "in";
     try {
       const job = await api.makeClip(path, time, backward);
-      // Asked for here, so a failure says why in a toast however soon it
-      // comes, see seenRunning.
-      if (job.state !== "failed") seenRunning.add(job.id);
       jobs.apply(job);
-      if (job.state === "failed") {
-        oops(job.error ?? "The clip could not be made");
-        return;
-      }
+      // Asked for here, so a failure says why in a toast however soon it
+      // comes, the store's news of it before this answer too.
+      const now = jobs.list.find((j) => j.id === job.id) ?? job;
+      failures.asked(now);
+      if (now.state === "failed") return;
       const key = `${job.id}/1`;
       madeHere.set(job.id, key);
       selected = key;
