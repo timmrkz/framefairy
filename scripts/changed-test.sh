@@ -130,6 +130,8 @@ has "scripts/build-llama.sh" "go framefairy/notices"
 # The rules test their own rules.
 has "scripts/ci-filters-test.sh" "rules"
 is ".github/ci-filters.yml" "rules"
+is "scripts/blob-times.py" "rules"
+has "scripts/blob-times-test.sh" "rules"
 has ".github/workflows/ci.yml" "rules" "workflow .github/workflows/ci.yml"
 has "scripts/changed.sh" "changed-rules"
 is ".github/workflows/builds.yml" "build-rules workflow .github/workflows/builds.yml"

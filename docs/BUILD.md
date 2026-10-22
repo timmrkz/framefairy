@@ -356,27 +356,32 @@ Go knows a file a test read by its size and modification time, not by
 what is in it, and a checkout gives every file the time of the checkout.
 So the engine, the app and every package whose tests read a file of the
 checkout ran again on every push, whatever changed. In `linux`,
-`git restore-mtime` from MestreLion/git-tools gives each file the time of
-the last commit that changed it, which takes the whole history,
-`fetch-depth: 0`. It comes with
-[chetan/git-restore-mtime-action](https://github.com/chetan/git-restore-mtime-action),
-which carries its 2025.08 version. Ubuntu's package is 2022.12, which
-asks `git whatchanged`, and the runner's git 2.55 refuses that command,
-so every file kept the time of the checkout. Folders all get one fixed
-time: Go knows a folder a test lists by the names and times of what is in
-it, so the folder's own time tells it nothing, and `git restore-mtime`
-leaves some folders at the time of the checkout, like one that holds only
-folders. That runs after the caches are restored, because restoring one
-adds a folder to the checkout. The episode's decoder, which the app's
-tests run, takes the time of the newest file it is built from, see
-`frames` in the Makefile, so building it again from the same files
-changes nothing the tests see. And the log of the tests goes to
-`$RUNNER_TEMP`, because one test resolves a path through the top of the
-checkout, whose time changes when a file is made in it. The one engine
-test that reads the docs, `TestVideosAreNamedOnce`, is skipped in
-`linux`, because it runs in `build` whatever changed, and otherwise a
-change to a doc would run the engine's tests again. `macos` does none of
-this, so there the engine and the app run every time.
+`scripts/blob-times.py` gives every file git tracks a time made from its
+content, from the hash git keeps for it, so the same content has the same
+time on every checkout and other content another. The episode's decoder,
+which the app's tests run, takes a time made from its own sha256 in the
+same way, and the step prints the sum, so two runs show whether it was
+built the same. Folders all get one fixed time: Go knows a folder a test
+lists by the names and times of what is in it, so the folder's own time
+tells it nothing. That runs after the caches are restored and the decoder
+is built, because each adds a folder to the checkout. And the log of the
+tests goes to `$RUNNER_TEMP`, because one test resolves a path through
+the top of the checkout, whose time changes when a file is made in it.
+
+The times come from the content and not from the history on purpose.
+`git restore-mtime`, which gives each file the time of the last commit
+that changed it, was tried first, in #457, and its review found that a
+pull request could go green on a test that failed. On a pull request CI
+checks out GitHub's merge of it into main, a merge commit, which the tool
+leaves out, so a file both sides changed kept main's time, and with an
+edit of the same size main's size too, and Go reused main's pass. An
+amended commit keeps its old time the same way. `scripts/blob-times-test.sh`
+plays that case and runs in `build` on every pull request.
+
+The one engine test that reads the docs, `TestVideosAreNamedOnce`, is
+skipped in `linux`, because it runs in `build` whatever changed, and
+otherwise a change to a doc would run the engine's tests again. `macos`
+does none of this, so there the engine and the app run every time.
 
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a

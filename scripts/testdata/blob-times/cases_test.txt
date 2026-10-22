@@ -1,0 +1,17 @@
+package sim
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+func TestCases(t *testing.T) {
+	b, err := os.ReadFile("cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "a=0.25") {
+		t.Fatalf("cases changed: %q", b)
+	}
+}

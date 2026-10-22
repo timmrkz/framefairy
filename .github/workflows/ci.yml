@@ -144,6 +144,11 @@ jobs:
       # the endings a second time would go green and break main.
       - name: Check the video endings are named once
         run: go test -run '^TestVideosAreNamedOnce$' ./engine
+      # And that the file times the job linux gives for Go's test cache
+      # never let a changed file through as the same, which is as silent
+      # when it is wrong: a pull request goes green on a test that fails.
+      - name: Check the file times for Go's test cache
+        run: sh scripts/blob-times-test.sh
       # And what make changed runs for a change, which is as silent when it
       # is wrong: the check before a push goes green having run less than
       # the change needed. It reads the packages with Go, so it runs
@@ -238,10 +243,7 @@ jobs:
             flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])|^TestVideosAreNamedOnce$
     runs-on: ubuntu-24.04
     steps:
-      # The whole history, for git restore-mtime below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -283,25 +285,25 @@ jobs:
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       # Go's test cache knows a file the tests read by its size and time,
       # and a checkout gives every file the time of the checkout. So each
-      # file takes the time of the last commit that changed it, with git
-      # restore-mtime from MestreLion/git-tools, which this action carries
-      # in its 2025.08 version. Ubuntu's 2022.12 asks git whatchanged,
-      # which the runner's git refuses. The decoder then takes the time of
-      # its newest source, see the Makefile. Folders all take one fixed
-      # time, once the caches and the decoder have added theirs: Go knows
-      # a folder a test lists by the names and times of what is in it, so
-      # a folder's own time tells it nothing, and git restore-mtime leaves
-      # some at the time of the checkout. The log of the tests goes outside
-      # the checkout, so nothing the tests read changes between two runs of
-      # the same code.
-      - name: File times from git, for Go's test cache
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2.3
-        with:
-          args: --no-directories
+      # file git tracks takes a time made from its content, and the decoder
+      # one made from its own, so the same content always looks the same to
+      # Go and other content never does. Times from the history let a pull
+      # request go green on a test that failed, see docs/BUILD.md and
+      # scripts/blob-times-test.sh. Folders all take one fixed time, once
+      # the caches and the decoder have added theirs: Go knows a folder a
+      # test lists by the names and times of what is in it, so a folder's
+      # own time tells it nothing. The log of the tests goes outside the
+      # checkout, so nothing the tests read changes between two runs of the
+      # same code.
+      - name: File times from their content, for Go's test cache
+        run: git ls-files -s -z | python3 -I scripts/blob-times.py
       - name: The episode's decoder
         run: |
           make frames
-          find . -path './.git/*' -prune -o -type d -exec touch -d 2026-01-01T00:00:00Z {} +
+          f=.build/frames/framefairy-frames
+          sha256sum "$f"
+          touch -d "@$((946684800 + 0x$(sha256sum "$f" | cut -c1-7)))" "$f"
+          find . -path './.git' -prune -o -type d -exec touch -d 2026-01-01T00:00:00Z {} +
       # A test that fails is named on the check, see
       # scripts/test-failures.sh, so finding it needs no log.
       #

@@ -161,6 +161,10 @@ for file in $changed; do
 		rules=1
 		shells="$shells $file"
 		;;
+	scripts/blob-times.py | scripts/blob-times-test.sh | scripts/testdata/blob-times/*)
+		rules=1
+		case $file in *.sh) shells="$shells $file" ;; esac
+		;;
 	scripts/changed.sh | scripts/changed-test.sh)
 		changed_rules=1
 		shells="$shells $file"
@@ -257,7 +261,7 @@ fi
 [ "$interface" = 1 ] && say "interface: make interface"
 [ "$walks" = 1 ] && say "walks:     make walks"
 [ "$build" = 1 ] && say "build:     make"
-[ "$rules" = 1 ] && say "rules:     scripts/ci-filters-test.sh"
+[ "$rules" = 1 ] && say "rules:     scripts/ci-filters-test.sh, scripts/blob-times-test.sh"
 [ "$changed_rules" = 1 ] && say "rules:     scripts/changed-test.sh"
 [ "$build_rules" = 1 ] && say "rules:     scripts/needs-build-test.sh"
 [ "$moved_rules" = 1 ] && say "rules:     scripts/main-moved-test.sh"
@@ -407,7 +411,10 @@ for w in $workflows; do
 done
 
 [ -n "$workflows" ] && sh scripts/pins.sh
-[ "$rules" = 1 ] && sh scripts/ci-filters-test.sh
+if [ "$rules" = 1 ]; then
+	sh scripts/ci-filters-test.sh
+	sh scripts/blob-times-test.sh
+fi
 [ "$changed_rules" = 1 ] && sh scripts/changed-test.sh
 [ "$build_rules" = 1 ] && sh scripts/needs-build-test.sh
 [ "$moved_rules" = 1 ] && sh scripts/main-moved-test.sh
