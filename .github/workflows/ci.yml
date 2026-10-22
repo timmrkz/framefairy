@@ -294,7 +294,10 @@ jobs:
       # test lists by the names and times of what is in it, so a folder's
       # own time tells it nothing. The log of the tests goes outside the
       # checkout, so nothing the tests read changes between two runs of the
-      # same code.
+      # same code. The decoder's time from its content can be older than
+      # its sources' times from theirs, so the tests below take it as it
+      # is, make -o, rather than build it again with a new time. Built
+      # twice from the same commit it had the same sum.
       - name: File times from their content, for Go's test cache
         run: git ls-files -s -z | python3 -I scripts/blob-times.py
       - name: The episode's decoder
@@ -315,7 +318,7 @@ jobs:
       - name: Go tests
         timeout-minutes: 15
         run: |
-          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee "$RUNNER_TEMP/unit.log"
+          make -o .build/frames/framefairy-frames unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee "$RUNNER_TEMP/unit.log"
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh "$RUNNER_TEMP/unit.log"; fi
           exit "$status"

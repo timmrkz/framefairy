@@ -360,8 +360,9 @@ checkout ran again on every push, whatever changed. In `linux`,
 content, from the hash git keeps for it, so the same content has the same
 time on every checkout and other content another. The episode's decoder,
 which the app's tests run, takes a time made from its own sha256 in the
-same way, and the step prints the sum, so two runs show whether it was
-built the same. Folders all get one fixed time: Go knows a folder a test
+same way, and the step prints the sum: three machines built the same
+bytes from one commit. That time can be older than the times of its
+sources, so `make -o` keeps `make unit` from building it again. Folders all get one fixed time: Go knows a folder a test
 lists by the names and times of what is in it, so the folder's own time
 tells it nothing. That runs after the caches are restored and the decoder
 is built, because each adds a folder to the checkout. And the log of the
