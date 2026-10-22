@@ -11936,7 +11936,7 @@ for (const seq of toWalk) {
           let ended;
           window.__fold = { seen, height: row.getBoundingClientRect().height, gap, row, ended: new Promise((r) => (ended = r)) };
           const look = () => {
-            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top });
+            seen.push({ there: row.isConnected, top: under.getBoundingClientRect().top, height: row.isConnected ? row.getBoundingClientRect().height : 0 });
             if (row.isConnected || seen.filter((f) => !f.there).length < 30) frame(look);
             else ended();
           };
@@ -11956,13 +11956,22 @@ for (const seq of toWalk) {
         }
         const { seen, height, gap } = await page.evaluate(() => ({ seen: window.__fold.seen, height: window.__fold.height, gap: window.__fold.gap }));
         const tops = seen.map((f) => f.top);
-        const left = seen.findIndex((f) => !f.there);
         const rose = tops[0] - tops[tops.length - 1];
         const back = tops.findIndex((t, i) => i && t > tops[i - 1] + 0.5);
-        const last = tops[left - 1] - tops[left];
+        // The space goes with the row: in every frame the row is still
+        // there, the card under it has risen by as much of the row and the
+        // space after it as the row has folded. Judged frame by frame, not
+        // by the step at the end, since a busy machine that draws no frame
+        // for a while makes that step as large as the fold it missed,
+        // issue #442.
+        const folding = seen.filter((f) => f.there && f.height > 0.5 && f.height < height - 0.5);
+        const off = folding
+          .map((f, i) => ({ i, by: tops[0] - f.top - (height + gap) * (1 - f.height / height) }))
+          .find((f) => Math.abs(f.by) > 1);
         if (Math.abs(rose - (height + gap)) > 1) wrong = `the card under the removed row rose ${rose.toFixed(1)} px, not the row's ${height} and the ${gap} after it`;
         else if (back >= 0) wrong = `the card under the removed row went back down ${(tops[back] - tops[back - 1]).toFixed(1)} px on frame ${back}`;
-        else if (last > 1) wrong = `the card under the removed row jumped ${last.toFixed(1)} px in the frame the row left the list, of the ${rose.toFixed(1)} it rose`;
+        else if (!folding.length) wrong = `the screen drew no frame while the row folded, of the ${seen.length} it drew, so how it folded cannot be judged`;
+        else if (off) wrong = `the space under the removed row did not fold with it: ${Math.abs(off.by).toFixed(1)} px ${off.by < 0 ? "short of" : "past"} where the card under it stands on frame ${off.i + 1} of the fold`;
         await watch.step("row folds", s);
         break;
       }

@@ -640,8 +640,11 @@ running and fails it with what it printed, and every walk writes
 `walking`, `walked` or `failed` with its name to stderr as it starts and
 ends, so a walk that hung is named, issue #443. And a check counts what the app drew
 against the frames the screen drew, not against a number: a bounce is
-drawn on every frame the screen drew while it lasted, and the crop frame
-of a glide stands in a place of its own on every frame the play showed.
+drawn on every frame the screen drew while it lasted, the crop frame
+of a glide stands in a place of its own on every frame the play showed,
+and the card under a removed row has risen, in every frame the row
+folds, by as much of the row and the space after it as the row has
+folded, so frames the screen did not draw make no jump, issue #442.
 A bounce the screen drew too few frames of to judge, fewer than three or
 none for 90 ms, is stepped onto again, up to three times. A bounce drawn
 on every other frame fails with "bounced on 8 of the 15 frames the screen
