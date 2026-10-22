@@ -335,6 +335,9 @@ facade the app goes around, and three files too big to hold in one's head.
     `codesign --verify`.
 37. Tests that wait on time: `remove_test.go:169, 190, 236` sleep a fixed
     300 ms for a 200 ms job. Poll with a deadline instead. **Fixed** in #58.
+    The advice was wrong: a poll with a deadline waits on the clock too.
+    A test hears the event that says the job ended, see the testing skill
+    in `.claude/skills/testing/`. What is left of such polls is #394.
 38. When our ffmpeg build fails, `tools.sh:104` unlinks the user's Homebrew
     ffmpeg and installs the tap's, a change to the machine nobody would
     expect. **Fixed** in #58.
