@@ -391,11 +391,16 @@ jobs:
       - name: The episode's decoder
         run: make frames
       # The version of Chromium the pinned Playwright was made for, with the
-      # libraries it needs.
+      # libraries it needs. Those come through apt with the cache the step
+      # System packages set up, so the job's cache keeps them too, and the
+      # cache goes back to the runner's user to be saved, see
+      # scripts/ci-packages.sh.
       - name: Chromium
         run: |
           make frontend/node_modules/.package-lock.json
-          cd frontend && npm exec -- playwright install --with-deps chromium
+          (cd frontend && npm exec -- playwright install --with-deps chromium)
+          sudo rm -rf ~/.cache/apt/partial ~/.cache/apt/lock
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt
       # A walk or a sequence that breaks a rule is named on the check, see
       # scripts/test-failures.sh. A share takes about two and a half
       # minutes, so one that hangs is stopped and named after eight rather

@@ -27,7 +27,18 @@ sudo rm -f /var/lib/man-db/auto-update
 # A download that stalls is tried again rather than waited on. The cache
 # is in the runner's home, which apt's own user cannot reach, so apt
 # downloads as root, as it would anyway, without saying so each time.
-apt="sudo apt-get -q -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Dir::Cache::Archives=$CACHE -o APT::Keep-Downloaded-Packages=true -o APT::Sandbox::User=root"
+# They are apt's own settings, not flags of this call, so whatever runs
+# apt after it in the same job takes the cache too: the walks job installs
+# the libraries Chromium needs through Playwright, and on a slow day the
+# fonts among them took eleven minutes from the runners' mirror, #462.
+printf '%s\n' \
+	'Acquire::Retries "3";' \
+	'Acquire::http::Timeout "20";' \
+	"Dir::Cache::Archives \"$CACHE\";" \
+	'APT::Keep-Downloaded-Packages "true";' \
+	'APT::Sandbox::User "root";' |
+	sudo tee /etc/apt/apt.conf.d/99ci-cache >/dev/null
+apt="sudo apt-get -q"
 $apt update
 $apt install -y --no-install-recommends \
 	pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev "$@"
