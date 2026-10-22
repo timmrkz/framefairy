@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -695,16 +696,19 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 
 	brief := func(ctx context.Context, p *engine.Project) (string, error) { return "ok", nil }
 	kinds := []string{"render", "model", "plan", engine.JobSearch}
-	// burst lets four hands add three pieces of work each, all at once,
-	// and hands back the work the queue took.
-	burst := func(round int, start <-chan struct{}) (took func() []string) {
+	// burst lets four hands add n pieces of work each, all at once. done
+	// closes when they have, and took hands back the work the queue took.
+	// Forty each in the race is what made it catch a Relaunch that looks
+	// and closes in two steps in a quarter of the runs, in a cloud session,
+	// where three each caught it in none.
+	burst := func(round, n int, start <-chan struct{}) (done <-chan struct{}, took func() []string) {
 		var mu sync.Mutex
 		var ids []string
 		var wg sync.WaitGroup
 		for hand := range 4 {
 			wg.Go(func() {
 				<-start
-				for k := range 3 {
+				for k := range n {
 					job := q.add(fmt.Sprintf("/eps/%d.mp4", hand), kinds[(round+hand+k)%len(kinds)], "Work", brief)
 					switch {
 					case job.State != JobFailed:
@@ -717,35 +721,50 @@ func TestRelaunchLetsNoWorkStartAfterIt(t *testing.T) {
 				}
 			})
 		}
-		return func() []string {
+		added := make(chan struct{})
+		go func() {
 			wg.Wait()
+			close(added)
+		}()
+		return added, func() []string {
+			<-added
 			return ids
 		}
 	}
 
 	for round := range 20 {
-		// Relaunch asks while the hands add, which is the race. Whichever
-		// comes first, once it has found the queue idle nothing runs or
-		// waits after it.
+		// Relaunch asks again and again while the hands add, which is the
+		// race. Whichever comes first, once it has found the queue idle
+		// nothing runs or waits until it reopens.
 		start := make(chan struct{})
-		took := burst(round, start)
+		done, took := burst(round, 40, start)
 		close(start)
-		reopen, idle := q.closeIfIdle()
-		added := took()
-		if idle && q.busy() {
-			t.Fatal("work ran or waited after Relaunch found the queue idle")
+		for asking := true; asking; {
+			select {
+			case <-done:
+				asking = false
+			default:
+			}
+			reopen, idle := q.closeIfIdle()
+			for range 20 {
+				if idle && q.busy() {
+					t.Fatal("work ran or waited after Relaunch found the queue idle")
+				}
+				runtime.Gosched()
+			}
+			reopen()
 		}
-		reopen()
+		added := took()
 
 		// Once all of that has ended the queue is idle, and Relaunch finds
 		// it so. Work asked for after that is refused, and none runs.
 		ended(added)
-		reopen, idle = q.closeIfIdle()
+		reopen, idle := q.closeIfIdle()
 		if !idle {
 			t.Fatalf("round %d: Relaunch did not find the queue idle once its work had ended", round)
 		}
 		start = make(chan struct{})
-		took = burst(round, start)
+		_, took = burst(round, 3, start)
 		close(start)
 		if added := took(); len(added) > 0 {
 			t.Fatalf("round %d: %d pieces of work were taken after Relaunch found the queue idle", round, len(added))
