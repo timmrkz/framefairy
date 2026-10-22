@@ -256,8 +256,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
+          key: go-v4-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v4-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -333,7 +333,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          key: go-v4-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
