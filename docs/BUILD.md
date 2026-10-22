@@ -362,18 +362,18 @@ the last commit that changed it, which takes the whole history,
 [chetan/git-restore-mtime-action](https://github.com/chetan/git-restore-mtime-action),
 which carries its 2025.08 version. Ubuntu's package is 2022.12, which
 asks `git whatchanged`, and the runner's git 2.55 refuses that command,
-so every file kept the time of the checkout. Folders all get one fixed time: Go knows
-a folder a test lists by the names and times of what is in it, so the
-folder's own time tells it nothing, and `git restore-mtime` leaves some
-folders at the time of the checkout, like one that holds only folders.
-That runs after the caches are restored, because restoring one adds a
-folder to the checkout. The episode's decoder, which the app's tests run, takes the
-time of the newest file it is built from, see `frames` in the Makefile,
-so building it again from the same files changes nothing the tests see.
-And the log of the tests goes to `$RUNNER_TEMP`, because one test
-resolves a path through the top of the checkout, whose time changes when
-a file is made in it. `macos` does none of this, so there the engine and
-the app run every time.
+so every file kept the time of the checkout. Folders all get one fixed
+time: Go knows a folder a test lists by the names and times of what is in
+it, so the folder's own time tells it nothing, and `git restore-mtime`
+leaves some folders at the time of the checkout, like one that holds only
+folders. That runs after the caches are restored, because restoring one
+adds a folder to the checkout. The episode's decoder, which the app's
+tests run, takes the time of the newest file it is built from, see
+`frames` in the Makefile, so building it again from the same files
+changes nothing the tests see. And the log of the tests goes to
+`$RUNNER_TEMP`, because one test resolves a path through the top of the
+checkout, whose time changes when a file is made in it. `macos` does none
+of this, so there the engine and the app run every time.
 
 Nothing is left out to make it quick. Every test runs on Linux under the
 race detector, with the same `FUZZTIME`, and every test of what runs on a
