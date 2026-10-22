@@ -827,12 +827,29 @@ func (q *queue) runJob(job *Job) {
 		}
 	}
 	log := engine.NewLog(out, false, true)
+	// Where the part being heard began, so a new part is seen beginning.
+	var partMu sync.Mutex
+	partFrom := -1.0
 	log.SetSink(func(ev engine.Event) {
 		// Detail lines are for bug reports, not for the interface.
 		if ev.Kind == engine.EventDetail {
 			return
 		}
 		copied := ev
+		// A hearing that begins a new part has saved the part before it,
+		// so the library is read again: what it says was heard stays true
+		// while a job hears a video in parts, not only once the job ends.
+		// Read only when it ended, the menu's share of a video heard went
+		// back each time the work went on to the next part, found by Tim.
+		if copied.Kind == engine.EventProgress && copied.Covered > 0 {
+			partMu.Lock()
+			moved := partFrom >= 0 && copied.From != partFrom
+			partFrom = copied.From
+			partMu.Unlock()
+			if moved && q.notify != nil {
+				q.notify(job.Episode)
+			}
+		}
 		if copied.Kind == engine.EventUnderway {
 			q.update(job, func(j *Job) {
 				j.Underway, j.Written, j.Whole = copied.Underway, copied.Found, copied.Whole

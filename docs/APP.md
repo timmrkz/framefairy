@@ -165,20 +165,19 @@ videos above it and run from edge to edge, the way a list's do in
 
 The row about the words says the one thing that can be done with them
 now, issue #432, asked for by Tim. Two rows of which one never works were
-two things to read for one:
+two things to read for one. Each is an action, which closes the menu the
+way a menu item does on the Mac. How far the work has come is not the
+menu's to show, Tim's call on #458:
 
 - **Transcribe whole video** while the transcript has not reached the
   video's end. It hears the video to its end with no search after, a job
-  of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md). It says
-  Transcribing in the frame it is clicked.
-- **Transcribing**, with how much of the video is transcribed as a
-  number and as the fill of work in hand, while it runs, or **Waiting to
-  transcribe** while a search hears or finds, which always goes first. The
-  cross at its end stops it, the way a download in Safari is stopped, and
-  says Stopping at once. What was heard stays.
+  of its own, `engine.JobTranscribe`, see [JOBS.md](JOBS.md). It gives
+  way to every search and clip made by hand, which always go first.
+- **Stop transcribing** while it runs or waits its turn. What was heard
+  stays.
 - **Continue transcribing** once it stopped, by hand, by the app closing
-  or by failing, with its fill standing still. Why it failed is said in a
-  toast as it fails.
+  or by failing, and from the frame Stop transcribing is clicked. Why it
+  failed is said in a toast as it fails.
 - **Export transcript** once the transcript reaches the end. It hangs its
   formats on the right of the menu, the way Export To does in Pages, and
   a format opens the system's save box on "<video> transcript" with the
@@ -193,6 +192,17 @@ two things to read for one:
   removed from a clip's captions is still said, so it stays. The file
   always gets the format's ending, whatever name is typed, so the save
   box can never replace the video or any other kind of file.
+
+While it runs, the video's row in the sidebar says how much of the video
+is transcribed, `62 %` at the end of the row, and its dot pulses the way
+it does for all work, both from the frame Transcribe whole video is
+clicked. The dots on the range picker shrink as it hears. The number is
+read from the same parts heard the dots are drawn from, a mark that only
+ever grows, `Heard` in `lib/flow.ts`, so it never goes back, and the
+library is read again each time the work goes on to the next part of the
+video. Read only when the job ended, the number went back each time the
+work went on to the next part and jumped from 60 to 96 % when it was
+stopped, found by Tim.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told

@@ -745,3 +745,37 @@ func TestASearchThatEndsKeepsTheModelAgain(t *testing.T) {
 	})
 	<-searched
 }
+
+// A job that hears a video in parts has the library read again each time
+// it goes on to the next part, so the parts the library says were heard
+// keep up with the work rather than catching up only when the job ends.
+// Read only at the end, the share of a video heard went back each time the
+// work went on to the next part and jumped from 60 to 96 % when it was
+// stopped, found by Tim on PR #458.
+func TestTheLibraryIsReadAgainWhenTheHearingGoesOnToTheNextPart(t *testing.T) {
+	t.Parallel()
+	told := make(chan string, 8)
+	q := newQueue(memoryStore(), func(JobUpdate) {}, func(episode string) { told <- episode })
+	part := make(chan struct{})
+	q.add("/eps/ep.mp4", engine.JobTranscribe, "Transcribe whole video", func(ctx context.Context, p *engine.Project) (string, error) {
+		// The same part going on is no news to the library, the next is.
+		p.Log().ProgressTo("transcribing", 0.1, 10, 0, 10)
+		p.Log().ProgressTo("transcribing", 0.2, 9, 0, 20)
+		p.Log().ProgressTo("transcribing", 0.3, 8, 100, 110)
+		<-part
+		return "", nil
+	})
+	if got := <-told; got != "/eps/ep.mp4" {
+		t.Fatalf("the library was told of %q", got)
+	}
+	select {
+	case got := <-told:
+		t.Fatalf("the library was told of %q again before the job ended", got)
+	default:
+	}
+	close(part)
+	// And once more when it ends, as every job does.
+	if got := <-told; got != "/eps/ep.mp4" {
+		t.Fatalf("at the end the library was told of %q", got)
+	}
+}

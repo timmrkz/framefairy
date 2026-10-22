@@ -77,6 +77,12 @@ class JobStore {
     return last;
   }
 
+  // The video's transcription to its end while it runs or waits its turn.
+  transcribing(path: string): Job | undefined {
+    const work = this.transcription(path);
+    return work?.state === "running" || work?.state === "queued" ? work : undefined;
+  }
+
   get busy(): number {
     return this.list.filter((j) => j.state === "running" || j.state === "queued").length;
   }

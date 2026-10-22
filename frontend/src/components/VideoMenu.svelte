@@ -25,22 +25,23 @@
   //
   // One row is about the words of the video, and says the one thing that
   // can be done with them now, issue #432: Transcribe whole video while
-  // the transcript has not reached the end, Transcribing with how far it
-  // has come while that runs, and its cross to stop it, the way a download
-  // in Safari is stopped, Continue transcribing once it stopped, by hand
-  // or by the app closing, and Export transcript once it is all there.
-  // Export hangs a list of its formats on the right of the menu, the way
-  // Export To does in Pages, and a format opens the system's save box.
-  // Two rows of which one never works were two things to read for one.
+  // the transcript has not reached the end, Stop transcribing while that
+  // runs, Continue transcribing once it stopped, by hand or by the app
+  // closing, and Export transcript once it is all there. Each is an
+  // action, which closes the menu the way a menu item does on the Mac.
+  // How far the work has come is not the menu's to show: the dots on the
+  // range picker shrink and the video's row in the sidebar says how much
+  // is transcribed, Tim's call on #458. Export hangs a list of its formats
+  // on the right of the menu, the way Export To does in Pages, and a
+  // format opens the system's save box. Two rows of which one never works
+  // were two things to read for one.
   //
   // Everything saves at once, the way it does everywhere in the app: a
   // colour the moment it is clicked, the words when Return is pressed, the
   // field is left or the menu closes. The pill in the row follows the words
   // while they are typed. Escape puts back what was there, and the cross at
   // the end of the field, there while it has words, removes the label.
-  import { untrack } from "svelte";
   import { Popover } from "bits-ui";
-  import Busy from "./Busy.svelte";
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
   import type { EpisodeStatus, Job, Label, TranscriptFormat } from "../lib/api";
@@ -61,7 +62,7 @@
     onreveal,
     onremove,
     work,
-    share,
+    stopping,
     ontranscribe,
     onstoptranscribe,
     onexport,
@@ -90,46 +91,21 @@
     onreveal: () => void;
     onremove: () => void;
     // The video's transcription to its end, running or stopped, or nothing,
-    // and how much of the video is transcribed, from 0 to 1, or -1 before
-    // that is known.
+    // and whether Stop transcribing was pressed while it still runs.
     work: Job | undefined;
-    share: number;
+    stopping: boolean;
     ontranscribe: () => void;
     onstoptranscribe: () => void;
     onexport: (format: TranscriptFormat) => void;
   } = $props();
 
-  // A click shows at once: Transcribe says Transcribing, and the cross
-  // says Stopping, from the frame it is pressed until the job says so too.
-  let asked = $state("");
-  let stopping = $state("");
-  const running = $derived(work?.state === "running" || work?.state === "queued");
-  const transcribing = $derived(running || (asked !== "" && asked === (work?.id ?? "none")));
-  $effect(() => {
-    const id = work?.id ?? "none";
-    const on = running;
-    untrack(() => {
-      if (asked && (asked !== id || on)) asked = "";
-      if (stopping && (stopping !== id || !on)) stopping = "";
-    });
-  });
-
   // What the row about the words says, see above. A video whose
-  // transcript reaches its end is done, whatever job brought it there.
+  // transcript reaches its end is done, whatever job brought it there. One
+  // told to stop is as good as stopped, so the row offers to carry it on.
+  const running = $derived((work?.state === "running" || work?.state === "queued") && !stopping);
   const words = $derived(
-    ep.transcribed && !transcribing
-      ? "export"
-      : transcribing
-        ? "transcribing"
-        : work && work.state !== "done"
-          ? "continue"
-          : "transcribe",
+    running ? "stop" : ep.transcribed ? "export" : work && work.state !== "done" ? "continue" : "transcribe",
   );
-  // How far, in the row's fill and its number, while it runs and once it
-  // stopped, where the fill stands still.
-  const percent = $derived(share >= 0 ? `${Math.floor(share * 100)} %` : "");
-  // Waiting for its turn behind a search is said as the search says it.
-  const waiting = $derived(transcribing && (!work?.step || work.step === "waiting"));
 
   // The list of formats Export transcript hangs on the right of the menu.
   let exporting = $state(false);
@@ -428,41 +404,24 @@
                     </Popover.Content>
                   </Popover.Portal>
                 </Popover.Root>
-              {:else if words === "transcribing"}
-                <div class="item busyhost">
-                  <Busy fraction={share} />
-                  <Icon name="transcript" />
-                  <span class="words">{stopping ? "Stopping" : waiting ? "Waiting to transcribe" : "Transcribing"}</span>
-                  <span class="end num">{percent}</span>
-                  <button
-                    class="stop quiet"
-                    title="Stop transcribing. What is transcribed stays"
-                    aria-label="Stop transcribing"
-                    disabled={!!stopping || !running}
-                    onclick={() => {
-                      stopping = work?.id ?? "";
-                      onstoptranscribe();
-                    }}
-                  >
-                    <Icon name="close" size={12} />
-                  </button>
-                </div>
               {:else}
                 <button
                   class="item"
                   disabled={ep.missing}
-                  title={words === "continue"
-                    ? "Carry on transcribing from where it stopped"
-                    : "Transcribe the whole video, so its transcript can be exported"}
+                  title={words === "stop"
+                    ? "Stop transcribing. What is transcribed stays, and it can be carried on"
+                    : words === "continue"
+                      ? "Carry on transcribing from where it stopped"
+                      : "Transcribe the whole video, so its transcript can be exported"}
                   onclick={() => {
-                    asked = work?.id ?? "none";
-                    ontranscribe();
+                    const stop = words === "stop";
+                    close();
+                    if (stop) onstoptranscribe();
+                    else ontranscribe();
                   }}
                 >
-                  {#if words === "continue" && share >= 0}<Busy fraction={share} still />{/if}
                   <Icon name="transcript" />
-                  <span class="words">{words === "continue" ? "Continue transcribing" : "Transcribe whole video"}</span>
-                  {#if words === "continue"}<span class="end num">{percent}</span>{/if}
+                  {words === "stop" ? "Stop transcribing" : words === "continue" ? "Continue transcribing" : "Transcribe whole video"}
                 </button>
               {/if}
               <button
@@ -587,33 +546,14 @@
     outline: none;
   }
 
-  /* What stands at the end of a row, the chevron of Export, a number or a
-     format's ending, in the grey of a secondary word, the way a menu on
+  /* What stands at the end of a row, the chevron of Export or a format's
+     ending, in the grey of a secondary word, the way a menu on
      the Mac puts a shortcut there. */
   .item .end {
     display: flex;
     align-items: center;
     margin-left: auto;
     color: var(--muted);
-  }
-
-  /* The row while the video is transcribed is no button: what it is for
-     is the cross at its end, as in Safari's list of downloads, and its
-     fill is how far, .busyhost in app.css. */
-  .stop {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    color: var(--muted);
-  }
-
-  .stop:hover:not(:disabled) {
-    color: var(--text);
   }
 
   /* The list of formats hangs beside the menu, as wide as its words, its

@@ -18,7 +18,7 @@
     type TranscriptFormat,
     errorText,
   } from "./lib/api";
-  import { heardIn, joinParts } from "./lib/flow";
+  import { Heard, heardIn } from "./lib/flow";
   import { jobs, nav, shell } from "./lib/state.svelte";
   import { railDot, standing, updates } from "./lib/updates.svelte";
   import { sortEpisodes, type EpisodeOrder } from "./lib/order";
@@ -171,17 +171,35 @@
     queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
   }
 
-  // How much of a video is transcribed, from 0 to 1, for the row about its
-  // words in its menu: what its transcript has heard, with what the work
-  // that hears it now has got to since it was last saved. -1 before the
-  // video has a transcript that knows how long it is.
+  // How much of a video is transcribed, from 0 to 1, for the number in its
+  // row while Transcribe whole video runs: what its transcript has heard,
+  // with what the work that hears it now has got to since it was last
+  // saved, held in a mark that only ever grows, the one the range picker
+  // draws its dots from, see Heard in lib/flow.ts. Summed afresh each time,
+  // it went back whenever the work went on to the next part of the video,
+  // and jumped from 60 to 96 % when it was stopped, found by Tim on #458.
+  // -1 before the video has a transcript that knows how long it is.
+  const marks = new Map<string, Heard>();
+  // The transcriptions Stop transcribing was pressed for: from that frame
+  // the row stops counting and the menu offers to carry it on, before the
+  // job has said it stopped. A click shows at once.
+  let stopped = $state<string[]>([]);
+  // The videos Transcribe whole video was pressed for and whose job is on
+  // its way: the row counts from that frame, not from the Go side's answer.
+  let starting = $state<string[]>([]);
+  function counting(path: string): Job | undefined {
+    const work = jobs.transcribing(path);
+    return work && !stopped.includes(work.id) ? work : undefined;
+  }
   function transcribedShare(ep: EpisodeStatus, work: Job | undefined): number {
     const length = ep.length ?? 0;
     if (!(length > 0)) return -1;
     if (ep.transcribed) return 1;
+    let mark = marks.get(ep.source);
+    if (!mark) marks.set(ep.source, (mark = new Heard()));
     const p = work?.state === "running" ? work.progress : undefined;
-    const live: [number, number][] = p?.covered ? [[p.from ?? 0, p.covered]] : [];
-    return Math.min(heardIn(joinParts([...(ep.heard ?? []), ...live]), 0, length) / length, 1);
+    const live: [number, number] | null = p?.covered ? [p.from ?? 0, p.covered] : null;
+    return Math.min(heardIn(mark.seen(ep.source, ep.heard ?? [], live, !!ep.transcriptStale), 0, length) / length, 1);
   }
 
   // Transcribe whole video, and Continue transcribing, in a video's menu.
@@ -189,10 +207,16 @@
   // without waiting for the job's first news.
   async function transcribe(ep: EpisodeStatus) {
     said(`video menu: transcribe whole video`, { video: ep.source });
+    starting = [...starting, ep.source];
+    // Read again, so a video added a moment ago knows how long it is and
+    // its row can say how much of it is transcribed.
+    void refresh();
     try {
       jobs.apply(await api.transcribe(ep.source));
     } catch (err) {
       toasts.say("transcribe whole video", errorText(err), { video: ep.source });
+    } finally {
+      starting = starting.filter((p) => p !== ep.source);
     }
   }
 
@@ -559,7 +583,7 @@
   }
 
   function dotFor(ep: EpisodeStatus): string {
-    if (jobs.active(ep.source)) return "busy";
+    if (jobs.active(ep.source) || starting.includes(ep.source)) return "busy";
     if (ep.missing) return "err";
     // A search that stopped says so here as well as in its row, so it can
     // be found from the sidebar: stopped or cut off in the colour of a
@@ -764,6 +788,10 @@
             <span class="line" title={label ? `${label.text}. ${summary(ep)}` : summary(ep)}>
               <span class="name">{ep.name}</span>
               {#if label}<span class="tag" style="--tag: {label.colour}">{label.text}</span>{/if}
+              {#if counting(ep.source) || starting.includes(ep.source)}
+                {@const share = transcribedShare(ep, counting(ep.source))}
+                {#if share >= 0}<span class="share num">{Math.floor(share * 100)} %</span>{/if}
+              {/if}
             </span>
           </button>
           <span class="tools">
@@ -782,11 +810,14 @@
               onreveal={() => api.reveal(ep.source)}
               onremove={() => (removing = ep)}
               work={jobs.transcription(ep.source)}
-              share={transcribedShare(ep, jobs.transcription(ep.source))}
+              stopping={!!jobs.transcribing(ep.source) && !counting(ep.source)}
               ontranscribe={() => transcribe(ep)}
               onstoptranscribe={() => {
-                const work = jobs.transcription(ep.source);
-                if (work) void api.cancelJob(work.id);
+                const work = jobs.transcribing(ep.source);
+                if (!work) return;
+                stopped = [...stopped, work.id];
+                said("video menu: stop transcribing", { video: ep.source });
+                void api.cancelJob(work.id);
               }}
               onexport={(format) => exportTranscript(ep, format)}
             />
@@ -1235,6 +1266,15 @@
 
   .episode .name {
     min-width: 0;
+  }
+
+  /* How much of the video Transcribe whole video has heard, at the end of
+     the row it was started from, out of the way of the three dots. The
+     row's dot pulses while it runs, the way all work does, see dotFor. */
+  .episode .share {
+    margin-left: auto;
+    flex: none;
+    color: var(--muted);
   }
 
   /* What you do with an episode itself waits until the pointer is on its

@@ -199,11 +199,20 @@
 //                      sidebar, whose row about the words says the one
 //                      thing that can be done with them now, issue #432.
 //                      "transcribe" needs it to say Transcribe whole
-//                      video, clicks it, and in the next frame it has to
-//                      say it is transcribing or waiting to. "Text" and
+//                      video and clicks it: in the next frame the menu has
+//                      closed and the video's row says how much of it is
+//                      transcribed. "stop" needs Stop transcribing and
+//                      clicks it: in the next frame the number is gone,
+//                      and the menu opened again says Continue
+//                      transcribing. "continue" waits for the stopped work
+//                      to end, clicks Continue transcribing, and the
+//                      number in the next frame is no less than where it
+//                      stopped. "Text" and
 //                      "Subtitles" wait, asking again each time the work
 //                      says how far it heard, until the Go side says the
-//                      video is transcribed to its end, then need the row
+//                      video is transcribed to its end, the number in the
+//                      video's row never going back on the way, then need
+//                      the row
 //                      to say Export transcript, hover it, which
 //                      hangs the formats on the right of the menu, and
 //                      click that format: the file saved has to be named
@@ -1353,8 +1362,8 @@ export const sequences = [
   },
   {
     // Issue #432: a video just added, still being heard by its first
-    // search, is transcribed to its end from its menu, and then offers
-    // its transcript.
+    // search, is transcribed to its end from its menu, stopped and carried
+    // on, and then offers its transcript.
     name: "a video added is transcribed to its end from its menu",
     steps: [
       // Heard slowly, and held once some of it is, so most of it is
@@ -1364,6 +1373,11 @@ export const sequences = [
       ["heard some"],
       ["speech", "hold"],
       ["transcript", "transcribe"],
+      // Stopped and carried on, it counts on from where it got to. Tim saw
+      // it go back and then jump from 60 to 96 % on PR #458.
+      ["transcript", "stop"],
+      ["speech", 1500],
+      ["transcript", "continue"],
       ["speech", 0],
       ["transcript", "Text"],
     ],
@@ -4911,6 +4925,9 @@ for (const seq of toWalk) {
   let removedLast = null;
   let removedChosen = "";
   let loopEnd = null;
+  // The number the video's row said at the last "transcript" step that
+  // started, stopped or carried on its transcription.
+  let transcriptShare = null;
   // Whether the last "drag edge" held shift.
   let dragShift = false;
   const edgeLabel = { start: "Clip start", end: "Clip end", "cut from": "Where cut 1 starts", "cut to": "Where cut 1 ends" };
@@ -6775,26 +6792,86 @@ for (const seq of toWalk) {
         // label.
         const says = () => page.evaluate(() => (document.querySelector(".video-menu .item")?.textContent ?? "").replace(/\s+/g, " ").trim());
         const first = await says();
-        if (arg === "transcribe") {
-          if (!first.startsWith("Transcribe whole video")) {
-            wrong = `the menu of a video not transcribed to its end says ${JSON.stringify(first)}, not Transcribe whole video`;
-            break;
-          }
-          // A click shows at once: in the next frame, before the Go side
-          // has said anything.
-          const next = await page.evaluate(
-            () =>
+        // The number at the end of the video's row in the sidebar, or null.
+        const share = () =>
+          page.evaluate(() => {
+            const t = document.querySelector("aside li:has(button.episode.current) .share")?.textContent ?? "";
+            return t ? parseInt(t, 10) : null;
+          });
+        // The row about the words clicked, and what the next frame shows:
+        // the menu closed, the way a menu item closes it, and the number in
+        // the video's row, before the Go side has said anything.
+        const pick = (want) =>
+          page.evaluate(
+            (want) =>
               new Promise((done) => {
-                document.querySelector(".video-menu .item").click();
-                requestAnimationFrame(() => done((document.querySelector(".video-menu .item")?.textContent ?? "").replace(/\s+/g, " ").trim()));
+                const item = document.querySelector(".video-menu .item");
+                const said = (item?.textContent ?? "").replace(/\s+/g, " ").trim();
+                if (said !== want) return done({ said });
+                item.click();
+                requestAnimationFrame(() =>
+                  done({
+                    said,
+                    open: !!document.querySelector(".video-menu"),
+                    busy: !!document.querySelector("aside li:has(button.episode.current) .dot.busy"),
+                    share: document.querySelector("aside li:has(button.episode.current) .share")?.textContent ?? null,
+                  }),
+                );
               }),
+            want,
           );
-          if (!/^(Transcribing|Waiting to transcribe)/.test(next)) {
-            wrong = `the frame after Transcribe whole video was clicked, the row says ${JSON.stringify(next)}`;
+        if (arg === "transcribe" || arg === "continue") {
+          const want = arg === "transcribe" ? "Transcribe whole video" : "Continue transcribing";
+          if (arg === "continue") {
+            // The stopped work has ended first, so what carries it on is a
+            // job of its own.
+            await page.keyboard.press("Escape");
+            await menu.waitFor({ state: "detached" });
+            const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
+            for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
+            await settle(page);
+            await row.hover();
+            await row.locator("button.more").click();
+            await menu.waitFor();
+          }
+          const was = transcriptShare;
+          const after = await pick(want);
+          // A video added a moment ago is read again before its row knows
+          // how long it is, so the number may come a little after the
+          // click. The dot says at once that work runs.
+          if (after.said === want && !after.open && after.busy && after.share === null) {
+            await page.waitForSelector("aside li:has(button.episode.current) .share", { timeout: 30000 });
+            after.share = await page.evaluate(() => document.querySelector("aside li:has(button.episode.current) .share")?.textContent ?? null);
+          }
+          if (after.said !== want) wrong = `the menu says ${JSON.stringify(after.said)}, not ${want}`;
+          else if (after.open) wrong = `the menu stayed open after ${want} was clicked`;
+          else if (!after.busy) wrong = `the frame after ${want} was clicked, the video's dot does not say that work runs`;
+          else if (!/^\d+ %$/.test(after.share ?? "")) wrong = `after ${want} was clicked, the video's row says ${JSON.stringify(after.share)}, not how much is transcribed`;
+          // Carried on, it counts on from where it stopped, never from less.
+          else if (was !== null && parseInt(after.share, 10) < was) wrong = `carried on, the video's row says ${after.share}, less than the ${was} % it stopped at`;
+          if (wrong) await page.keyboard.press("Escape");
+          transcriptShare = after.share ? parseInt(after.share, 10) : null;
+          break;
+        }
+        if (arg === "stop") {
+          const before = await share();
+          const after = await pick("Stop transcribing");
+          if (after.said !== "Stop transcribing") wrong = `the menu of a video being transcribed says ${JSON.stringify(after.said)}, not Stop transcribing`;
+          else if (after.open) wrong = "the menu stayed open after Stop transcribing was clicked";
+          else if (after.share !== null) wrong = `the frame after Stop transcribing was clicked, the video's row still says ${after.share}`;
+          if (wrong) {
+            await page.keyboard.press("Escape");
             break;
           }
+          // At once, the menu offers to carry it on, whether the work has
+          // ended yet or not.
+          await row.hover();
+          await row.locator("button.more").click();
+          await menu.waitFor();
+          if ((await says()) !== "Continue transcribing") wrong = `the menu of a video told to stop says ${JSON.stringify(await says())}, not Continue transcribing`;
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
+          transcriptShare = before;
           break;
         }
         // Asked again each time the work says how far it heard, until the
@@ -6804,15 +6881,18 @@ for (const seq of toWalk) {
         if (!(await whole())) {
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
-          for (let seen = await news(page); !(await whole()); ) seen = await nextNews(page, seen);
+          // The number in the video's row only ever grows while it runs.
+          let most = transcriptShare ?? 0;
+          for (let seen = await news(page); !(await whole()); seen = await nextNews(page, seen)) {
+            const now = await share();
+            if (now !== null && now < most && !wrong) wrong = `while it was transcribed, the video's row went back from ${most} % to ${now} %`;
+            if (now !== null) most = Math.max(most, now);
+          }
+          if (wrong) break;
           await settle(page);
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
-          await page.waitForFunction(() => !/^(Transcribing|Waiting to transcribe|Stopping)/.test((document.querySelector(".video-menu .item")?.textContent ?? "").trim()), null, {
-            polling: "raf",
-            timeout: 30000,
-          });
         }
         if (!(await says()).startsWith("Export transcript")) {
           wrong = `the menu of a video transcribed to its end says ${JSON.stringify(await says())}, not Export transcript`;
