@@ -244,17 +244,15 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux. v3 since the files have their times from git: the test
-      # results before were kept under the times of a checkout, which no
-      # run has again.
+      # linux.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
-          restore-keys: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -327,7 +325,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v3-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
