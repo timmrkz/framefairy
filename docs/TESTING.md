@@ -988,3 +988,37 @@ open the job's log.
 
 What it cannot check: the browser's own question before it hands a link
 on, which belongs to the browser, the mail app, and how any of it looks.
+
+## The testing skill in this project
+
+The skill in `.claude/skills/testing/` is written for any project, so it
+names nothing of ours. This is where its words meet this repository.
+
+What the code takes from outside, so a test can drive it:
+
+| What | Handed in as | Where |
+| --- | --- | --- |
+| the time of day | `now func() time.Time` | `signer.WithClock` in `licence/signer/signer.go`, `Now` in `licence/dispenser/engine.go` |
+| timers inside goroutines | `testing/synctest` around the test | the lint fixture `scripts/testdata/lint/go/signals` |
+| the disk | `afero.Fs` | `engine/files.go`, the project and the app's store |
+| random numbers | `io.Reader` | `signer.WithRandom` |
+| the model, the recogniser | an interface with a fake | the fake recogniser and fake llama-server in `engine/project_test.go` |
+| a program we run | its path | ffmpeg and the decoder through `FRAMEFAIRY_FRAMES` |
+| the end of work | a callback the caller gives | `emit` in `newQueue`, `cmd/framefairy-app/jobs.go` |
+
+The fake clocks: `testing/synctest` in Go, whose `time.Sleep` line says
+`//nolint:forbidigo // synctest bubble`, Vitest's fake timers in the
+interface tests, as `frontend/src/lib/frames/captions.test.ts` does, and
+Playwright's clock in the walks, through `fakeClock`, `holdClock`,
+`runClock` and `letClockGo` in `walks/bridge.mjs`. The end-to-end tests
+are the walks, against the real Go side through the bridge, and the
+rules every walk checks after every step are in `walks/rules.mjs`.
+
+What CI holds of the skill's rules today: golangci-lint's `forbidigo` in
+`make lint` and ESLint in `make interface` for the clock in a test, with
+the old breaks in `frontend/eslint-suppressions.json` and `--new-from-rev`
+for Go, the race detector on every Go test, and `internal/offdisk` for a
+test on the real disk. What it does not hold yet, skipped tests, polls
+with a deadline, mutation testing and a check a pull request cannot
+weaken, is #475. What is left of waits on the clock is #341 for the walks
+and #394 for the Go tests.

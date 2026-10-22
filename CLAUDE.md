@@ -61,7 +61,7 @@ Start with [README.md](README.md). In short:
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
-| how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md) |
+| how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
