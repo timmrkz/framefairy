@@ -401,6 +401,12 @@ jobs:
     permissions:
       contents: read
       packages: read
+    # A container runs a step with sh, where ${PIPESTATUS[0]} is no word.
+    # bash as a runner has it, without pipefail, so a walk that fails still
+    # reaches the step that names it.
+    defaults:
+      run:
+        shell: bash -e {0}
     container:
       image: ${{ needs.image.outputs.ref }}
       credentials:
@@ -460,12 +466,15 @@ jobs:
       # than holding the machine for the half hour make walks gives by
       # hand.
       - name: Sequences and walks
+        id: walks
         run: |
           make walks WALKSHARD=${{ matrix.shard }}/4 WALKTIMEOUT=8m 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
-      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
+      # Only after walks that passed: a share that stopped early has built
+      # little, and a cache saved from it is found first by every run after.
+      - if: steps.walks.outcome == 'success' && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

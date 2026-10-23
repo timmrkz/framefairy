@@ -558,8 +558,11 @@ the job is done in seconds, and when it does not, which is only when one
 of the three changed, it builds the image and pushes it, and the walks
 wait for it. Both images the Dockerfile starts from are pinned to a
 digest, so the same sum always means the same image, and moving them is
-a change to the file. A Playwright update from Dependabot therefore
-builds its own image on its own pull request.
+a change to the file. Dependabot moves both once a week, in one pull
+request. A Playwright update from Dependabot likewise builds its own
+image on its own pull request. A file the Dockerfile comes to read joins
+the sum and the job's sparse checkout, or a change to it would reuse
+the old image.
 
 The walks run in it as root, which is how GitHub runs a container, with
 the machine's IPC and an init process, as Playwright says to run
@@ -567,7 +570,17 @@ Chromium in one. The runners' work folder is mounted at the place it has
 on the machine as well, because the ffmpeg we ship comes from the cache
 the job `linux` fills, and its pkg-config files name the folder it was
 built in. The walks only read that cache, so it never holds an ffmpeg
-built in the container's folders.
+built in the container's folders. A container runs a step with `sh`,
+so the walks job sets `bash -e {0}`, the shell a runner's step has.
+Shard 1 saves Go's build cache only after walks that passed, because a
+share that stopped early has built little and its cache would be found
+first by every run after it.
+
+A pull request from a fork pulls the image like any other, since the
+package is public, but cannot push one: its token may not write
+packages. A fork that changes the Dockerfile or `scripts/ci-packages.sh`
+therefore fails at the job `image` until the change is on a branch of
+the repository.
 
 ## Keeping up
 
@@ -576,7 +589,8 @@ scan made once is out of date the week after.
 
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
   week when a Go module, a package of the interface or an action has a
-  newer version. Minor and patch versions come together, one pull request
+  newer version, and when the two images the CI image starts from have
+  a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The actions come in one pull request, majors
