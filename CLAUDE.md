@@ -61,6 +61,7 @@ Start with [README.md](README.md). In short:
 | training tool `framefairy-train` | `cmd/framefairy-train/`, `train/` | [docs/TRAINING.md](docs/TRAINING.md) |
 | build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | interface tests | `frontend/preview/`, `cmd/framefairy-app/bridge_test.go` | [docs/TESTING.md](docs/TESTING.md) |
+| how every test is written | `*_test.go`, `*.test.ts`, `frontend/preview/walks/` | [the testing skill](.claude/skills/testing/SKILL.md), and where it meets this repository in [docs/TESTING.md](docs/TESTING.md#the-testing-skill-in-this-project) |
 | shipping | not yet | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | open work | | [issues](https://github.com/timmrkz/framefairy/issues), and the history in [docs/GUI-PLAN.md](docs/GUI-PLAN.md) |
 
@@ -528,9 +529,15 @@ messages, pull request text, code comments and chat replies.
   while jobs run and report. A test that makes one call at a time proves
   nothing about a queue. A race only shows on someone else's machine, and
   by then it is their bug.
-- **A test waits on a signal, never on the clock.** It goes on when what
-  it waits for has happened, and something tells it so: a channel, a
-  job's news, a callback, a program saying it is ready. It never sleeps
+- **A test never waits, and never on the clock.** It runs straight
+  through: it takes a step and checks the result. It drives the work
+  itself, through what the code takes from outside, a clock, a disk, a
+  model, or it hears the event the code sends when that step is done: a
+  channel, a job's news, a callback, a program saying it is ready. A test
+  that has to wait for slow work asks why the work is slow and whether it
+  tests the right thing from the right place. How tests are written here,
+  this rule first, is the skill in `.claude/skills/testing/`, read before
+  any test is written, fixed or reviewed. It never sleeps
   in the hope that the work is done by then, and it never polls in a loop
   with a deadline. A wait long enough on one machine is too short on a
   busy one, so the test fails now and then, and the waits that are long
@@ -571,7 +578,8 @@ messages, pull request text, code comments and chat replies.
   to one package is checked in seconds rather than the ten minutes of
   everything, and a change that reaches everything, `go.mod` or the
   engine, still runs what it reaches. `make test` runs all of it, for a
-  deep run by hand. CI runs everything anyway, on both systems.
+  deep run by hand. On a pull request CI tests and fuzzes the same Go
+  packages, on both systems, and a push to main runs everything.
 - **Tests stay off the disk.** A test is about our code, not the drive
   under it. The engine, a project and the app's store hold an `afero.Fs`,
   see `engine/files.go`: the programs hand them the real disk, a test
@@ -688,7 +696,9 @@ session starts, see `scripts/cloud-decoder.sh`, logged in
 It also installs the engineering skills from `samber/cc-skills-golang` and
 `addyosmani/agent-skills` into `~/.claude/skills`, each pinned to a commit,
 because plugins added on claude.ai do not reach cloud sessions. They are
-general advice. Where one disagrees with this file, this file wins.
+general advice. Where one disagrees with this file, this file wins, and
+on tests the skill in `.claude/skills/testing/` wins too, which lists
+the places they disagree.
 Most Go skills name `**/*.go` as their paths, so Claude Code lists them
 only once a Go file has been read in the session.
 `.claude/settings.json` raises the room Claude Code gives the list of
@@ -716,7 +726,8 @@ the skills listed last show their name without what they are for.
   [docs/TESTING.md](docs/TESTING.md). It is twelve jobs at once rather than one after another, so
   the answer comes back in the time the slowest takes. On a pull request a
   first job reads which paths changed, by `.github/ci-filters.yml`, and a
-  job with nothing to do never starts a machine. A push to main narrows
+  job with nothing to do never starts a machine, and the Go jobs test
+  and fuzz only what `make changed` picks. A push to main narrows
   nothing. `make changed` runs what a branch
   reaches, `make test` runs the lot, and `make unit`, `make fuzz`,
   `make interface` and `make walks` are the four parts of it, see

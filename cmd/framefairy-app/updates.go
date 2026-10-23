@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	"framefairy/engine"
@@ -228,7 +229,7 @@ func newUpdating(u *updater.Updater, quit func(), st *store, idle func() (func()
 		install: startInstall,
 	}
 	exe, _ := os.Executable()
-	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Client: &http.Client{}}
+	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Entries: updates.EntriesURL, Client: &http.Client{}}
 	// The builds already downloaded, so going back to a channel has its
 	// build at once. In the user's caches, which is where macOS expects a
 	// file that can always be fetched again.
@@ -294,6 +295,7 @@ func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source
 	src.Picked = c.picked
 	src.Seen = c.seen
 	src.Progress = c.progress
+	src.Newer, src.Refused = newerEntry, refusedEntry
 	c.cfg = updater.Config{
 		CurrentVersion: c.state.Version,
 		Providers:      []updater.Provider{src},
@@ -419,6 +421,21 @@ func (c *updating) seen(l updates.List) {
 	c.state.settle()
 }
 
+// newerEntry says in the log that the followed channel's own entry was of
+// a newer build than the list, and is offered in its place, issue #420.
+func newerEntry(listed, entry updates.Build) {
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", entry.Channel).Str("listed", listed.Version).
+		Str("build", entry.Version).Msg("the channel's own entry is newer than the list, so its build is offered")
+}
+
+// refusedEntry says in the log why the followed channel's own entry was
+// not taken, so a report tells a missing or broken entry from a list
+// that had the newest build already.
+func refusedEntry(channel string, why error) {
+	theLog.line(zerolog.DebugLevel, "updates").Str("channel", channel).Err(why).
+		Msg("the channel's own entry was not taken, so the list's build is offered")
+}
+
 // progress is told about every quarter of a megabyte, and passes it on a
 // few times a second, which is as often as a fill can be seen to move.
 func (c *updating) progress(written, total int64) {
@@ -497,6 +514,7 @@ func (c *updating) Follow(channel string) error {
 		}
 	})
 	c.picking.Unlock()
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", channel).Msg("channel picked, its newest build is looked for")
 	if !c.loop() {
 		go c.check()
 	}
@@ -615,6 +633,7 @@ func (c *updating) checkOnce() {
 			return
 		}
 		log.Printf("update check: %v", err)
+		theLog.line(zerolog.WarnLevel, "updates").Str("channel", updates.Followed(c.picked(), c.own)).Err(err).Msg("the check failed")
 		mine(func(s *UpdateState) {
 			if s.Phase != "ready" {
 				s.Phase = "failed"
@@ -625,6 +644,8 @@ func (c *updating) checkOnce() {
 		return
 	}
 	if rel == nil {
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", updates.Followed(c.picked(), c.own)).
+			Str("build", c.cfg.CurrentVersion).Msg("the build running is the channel's newest")
 		c.drop(round)
 		mine(func(s *UpdateState) {
 			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
@@ -646,6 +667,8 @@ func (c *updating) checkOnce() {
 		return
 	}
 	commit, _ := rel.Metadata["commit"].(string)
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
+		Msg("the channel's newest build is fetched, from the builds kept if it is there")
 	mine(func(s *UpdateState) {
 		if !swap {
 			s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
@@ -662,6 +685,7 @@ func (c *updating) checkOnce() {
 			return
 		}
 		log.Printf("update download: %v", err)
+		theLog.line(zerolog.WarnLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Err(err).Msg("the download failed")
 		// The newer build did not come whole, and the one that is ready
 		// still is. The next look tries again.
 		if swap {
@@ -695,6 +719,7 @@ func (c *updating) checkOnce() {
 	unstage(gone)
 	if gone != w {
 		log.Printf("update ready: %s, %s", rel.Version, w.DownloadedPath())
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Msg("the build is ready for Relaunch")
 	}
 }
 

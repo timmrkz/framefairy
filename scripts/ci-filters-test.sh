@@ -82,12 +82,20 @@ check ".github/workflows/ci.yml" "app go interface workflows"
 check ".github/ci-filters.yml" "app go interface"
 check ".golangci.yml" "app go interface"
 check "frontend/package.json" "app interface"
+# The CI image starts the jobs that run in it, the walks by app and the
+# Go jobs by image, but not the Go tests on the Mac. So does the script
+# that fills it, which nothing else runs.
+check ".github/ci-image/Dockerfile" "app image"
+check "scripts/ci-packages.sh" "app image"
 
 # The rules that no job runs but their own check in build start nothing.
 # Issue #322: a pull request that changed only them ran every job.
 check "scripts/main-moved.sh scripts/main-moved-test.sh docs/BUILD.md" ""
 check "scripts/plan-frozen.sh scripts/needs-build-test.sh" ""
-check "scripts/changed.sh scripts/changed-test.sh" "changed"
+check "scripts/changed-test.sh" "changed"
+# Except changed.sh, which the Go jobs run on a pull request, so a change
+# to it runs it there, on Linux and on the Mac.
+check "scripts/changed.sh" "go changed"
 check "scripts/needs-build.sh engine/edit.go" "app go"
 
 # A file nobody thought of starts everything.
@@ -112,11 +120,12 @@ done
 
 # A push to main runs everything: each filter has an output in the job
 # changes of ci.yml that is true whenever the event is not a pull request,
-# and each output has its filter.
+# and each output of that job has its filter.
 want=$(sed -n 's/^\([a-z]*\):$/\1/p' "$root/.github/ci-filters.yml" | sort)
 got=$(sed -n "s/^      \([a-z]*\): \\\${{ github.event_name != 'pull_request' || steps.filter.outputs.\([a-z]*\) == 'true' }}\$/\1 \2/p" "$root/.github/workflows/ci.yml" |
 	awk '$1 == $2 { print $1 }' | sort)
-outputs=$(sed -n '/^    outputs:$/,/^    steps:$/p' "$root/.github/workflows/ci.yml" | grep -c '^      [a-z]*: ')
+outputs=$(sed -n '/^  changes:$/,/^    steps:$/p' "$root/.github/workflows/ci.yml" |
+	sed -n '/^    outputs:$/,$p' | grep -c '^      [a-z]*: ')
 if [ "$got" = "$want" ] && [ "$outputs" = "$(echo "$want" | wc -l)" ]; then
 	printf 'ok  \t%-52s %s\n' "a push to main" "$(echo $want)"
 else

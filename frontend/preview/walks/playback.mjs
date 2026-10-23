@@ -6,7 +6,7 @@
 //
 //   SEED=12 STEPS=25 BRIDGE_URL=http://127.0.0.1:8123/ node playback.mjs
 import { begin, walk } from "./walk.mjs";
-import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle } from "./bridge.mjs";
+import { handles, inside, middle, high, ask, recordFrames, preview, engineState, drag, settle, playFor, playUntil } from "./bridge.mjs";
 import { overlaid } from "./rules.mjs";
 
 const w = await begin({ steps: 25 });
@@ -50,10 +50,11 @@ function overlaysFollow(overlays, state) {
 // Paused, the picture stays where it was paused: the playhead stays, and
 // the frame on screen is the one that holds it, or where a play stopped on
 // the clip's end, the frame that holds the moment a frame before it, the
-// last the short shows, see frameAt in lib/flow.ts.
+// last the short shows, see frameAt in lib/flow.ts. Read before and after
+// the app has settled, so whatever the pause set going has ended.
 async function staysPaused(what) {
   const a = await at();
-  await page.waitForTimeout(400);
+  await settle(page);
   const b = await at();
   const holds = Math.floor((b.at + 0.001) / frame) * frame;
   const endsOn = Math.floor((b.at - frame + 0.001) / frame) * frame;
@@ -80,11 +81,8 @@ async function nearEnd(p, g) {
   const x = s + ((t - p[0].start) / (last.end - p[0].start)) * (e - s);
   const handle = [g.start, g.end, ...g.cutEdges].some((h) => Math.abs(middle(h) - x) < 10);
   if (handle || !inside(g.track, x)) return;
-  const was = (await at()).at;
   await page.mouse.click(x, high(g.track));
-  await page
-    .waitForFunction((was) => Number(document.querySelector(".screen").dataset.playhead) !== was, was, { timeout: 2000 })
-    .catch(() => {});
+  await settle(page);
 }
 
 const gestures = [
@@ -100,71 +98,63 @@ const gestures = [
       const ms = 300 + rng.int(2700);
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
-      await page.keyboard.press("Space");
-      await page.waitForTimeout(ms);
-      // A clip that reached its end has stopped by itself, and the space
-      // bar would play it again from its start. So whether it still plays
-      // is asked in the same moment as the space bar is pressed, inside
-      // the page: asked first and pressed after, the clip reached its end
-      // in between and played again.
-      await page.evaluate(() => {
-        if (document.querySelector('button[aria-label="Play"]')) return;
-        const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
-        document.body.dispatchEvent(new KeyboardEvent("keydown", key));
-        document.body.dispatchEvent(new KeyboardEvent("keyup", key));
-      });
+      // Plays ms of the episode by the playhead, not by the clock, and
+      // pauses in the frame it has gone that far, or lets a clip that
+      // reached its end first stand, see playFor.
+      await playFor(page, ms / 1000);
       const { frames, moved, overlays } = await stop();
-      if (!frames.length && !moved) watch.broke("the space bar plays", `played for ${ms} ms from ${from.toFixed(3)} and no frame came`);
+      if (!frames.length && !moved) watch.broke("the space bar plays", `played ${ms} ms of the episode from ${from.toFixed(3)} and no frame came`);
       if (clip) framesInClip(frames, p);
       overlaysFollow(overlays, state);
-      await staysPaused(`after playing for ${ms} ms`);
-      return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms`;
+      await staysPaused(`after playing ${ms} ms of the episode`);
+      return `play ${clip ? "the clip" : "the episode"} from ${from.toFixed(2)} for ${ms} ms of the episode`;
     },
   },
   {
+    // loop says whether L loops the clip on the way, when the walk makes
+    // this first, see the end of this file. Otherwise the seed says.
     name: "end",
     weight: 1,
     when: () => true,
-    async run(g) {
+    async run(g, { loop } = {}) {
       const state = await engineState(page, watch.at);
       const p = state.segments;
-      if (!(await playsClip())) return "nothing, the playhead is on the video";
+      const made = loop !== undefined;
+      const off = (why) => {
+        if (made) watch.broke("a clip is played to its end on every walk", why);
+        return `nothing, ${why}`;
+      };
+      if (!(await playsClip())) return off("the playhead is on the video");
       // Played from anywhere, a clip takes up to half a minute of real
       // time to reach its end, and that was most of what the walks took.
       // So the playhead goes a moment before the last cut first, which is
       // still a cut to jump on the way, or before the end when there is
       // none.
       await nearEnd(p, g);
-      if (!(await playsClip())) return "a click on the clip timeline, which put the playhead on the video";
+      if (!(await playsClip())) return off("a click on the clip timeline put the playhead on the video");
       const from = (await at()).at;
       // A clip at its end starts over, so as long as the whole clip.
       const length = p.reduce((sum, x) => sum + (x.end - x.start), 0);
       const stop = await recordFrames(page, frame);
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
-      // Playing, the play button says Pause, and once the clip has stopped
-      // at its end, Play again.
-      await page.locator('button[aria-label="Pause"]').waitFor({ timeout: 2000 }).catch(() => {});
+      await settle(page);
       const end = p[p.length - 1].end;
       // Half the time L loops the clip on the way and L again stops the
       // loop a moment before the end, once the next time through is worked
       // out, which is how Tim heard the clip's start play on after the
       // play had stopped at its end.
-      const looped = rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
+      const looped = made ? (loop ? 1 : 0) : rng.next() < 0.5 ? 0.3 + rng.next() * 2 : 0;
+      // Each wait ends at the latest once the play has gone on by the
+      // whole clip and a second more, in the episode's own time, so a clip
+      // that plays on breaks the rule below. A play that stalls is ended by
+      // the timeout of make walks, which prints the step.
       if (looped) {
         await page.keyboard.press("l");
-        await page
-          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - looped, {
-            timeout: (length + 5) * 1000,
-            polling: "raf",
-          })
-          .catch(() => {});
+        await playUntil(page, { past: end - looped, most: length + 1 });
         await page.keyboard.press("l");
       }
-      await page.waitForFunction(() => document.querySelector('button[aria-label="Play"]') !== null, null, {
-        timeout: (length + 5) * 1000,
-        polling: 100,
-      }).catch(() => {});
+      await playUntil(page, { most: length + 1 });
       const { frames, overlays } = await stop();
       framesInClip(frames, p);
       overlaysFollow(overlays, state);
@@ -211,23 +201,28 @@ const gestures = [
       await page.evaluate(() => document.body.focus());
       await page.keyboard.press("Space");
       // Half the time the hand skips ahead on the way, shift and the right
-      // arrow, or the arrow alone, every 300 ms: on the video either is a
-      // skip through the episode, and the clip stays dimmed.
+      // arrow, or the arrow alone, after every 0.3 s of the episode played:
+      // on the video either is a skip through the episode, and the clip
+      // stays dimmed.
       const skip = rng.next() < 0.5 ? rng.pick(["Shift+ArrowRight", "ArrowRight"]) : "";
       const past = (to) => page.evaluate((to) => Number(document.querySelector(".screen").dataset.playhead) > to, to);
+      // Either way the play goes on until the playhead is past the clip's
+      // start, or has stopped, or has gone on by the way there and five
+      // seconds more of the episode.
+      const most = start - from + 5;
       if (skip) {
-        const until = Date.now() + (start - from + 6) * 1000;
-        while (Date.now() < until && !(await past(start + 1.5))) {
-          await page.waitForTimeout(300);
+        let gone = 0;
+        while (gone <= most && !(await past(start + 1.5))) {
+          // The next skip once the play has gone on 0.3 s from where this
+          // one landed.
           await page.keyboard.press(skip);
+          await settle(page);
+          const now = await playUntil(page, { past: (await at()).at + 0.3, most: most - gone });
+          gone += now.gone;
+          if (!now.playing) break;
         }
       } else {
-        await page
-          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, start + 1.5, {
-            timeout: (start - from + 6) * 1000,
-            polling: 100,
-          })
-          .catch(() => {});
+        await playUntil(page, { past: start + 1.5, most });
       }
       await page.evaluate(() => {
         if (document.querySelector('button[aria-label="Play"]')) return;
@@ -290,8 +285,15 @@ const gestures = [
   },
 ];
 
+// Every walk plays the clip to its end first, once with L on and off on
+// the way and once without, whatever its seed draws later. Left to the
+// seeds, none of the three CI walks played the loop to the end, #479.
 await walk(w, gestures, {
   look: handles,
+  first: [
+    ["end", { loop: true }],
+    ["end", { loop: false }],
+  ],
   async show(page) {
     const v = await at();
     return `at ${v.at.toFixed(2)}${v.paused ? "" : " playing"}`;

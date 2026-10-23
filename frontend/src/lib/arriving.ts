@@ -107,7 +107,10 @@ export function arriving(
             : job.step === "stopped"
               ? "Stopped. Click Continue"
               : "Interrupted. Click Continue",
-          left: failed && job.error ? job.error : clock(clip.start),
+          // Where it lies, never why it failed: why is said whole in a
+          // toast as it fails, see Episode, and cut to a line here it was
+          // mostly unreadable, issue #450.
+          left: clock(clip.start),
           fraction: -1,
           stopped: true,
           failed,

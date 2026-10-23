@@ -42,7 +42,8 @@
 #   make lint       that no new Go test waits on the clock, by golangci-lint
 #   make walks      the interface against the real Go side, in Chromium:
 #                   the sequences, and every walk WALKS times, each of
-#                   its own length unless STEPS says, WALKERS at once
+#                   its own length unless STEPS says, WALKERS at once,
+#                   stopped after WALKTIMEOUT, 30m unless set
 #   make check      what this machine still needs to run framefairy
 #   make tools      install the missing tools and nothing else
 #   make models     download the models for the command line, which has no
@@ -405,7 +406,8 @@ motion: frontend/node_modules/.package-lock.json
 # interface is type checked is waiting for nothing.
 # The check before a push: what the branch changed, worked out file by
 # file, and only that. See scripts/changed.sh for what each kind of file
-# runs. CI still runs everything.
+# runs. CI runs the same Go packages and fuzz targets on a pull request,
+# and everything on main.
 changed: $(FRESH_FRAMES)
 	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" TOOLS_FIRST='$(TOOLS_FIRST)' GO='$(GO)' MAKE='$(MAKE)' LDFLAGS='$(LDFLAGS)' FUZZTIME='$(FUZZTIME)' sh scripts/changed.sh
 
@@ -428,13 +430,23 @@ test: unit fuzz interface walks lint
 # UNITFLAGS is one more flag for go test, like -run or -skip, passed as
 # it is, so a pattern needs no quoting. It is how CI spreads the tests
 # over machines, see the job linux in ci.yml.
+#
+# UNITPKGS names the packages to test, every one unless it says. On a pull
+# request CI names the ones make changed picks, see the job linux in
+# ci.yml, and when that is none, no test runs.
 RACE ?= -race
 UNITSKIP ?=
 UNITFLAGS ?=
-UNITPACKAGES = $(if $(UNITSKIP),$$($(GO) list ./... | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))),./...)
+UNITPKGS ?= ./...
 unit: toolchain modules $(FRESH_FRAMES)
-	@PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
-		$(GO) test $(RACE) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $(UNITPACKAGES)
+	@pkgs='$(strip $(UNITPKGS))'; \
+	if [ -n "$$pkgs" ] && [ -n '$(UNITSKIP)' ]; then \
+		pkgs=$$($(GO) list $$pkgs) || exit 1; \
+		pkgs=$$(printf '%s\n' "$$pkgs" | grep -vxF $(foreach p,$(UNITSKIP),-e $(p))); \
+	fi; \
+	if [ -z "$$pkgs" ]; then echo "no Go package to test"; exit 0; fi; \
+	PATH="$(TOOLS_FIRST)" FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" \
+		$(GO) test $(RACE) $(if $(UNITFLAGS),'$(UNITFLAGS)') -ldflags '$(LDFLAGS)' $$pkgs
 
 # The fuzzing runs without the race detector: it is the same code, many more
 # times over.
@@ -458,9 +470,14 @@ WALKERS ?=
 # walk-times.tsv. WALKTIMES=1 writes what the runs took into that file.
 WALKSHARD ?=
 WALKTIMES ?=
+# How long the runs may take before go test stops them. TestWalks stops
+# what still runs a minute before and names it with what it printed. CI
+# sets a few minutes over what a share takes, so a run that hangs is
+# named in minutes and does not hold its machine for half an hour.
+WALKTIMEOUT ?= 30m
 walks: toolchain modules frontend/node_modules/.package-lock.json $(FRESH_FRAMES)
 	@cd frontend && $(NPM) exec -- vite build --config preview/bridge.config.ts --logLevel error
-	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout 30m -run '^TestWalks$$' ./cmd/framefairy-app
+	@FRAMEFAIRY_FRAMES="$(if $(wildcard $(FRAMES)),$(CURDIR)/$(FRAMES))" FRAMEFAIRY_WALKS=1 WALKS='$(WALKS)' STEPS='$(STEPS)' WALKERS='$(WALKERS)' WALKSHARD='$(WALKSHARD)' WALKTIMES='$(WALKTIMES)' $(GO) test -count=1 -ldflags '$(LDFLAGS)' -timeout $(WALKTIMEOUT) -run '^TestWalks$$' ./cmd/framefairy-app
 
 # The checks from outside the app: a link that opens it, closed or open,
 # handed to macOS the way a browser does, with the local dispenser running

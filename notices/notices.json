@@ -101,7 +101,7 @@
   },
   {
     "name": "github.com/speedata/hyphenation",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "licence": "CC0-1.0",
     "url": "https://github.com/speedata/hyphenation",
     "part": "The app",
@@ -457,7 +457,7 @@
   },
   {
     "name": "@lucide/svelte",
-    "version": "1.56.0",
+    "version": "1.60.0",
     "licence": "ISC",
     "url": "https://www.npmjs.com/package/@lucide/svelte",
     "part": "The app's interface",
@@ -477,7 +477,7 @@
   },
   {
     "name": "bits-ui",
-    "version": "2.19.5",
+    "version": "2.20.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/bits-ui",
     "part": "The app's interface",

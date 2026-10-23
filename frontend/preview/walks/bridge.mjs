@@ -6,23 +6,56 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
-// The Chromium the pinned Playwright was made for, which CI installs. A
-// machine that has only another one walks on that rather than not at all:
+// The Chromium the pinned Playwright was made for. CI's image holds only
+// its headless shell, which a headless launch finds by itself, so there
+// the full browser this names is missing and the launch is left to
+// Playwright. A machine that has only another Chromium walks on that
+// rather than not at all:
 // a cloud session keeps the Chromium of the Playwright it came with in
 // PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
-// every walk there stopped on a browser that was not installed.
-function browserPath() {
-  if (existsSync(chromium.executablePath())) return undefined;
+// every walk there stopped on a browser that was not installed. Whether
+// to fall back is Playwright's own answer, the launch saying the browser
+// it would run is not there, since the file it would run is its headless
+// shell, not the browser executablePath names. The fallback is the newest
+// headless shell there, the kind CI runs, and only then the newest full
+// browser, which runs another headless mode. Newer builds keep them in
+// folders ending in linux64, older ones in chrome-linux, and a walk that
+// looked only in the second stopped again, #490. The fallback is said
+// once, so a walk that fails on it says which browser it ran in.
+const builds = [
+  ["chromium_headless_shell", ["chrome-headless-shell-linux64", "chrome-headless-shell"], ["chrome-linux", "headless_shell"]],
+  ["chromium", ["chrome-linux64", "chrome"], ["chrome-linux", "chrome"]],
+];
+function fallbackBrowser() {
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
   if (!root || !existsSync(root)) return undefined;
-  const builds = readdirSync(root)
-    .filter((d) => /^chromium-\d+$/.test(d))
-    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
-  for (const dir of builds) {
-    const exe = join(root, dir, "chrome-linux", "chrome");
-    if (existsSync(exe)) return exe;
+  const dirs = readdirSync(root);
+  for (const [kind, ...places] of builds) {
+    const found = dirs
+      .filter((d) => new RegExp(`^${kind}-\\d+$`).test(d))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    for (const dir of found) {
+      for (const place of places) {
+        const exe = join(root, dir, ...place);
+        if (existsSync(exe)) return exe;
+      }
+    }
   }
   return undefined;
+}
+let fellBack;
+async function launch(args) {
+  try {
+    return await chromium.launch({ args });
+  } catch (e) {
+    const exe = String(e?.message).includes("Executable doesn't exist") && fallbackBrowser();
+    if (!exe) throw e;
+    if (fellBack !== exe) {
+      fellBack = exe;
+      console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
+    }
+    return chromium.launch({ executablePath: exe, args });
+  }
 }
 
 // A random number generator that a seed decides, so a walk that breaks a
@@ -76,7 +109,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // preview itself draws on a 2D canvas here, __flatScreen, because
   // headless Chromium gives nothing back from a WebGPU canvas, and the
   // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
+  const browser = again ?? (await launch(["--enable-unsafe-webgpu"]));
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
   await page.addInitScript(() => {
     window.__flatScreen = true;
@@ -104,47 +137,28 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   return { browser, page, errors };
 }
 
-// Waits until no call has been on its way for a while and the page has
-// drawn what came back. It looks on every frame, and a call that went and
-// came back between two looks starts the while again, see
-// wails-bridge.ts. It keeps the page's real time, so it still tells quiet
-// from busy while the app's time is held, see holdClock.
+// Waits until the app has nothing on its way: no call out, no timer of
+// the app's set to fire in a moment and nothing on the page moving for a
+// moment. The page answers when the last of them ends, __settled in
+// wails-bridge.ts, and the walk only waits for that answer.
 export async function settle(page) {
-  await page.waitForFunction(
-    () => {
-      const w = window;
-      const now = w.__real?.now ?? (() => performance.now());
-      if (w.__pending > 0 || w.__answered !== w.__answeredSeen) {
-        w.__answeredSeen = w.__answered;
-        w.__quietSince = 0;
-        return false;
-      }
-      w.__quietSince ||= now();
-      return now() - w.__quietSince > 250;
-    },
-    null,
-    { polling: "raf", timeout: 15000 },
-  );
-  await page.evaluate(() => {
-    const frame = window.__real?.frame ?? ((f) => requestAnimationFrame(f));
-    return new Promise((r) => frame(() => frame(r)));
-  });
-  await page.evaluate(() => (window.__quietSince = 0));
+  await page.evaluate((held) => window.__settled(held), Boolean(page.__held));
 }
 
 // Gives a page Playwright's own fake clock, once, in place of the app's
 // timers, frames and performance.now. The walk's own waits keep the real
-// time and frames, kept on window.__real before the fake clock comes, and
-// again on every load, so settle still tells quiet from busy. The clock
-// runs as the real one does until holdClock stops it.
+// frames, kept on window.__real before the fake clock comes, and again on
+// every load, so settle still looks while the app's time is held. The
+// clock runs as the real one does until holdClock stops it.
 export async function fakeClock(page) {
   if (page.__clock) return;
   const keep = () => {
-    window.__real = { now: performance.now.bind(performance), frame: requestAnimationFrame.bind(window) };
+    window.__real = { frame: requestAnimationFrame.bind(window) };
   };
   await page.addInitScript(keep);
   await page.evaluate(keep);
   await page.clock.install();
+  await page.evaluate(() => window.__forgetSoon?.());
   page.__clock = true;
 }
 
@@ -161,7 +175,9 @@ export async function holdClock(page) {
   await fakeClock(page);
   for (;;) {
     try {
-      return await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+      await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+      page.__held = true;
+      return;
     } catch (e) {
       if (!String(e?.message).includes("fast-forward to the past")) throw e;
     }
@@ -176,6 +192,7 @@ export async function runClock(page, ms) {
 
 export async function letClockGo(page) {
   await page.clock.resume();
+  page.__held = false;
 }
 
 // Waits for n of the browser's own frames, which go on while the app's
@@ -221,10 +238,10 @@ export async function foldsDone(page) {
 // or held open while a video is dragged in the list, does not slide at
 // all, and then this is two frames.
 export async function sidebarStill(page) {
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await page.waitForFunction(() => (document.querySelector("aside")?.getAnimations().length ?? 0) === 0, null, {
-    polling: "raf",
-    timeout: 15000,
+  await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const aside = document.querySelector("aside");
+    while (aside?.getAnimations().length) await Promise.all(aside.getAnimations().map((a) => a.finished.catch(() => {})));
   });
 }
 
@@ -347,6 +364,24 @@ export const middle = (r) => r.x + r.w / 2;
 // High on the track, over the waveform rather than the captions' band.
 export const high = (t) => t.y + t.h * 0.2;
 
+// One click on the clip timeline, never the second of a double-click. The
+// clip timeline tells a double-click from two presses within half a
+// second and six pixels of each other, the Mac's own, see twice in
+// ClipTimeline.svelte, and a double-click inside a clip cuts a part out.
+// A walk that clicks where it clicked a step before used to be half a
+// second apart only because it waited on the clock between steps. Now
+// the hand lands eight pixels beside the last spot first, on the side
+// away from the new one, as a hand that misses by a little does, so the
+// click is one on its own however soon it comes.
+export async function clickOnTrack(page, x, y) {
+  const last = page.__pressed;
+  if (last && Math.abs(last.x - x) < 6 && Math.abs(last.y - y) < 6) {
+    await page.mouse.click(last.x + (x < last.x ? 8 : -8), y);
+  }
+  await page.mouse.click(x, y);
+  page.__pressed = { x, y };
+}
+
 // Waits for the page to draw n frames, so whatever the walk did last has
 // reached the screen however busy the machine is.
 export async function nextPaint(page, n = 1) {
@@ -360,27 +395,169 @@ export async function nextPaint(page, n = 1) {
   );
 }
 
+// Waits for the video preview to show the frame that holds the playhead,
+// by where the app says the frame shown begins, and with captions for
+// that frame to be drawn with its own captions over it, see data-captioned
+// in Player.svelte. It says true then, and false when a layer of captions
+// is given up on first, data-captions-lost, counted from lost, the count
+// read before the gesture, since a layer can be given up on while the
+// walk settles after it. T and C put a mark on the frame shown, the frame
+// a person sees, and the caption box shows what was drawn on it, and on a
+// busy machine both come a moment after the playhead. It waits on the
+// page changing, never on the clock, so a frame that never comes is ended
+// by the -timeout of make walks.
+export async function shownOnPlayhead(page, { captions = false, lost } = {}) {
+  const { fps, videoStart = 0 } = await ask(page, "Source", await episodeOn(page));
+  return page.locator(".screen").evaluate(
+    (screen, [fps, start, captions, lost]) =>
+      new Promise((done) => {
+        const since = lost ?? screen.dataset.captionsLost ?? "";
+        const gone = () => captions && (screen.dataset.captionsLost ?? "") !== since;
+        const up = () => {
+          const at = Number(screen.dataset.playhead);
+          const shown = Number(screen.dataset.shown);
+          // The frame that holds the playhead, one that begins a
+          // millisecond or less after it included, see frameAt in
+          // lib/flow.ts.
+          const begins = start + Math.floor((at - start + 0.001) * fps) / fps;
+          if (!Number.isFinite(shown) || Math.abs(shown - begins) >= 0.5 / fps) return false;
+          return !captions || (screen.dataset.captioned !== undefined && Number(screen.dataset.captioned) === shown);
+        };
+        if (up()) return done(true);
+        if (gone()) return done(false);
+        const seen = new MutationObserver(() => {
+          const came = up();
+          if (!came && !gone()) return;
+          seen.disconnect();
+          done(came);
+        });
+        seen.observe(screen, {
+          attributes: true,
+          attributeFilter: ["data-playhead", "data-shown", "data-captioned", "data-captions-lost"],
+        });
+      }),
+    [fps, videoStart, captions, lost],
+  );
+}
+
+// Waits, while a play goes on, until the playhead the video preview says
+// is past the moment past, or the play has stopped, or the playhead has
+// gone on by most seconds of the episode without stopping, whichever
+// comes first, and says where it stood, whether it still plays and how
+// far it went. A jump over a cut counts as far as it jumps, and a play
+// that loops back to the clip's start counts on from there. Each is read
+// when the page changes, the playhead or the Play button coming back,
+// never on the clock, and most is counted in the episode's own time, so
+// a busy machine plays as far as a quiet one, only slower. The way goes
+// from the moment from, the playhead now unless it is given. With pause,
+// a play still going is paused in the frame the wait ends, inside the
+// page: pressed a trip later, the play went on further the busier the
+// machine, and a clip that reached its end in between would play again
+// from its start.
+export async function playUntil(page, { past = Infinity, most = Infinity, from = NaN, pause = false } = {}) {
+  return page.evaluate(
+    ([past, most, from, pause]) =>
+      new Promise((done) => {
+        let last = Number.isFinite(from) ? from : Number(document.querySelector(".screen")?.dataset.playhead);
+        let gone = 0;
+        const look = () => {
+          const at = Number(document.querySelector(".screen")?.dataset.playhead);
+          const playing = !document.querySelector('button[aria-label="Play"]');
+          if (Number.isFinite(at) && at > last) gone += at - last;
+          last = at;
+          if (playing && !(at > past) && gone < most) return null;
+          if (playing && pause) {
+            const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
+            document.body.dispatchEvent(new KeyboardEvent("keydown", key));
+            document.body.dispatchEvent(new KeyboardEvent("keyup", key));
+          }
+          return { at, playing, gone };
+        };
+        const now = look();
+        if (now) return done(now);
+        const watch = new MutationObserver(() => {
+          const now = look();
+          if (!now) return;
+          watch.disconnect();
+          done(now);
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
+      }),
+    [past === Infinity ? Number.MAX_VALUE : past, most === Infinity ? Number.MAX_VALUE : most, from, pause],
+  );
+}
+
+// Plays from the playhead until it has gone on by seconds of the episode,
+// or until the play has stopped by itself at the clip's end, and pauses it
+// there, see playUntil. Says false, and plays nothing, when the space bar
+// did not start a play, once the app has settled on the press.
+export async function playFor(page, seconds) {
+  const from = await page.evaluate(() => document.querySelector(".screen")?.dataset.playhead ?? null);
+  await page.keyboard.press("Space");
+  await settle(page);
+  const now = await page.evaluate(() => ({
+    playing: !document.querySelector('button[aria-label="Play"]'),
+    at: document.querySelector(".screen")?.dataset.playhead ?? null,
+  }));
+  if (!now.playing) return now.at !== from;
+  await playUntil(page, { most: seconds, from: Number(from), pause: true });
+  return true;
+}
+
 // How many times the Go side has told the interface something of a name,
 // "job" above all, counted from the first time a walk asks, so it can wait
 // for the next. The bridge sends every event to every page listening, so
 // the walk listens beside the app and takes nothing from it.
+// The first ask waits until the walk is listening, so nothing the Go side
+// says after it is missed.
 export async function news(page, name = "job") {
-  return page.evaluate((name) => {
+  return page.evaluate(async (name) => {
     if (!window.__news) {
       window.__news = {};
-      new EventSource("/events").onmessage = (m) => {
+      window.__newsWaiting = [];
+      const source = new EventSource("/events");
+      source.onmessage = (m) => {
         const ev = JSON.parse(m.data);
         window.__news[ev.name] = (window.__news[ev.name] ?? 0) + 1;
+        const now = window.__newsWaiting.filter((w) => w.name === ev.name && window.__news[ev.name] > w.seen);
+        window.__newsWaiting = window.__newsWaiting.filter((w) => !now.includes(w));
+        for (const w of now) w.done();
       };
+      window.__listening = new Promise((r) => (source.onopen = r));
     }
+    await window.__listening;
     return window.__news[name] ?? 0;
   }, name);
 }
 
+// Waits until the interface has heard everything the Go side told it up
+// to now, by a mark the bridge sends behind it, see /mark in
+// bridge_test.go, and the newest change of every job in jobs, a list the
+// engine gave, by the job's seq. Then until the app has settled on it.
+// What the engine said and sent before this is then what the screen
+// shows, however late a busy machine delivered it. The seq is waited for
+// too because the Go side sends a job's news after it lets go of the
+// queue, so a list of jobs can show a change whose news the mark
+// overtook. The mark is asked for once the interface is listening, so
+// after a reload too it is not sent to nobody.
+export async function caughtUp(page, url, jobs = []) {
+  await page.evaluate(() => window.__listening);
+  const mark = await control(url, "/mark");
+  const due = jobs.map((j) => [j.id, j.seq]);
+  await page.evaluate(([mark, due]) => window.__heardMark(mark).then(() => window.__heardSeqs(due)), [mark, due]);
+  await settle(page);
+}
+
 // Waits until the Go side has told the interface something of a name more
-// often than seen, a count news gave, and says how often now.
+// often than seen, a count news gave, and says how often now. It waits
+// for good: news that never comes is a walk that hangs, ended by the
+// -timeout of make walks with the step it was in printed, see walk.mjs.
 export async function nextNews(page, seen, name = "job") {
-  await page.waitForFunction(([name, seen]) => (window.__news?.[name] ?? 0) > seen, [name, seen], { polling: "raf", timeout: 30000 });
+  await page.evaluate(
+    ([name, seen]) =>
+      new Promise((done) => ((window.__news[name] ?? 0) > seen ? done() : window.__newsWaiting.push({ name, seen, done }))),
+    [name, seen],
+  );
   return news(page, name);
 }
 
@@ -615,11 +792,71 @@ export async function fromSidebar(page, click) {
   // An episode picked is built behind the one on screen and takes its
   // place once it is ready, see App.svelte. Until then there are two, and
   // whatever a walk reads next is about the one it picked.
-  await page.waitForFunction(
-    () => document.querySelectorAll(".workspace").length <= 1 && !document.querySelector(".workspace.behind"),
-    null,
-    { polling: "raf", timeout: 15000 },
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const one = () => document.querySelectorAll(".workspace").length <= 1 && !document.querySelector(".workspace.behind");
+        if (one()) return done();
+        const watch = new MutationObserver(() => {
+          if (!one()) return;
+          watch.disconnect();
+          done();
+        });
+        watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      }),
   );
+}
+
+// Until fn, run in the page with arg, says true. It is asked again each
+// time the page changes, an attribute, a node or a text, never on the
+// clock, so what it waits for has to show on the page. One that never
+// comes is a walk that hangs, ended by the -timeout of make walks with
+// the step the walk printed last. seenUntil is the same wait for a read
+// the walk makes itself.
+export function pageUntil(page, fn, arg) {
+  return page.evaluate(
+    ([source, arg]) =>
+      new Promise((done) => {
+        const holds = new Function(`return (${source})`)();
+        if (holds(arg)) return done();
+        const o = new MutationObserver(() => {
+          if (!holds(arg)) return;
+          o.disconnect();
+          done();
+        });
+        o.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+      }),
+    [fn.toString(), arg],
+  );
+}
+
+// Reads read until ok says it is what was wanted, and says what it read
+// last: once the interface has heard everything the Go side told it and
+// has settled on it, see caughtUp, and then each time the page's body
+// changes, never on the clock. What the app shows a moment later by
+// itself, like the Updates page holding its looking for 1.4 s, comes that
+// way. read must change nothing in the body, or it wakes itself. A page
+// that never comes to it hangs the walk, as pageUntil does.
+export async function seenUntil(page, url, read, ok) {
+  await caughtUp(page, url);
+  for (;;) {
+    const changed = page.evaluate(
+      () =>
+        new Promise((done) => {
+          const o = new MutationObserver(() => {
+            o.disconnect();
+            done();
+          });
+          o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+        }),
+    );
+    // Left waiting once ok is met, so it must not throw when the page
+    // closes.
+    changed.catch(() => {});
+    const now = await read();
+    if (ok(now)) return now;
+    await changed;
+  }
 }
 
 // Adds an HEVC 10-bit episode with Add and chooses the clip its first
@@ -627,19 +864,15 @@ export async function fromSidebar(page, click) {
 export async function addHEVC(url, page) {
   await control(url, "/pick?seconds=40&codec=hevc");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  await page.waitForFunction(
-    () => {
-      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-      return (
-        on.startsWith("folge-") &&
-        pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
-        pane.querySelectorAll("ol li[data-key]").length > 0
-      );
-    },
-    null,
-    { timeout: 120000, polling: 250 },
-  );
+  await pageUntil(page, () => {
+    const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+    const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+    return (
+      on.startsWith("folge-") &&
+      pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
+      pane.querySelectorAll("ol li[data-key]").length > 0
+    );
+  });
   await page.locator("aside ol li[data-key] button.pick").first().click();
   await settle(page);
   // The frames on screen came through the Go side's streams, or this walk
@@ -699,26 +932,20 @@ export async function xOf(page, at) {
 
 // Puts the playhead on a moment of the clip with a click on the clip
 // timeline, the way a hand does, and waits until the video preview shows
-// the frame that holds it, at fps frames a second. Says whether that
-// frame came.
+// the frame that holds it, see shownOnPlayhead. Says whether the picture
+// is that frame by the number drawn on it, at fps frames a second.
 export async function seekTo(page, at, fps) {
   const g = await handles(page);
   await page.mouse.click(await xOf(page, at), high(g.track));
   await settle(page);
   await reader(page);
-  return page
-    .waitForFunction(
-      (fps) => {
-        const at = Number(document.querySelector(".screen").dataset.playhead);
-        // The frame that holds the playhead, a frame that begins a
-        // millisecond or less after it included, see frameAt in
-        // lib/flow.ts.
-        return window.__pictured() === Math.floor((at + 0.001) * fps);
-      },
-      fps,
-      { polling: 50, timeout: 5000 },
-    )
-    .then(() => true, () => false);
+  await shownOnPlayhead(page);
+  return page.evaluate((fps) => {
+    const at = Number(document.querySelector(".screen").dataset.playhead);
+    // The frame that holds the playhead, a frame that begins a
+    // millisecond or less after it included, see frameAt in lib/flow.ts.
+    return window.__pictured() === Math.floor((at + 0.001) * fps);
+  }, fps);
 }
 
 // The crop frame in the video preview, where the playhead is: where it

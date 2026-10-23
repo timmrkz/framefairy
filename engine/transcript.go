@@ -484,7 +484,12 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 		}
 		defer rec.Close()
 		started := time.Now()
-		words, before := 0, 0.0
+		// A job that hears in turns counts over all it set out to hear,
+		// so what it heard in the turns before this one is done already.
+		e.mu.Lock()
+		whole := math.Max(e.hearingWhole, todo)
+		e.mu.Unlock()
+		words, before := 0, whole-todo
 		for _, gap := range gaps {
 			read := Window{math.Max(0, gap.Start-hearingPad), math.Min(duration, gap.End+hearingPad)}
 			read.Start = math.Floor(read.Start/FrameSeconds+1e-6) * FrameSeconds
@@ -497,7 +502,7 @@ func (e *Engine) loadTranscript(ctx context.Context, source string, window Windo
 					e.Log.Detail("could not save the transcript so far: %s", err)
 				}
 			}
-			t, err := e.transcribe(ctx, source, read, rec, silenceDB, save, hearingShare{gap, before, todo})
+			t, err := e.transcribe(ctx, source, read, rec, silenceDB, save, hearingShare{gap, before, whole})
 			if err != nil {
 				return err
 			}

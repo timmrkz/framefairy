@@ -87,7 +87,17 @@ func TestAClipMadeByHand(t *testing.T) {
 	if !strings.HasPrefix(c.Title, "wort") {
 		t.Errorf("titled %q, want its first words", c.Title)
 	}
-	summaries := Status(disk, source, p.Base.ASRModel).Plans
+	st := Status(disk, source, p.Base.ASRModel, p.Base.SilenceDB)
+	// What is said is the edges of the lines a clip made by hand is made
+	// of, so the app knows where I and O can make one.
+	lined, err := p.Transcript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := saidOf(BuildLines(lined.Words, lined.Levels(), p.Base.MaxPause)); st.Said == nil || want == nil || *st.Said != *want {
+		t.Errorf("said %v, not %v, the edges of the lines MakeClip makes", st.Said, want)
+	}
+	summaries := st.Plans
 	if len(summaries) != 1 || summaries[0].By != ByHand {
 		t.Fatalf("clip sets %+v", summaries)
 	}

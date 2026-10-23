@@ -82,7 +82,7 @@ func TestTranscriptionResumes(t *testing.T) {
 	if got, done := Coverage(disk, source, base.ASRModel); done || got != cut {
 		t.Fatalf("partial coverage %v %v", got, done)
 	}
-	if st := Status(disk, source, base.ASRModel); st.Transcribed || st.Covered != cut {
+	if st := Status(disk, source, base.ASRModel, nil); st.Transcribed || st.Covered != cut {
 		t.Errorf("status of a partial transcript %+v", st)
 	}
 
@@ -166,7 +166,7 @@ func TestAnOlderTranscriptIsStillRead(t *testing.T) {
 		if _, _, _, ok := readTranscriptFile(fsys, path, stamp, "modell"); ok != read {
 			t.Errorf("version %d read %v, want %v", version, ok, read)
 		}
-		if st := Status(fsys, source, "modell"); st.TranscriptStale == read {
+		if st := Status(fsys, source, "modell", nil); st.TranscriptStale == read {
 			t.Errorf("version %d stale %v", version, st.TranscriptStale)
 		}
 	}
@@ -440,7 +440,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	e.checkpointEvery = time.Nanosecond
 	e.OpenRecognizer = func(string) (Recognizer, error) {
 		return watchingRecognizer{fakeRecognizer{&calls}, func() {
-			st := Status(disk, source, model)
+			st := Status(disk, source, model, nil)
 			if st.Covered > 0 && !st.Transcribed {
 				seen = append(seen, st.Covered)
 			}
@@ -459,7 +459,7 @@ func TestATranscriptionSaysHowFarItHasComeWhileItRuns(t *testing.T) {
 	if seen[len(seen)-1] <= seen[0] {
 		t.Errorf("coverage did not grow while it ran: %v", seen)
 	}
-	if st := Status(disk, source, model); !st.Transcribed || st.Covered < 69.9 {
+	if st := Status(disk, source, model, nil); !st.Transcribed || st.Covered < 69.9 {
 		t.Errorf("status when it is done %+v", st)
 	}
 }
@@ -510,6 +510,156 @@ func TestEveryChunkSaysHowFarTheAudioHasBeenHeard(t *testing.T) {
 	}
 	if last := reached[len(reached)-1]; last < 69.9 || last > 70.1 {
 		t.Errorf("the last moment reported is %v, the episode is 70 s", last)
+	}
+}
+
+// Issue #444: Tim searched windows heard in part already, and the fill of
+// the transcription started well past 0. What a hearing says of how far it
+// has come is a share of what it hears, the parts of the window not heard
+// yet, so a window heard half already starts at 0 and ends at 1 all the
+// same, and each moment it reports is that far through the part left.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestHearingAWindowHeardInPartFillsFromZero(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+
+	var mu sync.Mutex
+	type moment struct{ fraction, covered float64 }
+	var said []moment
+	listening := false
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if listening {
+			said = append(said, moment{ev.Fraction, ev.Covered})
+		}
+	})
+	var calls int32
+	e := NewEngine(log, disk)
+	e.checkpointEvery = time.Hour
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	if err := p.Hear(context.Background(), Window{0, 35}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+	gaps := Unheard(disk, source, base.ASRModel, Window{0, 70})
+	if len(gaps) != 1 {
+		t.Fatalf("after hearing the first half, what is left is %v, not one part", gaps)
+	}
+	left := gaps[0]
+	mu.Lock()
+	listening = true
+	mu.Unlock()
+	if err := p.Hear(context.Background(), Window{0, 70}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(said) < 2 {
+		t.Fatalf("hearing the second half reported %d moments, %v", len(said), said)
+	}
+	for i, m := range said {
+		want := math.Max(m.covered-left.Start, 0) / (left.End - left.Start)
+		if math.Abs(m.fraction-want) > 0.01 {
+			t.Errorf("at %.2f s it said %.3f, not %.3f, how far it is through %v: %v", m.covered, m.fraction, want, left, said)
+			break
+		}
+		if i > 0 && m.fraction < said[i-1].fraction {
+			t.Errorf("it went back from %.3f to %.3f: %v", said[i-1].fraction, m.fraction, said)
+			break
+		}
+	}
+	// The share of the window heard is never what it says: the half
+	// heard before counts for nothing.
+	if first := said[0]; first.fraction > first.covered/70-0.1 {
+		t.Errorf("at %.2f s it said %.3f, about the share of the window heard: %v", first.covered, first.fraction, said)
+	}
+	if last := said[len(said)-1].fraction; last < 0.99 {
+		t.Errorf("it ended at %.3f, not 1: %v", last, said)
+	}
+}
+
+// Issue #444, from the review of #456: a search that gives the lane of
+// hearing back, to a clip made by hand that needs words sooner or to a
+// search that finds, and gets it again, hears on in the same run. What it
+// says of how far it has come goes on from where it got to, over all it
+// set out to hear, and never starts from nothing again.
+//
+// On the real disk: ffmpeg reads the episode the speech model hears.
+func TestAHearingThatLosesItsTurnCountsOnFromWhereItWas(t *testing.T) {
+	t.Parallel()
+	source := testEpisode(t, "70")
+
+	var mu sync.Mutex
+	type moment struct {
+		turn              int
+		fraction, covered float64
+	}
+	var said []moment
+	turns := 0
+	var takeBack context.CancelFunc
+	log := NewLog(&bytes.Buffer{}, false, false)
+	log.SetSink(func(ev Event) {
+		if ev.Kind != EventProgress || ev.Covered <= 0 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		said = append(said, moment{turns, ev.Fraction, ev.Covered})
+		// The lane is taken back the first time the hearing says how far
+		// it has come, the way a clip made by hand takes it.
+		if takeBack != nil {
+			takeBack()
+			takeBack = nil
+		}
+	})
+	var calls int32
+	e := NewEngine(log, disk)
+	e.checkpointEvery = time.Hour
+	e.OpenRecognizer = func(string) (Recognizer, error) { return fakeRecognizer{&calls}, nil }
+	base := DefaultOptions()
+	base.ASRModel = t.TempDir()
+	p := NewProject(e, source, base)
+	turn := func(ctx context.Context, step string) (context.Context, func(), error) {
+		c, cancel := context.WithCancel(ctx)
+		mu.Lock()
+		turns++
+		if turns == 1 {
+			takeBack = cancel
+		}
+		mu.Unlock()
+		return c, cancel, nil
+	}
+	if err := p.hear(context.Background(), turn, Window{0, 70}); err != nil {
+		t.Fatalf("%v %s", err, p.LastError())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if turns < 2 || len(said) < 3 || said[len(said)-2].turn < 2 {
+		t.Fatalf("the hearing took %d turns and said %v, not two turns with more than the end in the second", turns, said)
+	}
+	for i, m := range said {
+		if want := m.covered / 70; math.Abs(m.fraction-want) > 0.01 {
+			t.Errorf("in turn %d at %.2f s it said %.3f, not %.3f, how far it is through the 70 s it set out to hear: %v",
+				m.turn, m.covered, m.fraction, want, said)
+			break
+		}
+		if i > 0 && m.fraction < said[i-1].fraction {
+			t.Errorf("it went back from %.3f to %.3f: %v", said[i-1].fraction, m.fraction, said)
+			break
+		}
+	}
+	if last := said[len(said)-1].fraction; last < 0.99 {
+		t.Errorf("it ended at %.3f, not 1: %v", last, said)
 	}
 }
 
@@ -703,7 +853,7 @@ func TestTheTranscriptIsReadWhileItIsWritten(t *testing.T) {
 				default:
 				}
 				covered, done := Coverage(disk, source, base.ASRModel)
-				st := Status(disk, source, base.ASRModel)
+				st := Status(disk, source, base.ASRModel, nil)
 				mu.Lock()
 				if covered < last-0.001 {
 					problems = append(problems, fmt.Sprintf("coverage went back from %v to %v", last, covered))

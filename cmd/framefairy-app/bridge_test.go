@@ -81,9 +81,12 @@ func (b *bus) send(name string, data any) {
 	for c := range b.subs {
 		// A browser that does not keep up misses an event rather than
 		// holding up the queue that sent it, which is what Wails does too.
+		// It is said, since a walk waiting on that event then waits for
+		// good, and the reason is in what the bridge printed.
 		select {
 		case c <- body:
 		default:
+			fmt.Fprintf(os.Stderr, "the bridge dropped %q for a page that did not keep up\n", name)
 		}
 	}
 }
@@ -124,10 +127,11 @@ func (b *bus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //
 // svc is the service now: a restart of the app is a new one. own are the
 // calls the bridge answers itself, a box from the system among them. held
-// says how long a call of a name waits before it reaches the service, and
-// the reason it fails with instead of reaching it, if it does, see /hold.
+// says how long a call of a name waits before it reaches the service, the
+// gate it waits behind until the gate opens, and the reason it fails with
+// instead of reaching it, if it does, see /hold.
 func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
-	held func(name string) (time.Duration, string)) http.Handler {
+	held func(name string) (time.Duration, <-chan struct{}, string)) http.Handler {
 	contextType := reflect.TypeFor[context.Context]()
 	errorType := reflect.TypeFor[error]()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,9 +144,16 @@ func callHandler(svc func() *FrameFairy, own map[string]func() (any, error),
 			return
 		}
 		name := call.Name[strings.LastIndex(call.Name, ".")+1:]
-		wait, fails := held(name)
+		wait, gate, fails := held(name)
 		if wait > 0 {
 			time.Sleep(wait)
+		}
+		if gate != nil {
+			select {
+			case <-gate:
+			case <-r.Context().Done():
+				return
+			}
 		}
 		if fails != "" {
 			http.Error(w, fails, http.StatusInternalServerError)
@@ -337,6 +348,16 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
 		answer(w, nil, b.reset())
 	})
+	// A mark sent down the events behind everything the Go side told the
+	// interface before it. A page that has heard the mark has heard all
+	// of that, since every page hears the events in the order they were
+	// sent, so a walk can wait until the interface knows what the engine
+	// knew when the walk asked it, see caughtUp in bridge.mjs.
+	mux.HandleFunc("/mark", func(w http.ResponseWriter, r *http.Request) {
+		n := b.marks.Add(1)
+		b.d.bus.send("mark", n)
+		answer(w, n, nil)
+	})
 	mux.HandleFunc("/pick", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		path, err := b.pick(q.Get("seconds"), q.Get("rate"), q.Get("switch"), q.Get("timing"), q.Get("codec") == "hevc",
@@ -410,6 +431,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.d.model.hangs(q.Get("hang") == "1")
 		answer(w, nil, nil)
 	})
+	// How many answers the model holds now, so a walk knows how many
+	// searches wait on it and have nothing to report.
+	mux.HandleFunc("/model-holding", func(w http.ResponseWriter, r *http.Request) {
+		answer(w, b.d.model.holding.Load(), nil)
+	})
 	// The person dictating stops talking, and the microphone hears
 	// nothing more once the phrase it is on has been said.
 	mux.HandleFunc("/microphone", func(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +444,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 	})
 	mux.HandleFunc("/speech", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		if q.Has("wordless") {
+			b.words.wordless.Store(q.Get("wordless") == "1")
+			answer(w, nil, nil)
+			return
+		}
 		if q.Get("ms") == "hold" {
 			b.words.hold()
 			answer(w, nil, nil)
@@ -425,6 +456,11 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		}
 		if q.Get("ms") == "hold one" {
 			b.words.holdOne()
+			answer(w, nil, nil)
+			return
+		}
+		if n, err := strconv.Atoi(q.Get("step")); err == nil {
+			b.words.step(min(max(n, 0), 100))
 			answer(w, nil, nil)
 			return
 		}
@@ -459,6 +495,13 @@ func bridgeHandler(b *bridge, dist string) http.Handler {
 		b.mu.Lock()
 		b.holds[q.Get("call")] = time.Duration(min(max(ms, 0), 10000)) * time.Millisecond
 		b.holdsLeft[q.Get("call")] = min(max(times, 0), 100)
+		switch gate, shut := b.gates[q.Get("call")]; {
+		case q.Get("gate") == "shut" && !shut:
+			b.gates[q.Get("call")] = make(chan struct{})
+		case q.Get("gate") == "open" && shut:
+			close(gate)
+			delete(b.gates, q.Get("call"))
+		}
 		if reason := q.Get("fail"); reason != "" {
 			b.fails[q.Get("call")] = reason
 		}
@@ -526,12 +569,19 @@ type prose struct {
 	// pace is how long it takes over each piece of audio it hears, in
 	// milliseconds, so a walk can see a transcript grow, and cancel it.
 	pace atomic.Int64
+	// wordless hears no word at all, the way a video with no speech is
+	// heard, so a walk can make a clip by hand that fails. Not the
+	// bridge's silent, which is the microphone's.
+	wordless atomic.Bool
 	// held keeps it from hearing anything more, so a walk can look at a
 	// transcript part way that stays where it is. The next pace or a reset
-	// lets it go on. hearing counts the pieces it is hearing now.
+	// lets it go on. steps is how many pieces it may still hear while it
+	// is held, so a walk can let the hearing on one piece at a time.
+	// hearing counts the pieces it is hearing now.
 	gate    sync.Mutex
 	turn    *sync.Cond
 	held    bool
+	steps   int
 	hearing int
 	// waiting counts the pieces handed to it while it is held, which the
 	// engine is part way through as far as it knows.
@@ -550,7 +600,7 @@ func (p *prose) cond() *sync.Cond {
 func (p *prose) hold() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = true
+	p.held, p.steps = true, 0
 	for p.hearing > 0 {
 		p.cond().Wait()
 	}
@@ -570,7 +620,18 @@ func (p *prose) holdOne() {
 func (p *prose) release() {
 	p.gate.Lock()
 	defer p.gate.Unlock()
-	p.held = false
+	p.held, p.steps = false, 0
+	p.cond().Broadcast()
+}
+
+// step lets n pieces more be heard while it is held, by whatever hears
+// next. It does not wait for them: a hearing called off between two
+// pieces never asks for the next, and a walk waits on the news of the
+// work instead.
+func (p *prose) step(n int) {
+	p.gate.Lock()
+	defer p.gate.Unlock()
+	p.steps += n
 	p.cond().Broadcast()
 }
 
@@ -584,13 +645,16 @@ ich. Und eigentlich erinnere ich mich an die Lüge besser als an den Arm.`)
 
 func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 	p.gate.Lock()
-	if p.held {
+	if p.held && p.steps == 0 {
 		p.waiting++
 		p.cond().Broadcast()
-		for p.held {
+		for p.held && p.steps == 0 {
 			p.cond().Wait()
 		}
 		p.waiting--
+	}
+	if p.held {
+		p.steps--
 	}
 	p.hearing++
 	p.gate.Unlock()
@@ -601,6 +665,9 @@ func (p *prose) Recognize(samples []float32, rate int) []engine.Token {
 		p.gate.Unlock()
 	}()
 	time.Sleep(time.Duration(p.pace.Load()) * time.Millisecond)
+	if p.wordless.Load() {
+		return nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	length := float64(len(samples)) / float64(rate)
@@ -702,6 +769,13 @@ type bridge struct {
 	holds map[string]time.Duration
 	// holdsLeft is how many calls of a name the hold is still for.
 	holdsLeft map[string]int
+	// gates are shut for every call of a name, which waits until the walk
+	// opens it, see /hold. A walk that holds a call by a time proves only
+	// that the time was long enough on that machine. Each call waiting
+	// holds one of the browser's six connections to the bridge, and the
+	// events hold another, so a walk shuts a gate only on a call the page
+	// makes a few of at a time, like Captions.
+	gates map[string]chan struct{}
 	// fails is the reason the next call of a name fails with instead of
 	// reaching the service, the way a full disk answers a save, see /hold.
 	fails map[string]string
@@ -714,6 +788,8 @@ type bridge struct {
 	// silent says the person dictating has stopped talking, see
 	// /microphone.
 	silent *atomic.Bool
+	// marks counts the marks sent down the events, see /mark.
+	marks atomic.Int64
 }
 
 // updatesAs gives the app updates the way a walk asks for them: a build
@@ -783,18 +859,19 @@ func (b *bridge) updatesAs(from, stored string, list, conflict []string, offline
 }
 
 // held is how long a call of this name waits before it reaches the
-// service, and the reason it fails with instead, if it does. A hold is for
-// the next call of the name, or the next so many, see /hold.
-func (b *bridge) held(name string) (time.Duration, string) {
+// service, the gate it waits behind, and the reason it fails with instead,
+// if it does. A hold is for the next call of the name, or the next so
+// many, and a gate for every call until it opens, see /hold.
+func (b *bridge) held(name string) (time.Duration, <-chan struct{}, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	wait, fails := b.holds[name], b.fails[name]
+	wait, gate, fails := b.holds[name], b.gates[name], b.fails[name]
 	if b.holdsLeft[name]--; b.holdsLeft[name] <= 0 {
 		delete(b.holds, name)
 		delete(b.holdsLeft, name)
 	}
 	delete(b.fails, name)
-	return wait, fails
+	return wait, gate, fails
 }
 
 // openBridge opens a desk whose Go side tells a browser what it does, with
@@ -890,7 +967,7 @@ func openBridge(t *testing.T) *bridge {
 	}
 	showReport = func(string) error { return nil }
 	b := &bridge{t: t, d: d, words: words, silent: silent, first: filepath.Join(d.home, "erste-erinnerung.mp4"), kept: t.TempDir(),
-		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, fails: map[string]string{}}
+		holds: map[string]time.Duration{}, holdsLeft: map[string]int{}, gates: map[string]chan struct{}{}, fails: map[string]string{}}
 	if err := makeEpisode(b.first, 120, 0, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1362,11 +1439,16 @@ func (b *bridge) reset() error {
 	b.silent.Store(false)
 	b.words.release()
 	b.words.pace.Store(0)
+	b.words.wordless.Store(false)
 	b.d.model.hangs(false)
 	b.d.model.fails(false)
 	b.mu.Lock()
 	b.picks = nil
 	clear(b.holds)
+	for _, gate := range b.gates {
+		close(gate)
+	}
+	clear(b.gates)
 	clear(b.fails)
 	b.chrome = Chrome{}
 	b.mu.Unlock()
@@ -1524,6 +1606,20 @@ func TestWalks(t *testing.T) {
 	var tookMu sync.Mutex
 	took := map[string]float64{}
 
+	// A walk waits on signals, so one whose signal never comes runs until
+	// go test's -timeout ends the whole binary, and that prints neither
+	// which walk it was nor anything the runs said through t. So the runs
+	// still going a minute before then are stopped and reported, with
+	// what they printed, and every run says on stderr, which is not held
+	// back, when it starts and ends. Issue #443.
+	ctx := context.Background()
+	if end, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, end.Add(-walkGrace))
+		defer cancel()
+	}
+	var unwalked atomic.Int32
+
 	walkers := min(envNumber("WALKERS", runtime.NumCPU()*3/2), len(runs))
 	todo := make(chan walkRun, len(runs))
 	for _, r := range runs {
@@ -1541,27 +1637,43 @@ func TestWalks(t *testing.T) {
 				return
 			}
 			for r := range todo {
+				if ctx.Err() != nil {
+					unwalked.Add(1)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "walking %s\n", name(r))
 				began := time.Now()
-				cmd := exec.Command(node, filepath.Join(walks, r.script))
-				cmd.Dir = walks
-				cmd.Env = append(append(os.Environ(), "BRIDGE_URL="+url), r.env...)
-				out, err := cmd.CombinedOutput()
+				var out bytes.Buffer
+				err := walk(ctx, node, []string{filepath.Join(walks, r.script)}, walks,
+					append(append(os.Environ(), "BRIDGE_URL="+url), r.env...), &out)
 				seconds := time.Since(began).Seconds()
 				tookMu.Lock()
 				took[name(r)] = seconds
 				tookMu.Unlock()
 				what := fmt.Sprintf("%s (%.0f s)", name(r), seconds)
 				if err != nil {
-					t.Errorf("%s:\n%s", what, out)
+					// A walk that was stopped says what it printed at once
+					// too, since the bridges may not end in time either,
+					// and then t holds it back for good.
+					if ctx.Err() != nil {
+						fmt.Fprintf(os.Stderr, "failed %s: %v\n%s\n", what, err, out.Bytes())
+					} else {
+						fmt.Fprintf(os.Stderr, "failed %s\n", what)
+					}
+					t.Errorf("%s: %v\n%s", what, err, out.Bytes())
 					continue
 				}
-				t.Logf("%s:\n%s", what, out)
+				fmt.Fprintf(os.Stderr, "walked %s\n", what)
+				t.Logf("%s:\n%s", what, out.Bytes())
 			}
 		})
 	}
 	wg.Wait()
 	if left := len(todo); left > 0 {
 		t.Errorf("%d runs were not walked, since no bridge started", left)
+	}
+	if n := unwalked.Load(); n > 0 {
+		t.Errorf("%d runs were not walked, since the test's time ran out", n)
 	}
 	// WALKTIMES=1 keeps what the runs took for the next split, and drops
 	// the runs that are gone.
@@ -1614,6 +1726,75 @@ func startBridge(t *testing.T) (string, error) {
 		before = append(before, line)
 	}
 	return "", fmt.Errorf("the bridge did not start:\n%s", strings.Join(before, "\n"))
+}
+
+// A walk that hangs is stopped when the test's time runs out, and what it
+// printed until then is kept, so the report says which walk it was and
+// how far it got, issue #443.
+func TestAWalkThatHangsIsStoppedWithWhatItSaid(t *testing.T) {
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	out := &saying{what: "halfway", said: make(chan struct{})}
+	go func() {
+		<-out.said
+		stop()
+	}()
+	// tail -f waits for more forever, the way a walk waits on a signal
+	// that never comes.
+	err := walk(ctx, "sh", []string{"-c", "echo halfway; exec tail -f /dev/null"}, "", nil, out)
+	if err == nil || !strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that hangs ends with %v, want that its time ran out", err)
+	}
+	if !strings.Contains(out.String(), "halfway") {
+		t.Errorf("what the walk printed before it was stopped is %q", out.String())
+	}
+	if err := walk(context.Background(), "sh", []string{"-c", "echo done"}, "", nil, io.Discard); err != nil {
+		t.Errorf("a walk that ends gives %v", err)
+	}
+	if err := walk(context.Background(), "sh", []string{"-c", "exit 1"}, "", nil, io.Discard); err == nil || strings.Contains(err.Error(), "time ran out") {
+		t.Errorf("a walk that fails gives %v, want its own failure", err)
+	}
+}
+
+// saying keeps what is written to it and closes said once it holds what.
+// The buffer is a field, not embedded, since a bytes.Buffer's ReadFrom
+// would read the walk's output past Write.
+type saying struct {
+	buf  bytes.Buffer
+	what string
+	said chan struct{}
+	once sync.Once
+}
+
+func (s *saying) Write(p []byte) (int, error) {
+	n, err := s.buf.Write(p)
+	if strings.Contains(s.buf.String(), s.what) {
+		s.once.Do(func() { close(s.said) })
+	}
+	return n, err
+}
+
+func (s *saying) String() string { return s.buf.String() }
+
+// walkGrace is how long before go test's -timeout the walks still
+// running are stopped, time enough to end them and report.
+const walkGrace = time.Minute
+
+// walk runs one walk, name with args in dir, and writes what it prints to
+// out. One still running when ctx ends is stopped, and says so, and what
+// it printed until then is in out.
+func walk(ctx context.Context, name string, args []string, dir string, env []string, out io.Writer) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir, cmd.Env = dir, env
+	cmd.Stdout, cmd.Stderr = out, out
+	// The browser a stopped walk started may hold its output open, and
+	// its output is not worth waiting for.
+	cmd.WaitDelay = 5 * time.Second
+	err := cmd.Run()
+	if err != nil && ctx.Err() != nil {
+		return errors.New("it had not ended when the test's time ran out, and was stopped")
+	}
+	return err
 }
 
 // walkScripts are the walks in the folder: every script that walks with

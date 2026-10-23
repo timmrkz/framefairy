@@ -1,34 +1,15 @@
 {
   "preview/walks/bridge.mjs": {
     "no-restricted-properties": {
-      "count": 4
-    }
-  },
-  "preview/walks/playback.mjs": {
-    "no-restricted-properties": {
-      "count": 2
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 3
-    }
-  },
-  "preview/walks/searching.mjs": {
-    "playwright/no-wait-for-timeout": {
       "count": 2
     }
   },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
-      "count": 6
+      "count": 3
     },
     "no-restricted-properties": {
-      "count": 38
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 95
+      "count": 27
     }
   },
   "preview/walks/speed.mjs": {
@@ -37,16 +18,6 @@
     },
     "playwright/no-wait-for-timeout": {
       "count": 4
-    }
-  },
-  "preview/walks/timeline.mjs": {
-    "playwright/no-wait-for-timeout": {
-      "count": 1
-    }
-  },
-  "preview/walks/words.mjs": {
-    "playwright/no-wait-for-timeout": {
-      "count": 2
     }
   },
   "src/lib/frames/app.test.ts": {

@@ -3,6 +3,7 @@
   // a click that throws work away has to be a click you meant.
   import { untrack, type Snippet } from "svelte";
   import { shell } from "../lib/state.svelte";
+  import { keyFocus } from "../lib/keys";
 
   let {
     title,
@@ -53,7 +54,7 @@
     event.preventDefault();
     const here = buttons.indexOf(document.activeElement as HTMLButtonElement);
     const next = (here + step + buttons.length) % buttons.length;
-    buttons[next].focus();
+    keyFocus(buttons[next]);
   }
 </script>
 

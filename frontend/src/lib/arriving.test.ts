@@ -72,7 +72,9 @@ describe("every clip on its way comes in the same way, whoever proposed it", () 
       ["s/1", true, "Stopped. Click Continue"],
       ["f/1", true, "Failed. Click Continue"],
     ]);
-    expect(rows[2].left).toBe("nothing is said after 1:00:00");
+    // Where it lies, and why only in its title, issue #450.
+    expect(rows[2].left).toBe("1:00:00");
+    expect(rows[2].full).toBe("nothing is said after 1:00:00");
     rows[0].oncontinue?.();
     expect(carried).toBe("c");
   });

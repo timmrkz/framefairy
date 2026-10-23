@@ -2,7 +2,7 @@
 # dorny/paths-filter in the job changes. A push to main starts every job
 # whatever this says.
 #
-# Each filter but the last two is every file, '**', less the files that
+# Each filter but the last three is every file, '**', less the files that
 # cannot change what its jobs do. So a file nobody thought of starts them
 # all, which is what the Makefile, a workflow, a script and go.mod need:
 # they decide how the project is built. The quantifier is
@@ -28,7 +28,11 @@ app:
 
 # The jobs linux, fuzz and macos: the Go tests. No Go test builds the
 # interface, so only the files of it a Go test reads count, like api.ts,
-# and the one that reads all of it runs in the job build.
+# and the one that reads all of it runs in the job build. These jobs run
+# scripts/changed.sh on a pull request, so a change to it starts them.
+# The CI image and the script it runs are left out, because macos does
+# not run in it, and the jobs that do are started by the filter image
+# below.
 go:
   - '**'
   - '!docs/**'
@@ -36,10 +40,12 @@ go:
   - '!LICENSE'
   - '!.vscode/**'
   - '!.claude/**'
-  - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!scripts/{main-moved,needs-build,plan-frozen}{,-test}.sh'
+  - '!scripts/changed-test.sh'
+  - '!{.github/ci-image/**,scripts/ci-packages.sh}'
   - '!frontend/**/!(api.ts|*.cases.json)'
 
-# The job interface, which needs Node and nothing of Go.
+# The job interface, which needs Node and nothing of Go, nor the CI image.
 interface:
   - '**'
   - '!docs/**'
@@ -48,6 +54,7 @@ interface:
   - '!.vscode/**'
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
+  - '!{.github/ci-image/**,scripts/ci-packages.sh}'
   - '!**/*.go'
   - '!go.{mod,sum}'
 
@@ -59,3 +66,11 @@ workflows:
 # it whenever it builds.
 changed:
   - 'scripts/changed{,-test}.sh'
+
+# The Go jobs that run in the CI image, linux and fuzz, beside what starts
+# them by the filter go: a change to the image, or to the script that
+# fills it, is a change to the machine their tests run on. The walks and
+# the build run in it too, and app starts them.
+image:
+  - '.github/ci-image/**'
+  - 'scripts/ci-packages.sh'

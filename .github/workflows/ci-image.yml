@@ -1,0 +1,62 @@
+# The machine the walks and the Linux Go jobs run on in CI,
+# .github/ci-image/Dockerfile: Ubuntu with every system package they use
+# and Playwright's Chromium already in it, so none of them downloads from
+# the Ubuntu mirror, which on some days held a walks job for twelve
+# minutes, #462. Called by every workflow with a job in it, ci.yml,
+# fuzz-nightly.yml and security.yml, whose jobs run in the image this
+# names as ref.
+#
+# It is kept in GitHub's container registry under a sum of what goes into
+# it: the Dockerfile, scripts/ci-packages.sh, which it runs, and the
+# version of Playwright the interface pins. So nearly every run only asks
+# the registry whether that image is there, and builds and pushes one only
+# when one of them changed. The step that builds stops after ten minutes,
+# as the system packages of the other jobs do. A file the Dockerfile
+# comes to read joins the sum and the sparse checkout below.
+name: CI image
+
+on:
+  workflow_call:
+    outputs:
+      ref:
+        description: The image, by its tag in the registry.
+        value: ${{ jobs.image.outputs.ref }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    name: find or build
+    runs-on: ubuntu-24.04
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            .github/ci-image/Dockerfile
+            scripts/ci-packages.sh
+            frontend/package-lock.json
+          sparse-checkout-cone-mode: false
+      - id: tag
+        run: |
+          playwright=$(jq -r '.packages["node_modules/playwright"].version' frontend/package-lock.json)
+          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
+          echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
+      - name: The image, unless it is there
+        timeout-minutes: 10
+        env:
+          REF: ${{ steps.tag.outputs.ref }}
+          PLAYWRIGHT: ${{ steps.tag.outputs.playwright }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
+            echo "$REF is there"
+            exit 0
+          fi
+          docker buildx build --push --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
+            -t "$REF" -f .github/ci-image/Dockerfile .

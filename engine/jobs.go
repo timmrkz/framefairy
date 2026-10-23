@@ -518,9 +518,29 @@ func (p *Project) TranscribeJob(ctx context.Context, turn Turn) (err error) {
 // turn, for as long as there is anything to hear.
 func (p *Project) hear(ctx context.Context, turn func(context.Context, string) (context.Context, func(), error),
 	span Window) error {
+	// What is unheard at the first turn is the whole of this hearing, so
+	// a turn after the lane was taken back counts on from where the last
+	// one got to rather than from nothing, issue #444.
+	first := true
+	defer func() {
+		p.engine.mu.Lock()
+		p.engine.hearingWhole = 0
+		p.engine.mu.Unlock()
+	}()
 	for {
-		if len(Unheard(p.Files, p.Source, p.Base.ASRModel, span)) == 0 {
+		gaps := Unheard(p.Files, p.Source, p.Base.ASRModel, span)
+		if len(gaps) == 0 {
 			return nil
+		}
+		if first {
+			whole := 0.0
+			for _, g := range gaps {
+				whole += g.End - g.Start
+			}
+			p.engine.mu.Lock()
+			p.engine.hearingWhole = whole
+			p.engine.mu.Unlock()
+			first = false
 		}
 		stepCtx, release, err := turn(ctx, StepHearing)
 		if err != nil {

@@ -37,6 +37,9 @@ the folder, copy the new files in and run `make` again.
    network the first time.
 5. Installs the interface's packages into `frontend/node_modules`, exactly as
    locked in `package-lock.json`, but only when the interface has to be built.
+   `go.mod` ignores that folder, because some of them ship Go code of their
+   own, and `./...` names only our packages. The job `build` in CI checks
+   that, once the packages are installed.
 6. Builds the interface into `cmd/framefairy-app/dist/app/`, when it is missing
    or something in `frontend/` changed. This needs Node.js. The built
    interface is not in the repository.
@@ -83,10 +86,10 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface`, `walks` and `lint` |
-| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines |
+| `make unit` | every Go test under the race detector, the fuzz seeds included. `RACE=` runs without the race detector and `UNITSKIP` leaves packages out, which CI's Mac does. `UNITFLAGS` adds one flag for go test, like `-run`, which is how CI spreads the tests over machines. `UNITPKGS` names the packages, `./...` unless it says, and when it names none no test runs |
 | `make fuzz` | every fuzz target, `FUZZTIME` executions each, looking for new cases. `FUZZTARGETS` names some, `FUZZSHARD=1/3` takes a third |
 | `make interface` | a type check of the interface, its own tests, and ESLint, which refuses a new wait on the clock in a walk or an interface test, see [No test waits on the clock](#no-test-waits-on-the-clock). Needs only Node |
-| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
+| `make walks` | the interface in Chromium against the real Go side: the sequences of the cases found by hand, and every walk for seeds 1 to `WALKS`, 3 unless set, each as long as it says unless `STEPS` is set, half as many again at once as the machine has cores unless `WALKERS` is set, each sequence a run of its own, stopped after `WALKTIMEOUT`, 30m unless set. Needs Node, ffmpeg and Playwright's Chromium. See [TESTING.md](TESTING.md) |
 | `make lint` | golangci-lint, which refuses a new wait on the clock in a Go test, see [No test waits on the clock](#no-test-waits-on-the-clock). It fetches the version the Makefile pins into `.build/` the first time, unless `INSTALL=0` |
 | `make check` | what this machine has and what it still needs, with the command for each |
 | `make tools` | the installing part of `make` and nothing else. macOS: Homebrew does Go, Node.js and what builds ffmpeg and llama.cpp. Elsewhere it points to [INSTALL.md](INSTALL.md) |
@@ -115,12 +118,15 @@ committed or not, new files included, and runs what those files can reach:
 
 | Changed | Runs |
 | --- | --- |
-| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. Of their fuzz targets, only those that go through a changed file, see below. A Go test file runs `make lint` too |
+| Go code, or a file a package keeps beside it, in `testdata/` or embedded | `gofmt` on the files, then `go vet` and the tests under the race detector for the changed packages and every package that imports them. And every fuzz target of those packages, see below. A Go test file runs `make lint` too, and the tests of `internal/offdisk` and `internal/ffmpegtest`, which read every test file. A file moved counts at both places |
+| `cmd/framefairy-frames/`, `scripts/build-ffmpeg.sh` | the packages whose tests run the episode's decoder, found by `FRAMEFAIRY_FRAMES`, since they do not import it |
+| `engine/hyphenation/` | the engine, and `notices`, whose test counts those files |
 | `go.mod`, `go.sum` | every package and every fuzz target |
 | `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
 | a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
-| `Makefile`, a build script | `make`, and for a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
-| `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh` |
+| `Makefile`, a build script | `make`, and for the `Makefile`, `scripts/fuzz.sh` and `scripts/ci-packages.sh` every package and every fuzz target, since they decide how the Go tests run. For a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
+| `.github/ci-image/` | `make`, every package, every fuzz target and `make walks`, since every Linux job of CI runs in the image |
+| `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh`, and for `ci.yml` every package and every fuzz target, since it decides how the Go tests run |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
 | `.golangci.yml`, `frontend/eslint*`, `scripts/lint-test.sh` and its fixtures, the interface's packages | the linter they are for, and `scripts/lint-test.sh` |
@@ -129,22 +135,30 @@ committed or not, new files included, and runs what those files can reach:
 | docs | nothing |
 | anything else | `make`, so a file nobody thought of is checked rather than skipped |
 
-Fuzzing is the slow part, ten thousand executions a target, and most
-targets read one kind of input a change never goes near. So a target is
-fuzzed only when its seeds, run once with coverage, go through a file that
-changed, or when one of its own seeds or a test file of its package
-changed. Running the seeds takes a second. A change to framing fuzzes
-nothing, a change to the caption writer fuzzes the four targets that write
-captions, and the rest are named as skipped.
+Fuzzing is the slow part, ten thousand executions a target, so only the
+targets of the packages a change reaches are fuzzed, all of them. It once
+fuzzed only the targets whose seeds, run with coverage, went through a
+changed file, but running them that way cost more than it saved. Measured
+on the cloud machine, four cores, one run each, from a Go cache that held
+the fuzzing builds and not the coverage builds, as CI's does. Before is the
+seeds of the 22 targets with coverage and then the 9 they kept, after is
+all 22:
+
+| Change | Before (s) | After (s) | Change |
+| --- | ---: | ---: | --- |
+| `engine/clips.go` | 122 | 46 | 62 % faster |
+
+`sh scripts/changed.sh --fuzz-targets` names them on one line.
 
 It says what it will run before it runs it, and `sh scripts/changed.sh
 --plan` says it and runs nothing. `BASE=` compares with another commit.
 Measured on the cloud machine, which has four cores: a change to `updates/`
 5 s, to the app 11 s, to the interface 8 s. A change to the engine reaches
 every program and takes about two minutes, most of it the engine's own
-tests. `make test` is ten minutes. CI still runs
-everything on every pull request, so this only saves the round trips, it
-does not replace the check.
+tests. `make test` is ten minutes. On a pull request CI's Go jobs run
+the same packages and fuzz the same targets, compared with main, see
+[What runs for a change](#what-runs-for-a-change), and a push to main runs
+everything.
 
 `scripts/changed-test.sh` checks the rules without running anything, and
 `make changed` runs it whenever the rules change. CI runs it in the `build`
@@ -233,13 +247,16 @@ regression suite, but after a few days of fuzzing the replay is what a run
 mostly spends its time on. `go clean -fuzzcache`, which `make clean` also
 does, puts it back to the seeds.
 
-CI keeps that cache too, in the Actions cache under `fuzz-v1-`, with the
+CI keeps that cache too, in the Actions cache under `fuzz-v2-`, with the
 packages built for fuzzing. A push to main and the nightly run save it, and
 every pull request starts from the newest. So a run goes on from where the
 last one stopped, rather than spending its 10000 executions finding the same
 easy inputs as every run before it. Should the replay ever take longer than
-the fuzzing, raise the `v1` in `ci.yml` and `fuzz-nightly.yml`, which starts
-the cache over from the seeds.
+the fuzzing, raise the `v2` in `ci.yml` and `fuzz-nightly.yml`, which starts
+the cache over from the seeds. It was raised from `v1` when the fuzzing
+on Linux moved into the CI image, whose home is another place. The Mac's
+nightly fuzzing does not run in the image and keeps its own cache, under
+`fuzz-v1-macOS-`, which is raised on its own.
 
 `.github/workflows/fuzz-nightly.yml` is the long fuzzing, at night on main
 and by hand from the Actions tab: half a minute on every target, 600 new
@@ -254,8 +271,9 @@ test case for the bug, and it becomes a seed for every later run.
 
 ### No test waits on the clock
 
-A test waits on a signal, never on the clock, see CLAUDE.md, and two
-linters hold every test to it, each with that one rule:
+A test never waits, and never on the clock, see CLAUDE.md and the
+testing skill in `.claude/skills/testing/`, and two linters hold every
+test to the part about the clock, each with that one rule:
 
 - golangci-lint, `make lint`, with only forbidigo, and only on test files,
   see `.golangci.yml`. It refuses `time.Sleep`, `time.After`, `time.Tick`,
@@ -301,16 +319,18 @@ out.
 `.github/workflows/ci.yml` runs on every pull request and on every push to
 main. It is twelve jobs on twelve machines, all at once, because none of them
 needs any of the rest, after a first one, `changes`, that says which of
-them a pull request needs, see [What runs for a change](#what-runs-for-a-change):
+them a pull request needs, see [What runs for a change](#what-runs-for-a-change),
+and `image`, which the jobs in the CI image wait for:
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
-| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
-| `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux | `make unit` under the race detector, every package on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
-| `walks (1/4)` to `walks (4/4)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/4` to `4/4`, a quarter of the runs each by how long they took last. On three machines each job took four and three quarter minutes |
-| `fuzz` | Linux | `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
-| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
+| `build` | Linux, in the CI image when the app changed | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
+| `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux, in the CI image | `make unit` under the race detector, on a pull request the packages `make changed` picks and on main every package, on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
+| `image` | Linux | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not. Whenever the app or the Go tests changed |
+| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
+| `fuzz` | Linux, in the CI image | on a pull request `make fuzz` for the targets `make changed` fuzzes, named by `scripts/changed.sh --fuzz-targets`, and on main `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
+| `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, on a pull request for the packages `make changed` picks, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
 
 `linux`, `walks` and `macos` start from Go's build cache as main left it
@@ -374,7 +394,9 @@ a machine, so a typo in a README does not fuzz two platforms:
 | `frontend/` only | everything but `linux`, `fuzz` and `macos`, and those too when a Go test reads one of the files, like `api.ts` |
 | Go files, `go.mod`, `go.sum` only | everything but `interface` |
 | `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
-| `scripts/changed*.sh` only | `build`, with `scripts/changed-test.sh` |
+| `scripts/changed-test.sh` only | `build`, with `scripts/changed-test.sh` |
+| `scripts/changed.sh` | `build`, with `scripts/changed-test.sh`, and `linux`, `fuzz` and `macos`, which run it on a pull request, so its own pull request runs it on Linux and on the Mac |
+| `.github/ci-image/`, `scripts/ci-packages.sh` only | `image`, and the jobs that run in it, `build`, `linux`, `fuzz` and the walks, with every package and every fuzz target. Not `macos` or `interface`, which do not. `outside` too, by the filter `app`, see #484 |
 | anything else, or a mix | everything |
 
 Each filter is every file less the files that cannot matter to its jobs,
@@ -404,17 +426,37 @@ runs in the `build` job whatever changed, because a mistake in the
 filters is silent: CI would go green having run less than it should. Run
 it by hand with `sh scripts/ci-filters-test.sh`.
 
+The jobs `linux`, `macos` and `fuzz` then narrow further, to what `make
+changed` picks for the change. The checkout is the merge commit GitHub
+made, so `HEAD^1` is main, and `BASE=HEAD^1 sh scripts/changed.sh --plan`
+names the packages the change reaches: those that changed and every
+package that imports them, and every package when `go.mod`, `go.sum`,
+the `Makefile` or `ci.yml` changed, since the last two decide how the Go
+tests run. Their names go to `make unit` as `UNITPKGS`. When the change
+reaches none, like a change to the interface that no Go test reads, the
+step says `no Go package to test` and passes. The fuzz job hands
+`make fuzz` the targets of those packages as `FUZZTARGETS`, from
+`scripts/changed.sh --fuzz-targets`, and says
+`no fuzz target this change reaches` when there are none, see
+[Checking a change](#checking-a-change).
+`scripts/changed-test.sh` in the `build` job checks those rules.
+
 A push to main narrows nothing. Whatever it touched, everything is built and
 tested, so main is always known to be sound and a mistake in the rules can
 never be what hides a break.
 
 A job a pull request does not need shows as skipped. GitHub counts a
 skipped job as passed for a required check, but a skipped job with a
-matrix shows once under its own name, not under the names of its
-machines, like `linux (A-AR+B-O)`. A check a branch rule requires is
-therefore a job without a matrix, or one job that waits on all the
-others. The Updates page does not read CI at all: it follows
-the builds of `builds.yml`, see [UPDATES.md](UPDATES.md).
+matrix shows once under its own name, `linux`, not under the names of
+its machines, like `linux (A-AR+B-O)`. GitHub decides to skip a job
+before it splits the job into its machines, so a name made from the
+matrix, like `linux (${{ matrix.tests }})`, would show as written. The
+jobs `linux` and `walks` therefore have names with no matrix in them,
+and GitHub adds each machine's value of the matrix when they run. A
+check a branch rule requires is a job without a matrix, or one job that
+waits on all the others. No branch rule requires a check today. The
+Updates page does not read CI at all: it follows the builds of
+`builds.yml`, see [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never
@@ -490,19 +532,79 @@ frame, and with forty identical episodes made one by one it was most of
 the five minutes the engine's tests took. `TestProjectSteps` still frames
 with it.
 
-**A Linux job installs what it uses and nothing else**, through
-`scripts/ci-packages.sh`. Every Go job compiles the app's package, the
-fuzzing too because one of its targets is there, so GTK, WebKit and
-pkg-config are in every one. ffmpeg is only in `linux`, whose tests
-render, and `walks`, whose bridge makes its episode with it, and patchelf
-only in `build`, which carries the speech library.
-ffmpeg was once in all three, and it is most of what apt downloads: on a
-day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
-speech synthesis library ffmpeg depends on, for a job that never runs
-ffmpeg. The packages apt downloads are kept by the workflow for a week,
-so a run normally downloads only the package lists, a download that
-stalls is tried again, and the step gives up after ten minutes rather
-than holding the job for hours.
+**No Linux job of CI installs a system package.** Every one that
+compiles Go, `build` when the app changed, `linux`, `fuzz`, the walks,
+the nightly fuzzing and govulncheck, runs in the CI image below, which
+has everything they use. On a day the Ubuntu mirror crawled, the fuzzing
+once waited fifteen minutes for a speech synthesis library ffmpeg
+depends on, and the walks up to twelve for Chromium's fonts. Only
+`tools.yml`, the build of the tools we ship, still installs its own,
+because it runs by hand, takes half an hour anyway and holds up nothing.
+
+### The CI image
+
+`build`, `linux`, `fuzz`, the walks, the nightly fuzzing and govulncheck
+run in a container, the CI image, built from
+`.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
+with every package `scripts/ci-packages.sh` installs for the Go side,
+ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
+Chromium of the Playwright version in `frontend/package-lock.json` with
+the libraries and fonts it needs. Go and Node are not in it: setup-go
+and setup-node bring them as in every other job.
+
+On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
+the libraries Chromium needs, mostly fonts, held a walks job for up to
+twelve minutes, #462. Chromium itself comes from Playwright's own
+servers and was always fast. The Go tests of `linux` waited the same
+way, up to five minutes for their packages, and the fuzzing once
+fifteen. An image is downloaded from GitHub's container registry
+instead, and no job in it asks the mirror for anything. A change to the
+image, or to `scripts/ci-packages.sh`, which only the image runs, starts
+`linux` and `fuzz` by the filter `image`, but not `macos`, which does
+not run in it. They then test every package and fuzz every target,
+because `scripts/changed.sh` reads the image as the machine every test
+runs on.
+
+`.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
+`image`, and `fuzz-nightly.yml` and `security.yml` call too, names the image by a sum of
+the Dockerfile, of `scripts/ci-packages.sh` and of the Playwright
+version, as `ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has
+that tag, the job is done in seconds, and when it does not, which is
+only when one of the three changed, it builds the image and pushes it,
+and the jobs in it wait for it. Both images the Dockerfile starts from
+are pinned to a digest, so the same sum always means the same image, and
+moving them is a change to the file. Dependabot moves both once a week,
+in one pull request. A Playwright update from Dependabot likewise builds
+its own image on its own pull request. A file the Dockerfile comes to
+read joins the sum and the job's sparse checkout, or a change to it
+would reuse the old image.
+
+The jobs run in it as root, which is how GitHub runs a container. The
+ones that run tests, `linux`, `fuzz`, the walks and the nightly fuzzing,
+have an init process, which reaps what a test leaves behind, and the
+walks the machine's IPC as well, as Playwright says to run Chromium in
+one. `build` and govulncheck name the image alone, since they leave
+nothing running. No job logs in to pull it, because the package is
+public. `linux` and the walks mount the runners' work folder at the
+place it has on the machine, because the ffmpeg we ship comes from the
+cache `linux` fills, and its pkg-config files name the folder it was
+built in. The one in the cache now was built on a runner, and the next,
+when `scripts/build-ffmpeg.sh` changes, is built in the container, at a
+place every job in the image has. From then on the mount can go. A
+container runs a step with `sh`, so each job in the image sets
+`bash -e {0}`, the shell a runner's step has, and tells git the
+checkout, which is the runner's user's, is safe to read, since
+`go build` asks git for the commit it stamps. Shard 1 saves Go's build
+cache only after walks that passed, and `linux` and the fuzzing only
+once their tests or their fuzzing ran to the end, passed or not, never
+after a cancel. A job that stopped early has built little, and its
+cache would be found first by every run after it.
+
+A pull request from a fork pulls the image like any other, since the
+package is public, but cannot push one: its token may not write
+packages. A fork that changes the Dockerfile or `scripts/ci-packages.sh`
+therefore fails at the job `image` until the change is on a branch of
+the repository.
 
 ## Keeping up
 
@@ -511,7 +613,8 @@ scan made once is out of date the week after.
 
 - **Dependabot**, `.github/dependabot.yml`, opens a pull request once a
   week when a Go module, a package of the interface or an action has a
-  newer version. Minor and patch versions come together, one pull request
+  newer version, and when the two images the CI image starts from have
+  a newer build. Minor and patch versions come together, one pull request
   for the Go modules and one for the interface, and a new major version
   comes in a pull request of its own, so a major that breaks the build
   holds back nothing else. The actions come in one pull request, majors
