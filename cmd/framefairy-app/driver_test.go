@@ -130,6 +130,7 @@ func (d *desk) start(st *store) {
 	// Whatever is still running when the test ends is stopped before its
 	// folder goes.
 	d.t.Cleanup(func() { svc.jobs.shutDown() })
+	logJobsOnFailure(d.t, svc.jobs)
 }
 
 // episode puts a video of this many seconds in the library's folder, with
@@ -347,13 +348,13 @@ func (d *desk) outcome(path string) outcome {
 	return outcome{}
 }
 
-// idle waits until nothing of the episode is queued or running, told by
+// idle waits until nothing of the video is queued or running, told by
 // the queue the moment its last job ends. Work that never ends hangs the
 // test until go test's own -timeout, which shows every goroutine.
 func (d *desk) idle(path string) {
 	d.t.Helper()
 	d.svc.jobs.until(func(jobs []*Job) bool {
-		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && going(j) })
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == path && j.going() })
 	}, nil)
 }
 

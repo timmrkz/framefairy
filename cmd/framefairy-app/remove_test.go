@@ -38,6 +38,7 @@ func anEpisodeWithWork(t *testing.T) (*FrameFairy, string, string) {
 		t.Fatal(err)
 	}
 	s.jobs = newQueue(s.store, func(JobUpdate) {}, func(string) {})
+	logJobsOnFailure(t, s.jobs)
 	return s, source, work
 }
 
@@ -128,8 +129,8 @@ func TestAnEpisodeIsAlwaysRemovedWhenItsWorkIsKept(t *testing.T) {
 	}
 }
 
-// waitForRunning waits until a job of an episode runs, told by the queue
-// as it starts.
+// waitForRunning waits until a job of a video runs, told by the queue as
+// it starts.
 func waitForRunning(t *testing.T, s *FrameFairy, source string) {
 	t.Helper()
 	s.jobs.until(func(jobs []*Job) bool {
@@ -143,7 +144,7 @@ func waitForRunning(t *testing.T, s *FrameFairy, source string) {
 func waitForSettled(t *testing.T, s *FrameFairy, source string) {
 	t.Helper()
 	s.jobs.until(func(jobs []*Job) bool {
-		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == source && going(j) })
+		return !slices.ContainsFunc(jobs, func(j *Job) bool { return j.Episode == source && j.going() })
 	}, nil)
 }
 
@@ -192,9 +193,9 @@ func TestRemovingAnEpisodeWhileItsSearchHears(t *testing.T) {
 			t.Error("the work folder is still there")
 		}
 		// The removal waited for the search to stop, so nothing of the
-		// episode is left without anything more to wait for.
+		// video is left without anything more to wait for.
 		for _, j := range s.jobs.list() {
-			if j.Episode == source && going(&j) {
+			if j.Episode == source && j.going() {
 				t.Errorf("%s is %s on an episode that was removed", j.Kind, j.State)
 			}
 		}

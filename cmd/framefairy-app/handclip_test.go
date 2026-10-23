@@ -27,7 +27,7 @@ func (d *desk) waitFor(id string) Job {
 	d.t.Helper()
 	var ended Job
 	d.svc.jobs.until(func(jobs []*Job) bool {
-		i := slices.IndexFunc(jobs, func(j *Job) bool { return j.ID == id && !going(j) })
+		i := slices.IndexFunc(jobs, func(j *Job) bool { return j.ID == id && !j.going() })
 		if i >= 0 {
 			ended = *jobs[i]
 		}

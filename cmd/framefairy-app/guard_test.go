@@ -285,7 +285,7 @@ func TestAJobThatPanicsOnlyFailsItself(t *testing.T) {
 	var ended map[string]Job
 	news.until(func(jobs map[string]Job) bool {
 		for _, id := range []string{bad.ID, good.ID} {
-			if j, ok := jobs[id]; !ok || going(&j) {
+			if j, ok := jobs[id]; !ok || j.going() {
 				return false
 			}
 		}

@@ -82,7 +82,7 @@ func TestTheQueueTakesEverythingAtOnce(t *testing.T) {
 
 	// Nothing may be left running: every job was asked to stop. A job
 	// that never stops hangs the test until go test's own -timeout.
-	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, going) }, nil)
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 	if events.Load() == 0 {
 		t.Error("the interface was told nothing")
 	}
@@ -199,6 +199,58 @@ func TestTheQueueGoesOnTheMomentAJobStops(t *testing.T) {
 	})
 }
 
+// A wait for jobs to stop goes on only once each job's goroutine is done,
+// not at the moment its state says it ended. After that moment the job
+// still closes its log in the video's work folder, tells the window and
+// lets go of its lane. Removing a video deletes that folder right after
+// the wait, and on Windows a folder with an open file in it cannot be
+// deleted. Found in the review of #504. Here the window's notify, the last
+// thing a job does, blocks, so the job's goroutine is held at its end.
+func TestAWaitForJobsGoesOnOnlyOnceTheirWorkIsDone(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		wait func(q *queue, j Job) bool
+	}{
+		{"removing a video", func(q *queue, j Job) bool { return q.cancelEpisode(j.Episode) }},
+		{"Search after Cancel", func(q *queue, j Job) bool {
+			q.cancel(j.ID)
+			q.waitJob(j.ID)
+			return true
+		}},
+		{"quitting", func(q *queue, j Job) bool { return q.shutDown() }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				told, hold := make(chan struct{}), make(chan struct{})
+				q := newQueue(memoryStore(), func(JobUpdate) {}, func(string) {
+					close(told)
+					<-hold
+				})
+				j := q.add("/eps/a.mp4", "render", "Render", func(ctx context.Context, p *engine.Project) (string, error) {
+					<-ctx.Done()
+					return "", engine.ErrCancelled
+				})
+				synctest.Wait()
+				returned := make(chan bool, 1)
+				go func() { returned <- c.wait(q, j) }()
+				<-told
+				synctest.Wait()
+				early := false
+				select {
+				case <-returned:
+					early = true
+					t.Error("the wait went on while the job was still telling the window it had ended")
+				default:
+				}
+				close(hold)
+				if !early && !<-returned {
+					t.Error("the job did not stop")
+				}
+			})
+		})
+	}
+}
+
 // Work asked for twice at once is queued once.
 //
 // Looking for an existing job and then adding one is two locks with a gap
@@ -284,7 +336,7 @@ func TestALaneSurvivesAPanicAroundAJob(t *testing.T) {
 
 	// A lane that died leaves the job behind it queued, and the test hangs
 	// until go test's own -timeout, which shows every goroutine.
-	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, going) }, nil)
+	q.until(func(jobs []*Job) bool { return !slices.ContainsFunc(jobs, (*Job).going) }, nil)
 	for _, j := range []Job{first, second, third} {
 		got, ok := q.find(j.Episode, j.Kind)
 		if !ok || got.State != JobDone {
@@ -514,6 +566,21 @@ func TestTheQueueUnderEverythingTheAppDoesAtOnce(t *testing.T) {
 	}
 }
 
+// logJobsOnFailure logs every job of the queue once the test has failed,
+// so a failure says what was left running and how each job ended. A hang
+// that go test's own -timeout ends runs no cleanup. It shows every
+// goroutine instead.
+func logJobsOnFailure(t testing.TB, q *queue) {
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		for _, j := range q.list() {
+			t.Logf("%s %s of %s is %s, step %q, error %q", j.ID, j.Kind, j.Episode, j.State, j.Step, j.Error)
+		}
+	})
+}
+
 // jobNews is what the window has heard of each job, the newest snapshot
 // by its number, for a test to wait on.
 type jobNews struct {
@@ -538,9 +605,6 @@ func (n *jobNews) heard(j Job) {
 	n.jobs[j.ID] = j
 	n.change.Broadcast()
 }
-
-// going says whether a job is queued or running.
-func going(j *Job) bool { return j.State == JobQueued || j.State == JobRunning }
 
 // until waits for the news that makes done true.
 func (n *jobNews) until(done func(map[string]Job) bool) {
@@ -569,8 +633,7 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		p.Log().ProgressOf("working", 0.5, 1)
 		return "", nil
 	}
-	// Work that ends by itself unless it was called off by then, so some
-	// jobs end done and some cancelled while they run.
+	// Work that ends by itself unless it was called off by then.
 	waiting := func(ctx context.Context, p *engine.Project) (string, error) {
 		runtime.Gosched()
 		if ctx.Err() != nil {
@@ -606,12 +669,21 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	// And one job called off while it runs, on purpose. It holds the lane
+	// of hearing, which none of the work above uses, until it is told to
+	// stop, and it is told once its news says it runs.
+	held := q.add("/eps/held.mp4", "model", "Speech model", func(ctx context.Context, p *engine.Project) (string, error) {
+		<-ctx.Done()
+		return "", engine.ErrCancelled
+	})
+	news.until(func(jobs map[string]Job) bool { return jobs[held.ID].State == JobRunning })
+	q.cancel(held.ID)
 	// Every job was heard of as it was added, so the news has them all.
 	// It says each has ended once its last snapshot has arrived, and the
 	// queue's state cannot be newer than that.
 	news.until(func(jobs map[string]Job) bool {
 		for _, j := range jobs {
-			if going(&j) {
+			if j.going() {
 				return false
 			}
 		}
@@ -624,6 +696,9 @@ func TestTheNewestNewsOfAJobIsHowItEnded(t *testing.T) {
 		if heard.State != j.State {
 			t.Errorf("%s ended %s, and the newest news of it says %s", j.ID, j.State, heard.State)
 		}
+	}
+	if j := news.jobs[held.ID]; j.State != JobCancelled {
+		t.Errorf("the job called off while it ran ended %s, and the news says so", j.State)
 	}
 }
 
