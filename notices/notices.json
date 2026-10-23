@@ -477,7 +477,7 @@
   },
   {
     "name": "bits-ui",
-    "version": "2.19.5",
+    "version": "2.20.0",
     "licence": "MIT",
     "url": "https://www.npmjs.com/package/bits-ui",
     "part": "The app's interface",
