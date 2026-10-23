@@ -322,7 +322,7 @@ and `image`, which the jobs in the CI image wait for:
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
-| `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
+| `build` | Linux, in the CI image when the app changed | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
 | `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux, in the CI image | `make unit` under the race detector, on a pull request the packages `make changed` picks and on main every package, on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
 | `image` | Linux | the CI image `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |

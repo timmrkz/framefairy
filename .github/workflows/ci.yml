@@ -95,15 +95,29 @@ jobs:
 
   # Builds everything, the interface included, which is what proves the
   # programs still link and that Go can embed what make built.
+  #
+  # Always, for the checks of the rules, and in the CI image when the app
+  # changed, so the build waits on no mirror. A change that leaves the app
+  # alone runs the checks on the runner as it is, since they need none of
+  # what the image has, and a container given no image is none. The image
+  # is public, so a pull from it needs no login.
   build:
-    needs: changes
+    needs: [changes, image]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.image.result != 'failure' }}
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash -e {0}
+    container: ${{ needs.changes.outputs.app == 'true' && needs.image.outputs.ref || '' }}
     steps:
       # Two commits, for the main the merge commit sits on, which the
       # clock lint and the check of the plan compare against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      # In the image the job runs as root, and the checkout is the
+      # runner's user's, see the walks.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # Node for the check of the CI rules, which matches with the
       # picomatch the action uses, and for the build.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -155,21 +169,6 @@ jobs:
       - name: Check what make changed runs
         if: needs.changes.outputs.app == 'true' || needs.changes.outputs.changed == 'true'
         run: sh scripts/changed-test.sh
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        if: needs.changes.outputs.app == 'true'
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-build-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-build-
-      - name: System packages
-        if: needs.changes.outputs.app == 'true'
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh patchelf
       # make tidies go.mod and go.sum quietly, so a change that leaves them
       # untidy builds everywhere and is committed that way. This says so,
       # before make has had the chance to tidy them.
