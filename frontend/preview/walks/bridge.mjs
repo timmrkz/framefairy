@@ -63,6 +63,14 @@ export async function slowDown(page) {
   }
 }
 
+// No action and no wait of Playwright's on page gives up after a time of
+// its own, 30 s unless set: a wait that never ends is ended by the
+// -timeout of make walks, which says which walk it was and what it said
+// last. Every page a walk opens goes through it, the report window too.
+export function noDeadlines(page) {
+  page.setDefaultTimeout(0);
+}
+
 // The interface on the bridge, in the episode's workspace with its clip
 // chosen and the keyboard on the page. viewport is the size of the page,
 // scale its device pixels to a CSS pixel, 2 for a Mac's screen, and again
@@ -81,6 +89,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // walks read the frame on screen from the canvas. See screen.ts.
   const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
+  noDeadlines(page);
   await page.addInitScript(() => {
     window.__flatScreen = true;
   });

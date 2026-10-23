@@ -728,9 +728,11 @@ frame of the page, and the last line says how many frames the video preview was
 behind the playhead while it moved, and how long after letting go the
 frame under it showed. A press whose frame never shows counts once the
 frame queue has done all the press asked of it, `standing` in
-`lib/frames/queue.ts`, never after a time. `REST` is the pause between
+`lib/frames/queue.ts`, never after a time, and a press that left the
+playhead where it was ends the run. `REST_FRAMES` is the pause between
 presses, in frames of the page, 15 unless set, a quarter of a second on a
-screen of 60 Hz, `ROUNDS` the times the clip is walked, each on a page opened
+screen of 60 Hz. It is the one pause on the clock made on purpose, a
+person's pace, which is part of what is measured. `ROUNDS` the times the clip is walked, each on a page opened
 afresh so no round finds the frames the one before kept, 5 unless set,
 `SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
 and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is

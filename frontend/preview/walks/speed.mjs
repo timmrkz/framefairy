@@ -11,15 +11,21 @@
 // press it times, in the page, how long from the key going down until the
 // video preview shows the frame that holds the playhead, and until that
 // frame has its own captions, which libass draws on the Go side. Between presses
-// the hand rests for REST frames of the page, 15 unless set, a quarter of a
-// second on a screen of 60 Hz, about as long as a person takes to look and
-// press again. ROUNDS, 5 unless set, walks the
+// the hand rests for REST_FRAMES frames of the page, 15 unless set, a
+// quarter of a second on a screen of 60 Hz, about as long as a person takes
+// to look and press again. That rest is the one pause on the clock made on
+// purpose: the browser's frames come by its own timer, and the rest is part
+// of what is measured, a person's pace, not a wait for work. ROUNDS, 5
+// unless set, walks the
 // clip that many times. CODEC=hevc makes the video HEVC with 10-bit colour.
 // SCALE, 2 unless set, is the device pixels of a CSS pixel, a Mac's screen.
 import { control, fromSidebar, handles, high, nextPaint, open, pageUntil, settle, shownOnPlayhead } from "./bridge.mjs";
 
 const url = process.env.BRIDGE_URL ?? "http://127.0.0.1:8123/";
-const rest = Number(process.env.REST ?? 15);
+// REST was the same pause in milliseconds, and 250 of them now would be
+// four seconds of frames.
+if (process.env.REST) throw new Error("REST is now REST_FRAMES, the rest between presses in frames of the page, 15 unless set");
+const rest = Number(process.env.REST_FRAMES ?? 15);
 const rounds = Number(process.env.ROUNDS ?? 5);
 const scale = Number(process.env.SCALE ?? 2);
 const codec = process.env.CODEC === "hevc" ? "&codec=hevc" : "";
@@ -53,10 +59,25 @@ try {
       // it never comes: the frame when the frame queue has done all the
       // press asked of it and the picture standing is another frame, see
       // standing in lib/frames/queue.ts, and the captions when a layer of
-      // them is given up on, data-captions-lost.
+      // them is given up on, data-captions-lost. A press that left the
+      // playhead where it was, once the app has done all it set going,
+      // window.__settled, is a press that did nothing, and fails the run,
+      // so the table never counts it.
       window.__followed = (before, still = false) =>
-        new Promise((done) => {
+        new Promise((done, failed) => {
           let frame = -1;
+          let over = false;
+          const end = (r) => {
+            over = true;
+            done(r);
+          };
+          if (!still)
+            window.__settled(false).then(() => {
+              if (!over && Number(document.querySelector(".screen")?.dataset.playhead) === before) {
+                over = true;
+                failed(new Error(`a press left the playhead at ${before}`));
+              }
+            });
           const lost = document.querySelector(".screen")?.dataset.captionsLost ?? "";
           const check = () => {
             const s = document.querySelector(".screen");
@@ -69,9 +90,10 @@ try {
             const captioned = !layers || (!layers.waiting && !(layers.lift && !layers.lift.word));
             const moved = still || at !== before;
             if (frame < 0 && moved && Math.abs(shown - holds) < 1e-3) frame = took;
-            if (frame >= 0 && captioned) done([frame, took]);
-            else if (frame >= 0 && (s?.dataset.captionsLost ?? "") !== lost) done([frame, -1]);
-            else if (frame < 0 && moved && q?.standing) done([-1, -1]);
+            if (over) return;
+            if (frame >= 0 && captioned) end([frame, took]);
+            else if (frame >= 0 && (s?.dataset.captionsLost ?? "") !== lost) end([frame, -1]);
+            else if (frame < 0 && moved && q?.standing) end([-1, -1]);
             else requestAnimationFrame(check);
           };
           check();

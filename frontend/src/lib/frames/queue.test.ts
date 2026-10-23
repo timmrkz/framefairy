@@ -395,9 +395,18 @@ describe("the picture standing still", () => {
     expect(q.standing).toBe(true);
   });
 
-  test("has nothing to wait for while it plays", () => {
-    const { q } = standing();
-    q.play();
-    expect(q.standing).toBe(true);
+  // A frame at half the canvas's size, never asked for again: only the
+  // state of the queue says it stands.
+  test("has nothing to wait for while it plays, at the end, or closed", () => {
+    for (const how of ["plays", "ended", "closed"]) {
+      const { q, inside, frame } = standing();
+      inside.shown = frame(320, 180);
+      inside.report();
+      expect(q.standing, how).toBe(false);
+      if (how === "plays") q.play();
+      if (how === "ended") (q as unknown as { state: string }).state = "ended";
+      if (how === "closed") q.close();
+      expect(q.standing, how).toBe(true);
+    }
   });
 });

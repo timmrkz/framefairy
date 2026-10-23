@@ -525,6 +525,8 @@ export class FrameQueue {
   // and size last asked for again, see sharpen.
   private sized = false;
   private sharpened = "";
+  // The frame and size said in the log to have come blurred, once.
+  private blurTold = "";
   // Settled the first time the canvas is told its size. No frame is asked
   // for before: a frame is decoded at the canvas's size, and a canvas
   // nobody has sized is 300 by 150. The first frame of every workspace was
@@ -766,9 +768,12 @@ export class FrameQueue {
   // canvas's size or was asked for at it once already, see sharpen. A
   // queue that plays, or has no frame up yet, has no picture standing
   // still to wait for, and says true. Each time it comes true the
-  // listeners are told, or the canvas has changed its size. For the walks
-  // and the benchmark, which read the picture once it stands, see
-  // stillBlurred in walks/rules.mjs.
+  // listeners are told, or the canvas has changed its size, or the queue
+  // has closed, which tells no one: the video preview it belonged to has
+  // gone or has a queue of its own by then. For the walks and the
+  // benchmark, which read the picture once it stands, see stillBlurred in
+  // walks/rules.mjs. It needs the app's own timers to run, the one after
+  // a frame is put up that asks for it again among them, see put.
   get standing(): boolean {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || !this.shown) return true;
     if (this.toldFor !== this.ticket) return false;
@@ -1131,11 +1136,21 @@ export class FrameQueue {
   // again and again.
   private sharpen() {
     if (this.closed || (this.state !== "paused" && this.state !== "cued") || !this.shown) return;
-    if (this.sharp(this.shown.frame)) return;
+    const f = this.shown.frame;
+    if (this.sharp(f)) return;
     const { width, height } = this.previewSize();
     const key = `${this.shown.rank} ${width} ${height}`;
-    if (key === this.sharpened) return;
+    if (key === this.sharpened) {
+      // Asked for again at this size and come back at another, once the
+      // ask has said how it went: it stays as it came.
+      if (this.toldFor === this.ticket && this.blurTold !== key) {
+        this.blurTold = key;
+        this.trace(`frame ${this.shown.rank} came again at ${f.width}x${f.height}, not the ${width}x${height} asked for, and stays`);
+      }
+      return;
+    }
     this.sharpened = key;
+    this.trace(`frame ${this.shown.rank} is up at ${f.width}x${f.height}, asked for again at the canvas's ${width}x${height}`);
     this.seek(this.at);
   }
 

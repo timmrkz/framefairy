@@ -55,7 +55,9 @@ export default [
       // drives a second window calls it main, so any other waitForTimeout
       // is caught here. A timeout or a polling handed to a wait, like
       // waitForFunction or waitFor, is a deadline or a look on the clock,
-      // and the -timeout of make walks ends a wait that never ends.
+      // and the -timeout of make walks ends a wait that never ends, see
+      // noDeadlines in walks/bridge.mjs. Options kept in a variable, or
+      // spread in from one, are not seen here.
       "no-restricted-syntax": [
         "error",
         {
@@ -64,6 +66,7 @@ export default [
           message: why,
         },
         { selector: "CallExpression > ObjectExpression > Property[key.name=/^(timeout|polling)$/]", message: why },
+        { selector: "CallExpression > ObjectExpression > Property[key.value=/^(timeout|polling)$/]", message: why },
       ],
     },
   },

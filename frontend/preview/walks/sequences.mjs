@@ -1221,7 +1221,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, noDeadlines, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
 import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
@@ -7469,6 +7469,7 @@ for (const seq of toWalk) {
         await fromSidebar(main, () => main.locator("aside button.bugs").click());
         if (!reportPage) {
           reportPage = await browser.newPage({ viewport: { width: 560, height: 640 } });
+          noDeadlines(reportPage);
           await slowDown(reportPage);
           reportPage.on("pageerror", (e) => errors.push(String(e)));
           // Every note the window plays, with its pitch and whether the

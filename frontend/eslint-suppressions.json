@@ -17,11 +17,6 @@
       "count": 3
     }
   },
-  "src/lib/frames/app.test.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    }
-  },
   "src/lib/frames/captions.test.ts": {
     "no-restricted-globals": {
       "count": 4
