@@ -19,8 +19,8 @@ type sideBySide struct {
 	inner  Recognizer
 	copies int
 	// pair holds the first piece until a second one is being heard, for
-	// the test that checks two are. Without it a part heard in one piece
-	// waited ten seconds for a second that never came.
+	// the test that checks two are. Only that test sets it, because a part
+	// heard in one piece would wait for a second that never comes.
 	pair bool
 	// The inner recogniser is heard one piece at a time. The waiting is
 	// outside it, so the pieces still overtake each other.
@@ -30,8 +30,7 @@ type sideBySide struct {
 	seen func()
 	fail int32
 	n    atomic.Int32
-	// paired closes once two pieces are being heard at once, or once the
-	// first gave up waiting for a second.
+	// paired closes once two pieces are being heard at once.
 	pairOnce sync.Once
 	makeOnce sync.Once
 	paired   chan struct{}
@@ -49,19 +48,16 @@ func (s *sideBySide) Recognize(samples []float32, rate int) []Token {
 	defer s.busy.Add(-1)
 	// The first piece is held until a second one arrives, so the two are
 	// heard at once by how the engine hands them out, not by how fast this
-	// machine decodes the next piece while the first one sleeps. An engine
-	// that hears one piece at a time never sends the second while the first
-	// is held, so the wait has a limit: once it runs out, no piece waits
-	// again, and the test fails as it should.
-	release := func() { s.pairOnce.Do(func() { close(s.pairedChan()) }) }
+	// machine decodes the next piece. The wait has no limit: a limit on the
+	// clock ran out on a busy machine before ffmpeg had read the next
+	// thirty seconds, and the test failed with nothing wrong, #486. An
+	// engine that hears one piece at a time never sends the second while
+	// the first is held, so it hangs here, and go test's -timeout ends it
+	// with this wait in the stack of every goroutine.
 	if now >= 2 || !s.pair {
-		release()
+		s.pairOnce.Do(func() { close(s.pairedChan()) })
 	} else {
-		select {
-		case <-s.pairedChan():
-		case <-time.After(10 * time.Second):
-			release()
-		}
+		<-s.pairedChan()
 	}
 	for {
 		most := s.most.Load()

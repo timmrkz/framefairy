@@ -181,6 +181,16 @@ jobs:
       - name: Build
         if: needs.changes.outputs.app == 'true'
         run: make NOTOOLS=1
+      # With the interface's packages installed by the build, ./... is our
+      # packages and nothing else. One of them, flatted, ships a Go port,
+      # which the ignore in go.mod keeps out, #471.
+      - name: Only our Go packages
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          if go list ./... | grep /node_modules/; then
+            echo "go list ./... takes in the packages above, see the ignore in go.mod"
+            exit 1
+          fi
       # No new Go test waits on the clock, see .golangci.yml. make
       # installs nothing here, so this step asks for the golangci-lint the
       # Makefile pins. After the build, whose Go build cache the linter
@@ -221,22 +231,35 @@ jobs:
   # or after GitHub dropped it, so its next push starts warm. Otherwise it
   # saves nothing: a cache a pull request writes is its own, and the
   # upload would cost every run.
+  #
+  # The name has no matrix in it, and the matrix holds only the name of
+  # each machine's tests. A job its if skips is never split into its
+  # machines, so a name made from the matrix showed as written, as
+  # linux (${{ matrix.tests }}), #476. GitHub adds the matrix's values to
+  # a name without one, so the machines are linux (A-AR+B-O) and the
+  # others when they run, and one linux when they are skipped. The step
+  # shard turns each into its pattern.
   linux:
     needs: changes
     if: needs.changes.outputs.go == 'true'
-    name: linux (${{ matrix.tests }})
+    name: linux
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - tests: A-AR+B-O
-            flags: -run=^Test(A[^S-Z]|[B-O])
-          - tests: AS-AZ+P-S
-            flags: -run=^Test(A[S-Z]|[P-S])
-          - tests: rest
-            flags: -skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])
+        tests: [A-AR+B-O, AS-AZ+P-S, rest]
     runs-on: ubuntu-24.04
     steps:
+      - id: shard
+        env:
+          TESTS: ${{ matrix.tests }}
+        run: |
+          case "$TESTS" in
+          A-AR+B-O) flags='-run=^Test(A[^S-Z]|[B-O])' ;;
+          AS-AZ+P-S) flags='-run=^Test(A[S-Z]|[P-S])' ;;
+          rest) flags='-skip=^Test(A[^S-Z]|[B-O])|^Test(A[S-Z]|[P-S])' ;;
+          *) echo "no pattern for the tests $TESTS"; exit 1 ;;
+          esac
+          echo "flags=$flags" >> "$GITHUB_OUTPUT"
       # Two commits, for the main the merge commit sits on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -253,8 +276,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
-          restore-keys: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-
+          key: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
+          restore-keys: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-
       # The packages apt downloaded, kept for a week and for this job's
       # list, so a run downloads only what changed. See ci-packages.sh.
       - id: week
@@ -304,7 +327,7 @@ jobs:
       - name: Go tests
         timeout-minutes: 15
         run: |
-          make unit UNITFLAGS='${{ matrix.flags }}' 2>&1 | tee unit.log
+          make unit UNITFLAGS='${{ steps.shard.outputs.flags }}' 2>&1 | tee unit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh unit.log; fi
           exit "$status"
@@ -319,7 +342,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
+          key: go-v1-linux-${{ runner.os }}-${{ steps.shard.outputs.flags }}-${{ github.sha }}
 
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
@@ -332,14 +355,18 @@ jobs:
   # six with a cold build cache, and on three each job took four and three
   # quarters, too close to five. More walkers on a machine of four cores
   # finish no sooner and break walks that wait on the clock.
+  #
+  # The name has no matrix in it, for the reason above the job linux, so
+  # the machines are walks (1/4) to walks (4/4) when they run, and one
+  # walks when they are skipped.
   walks:
     needs: changes
     if: needs.changes.outputs.app == 'true'
-    name: walks (${{ matrix.shard }}/4)
+    name: walks
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1/4, 2/4, 3/4, 4/4]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -408,11 +435,11 @@ jobs:
       # hand.
       - name: Sequences and walks
         run: |
-          make walks WALKSHARD=${{ matrix.shard }}/4 WALKTIMEOUT=8m 2>&1 | tee walks.log
+          make walks WALKSHARD=${{ matrix.shard }} WALKTIMEOUT=8m 2>&1 | tee walks.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then sh scripts/test-failures.sh walks.log; fi
           exit "$status"
-      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == 1
+      - if: always() && (github.ref == 'refs/heads/main' || steps.gocache.outputs.cache-matched-key == '') && matrix.shard == '1/4'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
