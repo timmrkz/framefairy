@@ -10,31 +10,49 @@ import { chromium } from "playwright";
 // machine that has only another one walks on that rather than not at all:
 // a cloud session keeps the Chromium of the Playwright it came with in
 // PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
-// every walk there stopped on a browser that was not installed. Newer
-// builds keep it in chrome-linux64, older ones in chrome-linux, and a walk
-// looked only in the second once, so every walk stopped again, #490. The
-// one it falls back on is said once, so a walk that fails on it says which
-// browser it ran in.
-let fallback;
-function browserPath() {
-  if (existsSync(chromium.executablePath())) return undefined;
+// every walk there stopped on a browser that was not installed. Whether
+// to fall back is Playwright's own answer, the launch saying the browser
+// it would run is not there, since the file it would run is its headless
+// shell, not the browser executablePath names. The fallback is the newest
+// headless shell there, the kind CI runs, and only then the newest full
+// browser, which runs another headless mode. Newer builds keep them in
+// folders ending in linux64, older ones in chrome-linux, and a walk that
+// looked only in the second stopped again, #490. The fallback is said
+// once, so a walk that fails on it says which browser it ran in.
+const builds = [
+  ["chromium_headless_shell", ["chrome-headless-shell-linux64", "chrome-headless-shell"], ["chrome-linux", "headless_shell"]],
+  ["chromium", ["chrome-linux64", "chrome"], ["chrome-linux", "chrome"]],
+];
+function fallbackBrowser() {
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
   if (!root || !existsSync(root)) return undefined;
-  const builds = readdirSync(root)
-    .filter((d) => /^chromium-\d+$/.test(d))
-    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
-  for (const dir of builds) {
-    for (const folder of ["chrome-linux64", "chrome-linux"]) {
-      const exe = join(root, dir, folder, "chrome");
-      if (!existsSync(exe)) continue;
-      if (fallback !== exe) {
-        fallback = exe;
-        console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
+  const dirs = readdirSync(root);
+  for (const [kind, ...places] of builds) {
+    const found = dirs
+      .filter((d) => new RegExp(`^${kind}-\\d+$`).test(d))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    for (const dir of found) {
+      for (const place of places) {
+        const exe = join(root, dir, ...place);
+        if (existsSync(exe)) return exe;
       }
-      return exe;
     }
   }
   return undefined;
+}
+let fellBack;
+async function launch(args) {
+  try {
+    return await chromium.launch({ args });
+  } catch (e) {
+    const exe = String(e?.message).includes("Executable doesn't exist") && fallbackBrowser();
+    if (!exe) throw e;
+    if (fellBack !== exe) {
+      fellBack = exe;
+      console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
+    }
+    return chromium.launch({ executablePath: exe, args });
+  }
 }
 
 // A random number generator that a seed decides, so a walk that breaks a
@@ -88,7 +106,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
   // preview itself draws on a 2D canvas here, __flatScreen, because
   // headless Chromium gives nothing back from a WebGPU canvas, and the
   // walks read the frame on screen from the canvas. See screen.ts.
-  const browser = again ?? (await chromium.launch({ executablePath: browserPath(), args: ["--enable-unsafe-webgpu"] }));
+  const browser = again ?? (await launch(["--enable-unsafe-webgpu"]));
   const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
   await page.addInitScript(() => {
     window.__flatScreen = true;

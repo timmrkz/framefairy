@@ -28,8 +28,12 @@ export async function begin({ steps: usual = 60 } = {}) {
 // unless a walk says otherwise, and show is what VERBOSE prints. first is
 // the gestures made before the seed picks any, each as its name and what
 // its run is handed after look, for what a walk checks on every push
-// whatever its seed draws. They take no random number, so the seed walks
-// on as it would without them.
+// whatever its seed draws. They take no random number, so the seed still
+// decides every step after them, the same way on every run. They leave
+// the app in another state than the walk began in, so a seed walks
+// another path after them than it did before a walk had them. One that
+// cannot be made in the state it finds breaks a rule, rather than run
+// where it was never meant to.
 //
 // Each step is printed as it begins, with the seed, so a walk that waits
 // for good on something that never comes says which step it hung in when
@@ -50,6 +54,10 @@ export async function walk(w, gestures, { look = shown, show, first = [] } = {})
       const box = await shown(page);
       const { g, args } = firsts[step - 1] ?? { g: rng.weighted(gestures.filter((g) => g.when(seen))), args: [] };
       console.log(`seed ${seed}, step ${step}: ${g.name}`);
+      if (!g.when(seen)) {
+        watch.broke("a gesture made first can be made", `step ${step}, ${g.name}`);
+        break;
+      }
       const said = await g.run(seen, ...args);
       walked.push(`${String(step).padStart(3)}  ${said}`);
       const { now } = await watch.step(g.name, box);
