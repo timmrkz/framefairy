@@ -447,8 +447,9 @@ matrix, like `linux (${{ matrix.tests }})`, would show as written. The
 jobs `linux` and `walks` therefore have names with no matrix in them,
 and GitHub adds each machine's value of the matrix when they run. A
 check a branch rule requires is a job without a matrix, or one job that
-waits on all the others. No branch rule requires a check today. The Updates page does not read CI at all: it follows
-the builds of `builds.yml`, see [UPDATES.md](UPDATES.md).
+waits on all the others. No branch rule requires a check today. The
+Updates page does not read CI at all: it follows the builds of
+`builds.yml`, see [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never

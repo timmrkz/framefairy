@@ -187,7 +187,8 @@ jobs:
       - name: Only our Go packages
         if: needs.changes.outputs.app == 'true'
         run: |
-          if go list ./... | grep /node_modules/; then
+          pkgs=$(go list ./...)
+          if printf '%s\n' "$pkgs" | grep /node_modules/; then
             echo "go list ./... takes in the packages above, see the ignore in go.mod"
             exit 1
           fi

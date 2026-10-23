@@ -117,6 +117,13 @@ func TestHearingSideBySideWritesTheSameTranscript(t *testing.T) {
 	var mu sync.Mutex
 	var problems []string
 	last := 0.0
+	// The first piece is held until a second one is heard, and the second
+	// goes out only once a whole chunkMax has been read after the first
+	// cut, which is at most chunkMax in. So the episode holds two of them,
+	// or the hold waits for ever with nothing wrong in the engine.
+	if 70 <= 2*chunkMax {
+		t.Fatalf("an episode of 70 s has no room for two pieces of %v s", chunkMax)
+	}
 	copies := &sideBySide{inner: fakeRecognizer{&calls}, copies: 4, pair: true}
 	copies.seen = func() {
 		file, words, _, ok := readTranscriptFile(disk, path, stamp, filepath.Base(base.ASRModel))
