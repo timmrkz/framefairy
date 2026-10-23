@@ -37,6 +37,9 @@ the folder, copy the new files in and run `make` again.
    network the first time.
 5. Installs the interface's packages into `frontend/node_modules`, exactly as
    locked in `package-lock.json`, but only when the interface has to be built.
+   `go.mod` ignores that folder, because some of them ship Go code of their
+   own, and `./...` names only our packages. The job `build` in CI checks
+   that, once the packages are installed.
 6. Builds the interface into `cmd/framefairy-app/dist/app/`, when it is missing
    or something in `frontend/` changed. This needs Node.js. The built
    interface is not in the repository.
@@ -440,11 +443,16 @@ never be what hides a break.
 
 A job a pull request does not need shows as skipped. GitHub counts a
 skipped job as passed for a required check, but a skipped job with a
-matrix shows once under its own name, not under the names of its
-machines, like `linux (A-AR+B-O)`. A check a branch rule requires is
-therefore a job without a matrix, or one job that waits on all the
-others. The Updates page does not read CI at all: it follows
-the builds of `builds.yml`, see [UPDATES.md](UPDATES.md).
+matrix shows once under its own name, `linux`, not under the names of
+its machines, like `linux (A-AR+B-O)`. GitHub decides to skip a job
+before it splits the job into its machines, so a name made from the
+matrix, like `linux (${{ matrix.tests }})`, would show as written. The
+jobs `linux` and `walks` therefore have names with no matrix in them,
+and GitHub adds each machine's value of the matrix when they run. A
+check a branch rule requires is a job without a matrix, or one job that
+waits on all the others. No branch rule requires a check today. The
+Updates page does not read CI at all: it follows the builds of
+`builds.yml`, see [UPDATES.md](UPDATES.md).
 
 A second push to a branch cancels the run the first one started, because its
 answer is about code nobody is waiting on any more. Pushes to main are never
