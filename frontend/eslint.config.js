@@ -73,6 +73,15 @@ export default [
   {
     files: ["src/**/*.test.ts"],
     languageOptions: { parser: typescript, ecmaVersion: "latest", sourceType: "module" },
-    rules: clock,
+    rules: {
+      ...clock,
+      // Vitest's waitFor and waitUntil look again every 50 ms until a
+      // deadline of a second: a poll on the clock.
+      "no-restricted-properties": [
+        ...clock["no-restricted-properties"],
+        { object: "vi", property: "waitFor", message: why },
+        { object: "vi", property: "waitUntil", message: why },
+      ],
+    },
   },
 ];

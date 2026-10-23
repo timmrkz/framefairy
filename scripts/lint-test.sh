@@ -38,6 +38,7 @@ expect 1 "playwright/no-wait-for-timeout" "a walk that waits on the clock fails"
 expect 1 "4 problems" "a walk that hands a wait a timeout or a polling fails" "$walk '$fix/walks/deadlines.mjs'"
 expect 0 "" "a walk on the page or page.clock passes" "$walk '$fix/walks/signals.mjs'"
 expect 1 "no-restricted-globals" "an interface test that waits on the clock fails" "$test '$fix/walks/waits.test.ts'"
+expect 1 "6 problems" "an interface test that polls with vi.waitFor or vi.waitUntil fails too" "$test '$fix/walks/waits.test.ts'"
 expect 0 "" "an interface test on vi.useFakeTimers passes" "$test '$fix/walks/signals.test.ts'"
 
 exit $fail

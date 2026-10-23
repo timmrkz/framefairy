@@ -16,10 +16,5 @@
     "no-restricted-properties": {
       "count": 3
     }
-  },
-  "src/lib/frames/captions.test.ts": {
-    "no-restricted-globals": {
-      "count": 4
-    }
   }
 }
