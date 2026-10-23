@@ -234,6 +234,12 @@ for file in $changed; do
 		*/main-moved.yml) moved_rules=1 ;;
 		esac
 		;;
+	# Every Linux job of CI runs in the CI image, so a change to it is a
+	# change to the machine every test runs on.
+	.github/ci-image/*)
+		build=1
+		all_go=1
+		;;
 	.github/*) ;;
 	*)
 		pkg=$(package_of "$file")

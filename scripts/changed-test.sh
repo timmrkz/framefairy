@@ -133,6 +133,8 @@ has "engine/hyphenation/hyph-de.head.txt" "go framefairy/engine" "go framefairy/
 # The scripts the Go jobs run decide how they run, like the Makefile.
 has "scripts/fuzz.sh" "build" "go framefairy/engine" "go framefairy/updates"
 has "scripts/ci-packages.sh" "build" "go framefairy/engine" "go framefairy/updates"
+# So does the CI image, which every Linux job runs in, the walks among them.
+has ".github/ci-image/Dockerfile" "build" "go framefairy/engine" "go framefairy/updates" "walks"
 
 # The fuzz targets are those of the packages a change reaches, all of them.
 fuzz=$(CHANGED=updates/source.go sh "$here/changed.sh" --fuzz-targets 2>/dev/null)
