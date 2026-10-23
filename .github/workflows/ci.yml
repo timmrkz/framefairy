@@ -321,10 +321,59 @@ jobs:
             ~/.cache/go-build
           key: go-v1-linux-${{ runner.os }}-${{ matrix.flags }}-${{ github.sha }}
 
+  # The machine the walks run on, .github/ci-image/Dockerfile: Ubuntu with
+  # every system package they use and Playwright's Chromium already in it,
+  # so no walks job downloads from the Ubuntu mirror, which on some days
+  # held one for twelve minutes, #462. It is kept in GitHub's container
+  # registry under a sum of what goes into it: the Dockerfile,
+  # scripts/ci-packages.sh, which it runs, and the version of Playwright
+  # the interface pins. So nearly every run only asks the registry whether
+  # that image is there, and builds and pushes one only when one of them
+  # changed. The step that builds stops after ten minutes, as the system
+  # packages of the other jobs do.
+  image:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            .github/ci-image/Dockerfile
+            scripts/ci-packages.sh
+            frontend/package-lock.json
+          sparse-checkout-cone-mode: false
+      - id: tag
+        run: |
+          playwright=$(jq -r '.packages["node_modules/playwright"].version' frontend/package-lock.json)
+          sum=$({ echo "playwright $playwright"; cat .github/ci-image/Dockerfile scripts/ci-packages.sh; } | sha256sum | cut -c1-16)
+          echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY}-ci:$sum" >> "$GITHUB_OUTPUT"
+      - name: The image, unless it is there
+        timeout-minutes: 10
+        env:
+          REF: ${{ steps.tag.outputs.ref }}
+          PLAYWRIGHT: ${{ steps.tag.outputs.playwright }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
+            echo "$REF is there"
+            exit 0
+          fi
+          docker buildx build --push --build-arg PLAYWRIGHT="$PLAYWRIGHT" \
+            -t "$REF" -f .github/ci-image/Dockerfile .
+
   # The interface in Chromium against the real Go side: the sequences of
   # the cases found by hand and the walks, see docs/TESTING.md. It needs
   # what the Go tests need, the interface's Node, and the Chromium
-  # Playwright drives, which only this job installs.
+  # Playwright drives, all of it in the image the job image keeps, which
+  # the job runs in.
   #
   # On four machines, each with a quarter of the runs by how long they took
   # last, see frontend/preview/walks/walk-times.tsv: on one the runs took
@@ -332,8 +381,16 @@ jobs:
   # six with a cold build cache, and on three each job took four and three
   # quarters, too close to five. More walkers on a machine of four cores
   # finish no sooner and break walks that wait on the clock.
+  #
+  # In the container as root, which is how GitHub runs one, with the IPC
+  # of the machine, as Playwright says to for Chromium, whose shared memory
+  # would not fit the 64 MB a container has, and with an init process,
+  # which Playwright asks for too, so what Chromium leaves behind is
+  # reaped. The runners' work folder is also where it is on the machine,
+  # because the ffmpeg we ship comes from the cache the job linux fills
+  # there, and its pkg-config files name the folder it was built in.
   walks:
-    needs: changes
+    needs: [changes, image]
     if: needs.changes.outputs.app == 'true'
     name: walks (${{ matrix.shard }}/4)
     strategy:
@@ -341,6 +398,17 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --init --ipc=host
+      volumes:
+        - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -348,40 +416,32 @@ jobs:
           go-version-file: go.mod
           cache: false
       # Go's build cache, kept by main after every push, see above the job
-      # linux.
+      # linux. v2 since the job runs in the image: actions/cache keeps a
+      # path by where it lies from the work folder, and the home of a
+      # container is another place than a runner's.
       - id: gocache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-v1-walks-${{ runner.os }}-
+          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-v2-walks-${{ runner.os }}-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # The packages apt downloaded, kept for a week and for this job's
-      # list, so a run downloads only what changed. See ci-packages.sh.
-      - id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/apt
-          key: apt-walks-${{ steps.week.outputs.week }}-${{ hashFiles('scripts/ci-packages.sh') }}
-          restore-keys: apt-walks-
-      # ffmpeg makes the bridge's episode and reads it.
-      - name: System packages
-        timeout-minutes: 10
-        run: sh scripts/ci-packages.sh ffmpeg meson ninja-build nasm
       # The episode's decoder, which the tests and the walks play through,
       # built against the ffmpeg we ship, see docs/VIDEO-PREVIEW.md. That
       # ffmpeg is built once and kept until scripts/build-ffmpeg.sh
-      # changes. The tests still take the system's ffmpeg from the PATH,
-      # because ours has no H.264 encoder on Linux, see TOOLS_FIRST.
+      # changes, by the job linux, whose cache this only reads: one built
+      # here would name this container's folders, which the machines of
+      # linux do not have. The tests still take the system's ffmpeg from
+      # the PATH, because ours has no H.264 encoder on Linux, see
+      # TOOLS_FIRST.
       - id: ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
@@ -390,17 +450,6 @@ jobs:
         run: sh scripts/build-ffmpeg.sh .build/ffmpeg
       - name: The episode's decoder
         run: make frames
-      # The version of Chromium the pinned Playwright was made for, with the
-      # libraries it needs. Those come through apt with the cache the step
-      # System packages set up, so the job's cache keeps them too, and the
-      # cache goes back to the runner's user to be saved, see
-      # scripts/ci-packages.sh.
-      - name: Chromium
-        run: |
-          make frontend/node_modules/.package-lock.json
-          (cd frontend && npm exec -- playwright install --with-deps chromium)
-          sudo rm -rf ~/.cache/apt/partial ~/.cache/apt/lock
-          sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt
       # A walk or a sequence that breaks a rule is named on the check, see
       # scripts/test-failures.sh. A share takes about two and a half
       # minutes, so one that hangs is stopped and named after eight rather
@@ -418,7 +467,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-v1-walks-${{ runner.os }}-${{ github.sha }}
+          key: go-v2-walks-${{ runner.os }}-${{ github.sha }}
 
   # Looking for new crashers, which is the part that does not need to hold
   # anything else up.

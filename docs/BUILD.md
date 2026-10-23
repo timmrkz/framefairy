@@ -312,14 +312,16 @@ out.
 `.github/workflows/ci.yml` runs on every pull request and on every push to
 main. It is twelve jobs on twelve machines, all at once, because none of them
 needs any of the rest, after a first one, `changes`, that says which of
-them a pull request needs, see [What runs for a change](#what-runs-for-a-change):
+them a pull request needs, see [What runs for a change](#what-runs-for-a-change),
+and `image`, which the walks wait for:
 
 | Job | Machine | What it runs |
 | --- | --- | --- |
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
 | `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux | `make unit` under the race detector, on a pull request the packages `make changed` picks and on main every package, on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
-| `walks (1/4)` to `walks (4/4)` | Linux | Playwright's Chromium, installed here and nowhere else, then `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
+| `image` | Linux | the CI image the walks run in, see [The CI image](#the-ci-image). Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
+| `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux | on a pull request `make fuzz` for the targets `make changed` fuzzes, named by `scripts/changed.sh --fuzz-targets`, and on main `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, on a pull request for the packages `make changed` picks, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
 | `outside` | macOS | the ffmpeg and the llama-server we ship, then `make` with no warnings allowed, then `make outside`: a keychain of its own, then the app opened by macOS from an Unlock link, closed and open, with the local dispenser beside it, see [TESTING.md](TESTING.md#from-outside-the-app). Stopped after 30 minutes |
@@ -387,6 +389,7 @@ a machine, so a typo in a README does not fuzz two platforms:
 | `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
 | `scripts/changed-test.sh` only | `build`, with `scripts/changed-test.sh` |
 | `scripts/changed.sh` | `build`, with `scripts/changed-test.sh`, and `linux`, `fuzz` and `macos`, which run it on a pull request, so its own pull request runs it on Linux and on the Mac |
+| `.github/ci-image/` only | `build`, `image`, `walks` and `outside`, the jobs of the app as a whole, since only the walks run in the image |
 | anything else, or a mix | everything |
 
 Each filter is every file less the files that cannot matter to its jobs,
@@ -521,8 +524,8 @@ with it.
 `scripts/ci-packages.sh`. Every Go job compiles the app's package, the
 fuzzing too because one of its targets is there, so GTK, WebKit and
 pkg-config are in every one. ffmpeg is only in `linux`, whose tests
-render, and `walks`, whose bridge makes its episode with it, and patchelf
-only in `build`, which carries the speech library.
+render, and patchelf only in `build`, which carries the speech library.
+The walks install nothing, they run in the CI image below.
 ffmpeg was once in all three, and it is most of what apt downloads: on a
 day the Ubuntu mirror crawled, the fuzzing waited fifteen minutes for a
 speech synthesis library ffmpeg depends on, for a job that never runs
@@ -530,6 +533,41 @@ ffmpeg. The packages apt downloads are kept by the workflow for a week,
 so a run normally downloads only the package lists, a download that
 stalls is tried again, and the step gives up after ten minutes rather
 than holding the job for hours.
+
+### The CI image
+
+The walks run in a container, the CI image, built from
+`.github/ci-image/Dockerfile`: Ubuntu 24.04, the runners' own system,
+with every package `scripts/ci-packages.sh` installs for the Go side,
+ffmpeg, meson, ninja, nasm and patchelf beside them, and the headless
+Chromium of the Playwright version in `frontend/package-lock.json` with
+the libraries and fonts it needs. Go and Node are not in it: setup-go
+and setup-node bring them as in every other job.
+
+On some days the runners' Ubuntu mirror gave 18 to 40 kB a second, and
+the libraries Chromium needs, mostly fonts, held a walks job for up to
+twelve minutes, #462. Chromium itself comes from Playwright's own
+servers and was always fast. An image is downloaded from GitHub's
+container registry instead, and no walks job asks the mirror for
+anything.
+
+The job `image` names the image by a sum of the Dockerfile, of
+`scripts/ci-packages.sh` and of the Playwright version, as
+`ghcr.io/timmrkz/framefairy-ci:<sum>`. When the registry has that tag,
+the job is done in seconds, and when it does not, which is only when one
+of the three changed, it builds the image and pushes it, and the walks
+wait for it. Both images the Dockerfile starts from are pinned to a
+digest, so the same sum always means the same image, and moving them is
+a change to the file. A Playwright update from Dependabot therefore
+builds its own image on its own pull request.
+
+The walks run in it as root, which is how GitHub runs a container, with
+the machine's IPC and an init process, as Playwright says to run
+Chromium in one. The runners' work folder is mounted at the place it has
+on the machine as well, because the ffmpeg we ship comes from the cache
+the job `linux` fills, and its pkg-config files name the folder it was
+built in. The walks only read that cache, so it never holds an ffmpeg
+built in the container's folders.
 
 ## Keeping up
 
