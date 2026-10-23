@@ -6,10 +6,10 @@
   },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
-      "count": 6
+      "count": 3
     },
     "no-restricted-properties": {
-      "count": 31
+      "count": 27
     }
   },
   "preview/walks/speed.mjs": {

@@ -7949,13 +7949,9 @@ for (const seq of toWalk) {
         if (what === "report") await page.locator("button.report").click();
         // Report closes the window once Finder has the zip, and says
         // nothing beside the buttons on the way. Tim had a line there.
-        const closed = await (async () => {
-          for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
-            const w = await (await fetch(new URL("/report-window", url))).json();
-            if (!w.open) return true;
-          }
-          return false;
-        })();
+        // Asked once the call that makes the report has come back.
+        await settle(page);
+        const closed = !(await (await fetch(new URL("/report-window", url))).json()).open;
         if (!closed) {
           wrong = `Report left the window open, saying "${await page.evaluate(() => document.querySelector(".words")?.textContent.trim())}"`;
           break;
@@ -7983,11 +7979,10 @@ for (const seq of toWalk) {
           if (!like.test(have)) wrong = `the report holds ${JSON.stringify(have)} as written, not ${JSON.stringify(also)}`;
         }
         // The window closes while the call is still on its way back, and the
-        // page empties the field once it is, so a busy runner can read the
-        // field a moment before. Given a second for that.
-        const look = () => page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
-        let left = await look();
-        for (const end = Date.now() + 1000; (left[0] || left[1]) && Date.now() < end; left = await look()) await new Promise((r) => setTimeout(r, 50));
+        // page empties the field once it is, so it is read once the app has
+        // settled on the answer.
+        await settle(page);
+        const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
         break;
       }
@@ -7996,13 +7991,15 @@ for (const seq of toWalk) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
         await page.mouse.wheel(0, arg);
-        // Read as soon as the wheel has turned, before the next words come.
+        // Read as soon as the wheel has turned the field, before the next
+        // words come, or two frames on if it did not.
         kept.scrolledTo = await page.locator(".telling").evaluate(
-          (f, was) => new Promise((done) => {
-            const read = () => (f.scrollTop !== was ? done(f.scrollTop) : requestAnimationFrame(read));
-            requestAnimationFrame(read);
-            setTimeout(() => done(f.scrollTop), 1000);
-          }),
+          (f, was) =>
+            new Promise((done) => {
+              if (f.scrollTop !== was) return done(f.scrollTop);
+              f.addEventListener("scroll", () => done(f.scrollTop), { once: true });
+              requestAnimationFrame(() => requestAnimationFrame(() => done(f.scrollTop)));
+            }),
           was,
         );
         if (arg < 0 && kept.scrolledTo >= was) wrong = `the wheel did not scroll the field up, it is at ${kept.scrolledTo} px`;
@@ -9158,8 +9155,12 @@ for (const seq of toWalk) {
         // The canvas itself, not what the interface was told: a column of
         // it with more than a few pixels painted is the waveform there.
         // The bridge's episode has sound from its first second to its last.
-        // Read once the interface has heard all the Go side said and has
-        // drawn it.
+        // Read once the Go side has measured all of it, which it says in
+        // a levels event, and the interface has heard that and drawn it.
+        const path = await episodeOn(page);
+        for (let seen = await news(page, "levels"); !(await ask(page, "Episode", path))?.measuredAll; ) {
+          seen = await nextNews(page, seen, "levels");
+        }
         await caughtUp(page, url);
         let read = null;
         {
