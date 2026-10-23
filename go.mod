@@ -29,3 +29,7 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
+
+// The interface's packages are not ours, but one of them, flatted, ships
+// a Go port, and ./... would build, vet and test it, #471.
+ignore ./frontend/node_modules
