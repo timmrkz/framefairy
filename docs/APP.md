@@ -199,12 +199,18 @@ menu's to show, Tim's call on #458:
   what it leads to. It is the one file the app writes outside the
   library, where the person says in the system's own box.
 
-While it runs, the dots on the range picker shrink as it hears, and the
-video's dot in the sidebar pulses the way it does for all work, from the
-frame Transcribe whole video is clicked until the frame Stop
-transcribing is. Nothing else says how far it has come, Tim's call on
-#458: a number in the menu, and then one in the video's row, were more
-to read for what the dots already show. The library is read again each
+While it runs, the range picker frames the part it works on the way it
+frames the window of a search that hears, the same line, breath and
+motes, and the frame stands in for that part's dots, so the motes read
+clearly over it. Its left edge follows the work as it hears, and the
+parts it has not reached keep their dots. While a search runs, the
+search's window is the work on the range picker and the whole video
+gives way to it, so its frame goes until the search is done. The video's
+dot in the sidebar pulses the way it does for all work, from the frame
+Transcribe whole video is clicked until the frame Stop transcribing is.
+Nothing else says how far it has come, Tim's calls on #458: a number in
+the menu, and then one in the video's row, were more to read for what
+the range picker already shows. The library is read again each
 time the work goes on to another part of the video, after a search or a
 clip made by hand took the hearing for a while, so what it says was heard
 never goes back.

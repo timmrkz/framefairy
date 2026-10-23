@@ -170,8 +170,8 @@
     queued[ep.source] = (queued[ep.source] ?? Promise.resolve()).then(save);
   }
 
-  // How far Transcribe whole video has come is shown by the dots on the
-  // range picker and by nothing else, Tim's call on #458: the video's dot
+  // How far Transcribe whole video has come is shown on the range picker
+  // and by nothing else, Tim's calls on #458: the video's dot
   // pulses while it runs, the way it does for all work. These keep that
   // true from the frame of the click. stopped is the transcriptions Stop
   // transcribing was pressed for: the dot stops, unless other work runs,

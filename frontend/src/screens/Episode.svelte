@@ -324,6 +324,8 @@
   // whole video, one at a time. Its progress says which part it hears and
   // how far it has come in it.
   const hearing = $derived(transcribing ?? handRunning.find((j) => j.step === "hearing") ?? wholeHearing);
+  // Transcribe whole video while it runs or waits its turn.
+  const wholeWork = $derived(jobs.transcribing(path));
   const isTranscribing = $derived(!!hearing);
   const busy = $derived(searching || starting);
   // What the search is doing right now, in the step's own words, see
@@ -539,6 +541,17 @@
     }
     if (duration - at >= 1) out.push([at, duration]);
     return out;
+  });
+  // The part Transcribe whole video works on, framed on the range picker
+  // the way the window of a search is while it hears, Tim's pick on #458:
+  // the part it hears, or the one it hears next while it waits its turn.
+  // While a search runs, the search's window is the work on the range
+  // picker, and the whole video gives way to it.
+  const wholePart = $derived.by((): [number, number] | null => {
+    if (!wholeWork || busy) return null;
+    const edge = wholeHearing && live ? live[1] : -1;
+    const gap = (edge >= 0 && unheard.find(([a]) => Math.abs(a - edge) < 0.5)) || unheard[0];
+    return gap ?? null;
   });
   // The clip list and the cards of what was said take turns in one
   // scrolled column, so each keeps its own place: the clip list comes back
@@ -3254,6 +3267,8 @@
     unheardLit={saying ? unheardLit : -1}
     unheardOn={saying ? unheardOn : -1}
     giving={live && !stoppedAt ? live[1] : -1}
+    part={wholePart}
+    partStill={!wholeHearing}
     onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}

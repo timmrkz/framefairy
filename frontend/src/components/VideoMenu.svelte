@@ -29,8 +29,9 @@
   // runs, Continue transcribing once it stopped, by hand or by the app
   // closing, and Export transcript once it is all there. Each is an
   // action, which closes the menu the way a menu item does on the Mac.
-  // How far the work has come is not the menu's to show: the dots on the
-  // range picker shrink and the video's dot pulses, Tim's call on #458.
+  // How far the work has come is not the menu's to show: the range picker
+  // frames the part it works on and the video's dot pulses, Tim's calls
+  // on #458.
   // Export hangs a list of its formats on the right of the menu, the way
   // Export To does in Pages, and a format opens the system's save box. Two rows of which one never works
   // were two things to read for one.

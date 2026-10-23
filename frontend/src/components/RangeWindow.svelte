@@ -53,6 +53,8 @@
     unheardLit = -1,
     unheardOn = -1,
     giving = -1,
+    part = null,
+    partStill = false,
     onhoverunheard,
   }: {
     duration: number;
@@ -120,6 +122,13 @@
     // gives way as the work hears, so its dots stand still while its edge
     // passes over them.
     giving?: number;
+    // The part of the video Transcribe whole video works on, or nothing.
+    // It is framed, breathing and shedding the motes, the way the window
+    // of a search is while it hears, and the frame stands in for the dots
+    // of that part, so the motes read clearly over it. Still while the
+    // work gives the hearing to a clip made by hand. Tim's pick on #458.
+    part?: [number, number] | null;
+    partStill?: boolean;
     // The one of them under the hand here, by its place among them, or -1,
     // so its card is lit too, while the cards are open.
     onhoverunheard?: (index: number) => void;
@@ -163,13 +172,17 @@
   // the start did not. A window that starts or ends with the episode
   // reaches the outside of the border and takes its round corner, so it
   // lies on the range picker's own edge rather than inside it.
-  const frame = $derived.by(() => {
-    const first = from <= 0.5;
-    const last = to >= duration - 0.5;
-    const left = first ? "0px" : `(${on(from, inner)} + 1px)`;
-    const right = last ? "100cqw" : `(${on(to, inner)} + 2px)`;
+  function frameOver(a: number, b: number) {
+    const first = a <= 0.5;
+    const last = b >= duration - 0.5;
+    const left = first ? "0px" : `(${on(a, inner)} + 1px)`;
+    const right = last ? "100cqw" : `(${on(b, inner)} + 2px)`;
     return { style: `left: calc(${left}); width: max(calc(${right} - ${left}), 0px)`, first, last };
-  });
+  }
+  const frame = $derived(frameOver(from, to));
+  // The part Transcribe whole video works on, framed the way the window of
+  // a search is while it hears, Tim's pick on #458.
+  const partFrame = $derived(part ? frameOver(part[0], part[1]) : null);
   onMount(() => {
     // Nothing measured while the workspace is put away, see App.svelte.
     const observer = new ResizeObserver(() => {
@@ -385,7 +398,13 @@
   <!-- What has not been heard yet, dots under the minutes so their lines
        still show through. -->
   {#each unheard as [a, b], i (i)}
-    <div class="unheard" class:lit={i === unheardLit || i === unheardOn} class:giving={giving >= 0 && Math.abs(a - giving) < 0.5} style="--at: {on(a)}; --to: {on(b)}"></div>
+    <div
+      class="unheard"
+      class:lit={i === unheardLit || i === unheardOn}
+      class:giving={giving >= 0 && Math.abs(a - giving) < 0.5}
+      class:framed={!!part && part[0] < b && a < part[1]}
+      style="--at: {on(a)}; --to: {on(b)}"
+    ></div>
   {/each}
   <!-- Every clip is a mark, and a mark is pressed to work on its clip. -->
   {#each marks as m (m.key)}
@@ -437,27 +456,35 @@
     </Info>
   </span>
 </div>
-{#if shown}
-  <!-- Only looked at, never taken hold of: the window of a search in hand
-       is the search's, and a press on it is a press on the track. Drawn beside
-       the track rather than in it, over its border, because the track
-       clips what is inside it to its round corners and cut into the
-       window and its breath. -->
+<!-- Only looked at, never taken hold of: the window of a search in hand
+     is the search's, and a press on it is a press on the track. Drawn
+     beside the track rather than in it, over its border, because the
+     track clips what is inside it to its round corners and cut into the
+     window and its breath. The part Transcribe whole video works on is
+     drawn the same way, by the same lines, because it is the same thing:
+     work in hand on a stretch of the video. -->
+{#snippet stretch(f: { style: string; first: boolean; last: boolean }, busy: boolean, all: boolean, still: boolean)}
   <div
     class="window frame"
-    class:waiting={locked}
-    class:locked
-    class:whole
-    class:first={frame.first}
-    class:last={frame.last}
-    style={frame.style}
+    class:waiting={busy}
+    class:locked={busy}
+    class:whole={all}
+    class:first={f.first}
+    class:last={f.last}
+    style={f.style}
   >
     <!-- The motes of work in hand rise through it while its clips are
          found, the ones every control of the app sheds, with no rim and no
          fill: how far the search has come is said on the clip cards, and
          only there. -->
-    {#if locked}<Busy rim={false} />{/if}
+    {#if busy}<Busy rim={false} {still} />{/if}
   </div>
+{/snippet}
+{#if shown}
+  {@render stretch(frame, locked, whole, false)}
+{/if}
+{#if partFrame}
+  {@render stretch(partFrame, true, false, partStill)}
 {/if}
 {#if !shown && to > from && duration > 0}
   <!-- The window at rest, marked at its four corners and not drawn over
@@ -829,6 +856,13 @@
 
   .unheard.lit::before {
     background-image: var(--halftone-lit);
+  }
+
+  /* The part Transcribe whole video works on is framed, and the frame
+     stands in for its dots, so the motes rising through it are not lost
+     among them. Tim's pick on #458. */
+  .unheard.framed::before {
+    display: none;
   }
 
   /* The box the playhead is drawn over, exactly the track and nothing

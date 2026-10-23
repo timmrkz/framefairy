@@ -202,11 +202,15 @@
 //                      video and holds the speech, then needs it to say
 //                      Transcribe whole video and clicks it: in the next
 //                      frame the menu has closed and the video's dot
-//                      pulses, with no number in its row. "stop" needs Stop transcribing and
+//                      pulses, with no number in its row. Once the work
+//                      runs, the range picker frames the part it works
+//                      on, breathing with the motes, and that part shows
+//                      no dots. "stop" needs Stop transcribing and
 //                      clicks it: the menu has closed, and opened again
 //                      it says Continue transcribing at once.
 //                      "continue" waits the same way for the stopped
-//                      work to end and clicks Continue transcribing, which
+//                      work to end, needs the frame gone and the dots
+//                      back, and clicks Continue transcribing, which
 //                      pulses the dot in the next frame again. "Text" and
 //                      "Subtitles" wait, asking again each time the work
 //                      says how far it heard, until the Go side says the
@@ -6835,6 +6839,16 @@ for (const seq of toWalk) {
             wrong = "the video's dot pulses with nothing running";
             break;
           }
+          // Nothing running, the range picker frames nothing, and a part the
+          // stopped work framed shows its dots again.
+          if (await page.locator(".window.frame.locked").count()) {
+            wrong = "with nothing running, the range picker frames a part as work in hand";
+            break;
+          }
+          if (arg === "continue" && !(await page.locator(".unheard").count())) {
+            wrong = "the whole video stopped, and the range picker shows no dots on what is left";
+            break;
+          }
           await row.hover();
           await row.locator("button.more").click();
           await menu.waitFor();
@@ -6847,7 +6861,28 @@ for (const seq of toWalk) {
           else if (after.open) wrong = `the menu stayed open after ${want} was clicked`;
           else if (!after.busy) wrong = `the frame after ${want} was clicked, the video's dot does not say that work runs`;
           else if (after.number) wrong = `after ${want} was clicked, the video's row shows a number`;
-          if (wrong) await page.keyboard.press("Escape");
+          if (wrong) {
+            await page.keyboard.press("Escape");
+            break;
+          }
+          // Once the work has said it runs, the range picker frames the part
+          // it works on the way a search's window is framed while it hears,
+          // breathing and shedding the motes, and the frame stands in for
+          // that part's dots, Tim's pick on #458.
+          const framed = () =>
+            page.evaluate(() => {
+              const frame = document.querySelector(".window.frame.locked.waiting");
+              return {
+                frame: !!frame,
+                motes: frame?.querySelectorAll(".mote").length ?? 0,
+                dots: [...document.querySelectorAll(".unheard.framed")].filter((el) => getComputedStyle(el, "::before").display !== "none").length,
+                hidden: document.querySelectorAll(".unheard.framed").length,
+              };
+            });
+          for (let seen = await news(page); !(await framed()).frame; ) seen = await nextNews(page, seen);
+          const look = await framed();
+          if (!look.motes) wrong = `while the whole video is transcribed, its frame on the range picker sheds no motes`;
+          else if (!look.hidden || look.dots) wrong = `while the whole video is transcribed, the part it works on shows its dots under the frame`;
           break;
         }
         if (arg === "stop") {
