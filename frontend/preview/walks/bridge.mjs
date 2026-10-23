@@ -777,24 +777,72 @@ export async function fromSidebar(page, click) {
   );
 }
 
+// Until fn, run in the page with arg, says true. It is asked again each
+// time the page changes, an attribute, a node or a text, never on the
+// clock, so what it waits for has to show on the page. One that never
+// comes is a walk that hangs, ended by the -timeout of make walks with
+// the step the walk printed last. seenUntil is the same wait for a read
+// the walk makes itself.
+export function pageUntil(page, fn, arg) {
+  return page.evaluate(
+    ([source, arg]) =>
+      new Promise((done) => {
+        const holds = new Function(`return (${source})`)();
+        if (holds(arg)) return done();
+        const o = new MutationObserver(() => {
+          if (!holds(arg)) return;
+          o.disconnect();
+          done();
+        });
+        o.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+      }),
+    [fn.toString(), arg],
+  );
+}
+
+// Reads read until ok says it is what was wanted, and says what it read
+// last: once the interface has heard everything the Go side told it and
+// has settled on it, see caughtUp, and then each time the page's body
+// changes, never on the clock. What the app shows a moment later by
+// itself, like the Updates page holding its looking for 1.4 s, comes that
+// way. read must change nothing in the body, or it wakes itself. A page
+// that never comes to it hangs the walk, as pageUntil does.
+export async function seenUntil(page, url, read, ok) {
+  await caughtUp(page, url);
+  for (;;) {
+    const changed = page.evaluate(
+      () =>
+        new Promise((done) => {
+          const o = new MutationObserver(() => {
+            o.disconnect();
+            done();
+          });
+          o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+        }),
+    );
+    // Left waiting once ok is met, so it must not throw when the page
+    // closes.
+    changed.catch(() => {});
+    const now = await read();
+    if (ok(now)) return now;
+    await changed;
+  }
+}
+
 // Adds an HEVC 10-bit episode with Add and chooses the clip its first
 // search finds.
 export async function addHEVC(url, page) {
   await control(url, "/pick?seconds=40&codec=hevc");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-  await page.waitForFunction(
-    () => {
-      const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-      const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
-      return (
-        on.startsWith("folge-") &&
-        pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
-        pane.querySelectorAll("ol li[data-key]").length > 0
-      );
-    },
-    null,
-    { timeout: 120000, polling: 250 },
-  );
+  await pageUntil(page, () => {
+    const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+    const on = document.querySelector("aside button.episode.current .name")?.textContent ?? "";
+    return (
+      on.startsWith("folge-") &&
+      pane?.querySelector(".listhead button.search")?.textContent.includes("Search") &&
+      pane.querySelectorAll("ol li[data-key]").length > 0
+    );
+  });
   await page.locator("aside ol li[data-key] button.pick").first().click();
   await settle(page);
   // The frames on screen came through the Go side's streams, or this walk
@@ -854,26 +902,20 @@ export async function xOf(page, at) {
 
 // Puts the playhead on a moment of the clip with a click on the clip
 // timeline, the way a hand does, and waits until the video preview shows
-// the frame that holds it, at fps frames a second. Says whether that
-// frame came.
+// the frame that holds it, see shownOnPlayhead. Says whether the picture
+// is that frame by the number drawn on it, at fps frames a second.
 export async function seekTo(page, at, fps) {
   const g = await handles(page);
   await page.mouse.click(await xOf(page, at), high(g.track));
   await settle(page);
   await reader(page);
-  return page
-    .waitForFunction(
-      (fps) => {
-        const at = Number(document.querySelector(".screen").dataset.playhead);
-        // The frame that holds the playhead, a frame that begins a
-        // millisecond or less after it included, see frameAt in
-        // lib/flow.ts.
-        return window.__pictured() === Math.floor((at + 0.001) * fps);
-      },
-      fps,
-      { polling: 50, timeout: 5000 },
-    )
-    .then(() => true, () => false);
+  await shownOnPlayhead(page);
+  return page.evaluate((fps) => {
+    const at = Number(document.querySelector(".screen").dataset.playhead);
+    // The frame that holds the playhead, a frame that begins a
+    // millisecond or less after it included, see frameAt in lib/flow.ts.
+    return window.__pictured() === Math.floor((at + 0.001) * fps);
+  }, fps);
 }
 
 // The crop frame in the video preview, where the playhead is: where it

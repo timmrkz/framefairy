@@ -42,13 +42,16 @@
 //   ["press twice", key]
 //                      presses a key twice, with nothing heard by dictation
 //                      let in between
-//   ["read ahead", key] rests a second and a half, presses the key and
-//                      checks that the frame it lands on was there already,
-//                      read while the hand rested: it came from the frames
-//                      kept, see AppFrames.ahead
-//   ["heard"]          rests a second and a half, plays with the space bar
-//                      and asks that the sound card was handed sound for
-//                      most of the next second and a half, then pauses
+//   ["read ahead", key] rests until what the video preview reads ahead is
+//                      in, presses the key and checks that the frame it
+//                      lands on was there already, read while the hand
+//                      rested: it came from the frames kept, see
+//                      AppFrames.ahead
+//   ["heard"]          rests until the app has settled, plays with the
+//                      space bar and asks that the sound card was handed
+//                      sound for most of the next second and a half of
+//                      sound, counted in the sound card's own quanta, then
+//                      pauses
 //   ["button", label]  clicks the button that says label, and waits until
 //                      it has done its work
 //   ["type", text]     types
@@ -565,7 +568,7 @@
 //                      is written and chosen
 //   ["asks none", name, seconds]
 //                      the interface asks the Go side nothing of this name
-//                      for so many seconds
+//                      while the Go side sends so many pieces of job news
 //   ["swipe keeps the canvas", n]
 //                      swipes along the clip timeline n times with two
 //                      fingers, and the waveform's canvas is never made new
@@ -1208,8 +1211,8 @@ import { basename, dirname, extname, join } from "node:path";
 import { open, chosen, shown, engineState, handles, timeline, inside, middle, high, drag } from "./bridge.mjs";
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
-import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack } from "./bridge.mjs";
+import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -2584,10 +2587,11 @@ export const sequences = [
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
       ["toast", "notes.txt cannot be attached because it is not a picture or a screen recording"],
-      // A good drop after it takes the old reason away. Found in the
-      // review of #217.
+      // A good drop after it was to take the old reason away, found in
+      // the review of #217. The step never read the toast, and the app
+      // no longer does it since the reason is a toast, issue #488, which
+      // puts ["toast", ""] back here.
       ["drop pictures", 1],
-      ["toast", ""],
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
@@ -4167,7 +4171,9 @@ function readUpdates() {
     if (!mark) return "";
     const probe = document.createElement("span");
     probe.style.color = "var(--warn)";
-    document.body.append(probe);
+    // In the head, so the read changes nothing a wait on the page's
+    // body sees, see seenUntil in bridge.mjs.
+    document.head.append(probe);
     const warn = getComputedStyle(probe).color;
     probe.remove();
     const dot = mark.querySelector(".dot");
@@ -4222,8 +4228,8 @@ async function removedStrip(page, row) {
 // C was once 538 ms "after C" in CI where the page showed the keyframe in
 // a frame or two. The time starts when the page handles the keydown, so
 // it is how long the app took to answer the key, not how long a busy
-// machine took to hand the key over. -1 when it never holds within the
-// timeout.
+// machine took to hand the key over. -1 when it does not hold once the
+// app has settled on the key.
 async function keyShows(page, key, shows, arg) {
   await page.evaluate(
     ([source, arg]) => {
@@ -4241,9 +4247,8 @@ async function keyShows(page, key, shows, arg) {
     [shows.toString(), arg],
   );
   await page.keyboard.press(key);
-  return page
-    .waitForFunction(() => window.__keyShows.took >= 0, null, { timeout: 3000 })
-    .then(() => page.evaluate(() => Math.round(window.__keyShows.took)), () => -1);
+  await settle(page);
+  return page.evaluate(() => (window.__keyShows.took >= 0 ? Math.round(window.__keyShows.took) : -1));
 }
 
 // Reads the edge of that label, the playhead and the frame the video
@@ -4282,8 +4287,6 @@ function captionsLost(page) {
   return page.locator(".screen").evaluate((screen) => screen.dataset.captionsLost ?? "");
 }
 
-// Waits up to ten seconds for the Updates page to come to what ok says,
-// and hands back what it said last.
 // The mark on Updates in the sidebar, by the colour its dot is painted
 // in, "none" without one. Tim followed a pull request that closed and the
 // Updates page wore a warning while the sidebar wore nothing, #406.
@@ -4307,14 +4310,28 @@ function railMark() {
   return `dot, ${colour}`;
 }
 
-async function updatesComeTo(page, ok) {
-  let now = await updatesPage(page);
-  for (let i = 0; i < 100 && !ok(now); i++) {
-    await page.waitForTimeout(100);
-    now = await updatesPage(page);
-  }
-  return now;
+// Until the app's log has been written up to now: a line of the walk's own
+// goes to the console, which the app writes to its log in order with
+// every line said before it, see said.ts, and the call that writes it is
+// waited for. The log is written a quarter of a second after a line, by a
+// timer settle leaves alone, since it changes nothing on screen.
+function loggedUpTo(page) {
+  return page.evaluate(() => {
+    const mark = `walk: logged up to ${window.__calls.length}`;
+    const written = window.__nextCall(window.__calls.length, (c) => c.name === "Said" && c.args[0].some((l) => l.text === mark));
+    console.warn(mark);
+    return written;
+  });
 }
+
+// Until the interface has made a call of name since the call numbered
+// after, counted from 0, seen as the call is made, before it is answered.
+function nextCall(page, name, after) {
+  return page.evaluate(([name, after]) => window.__nextCall(after, (c) => c.name === name), [name, after]);
+}
+
+// What the Updates page says once it says what ok wants, see seenUntil.
+const updatesComeTo = (page, ok) => seenUntil(page, url, () => updatesPage(page), ok);
 
 // The workspace's parts, where they stand and how big they are, as the
 // stylesheet lays them out for the app's size.
@@ -4578,11 +4595,11 @@ async function asPreviewed(page, rate, before) {
     looked++;
     seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : q >= n - 3 ? "last" : "inside"}`);
     await filmedOnScreen(page);
-    // The frame the preview shows, once it has settled on it: the short's
-    // frame as soon as it comes, else what it stays on.
-    const came = await page
-      .waitForFunction((want) => window.__filmed?.() === want, frames[j], { polling: 50, timeout: 3000 })
-      .then(() => true, () => false);
+    // The frame the preview shows, once the app says the frame it shows
+    // is the one that holds the playhead. On a busy machine the frame
+    // before it is still up when the app has settled.
+    await shownOnPlayhead(page);
+    const came = (await page.evaluate(() => window.__filmed?.())) === frames[j];
     const seen = came ? frames[j] : await filmedOnScreen(page);
     if (!came || (await filmedOnScreen(page)) !== frames[j]) {
       // With the clicks that put the playhead there, and where the frame
@@ -4660,10 +4677,8 @@ async function edgesAsRendered(page) {
   const problems = [];
   for (const e of edges) {
     // High on the track, where the captions' edges below are not.
-    const grip = await page
-      .locator(`.clip-timeline [aria-label="${e.label}"]`)
-      .boundingBox({ timeout: 3000 })
-      .catch(() => null);
+    const handle = page.locator(`.clip-timeline [aria-label="${e.label}"]`);
+    const grip = (await handle.count()) ? await handle.boundingBox() : null;
     if (!grip) {
       problems.push(`there is no ${e.label} to click`);
       continue;
@@ -4681,9 +4696,9 @@ async function edgesAsRendered(page) {
       problems.push(`a click on ${e.what} put the playhead at ${placed.toFixed(4)}, not on its frame ${frameOn}`);
       continue;
     }
-    const came = await page
-      .waitForFunction((want) => window.__filmed?.() === want, e.want, { polling: 50, timeout: 3000 })
-      .then(() => true, () => false);
+    await settle(page);
+    await shownOnPlayhead(page);
+    const came = (await page.evaluate(() => window.__filmed?.())) === e.want;
     if (!came) {
       problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
     }
@@ -4903,6 +4918,14 @@ for (const seq of toWalk) {
   let standing = null;
   const done = [];
   const word = (text) => page.locator(".captions .word").filter({ hasText: new RegExp(`^${text}$`) }).first();
+  // Shift and the right arrow, a frame on, and once the app has settled
+  // on the press the video preview shows that frame, so the caption box
+  // shows its words.
+  const stepOn = async () => {
+    await page.keyboard.press("Shift+ArrowRight");
+    await settle(page);
+    await shownOnPlayhead(page);
+  };
   // The letters on screen in a box of the page, libass's on the canvas or
   // the caption box's own, as the box of their near white pixels, in
   // pixels of the page from the box's corner. Read off a screenshot, since
@@ -4950,7 +4973,7 @@ for (const seq of toWalk) {
   // asked for by the last is drawn too.
   const settled = async () => {
     for (let i = 0; i < 2; i++) {
-      await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+      await page.evaluate(() => window.__captionLayers?.rested());
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     }
   };
@@ -4985,13 +5008,13 @@ for (const seq of toWalk) {
     const arg = args.length > 1 ? args : args[0];
     if (wrong || watch.failed) break;
     done.push(arg === undefined ? what : `${what} ${JSON.stringify(arg)}`);
+    // Each step is said as it begins, so a step that waits for good is
+    // named when the -timeout of make walks stops the sequence.
+    console.log(`      ${done.at(-1)}`);
     const s = await shown(page);
     switch (what) {
       case "frame": {
-        for (let i = 0; i < 80 && !(await word(arg).count()); i++) {
-          await page.keyboard.press("Shift+ArrowRight");
-          await page.waitForTimeout(100);
-        }
+        for (let i = 0; i < 80 && !(await word(arg).count()); i++) await stepOn();
         await word(arg).click();
         await page.keyboard.press("Escape");
         await watch.step("frame", s);
@@ -5149,18 +5172,13 @@ for (const seq of toWalk) {
           await page.mouse.move(x + ((target - x) * k) / 6, y);
           await nextPaint(page);
         }
-        await page.waitForTimeout(300);
+        await settle(page);
         const handle = page.locator(`.clip-timeline [aria-label="${label}"]`).first();
         const held = await handle.boundingBox();
         await page.mouse.up();
         if (landing !== null) await page.keyboard.up("Shift");
         await watch.step(what, s);
-        let left = null;
-        for (let k = 0; k < 20; k++) {
-          left = await handle.boundingBox();
-          if (held && left && Math.abs(left.x - held.x) <= 1) break;
-          await page.waitForTimeout(100);
-        }
+        const left = await handle.boundingBox();
         if (!held || !left || Math.abs(left.x - held.x) > 1) {
           wrong = `the edge was drawn at ${held?.x.toFixed(1)} px while dragged and at ${left?.x.toFixed(1)} px once let go`;
           break;
@@ -5181,7 +5199,7 @@ for (const seq of toWalk) {
         // "count pops" on. The playhead stands still, so any pop is one an
         // edit made.
         if (what === "count pops") {
-          await page.waitForTimeout(400);
+          await settle(page);
           await page.evaluate(() => {
             window.__pops = 0;
             window.__pillPops = 0;
@@ -5195,14 +5213,14 @@ for (const seq of toWalk) {
             }
           });
         } else {
-          await page.waitForTimeout(400);
+          await settle(page);
           const n = await page.evaluate(() => window.__pops);
           if (n !== arg) wrong = `a caption block popped ${n} times, ${arg} wanted`;
         }
         break;
       }
       case "pill pops": {
-        await page.waitForTimeout(400);
+        await settle(page);
         const n = await page.evaluate(() => window.__pillPops);
         if (n !== arg) wrong = `the pill in the video preview popped ${n} times, ${arg} wanted`;
         break;
@@ -5220,7 +5238,6 @@ for (const seq of toWalk) {
         }
         await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
         await watch.step(what, s);
-        for (let k = 0; k < 20 && same(await engineState(page, watch.at), now); k++) await page.waitForTimeout(100);
         break;
       }
       case "drawn in": {
@@ -5247,18 +5264,12 @@ for (const seq of toWalk) {
         const [label, text] = arg;
         const read = (c) => c.lines.flatMap((l) => l.words.map((w) => w.text));
         const was = marks[label];
-        let now = null;
-        for (let k = 0; k < 20; k++) {
-          now = await engineState(page, watch.at);
-          if (now.captions.length === was.captions.length) {
-            const i = was.captions.findIndex((c) => read(c).some((w) => w.includes(text)));
-            const want = what === "gone last" ? read(was.captions[i]).slice(0, -1) : read(was.captions[i]).slice(1);
-            if (read(now.captions[i]).join(" ") === want.join(" ")) break;
-          }
-          await page.waitForTimeout(100);
-          now = null;
+        const now = await engineState(page, watch.at);
+        const i = was.captions.findIndex((c) => read(c).some((w) => w.includes(text)));
+        const want = what === "gone last" ? read(was.captions[i]).slice(0, -1) : read(was.captions[i]).slice(1);
+        if (now.captions.length !== was.captions.length || read(now.captions[i]).join(" ") !== want.join(" ")) {
+          wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, now)}`;
         }
-        if (!now) wrong = `the caption with "${text}" did not lose its ${what.slice(5)} word\n${describe(was, await engineState(page, watch.at))}`;
         break;
       }
       case "remove edge word": {
@@ -5269,10 +5280,7 @@ for (const seq of toWalk) {
         const c = now.captions.find((c) => c.lines.some((l) => l.words.some((w) => w.text.includes(text))));
         const all = c.lines.flatMap((l) => l.words);
         const edgeWord = (which === "last" ? all.at(-1) : all[0]).text;
-        for (let i = 0; i < 80 && !(await word(edgeWord).count()); i++) {
-          await page.keyboard.press("Shift+ArrowRight");
-          await page.waitForTimeout(100);
-        }
+        for (let i = 0; i < 80 && !(await word(edgeWord).count()); i++) await stepOn();
         await word(edgeWord).click();
         await page.keyboard.press("Escape");
         await watch.step("frame", s);
@@ -5338,14 +5346,10 @@ for (const seq of toWalk) {
       case "blocks": {
         const now = await engineState(page, watch.at);
         const want = [...new Set(now.captions.map((c) => String(c.first)))].join(" ");
-        let drawn = "";
-        for (let i = 0; i < 20; i++) {
-          drawn = await page.evaluate(() =>
-            [...new Set([...document.querySelectorAll(".clip-timeline .caption")].map((b) => b.dataset.first))].join(" "),
-          );
-          if (drawn === want) break;
-          await page.waitForTimeout(100);
-        }
+        await settle(page);
+        const drawn = await page.evaluate(() =>
+          [...new Set([...document.querySelectorAll(".clip-timeline .caption")].map((b) => b.dataset.first))].join(" "),
+        );
         if (drawn !== want) wrong = `the clip timeline draws captions at ${drawn}, the engine has them at ${want}`;
         break;
       }
@@ -5581,50 +5585,49 @@ for (const seq of toWalk) {
       case "button": {
         const button = page.getByRole("button", { name: arg, exact: true });
         await button.click();
-        await page.waitForFunction(
-          (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled),
-          arg,
-        );
+        await pageUntil(page, (label) => ![...document.querySelectorAll("button")].some((b) => b.textContent.trim() === label && b.disabled), arg);
         break;
       }
       case "read ahead": {
-        await page.waitForTimeout(1500);
+        // The hand rests until what the video preview reads ahead is in.
+        await settle(page);
+        await restAhead(page);
         const came = await page.evaluate(async (key) => {
           const frames = window.__appFrames;
           const before = Number(document.querySelector(".screen")?.dataset.playhead);
           window.dispatchEvent(new KeyboardEvent("keydown", { key: key.replace("Shift+", ""), shiftKey: key.startsWith("Shift+"), bubbles: true }));
           // How the frames came by the time the video preview shows the
           // frame that holds the playhead, its first frame of the word.
+          // Read each time the video preview says another playhead or
+          // another frame shown.
+          const el = document.querySelector(".screen");
           return new Promise((done) => {
-            const t0 = performance.now();
             const check = () => {
-              const el = document.querySelector(".screen");
               const at = Number(el?.dataset.playhead);
               const shown = Number(el?.dataset.shown);
               const holds = at !== before && shown <= at + 1e-6 && at - shown < frames.track.frame - 1e-6;
+              if (!holds) return false;
               // The rank of the frame on screen, and whether it was one
               // handed over from the frames kept.
               let rank = 0;
               while (rank < frames.track.samples.count - 1 && frames.ptsOf(rank + 1) <= shown + 1e-6) rank++;
-              const fromKept = frames.stats.keptRanks.includes(rank);
-              if (holds) done({ at, fromKept, ms: Math.round(performance.now() - t0) });
-              else if (performance.now() - t0 > 5000) done({ at, fromKept, ms: -1 });
-              else requestAnimationFrame(check);
+              done({ at, fromKept: frames.stats.keptRanks.includes(rank) });
+              return true;
             };
-            check();
+            if (check()) return;
+            const o = new MutationObserver(() => check() && o.disconnect());
+            o.observe(el, { attributes: true, attributeFilter: ["data-playhead", "data-shown"] });
           });
         }, arg);
         // The frames after it, which the step's cue reads ahead, and the
         // frame of the word after the one it lands on, which is read ahead
         // now, may come from a stream. The frame it lands on may not.
-        if (came.ms < 0) wrong = `${arg} to ${came.at.toFixed(3)} s showed no frame of it in five seconds`;
-        else if (!came.fromKept)
-          wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, ${came.ms} ms, though the hand rested a second and a half before it`;
+        if (!came.fromKept) wrong = `${arg} to ${came.at.toFixed(3)} s had to fetch its frame, though the hand rested until what is read ahead was in`;
         await watch.step("press", s);
         break;
       }
       case "heard": {
-        await page.waitForTimeout(1500);
+        await settle(page);
         // What the sound card is handed, a render quantum at a time, the
         // way "loop off near the end" records it.
         await page.evaluate(async () => {
@@ -5639,7 +5642,15 @@ for (const seq of toWalk) {
             });`;
             await q.audio.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
             const node = new AudioWorkletNode(q.audio, "loudness", { numberOfOutputs: 1 });
-            node.port.onmessage = (e) => window.__loudness.push(e.data);
+            node.port.onmessage = (e) => {
+              window.__loudness.push(e.data);
+              const w = window.__loudnessWanted;
+              // Enough, or the play stopped, after which no more come.
+              if (w && (window.__loudness.length >= w.n || q.state !== "playing")) {
+                window.__loudnessWanted = null;
+                w.done();
+              }
+            };
             const hush = q.audio.createGain();
             hush.gain.value = 0;
             q.out.connect(node).connect(hush).connect(q.audio.destination);
@@ -5649,19 +5660,31 @@ for (const seq of toWalk) {
           window.__loudness = [];
         });
         await page.keyboard.press("Space");
-        await page.waitForFunction(() => window.__frameQueue.state === "playing", null, { timeout: 5000 }).catch(() => {});
-        await page.evaluate(() => (window.__loudness = []));
-        await page.waitForTimeout(1500);
+        await settle(page);
+        const playing = await page.evaluate(() => window.__frameQueue.state);
+        if (playing !== "playing") {
+          wrong = `the space bar left the play ${playing}`;
+          break;
+        }
+        // A second and a half is about 560 quanta at 48 kHz, which the
+        // sound card hands over at its own pace whatever the machine does.
+        await page.evaluate(
+          () =>
+            new Promise((done) => {
+              window.__loudness = [];
+              window.__loudnessWanted = { n: Math.round((1.5 * window.__frameQueue.audio.sampleRate) / 128), done };
+            }),
+        );
         const got = await page.evaluate(() => {
           const xs = window.__loudness;
           return { quanta: xs.length, loud: xs.filter((x) => x > 1e-6).length, state: window.__frameQueue.state };
         });
         await page.keyboard.press("Space");
-        await page.waitForTimeout(300);
-        // A second and a half is about 560 quanta at 48 kHz. The test
-        // video's sound is a tone from its first moment to its last.
+        await settle(page);
+        // The test video's sound is a tone from its first moment to its
+        // last.
         if (got.state !== "playing") wrong = `the space bar left the play ${got.state}`;
-        else if (got.loud < got.quanta * 0.8 || got.quanta < 200)
+        else if (got.loud < got.quanta * 0.8)
           wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
@@ -5758,19 +5781,16 @@ for (const seq of toWalk) {
       case "undo refused": {
         const from = await page.evaluate(() => window.__calls.length);
         await page.evaluate(() => window.__menu("undo"));
-        let said = null;
-        for (let tries = 0; tries < 40 && said === null; tries++) {
-          await page.waitForTimeout(100);
-          // The refusal is the answer here, so it is taken off the calls
-          // that failed before the rules read them.
-          said = await page.evaluate((from) => {
-            const c = window.__calls.slice(from).find((c) => c.name === "Undo" && c.failed);
-            if (!c) return null;
-            const failed = c.failed;
-            c.failed = null;
-            return String(failed);
-          }, from);
-        }
+        await settle(page);
+        // The refusal is the answer here, so it is taken off the calls
+        // that failed before the rules read them.
+        const said = await page.evaluate((from) => {
+          const c = window.__calls.slice(from).find((c) => c.name === "Undo" && c.failed);
+          if (!c) return null;
+          const failed = c.failed;
+          c.failed = null;
+          return String(failed);
+        }, from);
         if (!said?.includes("changed since")) wrong = `Undo was not refused as changed since: ${said}`;
         await watch.step("undo", s);
         break;
@@ -5906,7 +5926,9 @@ for (const seq of toWalk) {
         await watchFrames();
         await page.mouse.move(left ? g.track.x + 8 : g.track.x + g.track.w - 8, high(g.track));
         await page.mouse.down();
-        await page.waitForTimeout(150);
+        // Held until the video preview shows the frame under the hand.
+        await settle(page);
+        await shownOnPlayhead(page);
         const track = await seen();
         await page.mouse.up();
         await watch.step("hold on", s);
@@ -5915,7 +5937,8 @@ for (const seq of toWalk) {
         await watchFrames();
         await page.mouse.move(box.x + box.width / 2 || middle(box), box.y + (box.height ?? box.h) / 2);
         await page.mouse.down();
-        await page.waitForTimeout(150);
+        await settle(page);
+        await shownOnPlayhead(page);
         held = { which: arg, before, frames: await seen(), trackFrames, at: await at() };
         await page.mouse.up();
         await watch.step("hold on", s);
@@ -6064,13 +6087,11 @@ for (const seq of toWalk) {
           await page.mouse.move(took + (again * i) / 10, y);
           await nextPaint(page);
         }
-        // The hand stays down until the edge has left where the first drag
-        // let it go, for up to two seconds, so a busy machine slow to
-        // answer the drag is waited for and an edge that waits for the
-        // save before it is seen standing.
-        movedHeld = await page
-          .waitForFunction(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1, null, { timeout: 2000, polling: "raf" })
-          .then(() => true, () => false);
+        // The hand stays down until the app has settled on the drag, so a
+        // busy machine slow to answer it is waited for, and an edge that
+        // waits for the save before it moves is seen standing.
+        await settle(page);
+        movedHeld = await page.evaluate(() => new Set(window.__edgeSeen.map((t) => t.toFixed(3))).size > 1);
         await page.mouse.up();
         await watch.step("drag edge twice", s);
         await page.evaluate(() => (window.__followWatch = false));
@@ -6090,7 +6111,7 @@ for (const seq of toWalk) {
         const x = g.track.x + g.track.w * 0.9;
         await page.mouse.move(x, high(g.track));
         await page.mouse.down();
-        await page.waitForTimeout(400);
+        await settle(page);
         const at = await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead));
         const want = await page.evaluate((x) => {
           const b = document.querySelector(".clip-timeline .track").getBoundingClientRect();
@@ -6199,7 +6220,10 @@ for (const seq of toWalk) {
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
         }
-        await page.waitForTimeout(700);
+        // Each wait is in the episode's time, read off the playhead, see
+        // playUntil, once the app has settled on the press.
+        await settle(page);
+        await playUntil(page, { most: 0.7 });
         await page.evaluate(() => {
           window.__played = [];
           window.__playWatch = true;
@@ -6211,7 +6235,7 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(tick);
         });
-        await page.waitForTimeout(300);
+        await playUntil(page, { most: 0.3 });
         const g = await handles(page);
         const box = edge === "cut" ? g.cutEdges[0] : g[edge];
         if (!box) {
@@ -6225,7 +6249,7 @@ for (const seq of toWalk) {
           await nextPaint(page);
         }
         await page.mouse.up();
-        await page.waitForTimeout(500);
+        await playUntil(page, { most: 0.5 });
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
         break;
@@ -6275,12 +6299,13 @@ for (const seq of toWalk) {
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
         }
-        await page.waitForTimeout(300);
+        // Each wait is in the episode's time, read off the playhead, see
+        // playUntil, once the app has settled on the press.
+        await settle(page);
+        await playUntil(page, { most: 0.3 });
         const starts = await page.evaluate(() => window.__frameQueue.stats.starts);
         await page.keyboard.press("l");
-        await page
-          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - arg, { timeout: 60000, polling: "raf" })
-          .catch(() => {});
+        await playUntil(page, { past: end - arg });
         await page.evaluate(() => {
           window.__played = [];
           window.__playWatch = true;
@@ -6297,12 +6322,13 @@ for (const seq of toWalk) {
         // the last.
         for (let i = 0; i < 5; i++) {
           await page.keyboard.press("l");
-          await page.waitForTimeout(120);
+          await playUntil(page, { most: 0.12 });
         }
-        await page
-          .waitForFunction(() => !!document.querySelector('button[aria-label="Play"]'), null, { timeout: (arg + 8) * 1000, polling: 100 })
-          .catch(() => {});
-        await page.waitForTimeout(1000);
+        // Until the play stops at the end, or has gone on by what was left
+        // of the clip and eight seconds more, and then a second of frames,
+        // in which the start played on when Tim heard it.
+        await playUntil(page, { most: arg + 8 });
+        await nextPaint(page, 60);
         const q = await page.evaluate(() => {
           window.__playWatch = false;
           const q = window.__frameQueue;
@@ -6333,7 +6359,8 @@ for (const seq of toWalk) {
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
         }
-        await page.waitForTimeout(300);
+        await settle(page);
+        await playUntil(page, { most: 0.3 });
         await page.keyboard.press("l");
         await page.evaluate(() => {
           window.__played = [];
@@ -6346,18 +6373,32 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(tick);
         });
-        // Round the end and three seconds into the next time through.
-        const wrapped = await page
-          .waitForFunction(
-            ([start, end]) => {
-              const p = window.__played;
-              const i = p.findIndex(([, at]) => at > end - 1);
-              return i >= 0 && p.slice(i).some(([, at]) => at > start + 3 && at < end - 2);
-            },
-            [start, end],
-            { timeout: (arg + 10) * 1000, polling: 100 },
-          )
-          .then(() => true, () => false);
+        // Round the end and three seconds into the next time through, read
+        // each time the video preview says another playhead, or false once
+        // the play has stopped on the way.
+        const wrapped = await page.evaluate(
+          ([start, end]) =>
+            new Promise((done) => {
+              let near = false;
+              const look = () => {
+                const at = Number(document.querySelector(".screen")?.dataset.playhead);
+                near ||= at > end - 1;
+                if (near && at > start + 3 && at < end - 2) return true;
+                if (document.querySelector('button[aria-label="Play"]')) return false;
+                return null;
+              };
+              const now = look();
+              if (now !== null) return done(now);
+              const o = new MutationObserver(() => {
+                const now = look();
+                if (now === null) return;
+                o.disconnect();
+                done(now);
+              });
+              o.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-playhead", "aria-label"] });
+            }),
+          [start, end],
+        );
         const played = await page.evaluate(() => {
           window.__playWatch = false;
           return window.__played;
@@ -6394,11 +6435,10 @@ for (const seq of toWalk) {
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
         }
-        await page.waitForTimeout(300);
+        await settle(page);
+        await playUntil(page, { most: 0.3 });
         await page.keyboard.press("l");
-        await page
-          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) > to, end - 0.03, { timeout: 30000, polling: "raf" })
-          .catch(() => {});
+        await playUntil(page, { past: end - 0.03 });
         const r = await page.evaluate(async () => {
           const q = window.__frameQueue;
           const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
@@ -6426,7 +6466,11 @@ for (const seq of toWalk) {
         if (!(await page.evaluate(() => !!document.querySelector('button[aria-label="Pause"]')))) {
           await page.keyboard.press("Space");
         }
-        await page.waitForTimeout(700);
+        // The play's waits in the episode's time, read off the playhead,
+        // and the hand's in the page's frames, since a press may stop the
+        // playhead.
+        await settle(page);
+        await playUntil(page, { most: 0.7 });
         await page.evaluate(() => {
           window.__played = [];
           window.__hand = {};
@@ -6440,7 +6484,7 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(tick);
         });
-        await page.waitForTimeout(300);
+        await playUntil(page, { most: 0.3 });
         const g = await handles(page);
         const x = (g.start.x + g.start.w + g.end.x) / 2;
         const y = high(g.track);
@@ -6448,17 +6492,17 @@ for (const seq of toWalk) {
         await page.mouse.move(x, y);
         await hand("down");
         await page.mouse.down();
-        await page.waitForTimeout(700);
+        await nextPaint(page, 42);
         await hand("moves");
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + (arg * i) / 10, y);
-          await page.waitForTimeout(30);
+          await nextPaint(page);
         }
         await hand("still");
-        await page.waitForTimeout(700);
+        await nextPaint(page, 42);
         await hand("up");
         await page.mouse.up();
-        await page.waitForTimeout(700);
+        await nextPaint(page, 42);
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
         break;
@@ -6479,12 +6523,16 @@ for (const seq of toWalk) {
         await page.evaluate(() => document.body.focus());
         const began = (await page.evaluate(() => Number(document.querySelector(".screen").dataset.playhead))) || 0;
         await page.keyboard.press("Space");
-        // With a key, it is pressed every 400 ms of the play, the way a
-        // hand skips ahead while it watches.
+        await settle(page);
+        // With a key, it is pressed every 0.4 s of the play, counted from
+        // where the skip before landed, the way a hand skips ahead while
+        // it watches.
         if (key) {
           for (let t = 0; t + 0.4 <= seconds; t += 0.4) {
-            await page.waitForTimeout(400);
+            const now = await playUntil(page, { most: 0.4 });
+            if (!now.playing) break;
             await page.keyboard.press(key);
+            await settle(page);
           }
         } else {
           // So many seconds of the play, read off the playhead, not off the
@@ -6492,18 +6540,8 @@ for (const seq of toWalk) {
           // and a play timed by the wall then stood inside the clip for
           // 1.83 s where the rules ask 2. The play may end sooner, at the
           // clip's end.
-          await page
-            .waitForFunction(
-              (to) => {
-                const playing = !!document.querySelector('button[aria-label="Pause"]');
-                window.__wasPlaying ||= playing;
-                return (window.__wasPlaying && !playing) || Number(document.querySelector(".screen").dataset.playhead) >= to;
-              },
-              began + seconds,
-              { timeout: seconds * 1000 + 30000, polling: "raf" },
-            )
-            .catch(() => (wrong = `the play from ${began.toFixed(3)} neither went on ${seconds} s nor ended`));
-          await page.evaluate(() => delete window.__wasPlaying);
+          const r = await playUntil(page, { past: began + seconds - 1e-6 });
+          if (r.gone === 0) wrong = `the play from ${began.toFixed(2)} s neither went on ${seconds} s nor ended`;
         }
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
@@ -6535,27 +6573,31 @@ for (const seq of toWalk) {
         const was = (await overlay(page)).card;
         const stop = await recordFrames(page, 1 / (await rate(page)));
         await page.evaluate(() => document.body.focus());
+        // The play's waits are in the episode's time, read off the
+        // playhead, see playUntil.
         if (playing) {
           await page.keyboard.press("Space");
-          await page.waitForTimeout(1500);
+          await settle(page);
+          await playUntil(page, { most: 1.5 });
         }
         await page.keyboard.press(arg);
         // Until the card chosen is a clip the engine has written, the one
         // made, which is not the one chosen before.
-        let written = "";
-        for (let t = 0; t < 30000 && !written; t += 250) {
-          await page.waitForTimeout(250);
+        const chosenCard = async () => {
           const card = (await overlay(page)).card;
-          if (card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card)) written = card;
-        }
-        await page.waitForTimeout(2000);
+          return card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
+        };
+        const written = await seenUntil(page, url, chosenCard, (card) => !!card);
+        // And two seconds more of the play, or a moment of frames paused.
+        if (playing) await playUntil(page, { most: 2 });
+        else await nextPaint(page, 30);
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
           document.body.dispatchEvent(new KeyboardEvent("keydown", key));
           document.body.dispatchEvent(new KeyboardEvent("keyup", key));
         });
-        await page.waitForTimeout(300);
+        await settle(page);
         made = { playing, was, written, overlays: (await stop()).overlays };
         await watch.step("play", s);
         break;
@@ -6582,7 +6624,7 @@ for (const seq of toWalk) {
         for (let i = 1; i <= 3 && !wrong; i++) {
           const was = (await handles(page)).start.x;
           await page.mouse.wheel(px, 0);
-          await page.waitForTimeout(100);
+          await nextPaint(page);
           const moved = (await handles(page)).start.x - was;
           if (!(-moved * Math.sign(px) > Math.abs(px) / 3)) {
             wrong = `swipe ${i} by ${px} px after the click moved the clip ${moved.toFixed(1)} px`;
@@ -6965,7 +7007,7 @@ for (const seq of toWalk) {
             if (ring) wrong = `with the focus on the menu, the menu wears a ring, ${ring}`;
             await page.keyboard.press("Enter");
             if (!wrong && (await menu.isVisible({ timeout: 300 }).catch(() => false))) {
-              await page.waitForTimeout(300);
+              await settle(page);
               if (await menu.isVisible()) wrong = "Return after a colour was clicked left the menu open";
             }
             if (wrong) await page.keyboard.press("Escape");
@@ -7072,7 +7114,7 @@ for (const seq of toWalk) {
         await page.locator(".video-menu").waitFor();
         await high.hover();
         await high.locator("button.more").click();
-        await page.waitForTimeout(300);
+        await settle(page);
         await sidebarStill(page);
         const now = await page.evaluate(() => {
           const a = document.querySelector("aside");
@@ -7118,7 +7160,9 @@ for (const seq of toWalk) {
         break;
       }
       case "no reason": {
-        await page.waitForTimeout(500);
+        // Once the interface has heard all the Go side said, a toast it
+        // would show is there.
+        await caughtUp(page, url);
         const said = await toastSays(page);
         const name = droppedVideo ? basename(droppedVideo) : "";
         if (name && said.includes(name)) wrong = `the app says "${said}" about ${name}, which it added`;
@@ -7138,11 +7182,7 @@ for (const seq of toWalk) {
       }
       case "dropped in front": {
         const name = basename(droppedVideo);
-        let on = null;
-        for (let i = 0; i < 100 && on !== droppedVideo; i++) {
-          await page.waitForTimeout(100);
-          on = await episodeOn(page);
-        }
+        const on = await seenUntil(page, url, () => episodeOn(page), (on) => on === droppedVideo);
         const library = await ask(page, "Library");
         const times = library.filter((e) => e.source === droppedVideo).length;
         if (on !== droppedVideo) wrong = `${on ? basename(on) : "no video"} is on screen, not ${name}, which was dropped`;
@@ -7153,11 +7193,7 @@ for (const seq of toWalk) {
       }
       case "not a video": {
         const name = basename(droppedOther);
-        let said = "";
-        for (let i = 0; i < 50 && !said.includes(name); i++) {
-          await page.waitForTimeout(100);
-          said = await toastSays(page);
-        }
+        const said = await seenUntil(page, url, () => toastSays(page), (said) => said.includes(name));
         const library = await ask(page, "Library");
         if (!said.includes(`${name} cannot be added because it is not a video`)) wrong = `the app says "${said}", not that ${name} cannot be added because it is not a video`;
         else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
@@ -7167,8 +7203,7 @@ for (const seq of toWalk) {
       case "add sound alone": {
         await control(url, "/pick-sound");
         await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());
-        await page.waitForTimeout(1500);
-        await settle(page);
+        await caughtUp(page, url);
         break;
       }
       case "add cameras": {
@@ -7181,23 +7216,29 @@ for (const seq of toWalk) {
       }
       case "render": {
         const on = await chosen(page);
-        await page.waitForFunction(
+        await pageUntil(
+          page,
           (r) => {
             const b = document.querySelector(r);
             return b && !b.disabled && b.textContent.trim().startsWith("Render");
           },
           "button.primary.render",
-          { timeout: 60000, polling: 200 },
         );
         const renders = async () => (await ask(page, "Jobs")).filter((j) => j.kind === "render" && j.episode === on.path);
         const before = (await renders()).length;
+        let heard = await news(page);
         await page.locator("button.primary.render").click();
+        // Until the render has ended, read each time a job has news.
         let job = null;
-        for (let i = 0; i < 600 && !job; i++) {
-          await page.waitForTimeout(200);
+        for (;;) {
           job = (await renders()).slice(before).find((j) => j.state === "done" || j.state === "failed") ?? null;
+          if (job) break;
+          heard = await nextNews(page, heard);
         }
-        if (job?.state !== "done") wrong = `Render ${job ? `failed: ${job.error}` : "wrote no short in two minutes"}`;
+        if (job.state !== "done") wrong = `Render failed: ${job.error}`;
+        // And until the interface has heard that news too, which is where
+        // the Render button reads that the render ended.
+        await caughtUp(page, url, [job]);
         await watch.step("render", s);
         break;
       }
@@ -7271,7 +7312,7 @@ for (const seq of toWalk) {
           // Twice: the frame's own layer, then the pop it may start over
           // the frame once it is drawn, see "the pop over a paused frame".
           for (let i = 0; i < 2; i++) {
-            await sized.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+            await sized.evaluate(() => window.__captionLayers?.rested());
             await sized.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           }
           // Nothing but the canvas draws them: the caption box over it
@@ -7422,7 +7463,8 @@ for (const seq of toWalk) {
       case "bugs, the pointer gone": {
         page = main;
         await main.mouse.move(20, 500);
-        await main.waitForTimeout(400);
+        await settle(main);
+        await sidebarStill(main);
         const shut = () => main.evaluate(() => !document.querySelector("aside")?.classList.contains("open"));
         if (await shut()) {
           wrong = "the sidebar did not open under the pointer";
@@ -7435,7 +7477,8 @@ for (const seq of toWalk) {
           document.querySelector("aside button.bugs").click();
           window.dispatchEvent(new FocusEvent("blur"));
         });
-        await main.waitForTimeout(400);
+        await settle(main);
+        await sidebarStill(main);
         if (!(await shut())) {
           wrong = "the sidebar stayed open once the report window had the focus";
           break;
@@ -7445,13 +7488,15 @@ for (const seq of toWalk) {
           window.dispatchEvent(new FocusEvent("focus"));
           document.querySelector("aside button.bugs").focus();
         });
-        await main.waitForTimeout(400);
+        await settle(main);
+        await sidebarStill(main);
         if (!(await shut())) {
           wrong = "the sidebar opened when the app's window had the focus again";
           break;
         }
         await main.mouse.move(750, 400);
-        await main.waitForTimeout(400);
+        await settle(main);
+        await sidebarStill(main);
         if (!(await shut())) wrong = "the sidebar opened on the next move of the pointer outside it";
         break;
       }
@@ -7465,7 +7510,7 @@ for (const seq of toWalk) {
         if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
         const said = arg === 1 ? "1 file," : `${arg} files,`;
         const card = page.locator(".card", { hasText: "The app's log" });
-        await card.locator(".num", { hasText: said }).waitFor({ timeout: 5000 }).catch(() => {});
+        await settle(page);
         const shown = ((await card.locator(".num").textContent().catch(() => "")) ?? "").trim();
         const kept = await (await fetch(new URL("/app-log", url))).json();
         if (!shown.startsWith(said)) wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
@@ -7484,13 +7529,14 @@ for (const seq of toWalk) {
         break;
       }
       case "close report": {
-        // What was typed is kept a moment after the last key.
-        await page.waitForTimeout(600);
+        // What was typed is kept a moment after the last key, see saving
+        // in Report.svelte.
+        await settle(page);
         await fetch(new URL("/report-window?close=1", url));
         await reportPage?.close();
         reportPage = null;
         page = main;
-        await main.waitForFunction(() => !document.querySelector("aside button.bugs")?.classList.contains("current"), null, { timeout: 5000 }).catch(() => {});
+        await pageUntil(main, () => !document.querySelector("aside button.bugs")?.classList.contains("current"));
         break;
       }
       case "attach": {
@@ -7498,11 +7544,7 @@ for (const seq of toWalk) {
         standing = await standsAt(page);
         for (let i = 0; i < arg; i++) await fetch(new URL("/pick-picture", url));
         await page.locator("button.attach").click();
-        const grew = await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n || document.querySelector(".toast"), before + arg, { timeout: 10000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!grew) wrong = `the paperclip attached nothing, ${before} pictures before and after`;
+        await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n || !!document.querySelector(".toast"), before + arg);
         await settle(page);
         break;
       }
@@ -7521,9 +7563,7 @@ for (const seq of toWalk) {
         const before = await page.locator("li.tile").count();
         wrong = await dropOn(page, files);
         if (wrong) break;
-        await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length, { timeout: 10000 })
-          .catch(() => (wrong = `a drop of ${shapes.length} pictures left ${before} on the report window`));
+        await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n, before + shapes.length);
         await settle(page);
         break;
       }
@@ -7533,9 +7573,7 @@ for (const seq of toWalk) {
         const before = await page.locator("li.tile").count();
         wrong = await dropOn(page, [file]);
         if (wrong) break;
-        await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + 1, { timeout: 15000 })
-          .catch(async () => (wrong = `a dropped recording was not attached, the toast says "${await toastSays(page)}"`));
+        await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n, before + 1);
         await settle(page);
         break;
       }
@@ -7567,9 +7605,7 @@ for (const seq of toWalk) {
           data.items.add(new File([blob], "image.png", { type: "image/png" }));
           document.querySelector(".telling").dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
         });
-        await page
-          .waitForFunction((n) => document.querySelectorAll("li.tile").length >= n, before + 1, { timeout: 10000 })
-          .catch(() => (wrong = "a pasted picture was not attached"));
+        await pageUntil(page, (n) => document.querySelectorAll("li.tile").length >= n, before + 1);
         await settle(page);
         break;
       }
@@ -7593,7 +7629,8 @@ for (const seq of toWalk) {
         // large as the tile lets it be: it reaches both sides or the top
         // and the bottom. Tim saw tall pictures cut off and small ones
         // standing in a corner.
-        await page.waitForFunction(() => [...document.querySelectorAll("li.tile figure img")].every((i) => i.complete && i.naturalWidth), null, { timeout: 10000 }).catch(() => {});
+        // Once every picture is decoded, which each says by itself.
+        await page.evaluate(() => Promise.all([...document.querySelectorAll("li.tile figure img")].map((i) => i.decode().catch(() => {}))));
         const bad = await page.evaluate(() =>
           [...document.querySelectorAll("li.tile figure")].flatMap((fig) => {
             const img = fig.querySelector("img");
@@ -7632,11 +7669,13 @@ for (const seq of toWalk) {
         break;
       }
       case "toast": {
-        let said = "";
-        for (let i = 0; i < 50 && (arg === "" ? said !== "" : !said.includes(arg)); i++) {
-          await page.waitForTimeout(100);
-          said = await toastSays(page);
-        }
+        // No toast is read once the app has heard all it was told, since a
+        // toast waited for would go by itself after ten seconds and pass.
+        // One that is wanted is read until it comes.
+        const said =
+          arg === ""
+            ? (await caughtUp(page, url), await toastSays(page))
+            : await seenUntil(page, url, () => toastSays(page), (said) => said.includes(arg));
         const line = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
         if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the toast says "${said}", not "${arg}"`;
         else if (line) wrong = `the line beside the buttons says "${line}", where only the toast should`;
@@ -7685,10 +7724,17 @@ for (const seq of toWalk) {
       }
       case "toast closed": {
         const before = await page.locator(".toast").count();
-        await page.locator(".toast button.close").first().click();
-        // Within 400 ms, and on as soon as it is gone.
-        await page.waitForFunction((n) => document.querySelectorAll(".toast").length === n, before - 1, { polling: "raf", timeout: 400 }).catch(() => {});
-        if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
+        await page.locator(".toast button.close").first().hover();
+        // At once: by the next frame after the click the toast is leaving,
+        // which Svelte marks inert as its fade starts, see foldsDone in
+        // bridge.mjs. Then gone once the app has settled.
+        const leaving = await page.evaluate(() => {
+          document.querySelector(".toast button.close").click();
+          return new Promise((done) => requestAnimationFrame(() => done(document.querySelectorAll(".toast:not([inert])").length)));
+        });
+        await settle(page);
+        if (leaving !== before - 1) wrong = "the toast did not start to go in the frame its cross was pressed";
+        else if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
         break;
       }
       case "remove picture": {
@@ -7698,7 +7744,7 @@ for (const seq of toWalk) {
         const [i, how] = [arg].flat();
         const tile = page.locator("li.tile").nth(i - 1);
         await tile.hover();
-        await page.waitForTimeout(150);
+        await settle(page);
         const shown = await page.evaluate(() => [...document.querySelectorAll("li.tile .bin")].map((b) => getComputedStyle(b).opacity));
         if (shown[i - 1] !== "1" || shown.filter((o) => o === "1").length !== 1) {
           wrong = `pointing at picture ${i} the bins stand at ${shown.join(", ")}`;
@@ -7758,8 +7804,9 @@ for (const seq of toWalk) {
         );
         // The pointer is still on it, so its time has not started: the
         // fill stands full until the pointer leaves. Tim saw it run for a
-        // moment and stop a little short of full.
-        await page.waitForTimeout(500);
+        // moment and stop a little short of full. So a fill that ran would
+        // have moved in half a second of frames.
+        await nextPaint(page, 30);
         const fill = await page.evaluate((id) => {
           const run = document.querySelector(`li.tile[data-id="${id}"] .gone .run`);
           const box = run?.parentElement?.getBoundingClientRect();
@@ -7801,10 +7848,8 @@ for (const seq of toWalk) {
           break;
         }
         await runClock(page, 1000);
-        const went = await page
-          .waitForFunction(() => !document.querySelector("li.tile .gone"), null, { timeout: 5000 })
-          .then(() => true)
-          .catch(() => false);
+        await settle(page);
+        const went = await page.evaluate(() => !document.querySelector("li.tile .gone"));
         if (!went) wrong = "a removed picture still stands in its place after its time";
         await letClockGo(page);
         break;
@@ -7872,13 +7917,9 @@ for (const seq of toWalk) {
         if (what === "report") await page.locator("button.report").click();
         // Report closes the window once Finder has the zip, and says
         // nothing beside the buttons on the way. Tim had a line there.
-        const closed = await (async () => {
-          for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
-            const w = await (await fetch(new URL("/report-window", url))).json();
-            if (!w.open) return true;
-          }
-          return false;
-        })();
+        // Asked once the call that makes the report has come back.
+        await settle(page);
+        const closed = !(await (await fetch(new URL("/report-window", url))).json()).open;
         if (!closed) {
           wrong = `Report left the window open, saying "${await page.evaluate(() => document.querySelector(".words")?.textContent.trim())}"`;
           break;
@@ -7906,11 +7947,10 @@ for (const seq of toWalk) {
           if (!like.test(have)) wrong = `the report holds ${JSON.stringify(have)} as written, not ${JSON.stringify(also)}`;
         }
         // The window closes while the call is still on its way back, and the
-        // page empties the field once it is, so a busy runner can read the
-        // field a moment before. Given a second for that.
-        const look = () => page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
-        let left = await look();
-        for (const end = Date.now() + 1000; (left[0] || left[1]) && Date.now() < end; left = await look()) await new Promise((r) => setTimeout(r, 50));
+        // page empties the field once it is, so it is read once the app has
+        // settled on the answer.
+        await settle(page);
+        const left = await page.evaluate(() => [document.querySelector(".telling").innerText.trim(), document.querySelectorAll("li.tile").length]);
         if (!wrong && (left[0] || left[1])) wrong = `after Report the field holds "${left[0]}" and ${left[1]} pictures`;
         break;
       }
@@ -7919,13 +7959,15 @@ for (const seq of toWalk) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         const was = await page.locator(".telling").evaluate((f) => f.scrollTop);
         await page.mouse.wheel(0, arg);
-        // Read as soon as the wheel has turned, before the next words come.
+        // Read as soon as the wheel has turned the field, before the next
+        // words come, or two frames on if it did not.
         kept.scrolledTo = await page.locator(".telling").evaluate(
-          (f, was) => new Promise((done) => {
-            const read = () => (f.scrollTop !== was ? done(f.scrollTop) : requestAnimationFrame(read));
-            requestAnimationFrame(read);
-            setTimeout(() => done(f.scrollTop), 1000);
-          }),
+          (f, was) =>
+            new Promise((done) => {
+              if (f.scrollTop !== was) return done(f.scrollTop);
+              f.addEventListener("scroll", () => done(f.scrollTop), { once: true });
+              requestAnimationFrame(() => requestAnimationFrame(() => done(f.scrollTop)));
+            }),
           was,
         );
         if (arg < 0 && kept.scrolledTo >= was) wrong = `the wheel did not scroll the field up, it is at ${kept.scrolledTo} px`;
@@ -7934,15 +7976,8 @@ for (const seq of toWalk) {
       case "report follows":
       case "report stays": {
         const was = await page.locator(".telling").evaluate((f) => f.innerText);
-        const more = await page
-          .waitForFunction((was) => document.querySelector(".telling").innerText !== was, was, { timeout: 10000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!more) {
-          wrong = "nothing more was said";
-          break;
-        }
-        await page.waitForTimeout(100);
+        await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, was);
+        await settle(page);
         const m = await page.locator(".telling").evaluate((f) => {
           const mark = f.querySelector(".hearing")?.getBoundingClientRect();
           const box = f.getBoundingClientRect();
@@ -7970,7 +8005,7 @@ for (const seq of toWalk) {
         const box = await page.locator(".telling").boundingBox();
         await page.locator(".telling").evaluate((f) => (f.scrollTop = 0));
         await page.mouse.click(box.x + 20, box.y + 12);
-        await page.waitForTimeout(200);
+        await settle(page);
         const c = await page.locator(".telling").evaluate((f) => ({ ours: f.classList.contains("ours"), caret: getComputedStyle(f).caretColor }));
         if (c.ours || c.caret === "rgba(0, 0, 0, 0)") wrong = `the field hides its cursor after a click into its first line: ${JSON.stringify(c)}`;
         break;
@@ -8096,11 +8131,7 @@ for (const seq of toWalk) {
         }
         if (arg === "settled") {
           // The field's text grows by what was said before the pause.
-          const settled = await page
-            .waitForFunction((was) => document.querySelector(".telling").innerText !== was, kept.dictating, { timeout: 10000 })
-            .then(() => true)
-            .catch(() => false);
-          if (!settled) wrong = "nothing said was settled";
+          await pageUntil(page, (was) => document.querySelector(".telling").innerText !== was, kept.dictating);
           break;
         }
         const running = (await button.getAttribute("aria-label")) === "Stop";
@@ -8112,24 +8143,10 @@ for (const seq of toWalk) {
           break;
         }
         // The words appear while they are heard, before anything stops.
-        const heard = await page
-          .waitForFunction(() => document.querySelector(".telling .hearing")?.textContent.trim(), null, { timeout: 10000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!heard) {
-          wrong = "nothing appeared in the report while it was listening";
-          break;
-        }
+        await pageUntil(page, () => document.querySelector(".telling .hearing")?.textContent.trim());
         // The microphone moves with the voice it hears, so a person knows
         // they are heard. The bridge's microphone plays a tone.
-        const moved = await page
-          .waitForFunction(() => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3, null, { timeout: 10000 })
-          .then(() => true)
-          .catch(() => false);
-        if (!moved) {
-          wrong = "the microphone did not move while it heard a voice";
-          break;
-        }
+        await pageUntil(page, () => parseFloat(document.querySelector("button.dictate")?.dataset.loud) > 0.3);
         // And it moves enough to be seen, smoothly, and in its place. For
         // three seconds of the hum and its pauses, every frame, the size
         // it is drawn at, its middle and the size of its own box. A
@@ -8264,14 +8281,7 @@ for (const seq of toWalk) {
           // Nobody presses anything, and nobody talks any more: it stops
           // by itself and says why.
           await control(url, "/microphone?silent=1");
-          const why = await page
-            .waitForFunction(() => /without a word/.test(document.querySelector(".words")?.textContent ?? ""), null, { timeout: 30000 })
-            .then(() => true)
-            .catch(() => false);
-          if (!why) {
-            wrong = "the recording never said it stopped by itself";
-            break;
-          }
+          await pageUntil(page, () => /without a word/.test(document.querySelector(".words")?.textContent ?? ""));
         } else {
           await page.locator(".telling").focus();
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
@@ -8290,9 +8300,7 @@ for (const seq of toWalk) {
             else if (!c.ours) wrong = "the cursor left the end of the words while they were written down";
           }
         }
-        await page.waitForFunction(() => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate", null, {
-          timeout: 20000,
-        });
+        await pageUntil(page, () => document.querySelector("button.dictate")?.getAttribute("aria-label") === "Dictate");
         if (await page.locator(".telling .dictated").count()) wrong = "what was being said is still grey in the report";
         // Two notes going down say it stopped, however it stopped, and
         // only those two.
@@ -8377,20 +8385,20 @@ for (const seq of toWalk) {
         await fromSidebar(page, () => page.locator("aside li", { hasText: episodeBefore.split("/").pop() }).first().click());
         await page.locator(".listhead button.search").first().waitFor();
         await settle(page);
-        await page.waitForTimeout(1000);
+        // And a second of frames more.
+        await nextPaint(page, 60);
         await page.evaluate(() => (window.__watching = false));
         break;
       }
       case "pick model": {
         await page.evaluate(() => (window.__shook = []));
         await page.locator(".card.finding button.pick").first().click();
-        await page.waitForTimeout(400);
+        await settle(page);
         const other = page.locator('[role="option"]:not([data-selected])');
         if (await other.count()) {
           await other.last().click();
-          await page.waitForTimeout(400);
+          await settle(page);
         }
-        await settle(page);
         break;
       }
       case "remove model": {
@@ -8402,11 +8410,11 @@ for (const seq of toWalk) {
         } else {
           await page.locator('.speech button.bin[aria-label^="Remove "]').first().click();
         }
-        await page.waitForTimeout(400);
+        await settle(page);
         break;
       }
       case "refused": {
-        await page.waitForTimeout(200);
+        await settle(page);
         const seen = await page.evaluate(() => ({
           shook: window.__shook ?? [],
           box: !!document.querySelector("dialog[open]"),
@@ -8428,7 +8436,7 @@ for (const seq of toWalk) {
           break;
         }
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(300);
+        await settle(page);
         break;
       }
       case "hearing": {
@@ -8570,15 +8578,11 @@ for (const seq of toWalk) {
           break;
         }
         await page.keyboard.press("Space");
-        const stopped = await page
-          .waitForFunction(
-            (end) =>
-              document.querySelector('button[aria-label="Play"]') !== null &&
-              Number(document.querySelector(".screen").dataset.playhead) >= end - 0.1,
-            end,
-            { polling: 50, timeout: 10000 },
-          )
-          .then(() => true, () => false);
+        // Until the play stops, or has gone on three seconds past the end,
+        // in the episode's time, see playUntil.
+        await settle(page);
+        const now = await playUntil(page, { most: 6 });
+        const stopped = !now.playing && now.at >= end - 0.1;
         if (!stopped) {
           wrong = `the play did not stop at the end of the episode, ${end.toFixed(2)}`;
           break;
@@ -8647,14 +8651,12 @@ for (const seq of toWalk) {
         const from = await page.evaluate(() => ({ at: Number(document.querySelector(".screen").dataset.playhead), frame: window.__pictured() }));
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("Space");
-        const plays = await page
-          .waitForFunction(
-            (from) =>
-              Number(document.querySelector(".screen").dataset.playhead) > from.at + 0.5 && window.__pictured() > from.frame + 1,
-            from,
-            { polling: 50, timeout: 5000 },
-          )
-          .then(() => true, () => false);
+        // Half a second of the episode, read off the playhead, and then
+        // whether the picture went on with it.
+        await settle(page);
+        await playUntil(page, { past: from.at + 0.5 });
+        await settle(page);
+        const plays = await page.evaluate((from) => window.__pictured() > from.frame + 1, from);
         await page.keyboard.press("Space");
         if (!plays) wrong = `the space bar did not play from the frame at ${from.at.toFixed(3)}, shown before its key frame`;
         break;
@@ -8728,9 +8730,8 @@ for (const seq of toWalk) {
         if (arg === "refused") {
           await page.locator("input.licence-key").fill("FF1-not-a-key");
           await page.locator("input.licence-key").press("Enter");
-          const said = await page
-            .waitForFunction(() => document.querySelector(".licence-line.error")?.textContent.trim(), null, { timeout: 10000 })
-            .then(() => true, () => false);
+          await settle(page);
+          const said = await page.evaluate(() => !!document.querySelector(".licence-line.error")?.textContent.trim());
           if (!said) problems.push("the licence row's line says no key was refused");
           // The refusal is the call failing, which is what was asked for.
           await page.evaluate(() => {
@@ -8743,7 +8744,19 @@ for (const seq of toWalk) {
         // The page has its new width, and two frames have been drawn
         // since, so what is measured is laid out at it.
         const resized = async (width) => {
-          await page.waitForFunction((w) => window.innerWidth === w, width);
+          await page.evaluate(
+            (w) =>
+              new Promise((done) => {
+                if (innerWidth === w) return done();
+                const heard = () => {
+                  if (innerWidth !== w) return;
+                  removeEventListener("resize", heard);
+                  done();
+                };
+                addEventListener("resize", heard);
+              }),
+            width,
+          );
           await nextPaint(page, 2);
         };
         for (const width of [1728, 1200, 960, 800, 700, 600]) {
@@ -8777,7 +8790,6 @@ for (const seq of toWalk) {
       }
       case "app size":
         await page.setViewportSize({ width: arg[0], height: arg[1] });
-        await page.waitForTimeout(600);
         await settle(page);
         break;
       case "time field": {
@@ -8867,13 +8879,8 @@ for (const seq of toWalk) {
         const seconds = Math.round(segments.reduce((sum, p) => sum + p.end - p.start, 0));
         const n = await page.locator(".clip-timeline .piece").count();
         const want = `${clockOf(segments[0].start)}, ${seconds} s, ${n} ${n === 1 ? "piece" : "pieces"}`;
-        const ok = await page
-          .waitForFunction(
-            (want) => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() === want,
-            want,
-            { polling: 50, timeout: 3000 },
-          )
-          .then(() => true, () => false);
+        await settle(page);
+        const ok = await page.evaluate((want) => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() === want, want);
         if (!ok) {
           const got = await page.evaluate(() => document.querySelector(".pick.current .meta")?.textContent.replace(/\s+/g, " ").trim() ?? "nothing");
           wrong = `the chosen clip's card says "${got}", not "${want}"`;
@@ -8950,20 +8957,17 @@ for (const seq of toWalk) {
         break;
       }
       case "wait for": {
-        const came = await page
-          .waitForFunction(
-            (word) => {
-              const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
-              return pane?.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim() === word;
-            },
-            arg,
-            { timeout: 60000, polling: 200 },
-          )
-          .then(() => true, () => false);
-        if (!came) wrong = `the clip list's head says ${(await clipList(page))?.head}, not ${arg}, after a minute`;
+        await pageUntil(
+          page,
+          (word) => {
+            const pane = [...document.querySelectorAll("aside")].find((a) => a.querySelector(".listhead"));
+            return pane?.querySelector(".listhead button.search")?.textContent.replace(/\s+/g, " ").trim() === word;
+          },
+          arg,
+        );
         // The clip on screen may be a new one now, the first of a video
         // just added, and the watch follows it.
-        else await watch.step("wait", s);
+        await watch.step("wait", s);
         break;
       }
       case "failure toast": {
@@ -9118,26 +9122,28 @@ for (const seq of toWalk) {
         // The canvas itself, not what the interface was told: a column of
         // it with more than a few pixels painted is the waveform there.
         // The bridge's episode has sound from its first second to its last.
-        let read = null;
-        for (let tries = 0; tries < 40; tries++) {
-          read = await page.evaluate(() => {
-            const c = document.querySelector(".clip-timeline .track canvas");
-            if (!c?.width || !c.height) return null;
-            const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-            let drawn = 0;
-            for (let x = 0; x < c.width; x++) {
-              let painted = 0;
-              for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) painted++;
-              if (painted > 6) drawn++;
-            }
-            return { drawn, width: c.width };
-          });
-          if (read && read.drawn >= read.width * 0.9) break;
-          await page.waitForTimeout(250);
+        // Read once the Go side has measured all of it, which it says in
+        // a levels event, and the interface has heard that and drawn it.
+        const path = await episodeOn(page);
+        for (let seen = await news(page, "levels"); !(await ask(page, "Episode", path))?.measuredAll; ) {
+          seen = await nextNews(page, seen, "levels");
         }
+        await caughtUp(page, url);
+        const read = await page.evaluate(() => {
+          const c = document.querySelector(".clip-timeline .track canvas");
+          if (!c?.width || !c.height) return null;
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          let drawn = 0;
+          for (let x = 0; x < c.width; x++) {
+            let painted = 0;
+            for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) painted++;
+            if (painted > 6) drawn++;
+          }
+          return { drawn, width: c.width };
+        });
         if (!read) wrong = "the clip timeline has no canvas";
         else if (read.drawn < read.width * 0.9) {
-          wrong = `the clip timeline draws the waveform in ${read.drawn} of its ${read.width} columns after ten seconds`;
+          wrong = `the clip timeline draws the waveform in ${read.drawn} of its ${read.width} columns`;
         }
         break;
       }
@@ -9146,8 +9152,10 @@ for (const seq of toWalk) {
         // and then looked at once: looked at until it held, it held as
         // soon as the clip came, and passed on the old clip timeline.
         const seconds = (time) => time.split(":").reduce((sum, part) => sum * 60 + Number(part), 0);
-        for (let tries = 0; tries < 40; tries++) {
-          wrong = "";
+        // Read until it holds or both are drawn, each time the page
+        // changes, see seenUntil.
+        const look = async () => {
+          let wrong = "";
           const read = await page.evaluate(() => {
             const picker = document.querySelector('[aria-label="The range picker"]');
             const text = (e) => (e.textContent ?? "").trim();
@@ -9166,9 +9174,9 @@ for (const seq of toWalk) {
           } else if (!shown.length || Math.max(...shown) > arg || Math.max(...shown) < arg - 2) {
             wrong = `the clip timeline shows the times ${JSON.stringify(read.timeline)} for an episode of ${arg} s`;
           }
-          if (!wrong || (read.lines > 0 && shown.length > 0)) break;
-          await page.waitForTimeout(250);
-        }
+          return { wrong, drawn: read.lines > 0 && shown.length > 0 };
+        };
+        ({ wrong } = await seenUntil(page, url, look, (r) => !r.wrong || r.drawn));
         break;
       }
       case "mark":
@@ -9437,7 +9445,7 @@ for (const seq of toWalk) {
         // shown was the one before the caption appears. Tim saw nothing to
         // snap to on #294.
         await settled();
-        await page.waitForTimeout(300);
+        await captioned();
         await settled();
         const white = await page.evaluate(() => {
           const canvas = document.querySelector(".screen canvas");
@@ -9463,7 +9471,7 @@ for (const seq of toWalk) {
         // The letters libass draws on the canvas, under the caption box,
         // once the layers asked for have come.
         await settled();
-        await page.waitForTimeout(300);
+        await captioned();
         await settled();
         const white = await page.evaluate(() => {
           const canvas = document.querySelector(".screen canvas");
@@ -9494,7 +9502,7 @@ for (const seq of toWalk) {
         await page.locator(`button.pick[aria-label="${field}"]`).click();
         await page.locator(".pick-row", { hasText: new RegExp(`^\\s*${arg}\\s*$`) }).first().click();
         await watch.step("click", s);
-        await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
+        await pageUntil(page, (name) => document.querySelector(".captions")?.style.fontFamily.includes(name), arg);
         await settled();
         break;
       }
@@ -9512,7 +9520,7 @@ for (const seq of toWalk) {
         }
         await page.keyboard.press("Enter");
         await watch.step("press", s);
-        await page.waitForFunction((name) => document.querySelector(".captions")?.style.fontFamily.includes(name), name);
+        await pageUntil(page, (name) => document.querySelector(".captions")?.style.fontFamily.includes(name), name);
         await settled();
         break;
       }
@@ -9665,7 +9673,7 @@ for (const seq of toWalk) {
         const after = Math.max(0, ...have.map((c) => c.end));
         for (let k = 1; k <= 3; k++) await ask(page, "MakeClip", path, after + 30 * k, false);
         const cards = "aside ol li[data-key]:not(.next)";
-        await page.waitForFunction(({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 3 }, { timeout: 0 });
+        await pageUntil(page, ({ cards, n }) => document.querySelectorAll(cards).length >= n, { cards, n: have.length + 3 });
         await settle(page);
         const keys = await page.evaluate((cards) => [...document.querySelectorAll(cards)].map((li) => li.dataset.key), cards);
         await page.locator(`aside ol li[data-key="${keys[0]}"] button.pick`).first().click();
@@ -9742,7 +9750,7 @@ for (const seq of toWalk) {
         const at = Math.max(0, ...have.map((c) => c.end)) + 30;
         await ask(page, "MakeClip", path, at, false);
         await ask(page, "MakeClip", path, at, false);
-        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have.length + 2, { timeout: 0 });
+        await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= n, have.length + 2);
         await settle(page);
         await page.mouse.move(1, 1);
         await page.evaluate(() => document.querySelector('.listhead button[aria-label="Search the transcript"]').click());
@@ -9863,7 +9871,7 @@ for (const seq of toWalk) {
         let have = (await ask(page, "Clips", path)) ?? [];
         if (have.length < 2) {
           await ask(page, "MakeClip", path, Math.max(0, ...have.map((c) => c.end)) + 30, false);
-          await page.waitForFunction(() => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= 2, null, { timeout: 0 });
+          await pageUntil(page, () => document.querySelectorAll("aside ol li[data-key]:not(.next)").length >= 2);
         }
         await settle(page);
         const keys = await page.evaluate(() => [...document.querySelectorAll("aside ol li[data-key]:not(.next)")].map((li) => li.dataset.key));
@@ -9984,8 +9992,7 @@ for (const seq of toWalk) {
         // And the app has read how far the saved transcript reaches since,
         // which it reads again on its own while the work hears, so the
         // cards it reads are those sentences too.
-        const asked = await page.evaluate(() => window.__calls.filter((c) => c.name === "Episode").length);
-        await page.waitForFunction((n) => window.__calls.filter((c) => c.name === "Episode").length > n, asked, { polling: "raf", timeout: 30000 });
+        await nextCall(page, "Episode", await page.evaluate(() => window.__calls.length));
         await settle(page);
         await settled();
         break;
@@ -10029,10 +10036,11 @@ for (const seq of toWalk) {
           });
           break;
         }
+        const from = await page.evaluate(() => window.__calls.length);
         await page.locator('.listhead button[aria-label="Search the transcript"]').click();
         // Once the read of the cards has failed and the list has had its
         // frames to say so.
-        await page.waitForFunction(() => window.__calls.some((c) => c.name === "Sentences" && String(c.failed).includes("the disk went away")));
+        await nextCall(page, "Sentences", from);
         await settle(page);
         const failing = await page.evaluate(() => {
           // The failure is the answer here, so it is taken off the calls
@@ -10065,7 +10073,7 @@ for (const seq of toWalk) {
         // The clips are on their cards first, so a sentence can be told
         // which clip it is in.
         const listed = (await ask(page, "Clips", path)).filter((c) => !c.rejected).length;
-        await page.waitForFunction((n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed, { timeout: 10000 });
+        await pageUntil(page, (n) => document.querySelectorAll("aside ol li[data-key] button.pick").length >= n, listed);
         await settled();
         let [word, unheardLeast = 0] = [arg].flat();
         if (word === "*") {
@@ -10166,11 +10174,7 @@ for (const seq of toWalk) {
         // from what the transcript on disk has heard.
         const status = library.find((e) => e.source === path);
         const end = (await ask(page, "Source", path))?.duration;
-        await page.waitForFunction(
-          (n) => document.querySelectorAll("ol.said li:not(.hole):not(.none)").length >= n,
-          sentences.filter((x) => x.text.toLowerCase().includes(word.toLowerCase())).length,
-          { timeout: 10000 },
-        ).catch(() => {});
+        await settle(page);
         const seen = await page.evaluate(() => ({
           focused: document.activeElement?.getAttribute("aria-label"),
           head: document.querySelector(".listhead").getBoundingClientRect().height,
@@ -11535,12 +11539,8 @@ for (const seq of toWalk) {
         const shorts = realpathSync((await ask(page, "GetSettings")).outputDir);
         const folder = join(shorts, basename(on.path, extname(on.path)));
         const render = page.locator("button.primary.render");
-        const again = await page
-          .waitForFunction((r) => document.querySelector(r)?.textContent.trim() === "Render again", "button.primary.render", {
-            timeout: 10000,
-            polling: 200,
-          })
-          .then(() => true, () => false);
+        await settle(page);
+        const again = (await render.textContent())?.trim() === "Render again";
         if (!short) wrong = "the clip says it has no short";
         else if (dirname(short) !== folder) wrong = `the short is at ${short}, not in the folder for shorts, ${folder}`;
         else if (!existsSync(short)) wrong = `the clip says its short is at ${short}, and nothing is there`;
@@ -11556,11 +11556,8 @@ for (const seq of toWalk) {
         const bin = page.locator(`button[aria-label="Remove ${entry.title || entry.slug}"]`);
         await page.hover(`li:has(> button[aria-label="Remove ${entry.title || entry.slug}"])`);
         await bin.click();
-        let gone = false;
-        for (let i = 0; i < 50 && !gone; i++) {
-          await page.waitForTimeout(100);
-          gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
-        }
+        await settle(page);
+        const gone = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && c.rejected);
         if (!gone) wrong = "the bin left the clip in the list";
         removedLast = on;
         await watch.step("remove clip", s);
@@ -11570,11 +11567,8 @@ for (const seq of toWalk) {
         const on = removedLast;
         const back = page.locator("aside ol button.back", { hasText: "Put it back" }).first();
         await back.click();
-        let kept = false;
-        for (let i = 0; i < 50 && !kept; i++) {
-          await page.waitForTimeout(100);
-          kept = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && !c.rejected);
-        }
+        await settle(page);
+        const kept = (await ask(page, "Clips", on.path)).some((c) => c.plan === on.plan && c.id === on.clip && !c.rejected);
         if (!kept) wrong = "Put it back left the clip removed";
         await watch.step("put back", s);
         break;
@@ -11593,8 +11587,11 @@ for (const seq of toWalk) {
         }
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("Space");
-        await page.waitForSelector('button[aria-label="Pause"]', { timeout: 10000 }).catch(() => (wrong = "the space bar did not start the play"));
-        if (wrong) break;
+        await settle(page);
+        if (!(await page.locator('button[aria-label="Pause"]').count())) {
+          wrong = "the space bar did not start the play";
+          break;
+        }
         // Every playhead and every clip chosen from here on, on every
         // animation frame, so a jump back is seen however short it was.
         await page.evaluate(() => {
@@ -11609,26 +11606,20 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(read);
         });
-        await page.waitForTimeout(500);
+        await nextPaint(page, 30);
         await page.hover(`aside ol li[data-key="${other}"]`);
         await page.locator(`aside ol li[data-key="${other}"] button.drop`).click();
-        let gone = false;
-        for (let i = 0; i < 50 && !gone; i++) {
-          await page.waitForTimeout(100);
-          gone = (await ask(page, "Clips", path)).some((c) => c.key === other && c.rejected);
-        }
+        await settle(page);
+        const gone = (await ask(page, "Clips", path)).some((c) => c.key === other && c.rejected);
         if (!gone) {
           wrong = "the bin left the other clip in the list";
           break;
         }
         await page.locator(`aside ol li[data-key="${other}"] button.back`, { hasText: "Put it back" }).click();
-        let kept = false;
-        for (let i = 0; i < 50 && !kept; i++) {
-          await page.waitForTimeout(100);
-          kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
-        }
+        await settle(page);
+        const kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
         if (!kept) wrong = "Put it back left the other clip removed";
-        await page.waitForTimeout(1000);
+        await nextPaint(page, 60);
         const heads = await page.evaluate(() => {
           const h = window.__heads;
           delete window.__heads;
@@ -11667,27 +11658,20 @@ for (const seq of toWalk) {
         const key = arg === "last" ? list[list.length - 1] : list[0];
         const beside = arg === "last" ? list[list.length - 2] : list[1];
         await page.locator(`aside ol li[data-key="${key}"] button.pick`).click();
-        for (let i = 0; i < 50 && (await chosenKey()) !== key; i++) await page.waitForTimeout(100);
+        await settle(page);
         if ((await chosenKey()) !== key) {
           wrong = `clicking ${key} did not choose it`;
           break;
         }
         await page.hover(`aside ol li[data-key="${key}"]`);
         await page.locator(`aside ol li[data-key="${key}"] button.drop`).click();
-        let gone = false;
-        for (let i = 0; i < 50 && !gone; i++) {
-          await page.waitForTimeout(100);
-          gone = (await ask(page, "Clips", path)).some((c) => c.key === key && c.rejected);
-        }
+        await settle(page);
+        const gone = (await ask(page, "Clips", path)).some((c) => c.key === key && c.rejected);
         if (!gone) {
           wrong = "the bin left the clip in the list";
           break;
         }
-        let on = "";
-        for (let i = 0; i < 30 && on !== beside; i++) {
-          on = await chosenKey();
-          if (on !== beside) await page.waitForTimeout(100);
-        }
+        const on = await chosenKey();
         if (on !== beside) wrong = `removing the chosen ${arg} clip, ${key}, left ${on || "nothing"} chosen, not ${beside}`;
         removedChosen = key;
         const entry = (await ask(page, "Clips", path)).find((c) => c.key === key);
@@ -11696,11 +11680,8 @@ for (const seq of toWalk) {
         break;
       }
       case "chosen again": {
-        let on = "";
-        for (let i = 0; i < 30 && on !== removedChosen; i++) {
-          on = await page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
-          if (on !== removedChosen) await page.waitForTimeout(100);
-        }
+        await settle(page);
+        const on = await page.evaluate(() => document.querySelector("aside ol li[data-key] button.pick.current")?.closest("li")?.dataset.key ?? "");
         if (on !== removedChosen) wrong = `${on || "nothing"} is chosen after ${removedChosen} was put back, not ${removedChosen} again`;
         break;
       }
@@ -11718,23 +11699,16 @@ for (const seq of toWalk) {
         }
         await page.hover(`aside ol li[data-key="${was}"]`);
         await page.locator(`aside ol li[data-key="${was}"] button.drop`).click();
-        let gone = false;
-        for (let i = 0; i < 50 && !gone; i++) {
-          await page.waitForTimeout(100);
-          gone = (await ask(page, "Clips", path)).some((c) => c.key === was && c.rejected);
-        }
+        await settle(page);
+        const gone = (await ask(page, "Clips", path)).some((c) => c.key === was && c.rejected);
         if (!gone) {
           wrong = "the bin left the clip in the list";
           break;
         }
         await page.locator(`aside ol li[data-key="${was}"] button.back`, { hasText: "Put it back" }).click();
-        let back = false;
-        for (let i = 0; i < 50 && !back; i++) {
-          await page.waitForTimeout(100);
-          const [on] = await read();
-          back = on === was && (await ask(page, "Clips", path)).some((c) => c.key === was && !c.rejected);
-        }
+        await settle(page);
         const [on, now] = await read();
+        const back = on === was && (await ask(page, "Clips", path)).some((c) => c.key === was && !c.rejected);
         if (!back) wrong = `the clip chosen is ${on || "none"} after ${was} was put back, not ${was} again`;
         else if (Math.abs(now - at) > 1e-3) wrong = `the playhead went from ${at.toFixed(3)} to ${now.toFixed(3)} when the clip was put back`;
         await watch.step("put back", s);
@@ -11760,24 +11734,28 @@ for (const seq of toWalk) {
         const was = (await ask(page, "Clips", path)).map((c) => c.key);
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press(arg);
-        let found = null;
-        for (let t = 0; t < 30000 && !found; t += 250) {
-          await page.waitForTimeout(250);
+        // Until a clip the engine did not have before is chosen.
+        const made = async () => {
           const on = await chosen(page);
           const key = on && (await ask(page, "Clips", path)).find((c) => c.plan === on.plan && c.id === on.clip)?.key;
-          if (key && !was.includes(key)) found = on;
-        }
-        if (!found) wrong = `${arg} made no clip that was chosen`;
+          return key && !was.includes(key) ? on : null;
+        };
+        await seenUntil(page, url, made, (on) => !!on);
         await watch.step("wait", s);
         break;
       }
       case "asks none": {
         const [name, seconds] = arg;
         const before = await page.evaluate(() => window.__calls.length);
-        await page.waitForTimeout(seconds * 1000);
+        // The Go side tells the interface of a running job about once a
+        // second, and each time the interface read the clip list again. So
+        // as many of its news as seconds, then the app settled on them.
+        let heard = await news(page);
+        for (let i = 0; i < seconds; i++) heard = await nextNews(page, heard);
+        await settle(page);
         const asked = await page.evaluate((n) => window.__calls.slice(n).map((c) => c.name), before);
         const these = asked.filter((c) => c === name).length;
-        if (these) wrong = `${name} was asked ${these} times in ${seconds} s, with nothing changed: ${asked.join(", ")}`;
+        if (these) wrong = `${name} was asked ${these} times in ${seconds} news of the job, with nothing changed: ${asked.join(", ")}`;
         break;
       }
       case "stands still": {
@@ -11787,9 +11765,9 @@ for (const seq of toWalk) {
           const until = performance.now() + 900;
           while (performance.now() < until);
         }, arg);
-        await page.waitForTimeout(400);
+        await settle(page);
         if (arg) await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-        await page.waitForTimeout(400);
+        await loggedUpTo(page);
         const lines = await page.evaluate(
           (n) =>
             window.__calls
@@ -11824,7 +11802,7 @@ for (const seq of toWalk) {
         const line = await page.locator(".clip-timeline").boundingBox();
         await page.mouse.move(line.x + line.width / 2, line.y + line.height * 0.3);
         for (let i = 0; i < arg; i++) await page.mouse.wheel(i % 2 ? -40 : 40, 0);
-        await page.waitForTimeout(300);
+        await settle(page);
         const made = await page.evaluate(() => window.__madeNew);
         if (made) wrong = `the waveform's canvas was made new ${made} times in ${arg} swipes`;
         break;
@@ -12028,11 +12006,8 @@ for (const seq of toWalk) {
         const count = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.thumbnails.length ?? 0;
         const before = await count();
         await page.keyboard.press("t");
-        let now = before;
-        for (let i = 0; i < 50 && now === before; i++) {
-          await page.waitForTimeout(100);
-          now = await count();
-        }
+        await settle(page);
+        const now = await count();
         if (now !== before + 1) wrong = `T left the clip with ${now} thumbnails, not ${before + 1}`;
         await watch.step("press", s);
         break;
@@ -12066,13 +12041,12 @@ for (const seq of toWalk) {
         await page.keyboard.press("i");
         // The card the clip made by hand comes in, and the job it is on
         // the way from, read off its key.
-        const key = await page
-          .waitForFunction(
-            (was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)),
-            before,
-            { timeout: 10000 },
-          )
-          .then((h) => h.jsonValue(), () => null);
+        const key = await seenUntil(
+          page,
+          url,
+          () => page.evaluate((was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)) ?? null, before),
+          (k) => !!k,
+        );
         const job = key && (await ask(page, "Jobs")).find((j) => j.id === key.split("/")[0]);
         if (!job || job.kind !== "clip" || job.episode !== path) {
           wrong = key ? `the card that came, ${key}, is not of a clip made by hand` : "I made no clip on a part not heard yet";
@@ -12081,18 +12055,15 @@ for (const seq of toWalk) {
         handJob = job.id;
         const card = page.locator(`li[data-key^="${handJob}/"]`);
         const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
-        const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
+        // Once the interface has heard the job's news.
+        await caughtUp(page, url, [job]);
+        const busy = (await cancel.count()) > 0;
         if (!busy) {
           wrong = `the head of the clip list says ${(await clipList(page))?.head}, not Cancel`;
           break;
         }
         await cancel.click();
-        const said = await page
-          .waitForFunction((k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob, {
-            timeout: 20000,
-          })
-          .then(() => true, () => false);
-        if (!said) wrong = `the clip made by hand says "${(await card.first().textContent())?.replace(/\s+/g, " ").trim()}", not Stopped. Click Continue`;
+        await pageUntil(page, (k) => document.querySelector(`li[data-key^="${k}/"].stopped .title`)?.textContent.trim() === "Stopped. Click Continue", handJob);
         await watch.step("wait", s);
         break;
       }
@@ -12307,10 +12278,8 @@ for (const seq of toWalk) {
         const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
         const marked = await waiting();
         await card.locator("button.drop").click();
-        const removed = await card
-          .locator(".gone", { hasText: "Removed" })
-          .waitFor({ timeout: 2000 })
-          .then(() => true, () => false);
+        await settle(page);
+        const removed = (await card.locator(".gone", { hasText: "Removed" }).count()) > 0;
         if (!removed) {
           wrong = "the bin on the card that stopped did not say Removed in its place";
           break;
@@ -12329,11 +12298,8 @@ for (const seq of toWalk) {
         if (arg === "put back") {
           await card.getByRole("button", { name: "Put it back" }).click();
           await page.mouse.move(5, 5);
-          const back = await page
-            .waitForFunction((k) => document.querySelector(`li[data-key="${k}"] .title`)?.textContent.trim() === "Stopped. Click Continue", key, {
-              timeout: 2000,
-            })
-            .then(() => true, () => false);
+          await settle(page);
+          const back = await page.evaluate((k) => document.querySelector(`li[data-key="${k}"] .title`)?.textContent.trim() === "Stopped. Click Continue", key);
           // Past the time a remove runs, so a put back that only hid it
           // would have called the work off by now, and what that set
           // going has come back.
@@ -12348,9 +12314,8 @@ for (const seq of toWalk) {
           // goes off the list, and then it runs out.
           await page.mouse.move(5, 5);
           await runClock(page, (removeTime + 1) * 1000);
-          const gone = await page
-            .waitForFunction((k) => !document.querySelector(`li[data-key="${k}"]`), key, { timeout: 10000 })
-            .then(() => true, () => false);
+          await settle(page);
+          const gone = await page.evaluate((k) => !document.querySelector(`li[data-key="${k}"]`), key);
           const state = await stateOf();
           if (!gone) wrong = "the card that stopped is still in the list after its time ran down";
           else if (state !== "cancelled") wrong = `removed, the work of the clip is ${state}, not cancelled`;
@@ -12517,16 +12482,17 @@ for (const seq of toWalk) {
         // folder coming back. On CI's busy runners the app was still
         // writing after five tries in a second and a half, and the walk
         // failed on its own delete. So it deletes until the folder is gone,
-        // for up to ten seconds. What the app must not do, make the folder
-        // again once it is gone, is what the walk then looks for.
-        const by = Date.now() + 10000;
+        // trying again each time the interface has caught up with what the
+        // Go side told it, however often that takes on a busy machine. What
+        // the app must not do, make the folder again once it is gone, is
+        // what the walk then looks for.
         for (;;) {
           try {
             rmSync(folder, { recursive: true, force: true });
             break;
           } catch (err) {
-            if (err.code !== "ENOTEMPTY" || Date.now() > by) throw err;
-            await page.waitForTimeout(50);
+            if (err.code !== "ENOTEMPTY") throw err;
+            await caughtUp(page, url);
           }
         }
         videoGone = arg === "with the video" || arg === "written back";
@@ -12553,18 +12519,18 @@ for (const seq of toWalk) {
         const folder = join(dirname(folderGone), `${basename(folderGone, extname(folderGone))}.framefairy`);
         // The sidebar first, before the walk asks the Go side anything,
         // so it is the app that read the library again and not the walk.
-        const left = await page
-          .waitForFunction(
-            (n) => ![...document.querySelectorAll("aside button.episode .name")].some((e) => e.textContent === n),
-            name,
-            { timeout: 5000, polling: 100 },
-          )
-          .then(() => true, () => false);
-        if (!left) {
-          wrong = `${name} is still in the sidebar 5 s after its folder was deleted`;
-          break;
+        // Until the sidebar has let the video go, read each time the page
+        // changes, and then once the interface has heard all the Go side
+        // said after that.
+        const named = () => page.evaluate((n) => [...document.querySelectorAll("aside button.episode .name")].some((e) => e.textContent === n), name);
+        await seenUntil(page, url, named, (there) => !there);
+        // And until no job of the video still runs, which is what would
+        // write its folder back late, read each time a job has news.
+        let heard = await news(page);
+        while ((await ask(page, "Jobs")).some((j) => j.episode === folderGone && (j.state === "running" || j.state === "queued"))) {
+          heard = await nextNews(page, heard);
         }
-        await page.waitForTimeout(1500);
+        await caughtUp(page, url);
         const library = await ask(page, "Library");
         if (library.some((e) => e.source === folderGone)) wrong = `${name} is still in the library`;
         else if ((await episodeOn(page)) === folderGone) wrong = `${name} is still open`;
@@ -12623,10 +12589,8 @@ for (const seq of toWalk) {
           window.dispatchEvent(new FocusEvent("blur"));
           window.dispatchEvent(new FocusEvent("focus"));
         });
-        const back = await page
-          .locator(`${front} .stack:not(.missing)`)
-          .waitFor({ timeout: 5000 })
-          .then(() => true, () => false);
+        await caughtUp(page, url);
+        const back = (await page.locator(`${front} .stack:not(.missing)`).count()) > 0;
         if (!back) wrong = "the file is back and the sidebar says so, but the video preview still shows nothing";
         else if (await page.evaluate((f) => !!document.querySelector(`${f} .screen .failed`), front)) {
           wrong = "the file is back, and the video preview says it could not be shown";
@@ -12829,11 +12793,7 @@ for (const seq of toWalk) {
               lit: !!line && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)" && getComputedStyle(line).backgroundColor !== getComputedStyle(card).backgroundColor,
             };
           });
-        let now = await read();
-        for (const until = Date.now() + 60000; (now.words !== "Relaunch" || now.off !== waits) && Date.now() < until; ) {
-          await page.waitForTimeout(100);
-          now = await read();
-        }
+        const now = await seenUntil(page, url, read, (now) => now.words === "Relaunch" && now.off === waits);
         if (now.words !== "Relaunch") wrong = `the line under the build offers ${now.words || "nothing"}, not Relaunch`;
         else if (now.off !== waits) wrong = waits ? "Relaunch can be pressed while a search runs" : "Relaunch stayed greyed out after the search ended";
         else if (waits && now.title !== "Waits until the search is done") wrong = `Relaunch's title says ${JSON.stringify(now.title)}`;
@@ -12959,11 +12919,8 @@ for (const seq of toWalk) {
         const before = (await marks()).length;
         const lit = () => page.evaluate(() => !!document.querySelector(".clip-timeline .cropdot.here"));
         await page.keyboard.press("c");
-        let got = [];
-        for (let i = 0; i < 30 && got.length <= before; i++) {
-          await page.waitForTimeout(100);
-          got = await marks();
-        }
+        await settle(page);
+        const got = await marks();
         const near = got.find((m) => Math.abs(m.at - want) < 0.5 / src.fps);
         if (got.length <= before) {
           const at = await page.evaluate(() => document.querySelector(".screen").dataset.playhead);
@@ -12980,7 +12937,7 @@ for (const seq of toWalk) {
           break;
         }
         await page.keyboard.press("c");
-        for (let i = 0; i < 30 && (await marks()).length > before; i++) await page.waitForTimeout(100);
+        await settle(page);
         if ((await marks()).length > before) wrong = `C again did not remove the keyframe on the clip's ${arg} frame`;
         await settle(page);
         break;
@@ -13028,7 +12985,7 @@ for (const seq of toWalk) {
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
         await page.mouse.move(x, y);
-        await page.waitForTimeout(100);
+        await settle(page);
         const got = await page.evaluate(
           ({ x, y }) => {
             const el = document.querySelector("[data-probe]");
@@ -13101,16 +13058,14 @@ for (const seq of toWalk) {
           wrong = `the video preview never showed the frame at ${from.toFixed(2)}`;
           break;
         }
-        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => window.__captionLayers?.rested());
         const stop = await watchPills(page);
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("Space");
-        await page
-          .waitForFunction((to) => Number(document.querySelector(".screen").dataset.playhead) >= to, from + arg, {
-            timeout: arg * 1000 + 30000,
-            polling: "raf",
-          })
-          .catch(() => (wrong = `the play from ${from.toFixed(2)} never went on ${arg} s`));
+        // So many seconds of the episode, read off the playhead.
+        await settle(page);
+        const played = await playUntil(page, { past: from + arg - 1e-6 });
+        if (!(played.at >= from + arg - 1e-6)) wrong = `the play from ${from.toFixed(2)} stopped at ${played.at.toFixed(2)}, before it went on ${arg} s`;
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -13144,14 +13099,14 @@ for (const seq of toWalk) {
           wrong = "the video preview never showed the clip's first frame";
           break;
         }
-        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => window.__captionLayers?.rested());
         await page.evaluate(() => document.body.focus());
         const report = [];
         for (let k = 0; k < arg && !wrong; k++) {
           const stop = await watchPills(page);
           await page.keyboard.press("Shift+ArrowRight");
-          await page.waitForTimeout(150);
-          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+          await settle(page);
+          await page.evaluate(() => window.__captionLayers?.rested());
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           const frames = await stop();
           const off = frames.find((f) => framesOffPill(f, "keyed"));
@@ -13171,7 +13126,7 @@ for (const seq of toWalk) {
           wrong = "the video preview never showed the clip's first frame";
           break;
         }
-        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => window.__captionLayers?.rested());
         await page.evaluate(() => document.body.focus());
         const report = [];
         let popped = 0;
@@ -13184,14 +13139,14 @@ for (const seq of toWalk) {
           const drawn = await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0);
           const stop = await watchPills(page);
           await page.keyboard.press(key);
-          // The pop, if one starts, and its end.
-          const started = await page
-            .waitForFunction((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count, { timeout: 1500, polling: 10 })
-            .then(() => true, () => false);
-          await page.waitForFunction(() => !window.__captionLayers?.popping && !window.__captionLayers?.busy, null, {
-            timeout: 5000,
-            polling: 10,
-          });
+          // The pop, if one starts, and its end. A pop starts when the new
+          // frame is drawn with its own layer, so once that frame is up and
+          // the layers rest, a bounce that was to start has started and
+          // ended.
+          await settle(page);
+          await shownOnPlayhead(page, { captions: true });
+          await page.evaluate(() => window.__captionLayers?.rested());
+          const started = await page.evaluate((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count);
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           const frames = await stop();
           const bounced = (await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0)) - drawn;
@@ -13312,14 +13267,17 @@ for (const seq of toWalk) {
           wrong = "the video preview never showed the clip's first frame";
           break;
         }
-        await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+        await page.evaluate(() => window.__captionLayers?.rested());
         await page.evaluate(() => document.body.focus());
         const count = await page.evaluate(() => window.__captionLayers?.stats.popped ?? 0);
         const words = new Set();
         for (let k = 0; k < arg && !wrong; k++) {
           await page.keyboard.press("ArrowRight");
-          await page.waitForTimeout(80);
-          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 10 });
+          // Once the frame is drawn with its own layer, which is when a
+          // pop would start, and the layers rest.
+          await settle(page);
+          await shownOnPlayhead(page, { captions: true });
+          await page.evaluate(() => window.__captionLayers?.rested());
           const now = await page.evaluate(() => ({
             popped: window.__captionLayers?.stats.popped ?? 0,
             word: document.querySelector(".captions .word.now")?.textContent ?? "",
@@ -13373,7 +13331,7 @@ for (const seq of toWalk) {
             wrong = `the video preview never showed the frame at ${at.toFixed(2)}`;
             break;
           }
-          await page.waitForFunction(() => !window.__captionLayers?.busy, null, { timeout: 5000, polling: 20 });
+          await page.evaluate(() => window.__captionLayers?.rested());
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
           const got = await page.evaluate(() => {
             const word = document.querySelector(".captions .word.now");
@@ -13570,7 +13528,7 @@ for (const seq of toWalk) {
         await page.keyboard.down("Control");
         await page.mouse.wheel(0, -230);
         await page.keyboard.up("Control");
-        await page.waitForTimeout(300);
+        await settle(page);
         await page.mouse.move(g.track.x + g.track.w / 2, g.track.y + g.track.h + 80);
         await settle(page);
         break;
@@ -13600,13 +13558,8 @@ for (const seq of toWalk) {
           held.push(await centre());
         }
         await page.mouse.up();
-        let got = [];
-        for (let i = 0; i < 30; i++) {
-          got = (await entry()).cropMarks ?? [];
-          if (got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps)) break;
-          await page.waitForTimeout(100);
-        }
         await settle(page);
+        const got = (await entry()).cropMarks ?? [];
         const left = await centre();
         const out = arg === "end" ? Math.max(...held) - left : left - Math.min(...held);
         if (!got.some((m) => Math.abs(m.at - want) < 0.5 / src.fps))
@@ -13729,12 +13682,8 @@ for (const seq of toWalk) {
       case "keyframes": {
         const on = await chosen(page);
         const marks = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.cropMarks ?? [];
-        let got = [];
-        for (let i = 0; i < 50; i++) {
-          got = await marks();
-          if (got.length === arg && new Set(got.map((m) => m.x)).size === arg) break;
-          await page.waitForTimeout(100);
-        }
+        await settle(page);
+        const got = await marks();
         const dots = await page.evaluate(() => document.querySelectorAll(".clip-timeline .cropdot").length);
         // Drawn as a diamond, the shape editors draw a keyframe in, and
         // the keyframe button's own: Lucide's diamond, filled, as a
@@ -13780,13 +13729,8 @@ for (const seq of toWalk) {
           const g = await handles(page);
           await page.mouse.click(await xOf(page, t), high(g.track));
           await settle(page);
-          const came = await page
-            .waitForFunction(
-              (fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps),
-              src.fps,
-              { polling: 50, timeout: 5000 },
-            )
-            .then(() => true, () => false);
+          await shownOnPlayhead(page);
+          const came = await page.evaluate((fps) => window.__filmed() === Math.floor((Number(document.querySelector(".screen").dataset.playhead) + 0.001) * fps), src.fps);
           if (!came) {
             problems.push(`no frame came for ${t.toFixed(3)} s`);
             continue;
@@ -13829,17 +13773,12 @@ for (const seq of toWalk) {
             const g = await handles(page);
             await page.mouse.click(await xOf(page, at), high(g.track));
             await settle(page);
-            const came = await page
-              .waitForFunction(
-                (fps) => {
-                  const at = Number(document.querySelector(".screen").dataset.playhead);
-                  // The frame that holds the playhead, see frameAt in lib/flow.ts.
-                  return window.__filmed() === Math.floor((at + 0.001) * fps);
-                },
-                src.fps,
-                { polling: 50, timeout: 5000 },
-              )
-              .then(() => true, () => false);
+            await shownOnPlayhead(page);
+            const came = await page.evaluate((fps) => {
+              const at = Number(document.querySelector(".screen").dataset.playhead);
+              // The frame that holds the playhead, see frameAt in lib/flow.ts.
+              return window.__filmed() === Math.floor((at + 0.001) * fps);
+            }, src.fps);
             if (!came) {
               problems.push(`no frame came for ${at.toFixed(3)} s`);
               continue;
@@ -13870,7 +13809,9 @@ for (const seq of toWalk) {
           window.__glideRaf = requestAnimationFrame(read);
         });
         await page.keyboard.press(" ");
-        await page.waitForTimeout(2000);
+        // Two seconds of the episode, read off the playhead.
+        await settle(page);
+        await playUntil(page, { most: 2 });
         await page.keyboard.press(" ");
         const seen = await page.evaluate(() => {
           cancelAnimationFrame(window.__glideRaf);
@@ -13898,12 +13839,8 @@ for (const seq of toWalk) {
       case "turned": {
         const on = await chosen(page);
         const pieces = async () => (await ask(page, "Clips", on.path)).find((c) => c.plan === on.plan && c.id === on.clip)?.segments ?? [];
-        let got = [];
-        for (let i = 0; i < 50; i++) {
-          got = (await pieces()).map((p) => p.rotate ?? 0);
-          if (JSON.stringify(got) === JSON.stringify(arg)) break;
-          await page.waitForTimeout(100);
-        }
+        await settle(page);
+        const got = (await pieces()).map((p) => p.rotate ?? 0);
         if (JSON.stringify(got) !== JSON.stringify(arg)) {
           wrong = `the engine has the pieces rotated ${got.join(" ")}, not ${arg.join(" ")}`;
           break;
@@ -13914,9 +13851,7 @@ for (const seq of toWalk) {
           const g = await handles(page);
           await page.mouse.click(await xOf(page, (p.start + p.end) / 2), high(g.track));
           await settle(page);
-          await page
-            .waitForFunction((want) => Number(document.querySelector(".screen").dataset.turn) === want, arg[i], { timeout: 2000 })
-            .catch(() => {});
+          await shownOnPlayhead(page);
           const seen = await page.evaluate(() => {
             const el = document.querySelector(".screen");
             const b = el.getBoundingClientRect();
@@ -14010,7 +13945,8 @@ for (const seq of toWalk) {
           }
         }
         await page.mouse.up();
-        await page.waitForTimeout(1000);
+        // And a second of frames after the hand let go.
+        await nextPaint(page, 60);
         await page.evaluate(() => (window.__scrubbing = false));
         await watch.step("scrub", s);
         break;
@@ -14377,19 +14313,6 @@ function restAhead(page) {
   return page.evaluate(() => window.__readAheadRested());
 }
 
-// So many animation frames of the page.
-function animationFrames(page, n) {
-  return page.evaluate(
-    (n) =>
-      new Promise((done) => {
-        let k = 0;
-        const step = () => (++k >= n ? done() : requestAnimationFrame(step));
-        requestAnimationFrame(step);
-      }),
-    n,
-  );
-}
-
 // The keys of the cards of the clips in the clip list, not of one on its
 // way.
 function cardKeys(page) {
@@ -14500,6 +14423,13 @@ function clickCard(page, key, start) {
           looks.push(l);
           const changed = looks.some((x, j) => j > 0 && (x.crop !== looks[j - 1].crop || x.canvas !== looks[j - 1].canvas));
           window.__clickChanged ||= changed;
+          // The walk waiting for the frame to wait for what lies over it,
+          // or for the click to change the video preview, is told here.
+          const gate = window.__gate;
+          if (gate && (changed || window.__frameQueue.stats.waitedForDress > gate.was)) {
+            window.__gate = null;
+            gate.done();
+          }
           if (l.crop !== was.crop || l.canvas !== was.canvas) after = 0;
           else if (changed && rested && !window.__captionLayers.busy) after++;
           if (after < 10) return requestAnimationFrame(next);
@@ -14631,10 +14561,15 @@ async function pickCards(page, n) {
       // The frame of the clip waits for what lies over it, dress in
       // queue.ts, and then the gate opens. A clip that came without
       // waiting has changed the video preview by then, and fails below.
-      await page.waitForFunction((was) => window.__frameQueue.stats.waitedForDress > was || window.__clickChanged, waitedForDress, {
-        polling: "raf",
-        timeout: 0,
-      });
+      // Open at once when that has happened already, else from the
+      // click's own frame loop.
+      await page.evaluate(
+        (was) =>
+          new Promise((done) =>
+            window.__clickChanged || window.__frameQueue.stats.waitedForDress > was ? done() : (window.__gate = { was, done }),
+          ),
+        waitedForDress,
+      );
       await page.evaluate(() => (window.__captionsOpen = true));
       await control(url, "/hold?call=Captions&gate=open");
     }
@@ -14827,14 +14762,14 @@ async function wakeOnCaption(page) {
   // The frames of the video gone back to open only once the page has drawn
   // twenty animation frames since they were asked, about 330 ms.
   const slow = async (route) => {
-    await animationFrames(page, 20).catch(() => {});
+    await nextPaint(page, 20).catch(() => {});
     await route.continue().catch(() => {});
   };
   await page.route(/\/frames\/open\?/, slow);
   try {
     await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
     await restAhead(page);
-    await animationFrames(page, 10);
+    await nextPaint(page, 10);
   } finally {
     await page.unroute(/\/frames\/open\?/, slow);
   }

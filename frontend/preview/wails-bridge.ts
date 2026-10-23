@@ -189,10 +189,21 @@ let paused: { name: string; data: unknown }[] | null = null;
 // the way the preview does.
 (window as any).__menu = (what: string) => tell("undo", what);
 
+// window.__nextCall(after, match) settles once a call numbered after or
+// later, from 0, is one match says yes to, seen as the call is made,
+// before it is answered.
+type Made = (typeof calls)[number];
+let calling: { after: number; match: (c: Made) => boolean; done: () => void }[] = [];
+(window as any).__nextCall = (after: number, match: (c: Made) => boolean) =>
+  new Promise<void>((done) => (calls.slice(after).some(match) ? done() : calling.push({ after, match, done })));
+
 export const Call = {
   async ByName(name: string, ...args: unknown[]): Promise<unknown> {
-    const call: (typeof calls)[number] = { name: name.split(".").pop() ?? name, args };
+    const call: Made = { name: name.split(".").pop() ?? name, args };
     calls.push(call);
+    const now = calling.filter((w) => w.match(call));
+    calling = calling.filter((w) => !now.includes(w));
+    for (const w of now) w.done();
     const counted = !logOnly.has(call.name);
     if (counted) out++;
     let answer: Response;

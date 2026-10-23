@@ -6,16 +6,10 @@
   },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
-      "count": 6
+      "count": 3
     },
     "no-restricted-properties": {
-      "count": 38
-    },
-    "no-restricted-syntax": {
-      "count": 4
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 95
+      "count": 27
     }
   },
   "preview/walks/speed.mjs": {
