@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -319,6 +320,25 @@ func TestTheWholeVideoHearsLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	done()
+
+	// A model being installed takes it back too, and goes first: it
+	// waited behind the whole video for as long as that heard. Found by
+	// the second review of #458.
+	whole, wholeDone = given(t, l, LaneHearing, wholeHearingTurn)
+	install, _ := waiting(l, LaneHearing, plainTurn)
+	<-whole.Done()
+	if !errors.Is(whole.Err(), context.Canceled) {
+		t.Fatalf("the whole video kept the lane from the model being installed: %v", whole.Err())
+	}
+	wholeDone()
+	resumed, _ := waiting(l, LaneHearing, wholeHearingTurn)
+	select {
+	case installed := <-install:
+		installed()
+	case <-resumed:
+		t.Fatal("the whole video heard again before the model being installed")
+	}
+	(<-resumed)()
 }
 
 // What is asked for after the whole video never waits behind it, because

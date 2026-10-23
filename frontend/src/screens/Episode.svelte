@@ -551,9 +551,12 @@
   // the way the window of a search is while it hears, Tim's pick on #458:
   // the part it hears, or the one it hears next while it waits its turn.
   // The frame goes on the press of Stop transcribing, fading, see
-  // RangeWindow. While a search runs, the whole video gives way to it and
-  // its frame stays, dimmed, so it is plain the work is only on hold,
-  // Tim's report of 23 October.
+  // RangeWindow. While the whole video waits its turn, behind a search, a
+  // clip made by hand or a model being installed, its frame stays, dimmed,
+  // so it is plain the work is only on hold, Tim's report of 23 October.
+  // The look comes from its own job and not from whether a search runs:
+  // a search with a model in the cloud does not hold up the hearing, found
+  // by the second review of #458.
   const wholePart = $derived.by((): [number, number] | null => {
     if (!wholeWork || wholeStopping) return null;
     const edge = wholeHearing && live ? live[1] : -1;
@@ -699,8 +702,10 @@
   // whole video is what hears: the speech model finishes its chunk, and
   // the library is read again as the job ends, and the dots went on
   // shrinking after the frame had gone, Tim's report of 23 October.
-  // Either hold lasts until other work hears, and Search lets it go
-  // anyway. heldFor is the job it was pressed for. Ids, not jobs, so the
+  // Either hold lasts until other work hears, or the video is transcribed
+  // to its end, and Search lets it go anyway. Stopped on its last pieces,
+  // the work heard to the end, the menu offered Export, and the dots stayed
+  // for good, found by the second review of #458. heldFor is the job it was pressed for. Ids, not jobs, so the
   // effects run on the press and on the next work, not on every report,
   // see the rule on watching jobs.
   let heldFor = "";
@@ -710,14 +715,16 @@
   }
   const wholeStopped = $derived(wholeStopping && hearing === wholeHearing ? (wholeHearing?.id ?? "") : "");
   const hearingId = $derived(hearing?.id ?? "");
+  const heardToEnd = $derived(!!status?.transcribed);
   $effect(() => {
     const id = wholeStopped;
     if (id) untrack(() => hold(id));
   });
   $effect(() => {
     const id = hearingId;
+    const all = heardToEnd;
     untrack(() => {
-      if (!heldFor || !id || id === heldFor) return;
+      if (!heldFor || (!all && (!id || id === heldFor))) return;
       heldFor = "";
       stoppedAt = null;
     });
@@ -3051,6 +3058,18 @@
   // While the transcript grows, the covered part of the timeline grows.
 
 
+  // And when the whole video's work ends, which no search's hearing says:
+  // the workspace kept what it read last, so stopped on its last pieces
+  // the video was heard to its end and the dots stayed, found by the
+  // second review of #458.
+  const wholeOn = $derived(!!wholeWork);
+  let wasWhole = false;
+  $effect(() => {
+    const now = wholeOn;
+    if (wasWhole && !now) untrack(() => load());
+    wasWhole = now;
+  });
+
   // How far the episode has been heard is read again when the hearing
   // stops, so the range picker's edge lands on what was saved.
   let wasTranscribing = false;
@@ -3306,8 +3325,8 @@
     unheardOn={saying ? unheardOn : -1}
     giving={live && !stoppedAt ? live[1] : -1}
     part={wholePart}
-    partStill={!wholeHearing}
-    partBehind={busy}
+    partWaiting={!wholeHearing}
+    partKey={wholeWork?.id ?? ""}
     onhoverunheard={saying ? (i) => (unheardLit = i) : undefined}
     onmove={moveWindow}
     onreset={() => moveWindowOn(true)}

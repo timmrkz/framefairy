@@ -186,13 +186,17 @@ func (l *lanes) mayLocked(a *ask) bool {
 
 // givesWay says whether a turn that hears gives the hearing lane to another
 // that asks for it: a search to a clip made by hand, and the whole video
-// to both.
+// to everything but another whole video. A model being installed takes a
+// plain turn in the hearing lane, and it waited behind the whole video for
+// as long as that heard, up to an hour, found by the second review of
+// #458. The model the whole video hears with cannot be changed or removed
+// while it runs, see speechLocked, so installing another does it no harm.
 func givesWay(held, asks turnKind) bool {
 	switch held {
 	case hearingTurn:
 		return asks == handHearingTurn
 	case wholeHearingTurn:
-		return asks == hearingTurn || asks == handHearingTurn
+		return asks != wholeHearingTurn
 	}
 	return false
 }

@@ -59,8 +59,8 @@ at most one search at a time, and any number of clips and renders.
 A search goes **waiting**, **hearing**, **finding**, **done**. A
 transcription of the whole video goes **waiting**, **hearing**, **done**,
 and its hearing comes last: it gives the lane back to any search or clip
-made by hand that asks to hear, anything but another whole video asked
-after it goes first, and
+made by hand that asks to hear, and to a model being installed,
+anything but another whole video asked after it goes first, and
 it waits while a search finds, because it can take an hour and nobody is
 waiting on it, see `wholeHearingTurn` in `lanes.go`. Its record is
 `transcribe.json`, so an app closed while it hears says so in the

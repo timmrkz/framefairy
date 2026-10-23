@@ -122,9 +122,13 @@ func (s *FrameFairy) ExportTranscript(path, format string) (saved string, err er
 	if err := engine.WriteAtomic(s.store.files, dest, []byte(text)); err != nil {
 		return "", err
 	}
-	// A file made to share, so it is readable the way a saved file is.
+	// A file made to share, so it is readable the way a saved file is. It
+	// is saved by now, so a drive that takes no modes, like exFAT or one on
+	// the network, is no failure of the export, found by the second
+	// review of #458.
 	if err := s.store.files.Chmod(dest, 0o644); err != nil {
-		return "", err
+		theLog.line(zerolog.WarnLevel, "files").Str("video", filepath.Base(path)).Err(err).
+			Msg("the exported transcript is saved, and its mode could not be set")
 	}
 	bytes = len(text)
 	return dest, nil

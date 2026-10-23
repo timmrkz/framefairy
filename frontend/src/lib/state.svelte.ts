@@ -9,7 +9,7 @@ import type { EpisodeOrder } from "./order";
 // Cancelling for good, and only a restart cleared it.
 const recheck = 5000;
 
-class JobStore {
+export class JobStore {
   list = $state<Job[]>([]);
   // The transcriptions Stop transcribing was pressed for that have not
   // said they stopped yet. Everything that shows the work stops on the

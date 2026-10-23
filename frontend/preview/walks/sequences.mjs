@@ -1440,7 +1440,7 @@ export const sequences = [
       ["transcript", "stop"],
       ["speech", 0],
       ["transcript", "continue"],
-      ["speech", 0],
+      ["transcript", "stop at the end"],
       ["transcript", "Text"],
     ],
   },
@@ -6927,8 +6927,8 @@ for (const seq of toWalk) {
                     number: !!document.querySelector("aside li:has(button.episode.current) .share"),
                     // The whole video's frame on the range picker, still
                     // there as work in hand or going.
-                    framed: !!document.querySelector(".window.frame.locked:not(.going)"),
-                    going: !!document.querySelector(".window.frame.locked.going"),
+                    framed: !!document.querySelector(".part:not(.going) .window.frame.locked"),
+                    going: !!document.querySelector(".part.going .window.frame.locked"),
                     dots: window.dotsNow(),
                   }),
                 );
@@ -7005,48 +7005,120 @@ for (const seq of toWalk) {
           else if (!look.dots) wrong = `while the whole video is transcribed, the part it works on shows no dots under its frame`;
           break;
         }
+        const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
+        // The whole video's transcription as the Go side has it, and a
+        // wait on its news until its step is one of these.
+        const transcription = async () => (await ask(page, "Jobs")).findLast((j) => j.episode === source && j.kind === "transcribe");
+        const stepIs = async (...steps) => {
+          for (let seen = await news(page); !steps.includes((await transcription())?.step); ) seen = await nextNews(page, seen);
+        };
+        const partNow = () =>
+          page.evaluate(() => {
+            const part = document.querySelector(".part .window.frame.locked");
+            return {
+              part: !!part,
+              behind: !!part?.classList.contains("behind"),
+              breathes: !!part && getComputedStyle(part).animationName === "breath",
+              motes: part?.querySelectorAll(".mote").length ?? 0,
+            };
+          });
         if (arg === "behind") {
-          // A search started while the whole video is transcribed has the
-          // work: in the frame of its click the whole video's frame stays
-          // and keeps breathing, dimmed and with no motes, so it reads as
-          // on hold and not gone, Tim's report of 23 October. Cancelled,
-          // the search gives it back its motes.
+          // While the whole video waits its turn, its frame stays and
+          // keeps breathing, dimmed and with no motes, so it reads as on
+          // hold and not gone, Tim's report of 23 October. The look comes
+          // from its own job: a search with the model in the cloud holds
+          // nothing up, found by the second review of #458. Here the
+          // model is local, so a search that finds takes the hearing, and
+          // so does a clip made by hand over a part not heard yet. The
+          // speech takes its time, so the whole video's piece ends and it
+          // can give the hearing away.
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
-          const behind = () =>
-            page.evaluate(
-              () =>
-                new Promise((done) => {
-                  const head = document.querySelector(".listhead button.search");
-                  head.click();
-                  requestAnimationFrame(() => {
-                    const frames = [...document.querySelectorAll(".window.frame.locked")];
-                    const part = frames.find((f) => f.classList.contains("behind"));
-                    done({
-                      frames: frames.length,
-                      part: !!part,
-                      breathes: !!part?.classList.contains("waiting") && getComputedStyle(part).animationName === "breath",
-                      motes: part?.querySelectorAll(".mote").length ?? 0,
-                    });
-                  });
-                }),
-            );
-          const seen = await behind();
-          if (!seen.part) wrong = `in the frame Search was clicked, the whole video's frame is not dimmed behind it, ${seen.frames} frames on the range picker`;
-          else if (!seen.breathes) wrong = "behind a search, the whole video's frame stopped breathing";
-          else if (seen.motes) wrong = `behind a search, the whole video's frame sheds ${seen.motes} motes`;
+          await control(url, "/speech?ms=1500");
+          const onHold = async (what) => {
+            await stepIs("waiting");
+            const seen = await partNow();
+            if (!seen.part) return `${what}, the whole video's frame is gone`;
+            if (!seen.behind) return `${what}, the whole video waits its turn and its frame is not dimmed`;
+            if (!seen.breathes) return `${what}, the whole video's frame stopped breathing`;
+            if (seen.motes) return `${what}, the whole video's frame sheds ${seen.motes} motes`;
+            return "";
+          };
+          const back = async (what) => {
+            await stepIs("hearing");
+            await settle(page);
+            const seen = await partNow();
+            if (!seen.part) return `${what}, the whole video's frame is gone`;
+            if (seen.behind) return `${what}, the whole video hears and its frame stays dimmed`;
+            if (!seen.motes) return `${what}, the whole video hears and its frame sheds no motes`;
+            return "";
+          };
+          await page.locator(".listhead button.search").click();
+          wrong = await onHold("a search finding");
           if (wrong) break;
           const searching = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "search" && (j.state === "running" || j.state === "queued"));
           await page.locator(".listhead button.search").click();
           for (let seen = await news(page); await searching(); ) seen = await nextNews(page, seen);
+          wrong = await back("the search cancelled");
+          if (wrong) break;
+          // The playhead on a part not heard yet, near the end, and a clip
+          // made there by hand.
+          const track = await page.locator('[aria-label="The range picker"]').boundingBox();
+          await page.mouse.click(track.x + track.width * 0.9, track.y + track.height / 2);
           await settle(page);
-          const back = await page.evaluate(() => {
-            const part = document.querySelector(".window.frame.locked");
-            return { part: !!part, behind: !!part?.classList.contains("behind"), motes: part?.querySelectorAll(".mote").length ?? 0 };
-          });
-          if (!back.part) wrong = "the search cancelled, the whole video's frame is gone";
-          else if (back.behind) wrong = "the search cancelled, the whole video's frame stays dimmed";
-          else if (!back.motes) wrong = "the search cancelled, the whole video's frame sheds no motes";
+          await page.keyboard.press("i");
+          wrong = await onHold("a clip made by hand hearing");
+          if (wrong) break;
+          const making = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "clip" && (j.state === "running" || j.state === "queued"));
+          for (let seen = await news(page); await making(); ) seen = await nextNews(page, seen);
+          wrong = await back("the clip made by hand");
+          if (wrong) break;
+          await control(url, "/speech?ms=hold");
+          break;
+        }
+        if (arg === "stop at the end") {
+          // Stopped while its last piece is being heard, the work still
+          // hears to the end, and once it has ended nothing on the range
+          // picker says a part is left: the dots stayed for good while the
+          // menu offered Export, found by the second review of #458. The
+          // speech is held and let on a piece at a time until what is left
+          // is shorter than a piece, so the piece waiting is the last.
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          const left = () =>
+            page.evaluate(() => {
+              const parts = [...document.querySelectorAll(".unheard")].map((el) => Number(/round\(([\d.]+) \*/.exec(el.style.getPropertyValue("--at"))?.[1] ?? 0));
+              return parts.length === 1 ? 1 - parts[0] : 1;
+            });
+          const { duration } = await ask(page, "Source", source);
+          for (let n = 0; (await left()) * duration >= 25; n++) {
+            if (n >= 200) {
+              wrong = "two hundred pieces heard, and the whole video still has more than a piece left";
+              break;
+            }
+            const seen = await news(page);
+            await control(url, "/speech?step=1");
+            await nextNews(page, seen);
+          }
+          if (wrong) break;
+          await control(url, "/speech?ms=hold%20one");
+          await row.hover();
+          await row.locator("button.more").click();
+          await menu.waitFor();
+          const after = await pick("Stop transcribing");
+          if (after.said !== "Stop transcribing") {
+            wrong = `the menu of a video being transcribed says ${JSON.stringify(after.said)}, not Stop transcribing`;
+            await page.keyboard.press("Escape");
+            break;
+          }
+          const read = await news(page, "episode");
+          await control(url, "/speech?ms=0");
+          await nextNews(page, read, "episode");
+          const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
+          for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
+          await settle(page);
+          if (!(await whole())) wrong = "stopped on its last piece, the video was not heard to its end";
+          else if (await page.locator(".unheard").count()) wrong = "the video is transcribed to its end, and the range picker still shows dots on a part";
           break;
         }
         if (arg === "stop") {
@@ -7112,7 +7184,6 @@ for (const seq of toWalk) {
         // Asked again each time the work says how far it heard, until the
         // Go side says the video is transcribed to its end, and the menu
         // opened again on it.
-        const whole = async () => (await ask(page, "Library")).find((e) => e.source === source)?.transcribed;
         if (!(await whole())) {
           await page.keyboard.press("Escape");
           await menu.waitFor({ state: "detached" });
@@ -7155,7 +7226,9 @@ for (const seq of toWalk) {
           if (!file?.name.endsWith(" transcript.srt")) wrong = `the formats picked with the keyboard saved ${JSON.stringify(file?.name)}`;
           break;
         }
-        await menu.locator(".item", { hasText: "Export transcript" }).hover();
+        // On the words of the row, the way a hand comes to it, so the way
+        // on to a format runs down across the row under it.
+        await menu.locator(".item", { hasText: "Export transcript" }).hover({ position: { x: 40, y: 10 } });
         await formats.waitFor();
         const hangs = await page.evaluate(() => {
           const m = document.querySelector(".video-menu").getBoundingClientRect();
@@ -7190,7 +7263,18 @@ for (const seq of toWalk) {
           await menu.waitFor({ state: "detached" });
           break;
         }
-        await formats.locator(".item", { hasText: arg }).click();
+        // The hand goes to the format in a straight line, crossing the row
+        // under Export transcript on its way, and the formats stay. They
+        // closed under it, found by the second review of #458.
+        const format = formats.locator(".item", { hasText: arg });
+        const box = await format.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 12 });
+        if (!(await formats.count())) {
+          wrong = `the formats closed on the way from Export transcript to ${arg}`;
+          await page.keyboard.press("Escape");
+          break;
+        }
+        await format.click();
         await menu.waitFor({ state: "detached" });
         // The export has been answered, so the file is there. A long
         // video's took longer than the walk took to look.

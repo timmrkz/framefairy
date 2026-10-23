@@ -119,6 +119,38 @@
   let exporting = $state(false);
   let exportRow = $state<HTMLButtonElement>();
   let formats = $state<HTMLElement>();
+  // The pointer anywhere else in the menu takes the formats in again, the
+  // way a submenu goes when the pointer leaves its row, unless it is on
+  // its way to them: inside the triangle from where it was to the near
+  // edge of the formats, the way a submenu on the Mac stays while the
+  // pointer cuts across the row under it. Taken in at once, they closed
+  // under a pointer moving from Export to Subtitles, found by the second
+  // review of #458. aim is where the pointer was last on that way.
+  let aim: [number, number] | null = null;
+  function towardFormats(e: PointerEvent) {
+    if (!exporting) return;
+    const at: [number, number] = [e.clientX, e.clientY];
+    if ((e.target as Element).closest("[data-export], .formats")) {
+      aim = at;
+      return;
+    }
+    const r = formats?.getBoundingClientRect();
+    if (aim && r) {
+      const edge = r.left >= aim[0] ? r.left : r.right;
+      if (within(at, aim, [edge, r.top], [edge, r.bottom])) {
+        aim = at;
+        return;
+      }
+    }
+    aim = null;
+    exporting = false;
+  }
+  // Whether p lies in the triangle a, b, c, its edges included.
+  function within(p: [number, number], a: [number, number], b: [number, number], c: [number, number]): boolean {
+    const side = (u: [number, number], v: [number, number]) => (v[0] - u[0]) * (p[1] - u[1]) - (v[1] - u[1]) * (p[0] - u[0]);
+    const [x, y, z] = [side(a, b), side(b, c), side(c, a)];
+    return (x >= 0 && y >= 0 && z >= 0) || (x <= 0 && y <= 0 && z <= 0);
+  }
   const formatItems = () => [...(formats?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
   async function showFormats(keyboard: boolean) {
     if (ep.missing) return;
@@ -341,12 +373,7 @@
               aria-label="More for {ep.name}"
               onkeydown={keepKeys}
               onpointerdown={() => (pressed = true)}
-              onpointerover={(e) => {
-                // The pointer anywhere else in the menu takes the formats in
-                // again, the way a submenu goes when the pointer leaves its
-                // row.
-                if (!(e.target as Element).closest("[data-export]")) exporting = false;
-              }}
+              onpointermove={towardFormats}
             >
               <div class="label">
                 <span class="field">

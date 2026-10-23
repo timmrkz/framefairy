@@ -121,3 +121,25 @@ func TestTheExportReplacesALinkAndNotTheVideo(t *testing.T) {
 		t.Errorf("the link was not replaced by the subtitles: %v", err)
 	}
 }
+
+// A drive that takes no modes, like exFAT or one on the network.
+type noModes struct{ afero.Fs }
+
+func (noModes) Chmod(string, os.FileMode) error { return errors.New("modes are not supported") }
+
+// The file is saved before its mode is set, so a drive that takes no
+// modes still gets the export, and it is not said to have failed. Found
+// by the second review of #458.
+func TestAnExportToADriveWithoutModesIsSaved(t *testing.T) {
+	svc, mine, _ := anEpisodeWithAPlan(t)
+	heardEpisode(t, svc, mine, 30, [][3]any{{10.1, 10.4, "eins"}, {10.5, 10.9, "zwei."}})
+	svc.store.files = noModes{svc.store.files}
+	svc.saveBox = func(string) (string, error) { return "/Volumes/Stick/ep.txt", nil }
+	saved, err := svc.ExportTranscript(mine, "text")
+	if err != nil || saved != "/Volumes/Stick/ep.txt" {
+		t.Fatalf("saved at %q: %v", saved, err)
+	}
+	if body, err := afero.ReadFile(svc.store.files, saved); err != nil || string(body) != "0:10\neins zwei.\n" {
+		t.Errorf("the text reads %q: %v", body, err)
+	}
+}

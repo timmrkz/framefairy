@@ -907,7 +907,11 @@ func (q *queue) runJob(job *Job) {
 	// started writes the same record. That record is the newer job's, so
 	// it is left alone. The look and the write are under the queue's lock,
 	// so a job added at the same moment is either seen here or writes its
-	// record after this one, found by the review of #458.
+	// record after this one, found by the review of #458. The write ends in
+	// a full flush and holds every job's news for as long, tens of
+	// milliseconds on a slow drive. That is chosen: it happens once, on a
+	// press of Stop or Cancel, and a write outside the lock could land
+	// over the record of the job Continue started.
 	q.mu.Lock()
 	if job.byHand && errors.Is(err, engine.ErrCancelled) && !q.carriedOnLocked(job) {
 		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
