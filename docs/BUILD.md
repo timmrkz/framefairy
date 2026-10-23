@@ -537,7 +537,9 @@ speech synthesis library ffmpeg depends on, for a job that never runs
 ffmpeg. The packages apt downloads are kept by the workflow for a week,
 so a run normally downloads only the package lists, a download that
 stalls is tried again, and the step gives up after ten minutes rather
-than holding the job for hours.
+than holding the job for hours. A new week starts from the week before,
+and `apt-get autoclean` drops each package the mirror no longer offers,
+so the cache holds what the jobs install and not every version since.
 
 ## Keeping up
 

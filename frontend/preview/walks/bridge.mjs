@@ -10,7 +10,12 @@ import { chromium } from "playwright";
 // machine that has only another one walks on that rather than not at all:
 // a cloud session keeps the Chromium of the Playwright it came with in
 // PLAYWRIGHT_BROWSERS_PATH, and after Playwright went from 1.56 to 1.63
-// every walk there stopped on a browser that was not installed.
+// every walk there stopped on a browser that was not installed. Newer
+// builds keep it in chrome-linux64, older ones in chrome-linux, and a walk
+// looked only in the second once, so every walk stopped again, #490. The
+// one it falls back on is said once, so a walk that fails on it says which
+// browser it ran in.
+let fallback;
 function browserPath() {
   if (existsSync(chromium.executablePath())) return undefined;
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH;
@@ -19,8 +24,15 @@ function browserPath() {
     .filter((d) => /^chromium-\d+$/.test(d))
     .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
   for (const dir of builds) {
-    const exe = join(root, dir, "chrome-linux", "chrome");
-    if (existsSync(exe)) return exe;
+    for (const folder of ["chrome-linux64", "chrome-linux"]) {
+      const exe = join(root, dir, folder, "chrome");
+      if (!existsSync(exe)) continue;
+      if (fallback !== exe) {
+        fallback = exe;
+        console.error(`walking on ${exe}, since the Chromium of this Playwright is not installed`);
+      }
+      return exe;
+    }
   }
   return undefined;
 }
