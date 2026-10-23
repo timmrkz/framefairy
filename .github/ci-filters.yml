@@ -30,8 +30,9 @@ app:
 # interface, so only the files of it a Go test reads count, like api.ts,
 # and the one that reads all of it runs in the job build. These jobs run
 # scripts/changed.sh on a pull request, so a change to it starts them.
-# The CI image is left out, because macos does not run in it, and the
-# jobs that do are started by the filter image below.
+# The CI image and the script it runs are left out, because macos does
+# not run in it, and the jobs that do are started by the filter image
+# below.
 go:
   - '**'
   - '!docs/**'
@@ -41,7 +42,7 @@ go:
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen}{,-test}.sh'
   - '!scripts/changed-test.sh'
-  - '!.github/ci-image/**'
+  - '!{.github/ci-image/**,scripts/ci-packages.sh}'
   - '!frontend/**/!(api.ts|*.cases.json)'
 
 # The job interface, which needs Node and nothing of Go, nor the CI image.
@@ -53,7 +54,7 @@ interface:
   - '!.vscode/**'
   - '!.claude/**'
   - '!scripts/{main-moved,needs-build,plan-frozen,changed}{,-test}.sh'
-  - '!.github/ci-image/**'
+  - '!{.github/ci-image/**,scripts/ci-packages.sh}'
   - '!**/*.go'
   - '!go.{mod,sum}'
 
@@ -67,7 +68,9 @@ changed:
   - 'scripts/changed{,-test}.sh'
 
 # The Go jobs that run in the CI image, linux and fuzz, beside what starts
-# them by the filter go: a change to the image is a change to the machine
-# their tests run on. The walks run in it too, and app starts them.
+# them by the filter go: a change to the image, or to the script that
+# fills it, is a change to the machine their tests run on. The walks and
+# the build run in it too, and app starts them.
 image:
   - '.github/ci-image/**'
+  - 'scripts/ci-packages.sh'

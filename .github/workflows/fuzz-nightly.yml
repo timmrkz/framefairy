@@ -40,20 +40,12 @@ jobs:
     needs: image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: read
     defaults:
       run:
         shell: bash -e {0}
     container:
       image: ${{ needs.image.outputs.ref }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
       options: --init
-      volumes:
-        - /home/runner/work:/home/runner/work
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The checkout is the runner's user's and the job runs as root, see
@@ -71,7 +63,7 @@ jobs:
           key: fuzz-v2-${{ runner.os }}-${{ github.sha }}
           restore-keys: fuzz-v2-${{ runner.os }}-
       # make checks for npm before it builds anything, and the image has
-      # no Node, as a runner does.
+      # no Node, which a runner has.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -94,8 +86,8 @@ jobs:
           name: crashers
           path: ${{ runner.temp }}/crashers
           retention-days: 30
-      # Only after the fuzzing ran, see the job fuzz of ci.yml.
-      - if: always() && steps.fuzz.outcome != 'skipped'
+      # Only after the fuzzing ran to its end, see the job fuzz of ci.yml.
+      - if: ${{ !cancelled() && steps.fuzz.outcome != 'skipped' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -134,7 +126,7 @@ jobs:
           name: crashers-macos
           path: ${{ runner.temp }}/crashers
           retention-days: 30
-      - if: always()
+      - if: ${{ !cancelled() }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |

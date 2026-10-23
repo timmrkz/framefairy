@@ -125,6 +125,7 @@ committed or not, new files included, and runs what those files can reach:
 | `frontend/` | `make interface` and `make walks`, and for a file a Go test reads, like `api.ts`, that test's package too. The preview's own files, outside `walks/` and the bridge's, are not under the walks |
 | a package the app reaches, the engine among them | `make walks` as well, since the walks drive the app |
 | `Makefile`, a build script | `make`, and for the `Makefile`, `scripts/fuzz.sh` and `scripts/ci-packages.sh` every package and every fuzz target, since they decide how the Go tests run. For a script a Go test reads, like the notices test reading `build-ffmpeg.sh`, that test's package too |
+| `.github/ci-image/` | `make`, every package, every fuzz target and `make walks`, since every Linux job of CI runs in the image |
 | `.github/ci-filters.yml`, `scripts/ci-filters-test.sh`, `ci.yml` | `scripts/ci-filters-test.sh`, and for `ci.yml` every package and every fuzz target, since it decides how the Go tests run |
 | `scripts/changed*.sh` | `scripts/changed-test.sh` |
 | `scripts/main-moved*.sh`, `main-moved.yml` | `scripts/main-moved-test.sh` |
@@ -253,7 +254,9 @@ last one stopped, rather than spending its 10000 executions finding the same
 easy inputs as every run before it. Should the replay ever take longer than
 the fuzzing, raise the `v2` in `ci.yml` and `fuzz-nightly.yml`, which starts
 the cache over from the seeds. It was raised from `v1` when the fuzzing
-on Linux moved into the CI image, whose home is another place.
+on Linux moved into the CI image, whose home is another place. The Mac's
+nightly fuzzing does not run in the image and keeps its own cache, under
+`fuzz-v1-macOS-`, which is raised on its own.
 
 `.github/workflows/fuzz-nightly.yml` is the long fuzzing, at night on main
 and by hand from the Actions tab: half a minute on every target, 600 new
@@ -324,7 +327,7 @@ and `image`, which the jobs in the CI image wait for:
 | `interface` | Linux | `make interface`, ESLint among it. Needs only Node, so it is first back by a long way |
 | `build` | Linux, in the CI image when the app changed | a check that `go.mod` is tidy, which `make` would fix quietly, then `make NOTOOLS=1`. The programs and the interface, which is what proves they still link, without the tools we ship, which nothing builds for Linux yet. Then `scripts/lint-test.sh` and `make lint` |
 | `linux (A-AR+B-O)`, `linux (AS-AZ+P-S)`, `linux (rest)` | Linux, in the CI image | `make unit` under the race detector, on a pull request the packages `make changed` picks and on main every package, on each, with `UNITFLAGS` of `-run` for the tests whose names start with those letters, and `-skip` for both patterns on the third. On one machine they took six minutes |
-| `image` | Linux | the CI image `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not |
+| `image` | Linux | the CI image `build`, `linux`, `fuzz` and the walks run in, see [The CI image](#the-ci-image), by `.github/workflows/ci-image.yml`, which the nightly fuzzing and the security check call too. Asks the registry whether the image for this commit's recipe is there, and builds and pushes it only when it is not. Whenever the app or the Go tests changed |
 | `walks (1/4)` to `walks (4/4)` | Linux, in the CI image | `make walks WALKSHARD=1/4` to `4/4` with `WALKTIMEOUT=8m`, a quarter of the runs each by how long they took last, so a run that hangs is named in minutes. On three machines each job took four and three quarter minutes |
 | `fuzz` | Linux, in the CI image | on a pull request `make fuzz` for the targets `make changed` fuzzes, named by `scripts/changed.sh --fuzz-targets`, and on main `make fuzz SIMTIME=0`, from the fuzz cache main left, see [Tests](#tests) |
 | `macos` | macOS | the ffmpeg we ship, built by its script and kept until the script changes, then `make unit` against it, on a pull request for the packages `make changed` picks, without the race detector, which Linux runs, and without the licence server's packages, which never run on a Mac |
@@ -393,7 +396,7 @@ a machine, so a typo in a README does not fuzz two platforms:
 | `scripts/main-moved*.sh`, `scripts/needs-build*.sh`, `scripts/plan-frozen*.sh` only | `build` only, whose checks of the rules run whatever changed |
 | `scripts/changed-test.sh` only | `build`, with `scripts/changed-test.sh` |
 | `scripts/changed.sh` | `build`, with `scripts/changed-test.sh`, and `linux`, `fuzz` and `macos`, which run it on a pull request, so its own pull request runs it on Linux and on the Mac |
-| `.github/ci-image/` only | `build`, `image`, `walks` and `outside`, the jobs of the app as a whole, since only the walks run in the image |
+| `.github/ci-image/`, `scripts/ci-packages.sh` only | `image`, and the jobs that run in it, `build`, `linux`, `fuzz` and the walks, with every package and every fuzz target. Not `macos` or `interface`, which do not. `outside` too, by the filter `app`, see #484 |
 | anything else, or a mix | everything |
 
 Each filter is every file less the files that cannot matter to its jobs,
@@ -556,8 +559,11 @@ servers and was always fast. The Go tests of `linux` waited the same
 way, up to five minutes for their packages, and the fuzzing once
 fifteen. An image is downloaded from GitHub's container registry
 instead, and no job in it asks the mirror for anything. A change to the
-image starts `linux` and `fuzz` by the filter `image`, but not `macos`,
-which does not run in it.
+image, or to `scripts/ci-packages.sh`, which only the image runs, starts
+`linux` and `fuzz` by the filter `image`, but not `macos`, which does
+not run in it. They then test every package and fuzz every target,
+because `scripts/changed.sh` reads the image as the machine every test
+runs on.
 
 `.github/workflows/ci-image.yml`, which `ci.yml` calls as the job
 `image`, and `fuzz-nightly.yml` and `security.yml` call too, names the image by a sum of
@@ -573,20 +579,25 @@ its own image on its own pull request. A file the Dockerfile comes to
 read joins the sum and the job's sparse checkout, or a change to it
 would reuse the old image.
 
-The jobs run in it as root, which is how GitHub runs a container, with
-an init process, which reaps what a test leaves behind, and the walks
-with the machine's IPC as well, as Playwright says to run Chromium in
-one. The runners' work folder is mounted at the place it has on the
-machine as well, because the ffmpeg we ship comes from the cache the job
-`linux` fills, and its pkg-config files name the folder it was built in.
-The one in the cache now was built on a runner, and the next, when
-`scripts/build-ffmpeg.sh` changes, is built in the container, at a place
-every job in the image has. From then on the mount can go. A container
-runs a step with `sh`, so each job in the image sets `bash -e {0}`, the
-shell a runner's step has, and tells git the checkout, which is the
-runner's user's, is safe to read, since `go build` asks git for the
-commit it stamps. Shard 1 saves Go's build cache only after walks that
-passed, because a share that stopped early has built little and its
+The jobs run in it as root, which is how GitHub runs a container. The
+ones that run tests, `linux`, `fuzz`, the walks and the nightly fuzzing,
+have an init process, which reaps what a test leaves behind, and the
+walks the machine's IPC as well, as Playwright says to run Chromium in
+one. `build` and govulncheck name the image alone, since they leave
+nothing running. No job logs in to pull it, because the package is
+public. `linux` and the walks mount the runners' work folder at the
+place it has on the machine, because the ffmpeg we ship comes from the
+cache `linux` fills, and its pkg-config files name the folder it was
+built in. The one in the cache now was built on a runner, and the next,
+when `scripts/build-ffmpeg.sh` changes, is built in the container, at a
+place every job in the image has. From then on the mount can go. A
+container runs a step with `sh`, so each job in the image sets
+`bash -e {0}`, the shell a runner's step has, and tells git the
+checkout, which is the runner's user's, is safe to read, since
+`go build` asks git for the commit it stamps. Shard 1 saves Go's build
+cache only after walks that passed, and `linux` and the fuzzing only
+once their tests or their fuzzing ran to the end, passed or not, never
+after a cancel. A job that stopped early has built little, and its
 cache would be found first by every run after it.
 
 A pull request from a fork pulls the image like any other, since the

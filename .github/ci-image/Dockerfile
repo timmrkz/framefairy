@@ -1,4 +1,5 @@
-# The machine the walks and the Linux Go tests run on in CI: Ubuntu
+# The machine every Linux job of CI runs on, the walks and the Go tests
+# among them, tools.yml alone left out, see docs/BUILD.md: Ubuntu
 # 24.04, the runners' own system, with every system package they use and
 # the Chromium the pinned Playwright drives, with its libraries, already
 # installed. A job that runs in it downloads nothing from the Ubuntu
@@ -29,14 +30,14 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 # side, GTK and WebKit, and what the walks and the tests use beside it:
 # ffmpeg, which makes the bridge's episode, meson, ninja and nasm, which
 # build the ffmpeg we ship when its cache is missed, and patchelf, which
-# make looks for before it builds. The script's cache of downloads is
-# for a runner, so it goes, and so do the package lists.
+# make looks for before it builds. The package lists go after, and so
+# does the script's setting for the downloads, which a job never makes.
 ENV LANG=C.UTF-8
 RUN --mount=type=bind,source=scripts/ci-packages.sh,target=/tmp/ci-packages.sh \
-	CACHE=/tmp/apt sh /tmp/ci-packages.sh \
+	sh /tmp/ci-packages.sh \
 		build-essential ca-certificates curl git procps xz-utils zstd \
 		ffmpeg meson ninja-build nasm patchelf && \
-	rm -rf /tmp/apt /etc/apt/apt.conf.d/99ci-cache /var/lib/apt/lists/*
+	rm -rf /etc/apt/apt.conf.d/99ci-retries /var/lib/apt/lists/*
 
 # Chromium for the Playwright the interface pins, with the libraries and
 # fonts it needs, in the place Playwright's own images keep it. Only its
@@ -51,4 +52,4 @@ RUN --mount=type=bind,from=node,source=/usr/local,target=/opt/node \
 	rm -rf /root/.npm /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.source=https://github.com/timmrkz/framefairy
-LABEL org.opencontainers.image.description="The machine framefairy's walks run on in CI"
+LABEL org.opencontainers.image.description="The machine framefairy's Linux CI jobs run on"
