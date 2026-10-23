@@ -82,7 +82,7 @@ and nothing else. `make INSTALL=0` does the same by hand.
 | `make llama` | the same for the llama-server framefairy ships, which is what runs a local model |
 | `make frames` | the episode's decoder, `framefairy-frames`, built against the libraries of the ffmpeg above and put beside the programs with it. `make` builds it when it is not there or its code, the modules or that ffmpeg changed since, decided by file times, and says to run `make ffmpeg` first where that ffmpeg is not there. `make unit`, `make walks` and `make changed` build it again first when it is there and older than its code, so new tests never meet an old decoder. See [VIDEO-PREVIEW.md](VIDEO-PREVIEW.md) |
 | `make tools-archive` | packs both of them into one archive with a manifest, for a release. See [PACKAGING.md](PACKAGING.md#the-tools-we-ship) |
-| `make notices` | writes the licence notices in `notices/` again, from the Go modules, the interface's packages and the source trees ffmpeg and llama-server are built from. Without those trees it keeps their notices while the pins stay put, so it takes about a minute. Run it when a test or the interface build says a notice is missing or out of date. A new version alone never needs it. See [THIRD_PARTY.md](THIRD_PARTY.md) |
+| `make notices` | writes the licence notices in `notices/` again, for what is pinned by hand: Go, the source trees ffmpeg and llama-server are built from, the speech runtime, the fonts, the hyphenation patterns and the models. Run it when a test says a notice is out of date. The Go modules and the interface's packages need nothing: every build writes theirs. See [THIRD_PARTY.md](THIRD_PARTY.md) |
 | `make hyphenation` | writes the patterns in `engine/hyphenation/` again, which break a word too long for a caption line: hyph-utf8's for 20 languages and the German joints, built from the Trennmuster team's word list, each from the commit `scripts/hyphenation.sh` pins. It needs `patgen`, from `texlive-binaries` on Linux or `texlive` on macOS, takes about five minutes and is only for when a pin moves. Run `make notices` after it. See [ENGINE.md](ENGINE.md) |
 | `make changed` | what the branch changed against main, and only that. The check that follows every push, see [Checking a change](#checking-a-change) |
 | `make test` | everything below: `unit`, `fuzz`, `interface`, `walks` and `lint` |
@@ -614,9 +614,9 @@ scan made once is out of date the week after.
   Wails and the speech library's Go module are left out, because each
   moves with a pin Dependabot cannot change. TypeScript stays below 7 until
   svelte-check, which checks the interface's types, accepts 7. An update
-  needs no new licence notice unless it brings a new module or package or
-  another licence text, because the app shows the versions `go.mod` and
-  the lock file name, see [THIRD_PARTY.md](THIRD_PARTY.md).
+  needs no licence notice written, because the build writes the notices
+  of the modules and packages it has. It stops only on a licence nobody
+  allowed yet, see [THIRD_PARTY.md](THIRD_PARTY.md).
 - **govulncheck** and **npm audit**, `.github/workflows/security.yml`, on
   every pull request that changes the Go modules or the interface's
   packages, and on main every Monday. govulncheck reports only what the

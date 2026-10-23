@@ -1,59 +1,36 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Every package that ends up in the bundle has its licence shown in the
-// app, from notices/notices.json. A package the bundle takes in without a
-// notice, a notice for one it no longer takes in, or a package whose
-// licence file is no longer the text its notice shows, stops the build
-// here, because the day it changes is the day it is easiest to say what it
-// is. A new version alone stops nothing: the app shows the version the
-// lock file installs, see notices/notices.go, so an update that keeps its
-// licence needs no new notice. make notices writes the notices again. It
-// builds the interface itself to see what the bundle holds, and says so in
-// FRAMEFAIRY_WRITING_NOTICES, so the notices it is there to write do not
-// stop it.
+// app. The build knows which ones those are, so it says so here: it writes
+// the folder of each into dist/packages.json, and make hands that to
+// notices/gen -built, which reads each package's version and licence from
+// its folder and stops the build on a licence nobody allowed. The folder
+// is the one the code came from, so a copy a package carries in its own
+// node_modules counts as itself, not as the package that carries it.
 function notices(): Plugin {
   return {
     name: "framefairy-notices",
-    apply: (_, env) => env.command === "build" && !process.env.FRAMEFAIRY_WRITING_NOTICES,
+    apply: "build",
     generateBundle(_, bundle) {
-      const root = new URL("../notices/", import.meta.url);
-      const noticed = new Map<string, string[]>();
-      for (const n of JSON.parse(readFileSync(new URL("notices.json", root), "utf8"))) {
-        if (n.part === "The app's interface") noticed.set(n.name, n.texts);
-      }
-      const found = new Set<string>();
+      const folders = new Set<string>();
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk") continue;
         for (const id of output.moduleIds) {
-          const hit = /node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(id.replaceAll("\\", "/"));
-          if (hit) found.add(hit[1]);
+          const file = id.replaceAll("\\", "/");
+          const at = file.indexOf("/node_modules/");
+          if (at < 0) continue;
+          // node_modules/a/node_modules/@b/c/dist/c.js comes from
+          // node_modules/a/node_modules/@b/c.
+          const hit = /^(?:node_modules\/(?:@[^/]+\/)?[^/]+\/)+/.exec(file.slice(at + 1));
+          if (hit) folders.add(hit[0].slice(0, -1));
         }
       }
-      const wrong: string[] = [];
-      for (const name of found) {
-        const texts = noticed.get(name);
-        if (texts === undefined) {
-          wrong.push(`${name} has no notice`);
-          continue;
-        }
-        // The licence files at the top of the package, by the names
-        // notices/licence looks for. A package without one, like the
-        // Wails runtime, has its text from elsewhere and nothing to
-        // compare.
-        const dir = new URL(`./node_modules/${name}/`, import.meta.url);
-        const files = readdirSync(dir).filter((f) => /^(licen[cs]e|copying)/i.test(f));
-        const shown = texts.map((t) => readFileSync(new URL(`texts/${t}`, root), "utf8").trim());
-        if (files.length > 0 && !files.some((f) => shown.includes(readFileSync(new URL(f, dir), "utf8").trim()))) {
-          wrong.push(`${name} carries another licence text than its notice shows`);
-        }
-      }
-      for (const name of noticed.keys()) {
-        if (!found.has(name)) wrong.push(`${name} has a notice and is not in the bundle`);
-      }
-      if (found.size === 0) wrong.push("no package was found in the bundle, so nothing was checked");
-      if (wrong.length > 0) this.error(`${wrong.join(", ")}. Run make notices.`);
+      if (folders.size === 0) this.error("no package was found in the bundle, so no licence can be shown");
+      const dist = new URL("../cmd/framefairy-app/dist/", import.meta.url);
+      mkdirSync(dist, { recursive: true });
+      writeFileSync(new URL("packages.json", dist), JSON.stringify([...folders].sort(), null, 2) + "\n");
     },
   };
 }

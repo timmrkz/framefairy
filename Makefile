@@ -128,6 +128,7 @@ INSTALL ?= $(if $(CI),0,1)
 UI_SOURCES := $(shell find frontend/src -type f 2>/dev/null) frontend/index.html \
 	frontend/package.json frontend/vite.config.ts frontend/svelte.config.js frontend/tsconfig.json
 UI_BUILT := cmd/framefairy-app/dist/app/index.html
+LICENCES_BUILT := cmd/framefairy-app/dist/licences.json
 
 # What the build workflow says about a build of the app: its version, the
 # channel it came from and the commit. A build made here leaves them empty,
@@ -247,7 +248,16 @@ $(BIN)/framefairy$(EXE): modules
 		$(GO) build -trimpath -ldflags "$(LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 
-$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) frames
+# The licence of every Go module the programs compile on this system and
+# of every package in the interface bundle, written by the build from what
+# it really has and built into the app beside notices/. It is never in the
+# repository, so a new version needs nothing written by hand. It stops the
+# build on a licence that is not on the list in notices/licence.
+$(LICENCES_BUILT): go.mod go.sum $(UI_BUILT)
+	@echo "Writing the licences of the Go modules and the interface's packages"
+	@$(GO) run ./notices/gen -built $@
+
+$(BIN)/framefairy-app$(EXE): modules $(UI_BUILT) $(LICENCES_BUILT) frames
 	@echo "Building $@"
 	@sums=$$(sh scripts/tool-sums.sh $(STAMPS)) && \
 		$(GO) build -trimpath -tags production -ldflags "$(APP_LDFLAGS) -X framefairy/engine.toolSums=$$sums" -o $@ ./cmd/framefairy-app
@@ -374,22 +384,15 @@ llama:
 tools-archive:
 	@sh scripts/pack-tools.sh $(STAMPS)/ffmpeg $(STAMPS)/llama $(STAMPS)/dist
 
-# The licence of everything the programs are made of or bring with them,
-# and the text each asks to travel with every copy, into notices/, which
-# the app shows under Licences. It reads the Go modules and the
-# interface's packages, so it installs those first. The source trees
-# ffmpeg and llama-server are built from it reads when make has built
-# them, and keeps their notices as they are while their pins stay put, so
-# a new module or package is noticed in a minute and not after both
-# builds. The tests and the interface build say when it is due: a module
-# or a package that is new, gone or carries another licence text, or a
-# pinned version that changed without it.
-#
-# The interface build's own check is off while it runs: after a package
-# update, the very build it does first stopped on the notices it was
-# there to write, and "Run make notices" could never be done.
-notices: export FRAMEFAIRY_WRITING_NOTICES := 1
-notices: frontend/node_modules/.package-lock.json
+# The licence of what the programs bring with them whose version is pinned
+# by hand, and the text each asks to travel with every copy, into notices/,
+# which the app shows under Licences: Go, ffmpeg and llama-server with
+# what is in them, the speech runtime, the fonts, the hyphenation patterns
+# and the models. It reads the source trees ffmpeg and llama-server are
+# built from, so it builds everything first. The tests say when it is due:
+# a pinned version that changed without it. The Go modules and the
+# interface's packages are not in it, see $(LICENCES_BUILT).
+notices: all
 	@$(GO) run ./notices/gen
 	@printf 'ok  \tnotices\n'
 

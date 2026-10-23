@@ -91,15 +91,10 @@ packages=$($GO list -f '{{.Dir}}' ./... | sed "s|^$root/\{0,1\}||; s|^$|.|")
 
 # The package a file belongs to: the nearest directory above it that is
 # a package. A file in testdata/, or one a package embeds, belongs to the
-# package it sits in. The top of the repository is a package too, see
-# modules.go, but only its own Go files belong to it: anything else up
-# there, or in a folder that is no package, is the build's.
+# package it sits in.
 package_of() {
 	dir=$(dirname -- "$1")
 	while :; do
-		if [ "$dir" = . ]; then
-			case $1 in */*) return ;; *.go) ;; *) return ;; esac
-		fi
 		if printf '%s\n' "$packages" | grep -qxF "$dir"; then
 			if [ "$dir" = . ]; then echo "$module"; else echo "$module/$dir"; fi
 			return

@@ -18,3 +18,27 @@ func TestEveryLicenceTextOfAModuleIsTold(t *testing.T) {
 		}
 	}
 }
+
+// Only a licence a person read and allowed lets a module or a package into
+// the app. The GPL, a licence nobody named and an empty one stop the build.
+func TestOnlyALicenceAPersonAllowedShips(t *testing.T) {
+	for _, c := range []struct {
+		spdx string
+		want bool
+	}{
+		{"MIT", true},
+		{"Apache-2.0", true},
+		{"(MIT OR Apache-2.0)", true},
+		{"MIT OR GPL-3.0-only", true},
+		{"MIT AND BSD-3-Clause", true},
+		{"MIT AND GPL-3.0-only", false},
+		{"GPL-3.0-only", false},
+		{"LGPL-2.1-or-later", false},
+		{"SEE LICENSE IN LICENSE.txt", false},
+		{"", false},
+	} {
+		if got := MayShip(c.spdx); got != c.want {
+			t.Errorf("MayShip(%q) = %v, want %v", c.spdx, got, c.want)
+		}
+	}
+}

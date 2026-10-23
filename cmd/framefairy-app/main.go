@@ -421,11 +421,35 @@ func (s *FrameFairy) Platform() string { return runtime.GOOS }
 
 // Licences is the notice of every piece of other people's work the app is
 // made of or brings with it, for Acknowledgements in the Help menu.
-func (s *FrameFairy) Licences() ([]notices.Notice, error) { return notices.All() }
+func (s *FrameFairy) Licences() ([]notices.Notice, error) {
+	built, err := builtNotices()
+	if err != nil {
+		return nil, err
+	}
+	return notices.All(built)
+}
 
 // LicenceText is one of the texts a notice names. Only the texts built
 // into the app can be read this way, whatever name is asked for.
-func (s *FrameFairy) LicenceText(name string) (string, error) { return notices.Text(name) }
+func (s *FrameFairy) LicenceText(name string) (string, error) {
+	built, err := builtNotices()
+	if err != nil {
+		return "", err
+	}
+	return notices.Text(built, name)
+}
+
+// builtNotices are the notices make wrote of the Go modules and the
+// interface's packages this build has, see notices/gen. A program built
+// without make has none, and says so in the log.
+func builtNotices() (notices.Built, error) {
+	raw, err := dist.ReadFile("dist/licences.json")
+	if err != nil {
+		theLog.line(zerolog.WarnLevel, "app").Err(err).Msg("built without the licences of its modules and packages, run make")
+		return notices.Built{}, nil
+	}
+	return notices.ReadBuilt(raw)
+}
 
 // Chrome says where macOS put its own furniture in a window, "app" or
 // "report", or all zeros where the system draws its own title bar. The

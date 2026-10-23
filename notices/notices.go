@@ -2,33 +2,33 @@
 // that Frame Fairy is made of or brings with it, and the text each licence
 // asks to travel with every copy.
 //
-// Nothing in here is written by hand except the texts in kept/. The rest is
-// made by gen/ from what the programs are really built from: the Go modules
-// they compile, the packages the interface bundles, and the source trees
-// make builds ffmpeg and llama-server from. The tests in this package fail
-// when something the programs are built from has no notice, so the list can
-// not quietly fall behind.
+// Two lists make up what the app shows. notices.json, with its texts, is
+// kept here: Go itself, ffmpeg and llama-server with what is in them, the
+// speech runtime, the fonts, the hyphenation patterns and the models,
+// whose versions are pinned by hand. make notices writes it with gen/ from
+// what make builds them from, and nothing in it is written by hand except
+// the texts in kept/. The tests in this package fail when a pin moves
+// without it.
 //
-// A Go module and an interface package keep no version here. Theirs is the
-// one go.mod and the interface's package-lock.json name, which Dependabot
-// moves, so an update that keeps its licence needs no new notice.
+// The Go modules the programs compile and the packages the interface
+// bundles are not kept here. The build writes their notices into its own
+// output, from what that build really has, with gen/ -built, and the app
+// hands them to All and Text. So a Dependabot update needs no notice
+// written, and no version can fall behind.
 package notices
 
 import (
 	"embed"
 	"encoding/json"
 	"path"
+	"sort"
 	"strings"
-
-	"framefairy"
 )
 
 // Notice is one piece of work and its licence.
 type Notice struct {
 	// Name is what the work is called by the people who make it.
-	Name string `json:"name"`
-	// Version is left out of notices.json for a Go module and an
-	// interface package, and All fills it in from what they are built at.
+	Name    string `json:"name"`
 	Version string `json:"version"`
 	// Licence is the SPDX identifier, like MIT or Apache-2.0.
 	Licence string `json:"licence"`
@@ -59,8 +59,27 @@ var Parts = []string{PartApp, PartScreen, PartSpeech, PartFFmpeg, PartLlama, Par
 //go:embed notices.json texts
 var files embed.FS
 
-// All is every notice, in the order of Parts and by name within a part.
-func All() ([]Notice, error) {
+// Built is what the build wrote about the Go modules and the interface
+// packages it is made of: their notices, and their texts by name.
+type Built struct {
+	Notices []Notice          `json:"notices"`
+	Texts   map[string]string `json:"texts"`
+}
+
+// ReadBuilt reads what gen -built wrote. Nothing, from a program built
+// without make, is no notices.
+func ReadBuilt(raw []byte) (Built, error) {
+	var b Built
+	if len(raw) == 0 {
+		return b, nil
+	}
+	err := json.Unmarshal(raw, &b)
+	return b, err
+}
+
+// All is every notice, the ones kept here and the ones the build wrote, in
+// the order of Parts and by name within a part.
+func All(built Built) ([]Notice, error) {
 	raw, err := files.ReadFile("notices.json")
 	if err != nil {
 		return nil, err
@@ -69,73 +88,25 @@ func All() ([]Notice, error) {
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, err
 	}
-	modules := goModules(framefairy.GoMod)
-	packages, err := npmPackages(framefairy.PackageLock)
-	if err != nil {
-		return nil, err
+	list = append(list, built.Notices...)
+	order := map[string]int{}
+	for i, p := range Parts {
+		order[p] = i
 	}
-	for i, n := range list {
-		if n.Version != "" {
-			continue
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Part != list[j].Part {
+			return order[list[i].Part] < order[list[j].Part]
 		}
-		if n.Part == PartScreen {
-			list[i].Version = packages[n.Name]
-		} else {
-			list[i].Version = strings.TrimPrefix(modules[n.Name], "v")
-		}
-	}
+		return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name)
+	})
 	return list, nil
 }
 
-// goModules is every module go.mod requires, at the version it names. go
-// writes every module the build takes a package from there, at the version
-// it takes.
-func goModules(mod []byte) map[string]string {
-	versions := map[string]string{}
-	block := false
-	for _, line := range strings.Split(string(mod), "\n") {
-		if i := strings.Index(line, "//"); i >= 0 {
-			line = line[:i]
-		}
-		fields := strings.Fields(line)
-		switch {
-		case len(fields) == 2 && fields[0] == "require" && fields[1] == "(":
-			block = true
-		case block && len(fields) == 1 && fields[0] == ")":
-			block = false
-		case block && len(fields) == 2:
-			versions[fields[0]] = fields[1]
-		case len(fields) == 3 && fields[0] == "require":
-			versions[fields[1]] = fields[2]
-		}
+// Text is one text a notice names, from texts/ or from the build.
+func Text(built Built, name string) (string, error) {
+	if text, ok := built.Texts[name]; ok {
+		return text, nil
 	}
-	return versions
-}
-
-// npmPackages is every package the interface's lock file installs, at the
-// version it installs.
-func npmPackages(lock []byte) (map[string]string, error) {
-	var file struct {
-		Packages map[string]struct {
-			Version string `json:"version"`
-		} `json:"packages"`
-	}
-	if err := json.Unmarshal(lock, &file); err != nil {
-		return nil, err
-	}
-	versions := map[string]string{}
-	for at, p := range file.Packages {
-		// A package another package carries in its own node_modules is
-		// not what the bundle names it by.
-		if name, ok := strings.CutPrefix(at, "node_modules/"); ok && !strings.Contains(name, "/node_modules/") {
-			versions[name] = p.Version
-		}
-	}
-	return versions, nil
-}
-
-// Text is the content of one file in texts/.
-func Text(name string) (string, error) {
 	raw, err := files.ReadFile(path.Join("texts", path.Base(name)))
 	return string(raw), err
 }
