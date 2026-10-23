@@ -5940,9 +5940,13 @@ for (const seq of toWalk) {
         await page.evaluate(() => {
           const screen = document.querySelector(".screen");
           window.__scrubShown = [];
-          window.__scrubKeys = window.__frameQueue?.stats.keys ?? 0;
-          window.__scrubWatch = new MutationObserver(() => window.__scrubShown.push(Number(screen.dataset.shown)));
-          window.__scrubWatch.observe(screen, { attributes: true, attributeFilter: ["data-shown"] });
+          window.__scrubKeys = window.__frameQueue?.stats.keysAt.length ?? 0;
+          // Each record's old value, and the value now once it is read, so
+          // two changes before the observer runs are both kept.
+          window.__scrubWatch = new MutationObserver((records) => {
+            for (const r of records) window.__scrubShown.push(Number(r.oldValue));
+          });
+          window.__scrubWatch.observe(screen, { attributes: true, attributeOldValue: true, attributeFilter: ["data-shown"] });
         });
         // 1.4 s after a key frame, so the frame under the hand is 7 frames
         // of decoding from it.
@@ -5957,8 +5961,10 @@ for (const seq of toWalk) {
         await shownOnPlayhead(page);
         const rested = await preview(page, 1 / fps);
         const seen = await page.evaluate(() => {
+          for (const r of window.__scrubWatch.takeRecords()) window.__scrubShown.push(Number(r.oldValue));
           window.__scrubWatch.disconnect();
-          return { shown: window.__scrubShown, keys: (window.__frameQueue?.stats.keys ?? 0) - window.__scrubKeys };
+          window.__scrubShown.push(Number(document.querySelector(".screen").dataset.shown));
+          return { shown: window.__scrubShown, keys: window.__frameQueue?.stats.keysAt.slice(window.__scrubKeys) ?? [] };
         });
         await page.mouse.up();
         await settle(page);
@@ -5975,9 +5981,12 @@ for (const seq of toWalk) {
         const { fps, shown, keys, rested, after } = scrubbed;
         const frameOf = (at) => Math.floor((at + 0.001) * fps);
         const under = frameOf(rested.at);
-        const key = shown.find((at) => frameOf(at) < under && frameOf(at) >= under - 2 * fps);
-        if (!keys || key === undefined) {
-          wrong = `no key frame came on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the video preview put up ${shown.map((a) => a.toFixed(3)).join(", ")}`;
+        // What the frame queue put up, rather than what was painted: on a
+        // busy machine the frame under the hand can come before the next
+        // paint, and then the key frame is rightly never painted.
+        const key = keys.find((at) => frameOf(at) < under && frameOf(at) >= under - 2 * fps);
+        if (key === undefined) {
+          wrong = `no key frame was put up on the way to the frame under the hand at ${rested.at.toFixed(3)} s, the frame queue put up key frames at ${keys.map((a) => a.toFixed(3)).join(", ") || "none"} and the video preview showed ${shown.map((a) => a.toFixed(3)).join(", ")}`;
         } else if (Math.round(rested.frame * fps) !== under) {
           wrong = `with the button still down, the picture stood on frame ${Math.round(rested.frame * fps)}, not frame ${under} under the hand`;
         } else if (Math.round(after.frame * fps) !== frameOf(after.at)) {
@@ -6553,12 +6562,16 @@ for (const seq of toWalk) {
         await settle(page);
         await playUntil(page, { most: 0.3 });
         await page.keyboard.press("l");
-        await playUntil(page, { past: end - 0.03 });
-        const r = await page.evaluate(async () => {
+        // The playhead moves once a frame of the video (#446), so it is on
+        // the clip's last frame up to a frame before the end, and the page
+        // is held for that frame longer.
+        const frame = 1 / (await rate(page));
+        await playUntil(page, { past: end - frame - 0.03 });
+        const r = await page.evaluate(async (frame) => {
           const q = window.__frameQueue;
           const sounded = () => q.m0 / q.sampleRate + (q.audio.currentTime - q.c0);
           const t = performance.now();
-          while (performance.now() - t < 250) {}
+          while (performance.now() - t < 250 + frame * 1000) {}
           const crossed = q.c0 !== null && sounded() >= q.program.length;
           document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
           // The loop is switched by the page's next microtasks, not its
@@ -6566,7 +6579,7 @@ for (const seq of toWalk) {
           await Promise.resolve();
           await new Promise((done) => setTimeout(done, 0));
           return { crossed, loop: q.program.loop, ends: q.program.end, sounded: sounded() };
-        });
+        }, frame);
         await page.keyboard.press("Space");
         await settle(page);
         if (!r.crossed) wrong = "the sound had not crossed the clip's end when L came";

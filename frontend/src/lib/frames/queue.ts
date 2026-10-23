@@ -109,8 +109,9 @@ export type Stats = {
   // press of L starts none, see relooped.
   starts: number;
   // Key frames put up on the way to the frame under a hand that drags the
-  // playhead, see passing.
+  // playhead, see passing, and where each begins, for the walks.
   keys: number;
+  keysAt: number[];
   // Packets of sound decoded, and stretches handed to the sound card.
   soundDecoded: number;
   soundScheduled: number;
@@ -518,6 +519,7 @@ export class FrameQueue {
     waitedForDress: 0,
     starts: 0,
     keys: 0,
+    keysAt: [],
     soundDecoded: 0,
     soundScheduled: 0,
     screen: "",
@@ -1222,7 +1224,10 @@ export class FrameQueue {
     if (!key) this.shownAsked = seq;
     if (this.shown?.rank === rank) return;
     this.stats.open++;
-    if (key) this.stats.keys++;
+    if (key) {
+      this.stats.keys++;
+      this.stats.keysAt.push(this.shownAt(rank));
+    }
     this.put(frame.clone(), -1, rank, true);
     this.shownKey = key;
     this.report(true, true);
