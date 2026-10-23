@@ -79,7 +79,9 @@ are removed. `--preview` and `--dry-run` write none. See
 [THUMBNAILS.md](THUMBNAILS.md).
 
 `framefairy episode.mp4 --transcribe-only` transcribes and stops. It writes
-`logs/words.srt`, a readable transcript, and makes no API call.
+`logs/words.srt`, a readable transcript, and makes no API call. It is the
+same subtitles Export transcript makes in the app, at most two lines of 42
+characters and 7 seconds each, without the corrections made in the app.
 
 Transcription runs once per episode, or once per `--from`/`--to` window. Its
 result is reused until the video file changes.

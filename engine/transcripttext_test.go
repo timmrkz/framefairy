@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -108,4 +109,39 @@ func TestTheExportedSubtitlesAreShort(t *testing.T) {
 	if got := TranscriptSRT(&Transcript{}); got != "" {
 		t.Errorf("no words read %q", got)
 	}
+
+	// Short words said slowly would fit two lines for half a minute, so
+	// the time is what cuts them, and no subtitle runs into the next.
+	// Found by the review of #458, nothing here looked at the times.
+	words = words[:0]
+	for i := range 40 {
+		words = append(words, Cue{Start: float64(i) * 1.2, End: float64(i)*1.2 + 1, Text: "ja"})
+	}
+	srt = TranscriptSRT(&Transcript{Words: words})
+	blocks = strings.Split(strings.TrimSpace(srt), "\n\n")
+	ended := -1.0
+	for _, block := range blocks {
+		times := strings.Split(strings.Split(block, "\n")[1], " --> ")
+		from, to := srtSeconds(t, times[0]), srtSeconds(t, times[1])
+		if to-from > subtitleSeconds {
+			t.Errorf("a subtitle of %.3f s:\n%s", to-from, block)
+		}
+		if from < ended {
+			t.Errorf("a subtitle from %.3f s begins before the one before it ends at %.3f s", from, ended)
+		}
+		ended = to
+	}
+	if len(blocks) < 5 {
+		t.Errorf("40 words over 48 s in %d subtitles", len(blocks))
+	}
+}
+
+// srtSeconds reads a time of an srt file, 00:01:02,345.
+func srtSeconds(t *testing.T, at string) float64 {
+	t.Helper()
+	var h, m, sec, ms int
+	if _, err := fmt.Sscanf(at, "%d:%d:%d,%d", &h, &m, &sec, &ms); err != nil {
+		t.Fatalf("the time %q: %v", at, err)
+	}
+	return float64(h*3600+m*60+sec) + float64(ms)/1000
 }

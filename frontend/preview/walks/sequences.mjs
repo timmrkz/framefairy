@@ -198,15 +198,16 @@
 //   ["transcript", how] opens the three dots of the video on screen in the
 //                      sidebar, whose row about the words says the one
 //                      thing that can be done with them now, issue #432.
-//                      "transcribe" needs it to say Transcribe whole
-//                      video and clicks it: in the next frame the menu has
-//                      closed and the video's dot pulses, with no number
-//                      in its row. "stop" needs Stop transcribing and
+//                      "transcribe" waits until nothing runs for the
+//                      video and holds the speech, then needs it to say
+//                      Transcribe whole video and clicks it: in the next
+//                      frame the menu has closed and the video's dot
+//                      pulses, with no number in its row. "stop" needs Stop transcribing and
 //                      clicks it: the menu has closed, and opened again
 //                      it says Continue transcribing at once.
-//                      "continue" waits for the stopped work to end and
-//                      clicks Continue transcribing, which pulses the dot
-//                      in the next frame again. "Text" and
+//                      "continue" waits the same way for the stopped
+//                      work to end and clicks Continue transcribing, which
+//                      pulses the dot in the next frame again. "Text" and
 //                      "Subtitles" wait, asking again each time the work
 //                      says how far it heard, until the Go side says the
 //                      video is transcribed to its end, then need the row
@@ -216,7 +217,12 @@
 //                      for the video with the format's ending and hold
 //                      the words of the video, and the menu has closed.
 //                      "Escape" hangs the formats the same way and needs
-//                      Escape to close them and the menu with them
+//                      Escape to close them and the menu with them.
+//                      "click" hangs them and clicks Export transcript,
+//                      which has to keep them out. "keys" does it with the
+//                      keyboard alone: Return on Export transcript has to
+//                      put the keyboard on Text, the down arrow on
+//                      Subtitles, and Return saves the subtitles
 //   ["exported", word] the file exported last holds the word
 //   ["title bar"]      lays the app's window out the way macOS does on
 //                      Tim's Mac, a title bar 30 points high with its
@@ -1355,6 +1361,9 @@ export const sequences = [
       ["transcript", "Escape"],
       ["transcript", "Subtitles"],
       ["exported", "Schulhoff"],
+      ["transcript", "click"],
+      ["transcript", "keys"],
+      ["exported", "Schulhoff"],
     ],
   },
   {
@@ -1363,16 +1372,15 @@ export const sequences = [
     // on, and then offers its transcript.
     name: "a video added is transcribed to its end from its menu",
     steps: [
-      // Heard slowly, and held once some of it is, so most of it is
-      // still to come when Transcribe whole video is clicked.
-      ["speech", 1500],
-      ["add", 600],
-      ["heard some"],
-      ["speech", "hold"],
+      // Its first search hears the first of its two windows and ends, so
+      // half of it is still to come when Transcribe whole video is
+      // clicked, and the click holds the speech so it stays to come.
+      ["speech", 0],
+      ["add", 1500],
       ["transcript", "transcribe"],
       // Stopped and carried on, each said in the frame of the click.
       ["transcript", "stop"],
-      ["speech", 1500],
+      ["speech", 0],
       ["transcript", "continue"],
       ["speech", 0],
       ["transcript", "Text"],
@@ -6811,19 +6819,30 @@ for (const seq of toWalk) {
           );
         if (arg === "transcribe" || arg === "continue") {
           const want = arg === "transcribe" ? "Transcribe whole video" : "Continue transcribing";
-          if (arg === "continue") {
-            // The stopped work has ended first, so what carries it on is a
-            // job of its own.
-            await page.keyboard.press("Escape");
-            await menu.waitFor({ state: "detached" });
-            const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && j.kind === "transcribe" && (j.state === "running" || j.state === "queued"));
-            for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
-            await settle(page);
-            await row.hover();
-            await row.locator("button.more").click();
-            await menu.waitFor();
+          // Nothing runs for the video first, its first search and the
+          // work that was stopped included, so a dot that pulses in the
+          // next frame pulses for the click and for nothing else. Found by
+          // the review of #458: the first search still heard, and the dot
+          // pulsed for it. The speech is held from then on, so the work
+          // the click starts is still running when the next step looks.
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
+          const runs = async () => (await ask(page, "Jobs")).some((j) => j.episode === source && (j.state === "running" || j.state === "queued"));
+          for (let seen = await news(page); await runs(); ) seen = await nextNews(page, seen);
+          await control(url, "/speech?ms=hold");
+          await settle(page);
+          if (await page.locator("aside li:has(button.episode.current) .dot.busy").count()) {
+            wrong = "the video's dot pulses with nothing running";
+            break;
           }
+          await row.hover();
+          await row.locator("button.more").click();
+          await menu.waitFor();
+          // The Go side answers late, the way a busy machine does, so the
+          // dot pulses for the click and not for the job's first news.
+          await control(url, "/hold?call=Transcribe&ms=1500");
           const after = await pick(want);
+          await settle(page);
           if (after.said !== want) wrong = `the menu says ${JSON.stringify(after.said)}, not ${want}`;
           else if (after.open) wrong = `the menu stayed open after ${want} was clicked`;
           else if (!after.busy) wrong = `the frame after ${want} was clicked, the video's dot does not say that work runs`;
@@ -6868,8 +6887,36 @@ for (const seq of toWalk) {
           wrong = `the menu of a video transcribed to its end says ${JSON.stringify(await says())}, not Export transcript`;
           break;
         }
-        await menu.locator(".item", { hasText: "Export transcript" }).hover();
         const formats = page.locator(".formats");
+        if (arg === "keys") {
+          // With the keyboard alone, the way it works in a menu on the
+          // Mac: Return on Export transcript hangs the formats out with
+          // the keyboard on the first, the down arrow goes to the next and
+          // Return picks it. Found by the review of #458, no key reached
+          // them.
+          await menu.locator("[data-export]").focus();
+          await page.keyboard.press("Enter");
+          await formats.waitFor();
+          const focused = () => page.evaluate(() => (document.activeElement?.closest(".formats .item")?.textContent ?? "").replace(/\s+/g, " ").trim());
+          if (!(await focused()).startsWith("Text")) {
+            wrong = `Return on Export transcript left the keyboard on ${JSON.stringify(await focused())}, not on Text`;
+            await page.keyboard.press("Escape");
+            break;
+          }
+          await page.keyboard.press("ArrowDown");
+          if (!(await focused()).startsWith("Subtitles")) {
+            wrong = `the down arrow in the formats went to ${JSON.stringify(await focused())}, not to Subtitles`;
+            await page.keyboard.press("Escape");
+            break;
+          }
+          await page.keyboard.press("Enter");
+          await menu.waitFor({ state: "detached" });
+          await settle(page);
+          const file = await control(url, "/exported");
+          if (!file?.name.endsWith(" transcript.srt")) wrong = `the formats picked with the keyboard saved ${JSON.stringify(file?.name)}`;
+          break;
+        }
+        await menu.locator(".item", { hasText: "Export transcript" }).hover();
         await formats.waitFor();
         const hangs = await page.evaluate(() => {
           const m = document.querySelector(".video-menu").getBoundingClientRect();
@@ -6879,6 +6926,17 @@ for (const seq of toWalk) {
         });
         if (!hangs.right || !hangs.top) {
           wrong = "the formats do not hang on the right of the menu, beside Export transcript";
+          break;
+        }
+        if (arg === "click") {
+          // The row the pointer hung the formats out from, clicked, keeps
+          // them out, the way a submenu stays on the Mac. Found by the
+          // review of #458, the click put them away.
+          await menu.locator("[data-export]").click();
+          const still = await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(!!document.querySelector(".formats")))));
+          if (!still) wrong = "Export transcript clicked put its formats away";
+          await page.keyboard.press("Escape");
+          await menu.waitFor({ state: "detached" });
           break;
         }
         if (arg === "Escape") {
@@ -6895,6 +6953,9 @@ for (const seq of toWalk) {
         }
         await formats.locator(".item", { hasText: arg }).click();
         await menu.waitFor({ state: "detached" });
+        // The export has been answered, so the file is there. A long
+        // video's took longer than the walk took to look.
+        await settle(page);
         const file = await control(url, "/exported");
         const ending = { Text: ".txt", Subtitles: ".srt" }[arg];
         const name = `${basename(source, extname(source))} transcript${ending}`;

@@ -30,9 +30,9 @@
   // closing, and Export transcript once it is all there. Each is an
   // action, which closes the menu the way a menu item does on the Mac.
   // How far the work has come is not the menu's to show: the dots on the
-  // range picker shrink and the video's dot pulses, Tim's call on #458. Export hangs a list of its formats
-  // on the right of the menu, the way Export To does in Pages, and a
-  // format opens the system's save box. Two rows of which one never works
+  // range picker shrink and the video's dot pulses, Tim's call on #458.
+  // Export hangs a list of its formats on the right of the menu, the way
+  // Export To does in Pages, and a format opens the system's save box. Two rows of which one never works
   // were two things to read for one.
   //
   // Everything saves at once, the way it does everywhere in the app: a
@@ -41,6 +41,7 @@
   // while they are typed. Escape puts back what was there, and the cross at
   // the end of the field, there while it has words, removes the label.
   import { Popover } from "bits-ui";
+  import { tick } from "svelte";
   import Icon from "./Icon.svelte";
   import Swatches from "./Swatches.svelte";
   import type { EpisodeStatus, Job, Label, TranscriptFormat } from "../lib/api";
@@ -107,7 +108,41 @@
   );
 
   // The list of formats Export transcript hangs on the right of the menu.
+  // The pointer on Export hangs it out and leaves the keyboard where it
+  // was, so a label being typed is neither saved nor lost by it. A click
+  // on Export keeps it out, the way a submenu stays on the Mac. Return,
+  // Space or the right arrow on Export hang it out with the keyboard on
+  // its first format, the arrows go up and down it, and the left arrow
+  // takes the keyboard back to Export. Found by the review of #458: a
+  // click put it away, and no key reached it.
   let exporting = $state(false);
+  let exportRow = $state<HTMLButtonElement>();
+  let formats = $state<HTMLElement>();
+  const formatItems = () => [...(formats?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+  async function showFormats(keyboard: boolean) {
+    if (ep.missing) return;
+    exporting = true;
+    if (!keyboard) return;
+    await tick();
+    formatItems()[0]?.focus();
+  }
+  function formatKeys(event: KeyboardEvent) {
+    if (event.key === "Escape") return;
+    // The list lies outside the menu, so the workspace's shortcuts are
+    // kept off it here as the menu keeps them off its own rows.
+    event.stopPropagation();
+    const items = formatItems();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(at + step + items.length) % items.length]?.focus();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      exporting = false;
+      exportRow?.focus();
+    }
+  }
   function exportAs(format: TranscriptFormat) {
     exporting = false;
     close();
@@ -229,6 +264,17 @@
     onopenchange(false);
   }
 
+  // Escape in the formats: the menu closes with them and puts the label
+  // back, what Escape on the menu does through onEscapeKeydown and
+  // onOpenChange, which a menu closed from here does not reach.
+  function dismiss() {
+    putBack = true;
+    exporting = false;
+    open = false;
+    ondraft(kept);
+    onopenchange(false);
+  }
+
   $effect(() => {
     if (!shown && open) close();
   });
@@ -346,14 +392,24 @@
                 <Popover.Root bind:open={exporting}>
                   <Popover.Trigger>
                     {#snippet child({ props })}
+                      <!-- The click is the menu's own and only ever hangs
+                           the formats out. A click made with the keyboard
+                           has no detail, and takes the keyboard to them. -->
                       <button
                         {...props}
+                        bind:this={exportRow}
                         class="item"
                         class:lit={exporting}
                         data-export
                         disabled={ep.missing}
                         title="Save the transcript with every word you corrected"
-                        onpointerenter={() => (exporting = !ep.missing)}
+                        onpointerenter={() => showFormats(false)}
+                        onclick={(e) => showFormats(e.detail === 0)}
+                        onkeydown={(e) => {
+                          if (e.key !== "ArrowRight") return;
+                          e.preventDefault();
+                          showFormats(true);
+                        }}
                       >
                         <Icon name="export" />
                         Export transcript
@@ -362,11 +418,12 @@
                     {/snippet}
                   </Popover.Trigger>
                   <Popover.Portal>
-                    <!-- Hung out by the pointer, the formats leave the keyboard
-                         where it was, so a label being typed is neither saved
-                         nor lost by it. Escape closes them and the menu with
-                         them, the way it closes a submenu on the Mac, and puts
-                         the label back as Escape on the menu does. -->
+                    <!-- Where the keyboard goes is said by showFormats, so
+                         the list takes none of its own. Escape closes it and
+                         the menu with it, the way it closes a submenu on the
+                         Mac, see dismiss. It hangs 4 from the menu and keeps
+                         4 from the app's edge, as the menu does from its
+                         row. -->
                     <Popover.Content
                       side="right"
                       align="start"
@@ -376,18 +433,14 @@
                       onCloseAutoFocus={(e) => e.preventDefault()}
                       onEscapeKeydown={(e) => {
                         e.preventDefault();
-                        exporting = false;
-                        putBack = true;
-                        open = false;
-                        ondraft(kept);
-                        onopenchange(false);
+                        dismiss();
                       }}
                     >
                       {#snippet child({ props, wrapperProps, open: listed })}
                         {#if listed}
                           <div {...wrapperProps}>
                             <!-- svelte-ignore a11y_no_static_element_interactions -->
-                            <div {...props} class="formats panel" role="menu" aria-label="Formats" onkeydown={(e) => e.key !== "Escape" && e.stopPropagation()}>
+                            <div {...props} bind:this={formats} class="formats panel" role="menu" aria-label="Formats" onkeydown={formatKeys}>
                               <button class="item" role="menuitem" title="The words in paragraphs, to read or paste" onclick={() => exportAs("text")}>
                                 Text
                                 <span class="end">.txt</span>
@@ -555,8 +608,10 @@
     color: var(--muted);
   }
 
-  /* The list of formats hangs beside the menu, as wide as its words, its
-     rows the menu's rows and running from edge to edge the same way. */
+  /* The list of formats hangs beside the menu, its rows the menu's rows
+     and running from edge to edge the same way. It is as wide as its
+     words and never narrower than 160, so the ending of a format stands
+     apart from its name the way a shortcut does in a menu on the Mac. */
   .formats {
     min-width: 160px;
     padding: 0;

@@ -917,3 +917,32 @@ func TestAFileIsReplacedWholeOrNotAtAll(t *testing.T) {
 		t.Errorf("the file is now %q", got)
 	}
 }
+
+// A transcript is done when nothing is left to hear by the measure hear
+// stops at, a gap too short to hold a word included. Found by the review
+// of #458: a gap of 0.05 s left between two parts was never heard, and
+// the video never read as transcribed, so Export transcript never came.
+func TestATranscriptIsDoneWhenNothingIsLeftToHear(t *testing.T) {
+	cases := []struct {
+		name  string
+		parts [][2]PyFloat
+		done  bool
+	}{
+		{"one part to the end", [][2]PyFloat{{0, 600}}, true},
+		{"a gap too short to hold a word", [][2]PyFloat{{0, 100}, {100.05, 600}}, true},
+		{"a gap with room for a word", [][2]PyFloat{{0, 100}, {100.5, 600}}, false},
+		{"short of the end by too little for a word", [][2]PyFloat{{0, 599.95}}, true},
+		{"short of the end", [][2]PyFloat{{0, 590}}, false},
+		{"from a little after the start", [][2]PyFloat{{0.05, 600}}, true},
+		{"nothing heard", nil, false},
+	}
+	for _, c := range cases {
+		file := transcriptFile{Version: transcriptVersion, End: 600, Parts: c.parts}
+		if got := file.done(); got != c.done {
+			t.Errorf("%s: done is %v", c.name, got)
+		}
+		if unheard := len(gapsIn(file.heard(), Window{0, 600})) == 0; unheard != c.done && len(c.parts) > 0 {
+			t.Errorf("%s: done says %v and what is left to hear disagrees", c.name, c.done)
+		}
+	}
+}
