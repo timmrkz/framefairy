@@ -199,13 +199,20 @@ func givesWay(held, asks turnKind) bool {
 
 // passes says whether an ask goes ahead of one in the same lane asked for
 // before it: a clip made by hand goes ahead of everything but another clip,
-// and a search that hears goes ahead of the whole video.
+// and everything but another whole video goes ahead of the whole video.
+//
+// The whole video waits for every search and clip that asks to hear, so
+// whatever was asked for after it may not wait for it in turn. A model
+// being installed once did, behind it, and a search behind the install:
+// each waited on the next and none of the three ever heard. Found by
+// TestTurnsFromEverywhereAtOnce once the review of #458 put the whole
+// video in it.
 func passes(a, earlier turnKind) bool {
-	switch a {
-	case handHearingTurn:
+	if earlier == wholeHearingTurn {
+		return a != wholeHearingTurn
+	}
+	if a == handHearingTurn {
 		return earlier != handHearingTurn
-	case hearingTurn:
-		return earlier == wholeHearingTurn
 	}
 	return false
 }

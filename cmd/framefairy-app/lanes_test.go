@@ -205,7 +205,8 @@ func TestFindingLeavesOtherWorkAlone(t *testing.T) {
 }
 
 // Asked for, given up and let go from many goroutines at once, a lane
-// never has two turns at a time and every turn that is not given up comes.
+// never has two turns at a time and every turn that is not given up comes,
+// the whole video's hearing that gives way to every other among them.
 func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 	l := newLanes()
 	var inLane [2]atomic.Int32
@@ -216,11 +217,11 @@ func TestTurnsFromEverywhereAtOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			which := i % 2
-			kind := []turnKind{plainTurn, hearingTurn, findingTurn, handHearingTurn}[(i/2)%4]
+			kind := []turnKind{plainTurn, hearingTurn, findingTurn, handHearingTurn, wholeHearingTurn}[(i/2)%5]
 			if which == 0 && kind == findingTurn {
 				kind = hearingTurn
 			}
-			if which == 1 && (kind == hearingTurn || kind == handHearingTurn) {
+			if which == 1 && (kind == hearingTurn || kind == handHearingTurn || kind == wholeHearingTurn) {
 				kind = findingTurn
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -318,4 +319,33 @@ func TestTheWholeVideoHearsLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	done()
+}
+
+// What is asked for after the whole video never waits behind it, because
+// the whole video waits for every search that asks to hear. A model being
+// installed, asked for after it and before a search, once waited behind
+// the whole video, the search behind the install, and the whole video for
+// the search, so none of them ever heard. Found by the review of #458.
+func TestNothingWaitsBehindTheWholeVideo(t *testing.T) {
+	l := newLanes()
+	_, held := given(t, l, LaneHearing, plainTurn)
+	whole := l.enqueue(LaneHearing, wholeHearingTurn)
+	install := l.enqueue(LaneHearing, plainTurn)
+	search := l.enqueue(LaneHearing, hearingTurn)
+	held()
+	l.mu.Lock()
+	wholeMay, installMay, searchMay := l.mayLocked(whole), l.mayLocked(install), l.mayLocked(search)
+	l.mu.Unlock()
+	if wholeMay || !installMay || searchMay {
+		t.Fatalf("with the lane free, the whole video may hear %v, the install %v, the search %v",
+			wholeMay, installMay, searchMay)
+	}
+	// And so each has its turn, the whole video last.
+	for _, a := range []*ask{install, search, whole} {
+		_, done, err := l.wait(context.Background(), a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done()
+	}
 }
