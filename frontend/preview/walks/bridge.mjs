@@ -774,13 +774,12 @@ export async function fromSidebar(page, click) {
   );
 }
 
-// Adds an HEVC 10-bit episode with Add and chooses the clip its first
-// search finds.
 // Until fn, run in the page with arg, says true. It is asked again each
 // time the page changes, an attribute, a node or a text, never on the
 // clock, so what it waits for has to show on the page. One that never
 // comes is a walk that hangs, ended by the -timeout of make walks with
-// the step printed.
+// the step the walk printed last. seenUntil is the same wait for a read
+// the walk makes itself.
 export function pageUntil(page, fn, arg) {
   return page.evaluate(
     ([source, arg]) =>
@@ -798,6 +797,37 @@ export function pageUntil(page, fn, arg) {
   );
 }
 
+// Reads read until ok says it is what was wanted, and says what it read
+// last: once the interface has heard everything the Go side told it and
+// has settled on it, see caughtUp, and then each time the page's body
+// changes, never on the clock. What the app shows a moment later by
+// itself, like the Updates page holding its looking for 1.4 s, comes that
+// way. read must change nothing in the body, or it wakes itself. A page
+// that never comes to it hangs the walk, as pageUntil does.
+export async function seenUntil(page, url, read, ok) {
+  await caughtUp(page, url);
+  for (;;) {
+    const changed = page.evaluate(
+      () =>
+        new Promise((done) => {
+          const o = new MutationObserver(() => {
+            o.disconnect();
+            done();
+          });
+          o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+        }),
+    );
+    // Left waiting once ok is met, so it must not throw when the page
+    // closes.
+    changed.catch(() => {});
+    const now = await read();
+    if (ok(now)) return now;
+    await changed;
+  }
+}
+
+// Adds an HEVC 10-bit episode with Add and chooses the clip its first
+// search finds.
 export async function addHEVC(url, page) {
   await control(url, "/pick?seconds=40&codec=hevc");
   await fromSidebar(page, () => page.locator("aside").getByText("Add", { exact: true }).first().click());

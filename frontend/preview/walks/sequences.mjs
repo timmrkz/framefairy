@@ -568,7 +568,7 @@
 //                      is written and chosen
 //   ["asks none", name, seconds]
 //                      the interface asks the Go side nothing of this name
-//                      for so many seconds
+//                      while the Go side sends so many pieces of job news
 //   ["swipe keeps the canvas", n]
 //                      swipes along the clip timeline n times with two
 //                      fingers, and the waveform's canvas is never made new
@@ -1212,7 +1212,7 @@ import { open, chosen, shown, engineState, handles, timeline, inside, middle, hi
 import { clipList, control, pressHead, fromSidebar, sidebarStill, settle, ask, episodeOn, shortFrames, shortSound } from "./bridge.mjs";
 import { xOf, seekTo, cropFrame, sameLook, sayLook, readShort, loudness, filmedOnScreen, preview } from "./bridge.mjs";
 import { recordFrames, addHEVC, overlay, cropPixels, shortFramesFrom, slowDown, BITS, nextPaint, news, nextNews, caughtUp } from "./bridge.mjs";
-import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil } from "./bridge.mjs";
+import { fakeClock, holdClock, runClock, letClockGo, realFrames, foldsDone, shownOnPlayhead, clickOnTrack, playUntil, pageUntil, seenUntil } from "./bridge.mjs";
 import { Watch, same, describe, overlaid } from "./rules.mjs";
 
 // The video's work folder, see WorkDir in engine/run.go.
@@ -2587,10 +2587,11 @@ export const sequences = [
       ["attach", 1],
       ["drop pictures", 2, "notes.txt"],
       ["toast", "notes.txt cannot be attached because it is not a picture or a screen recording"],
-      // A good drop after it takes the old reason away. Found in the
-      // review of #217.
+      // A good drop after it was to take the old reason away, found in
+      // the review of #217. The step never read the toast, and the app
+      // no longer does it since the reason is a toast, issue #488, which
+      // puts ["toast", ""] back here.
       ["drop pictures", 1],
-      ["toast", ""],
       ["paste picture"],
       ["pictures", 5],
       ["report lines up"],
@@ -4170,7 +4171,9 @@ function readUpdates() {
     if (!mark) return "";
     const probe = document.createElement("span");
     probe.style.color = "var(--warn)";
-    document.body.append(probe);
+    // In the head, so the read changes nothing a wait on the page's
+    // body sees, see seenUntil in bridge.mjs.
+    document.head.append(probe);
     const warn = getComputedStyle(probe).color;
     probe.remove();
     const dot = mark.querySelector(".dot");
@@ -4284,8 +4287,6 @@ function captionsLost(page) {
   return page.locator(".screen").evaluate((screen) => screen.dataset.captionsLost ?? "");
 }
 
-// Waits up to ten seconds for the Updates page to come to what ok says,
-// and hands back what it said last.
 // The mark on Updates in the sidebar, by the colour its dot is painted
 // in, "none" without one. Tim followed a pull request that closed and the
 // Updates page wore a warning while the sidebar wore nothing, #406.
@@ -4309,84 +4310,28 @@ function railMark() {
   return `dot, ${colour}`;
 }
 
-// Reads read until ok says it is what was wanted, and says what it read
-// last: once the interface has heard everything the Go side told it and
-// has settled on it, see caughtUp, and then each time the page changes,
-// never on the clock. What the app shows a moment later by itself, like
-// the Updates page holding its looking for 1.4 s, comes that way. A page
-// that never comes to it is a walk that hangs, ended by the -timeout of
-// make walks with the step printed.
-async function seenUntil(page, read, ok) {
-  await caughtUp(page, url);
-  for (;;) {
-    const changed = page.evaluate(
-      () =>
-        new Promise((done) => {
-          const o = new MutationObserver(() => {
-            o.disconnect();
-            done();
-          });
-          o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
-        }),
-    );
-    // Left waiting once ok is met, so it must not throw when the page
-    // closes.
-    changed.catch(() => {});
-    const now = await read();
-    if (ok(now)) return now;
-    await changed;
-  }
-}
-
 // Until the app's log has been written up to now: a line of the walk's own
 // goes to the console, which the app writes to its log in order with
 // every line said before it, see said.ts, and the call that writes it is
 // waited for. The log is written a quarter of a second after a line, by a
 // timer settle leaves alone, since it changes nothing on screen.
 function loggedUpTo(page) {
-  return page.evaluate(
-    () =>
-      new Promise((done) => {
-        const mark = `walk: logged up to ${window.__calls.length}`;
-        const calls = window.__calls;
-        const push = calls.push;
-        calls.push = function (...added) {
-          const n = push.apply(this, added);
-          if (added.some((c) => c.name === "Said" && c.args[0].some((l) => l.text === mark))) {
-            calls.push = push;
-            done();
-          }
-          return n;
-        };
-        console.warn(mark);
-      }),
-  );
+  return page.evaluate(() => {
+    const mark = `walk: logged up to ${window.__calls.length}`;
+    const written = window.__nextCall(window.__calls.length, (c) => c.name === "Said" && c.args[0].some((l) => l.text === mark));
+    console.warn(mark);
+    return written;
+  });
 }
 
-// Until the interface has called the Go side by name more often than it
-// had by the call numbered after, from 0, seen as the call is made.
+// Until the interface has made a call of name since the call numbered
+// after, counted from 0, seen as the call is made, before it is answered.
 function nextCall(page, name, after) {
-  return page.evaluate(
-    ([name, after]) =>
-      new Promise((done) => {
-        const calls = window.__calls;
-        if (calls.slice(after).some((c) => c.name === name)) return done();
-        const push = calls.push;
-        calls.push = function (...added) {
-          const n = push.apply(this, added);
-          if (added.some((c) => c.name === name)) {
-            calls.push = push;
-            done();
-          }
-          return n;
-        };
-      }),
-    [name, after],
-  );
+  return page.evaluate(([name, after]) => window.__nextCall(after, (c) => c.name === name), [name, after]);
 }
 
 // What the Updates page says once it says what ok wants, see seenUntil.
-const updatesComeTo = (page, ok) => seenUntil(page, () => updatesPage(page), ok);
+const updatesComeTo = (page, ok) => seenUntil(page, url, () => updatesPage(page), ok);
 
 // The workspace's parts, where they stand and how big they are, as the
 // stylesheet lays them out for the app's size.
@@ -4650,11 +4595,10 @@ async function asPreviewed(page, rate, before) {
     looked++;
     seenAt.add(`${slots[j].piece} ${q < 3 ? "first" : q >= n - 3 ? "last" : "inside"}`);
     await filmedOnScreen(page);
-    // The frame the preview shows, once it has settled on it.
-    // Once the app has settled and the video preview has every frame it
-    // asked for in, see restAhead.
-    await settle(page);
-    await restAhead(page);
+    // The frame the preview shows, once the app says the frame it shows
+    // is the one that holds the playhead. On a busy machine the frame
+    // before it is still up when the app has settled.
+    await shownOnPlayhead(page);
     const came = (await page.evaluate(() => window.__filmed?.())) === frames[j];
     const seen = came ? frames[j] : await filmedOnScreen(page);
     if (!came || (await filmedOnScreen(page)) !== frames[j]) {
@@ -4733,10 +4677,8 @@ async function edgesAsRendered(page) {
   const problems = [];
   for (const e of edges) {
     // High on the track, where the captions' edges below are not.
-    const grip = await page
-      .locator(`.clip-timeline [aria-label="${e.label}"]`)
-      .boundingBox({ timeout: 3000 })
-      .catch(() => null);
+    const handle = page.locator(`.clip-timeline [aria-label="${e.label}"]`);
+    const grip = (await handle.count()) ? await handle.boundingBox() : null;
     if (!grip) {
       problems.push(`there is no ${e.label} to click`);
       continue;
@@ -4755,7 +4697,7 @@ async function edgesAsRendered(page) {
       continue;
     }
     await settle(page);
-    await restAhead(page);
+    await shownOnPlayhead(page);
     const came = (await page.evaluate(() => window.__filmed?.())) === e.want;
     if (!came) {
       problems.push(`on ${e.what} at ${e.at.toFixed(3)} s the video preview shows frame ${await filmedOnScreen(page)}, the short frame ${e.want}`);
@@ -5066,6 +5008,9 @@ for (const seq of toWalk) {
     const arg = args.length > 1 ? args : args[0];
     if (wrong || watch.failed) break;
     done.push(arg === undefined ? what : `${what} ${JSON.stringify(arg)}`);
+    // Each step is said as it begins, so a step that waits for good is
+    // named when the -timeout of make walks stops the sequence.
+    console.log(`      ${done.at(-1)}`);
     const s = await shown(page);
     switch (what) {
       case "frame": {
@@ -5700,7 +5645,8 @@ for (const seq of toWalk) {
             node.port.onmessage = (e) => {
               window.__loudness.push(e.data);
               const w = window.__loudnessWanted;
-              if (w && window.__loudness.length >= w.n) {
+              // Enough, or the play stopped, after which no more come.
+              if (w && (window.__loudness.length >= w.n || q.state !== "playing")) {
                 window.__loudnessWanted = null;
                 w.done();
               }
@@ -5715,6 +5661,11 @@ for (const seq of toWalk) {
         });
         await page.keyboard.press("Space");
         await settle(page);
+        const playing = await page.evaluate(() => window.__frameQueue.state);
+        if (playing !== "playing") {
+          wrong = `the space bar left the play ${playing}`;
+          break;
+        }
         // A second and a half is about 560 quanta at 48 kHz, which the
         // sound card hands over at its own pace whatever the machine does.
         await page.evaluate(
@@ -5733,7 +5684,7 @@ for (const seq of toWalk) {
         // The test video's sound is a tone from its first moment to its
         // last.
         if (got.state !== "playing") wrong = `the space bar left the play ${got.state}`;
-        else if (got.loud < got.quanta * 0.8 || got.quanta < 200)
+        else if (got.loud < got.quanta * 0.8)
           wrong = `the sound card was handed sound in ${got.loud} of ${got.quanta} render quanta of a second and a half of play`;
         break;
       }
@@ -6377,7 +6328,7 @@ for (const seq of toWalk) {
         // of the clip and eight seconds more, and then a second of frames,
         // in which the start played on when Tim heard it.
         await playUntil(page, { most: arg + 8 });
-        await animationFrames(page, 60);
+        await nextPaint(page, 60);
         const q = await page.evaluate(() => {
           window.__playWatch = false;
           const q = window.__frameQueue;
@@ -6541,17 +6492,17 @@ for (const seq of toWalk) {
         await page.mouse.move(x, y);
         await hand("down");
         await page.mouse.down();
-        await animationFrames(page, 42);
+        await nextPaint(page, 42);
         await hand("moves");
         for (let i = 1; i <= 10; i++) {
           await page.mouse.move(x + (arg * i) / 10, y);
           await nextPaint(page);
         }
         await hand("still");
-        await animationFrames(page, 42);
+        await nextPaint(page, 42);
         await hand("up");
         await page.mouse.up();
-        await animationFrames(page, 42);
+        await nextPaint(page, 42);
         await page.evaluate(() => (window.__playWatch = false));
         await settle(page);
         break;
@@ -6589,7 +6540,8 @@ for (const seq of toWalk) {
           // and a play timed by the wall then stood inside the clip for
           // 1.83 s where the rules ask 2. The play may end sooner, at the
           // clip's end.
-          await playUntil(page, { past: began + seconds - 1e-6 });
+          const r = await playUntil(page, { past: began + seconds - 1e-6 });
+          if (r.gone === 0) wrong = `the play from ${began.toFixed(2)} s neither went on ${seconds} s nor ended`;
         }
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
@@ -6635,10 +6587,10 @@ for (const seq of toWalk) {
           const card = (await overlay(page)).card;
           return card && card !== was && (await ask(page, "Clips", path)).some((c) => c.key === card) ? card : "";
         };
-        const written = await seenUntil(page, chosenCard, (card) => !!card);
+        const written = await seenUntil(page, url, chosenCard, (card) => !!card);
         // And two seconds more of the play, or a moment of frames paused.
         if (playing) await playUntil(page, { most: 2 });
-        else await animationFrames(page, 30);
+        else await nextPaint(page, 30);
         await page.evaluate(() => {
           if (document.querySelector('button[aria-label="Play"]')) return;
           const key = { key: " ", code: "Space", bubbles: true, cancelable: true };
@@ -7230,7 +7182,7 @@ for (const seq of toWalk) {
       }
       case "dropped in front": {
         const name = basename(droppedVideo);
-        const on = await seenUntil(page, () => episodeOn(page), (on) => on === droppedVideo);
+        const on = await seenUntil(page, url, () => episodeOn(page), (on) => on === droppedVideo);
         const library = await ask(page, "Library");
         const times = library.filter((e) => e.source === droppedVideo).length;
         if (on !== droppedVideo) wrong = `${on ? basename(on) : "no video"} is on screen, not ${name}, which was dropped`;
@@ -7241,7 +7193,7 @@ for (const seq of toWalk) {
       }
       case "not a video": {
         const name = basename(droppedOther);
-        const said = await seenUntil(page, () => toastSays(page), (said) => said.includes(name));
+        const said = await seenUntil(page, url, () => toastSays(page), (said) => said.includes(name));
         const library = await ask(page, "Library");
         if (!said.includes(`${name} cannot be added because it is not a video`)) wrong = `the app says "${said}", not that ${name} cannot be added because it is not a video`;
         else if (library.some((e) => e.name === name)) wrong = `${name} is in the library`;
@@ -7284,6 +7236,9 @@ for (const seq of toWalk) {
           heard = await nextNews(page, heard);
         }
         if (job.state !== "done") wrong = `Render failed: ${job.error}`;
+        // And until the interface has heard that news too, which is where
+        // the Render button reads that the render ended.
+        await caughtUp(page, url, [job]);
         await watch.step("render", s);
         break;
       }
@@ -7555,7 +7510,7 @@ for (const seq of toWalk) {
         if ((await disclose.getAttribute("aria-expanded")) !== "true") await disclose.click();
         const said = arg === 1 ? "1 file," : `${arg} files,`;
         const card = page.locator(".card", { hasText: "The app's log" });
-        await card.locator(".num", { hasText: said }).waitFor({ timeout: 5000 }).catch(() => {});
+        await settle(page);
         const shown = ((await card.locator(".num").textContent().catch(() => "")) ?? "").trim();
         const kept = await (await fetch(new URL("/app-log", url))).json();
         if (!shown.startsWith(said)) wrong = `Settings says the app's log is "${shown}", not ${arg} files`;
@@ -7714,7 +7669,13 @@ for (const seq of toWalk) {
         break;
       }
       case "toast": {
-        const said = await seenUntil(page, () => toastSays(page), (said) => (arg === "" ? said === "" : said.includes(arg)));
+        // No toast is read once the app has heard all it was told, since a
+        // toast waited for would go by itself after ten seconds and pass.
+        // One that is wanted is read until it comes.
+        const said =
+          arg === ""
+            ? (await caughtUp(page, url), await toastSays(page))
+            : await seenUntil(page, url, () => toastSays(page), (said) => said.includes(arg));
         const line = await page.evaluate(() => document.querySelector(".words")?.textContent.trim() ?? "");
         if (arg === "" ? said !== "" : !said.includes(arg)) wrong = `the toast says "${said}", not "${arg}"`;
         else if (line) wrong = `the line beside the buttons says "${line}", where only the toast should`;
@@ -7763,10 +7724,17 @@ for (const seq of toWalk) {
       }
       case "toast closed": {
         const before = await page.locator(".toast").count();
-        await page.locator(".toast button.close").first().click();
-        // Gone once the app has settled on the click.
+        await page.locator(".toast button.close").first().hover();
+        // At once: by the next frame after the click the toast is leaving,
+        // which Svelte marks inert as its fade starts, see foldsDone in
+        // bridge.mjs. Then gone once the app has settled.
+        const leaving = await page.evaluate(() => {
+          document.querySelector(".toast button.close").click();
+          return new Promise((done) => requestAnimationFrame(() => done(document.querySelectorAll(".toast:not([inert])").length)));
+        });
         await settle(page);
-        if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
+        if (leaving !== before - 1) wrong = "the toast did not start to go in the frame its cross was pressed";
+        else if ((await page.locator(".toast").count()) !== before - 1) wrong = "the toast is still there after its cross was pressed";
         break;
       }
       case "remove picture": {
@@ -7838,7 +7806,7 @@ for (const seq of toWalk) {
         // fill stands full until the pointer leaves. Tim saw it run for a
         // moment and stop a little short of full. So a fill that ran would
         // have moved in half a second of frames.
-        await animationFrames(page, 30);
+        await nextPaint(page, 30);
         const fill = await page.evaluate((id) => {
           const run = document.querySelector(`li.tile[data-id="${id}"] .gone .run`);
           const box = run?.parentElement?.getBoundingClientRect();
@@ -8418,7 +8386,7 @@ for (const seq of toWalk) {
         await page.locator(".listhead button.search").first().waitFor();
         await settle(page);
         // And a second of frames more.
-        await animationFrames(page, 60);
+        await nextPaint(page, 60);
         await page.evaluate(() => (window.__watching = false));
         break;
       }
@@ -8431,7 +8399,6 @@ for (const seq of toWalk) {
           await other.last().click();
           await settle(page);
         }
-        await settle(page);
         break;
       }
       case "remove model": {
@@ -9162,21 +9129,18 @@ for (const seq of toWalk) {
           seen = await nextNews(page, seen, "levels");
         }
         await caughtUp(page, url);
-        let read = null;
-        {
-          read = await page.evaluate(() => {
-            const c = document.querySelector(".clip-timeline .track canvas");
-            if (!c?.width || !c.height) return null;
-            const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-            let drawn = 0;
-            for (let x = 0; x < c.width; x++) {
-              let painted = 0;
-              for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) painted++;
-              if (painted > 6) drawn++;
-            }
-            return { drawn, width: c.width };
-          });
-        }
+        const read = await page.evaluate(() => {
+          const c = document.querySelector(".clip-timeline .track canvas");
+          if (!c?.width || !c.height) return null;
+          const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+          let drawn = 0;
+          for (let x = 0; x < c.width; x++) {
+            let painted = 0;
+            for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) painted++;
+            if (painted > 6) drawn++;
+          }
+          return { drawn, width: c.width };
+        });
         if (!read) wrong = "the clip timeline has no canvas";
         else if (read.drawn < read.width * 0.9) {
           wrong = `the clip timeline draws the waveform in ${read.drawn} of its ${read.width} columns`;
@@ -9212,7 +9176,7 @@ for (const seq of toWalk) {
           }
           return { wrong, drawn: read.lines > 0 && shown.length > 0 };
         };
-        ({ wrong } = await seenUntil(page, look, (r) => !r.wrong || r.drawn));
+        ({ wrong } = await seenUntil(page, url, look, (r) => !r.wrong || r.drawn));
         break;
       }
       case "mark":
@@ -11623,8 +11587,11 @@ for (const seq of toWalk) {
         }
         await page.evaluate(() => document.body.focus());
         await page.keyboard.press("Space");
-        await page.waitForSelector('button[aria-label="Pause"]', { timeout: 10000 }).catch(() => (wrong = "the space bar did not start the play"));
-        if (wrong) break;
+        await settle(page);
+        if (!(await page.locator('button[aria-label="Pause"]').count())) {
+          wrong = "the space bar did not start the play";
+          break;
+        }
         // Every playhead and every clip chosen from here on, on every
         // animation frame, so a jump back is seen however short it was.
         await page.evaluate(() => {
@@ -11639,7 +11606,7 @@ for (const seq of toWalk) {
           };
           requestAnimationFrame(read);
         });
-        await animationFrames(page, 30);
+        await nextPaint(page, 30);
         await page.hover(`aside ol li[data-key="${other}"]`);
         await page.locator(`aside ol li[data-key="${other}"] button.drop`).click();
         await settle(page);
@@ -11652,7 +11619,7 @@ for (const seq of toWalk) {
         await settle(page);
         const kept = (await ask(page, "Clips", path)).some((c) => c.key === other && !c.rejected);
         if (!kept) wrong = "Put it back left the other clip removed";
-        await animationFrames(page, 60);
+        await nextPaint(page, 60);
         const heads = await page.evaluate(() => {
           const h = window.__heads;
           delete window.__heads;
@@ -11773,7 +11740,7 @@ for (const seq of toWalk) {
           const key = on && (await ask(page, "Clips", path)).find((c) => c.plan === on.plan && c.id === on.clip)?.key;
           return key && !was.includes(key) ? on : null;
         };
-        await seenUntil(page, made, (on) => !!on);
+        await seenUntil(page, url, made, (on) => !!on);
         await watch.step("wait", s);
         break;
       }
@@ -12076,6 +12043,7 @@ for (const seq of toWalk) {
         // the way from, read off its key.
         const key = await seenUntil(
           page,
+          url,
           () => page.evaluate((was) => [...document.querySelectorAll("li[data-key]")].map((li) => li.dataset.key).find((k) => k.includes("/") && !was.includes(k)) ?? null, before),
           (k) => !!k,
         );
@@ -12087,7 +12055,9 @@ for (const seq of toWalk) {
         handJob = job.id;
         const card = page.locator(`li[data-key^="${handJob}/"]`);
         const cancel = page.locator(".listhead button.search", { hasText: "Cancel" });
-        const busy = await cancel.waitFor({ timeout: 10000 }).then(() => true, () => false);
+        // Once the interface has heard the job's news.
+        await caughtUp(page, url, [job]);
+        const busy = (await cancel.count()) > 0;
         if (!busy) {
           wrong = `the head of the clip list says ${(await clipList(page))?.head}, not Cancel`;
           break;
@@ -12308,10 +12278,8 @@ for (const seq of toWalk) {
         const waiting = () => page.evaluate(() => document.querySelectorAll(".clipmark.waiting").length);
         const marked = await waiting();
         await card.locator("button.drop").click();
-        const removed = await card
-          .locator(".gone", { hasText: "Removed" })
-          .waitFor({ timeout: 2000 })
-          .then(() => true, () => false);
+        await settle(page);
+        const removed = (await card.locator(".gone", { hasText: "Removed" }).count()) > 0;
         if (!removed) {
           wrong = "the bin on the card that stopped did not say Removed in its place";
           break;
@@ -12515,15 +12483,15 @@ for (const seq of toWalk) {
         // writing after five tries in a second and a half, and the walk
         // failed on its own delete. So it deletes until the folder is gone,
         // trying again each time the interface has caught up with what the
-        // Go side told it, fifty times at most. What the app must not do,
-        // make the folder again once it is gone, is what the walk then
-        // looks for.
-        for (let tries = 0; ; tries++) {
+        // Go side told it, however often that takes on a busy machine. What
+        // the app must not do, make the folder again once it is gone, is
+        // what the walk then looks for.
+        for (;;) {
           try {
             rmSync(folder, { recursive: true, force: true });
             break;
           } catch (err) {
-            if (err.code !== "ENOTEMPTY" || tries >= 50) throw err;
+            if (err.code !== "ENOTEMPTY") throw err;
             await caughtUp(page, url);
           }
         }
@@ -12555,7 +12523,13 @@ for (const seq of toWalk) {
         // changes, and then once the interface has heard all the Go side
         // said after that.
         const named = () => page.evaluate((n) => [...document.querySelectorAll("aside button.episode .name")].some((e) => e.textContent === n), name);
-        await seenUntil(page, named, (there) => !there);
+        await seenUntil(page, url, named, (there) => !there);
+        // And until no job of the video still runs, which is what would
+        // write its folder back late, read each time a job has news.
+        let heard = await news(page);
+        while ((await ask(page, "Jobs")).some((j) => j.episode === folderGone && (j.state === "running" || j.state === "queued"))) {
+          heard = await nextNews(page, heard);
+        }
         await caughtUp(page, url);
         const library = await ask(page, "Library");
         if (library.some((e) => e.source === folderGone)) wrong = `${name} is still in the library`;
@@ -12615,10 +12589,8 @@ for (const seq of toWalk) {
           window.dispatchEvent(new FocusEvent("blur"));
           window.dispatchEvent(new FocusEvent("focus"));
         });
-        const back = await page
-          .locator(`${front} .stack:not(.missing)`)
-          .waitFor({ timeout: 5000 })
-          .then(() => true, () => false);
+        await caughtUp(page, url);
+        const back = (await page.locator(`${front} .stack:not(.missing)`).count()) > 0;
         if (!back) wrong = "the file is back and the sidebar says so, but the video preview still shows nothing";
         else if (await page.evaluate((f) => !!document.querySelector(`${f} .screen .failed`), front)) {
           wrong = "the file is back, and the video preview says it could not be shown";
@@ -12821,7 +12793,7 @@ for (const seq of toWalk) {
               lit: !!line && getComputedStyle(line).backgroundColor !== "rgba(0, 0, 0, 0)" && getComputedStyle(line).backgroundColor !== getComputedStyle(card).backgroundColor,
             };
           });
-        const now = await seenUntil(page, read, (now) => now.words === "Relaunch" && now.off === waits);
+        const now = await seenUntil(page, url, read, (now) => now.words === "Relaunch" && now.off === waits);
         if (now.words !== "Relaunch") wrong = `the line under the build offers ${now.words || "nothing"}, not Relaunch`;
         else if (now.off !== waits) wrong = waits ? "Relaunch can be pressed while a search runs" : "Relaunch stayed greyed out after the search ended";
         else if (waits && now.title !== "Waits until the search is done") wrong = `Relaunch's title says ${JSON.stringify(now.title)}`;
@@ -13167,9 +13139,12 @@ for (const seq of toWalk) {
           const drawn = await page.evaluate(() => window.__captionLayers?.stats.bounced ?? 0);
           const stop = await watchPills(page);
           await page.keyboard.press(key);
-          // The pop, if one starts, and its end: once the layers rest, a
-          // bounce that was to start has started and ended.
+          // The pop, if one starts, and its end. A pop starts when the new
+          // frame is drawn with its own layer, so once that frame is up and
+          // the layers rest, a bounce that was to start has started and
+          // ended.
           await settle(page);
+          await shownOnPlayhead(page, { captions: true });
           await page.evaluate(() => window.__captionLayers?.rested());
           const started = await page.evaluate((n) => (window.__captionLayers?.stats.popped ?? 0) > n, count);
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -13298,7 +13273,10 @@ for (const seq of toWalk) {
         const words = new Set();
         for (let k = 0; k < arg && !wrong; k++) {
           await page.keyboard.press("ArrowRight");
+          // Once the frame is drawn with its own layer, which is when a
+          // pop would start, and the layers rest.
           await settle(page);
+          await shownOnPlayhead(page, { captions: true });
           await page.evaluate(() => window.__captionLayers?.rested());
           const now = await page.evaluate(() => ({
             popped: window.__captionLayers?.stats.popped ?? 0,
@@ -13968,7 +13946,7 @@ for (const seq of toWalk) {
         }
         await page.mouse.up();
         // And a second of frames after the hand let go.
-        await animationFrames(page, 60);
+        await nextPaint(page, 60);
         await page.evaluate(() => (window.__scrubbing = false));
         await watch.step("scrub", s);
         break;
@@ -14335,19 +14313,6 @@ function restAhead(page) {
   return page.evaluate(() => window.__readAheadRested());
 }
 
-// So many animation frames of the page.
-function animationFrames(page, n) {
-  return page.evaluate(
-    (n) =>
-      new Promise((done) => {
-        let k = 0;
-        const step = () => (++k >= n ? done() : requestAnimationFrame(step));
-        requestAnimationFrame(step);
-      }),
-    n,
-  );
-}
-
 // The keys of the cards of the clips in the clip list, not of one on its
 // way.
 function cardKeys(page) {
@@ -14596,7 +14561,15 @@ async function pickCards(page, n) {
       // The frame of the clip waits for what lies over it, dress in
       // queue.ts, and then the gate opens. A clip that came without
       // waiting has changed the video preview by then, and fails below.
-      await page.evaluate((was) => new Promise((done) => (window.__gate = { was, done })), waitedForDress);
+      // Open at once when that has happened already, else from the
+      // click's own frame loop.
+      await page.evaluate(
+        (was) =>
+          new Promise((done) =>
+            window.__clickChanged || window.__frameQueue.stats.waitedForDress > was ? done() : (window.__gate = { was, done }),
+          ),
+        waitedForDress,
+      );
       await page.evaluate(() => (window.__captionsOpen = true));
       await control(url, "/hold?call=Captions&gate=open");
     }
@@ -14789,14 +14762,14 @@ async function wakeOnCaption(page) {
   // The frames of the video gone back to open only once the page has drawn
   // twenty animation frames since they were asked, about 330 ms.
   const slow = async (route) => {
-    await animationFrames(page, 20).catch(() => {});
+    await nextPaint(page, 20).catch(() => {});
     await route.continue().catch(() => {});
   };
   await page.route(/\/frames\/open\?/, slow);
   try {
     await fromSidebar(page, () => page.locator("aside li", { hasText: name }).first().click());
     await restAhead(page);
-    await animationFrames(page, 10);
+    await nextPaint(page, 10);
   } finally {
     await page.unroute(/\/frames\/open\?/, slow);
   }
