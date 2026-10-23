@@ -209,7 +209,7 @@ nothing on the page moves for a moment, see below:
 | A caption removed whole was there and is gone, its words are held to the two rules above, from its first word to its last | |
 | Moving a caption edge moves that edge and nothing else: its other edge stays, every other caption appears and goes when it did, and every word outside the caption is as it was | the caption before growing into the room a left edge was dragged in from, found by Tim |
 | Undo puts back the engine's captions from before the step it takes back, and Redo those from after it | |
-| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, within a moment of the step, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
+| A picture that stands still, paused or cued, was decoded at the size of the video preview's canvas, no larger than the file's own, once the frame queue says the picture stands, `standing` in `lib/frames/queue.ts`, `stillBlurred` in `rules.mjs` | the first frame of every workspace decoded at the 300 by 150 of a canvas not laid out yet, blurred until a play, found by Tim, plan row 2.187 |
 
 The engine's captions are asked for directly, `Captions` through
 `/call`, and are what the screen is compared with: the walk knows
@@ -724,10 +724,13 @@ holds the playhead, and until that frame has its own captions, and how
 the frames of each kind of press came: from a stream opened for them,
 read on in one already open, or from the frames kept. Each round ends
 with the playhead dragged over the clip timeline and back, a step every
-16 ms, and the last line says how many frames the video preview was
+frame of the page, and the last line says how many frames the video preview was
 behind the playhead while it moved, and how long after letting go the
-frame under it showed. `REST` is the pause between presses, 250 ms
-unless set, `ROUNDS` the times the clip is walked, each on a page opened
+frame under it showed. A press whose frame never shows counts once the
+frame queue has done all the press asked of it, `standing` in
+`lib/frames/queue.ts`, never after a time. `REST` is the pause between
+presses, in frames of the page, 15 unless set, a quarter of a second on a
+screen of 60 Hz, `ROUNDS` the times the clip is walked, each on a page opened
 afresh so no round finds the frames the one before kept, 5 unless set,
 `SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
 and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is
@@ -851,11 +854,13 @@ and the step reads what is left of the time from the row's fill.
 
 ESLint refuses a new wait on the clock in a walk, in `make interface`:
 `waitForTimeout`, `setTimeout`, `setInterval`, `Date.now` and
-`performance.now`, see `frontend/eslint.config.js`. Playwright's
+`performance.now`, and a `timeout` or `polling` handed to a wait like
+`waitForFunction`, see `frontend/eslint.config.js`. Playwright's
 `page.clock` is no clock to it, so `holdClock` and `runClock` are the way
-to let time pass. The waits from before are counted as known in
-`frontend/eslint-suppressions.json`, one more in a file fails, and taking
-them out is #341. See No test waits on the clock in
+to let time pass. The walks wait on no clock since #341. What
+`frontend/eslint-suppressions.json` still counts for them are reads of the
+clock that measure, and the stalls and late answers a step puts on the app
+on purpose. One more in a file fails. See No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
 `make changed` runs it whenever the interface changed, the preview's own
@@ -1099,5 +1104,5 @@ the old breaks in `frontend/eslint-suppressions.json` and `--new-from-rev`
 for Go, the race detector on every Go test, and `internal/offdisk` for a
 test on the real disk. What it does not hold yet, skipped tests, polls
 with a deadline, mutation testing and a check a pull request cannot
-weaken, is #475. What is left of waits on the clock is #341 for the walks
-and #394 for the Go tests.
+weaken, is #475. What is left of waits on the clock is #394, in the Go
+tests.

@@ -587,6 +587,9 @@ export class FrameQueue {
   // the newest ask of the Go side's frames made when it was put up.
   private putFor = -1;
   private shownAsked = 0;
+  // The ticket of the newest seek, cue or play that has said how it went,
+  // see report and standing.
+  private toldFor = -1;
   private shown: { frame: Picture; run: number; rank: number } | null = null;
   // The sound card's time at which the program's sample m0 is played.
   private c0: number | null = null;
@@ -756,6 +759,22 @@ export class FrameQueue {
   listen(fn: (s: Shown) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  // Whether the picture standing still is the one the queue leaves there:
+  // the newest seek or cue has said how it went, and its frame is at the
+  // canvas's size or was asked for at it once already, see sharpen. A
+  // queue that plays, or has no frame up yet, has no picture standing
+  // still to wait for, and says true. Each time it comes true the
+  // listeners are told, or the canvas has changed its size. For the walks
+  // and the benchmark, which read the picture once it stands, see
+  // stillBlurred in walks/rules.mjs.
+  get standing(): boolean {
+    if (this.closed || (this.state !== "paused" && this.state !== "cued") || !this.shown) return true;
+    if (this.toldFor !== this.ticket) return false;
+    if (this.sharp(this.shown.frame)) return true;
+    const { width, height } = this.previewSize();
+    return this.sharpened === `${this.shown.rank} ${width} ${height}`;
   }
 
   private get program(): Program {
@@ -1147,6 +1166,8 @@ export class FrameQueue {
   }
 
   private report(drew = false, passing = false) {
+    // A frame passing is put up on the way to the one asked for.
+    if (!passing) this.toldFor = this.ticket;
     const playing = this.state === "playing" || this.state === "starting";
     // A play that stopped lets the cards' frames be read again, see
     // AppFrames.paused.

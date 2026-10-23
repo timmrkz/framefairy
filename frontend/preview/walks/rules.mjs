@@ -93,9 +93,31 @@ export function overlaid(samples, state, frame) {
 
 // What is wrong with the size of the frame standing on the video preview,
 // or null: nothing stands still, or it was decoded at the size the canvas
-// asks for. Waits a moment for a frame on its way.
+// asks for. A frame asked for again after a resize may still be on its
+// way, so it is read once the frame queue says the picture stands, see
+// standing in lib/frames/queue.ts. That is asked again each time the
+// queue reports and each time the page changes, the canvas's size among
+// it, never on the clock. A frame that never comes is a walk that hangs,
+// ended by the -timeout of make walks.
 export async function stillBlurred(page) {
-  const look = () => {
+  await page.evaluate(
+    () =>
+      new Promise((done) => {
+        const q = window.__frameQueue;
+        if (!q || q.standing) return done();
+        let off = () => {};
+        const o = new MutationObserver(() => again());
+        const again = () => {
+          if (window.__frameQueue === q && !q.standing) return;
+          off();
+          o.disconnect();
+          done();
+        };
+        off = q.listen(again);
+        o.observe(document, { subtree: true, childList: true, attributes: true });
+      }),
+  );
+  return page.evaluate(() => {
     const q = window.__frameQueue;
     const c = document.querySelector(".screen canvas");
     const f = q?.picture();
@@ -106,11 +128,7 @@ export async function stillBlurred(page) {
     const want = [even(v.width * scale), even(v.height * scale)];
     if (f.width === want[0] && f.height === want[1]) return null;
     return `the frame on the video preview is ${f.width} by ${f.height}, the canvas is ${c.width} by ${c.height} and the file ${v.width} by ${v.height}, so it should be ${want.join(" by ")}`;
-  };
-  const sharp = await page
-    .waitForFunction(`(${look})() === null`, null, { timeout: 1500, polling: 100 })
-    .then(() => true, () => false);
-  return sharp ? null : page.evaluate(look);
+  });
 }
 
 // Watches one page through the steps made on it.
@@ -189,7 +207,7 @@ export class Watch {
     // A picture that stands still is as sharp as the video preview lets it
     // be: the frame on the canvas was decoded at the canvas's size, no
     // larger than the file's own. A frame asked for again after a resize
-    // may still be on its way, so it has a moment to come. Tim saw the
+    // may still be on its way, and is waited for. Tim saw the
     // first frame of every workspace blurred, decoded at the 300 by 150 of
     // a canvas not laid out yet, plan row 2.187.
     const blurred = await stillBlurred(page);

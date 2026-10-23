@@ -4,9 +4,11 @@
 //
 // What waited on the clock before the rule was enforced is listed in
 // eslint-suppressions.json, file by file and rule by rule, so only a new
-// one fails. Taking one out is #341, and ESLint then fails until
+// one fails. Taking one out makes ESLint fail until
 // npm run lint -- --prune-suppressions shortens the list. The list only
-// ever shrinks. A clock the test controls is not the clock: Playwright's
+// ever shrinks. What it counts for the walks are reads of the clock that
+// measure, and the stalls and late answers a step puts on the app on
+// purpose. A clock the test controls is not the clock: Playwright's
 // page.clock and Vitest's vi.useFakeTimers and vi.advanceTimersByTime are
 // not touched by any rule below.
 import playwright from "eslint-plugin-playwright";
@@ -51,7 +53,9 @@ export default [
       "playwright/no-wait-for-timeout": "error",
       // The plugin knows a page by its name, page or frame. A walk that
       // drives a second window calls it main, so any other waitForTimeout
-      // is caught here.
+      // is caught here. A timeout or a polling handed to a wait, like
+      // waitForFunction or waitFor, is a deadline or a look on the clock,
+      // and the -timeout of make walks ends a wait that never ends.
       "no-restricted-syntax": [
         "error",
         {
@@ -59,6 +63,7 @@ export default [
             "CallExpression[callee.property.name='waitForTimeout']:not([callee.object.name=/(^(page|frame)|(Page|Frame)$)/])",
           message: why,
         },
+        { selector: "CallExpression > ObjectExpression > Property[key.name=/^(timeout|polling)$/]", message: why },
       ],
     },
   },

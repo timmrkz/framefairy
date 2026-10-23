@@ -15,9 +15,6 @@
   "preview/walks/speed.mjs": {
     "no-restricted-properties": {
       "count": 3
-    },
-    "playwright/no-wait-for-timeout": {
-      "count": 4
     }
   },
   "src/lib/frames/app.test.ts": {

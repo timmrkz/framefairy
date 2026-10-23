@@ -323,3 +323,81 @@ describe("a workspace woken again", () => {
     expect(writes()).toBe(2);
   });
 });
+
+describe("the picture standing still", () => {
+  // A paused queue with a frame of 640 by 360 up, from a file of 1920 by
+  // 1080, on a canvas of 640 by 360: the frame is as sharp as the canvas
+  // lets it be. The queue has no decoders here, so a frame asked for
+  // never comes, and the test says how each ask went with report, the way
+  // a frame that comes does.
+  function standing() {
+    let width = 640;
+    let height = 360;
+    const c = {
+      getContext: () => null,
+      get width() {
+        return width;
+      },
+      set width(w: number) {
+        width = w;
+      },
+      get height() {
+        return height;
+      },
+      set height(h: number) {
+        height = h;
+      },
+    } as unknown as HTMLCanvasElement;
+    const q = new FrameQueue(
+      c,
+      "/episode.mp4",
+      movieOf({ duration: 120, width: 1920, height: 1080, grid: { origin: 0, start: 0, num: 25, den: 1, count: 3000 } }),
+    );
+    const inside = q as unknown as {
+      video: unknown;
+      shown: unknown;
+      report(drew?: boolean, passing?: boolean): void;
+    };
+    inside.video = { width: 1920, height: 1080, samples: { pts: [0], order: [0], timescale: 25 } };
+    const frame = (width: number, height: number) => ({ frame: { width, height, close() {} }, run: -1, rank: 0 });
+    inside.shown = frame(640, 360);
+    return { q, inside, frame };
+  }
+
+  test("stands once the newest seek has said how it went, not while a frame passes on the way", () => {
+    const { q, inside } = standing();
+    expect(q.standing).toBe(false);
+    inside.report();
+    expect(q.standing).toBe(true);
+    q.seek(1);
+    expect(q.standing).toBe(false);
+    inside.report(true, true);
+    expect(q.standing).toBe(false);
+    inside.report(true);
+    expect(q.standing).toBe(true);
+  });
+
+  test("waits for the frame asked for again at the canvas's new size", () => {
+    const { q, inside, frame } = standing();
+    inside.report();
+    q.resize(1280, 720);
+    expect(q.standing).toBe(false);
+    inside.shown = frame(1280, 720);
+    inside.report(true);
+    expect(q.standing).toBe(true);
+  });
+
+  test("stands with a frame the decoder gave at a size of its own, since it is not asked for again", () => {
+    const { q, inside } = standing();
+    inside.report();
+    q.resize(1280, 720);
+    inside.report(false);
+    expect(q.standing).toBe(true);
+  });
+
+  test("has nothing to wait for while it plays", () => {
+    const { q } = standing();
+    q.play();
+    expect(q.standing).toBe(true);
+  });
+});

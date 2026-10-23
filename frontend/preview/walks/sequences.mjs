@@ -7036,7 +7036,7 @@ for (const seq of toWalk) {
             });
             if (ring) wrong = `with the focus on the menu, the menu wears a ring, ${ring}`;
             await page.keyboard.press("Enter");
-            if (!wrong && (await menu.isVisible({ timeout: 300 }).catch(() => false))) {
+            if (!wrong) {
               await settle(page);
               if (await menu.isVisible()) wrong = "Return after a colour was clicked left the menu open";
             }
