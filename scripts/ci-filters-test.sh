@@ -82,9 +82,10 @@ check ".github/workflows/ci.yml" "app go interface workflows"
 check ".github/ci-filters.yml" "app go interface"
 check ".golangci.yml" "app go interface"
 check "frontend/package.json" "app interface"
-# The CI image is the walks' alone, so it starts the jobs of app only. The
-# script it runs is also the Go jobs', so it starts everything.
-check ".github/ci-image/Dockerfile" "app"
+# The CI image starts the jobs that run in it, the walks by app and the
+# Go jobs by image, but not the Go tests on the Mac. The script it runs is
+# also the Mac's, so it starts everything.
+check ".github/ci-image/Dockerfile" "app image"
 check "scripts/ci-packages.sh" "app go interface"
 
 # The rules that no job runs but their own check in build start nothing.

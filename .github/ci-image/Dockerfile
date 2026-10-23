@@ -1,8 +1,9 @@
-# The machine the walks run on in CI: Ubuntu 24.04, the runners' own
-# system, with every system package they use and the Chromium the pinned
-# Playwright drives, with its libraries, already installed. A job that runs
-# in it downloads nothing from the Ubuntu mirror, which on some days gave
-# the runners 18 kB a second and held a walks job for twelve minutes, #462.
+# The machine the walks and the Linux Go tests run on in CI: Ubuntu
+# 24.04, the runners' own system, with every system package they use and
+# the Chromium the pinned Playwright drives, with its libraries, already
+# installed. A job that runs in it downloads nothing from the Ubuntu
+# mirror, which on some days gave the runners 18 kB a second and held a
+# walks job for twelve minutes, #462.
 #
 # The job image in .github/workflows/ci.yml builds it and keeps it in
 # GitHub's container registry, tagged by a sum of this file, of
@@ -21,7 +22,8 @@ FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
 # What a runner has and an Ubuntu image does not: a compiler, git for the
-# checkout, curl, xz and zstd, the last for actions/cache, which keeps
+# checkout, ps for scripts/leftovers.sh, which names what the tests left
+# running, curl, xz and zstd, the last for actions/cache, which keeps
 # what it saves with zstd when it finds it, and finds an entry saved one
 # way only that way. Then what scripts/ci-packages.sh installs for the Go
 # side, GTK and WebKit, and what the walks and the tests use beside it:
@@ -32,7 +34,7 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 ENV LANG=C.UTF-8
 RUN --mount=type=bind,source=scripts/ci-packages.sh,target=/tmp/ci-packages.sh \
 	CACHE=/tmp/apt sh /tmp/ci-packages.sh \
-		build-essential ca-certificates curl git xz-utils zstd \
+		build-essential ca-certificates curl git procps xz-utils zstd \
 		ffmpeg meson ninja-build nasm patchelf && \
 	rm -rf /tmp/apt /etc/apt/apt.conf.d/99ci-cache /var/lib/apt/lists/*
 
