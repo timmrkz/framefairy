@@ -210,7 +210,8 @@ to the report window Bugs opens, since a Mac tells the window nothing
 of the pointer going then, and the next move of the pointer says where
 it is. Only the keyboard going into it opens it, not the focus coming
 back to the button last clicked. Hovering opens it only on a real move
-of the pointer onto it, and only while the app is in front: macOS hands
+of the pointer onto it, and only while the app is in front, taking in no
+move made while another app is: macOS hands
 the app moves that move nothing, while Mission Control shows it above
 all, and a sidebar that answered them opened and closed over and over
 under a still pointer. The log says every time it opens or closes and

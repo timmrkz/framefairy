@@ -2453,16 +2453,13 @@ export const sequences = [
     // Tim ended a dictation with Enter and pressed Tab while the last
     // words were still being written down. Tab put the focus on Report,
     // and when the words came the field took it back, so Tab looked as if
-    // it passed Report over. The speech model is slow, so the words come
-    // only after the Tab.
+    // it passed Report over. The words are held back until after the Tab.
     name: "Tab right after a dictation leaves the focus on Report once the words are written",
     steps: [
       ["bugs"],
       ["write", "It froze.", "end"],
-      ["speech", 1500],
       ["dictate", "enter, then tab"],
       ["report reads", "It froze. *"],
-      ["speech", 0],
     ],
   },
   {
@@ -7566,11 +7563,19 @@ for (const seq of toWalk) {
           wrong = "the sidebar opened under the pointer while the app was not in front";
           break;
         }
-        // In front again, the next move onto it opens it.
+        // In front again with the pointer on it, the next move opens it.
+        // What the pointer did while another app was in front is no
+        // move onto it the app has already seen.
         await main.evaluate(() => {
           delete document.hasFocus;
           window.dispatchEvent(new FocusEvent("focus"));
         });
+        await main.mouse.move(24, 500);
+        await sidebarStill(main);
+        if (await shut()) {
+          wrong = "the sidebar stayed shut under a pointer that moved on it once the app was in front again";
+          break;
+        }
         await main.mouse.move(750, 400);
         await sidebarStill(main);
         await main.mouse.move(20, 500);
@@ -8440,13 +8445,18 @@ for (const seq of toWalk) {
           }
         } else {
           await page.locator(".telling").focus();
+          // The last words are held back until Tab is pressed, so Tab
+          // comes while they are written down on any machine.
+          const late = arg === "enter, then tab and enter" || arg === "enter, then tab";
+          if (late) await control(url, "/hold?call=StopListening&gate=shut");
           await page.keyboard.press(arg === "enter" ? "Enter" : "Escape");
           if (arg === "escape, then enter") await page.keyboard.press("Enter");
-          if (arg === "enter, then tab and enter" || arg === "enter, then tab") {
-            const writing = await button.getAttribute("aria-label");
+          if (late) {
             await page.keyboard.press("Tab");
             if (arg === "enter, then tab and enter") await page.keyboard.press("Enter");
-            if (writing !== "Writing") wrong = `the button says ${writing} right after Enter, not Writing, so Tab came after the words were written`;
+            const writing = await button.getAttribute("aria-label");
+            await control(url, "/hold?call=StopListening&gate=open");
+            if (writing !== "Writing") wrong = `the button says ${writing} after Tab, not Writing, so Tab came after the words were written`;
           }
           // While the last words are written down, the cursor is still
           // drawn after them, where they end.

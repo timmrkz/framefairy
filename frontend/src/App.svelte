@@ -111,22 +111,27 @@
   // is none. Only the very first move is taken without it, since the
   // pointer had no place before it to have moved from. And the sidebar
   // only answers the pointer while the app is in front, the way the Mac's
-  // own windows do. Where the pointer was at its last real move, so it
-  // opens on the way in and not again while it stays.
+  // own windows do: a move while another app is in front is not taken
+  // in at all, or the sidebar took the pointer for already there and
+  // stayed a rail when the app came back to the front. WebKit hands the
+  // app such moves only on a Mac that shows scroll bars always, see
+  // trackingAreaOptions in WebKit's WebViewImpl.mm. Where the pointer was
+  // at its last real move, so it opens on the way in and not again while
+  // it stays.
   let inside = false;
   let moved = false;
   function pointerMoved(e: PointerEvent) {
     if (moved && !e.movementX && !e.movementY) return;
+    if (!document.hasFocus()) return;
     moved = true;
     const now = !!aside?.contains(e.target as Node);
     const came = now && !inside;
     inside = now;
     if (holding) return;
-    const front = document.hasFocus();
     if (asking) {
       asking = false;
-      reach(now && front, now ? "the pointer is on it" : "the pointer is away from it");
-    } else if (came && front) reach(true, "the pointer moved onto it");
+      reach(now, now ? "the pointer is on it" : "the pointer is away from it");
+    } else if (came) reach(true, "the pointer moved onto it");
   }
 
   function pointerLeft() {
