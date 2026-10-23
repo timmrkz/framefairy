@@ -779,3 +779,79 @@ func TestTheLibraryIsReadAgainWhenTheHearingGoesOnToTheNextPart(t *testing.T) {
 		t.Fatalf("at the end the library was told of %q", got)
 	}
 }
+
+// Stop transcribing keeps the record, so the menu says Continue
+// transcribing after a restart too, and Continue clicked while the work
+// still stops keeps the record of the job it started. Found by the review
+// of #458: the record was removed once the stopped job ended, the new
+// job's with it.
+func TestStopTranscribingKeepsTheRecordOfTheJobThatCarriesOn(t *testing.T) {
+	t.Parallel()
+	svc, eps := memoryLibrary(t, "ep.mp4")
+	ep := eps[0]
+	news := make(chan Job, 256)
+	svc.jobs = newQueue(svc.store, func(u JobUpdate) { news <- u.Job }, func(string) {})
+	record := func() (engine.JobRecord, bool) {
+		for _, rec := range engine.ReadJobs(svc.store.files, ep) {
+			if rec.ID == engine.TranscribeID {
+				return rec, true
+			}
+		}
+		return engine.JobRecord{}, false
+	}
+	// A stand-in for TranscribeJob: it writes its record and hears until
+	// it is called off, and then holds until it is let go.
+	started := make(chan struct{})
+	transcribe := func(letGo chan struct{}) Job {
+		return svc.jobs.addSteps(ep, engine.JobTranscribe, "Transcribe whole video", true, func(j *Job) {
+			j.Record = engine.TranscribeID
+		}, func(ctx context.Context, p *engine.Project, turn engine.Turn) (string, error) {
+			rec := engine.JobRecord{ID: engine.TranscribeID, Kind: engine.JobTranscribe, Step: engine.StepHearing}
+			if err := engine.WriteJob(svc.store.files, ep, rec); err != nil {
+				return "", err
+			}
+			started <- struct{}{}
+			<-ctx.Done()
+			<-letGo
+			return "", engine.ErrCancelled
+		})
+	}
+	ended := func(id string) Job {
+		for j := range news {
+			if j.ID == id && j.State != JobQueued && j.State != JobRunning {
+				return j
+			}
+		}
+		panic("the news ended")
+	}
+
+	firstGo := make(chan struct{})
+	first := transcribe(firstGo)
+	<-started
+	if !svc.cancelSteps(first.ID) {
+		t.Fatal("Stop transcribing found no job")
+	}
+	// Continue transcribing, clicked while the first still stops.
+	secondGo := make(chan struct{})
+	second := transcribe(secondGo)
+	if second.ID == first.ID {
+		t.Fatal("Continue gave the job that stops")
+	}
+	<-started
+	close(firstGo)
+	if j := ended(first.ID); j.State != JobInterrupted {
+		t.Errorf("Stop transcribing ended the job as %s", j.State)
+	}
+	if rec, ok := record(); !ok || rec.Step == engine.StepStopped {
+		t.Errorf("the job that carries on lost its record: %+v, there %v", rec, ok)
+	}
+
+	svc.cancelSteps(second.ID)
+	close(secondGo)
+	if j := ended(second.ID); j.State != JobInterrupted || j.Step != engine.StepStopped {
+		t.Errorf("Stop transcribing ended the job as %s, %s", j.State, j.Step)
+	}
+	if rec, ok := record(); !ok || rec.Step != engine.StepStopped {
+		t.Errorf("after Stop transcribing the record is %+v, there %v", rec, ok)
+	}
+}

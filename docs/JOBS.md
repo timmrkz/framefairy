@@ -63,8 +63,10 @@ made by hand that asks to hear, a search asked after it goes first, and
 it waits while a search finds, because it can take an hour and nobody is
 waiting on it, see `wholeHearingTurn` in `lanes.go`. Its record is
 `transcribe.json`, so an app closed while it hears says so in the
-video's menu, and Continue transcribing carries it on. Called off with its
-cross, its record goes, and what it heard stays. A clip made
+video's menu, and Continue transcribing carries it on. Stopped with Stop
+transcribing in the menu, it ends the way a search called off with Cancel
+does: its record says stopped, what it heard stays, and the menu offers
+Continue transcribing, after a restart too. A clip made
 by hand goes **waiting**, **hearing** where the transcript does not reach
 far enough yet, **framing**, **done**. A render goes **waiting**,
 **rendering**, **done**. Waiting is its turn behind

@@ -381,6 +381,16 @@ func makesClips(kind string) bool {
 	return kind == engine.JobSearch || kind == engine.JobClip
 }
 
+// stopsAsStopped says whether a kind of job called off by hand keeps its
+// record and says Stopped with Continue: those that make clips, and the
+// whole video being transcribed, whose Stop transcribing offers Continue
+// transcribing, after a restart too. Found by the review of #458: its
+// record was removed instead, and could take the record of the Continue
+// clicked right after with it.
+func stopsAsStopped(kind string) bool {
+	return makesClips(kind) || kind == engine.JobTranscribe
+}
+
 // jobLabel is what a job is called, by what it does.
 func jobLabel(kind string, preview bool) string {
 	switch {
@@ -635,12 +645,25 @@ func (q *queue) cancelEpisode(episode string) bool {
 	return q.waitEpisode(episode)
 }
 
-// stopByHand calls off a job that makes clips with Cancel, see makesClips.
-// It ends as work that stopped, not as work that is gone, see runJob.
+// carriedOnLocked says whether another job that waits or runs writes the
+// same record as this one: Continue clicked while this one stopped.
+func (q *queue) carriedOnLocked(job *Job) bool {
+	for _, j := range q.jobs {
+		if j != job && j.Episode == job.Episode && j.Record == job.Record &&
+			(j.State == JobQueued || j.State == JobRunning) && j.ctx.Err() == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// stopByHand calls off a job with Cancel or Stop transcribing, see
+// stopsAsStopped. It ends as work that stopped, not as work that is gone,
+// see runJob.
 func (q *queue) stopByHand(id string) {
 	q.mu.Lock()
 	for _, j := range q.jobs {
-		if j.ID == id && makesClips(j.Kind) && j.Record != "" {
+		if j.ID == id && stopsAsStopped(j.Kind) && j.Record != "" {
 			j.byHand = true
 		}
 	}
@@ -836,12 +859,12 @@ func (q *queue) runJob(job *Job) {
 			return
 		}
 		copied := ev
-		// A hearing that begins a new part has saved the part before it,
-		// so the library is read again: what it says was heard, and the
-		// summary in the video's row, stay true while a job hears a video
-		// in parts, not only once the job ends. Read only when it ended, a
-		// share of the video worked out from it went back each time the
-		// work went on to the next part, found by Tim on #458.
+		// A hearing that begins another part has saved the part before
+		// it, so the library is read again: what it says was heard stays
+		// true while a job hears a video in parts, not only once the job
+		// ends. Read only when it ended, a share of the video worked out
+		// from it went back each time the work went on to another part,
+		// found by Tim on #458.
 		if copied.Kind == engine.EventProgress && copied.Covered > 0 {
 			partMu.Lock()
 			moved := partFrom >= 0 && copied.From != partFrom
@@ -879,14 +902,19 @@ func (q *queue) runJob(job *Job) {
 	// A search called off by hand says so in its record before it says
 	// it has ended, so the note is there whenever anyone looks, the app
 	// quit a moment later included.
+	//
+	// Continue may have been clicked while it stopped, and the job it
+	// started writes the same record. That record is the newer job's, so
+	// it is left alone. The look and the write are under the queue's lock,
+	// so a job added at the same moment is either seen here or writes its
+	// record after this one, found by the review of #458.
 	q.mu.Lock()
-	byHand := job.byHand
-	q.mu.Unlock()
-	if byHand && errors.Is(err, engine.ErrCancelled) {
+	if job.byHand && errors.Is(err, engine.ErrCancelled) && !q.carriedOnLocked(job) {
 		if serr := engine.StopJob(q.store.files, job.Episode, job.Record); serr != nil {
 			project.Log().Warn("could not note the search as stopped: %s", serr)
 		}
 	}
+	q.mu.Unlock()
 	log.SetSink(nil)
 	q.update(job, func(j *Job) {
 		j.Progress = nil

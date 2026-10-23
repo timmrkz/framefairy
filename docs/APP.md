@@ -199,8 +199,9 @@ frame Transcribe whole video is clicked until the frame Stop
 transcribing is. Nothing else says how far it has come, Tim's call on
 #458: a number in the menu, and then one in the video's row, were more
 to read for what the dots already show. The library is read again each
-time the work goes on to the next part of the video, so the summary in
-the video's row keeps up with it.
+time the work goes on to another part of the video, after a search or a
+clip made by hand took the hearing for a while, so what it says was heard
+never goes back.
 
 A label is a few words and a colour beside the video's name, in its row
 and in the title bar. It is how videos with the same file name are told

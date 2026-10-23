@@ -264,7 +264,8 @@ func firstWindowEnd(duration float64, room engine.Room, req engine.PlanRequest) 
 // cancelSteps calls off a search or a render, or takes away the note of
 // one that stopped. A search called off says so where its work was, with
 // Continue, the same as one cut off by the app closing: what it heard stays
-// and it can be carried on. A render called off keeps the shorts it
+// and it can be carried on. The whole video being transcribed does the
+// same, its menu says Continue transcribing. A render called off keeps the shorts it
 // finished and goes, because its Render button is where it is carried on.
 // It says whether the job was one of those.
 //
@@ -290,7 +291,7 @@ func (s *FrameFairy) cancelSteps(id string) bool {
 			s.jobs.settle(j.Episode, j.Kind, j.Record)
 			return true
 		}
-		if makesClips(j.Kind) {
+		if stopsAsStopped(j.Kind) {
 			// Its record says stopped as it ends, see runJob.
 			s.jobs.stopByHand(id)
 			return true
