@@ -5,9 +5,10 @@
 //
 // A walk waits until the app is done before it compares the screen with
 // the engine, and a probe before it measures: the calls out, the timers
-// set to fire in a moment, and what moves on the page for a moment. __settled answers when none is left, woken by the
-// call coming back, the timer firing or being cleared and the movement
-// ending, never by looking again and again.
+// set to fire in a moment, and what moves on the page for a moment.
+// __settled answers when none is left, woken by the call coming back,
+// the timer firing or being cleared and the movement ending, never by
+// looking again and again.
 //
 // The calls that only write the app's log are left out: they change
 // nothing on screen. So is the timer that writes the log, see said.ts.
@@ -19,6 +20,8 @@
 // holdClock. A movement counts the same way: a row sliding open or a clip
 // timeline gliding to its view, not the shimmer over a place waiting to
 // be filled, which moves for good.
+import "./standing";
+
 const SOON = 1000;
 const logOnly = new Set(["Said", "Acted"]);
 let out = 0;

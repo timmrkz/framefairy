@@ -377,6 +377,26 @@ describe("the picture standing still", () => {
     expect(q.standing).toBe(true);
   });
 
+  test("waits for the first frame of a queue just opened, and stands with none when the seek put none up", () => {
+    const { q, inside } = standing();
+    inside.shown = null;
+    expect(q.standing).toBe(false);
+    q.seek(0);
+    expect(q.standing).toBe(false);
+    inside.report();
+    expect(q.standing).toBe(true);
+  });
+
+  test("the walks hear the newest queue still open, not one made after it and closed", () => {
+    const on = standing().q;
+    const slept = standing().q;
+    const walks = globalThis as unknown as { __frameQueue?: unknown };
+    expect(walks.__frameQueue).toBe(slept);
+    slept.close();
+    expect(walks.__frameQueue).toBe(on);
+    on.close();
+  });
+
   test("waits for the frame asked for again at the canvas's new size", () => {
     const { q, inside, frame } = standing();
     inside.report();

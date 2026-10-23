@@ -354,34 +354,13 @@ export async function frames({ query = "", width = 900, height = 520 } = {}) {
 
 // Until the app has nothing on its way, its calls, its timers of a second
 // or less and what moves on the page, see preview/settled.ts, and the
-// picture on the video preview stands, see standing in
-// lib/frames/queue.ts. Each is heard from the page when it ends, never
+// picture on the video preview stands, see __standing in
+// preview/standing.ts. Each is heard from the page when it ends, never
 // looked at again and again. The frame queue's own page has no app, so
 // there it is only the picture.
 export async function settled(page) {
   await page.evaluate(() => window.__settled?.(false));
-  await page.evaluate(
-    () =>
-      new Promise((done) => {
-        let q = null;
-        let off = () => {};
-        const o = new MutationObserver(() => again());
-        const again = () => {
-          const now = window.__frameQueue ?? window.__queue ?? null;
-          if (now !== q) {
-            off();
-            q = now;
-            off = q ? q.listen(again) : () => {};
-          }
-          if (q && !q.standing) return;
-          off();
-          o.disconnect();
-          done();
-        };
-        o.observe(document, { subtree: true, childList: true, attributes: true });
-        again();
-      }),
-  );
+  await page.evaluate(() => window.__standing());
 }
 
 // Until the frame queue of the frame queue's own page reports something

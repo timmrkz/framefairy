@@ -5691,7 +5691,24 @@ for (const seq of toWalk) {
         });
         await page.keyboard.press("Space");
         await settle(page);
-        const playing = await page.evaluate(() => window.__frameQueue.state);
+        // The app has done what the space bar set going, but a play
+        // starting waits for its first frames and the sound card, which
+        // are no call and no timer, so it is heard from the queue: the
+        // first report once it has started or given up. On a busy machine
+        // it was still starting here. A play that never starts is a walk
+        // that hangs, ended by the -timeout of make walks.
+        const playing = await page.evaluate(
+          () =>
+            new Promise((done) => {
+              const q = window.__frameQueue;
+              if (q.state !== "starting") return done(q.state);
+              const off = q.listen(() => {
+                if (q.state === "starting") return;
+                off();
+                done(q.state);
+              });
+            }),
+        );
         if (playing !== "playing") {
           wrong = `the space bar left the play ${playing}`;
           break;
@@ -6475,11 +6492,22 @@ for (const seq of toWalk) {
           const t = performance.now();
           while (performance.now() - t < 250) {}
           const crossed = q.c0 !== null && sounded() >= q.program.length;
+          // The loop button says the loop is off in the same pass that
+          // hands the queue its program, so once it has changed, the
+          // queue has the program without the loop.
+          const button = document.querySelector('button[aria-label="Loop the clip"]');
+          const switched = new Promise((done) => {
+            const seen = new MutationObserver(() => {
+              if (button.getAttribute("aria-pressed") !== "false") return;
+              seen.disconnect();
+              done();
+            });
+            seen.observe(button, { attributes: true, attributeFilter: ["aria-pressed"] });
+          });
           document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "l", bubbles: true }));
-          // The loop is switched by the page's next microtasks, not its
-          // next frame.
-          await Promise.resolve();
-          await new Promise((done) => setTimeout(done, 0));
+          // An L the app did not take changes nothing, and the app then
+          // settles with the loop still on, which is said below.
+          await Promise.race([switched, window.__settled(false)]);
           return { crossed, loop: q.program.loop, ends: q.program.end, sounded: sounded() };
         });
         await page.keyboard.press("Space");

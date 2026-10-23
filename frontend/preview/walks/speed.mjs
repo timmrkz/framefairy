@@ -203,7 +203,10 @@ try {
     for (let i = 0; i < 8; i++) await press("Shift+Right, a word on", "Shift+ArrowRight");
     for (let i = 0; i < 3; i++) await press("Left, a frame back", "ArrowLeft");
     for (let i = 0; i < 3; i++) await press("Right, a frame on", "ArrowRight");
-    for (let i = 0; i < 8; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
+    // Seven back, not eight: the clip is picked with the playhead before
+    // its first word, so eight on lands on the eighth word, and an eighth
+    // step back from the first word has no word to go to and does nothing.
+    for (let i = 0; i < 7; i++) await press("Shift+Left, a word back", "Shift+ArrowLeft");
     for (let i = 0; i < 4; i++) {
       await press("Shift+Right, a word on", "Shift+ArrowRight");
       await press("Left after a word", "ArrowLeft");

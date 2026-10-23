@@ -7,6 +7,7 @@
 //           drawn, which costs a read of the canvas each time
 //   ?hear   records every sample the sound card was handed, with the
 //           sound card's own frame it was played at
+import "../standing";
 import { movieOf } from "../../src/lib/frames/movie";
 import { FrameQueue, type Shown } from "../../src/lib/frames/queue";
 

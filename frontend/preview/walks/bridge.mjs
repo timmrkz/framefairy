@@ -119,7 +119,7 @@ export async function open(url, { viewport = { width: 1500, height: 1000 }, scal
 // Waits until the app has nothing on its way: no call out, no timer of
 // the app's set to fire in a moment and nothing on the page moving for a
 // moment. The page answers when the last of them ends, __settled in
-// wails-bridge.ts, and the walk only waits for that answer.
+// preview/settled.ts, and the walk only waits for that answer.
 export async function settle(page) {
   await page.evaluate((held) => window.__settled(held), Boolean(page.__held));
 }

@@ -724,15 +724,16 @@ holds the playhead, and until that frame has its own captions, and how
 the frames of each kind of press came: from a stream opened for them,
 read on in one already open, or from the frames kept. Each round ends
 with the playhead dragged over the clip timeline and back, a step every
-frame of the page, and the last line says how many frames the video preview was
-behind the playhead while it moved, and how long after letting go the
-frame under it showed. A press whose frame never shows counts once the
-frame queue has done all the press asked of it, `standing` in
-`lib/frames/queue.ts`, never after a time, and a press that left the
-playhead where it was ends the run. `REST_FRAMES` is the pause between
-presses, in frames of the page, 15 unless set, a quarter of a second on a
-screen of 60 Hz. It is the one pause on the clock made on purpose, a
-person's pace, which is part of what is measured. `ROUNDS` the times the clip is walked, each on a page opened
+frame of the page, and the last line says how many frames the video
+preview was behind the playhead while it moved, and how long after
+letting go the frame under it showed. A press whose frame never shows
+counts once the frame queue has done all the press asked of it,
+`standing` in `lib/frames/queue.ts`, never after a time, and a press
+that left the playhead where it was ends the run. `REST_FRAMES` is the
+pause between presses, in frames of the page, 15 unless set, a quarter
+of a second on a screen of 60 Hz. It is the one pause on the clock made
+on purpose, a person's pace, which is part of what is measured.
+`ROUNDS` is how many times the clip is walked, each on a page opened
 afresh so no round finds the frames the one before kept, 5 unless set,
 `SCALE` the device pixels of a CSS pixel, 2 unless set, a Mac's screen,
 and `CODEC=hevc` makes the video HEVC with 10-bit colour. The window is
@@ -813,7 +814,7 @@ had been on its way for a quarter of a second. That quarter stood in for
 the app's own short delays, the 150 ms before the clip timeline reads
 its waveform and the 240 ms before a newly chosen clip is shown. Now
 `settle` waits for those delays themselves, and for nothing else.
-`__settled` in `preview/wails-bridge.ts` answers once no call is out, no
+`__settled` in `preview/settled.ts` answers once no call is out, no
 timer of the app's is set to fire within a second, and nothing on the
 page moves for a second or less, a row sliding open or the clip
 timeline gliding to its view. It is woken by the call coming back, the
@@ -865,7 +866,9 @@ Playwright's own 30 s on every action and wait is off too, `noDeadlines` in
 of `make walks`. The walks and the probes wait on no clock since #341 and
 #495. What `frontend/eslint-suppressions.json` still counts for them are
 reads of the clock that measure, and the stalls and late answers a step
-puts on the app on purpose. One more in a file fails. See No test waits on the clock in
+puts on the app on purpose. One more in a file fails. Some walks still
+wait a fixed number of the browser's frames, which #503 takes out. See
+No test waits on the clock in
 [BUILD.md](BUILD.md#no-test-waits-on-the-clock).
 
 `make changed` runs it whenever the interface changed, the preview's own

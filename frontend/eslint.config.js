@@ -1,6 +1,7 @@
 // ESLint holds one rule here and nothing else: a test waits on a signal,
-// never on the clock, see CLAUDE.md. It reads the walks and the
-// interface's own tests, and has no rule about style.
+// never on the clock, see CLAUDE.md. It reads the walks, the probes in
+// preview/ and preview/frames/, and the interface's own tests, and has no
+// rule about style.
 //
 // What waited on the clock before the rule was enforced is listed in
 // eslint-suppressions.json, file by file and rule by rule, so only a new

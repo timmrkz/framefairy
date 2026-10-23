@@ -95,56 +95,33 @@ export function overlaid(samples, state, frame) {
 // or null: nothing stands still, or it was decoded at the size the canvas
 // asks for. A frame asked for again after a resize may still be on its
 // way, so the size is read once the frame queue says the picture stands,
-// see standing in lib/frames/queue.ts, in the same moment. That is asked
-// again each time the queue reports and each time the page changes, the
-// canvas's size among it, never on the clock. A step that opens another
-// video makes another queue, which is listened to then in its place. A
-// frame that never comes is a walk that hangs, ended by the -timeout of
-// make walks. The queue needs the app's own timers to stand, so under a
+// see standing in lib/frames/queue.ts, in the same moment. The page hears
+// that from the queue and from the page changing, the canvas's size among
+// it, never on the clock, and follows a new queue when a step opens
+// another video, see __standing in preview/standing.ts. A frame that
+// never comes is a walk that hangs, ended by the -timeout of make walks. The queue needs the app's own timers to stand, so under a
 // held clock a picture that does not stand yet is a walk that reads it at
 // the wrong time, and fails at once.
 export async function stillBlurred(page) {
   const said = await page.evaluate(
     (held) =>
-      new Promise((done) => {
-        let q = null;
-        let off = () => {};
-        const look = () => {
-          const c = document.querySelector(".screen canvas");
-          const f = q?.picture();
-          const v = q?.video;
-          if (!f || !v || !c || (q.state !== "paused" && q.state !== "cued")) return null;
-          const scale = Math.min(1, c.width / v.width, c.height / v.height);
-          const even = (n) => Math.max(2, Math.round(n / 2) * 2);
-          const want = [even(v.width * scale), even(v.height * scale)];
-          if (f.width === want[0] && f.height === want[1]) return null;
-          return `the frame on the video preview is ${f.width} by ${f.height}, the canvas is ${c.width} by ${c.height} and the file ${v.width} by ${v.height}, so it should be ${want.join(" by ")}`;
-        };
-        const o = new MutationObserver(() => again());
-        const again = () => {
-          if (window.__frameQueue !== q) {
-            off();
-            q = window.__frameQueue ?? null;
-            off = q ? q.listen(again) : () => {};
-          }
-          if (q && !q.standing) {
-            if (held) end({ held: true });
-            return;
-          }
-          end({ blurred: look() });
-        };
-        const end = (r) => {
-          off();
-          o.disconnect();
-          done(r);
-        };
-        o.observe(document, { subtree: true, childList: true, attributes: true });
-        again();
+      window.__standing(held).then((stands) => {
+        if (!stands) return { held: true };
+        const q = window.__frameQueue;
+        const c = document.querySelector(".screen canvas");
+        const f = q?.picture();
+        const v = q?.video;
+        if (!f || !v || !c || (q.state !== "paused" && q.state !== "cued")) return {};
+        const scale = Math.min(1, c.width / v.width, c.height / v.height);
+        const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+        const want = [even(v.width * scale), even(v.height * scale)];
+        if (f.width === want[0] && f.height === want[1]) return {};
+        return { blurred: `the frame on the video preview is ${f.width} by ${f.height}, the canvas is ${c.width} by ${c.height} and the file ${v.width} by ${v.height}, so it should be ${want.join(" by ")}` };
       }),
     Boolean(page.__held),
   );
   if (said.held) throw new Error("the picture was read for its size under a held clock before it stood, see stillBlurred");
-  return said.blurred;
+  return said.blurred ?? null;
 }
 
 // Watches one page through the steps made on it.

@@ -76,6 +76,7 @@ is "frontend/preview/wails-stub.ts" "interface"
 is "frontend/preview/walks/words.mjs" "interface walks"
 is "frontend/preview/wails-bridge.ts" "interface walks"
 is "frontend/preview/settled.ts" "interface walks"
+is "frontend/preview/standing.ts" "interface walks"
 
 # Except the files of the interface a Go test reads, which are that test's
 # package too. A file a Go test only names in a comment is not one of them.

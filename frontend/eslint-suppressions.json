@@ -16,7 +16,7 @@
   },
   "preview/walks/sequences.mjs": {
     "no-restricted-globals": {
-      "count": 3
+      "count": 2
     },
     "no-restricted-properties": {
       "count": 27
