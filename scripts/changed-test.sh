@@ -173,8 +173,11 @@ is "scripts/plan-frozen.sh" "plan-rules script scripts/plan-frozen.sh"
 # while every other doc runs nothing.
 is "docs/GUI-PLAN.md" "plan-rules"
 
-# A file nobody thought of builds, rather than being passed over.
+# A file nobody thought of builds, rather than being passed over. The
+# top of the repository is a package, for modules.go, and still no file
+# outside a package falls to it.
 is "build/icon.png" "build"
+has "modules.go" "go framefairy" "go framefairy/notices"
 
 # A mix runs everything it touches.
 has "frontend/src/App.svelte updates/source.go docs/UPDATES.md" "interface" "go framefairy/updates"
